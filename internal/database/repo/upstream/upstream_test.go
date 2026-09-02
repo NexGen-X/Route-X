@@ -33,6 +33,10 @@ const schemaPrefix = "test_upstream_"
 // Pemeriksaan ini ada karena test integrasi di sini membuat schema di database
 // development: satu pembersihan yang terlewat akan menumpuk tanpa terlihat sampai
 // database penuh dengan puluhan schema mati.
+//
+// Yang ditemukan hanya dilaporkan, tidak dihapus. Kalau paket ini kebetulan dijalankan
+// dua kali bersamaan pada database yang sama, schema milik proses lain akan ikut terlihat
+// di sini — dan menghapusnya berarti mematikan test yang sedang berjalan.
 func TestMain(m *testing.M) {
 	code := m.Run()
 

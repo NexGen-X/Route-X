@@ -3,6 +3,7 @@ package security
 import (
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"golang.org/x/crypto/argon2"
@@ -241,5 +242,38 @@ func TestWeakerThanDefault(t *testing.T) {
 func TestBurnVerifyTime(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		BurnVerifyTime()
+	}
+}
+
+// BurnVerifyTime dipanggil dari jalur login, jadi pasti dipanggil bersamaan. Versi
+// pertamanya mengisi hash pembanding secara malas tanpa penyelarasan dan race
+// detector melaporkannya; test ini menjaga agar itu tidak kembali.
+func TestBurnVerifyTimeConcurrent(t *testing.T) {
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			BurnVerifyTime()
+		}()
+	}
+	wg.Wait()
+}
+
+func TestWarmUpIsIdempotent(t *testing.T) {
+	WarmUp()
+	WarmUp()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); WarmUp() }()
+	}
+	wg.Wait()
+
+	// Sesudah WarmUp, BurnVerifyTime harus benar-benar melakukan verifikasi, bukan
+	// keluar lebih awal karena hash pembanding kosong.
+	if dummyHash == "" {
+		t.Fatal("WarmUp tidak menyiapkan hash pembanding")
 	}
 }

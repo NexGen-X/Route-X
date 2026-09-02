@@ -27,6 +27,11 @@ const (
 	// email yang tidak terdaftar — di situ actor_user_id kosong dan hanya cuplikan
 	// email yang tersimpan.
 	ActionLoginFailed = "auth.login_failed"
+	// ActionPasswordChange dicatat setelah password berhasil diganti pemiliknya.
+	ActionPasswordChange = "auth.password_change"
+	// ActionPasswordChangeFailed dicatat saat penggantian password ditolak, mis. karena
+	// password lama salah atau yang baru terlalu lemah.
+	ActionPasswordChangeFailed = "auth.password_change_failed"
 
 	// ActionProviderCreate, ActionProviderUpdate, dan ActionProviderDelete mencatat
 	// perubahan pada provider upstream.

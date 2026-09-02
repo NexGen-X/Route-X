@@ -388,7 +388,8 @@ func listModelsQuery(f ModelFilter, cursor string, limit int) (string, []any) {
 		// Satu argumen dipakai dua kali, jadi kondisinya dirakit langsung.
 		args = append(args, f.Search)
 		n := len(args)
-		conds = append(conds, fmt.Sprintf("(m.model_id ilike '%%' || $%d || '%%' or m.display_name ilike '%%' || $%d || '%%')", n, n))
+		conds = append(conds, fmt.Sprintf(
+			"(m.model_id ilike '%%' || $%d || '%%' or m.display_name ilike '%%' || $%d || '%%')", n, n))
 	}
 	if f.ExcludeDeprecated {
 		conds = append(conds, "m.deprecated_at is null")
@@ -437,7 +438,8 @@ func (r *ModelRepo) AddAlias(ctx context.Context, modelID, alias string, created
 		alias, modelID, createdBy).Scan(&a.Alias, &a.ModelID, &a.CreatedAt, &a.CreatedBy)
 	if err != nil {
 		if aliasCollision(err) {
-			return nil, fmt.Errorf("%s: %w: %q sudah dipakai sebagai model_id kanonik, jadi alias itu tidak akan pernah terpakai",
+			return nil, fmt.Errorf(
+				"%s: %w: %q sudah dipakai sebagai model_id kanonik, jadi alias itu tidak akan pernah terpakai",
 				op, repo.ErrConflict, alias)
 		}
 		return nil, repo.Err(op, err)

@@ -58,7 +58,8 @@ type CredentialRepo struct {
 // NewCredentialRepo membuat CredentialRepo. cipher berasal dari config.EncryptionKey.
 func NewCredentialRepo(q repo.Querier, cipher *security.Cipher) (*CredentialRepo, error) {
 	if cipher == nil {
-		return nil, fmt.Errorf("kredensial provider tidak bisa dilayani tanpa cipher: %w", security.ErrInvalidKeyLength)
+		return nil, fmt.Errorf("kredensial provider tidak bisa dilayani tanpa cipher: %w",
+			security.ErrInvalidKeyLength)
 	}
 	return &CredentialRepo{q: q, cipher: cipher}, nil
 }

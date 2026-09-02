@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -221,8 +222,31 @@ func decodeHash(encoded string) (p Argon2Params, salt, key []byte, err error) {
 	return p, salt, key, nil
 }
 
-// dummyHash adalah hash tetap yang dipakai BurnVerifyTime.
-var dummyHash string
+// dummyHash adalah hash pembanding tetap yang dipakai BurnVerifyTime.
+//
+// Dijaga sync.Once, bukan pemeriksaan "kalau masih kosong": dua login bersamaan untuk
+// email yang tidak terdaftar akan membaca dan menulis variabel ini serentak, dan itu
+// data race sungguhan — terbukti dilaporkan race detector sebelum penyelarasan ini ada.
+var (
+	dummyHashOnce sync.Once
+	dummyHash     string
+)
+
+// WarmUp menyiapkan hash pembanding yang dipakai BurnVerifyTime.
+//
+// Panggil sekali saat aplikasi start. Tanpa itu, panggilan BurnVerifyTime yang pertama
+// harus menghitung hash penuh — jauh lebih lambat daripada satu verifikasi — sehingga
+// login pertama untuk email tak terdaftar justru menonjol dari sisi waktu, kebalikan
+// dari yang hendak dicapai.
+func WarmUp() { dummyHashOnce.Do(buildDummyHash) }
+
+func buildDummyHash() {
+	// Kalau gagal, tidak ada yang bisa dilakukan selain melewatkannya — ini murni
+	// pertahanan waktu, bukan jalur yang menentukan kebenaran.
+	if h, err := HashPasswordWith("kata-sandi-pembanding-tetap", DefaultArgon2Params); err == nil {
+		dummyHash = h
+	}
+}
 
 // BurnVerifyTime melakukan pekerjaan argon2 setara satu verifikasi, lalu membuang
 // hasilnya.
@@ -230,15 +254,12 @@ var dummyHash string
 // Dipakai lapisan auth saat email yang dicari tidak ada: tanpa ini, permintaan untuk
 // akun yang tidak terdaftar akan selesai jauh lebih cepat daripada akun yang ada, dan
 // selisih waktunya menjadi alat enumerasi akun bagi penyerang.
+//
+// Aman dipanggil dari banyak goroutine sekaligus.
 func BurnVerifyTime() {
+	dummyHashOnce.Do(buildDummyHash)
 	if dummyHash == "" {
-		// Dibuat sekali saat pertama dipakai. Kalau gagal, tidak ada yang bisa
-		// dilakukan selain melewatkannya — ini murni pertahanan waktu.
-		h, err := HashPasswordWith("kata-sandi-pembanding-tetap", DefaultArgon2Params)
-		if err != nil {
-			return
-		}
-		dummyHash = h
+		return
 	}
 	_, _ = VerifyPassword("kata-sandi-yang-pasti-salah", dummyHash)
 }

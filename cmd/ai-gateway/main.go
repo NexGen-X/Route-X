@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/cache"
 	"github.com/NexGen-X/Route-X/internal/config"
 	"github.com/NexGen-X/Route-X/internal/database"
@@ -28,6 +29,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/health"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
+	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/web"
 )
 
@@ -72,6 +74,11 @@ func run(migrateOnly bool) error {
 		Pretty: !cfg.AppEnv.IsProduction(),
 	})
 	slog.SetDefault(logger)
+
+	// Hash pembanding argon2 disiapkan sekarang, bukan saat login pertama untuk email
+	// tak terdaftar. Kalau dibiarkan malas, permintaan pertama itu harus menghitung
+	// hash penuh dan justru menonjol dari sisi waktu — kebalikan dari tujuannya.
+	security.WarmUp()
 
 	logger.Info("menyalakan ai-gateway",
 		"version", version, "commit", commit, "built_at", builtAt,
@@ -122,7 +129,13 @@ func run(migrateOnly bool) error {
 	go collectPoolStats(ctx, metrics, db, rdb)
 
 	// --- Router -------------------------------------------------------------
-	router, err := buildRouter(cfg, logger, metrics,
+	// Pembatas laju login memakai Redis dan sengaja gagal-terbuka: Redis mati tidak
+	// boleh membuat tidak seorang pun bisa masuk untuk memperbaikinya, sementara
+	// penguncian per akun tetap ditegakkan di database.
+	authSvc := auth.NewService(db.Pool, cfg, logger,
+		auth.WithLoginLimiter(auth.NewLoginLimiter(rdb, logger)))
+
+	router, err := buildRouter(cfg, logger, metrics, authSvc,
 		health.NewChecker("postgres", db.Ping),
 		health.NewChecker("redis", rdb.Ping),
 	)
@@ -141,6 +154,7 @@ func buildRouter(
 	cfg *config.Config,
 	logger *slog.Logger,
 	metrics *observability.Metrics,
+	authSvc *auth.Service,
 	checkers ...health.Checker,
 ) (http.Handler, error) {
 	trusted, err := httpx.ParseTrustedProxies(cfg.TrustedProxies)
@@ -183,6 +197,16 @@ func buildRouter(
 			"saran", "batasi akses di reverse proxy atau firewall sampai autentikasi admin terpasang")
 	}
 	r.Handle("/metrics", metrics.Handler())
+
+	// --- Autentikasi dashboard ---
+	//
+	// Rute ini tidak dilindungi RequireSession: /login justru jalan masuknya. CSRF juga
+	// tidak dipasang di sini — perlindungannya berlaku pada rute admin yang sudah
+	// berautentikasi cookie, dan /login sendiri dijaga kewajiban Content-Type JSON
+	// plus pembatas laju.
+	if authSvc != nil {
+		r.Mount("/api/auth", auth.NewHandlers(authSvc).Routes())
+	}
 
 	// --- Dashboard (fallback untuk seluruh path yang tidak cocok rute di atas) ---
 	dashboard, err := dashboardHandler(logger)

@@ -355,7 +355,8 @@ func (r *ProviderRepo) List(ctx context.Context, f ProviderFilter, page repo.Pag
 		// Satu argumen dipakai dua kali, jadi kondisinya dirakit langsung.
 		args = append(args, f.Search)
 		n := len(args)
-		conds = append(conds, fmt.Sprintf("(name ilike '%%' || $%d || '%%' or display_name ilike '%%' || $%d || '%%')", n, n))
+		conds = append(conds, fmt.Sprintf(
+			"(name ilike '%%' || $%d || '%%' or display_name ilike '%%' || $%d || '%%')", n, n))
 	}
 	if page.Cursor != "" {
 		ts, id, err := decodeCursor(op, page.Cursor)

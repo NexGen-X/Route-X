@@ -175,6 +175,7 @@ type Result struct {
 	RolesCreated       int
 	RolesUpdated       int
 	AdminCreated       bool
+	Catalog            CatalogResult
 }
 
 // Run menanam katalog izin, peran bawaan, dan admin pertama.
@@ -227,6 +228,12 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, logger *sl
 			return err
 		}
 		res.AdminCreated = created
+
+		catalog, err := SeedCatalog(ctx, q)
+		if err != nil {
+			return fmt.Errorf("menanam katalog model: %w", err)
+		}
+		res.Catalog = catalog
 		return nil
 	})
 	if err != nil {
@@ -237,7 +244,10 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, logger *sl
 		"permissions", res.PermissionsEnsured,
 		"roles_created", res.RolesCreated,
 		"roles_updated", res.RolesUpdated,
-		"admin_created", res.AdminCreated)
+		"admin_created", res.AdminCreated,
+		"models_created", res.Catalog.ModelsCreated,
+		"models_existing", res.Catalog.ModelsExisting,
+		"aliases_created", res.Catalog.AliasesCreated)
 	return res, nil
 }
 
@@ -299,3 +309,8 @@ func seedInitialAdmin(ctx context.Context, q repo.Querier, cfg *config.Config, l
 		"tindakan_wajib", "ganti password saat login pertama, lalu hapus INITIAL_ADMIN_PASSWORD dari .env")
 	return true, nil
 }
+
+// isNotFound dan isConflict membungkus pemeriksaan sentinel agar pemanggil di paket ini
+// tidak perlu mengimpor errors di banyak tempat.
+func isNotFound(err error) bool { return errors.Is(err, repo.ErrNotFound) }
+func isConflict(err error) bool { return errors.Is(err, repo.ErrConflict) }

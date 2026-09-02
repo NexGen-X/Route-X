@@ -42,21 +42,34 @@ fmt: ## Format kode
 vet: ## Analisis statis bawaan Go
 > $(GO) vet $(PKG)
 
-test: ## Semua test (unit + integrasi)
-> $(GO) test -count=1 $(PKG)
+# Test integrasi berbagi SATU database Postgres. Setiap paket memakai schema
+# sementaranya sendiri dan memeriksa tidak ada yang tertinggal setelah selesai —
+# pemeriksaan itu saling menuduh bila paket berjalan paralel. Karena itu -p 1.
+TESTFLAGS := -count=1 -p 1
 
-test-unit: ## Hanya unit test (tanpa Postgres/Redis)
+test: ## Semua test (unit + integrasi, butuh Postgres & Redis)
+> $(GO) test $(TESTFLAGS) $(PKG)
+
+test-unit: ## Hanya unit test (tanpa Postgres/Redis, bisa paralel)
 > $(GO) test -count=1 -short $(PKG)
 
 test-integration: ## Hanya test integrasi
-> $(GO) test -count=1 -run Integration $(PKG)
+> $(GO) test $(TESTFLAGS) -run Integration $(PKG)
 
 race: ## Test dengan race detector
-> $(GO) test -count=1 -race $(PKG)
+> $(GO) test $(TESTFLAGS) -race $(PKG)
 
 cover: ## Test + laporan coverage
-> $(GO) test -count=1 -coverprofile=coverage.out -covermode=atomic $(PKG)
+> $(GO) test $(TESTFLAGS) -coverprofile=coverage.out -covermode=atomic $(PKG)
 > $(GO) tool cover -func=coverage.out | tail -1
+
+# PERINGATAN: ini menghapus SEMUA schema berawalan test_, termasuk milik test yang
+# sedang berjalan. Jalankan hanya saat tidak ada test yang aktif.
+schemas-clean: ## Hapus schema test tertinggal (jangan jalankan saat test aktif)
+> @set -a; . ./.env; set +a; \
+>  psql "$$DATABASE_URL" -qtAX -c "select nspname from pg_namespace where nspname like 'test\\_%'" \
+>  | while read -r s; do [ -n "$$s" ] && echo "menghapus $$s" && \
+>    psql "$$DATABASE_URL" -q -c "drop schema \"$$s\" cascade"; done; true
 
 clean: ## Hapus artefak build
 > rm -f $(BINARY) coverage.out

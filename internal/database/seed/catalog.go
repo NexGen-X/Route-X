@@ -40,6 +40,14 @@ type CatalogModel struct {
 //
 // Daftar ini bukan pembatas: operator bisa menambah model apa pun dari dashboard.
 // Isinya sekadar titik mulai supaya instalasi baru tidak menghadapi registry kosong.
+//
+// Catatan soal ContextWindow dan MaxOutputTokens: ini nilai awal yang perlu
+// dikonfirmasi operator, tidak semuanya terverifikasi dari dokumentasi resmi. Keduanya
+// sengaja diperlakukan berbeda dari harga — angka jendela konteks yang salah
+// menghasilkan penolakan dari upstream, yaitu kegagalan yang terlihat dan langsung bisa
+// diperbaiki, sementara harga yang salah menghasilkan laporan biaya yang salah tanpa
+// satu pun tanda. Karena itu harga menuntut asal yang tercatat (lihat ReferencePrice)
+// sedangkan angka di bawah cukup ditandai sebagai perkiraan awal.
 var catalogModels = []CatalogModel{
 	// --- Anthropic ---
 	{

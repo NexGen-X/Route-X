@@ -24,6 +24,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/cache"
 	"github.com/NexGen-X/Route-X/internal/config"
 	"github.com/NexGen-X/Route-X/internal/database"
+	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/health"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
@@ -93,6 +94,12 @@ func run(migrateOnly bool) error {
 		return fmt.Errorf("menjalankan migrasi: %w", err)
 	}
 	logger.Info("migrasi database siap", "applied", applied)
+
+	// Seed dijalankan setiap start dan bersifat idempoten: katalog izin dan pemetaan
+	// peran ikut tersegarkan bila rilis baru menambah izin.
+	if _, err := seed.Run(ctx, db.Pool, cfg, logger); err != nil {
+		return fmt.Errorf("menanam data awal: %w", err)
+	}
 
 	if migrateOnly {
 		logger.Info("mode -migrate selesai, server tidak dinyalakan")

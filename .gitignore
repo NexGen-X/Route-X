@@ -1,0 +1,31 @@
+# Binary hasil build
+/ai-gateway
+/dist/
+
+# Rahasia — jangan pernah di-commit
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Frontend
+node_modules/
+web/.vite/
+web/dist/*
+!web/dist/.gitkeep
+
+# Go
+vendor/
+*.test
+*.out
+coverage.*
+
+# Editor & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Scratch lokal
+/_artifacts/

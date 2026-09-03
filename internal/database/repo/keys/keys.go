@@ -200,6 +200,11 @@ func (r *Repo) Create(ctx context.Context, p CreateParams) (*Created, error) {
 		allowlist = []netip.Prefix{}
 	}
 
+	var ownerID any = p.OwnerUserID
+	if p.OwnerUserID == "" {
+		ownerID = nil
+	}
+
 	row := r.q.QueryRow(ctx, `
 		insert into api_keys (
 			name, key_hash, key_prefix, last4, owner_user_id, scopes,
@@ -208,7 +213,7 @@ func (r *Repo) Create(ctx context.Context, p CreateParams) (*Created, error) {
 			ip_allowlist, expires_at, created_by
 		) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		returning `+keyColumns,
-		p.Name, generated.Hash, generated.Prefix, generated.Last4, p.OwnerUserID, scopes,
+		p.Name, generated.Hash, generated.Prefix, generated.Last4, ownerID, scopes,
 		p.RateLimitRPS, p.RateLimitRPM, p.RateLimitTPM,
 		p.DailyRequestLimit, p.MonthlyRequestLimit, p.DailyTokenLimit, p.MonthlyTokenLimit,
 		allowlist, p.ExpiresAt, p.CreatedBy,

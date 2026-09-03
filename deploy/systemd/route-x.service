@@ -1,0 +1,48 @@
+[Unit]
+Description=Route-X AI Gateway
+Documentation=https://github.com/NexGen-X/Route-X
+After=network-online.target postgresql.service redis.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Pengguna dan grup operasional mandiri (tanpa hak istimewa root)
+User=routex
+Group=routex
+
+# Eksekusi biner tunggal Route-X
+ExecStart=/usr/local/bin/ai-gateway
+WorkingDirectory=/var/lib/route-x
+EnvironmentFile=-/etc/route-x/route-x.env
+
+# Kebijakan restart otomatis saat terjadi kegagalan sistem
+Restart=always
+RestartSec=5s
+
+# Pengerasan keamanan Linux Sandbox (Systemd Security Hardening)
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+CapabilityBoundingSet=
+
+# Batas sumber daya deskriptor file untuk melayani konkurensi koneksi tinggi
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Penanganan log via systemd journal
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=route-x
+
+[Install]
+WantedBy=multi-user.target

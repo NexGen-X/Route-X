@@ -173,11 +173,20 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		actorID = &p.User.ID
 	}
 
+	ownerID := req.OwnerUserID
+	if ownerID == "" && actorID != nil {
+		ownerID = *actorID
+	}
+	scopes := req.Scopes
+	if len(scopes) == 0 {
+		scopes = []string{"inference"}
+	}
+
 	created, err := h.keyRepo.Create(ctx, keys.CreateParams{
 		Name:                req.Name,
-		OwnerUserID:         req.OwnerUserID,
+		OwnerUserID:         ownerID,
 		Live:                req.Live,
-		Scopes:              req.Scopes,
+		Scopes:              scopes,
 		RateLimitRPS:        req.RateLimitRPS,
 		RateLimitRPM:        req.RateLimitRPM,
 		RateLimitTPM:        req.RateLimitTPM,
@@ -200,9 +209,10 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	h.writeAudit(ctx, r, "create", "api_key", created.Key.ID, map[string]any{"name": created.Key.Name, "prefix": created.Key.Prefix})
 	_ = httpx.JSON(w, http.StatusCreated, map[string]any{
-		"key":    created.Key,
-		"masked": created.Key.Masked(),
-		"token":  created.Raw.Reveal(), // Token mentah hanya dikembalikan saat pembuatan!
+		"key":     created.Key,
+		"masked":  created.Key.Masked(),
+		"token":   created.Raw.Reveal(), // Token mentah hanya dikembalikan saat pembuatan!
+		"raw_key": created.Raw.Reveal(),
 	})
 }
 

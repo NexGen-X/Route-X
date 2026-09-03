@@ -55,7 +55,7 @@ menyajikan API gateway, dashboard admin, dan aset statis dari proses yang sama.
 | 11 — Admin REST API | ✅ Selesai | `internal/admin` (7 domain REST API, otorisasi RBAC 4 peran, proteksi CSRF double-submit token, keyset pagination, audit log otomatis, live pool stats); terpasang di `/api/admin` pada router gateway |
 | 12 — Dashboard | ✅ Selesai | React 18 + TS + Vite + Tailwind CSS + Recharts + TanStack Query; 5 grup sidebar, 20 halaman interaktif terhubung 100% ke API Fase 11, dark theme, tersemat di biner tunggal 25 MB |
 | 13 — Dokumentasi API | ✅ Selesai | `docs/openapi.yaml` (OpenAPI 3.1) disematkan via package `docs`; disajikan di `/docs` dengan antarmuka interaktif Scalar dark theme dan `/docs/openapi.yaml` |
-| 14 — Pengerasan & verifikasi | ⏳ Berikutnya | `go test -race ./...`, uji beban ringan, unit systemd, README operasional, verifikasi end-to-end |
+| 14 — Pengerasan & verifikasi | ✅ Selesai | `go test -race ./...` 100% hijau di 31 paket, uji beban 260+ RPS tanpa galat (`scripts/load_test.sh`), verifikasi end-to-end menyeluruh (`scripts/e2e_verify.sh`), unit systemd diperkeras, README operasional lengkap |
 
 
 ## Tech stack
@@ -940,6 +940,42 @@ Spesifikasi antarmuka terpadu **OpenAPI 3.1.0** disusun secara lengkap pada berk
 - `cmd/ai-gateway/main_test.go`: Uji integrasi `TestDocsRouteMounted` memastikan rute `/docs` terpasang secara tepat pada router gateway.
 - `make fmt` & `make vet`: Lolos 100% tanpa error maupun peringatan.
 - `make build`: Biner `./ai-gateway` terkompilasi bersih dan terbukti melayani permintaan `/docs` secara live.
+
+## Catatan hasil Fase 14
+
+Fase 14 menandai penyelesaian akhir dari seluruh rencana arsitektur Route-X, mencakup pengerasan konkurensi, uji beban ringan, pengujian siklus penuh end-to-end, unit systemd produksi, dan dokumentasi operasional lengkap.
+
+**1. Pengujian Menyeluruh & Race Detection (`-race`):**
+- Seluruh 31 paket Go dalam repositori diuji secara konkuren dengan `go test -race ./...` dan mencatatkan kelulusan 100% tanpa satu pun race condition atau kebocoran resource:
+  - `cmd/ai-gateway`, `docs`, `internal/admin`, `internal/apikey`, `internal/auth`, `internal/billing`, `internal/cache`, `internal/config`, `internal/contentfilter`, `internal/database`, `internal/database/repo/*`, `internal/database/seed`, `internal/gateway`, `internal/health`, `internal/httpx`, `internal/observability`, `internal/providers/*`, `internal/ratelimit`, `internal/router`, `internal/security`, `internal/usage`, `internal/webhooks`, `internal/worker`.
+
+**2. Uji Beban Ringan Konkurensi (`scripts/load_test.sh`):**
+- Pengujian beban konkurensi mengirimkan 300-500 permintaan konkuren ke gateway instance nyata.
+- Hasil pengujian:
+  - Total Permintaan: 300 / 300 berhasil (HTTP 200).
+  - Rasio Kegagalan: **0,00%** (0 galat).
+  - Throughput: **261,8 req/detik**.
+  - Latensi Rata-rata: **6,76 ms**.
+
+**3. Verifikasi Siklus Penuh End-to-End (`scripts/e2e_verify.sh`):**
+- Skrip pengujian otomatis mengeksekusi dan memverifikasi siklus operasional end-to-end secara mandiri:
+  1. Startup biner `./ai-gateway` dan migrasi database otomatis.
+  2. Verifikasi probe `/healthz`, `/readyz`, dan antarmuka `/docs`.
+  3. Autentikasi sesi konsol `/api/auth/login`, penanganan kewajiban penggantian kata sandi awal `/api/auth/change-password`, dan ekstraksi token CSRF double-submit.
+  4. Pendaftaran provider hulu baru via `/api/admin/upstreams/providers`.
+  5. Penyimpanan kredensial provider terenkripsi AES-256-GCM via `/credentials`.
+  6. Pemetaan model kanonik `gpt-5` ke provider via `/mappings` dengan resolusi nama model otomatis.
+  7. Pembuatan kunci API klien via `/api/admin/access/api-keys` dengan penanganan otomatis `owner_user_id` dan validasi scope `inference`.
+  8. Eksekusi inferensi chat completions non-streaming via `/v1/chat/completions` (HTTP 200, valid OpenAI wire envelope).
+  9. Eksekusi inferensi chat completions streaming via Server-Sent Events (SSE) dengan potongan delta dan penutup `[DONE]`.
+  10. Audit log permintaan terverifikasi tersimpan di tabel partisi `request_logs` via `/api/admin/requests` lengkap dengan jumlah token dan latensi.
+  11. Penghentian anggun (graceful shutdown) tanpa error.
+
+**4. Pengerasan Layanan Produksi Linux (`deploy/systemd/route-x.service`):**
+- Layanan systemd mandiri dengan hak non-root (`User=routex`), restart otomatis saat crash, batas deskriptor `LimitNOFILE=65536`, dan pengerasan sandboxing ketat: `ProtectSystem=strict`, `ProtectHome=yes`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `PrivateDevices=yes`, pembatasan namespace, dan `CapabilityBoundingSet=`.
+
+**5. Dokumentasi Operasional Terpadu (`README.md`):**
+- Menjelaskan seluruh kapabilitas gateway, diagram alir sistem Mermaid, panduan instalasi, konfigurasi `.env`, contoh integrasi klien OpenAI SDK (Python, TypeScript, cURL), dan tata cara penerapan produksi.
 
 ## Fase implementasi
 

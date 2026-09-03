@@ -223,7 +223,12 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 	case errors.Is(err, repo.ErrInvalidReference):
 		httpx.BadRequest(w, r, "invalid_reference", fmt.Sprintf("referensi data untuk %s tidak valid", resource))
 	case errors.Is(err, repo.ErrConstraint):
-		httpx.BadRequest(w, r, "constraint_violation", fmt.Sprintf("nilai input melanggar batasan untuk %s", resource))
+		observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelWarn,
+			"constraint violation",
+			slog.String("resource", resource),
+			slog.String("error", err.Error()),
+		)
+		httpx.BadRequest(w, r, "constraint_violation", fmt.Sprintf("nilai input melanggar batasan untuk %s: %v", resource, err))
 	default:
 		observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelError,
 			"kegagalan database di admin API",

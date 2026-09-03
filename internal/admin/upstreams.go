@@ -631,6 +631,11 @@ func (h *Handlers) attachProviderModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	modelID := chi.URLParam(r, "id")
 
+	// Dukung resolusi via nama kanonik (mis. "gpt-5") atau UUID
+	if m, err := h.modelRepo.Resolve(ctx, modelID); err == nil && m != nil {
+		modelID = m.ID
+	}
+
 	var req attachProviderReq
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())

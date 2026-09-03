@@ -33,6 +33,7 @@ func TestNewMetricsRegistersEverything(t *testing.T) {
 	m.TimeToFirstByte.WithLabelValues("openai", "gpt-5").Observe(0.21)
 	m.TokensTotal.WithLabelValues("openai", "gpt-5", "input").Add(1200)
 	m.CostTotal.WithLabelValues("openai", "gpt-5").Add(0.0123)
+	m.UpstreamFailures.WithLabelValues("openai", "timeout").Inc()
 	m.RetriesTotal.WithLabelValues("openai", "timeout").Inc()
 	m.FailoversTotal.WithLabelValues("openai", "anthropic", "circuit_open").Inc()
 	m.CircuitBreaker.WithLabelValues("openai", "gpt-5").Set(BreakerOpen)
@@ -40,12 +41,15 @@ func TestNewMetricsRegistersEverything(t *testing.T) {
 	m.ContentBlocked.WithLabelValues("blocked_pattern").Inc()
 	m.ProviderUp.WithLabelValues("openai").Set(BoolGauge(true))
 	m.ProviderLatencyMS.WithLabelValues("openai").Set(84)
+	m.ProviderAvailability.WithLabelValues("openai").Set(0.995)
 	m.HTTPRequestsTotal.WithLabelValues("GET", "/api/requests", "200").Inc()
 	m.HTTPDuration.WithLabelValues("GET", "/api/requests").Observe(0.03)
 	m.HTTPInFlight.Set(3)
 	m.WorkerRunsTotal.WithLabelValues("health_checker", "success").Inc()
 	m.WorkerDuration.WithLabelValues("health_checker").Observe(0.4)
 	m.PoolConnections.WithLabelValues("postgres", "idle").Set(5)
+	m.UsageRecords.WithLabelValues("written").Inc()
+	m.UsageQueueDepth.Set(12)
 
 	body := scrape(t, m)
 
@@ -68,6 +72,10 @@ func TestNewMetricsRegistersEverything(t *testing.T) {
 		"routex_worker_runs_total",
 		"routex_worker_duration_seconds",
 		"routex_pool_connections",
+		"routex_gateway_upstream_failures_total",
+		"routex_provider_availability_ratio",
+		"routex_usage_records_total",
+		"routex_usage_queue_depth",
 	}
 	for _, name := range want {
 		if !strings.Contains(body, name) {

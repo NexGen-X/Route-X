@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -88,6 +89,7 @@ type Handlers struct {
 	engine     *router.Engine
 	exec       *Executor
 	guard      *Guard
+	usage      UsageSink
 	logger     *slog.Logger
 }
 
@@ -107,7 +109,12 @@ type HandlersDeps struct {
 	Restrict KeyRestrictions
 	// Guard menegakkan penyaring konten, batas laju cakupan model dan provider, serta
 	// anggaran biaya. nil berarti tidak satu pun kebijakan itu ditegakkan.
-	Guard  *Guard
+	Guard *Guard
+	// Usage menerima hasil setiap permintaan: token, biaya, latensi, dan jejak
+	// percobaannya. nil berarti TIDAK ADA baris log request yang ditulis dan tidak ada
+	// pemakaian anggaran yang naik — sah untuk test, tetapi di produksi berarti halaman
+	// Requests kosong dan setiap anggaran menegakkan angka yang tidak bergerak.
+	Usage  UsageSink
 	Logger *slog.Logger
 }
 
@@ -148,7 +155,7 @@ func NewHandlers(d HandlersDeps) (*Handlers, error) {
 	return &Handlers{
 		models: d.Models, lister: d.Lister, candidates: d.Candidates,
 		restrict: d.Restrict, factory: d.Factory,
-		engine: engine, exec: d.Executor, guard: guard, logger: logger,
+		engine: engine, exec: d.Executor, guard: guard, usage: d.Usage, logger: logger,
 	}, nil
 }
 
@@ -199,7 +206,7 @@ type persiapan struct {
 // kegagalan daripada klien yang menerima 400.
 //
 // ok false berarti jawaban sudah ditulis; pemanggil cukup return.
-func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request) (*persiapan, bool) {
+func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request, j *jejak) (*persiapan, bool) {
 	body, ok := h.bacaBody(w, r)
 	if !ok {
 		return nil, false
@@ -210,6 +217,7 @@ func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request) (*persiap
 		httpx.BadRequest(w, r, httpx.CodeInvalidRequest, err.Error())
 		return nil, false
 	}
+	j.pasangDiminta(req.Model)
 
 	// Penyaring konten fase pertama: ukuran dan pola, keduanya bisa dijawab dari body saja.
 	// Dijalankan sebelum resolusi model supaya permintaan yang jelas ditolak tidak menyentuh
@@ -226,6 +234,7 @@ func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request) (*persiap
 	if !ok {
 		return nil, false
 	}
+	j.pasangModel(model)
 
 	p, _ := apikey.PrincipalFrom(r.Context())
 	if !h.izinModel(w, r, p, model) {
@@ -234,6 +243,7 @@ func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request) (*persiap
 
 	clientIP, _ := httpx.ClientIPFrom(r.Context())
 	targets := TargetsFor(p, model.ID, clientIP)
+	j.pasangKebijakan(p, targets)
 	if !h.kebijakan(w, r, p, model, targets) {
 		return nil, false
 	}
@@ -254,6 +264,7 @@ func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request) (*persiap
 	}
 
 	keputusan := h.engine.Route(r.Context(), rreq, cands)
+	j.pasangKeputusan(keputusan, req.Stream)
 	if len(keputusan.Candidates) == 0 {
 		h.tolakTanpaKandidat(w, r, rreq, model, cands)
 		return nil, false
@@ -568,19 +579,26 @@ func untukKandidat(req *providers.ChatRequest, c *upstream.RouteCandidate) *prov
 
 // ChatCompletions melayani POST /v1/chat/completions dan POST /v1/responses.
 func (h *Handlers) ChatCompletions(w http.ResponseWriter, r *http.Request) {
-	pr, ok := h.siapkanChat(w, r)
+	// Jejak dibuat sebelum apa pun dan diserahkan lewat defer, sehingga SETIAP jalan keluar
+	// — termasuk yang belum ada saat baris ini ditulis — menghasilkan satu baris log
+	// request. Writer yang dipakai selanjutnya adalah writer dari jejak, karena itulah yang
+	// tahu status dan envelope apa yang benar-benar terkirim.
+	j, w := h.mulaiJejak(w, r)
+	defer j.selesai(r.Context())
+
+	pr, ok := h.siapkanChat(w, r, j)
 	if !ok {
 		return
 	}
 	if pr.req.Stream {
-		h.chatMengalir(w, r, pr)
+		h.chatMengalir(w, r, pr, j)
 		return
 	}
-	h.chatSekali(w, r, pr)
+	h.chatSekali(w, r, pr, j)
 }
 
 // chatSekali melayani completion non-streaming.
-func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan) {
+func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
 	out := Execute(r.Context(), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.ChatResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
@@ -594,11 +612,14 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 		})
 
 	h.catatRute(r, pr, out.Attempts, out.Candidate)
+	j.pasangPercobaan(out.Attempts, out.Candidate)
 
 	if out.Err != nil {
+		j.pasangKegagalanUpstream(out.Err)
 		tulisKegagalan(w, r, out.Err)
 		return
 	}
+	j.pasangPemakaian(out.Value.Usage)
 
 	// Pemakaian token dicatat SEBELUM penyaring jawaban: permintaannya sudah dijalankan dan
 	// tokennya sudah ditagihkan upstream, jadi jawaban yang kemudian ditolak penyaring pun
@@ -720,7 +741,7 @@ var (
 // error di dalam stream, dan klien OpenAI mana pun akan menganggap itu percakapan yang
 // berhenti tanpa sebab. Harganya: klien menunggu tanpa header sampai upstream menjawab,
 // yang persis perilaku OpenAI sendiri.
-func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *persiapan) {
+func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
 	out := ExecuteStream(r.Context(), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
@@ -734,11 +755,19 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		})
 
 	h.catatRute(r, pr, out.Attempts, out.Candidate)
+	j.pasangPercobaan(out.Attempts, out.Candidate)
 
 	if out.Err != nil {
+		j.pasangKegagalanUpstream(out.Err)
 		tulisKegagalan(w, r, out.Err)
 		return
 	}
+	// Waktu hulu satu aliran adalah waktu MEMBUKA ditambah waktu membaca, dan hanya yang
+	// pertama tercatat sebagai durasi percobaan. Sisanya ditambahkan lewat defer supaya ia
+	// tetap terhitung ketika aliran berakhir karena klien menutup koneksi.
+	mulaiAliran := time.Now()
+	defer func() { j.tambahHulu(time.Since(mulaiAliran)) }()
+
 	// Close melepas context percobaan sekaligus koneksi upstream. Tanpa ini koneksi
 	// menggantung sampai tenggat permintaan, dan pada klien yang berhenti membaca lebih awal
 	// — kejadian yang normal di gateway — itu berarti satu koneksi upstream tersangkut untuk
@@ -763,6 +792,11 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 	// klien yang selalu memutus aliran lebih awal tidak pernah memakan kuota tokennya.
 	defer func() {
 		h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(usage.TotalTokens))
+		// Token juga diserahkan ke pencatat lewat defer yang sama, dan alasannya sama:
+		// aliran bisa berakhir karena klien menutup koneksi atau upstream terputus di
+		// tengah, dan token yang sudah dihasilkan sampai titik itu tetap ditagihkan
+		// provider. Tanpa ini, setiap aliran yang diputus lebih awal tercatat tanpa biaya.
+		j.pasangPemakaian(usage)
 	}()
 
 	for {
@@ -773,7 +807,7 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 				return
 			}
 			// Kegagalan setelah header terkirim hanya bisa dilaporkan di dalam stream.
-			h.kegagalanDalamAliran(r, w, rc, err, terkirim)
+			h.kegagalanDalamAliran(r, w, rc, err, terkirim, j)
 			return
 		}
 		if ev.Usage != nil {
@@ -801,7 +835,21 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 			h.logger.DebugContext(r.Context(), "flush SSE gagal", "error", err)
 			return
 		}
+		// TTFT ditandai SETELAH flush berhasil, dan hanya untuk peristiwa yang benar-benar
+		// membawa konten. Lihat jejak.tandaiTTFT untuk kedua alasannya.
+		if adaKonten(ev) {
+			j.tandaiTTFT()
+		}
 	}
+}
+
+// adaKonten melaporkan apakah satu peristiwa membawa keluaran model.
+//
+// Peristiwa pembuka aliran berdialek OpenAI hanya membawa peran, dan peristiwa penutup
+// hanya membawa alasan berhenti beserta usage. Keduanya bukan token, jadi keduanya tidak
+// boleh menjadi penanda "token pertama sudah sampai".
+func adaKonten(ev *providers.StreamEvent) bool {
+	return ev.Delta != "" || ev.ReasoningDelta != "" || len(ev.ToolCalls) > 0
 }
 
 // tulisPeristiwa menulis satu peristiwa SSE dan mengembalikan jumlah byte muatannya.
@@ -848,7 +896,7 @@ func (h *Handlers) tutupAliran(r *http.Request, w http.ResponseWriter, rc *http.
 // Penanda penutup tetap dikirim setelahnya. Tanpa itu klien menunggu sampai timeout-nya
 // sendiri untuk aliran yang jelas-jelas sudah berakhir.
 func (h *Handlers) kegagalanDalamAliran(
-	r *http.Request, w http.ResponseWriter, rc *http.ResponseController, err error, terkirim int64,
+	r *http.Request, w http.ResponseWriter, rc *http.ResponseController, err error, terkirim int64, j *jejak,
 ) {
 	perr := jadikanProviderError("", err)
 	// StreamedBytes dipasang di sini supaya jelas di log bahwa kegagalan ini TIDAK bisa
@@ -857,6 +905,13 @@ func (h *Handlers) kegagalanDalamAliran(
 	if perr.StreamedBytes == 0 {
 		perr.StreamedBytes = terkirim
 	}
+
+	// Kategori kegagalan dicatat walaupun status yang diterima klien tetap 200: klien sudah
+	// menerima sebagian jawaban, jadi 200 adalah status yang benar untuk dilaporkan, dan
+	// kategori inilah satu-satunya cara aliran yang putus di tengah tetap bisa dihitung
+	// sebagai kegagalan. Agregasi karena itu memakai "error_type is not null", bukan hanya
+	// "status >= 400".
+	j.pasangKegagalanUpstream(perr)
 
 	_, errType, code, message := httpUntuk(perr)
 	h.logger.WarnContext(r.Context(), "aliran terputus setelah sebagian terkirim",
@@ -900,6 +955,9 @@ func requestID(r *http.Request) string {
 // Tanpa syarat itu, permintaan embedding akan dirutekan ke model chat mana pun yang cocok
 // dan gagal di upstream dengan pesan yang tidak menjelaskan apa pun.
 func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
+	j, w := h.mulaiJejak(w, r)
+	defer j.selesai(r.Context())
+
 	body, ok := h.bacaBody(w, r)
 	if !ok {
 		return
@@ -910,6 +968,7 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, httpx.CodeInvalidRequest, err.Error())
 		return
 	}
+	j.pasangDiminta(req.Model)
 
 	// Penyaring konten atas masukan embedding. Sama seperti jalur chat, dijalankan sebelum
 	// resolusi model supaya permintaan yang jelas ditolak tidak menyentuh database.
@@ -925,6 +984,8 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	j.pasangModel(model)
+
 	p, _ := apikey.PrincipalFrom(r.Context())
 	if !h.izinModel(w, r, p, model) {
 		return
@@ -932,6 +993,7 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 
 	clientIP, _ := httpx.ClientIPFrom(r.Context())
 	targets := TargetsFor(p, model.ID, clientIP)
+	j.pasangKebijakan(p, targets)
 	if !h.kebijakan(w, r, p, model, targets) {
 		return
 	}
@@ -949,6 +1011,7 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	keputusan := h.engine.Route(r.Context(), rreq, cands)
+	j.pasangKeputusan(keputusan, false)
 	if len(keputusan.Candidates) == 0 {
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.ErrTypeAPI, "no_provider_for_model",
 			"tidak ada provider yang dikonfigurasi untuk model embedding "+kutip(model.ModelID))
@@ -970,10 +1033,13 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 			return prov.Embeddings(ctx, &salinan)
 		})
 
+	j.pasangPercobaan(out.Attempts, out.Candidate)
 	if out.Err != nil {
+		j.pasangKegagalanUpstream(out.Err)
 		tulisKegagalan(w, r, out.Err)
 		return
 	}
+	j.pasangPemakaian(out.Value.Usage)
 	h.guard.CatatToken(r.Context(), p, targets, int64(out.Value.Usage.TotalTokens))
 	if len(out.Value.Raw) == 0 {
 		h.logger.ErrorContext(r.Context(), "adapter embedding mengembalikan respons tanpa body mentah",

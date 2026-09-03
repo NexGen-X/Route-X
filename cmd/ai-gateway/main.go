@@ -31,6 +31,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database"
 	"github.com/NexGen-X/Route-X/internal/database/repo/keys"
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
+	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/gateway"
@@ -40,6 +41,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/ratelimit"
 	"github.com/NexGen-X/Route-X/internal/router"
 	"github.com/NexGen-X/Route-X/internal/security"
+	"github.com/NexGen-X/Route-X/internal/usage"
 	"github.com/NexGen-X/Route-X/web"
 )
 
@@ -52,6 +54,14 @@ var (
 
 // poolStatsInterval adalah jeda pembaruan metrik pool koneksi.
 const poolStatsInterval = 15 * time.Second
+
+// usageDrainTimeout adalah waktu yang diberikan pencatat pemakaian untuk menguras antreannya
+// setelah server berhenti menerima permintaan.
+//
+// Dibangun dari context TANPA pembatalan, karena pada titik ini context aplikasi sudah Done —
+// kalau diturunkan darinya, pengurasan menyerah seketika dan setiap restart kehilangan
+// catatan permintaan terakhir yang sudah dilayani.
+const usageDrainTimeout = 10 * time.Second
 
 func main() {
 	showVersion := flag.Bool("version", false, "cetak versi lalu keluar")
@@ -148,7 +158,7 @@ func run(migrateOnly bool) error {
 	// Permukaan /v1: inilah yang dilihat aplikasi klien. Dirakit sebelum router supaya
 	// kegagalan perakitannya menghentikan start, bukan muncul sebagai 404 pada permintaan
 	// pertama pelanggan.
-	v1, err := buildGatewaySurface(ctx, cfg, logger, metrics, db, rdb)
+	v1, tutupUsage, err := buildGatewaySurface(ctx, cfg, logger, metrics, db, rdb)
 	if err != nil {
 		return fmt.Errorf("merakit permukaan /v1: %w", err)
 	}
@@ -164,7 +174,17 @@ func run(migrateOnly bool) error {
 	srv := httpx.NewServer(cfg, mux, logger)
 	logger.Info("siap menerima permintaan", "addr", srv.Addr(), "dashboard", dashboardURL(cfg, srv.Addr()))
 
-	return srv.Run(ctx)
+	runErr := srv.Run(ctx)
+
+	// Pencatat pemakaian ditutup SETELAH server berhenti, bukan lewat defer di dekat
+	// pembuatannya: antreannya masih diisi selama ada permintaan yang berjalan, dan menutupnya
+	// lebih dulu berarti setiap permintaan yang dilayani saat shutdown hilang dari log.
+	tutupCtx, batalTutup := context.WithTimeout(context.Background(), usageDrainTimeout)
+	defer batalTutup()
+	if err := tutupUsage(tutupCtx); err != nil {
+		logger.Warn("pencatat pemakaian tidak selesai menguras antrean", "error", err)
+	}
+	return runErr
 }
 
 // buildRouter menyusun seluruh rute HTTP beserta rantai middleware-nya.
@@ -266,22 +286,22 @@ func buildGatewaySurface(
 	metrics *observability.Metrics,
 	db *database.DB,
 	rdb *cache.Redis,
-) (http.Handler, error) {
+) (http.Handler, func(context.Context) error, error) {
 	cipher, err := security.NewCipher(cfg.EncryptionKey)
 	if err != nil {
-		return nil, fmt.Errorf("menyiapkan cipher kredensial: %w", err)
+		return nil, nil, fmt.Errorf("menyiapkan cipher kredensial: %w", err)
 	}
 	creds, err := upstream.NewCredentialRepo(db.Pool, cipher)
 	if err != nil {
-		return nil, fmt.Errorf("repository kredensial provider: %w", err)
+		return nil, nil, fmt.Errorf("repository kredensial provider: %w", err)
 	}
 	egress, err := upstream.NewEgressRepo(db.Pool, cipher)
 	if err != nil {
-		return nil, fmt.Errorf("repository egress pool: %w", err)
+		return nil, nil, fmt.Errorf("repository egress pool: %w", err)
 	}
 	keyRepo, err := keys.New(db.Pool, cfg.APIKeyPepper)
 	if err != nil {
-		return nil, fmt.Errorf("repository API key: %w", err)
+		return nil, nil, fmt.Errorf("repository API key: %w", err)
 	}
 
 	if len(cfg.UpstreamAllowedPrivateAddrs) > 0 || cfg.UpstreamAllowHTTP {
@@ -329,18 +349,53 @@ func buildGatewaySurface(
 		logger.Warn("ada penyaring konten aktif yang TIDAK menegakkan apa pun", "penyaring", inert)
 	}
 
+	// --- Pemakaian, biaya, dan angka terukur -------------------------------
+	//
+	// Tiga bagian yang saling bergantung dan karena itu dirakit bersama:
+	//
+	//   trafficRepo  menulis log request dan membacanya kembali sebagai agregat
+	//   pricer       menghitung biaya, dan menjadi sumber harga strategi lowest_cost
+	//   index        menghitung latensi p95 terukur, dan menjadi sumber lowest_latency
+	//
+	// Tanpa pricer dan index, dua dari enam strategi routing memperlakukan seluruh kandidat
+	// sebagai "belum diketahui" — yang menurut aturan paket router diurutkan paling belakang,
+	// sehingga hasilnya sama dengan priority. Itu aman, tetapi berarti kedua strategi itu
+	// tidak melakukan apa pun.
+	trafficRepo := traffic.New(db.Pool)
+	pricer := usage.NewPricer(upstream.NewPricingRepo(db.Pool), logger)
+	if err := pricer.Warm(ctx); err != nil {
+		// Tidak menghentikan start: gateway yang menolak menyala karena tabel harga belum
+		// bisa dibaca menukar seluruh lalu lintas dengan ketepatan laporan biaya.
+		logger.Warn("pemanasan harga model gagal, biaya awal bisa tercatat nol", "error", err)
+	}
+
+	index := usage.NewIndex(trafficRepo, metrics, logger)
+	go index.Run(ctx)
+
+	recorder := usage.New(usage.Deps{
+		Store:   trafficRepo,
+		Spend:   policyRepo,
+		Prices:  pricer,
+		Metrics: metrics,
+		Logger:  logger,
+	})
+
 	models := upstream.NewModelRepo(db.Pool)
 	handlers, err := gateway.NewHandlers(gateway.HandlersDeps{
 		Models:     models,
 		Lister:     models,
 		Candidates: upstream.NewProviderRepo(db.Pool),
-		Factory:    gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger),
-		// Selector tanpa sumber latensi maupun biaya: keduanya baru ada di Fase 9. Sampai
-		// itu, lowest_latency dan lowest_cost memperlakukan seluruh kandidat sebagai "belum
-		// diketahui", dan menurut aturan paket router nilai yang tidak diketahui diurutkan
-		// PALING BELAKANG — sehingga hasilnya urutan prioritas, bukan urutan yang dikarang
-		// dari angka yang tidak ada.
-		Engine:   router.NewEngine(upstream.NewRoutingRepo(db.Pool), router.NewSelector(), logger),
+		// Penanda pemakaian kredensial dipasang eksplisit karena ia MENGUBAH PERILAKU:
+		// last_used_at yang tertulis membuat CredentialRepo.Active bergiliran antar kredensial
+		// pada provider yang punya lebih dari satu. Kunci cache adapter sudah memuat
+		// kredensialnya, jadi setiap kredensial punya connection pool-nya sendiri.
+		Factory: gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
+			gateway.WithCredentialUseMarker(creds)),
+		Engine: router.NewEngine(upstream.NewRoutingRepo(db.Pool),
+			router.NewSelector(
+				router.WithLatencySource(index),
+				router.WithCostSource(pricer),
+			), logger),
 		Executor: gateway.NewExecutor(breaker, logger),
 		// Pembatasan model dan provider per API key. Bukan opsional di produksi: tanpa ini
 		// setiap key boleh memakai setiap model.
@@ -350,12 +405,14 @@ func buildGatewaySurface(
 			Budgets: budgets,
 			Rates:   rates,
 			Limiter: limiter,
+			Metrics: metrics,
 			Logger:  logger,
 		}),
+		Usage:  recorder,
 		Logger: logger,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	authn := apikey.NewAuthenticator(keyRepo, metrics, logger)
@@ -363,7 +420,7 @@ func buildGatewaySurface(
 	r := chi.NewRouter()
 	r.Use(authn.Authenticate(), limiter.Limit())
 	r.Mount("/", handlers.Routes())
-	return r, nil
+	return r, recorder.Close, nil
 }
 
 // dashboardHandler menyajikan aset frontend yang tersemat.

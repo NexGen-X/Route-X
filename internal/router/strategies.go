@@ -334,9 +334,11 @@ func (s *Selector) urutLatensi(cands []*upstream.RouteCandidate) {
 
 // latensi mengambil latensi satu kandidat dari sumber, dengan cadangan cuplikan kesehatan.
 //
-// Cadangannya ada supaya strategi ini sudah berguna sebelum Fase 9 memasang histogram:
-// last_latency_ms dari health check adalah pengukuran nyata, hanya kasar. Yang tidak
-// dilakukan adalah mengarang angka ketika keduanya tidak ada.
+// Cadangannya bukan sementara. Sumber utama hanya punya angka untuk pemetaan yang sudah
+// melayani cukup banyak permintaan berhasil belakangan ini, jadi pemetaan yang baru
+// ditambahkan — atau yang lalu lintasnya sepi — tidak akan pernah ada di sana. Untuk
+// pemetaan itu, last_latency_ms dari health check adalah pengukuran nyata, hanya kasar. Yang
+// tidak dilakukan adalah mengarang angka ketika keduanya tidak ada.
 func (s *Selector) latensi(c *upstream.RouteCandidate) (time.Duration, bool) {
 	if s.latency != nil {
 		if d, ok := s.latency.LatencyP95(c.ProviderModelID); ok {

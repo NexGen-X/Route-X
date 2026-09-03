@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/contentfilter"
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
+	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/ratelimit"
 	"github.com/NexGen-X/Route-X/internal/security"
@@ -470,5 +472,49 @@ func TestEmbeddingsIkutDijagaKebijakan(t *testing.T) {
 	}
 	if got := kodeGalat(galat(t, w)); got != CodeContentFilter {
 		t.Errorf("code = %q, mau %q", got, CodeContentFilter)
+	}
+}
+
+// Penolakan penyaring konten harus terhitung di metrik, bukan hanya masuk log: log tidak
+// bisa dijadikan alert, sehingga aturan yang tiba-tiba memblokir seluruh lalu lintas satu
+// penyewa tidak terlihat sampai penyewa itu mengeluh.
+func TestPenyaringKontenTerhitungDiMetrik(t *testing.T) {
+	src := &sumberKebijakan{filters: []*policy.ContentFilter{
+		filterBaris("f1", "tanpa kata rahasia", policy.FilterBlockedPattern, func(f *policy.ContentFilter) {
+			f.Pattern = "rahasia"
+			f.PatternType = policy.PatternSubstring
+		}),
+		filterBaris("f2", "hanya peringatan", policy.FilterBlockedPattern, func(f *policy.ContentFilter) {
+			f.Pattern = "hati-hati"
+			f.PatternType = policy.PatternSubstring
+			f.Action = policy.ActionWarn
+			f.Priority = 200
+		}),
+	}}
+	metrics := observability.NewMetrics()
+	g := NewGuard(GuardDeps{
+		Filters: contentfilter.NewEngine(src, loggerSenyap()),
+		Metrics: metrics,
+		Logger:  loggerSenyap(),
+	})
+
+	if rj := g.SaringPermintaan(context.Background(), contentfilter.Subject{Text: "ini rahasia"}); rj == nil {
+		t.Fatal("permintaan terlarang tidak ditolak")
+	}
+	// Aturan berjenis warn TIDAK boleh menaikkan penghitung blokir: ia memang tidak
+	// memblokir apa pun, dan menghitungnya membuat angka blokir tidak bisa dipercaya.
+	if rj := g.SaringPermintaan(context.Background(), contentfilter.Subject{Text: "hati-hati saja"}); rj != nil {
+		t.Fatalf("aturan warn memblokir permintaan: %+v", rj)
+	}
+
+	rec := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+
+	if !strings.Contains(body, `routex_content_filter_blocked_total{rule="tanpa kata rahasia"} 1`) {
+		t.Errorf("penolakan penyaring tidak terhitung; keluaran:\n%s", body)
+	}
+	if strings.Contains(body, `rule="hanya peringatan"`) {
+		t.Error("aturan berjenis warn ikut dihitung sebagai blokir")
 	}
 }

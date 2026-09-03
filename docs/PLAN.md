@@ -50,8 +50,8 @@ menyajikan API gateway, dashboard admin, dan aset statis dari proses yang sama.
 | 6 — Routing & resilience | ✅ Selesai | `internal/router` (6 strategi + mesin aturan), `internal/gateway` (pemutus arus Redis, retry, failover); 3 paket hijau `-race` |
 | 7 — Endpoint gateway | ✅ Selesai | `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/models`; SSE, codec dua arah, pabrik adapter bercache; terpasang di biner |
 | 8 — Rate limit, budget, ban, filter | ✅ Selesai | `repo/policy` (4 tabel), `internal/ratelimit` (6 cakupan), `internal/billing` (anggaran), `internal/contentfilter` (6 jenis aturan); semuanya terpasang di jalur `/v1` |
-| 9 — Usage, cost, observability | ⏳ Berikutnya | Pencatat usage-lah yang menaikkan `budgets.spent_usd`; sampai itu ada, anggaran menegakkan angka yang belum bergerak |
-| 10 — Worker | ⬜ | |
+| 9 — Usage, cost, observability | ✅ Selesai | `internal/usage` 90,0% (pencatat asinkron, harga, cuplikan latensi), `repo/traffic` 88,6% (rollup jam & hari + agregasi baca), `internal/gateway` 89,2%; `lowest_cost` dan `lowest_latency` akhirnya benar-benar berbeda dari `priority`; `budgets.spent_usd` bergerak |
+| 10 — Worker | ⏳ Berikutnya | Penjadwal rollup, health checker, retensi, dan pemeliharaan partisi. Repository-nya sudah ada; yang belum ada penjadwalnya |
 | 11 — Admin REST API | ⬜ | |
 | 12 — Dashboard | ⬜ | Acuan visual sudah ada |
 | 13 — Dokumentasi API | ⬜ | |
@@ -592,6 +592,187 @@ setiap perubahan kebijakan diberi jeda 6 detik karena TTL salinannya 5 detik):
 | Pembatasan provider | 503 `no_provider_for_model` — kandidat tersaring, bukan 502 dari provider yang tidak dihubungi |
 
 Seluruh baris uji, kunci Redis, dan prosesnya dibersihkan setelah verifikasi.
+
+## Catatan hasil Fase 9
+
+Dua paket baru dan satu repository yang dilengkapi: `internal/usage` (pencatat asinkron,
+`Pricer` sebagai sumber biaya router, `Index` sebagai sumber latensi router),
+`internal/database/repo/traffic` mendapat `rollup.go` (mengisi `usage_hourly` dan
+`usage_daily`) dan `stats.go` (Summary, Series, Breakdown, latensi per pemetaan), plus
+`internal/gateway/usage.go` yang menyerahkan hasil setiap permintaan `/v1` ke pencatat.
+Seluruh paket hijau `-race`.
+
+**Yang berubah bagi pengguna:** halaman Requests akhirnya punya isi, `budgets.spent_usd`
+bergerak, dan `lowest_cost` serta `lowest_latency` berhenti berperilaku seperti `priority`.
+
+**Keputusan yang mengikat fase berikutnya:**
+
+- **Token punya DUA bentuk, dan batasnya hanya di satu fungsi.** Kolom token di `requests`
+  memakai konvensi OpenAI yang BERSARANG — `input_tokens` sudah memuat
+  `cached_input_tokens`, `output_tokens` sudah memuat `reasoning_tokens` — karena itulah
+  bentuk yang diteruskan apa adanya ke klien di body respons, dan angka di log request harus
+  sama dengan angka yang dilihat klien. Perhitungan biaya menuntut keempat bagian SALING
+  LEPAS, dan konversinya ada di `usage.TokensFor`. Terukur pada laporan usage yang bentuknya
+  biasa (1000/400 input, 500/200 output): bentuk terpisah menghasilkan 942.000 satuan 10⁻⁸,
+  bentuk bersarang yang dipakai apa adanya menghasilkan 1.362.000 — **44% lebih mahal**,
+  tanpa satu pun error. Menjumlahkan keempat kolom `requests` akan menghitung token cache dan
+  token penalaran dua kali; `total_tokens = input + output`.
+- **Sukses dan gagal ditentukan `status_code` DAN `error_type`.** Aliran yang terputus setelah
+  sebagian terkirim sampai ke klien sebagai 200 — status itu benar, karena klien memang
+  menerima jawaban sebagian — jadi menghitung kegagalan dari status saja melewatkan seluruh
+  kelas kegagalan streaming. Definisi yang berlaku: sukses = `status_code < 400 and error_type
+  is null`, gagal = kebalikannya; keduanya komplemen persis sehingga
+  `success_count + error_count = request_count`. `timeout_count` dihitung dari `error_type`
+  tanpa syarat status, dengan alasan yang sama. Konsekuensi yang sudah diambil:
+  `traffic.Filter.OnlyErrors` ikut diubah menjadi `(status_code >= 400 or error_type is not
+  null)`, sehingga indeks partial `requests_errors_idx` tidak lagi melayani seluruh syaratnya.
+- **`error_type` adalah kosakata TERTUTUP untuk agregasi, `error_code` adalah kode yang
+  dilihat klien.** Kegagalan upstream memakai `providers.ErrorKind` apa adanya (`timeout`,
+  `network`, `rate_limit`, …); penolakan gateway dipetakan dari kode envelope lewat
+  `tipeKesalahan` di `internal/gateway/usage.go`; sisanya `"gateway"`. Menambah kode envelope
+  baru tanpa menambahkannya ke peta itu membuat baris tercatat sebagai `"gateway"` — bukan
+  kesalahan, tetapi kehilangan pemecahan. `error_code` dan `error_message` TIDAK disusun ulang
+  di pencatat, melainkan dibaca kembali dari envelope yang benar-benar tertulis: dua tempat
+  yang memutuskan hal yang sama akan berbeda, dan yang dicari saat pengguna mengeluh adalah
+  kode yang ia lihat.
+- **Status HTTP dibaca dari respons, bukan dilaporkan tiap jalan keluar.** `pencatatRespons`
+  membungkus `ResponseWriter` dan mencatat status pertama beserta envelope error-nya; jejak
+  diserahkan lewat satu `defer` per handler. Itu yang membuat titik keluar BARU ikut tercatat
+  tanpa harus diingat — dan handler `/v1` punya belasan titik keluar. Wrapper itu WAJIB punya
+  `Unwrap()`: tanpanya `httpx.PrepareSSE` tidak bisa melepas tenggat baca/tulis dan setiap
+  respons streaming mati pada detik `READ_TIMEOUT`.
+- **Pencatatan asinkron, dan alasan pertamanya bukan performa.** Context permintaan sudah MATI
+  ketika pencatatan berjalan, jadi `INSERT` dengan context itu gagal setiap kali, bukan
+  kadang-kadang. Penulis memakai context baru bertenggat sendiri. Antrean berbatas (4.096) dan
+  penuh berarti catatan DIBUANG, bukan permintaan ditahan; `routex_usage_records_total`
+  memecah hasilnya (`written`, `failed`, `dropped`, `spend_failed`) supaya pembuangan itu bisa
+  dipertanggungjawabkan. Metrik diambil SEBELUM antrean — kalau tidak, hilangnya satu baris
+  database ikut menghilangkan angka yang melaporkan hilangnya baris itu. Satu-satunya yang
+  dihitung di penulis adalah biaya, karena ia butuh cuplikan harga yang pemuatannya pembacaan
+  database. **`Recorder.Close` wajib dipanggil SETELAH server berhenti menerima permintaan**;
+  `main` sudah menyusunnya begitu, dengan tenggat pengurasan 10 detik dari context tanpa
+  pembatalan.
+- **TTFT diukur setelah flush, dan hanya pada potongan KONTEN.** Aliran berdialek OpenAI
+  dibuka dengan potongan yang hanya membawa peran (`"delta":{"role":"assistant"}`), dan
+  potongan itu datang sebelum token pertama dihasilkan. Terukur pada upstream uji yang menunda
+  50 ms lalu 120 ms lagi: menandai pada potongan pertama apa pun melaporkan ~50 ms, menandai
+  pada potongan konten melaporkan 174 ms — dan yang kedua itulah yang dialami pengguna.
+- **Persentil: satu baris pakai kolom, lebih dari satu baris WAJIB pakai histogram.** Kolom
+  `latency_p50..p99` pada `usage_hourly` persis untuk jamnya sendiri (dihitung
+  `percentile_disc` atas `requests`); kolom yang sama pada `usage_daily` dan SEMUA pembacaan
+  rentang gabungan lewat `usage_histogram_sum` + `usage_histogram_percentile`. Terukur ulang
+  di test permanen `TestIntegrationPersentilGabunganBukanRataRataPersentil`: p95 persis
+  **80 ms**, histogram gabungan **88,79 ms**, rata-rata p95 per bucket **30.040 ms**.
+- **Sumber baca dipilih wholesale, tidak pernah dicampur.** `traffic.Query.Source` memilih
+  tabel (`requests` untuk rentang ≤ 7 hari, `usage_daily` di atas itu, atau eksplisit), dan
+  `Stats.Source` melaporkan mana yang dipakai. Mencampurnya berarti separuh grafik memakai
+  definisi persentil yang berbeda dari separuh lainnya. Harganya diakui: berpindah sumber bisa
+  menggeser p95 sebesar lebar satu slot histogram — terukur 6.000 ms (persis) menjadi
+  6.833 ms (histogram) pada data verifikasi.
+- **`Pricer` punya dua pintu karena dua jalurnya berbeda.** `Price(ctx, …)` memuat ulang
+  cuplikan yang kedaluwarsa dan dipakai pencatat (asinkron, boleh menyentuh database);
+  `Cost(…)` hanya membaca cuplikan dan dipakai router pada setiap kandidat (tidak boleh
+  menunggu apa pun). TTL 30 detik, lebih pendek daripada cache lain di proyek ini justru
+  karena yang dibayar keterlambatan di sini adalah uang. `Warm` dipanggil saat start;
+  kegagalannya dicatat dan TIDAK menghentikan start.
+- **`Index` memakai `coalesce(ttft_ms, latency_ms)` dan hanya request BERHASIL.** Untuk
+  streaming yang ditunggu pengguna adalah token pertama, bukan panjang jawabannya; dan
+  provider yang menolak setiap permintaan dalam 5 ms adalah yang tercepat menurut angka
+  mentah. Ambang 10 sampel pada jendela 30 menit, disegarkan tiap menit oleh satu goroutine
+  yang `main` nyalakan (pola yang sama dengan `collectPoolStats`). Pemetaan di bawah ambang
+  TIDAK muncul di hasil, dan `Selector` memperlakukan yang tidak ada sebagai "belum terukur"
+  lalu jatuh ke `last_latency_ms` health check — cadangan itu bukan sementara, ia melayani
+  pemetaan yang lalu lintasnya sepi.
+- **`FromHealthSnapshot` tidak pernah ada dan tidak dibuat.** Doc `internal/router` menyebutnya;
+  cadangan yang dimaksud sudah hidup di `Selector.latensi`, dan menulis tipe kedua hanya
+  menggandakan aturan yang sama. Doc-nya sudah diperbaiki agar menunjuk ke tempat yang benar.
+- **`CredentialRepo.MarkUsed` kini dipanggil, dijeda 5 detik per kredensial, di luar jalur
+  permintaan.** Dipasang eksplisit lewat `gateway.WithCredentialUseMarker` karena ia MENGUBAH
+  PERILAKU: `Active` mengurutkan dengan `last_used_at asc nulls first`, jadi menulis kolom itu
+  membuat beberapa kredensial pada satu provider bergiliran. Jedanya ada karena giliran
+  per-permintaan berharga satu `UPDATE` ke baris yang sama untuk SETIAP permintaan inference —
+  dan pada provider dengan satu kredensial, keadaan paling umum, tidak ada apa pun yang
+  digilir. Giliran per permintaan bisa didapat dengan menurunkan `jedaTandaiPemakaian` ke nol;
+  yang harus diketahui sebelum melakukannya adalah baris panas itu. **Kunci cache adapter
+  jangan disederhanakan menjadi satu entri per provider** — sekarang giliran itu nyata.
+- **Label metrik hanya boleh dari registry.** `Event.RequestedModel` datang dari klien dan
+  TIDAK BOLEH menjadi label; yang dipakai `Event.ModelName` (nama kanonik) dan
+  `Event.ProviderName`. Ada test permanen yang mengirim nama model karangan lalu menggagalkan
+  build kalau nama itu muncul di `/metrics`. Provider yang tidak terpilih menghasilkan label
+  kosong (`provider=""`), dan itu apa adanya: permintaan yang ditolak sebelum routing memang
+  tidak punya provider.
+- **`GET /v1/models` sengaja tidak dicatat** ke `requests`: ia tidak punya model, tidak punya
+  provider, dan tidak memakai satu token pun, jadi barisnya hanya derau di halaman Requests.
+  Jejaknya ada di access log.
+- **Rollup punya repository, belum punya penjadwal.** `RollupHourly`, `RollupDaily`, dan
+  `RollupRange` idempoten (menimpa, bukan menambah) dan aman dijalankan ulang; yang belum ada
+  adalah worker yang memanggilnya, dan itu Fase 10. Sampai itu, `usage_hourly` dan
+  `usage_daily` kosong di pemasangan baru, dan pembacaan rentang panjang mengembalikan nol —
+  bukan error. `Stats.Source` yang membuat keadaan itu bisa dibedakan dari "tidak ada lalu
+  lintas". Catatan untuk penjadwalnya: menghitung ulang jam yang baris mentahnya sudah dibuang
+  retensi TIDAK menolkan baris agregatnya, ia membiarkan nilai lama — jadi urutan yang benar
+  adalah rollup dulu, retensi kemudian.
+
+**Batas yang diketahui dan sengaja dibiarkan terbuka:**
+
+- **`request_payloads` masih tidak punya penulis.** `SavePayload` ada sejak Fase 2 dan tidak
+  dipanggil siapa pun. Menangkap body berarti menyimpan prompt pengguna di database, dan
+  keputusan itu butuh dua hal yang belum ada: setelan yang menyalakannya secara sadar, dan
+  bentuk yang masuk akal untuk jawaban SSE (yang bukan satu dokumen JSON). Request inspector
+  Fase 12-lah yang menentukan kebutuhannya; sampai itu, membangunnya setengah jalan hanya
+  menambah data sensitif tanpa pembaca.
+- **Penolakan yang terjadi SEBELUM handler tidak masuk `requests`.** 401 dari
+  `apikey.Authenticate()` dan 429 cakupan key/pengguna/IP/global dari `apikey.Limit()` terjadi
+  di middleware, yang tidak punya model, token, maupun provider untuk dicatat. Keduanya
+  terlihat di access log dan di metrik (`routex_rate_limit_rejected_total`), tetapi halaman
+  Requests tidak akan memuatnya. Menutupnya berarti memindahkan pencatatan ke middleware, dan
+  di sana separuh kolomnya kosong.
+- **Metrik HTTP admin dan worker belum diamati.** `routex_http_*`, `routex_worker_*`
+  terdaftar tetapi tidak ada yang mengisinya: permukaan admin baru ada di Fase 11 dan worker
+  di Fase 10. `routex_provider_up` dan `routex_provider_health_latency_ms` juga masih kosong
+  karena health checker provider adalah Fase 10 — gauge yang absen lebih baik daripada gauge
+  yang salah.
+- **`routex_gateway_cost_usd_total` bertipe float64** seperti semua counter Prometheus, jadi
+  ia bisa menyimpang beberapa satuan 10⁻⁸ setelah jutaan penjumlahan. Angka yang berwenang
+  untuk penagihan tetap `requests.cost_usd` (numeric, skala 8).
+- **`budgets.spent_usd` berskala 6 sementara `upstream.USD` berskala 8**, jadi setiap
+  `AddSpend` dibulatkan PostgreSQL — selisih maksimum 5e-7 USD per permintaan. Temuan Fase 8,
+  belum berubah; worker pemelihara periode Fase 10 bisa menghitungnya ulang dari
+  `requests.cost_usd`.
+- **Harga bisa terlambat satu TTL (30 detik) di instance LAIN.** `Pricer.Invalidate()` ada
+  untuk API admin Fase 11 dan hanya berlaku pada instance yang dihubungi; batas yang sama
+  seperti cache aturan routing. Biaya yang sudah tercatat tidak dihitung ulang sendiri —
+  `model_pricing` menyimpan riwayatnya, jadi perhitungan ulang mungkin lewat `PricingRepo.At`
+  dengan join `provider_models` pada `(provider_id, model_id)`, karena `requests` menyimpan
+  keduanya dan bukan `provider_model_id`.
+- **`providers.max_retries` masih tidak dipakai jalur request** — temuan Fase 7, belum berubah.
+- **Penyaring konten masih tidak berlaku pada jawaban streaming** — batas Fase 8, belum berubah.
+- **Moderasi konten eksternal masih belum didukung** — batas Fase 8, belum berubah.
+- **Ambang pemutus arus per aturan routing masih belum tersalurkan** — batas Fase 6, belum
+  berubah.
+
+**Verifikasi end-to-end pada biner sungguhan** (dua upstream palsu berdialek OpenAI di
+loopback yang melaporkan usage BERSARANG seperti OpenAI — `prompt_tokens` 1000 dengan
+`cached_tokens` 400, `completion_tokens` 500 dengan `reasoning_tokens` 200 — provider
+`openai_compatible`, harga 3,00/15,00/0,30 USD per juta token, API key nyata):
+
+| Yang diuji | Hasil |
+| --- | --- |
+| Chat non-streaming | 200; baris `requests` memuat token 1000/400/500/200/1500 apa adanya dan `cost_usd = 0.00942000` — angka yang sama dengan yang dihitung tangan di test unit |
+| Chat streaming | 200, 6 peristiwa SSE ditutup `[DONE]`; `ttft_ms = 174` sementara potongan peran datang pada ~50 ms, jadi penandaan TTFT memang menunggu potongan konten |
+| Embeddings | 200; 9 token, `cost_usd = 0.00002700` |
+| Model tak dikenal | 404; baris tercatat dengan `requested_model = "tidak-ada"`, `error_type = model_not_found`, tanpa model kanonik maupun provider |
+| `request_events` | satu baris `attempt_succeeded` per permintaan berhasil, `detail` memuat nomor percobaan dan state pemutus arus |
+| `routing_decision` | strategi, aturan, dan kandidat berurut dengan penanda `chosen` |
+| Anggaran | `budgets.spent_usd` bergerak 0 → 0,018840 setelah dua permintaan; inilah celah Fase 8 yang tertutup |
+| `lowest_cost` vs `priority` | dua provider melayani model yang sama, yang mahal berprioritas LEBIH BAIK. `priority` memilih yang mahal (0,25 USD), `lowest_cost` memilih yang murah (0,00942 USD) — 26× lebih murah, hanya karena sumber harga terpasang |
+| `lowest_latency` vs `priority` | dengan p95 terukur 96 ms vs 4 s, `lowest_latency` memilih yang cepat sementara `priority` tetap memilih yang berprioritas lebih baik |
+| Failover | provider prioritas 1 dialihkan ke `http://127.0.0.1:9`; klien menerima 200 dari provider berikutnya, baris tercatat `failover_count = 1`, timeline `attempt_failed (network) → attempt_succeeded` |
+| Giliran kredensial | dua kredensial pada satu provider; keduanya terpakai, dan `last_used_at` ditulis paling sering sekali per 5 detik per kredensial |
+| Rollup & agregasi | `RollupRange` menghasilkan 5 baris jam dan 5 baris hari; `Summary` dari `requests` p95 6.000 ms, dari `usage_hourly` 6.833 ms; `Breakdown` per provider memisahkan biaya 0,113 vs 1,50 USD dan memuat potongan tanpa provider; granularitas jam atas `usage_daily` ditolak dengan pesan yang menyebut sebabnya |
+| `/metrics` | `routex_usage_records_total{outcome="written"} 12`, `usage_queue_depth 0`, biaya per provider, `upstream_failures_total{kind="network"}`, `failovers_total`, dan `provider_availability_ratio` berlabel NAMA provider |
+
+Seluruh baris uji, kredensial uji, kunci Redis, dan prosesnya dibersihkan setelah verifikasi.
 
 ## Catatan hasil Fase 3
 

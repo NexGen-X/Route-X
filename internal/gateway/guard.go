@@ -35,6 +35,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/contentfilter"
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/ratelimit"
 )
@@ -89,6 +90,11 @@ type GuardDeps struct {
 	// Limiter adalah mesin jendela di Redis. Tanpa ini, batas dari tabel rate_limits tidak
 	// bisa ditegakkan sama sekali walau Rates terpasang.
 	Limiter *apikey.Limiter
+	// Metrics dipakai menghitung penolakan penyaring konten. nil berarti penolakan hanya
+	// masuk log — dan log saja tidak bisa dijadikan alert, sehingga aturan penyaring yang
+	// tiba-tiba memblokir seluruh lalu lintas satu penyewa tidak terlihat sampai penyewa itu
+	// mengeluh.
+	Metrics *observability.Metrics
 	Logger  *slog.Logger
 }
 
@@ -98,6 +104,7 @@ type Guard struct {
 	budgets *billing.Enforcer
 	rates   *ratelimit.Engine
 	limiter *apikey.Limiter
+	metrics *observability.Metrics
 	logger  *slog.Logger
 }
 
@@ -109,7 +116,7 @@ func NewGuard(d GuardDeps) *Guard {
 	}
 	return &Guard{
 		filters: d.Filters, budgets: d.Budgets, rates: d.Rates,
-		limiter: d.Limiter, logger: logger,
+		limiter: d.Limiter, metrics: d.Metrics, logger: logger,
 	}
 }
 
@@ -175,6 +182,13 @@ func (g *Guard) saring(ctx context.Context, s contentfilter.Subject) *Rejection 
 	}
 	g.logger.InfoContext(ctx, "permintaan ditolak penyaring konten",
 		"penyaring", v.Filter.Name, "kind", v.Filter.Kind, "jawaban", s.Response)
+	if g.metrics != nil {
+		// Dipecah per NAMA aturan, bukan per jenis: yang ditanyakan operator saat lalu lintas
+		// mendadak ditolak adalah aturan mana, dan nama itu yang ia lihat di dashboard.
+		// Namanya berasal dari baris content_filters yang dikurasi operator, jadi jumlah
+		// nilainya terbatas.
+		g.metrics.ContentBlocked.WithLabelValues(v.Filter.Name).Inc()
+	}
 
 	if v.Filter.Kind == policy.FilterRequestSize {
 		return &Rejection{

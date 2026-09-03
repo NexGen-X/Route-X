@@ -62,9 +62,44 @@ import (
 // pemetaan provider aktif, jadi batas ini hanya menyentuh entri yang memang sudah usang.
 const defaultAdapterCacheSize = 128
 
+// jedaTandaiPemakaian adalah jeda minimum antara dua penandaan pemakaian kredensial yang
+// sama.
+//
+// Ada karena upstream.CredentialRepo.Active mengurutkan kandidat dengan
+// "last_used_at asc nulls first", sehingga menulis kolom itu pada SETIAP permintaan membuat
+// beberapa kredensial pada satu provider bergiliran per permintaan. Kedengarannya bagus, dan
+// harganya satu UPDATE ke baris yang sama untuk setiap permintaan inference: pada provider
+// dengan satu kredensial — keadaan yang paling umum — tidak ada apa pun yang digilir, dan
+// yang tersisa hanya satu baris panas beserta pekerjaan vacuum yang tumbuh sebanding lalu
+// lintas.
+//
+// Lima detik menukar itu dengan giliran yang bergerak per lima detik alih-alih per
+// permintaan: beban tetap terbagi ke semua kredensial, last_used_at di dashboard tetap
+// akurat dalam hitungan detik, dan jalur permintaan tidak membayar satu UPDATE pun. Giliran
+// per permintaan bisa didapat dengan menurunkan angka ini ke nol, dan yang harus diketahui
+// sebelum melakukannya adalah baris panas itu.
+const jedaTandaiPemakaian = 5 * time.Second
+
+// batasTandaiPemakaian membatasi umur satu penandaan.
+//
+// Penandaan berjalan di luar permintaan yang memicunya, jadi ia tidak punya tenggat dari
+// mana pun. Tanpa batas ini, satu UPDATE yang menggantung menahan goroutine selamanya.
+const batasTandaiPemakaian = 5 * time.Second
+
 // CredentialSource memasok kredensial aktif satu provider. Dipenuhi *upstream.CredentialRepo.
 type CredentialSource interface {
 	Active(ctx context.Context, providerID string) (*upstream.ActiveCredential, error)
+}
+
+// CredentialUseMarker mencatat bahwa satu kredensial baru saja dipakai.
+// Dipenuhi *upstream.CredentialRepo.
+//
+// Dipasang lewat WithCredentialUseMarker, bukan disimpulkan dari CredentialSource, karena
+// memasangnya MENGUBAH PERILAKU: begitu last_used_at ditulis, Active mulai bergiliran antar
+// kredensial pada provider yang punya lebih dari satu. Perubahan seperti itu harus terlihat
+// di tempat perakitannya, bukan muncul karena sebuah tipe kebetulan punya method yang cocok.
+type CredentialUseMarker interface {
+	MarkUsed(ctx context.Context, id string) error
 }
 
 // EgressSource memasok URL proxy satu egress pool. Dipenuhi *upstream.EgressRepo.
@@ -81,6 +116,10 @@ type Factory struct {
 	policy security.SSRFPolicy
 	logger *slog.Logger
 	maks   int
+
+	// tandai mencatat pemakaian kredensial di luar jalur permintaan. nil berarti
+	// last_used_at tidak pernah ditulis, dan Active akan terus memilih kredensial yang sama.
+	tandai *penandaPemakaian
 
 	// jumlah adalah ukuran cache yang bisa dibaca tanpa lock. Ada supaya LogValue tidak
 	// perlu mengambil mu: LogValue dipanggil dari dalam pemanggilan slog, dan slog bisa
@@ -109,6 +148,25 @@ func WithAdapterCacheSize(n int) FactoryOption {
 	return func(f *Factory) {
 		if n > 0 {
 			f.maks = n
+		}
+	}
+}
+
+// WithCredentialUseMarker menyalakan pencatatan last_used_at pada kredensial yang dipakai.
+//
+// Akibatnya provider dengan beberapa kredensial mulai bergiliran — lihat catatan
+// CredentialUseMarker dan jedaTandaiPemakaian. Kunci cache adapter sudah memuat kredensial,
+// jadi setiap kredensial punya entri cache-nya sendiri beserta connection pool-nya sendiri;
+// menyederhanakan kunci itu menjadi satu entri per provider akan membuat gateway memakai
+// kredensial yang salah setelah giliran berpindah.
+func WithCredentialUseMarker(m CredentialUseMarker) FactoryOption {
+	return func(f *Factory) {
+		if m != nil {
+			f.tandai = &penandaPemakaian{
+				marker: m,
+				jeda:   jedaTandaiPemakaian,
+				akhir:  map[string]time.Time{},
+			}
 		}
 	}
 }
@@ -173,6 +231,7 @@ func (f *Factory) Provider(ctx context.Context, c *upstream.RouteCandidate) (pro
 
 	kunci := kunciAdapter(c, cred, proxy)
 	if p, ok := f.dariCache(kunci); ok {
+		f.tandaiPemakaian(cred)
 		return p, nil
 	}
 
@@ -180,7 +239,59 @@ func (f *Factory) Provider(ctx context.Context, c *upstream.RouteCandidate) (pro
 	if err != nil {
 		return nil, err
 	}
+	// Ditandai setelah adapternya benar-benar jadi, bukan setelah kredensialnya diambil:
+	// last_used_at berarti "kredensial ini dipakai menghubungi provider", dan kandidat yang
+	// gagal disiapkan tidak pernah menghubungi apa pun.
+	f.tandaiPemakaian(cred)
 	return f.keCache(kunci, p), nil
+}
+
+// tandaiPemakaian mencatat pemakaian kredensial bila penandanya terpasang.
+func (f *Factory) tandaiPemakaian(cred *upstream.ActiveCredential) {
+	if f.tandai == nil || cred == nil || cred.ID == "" {
+		return
+	}
+	f.tandai.tandai(cred.ID, f.logger)
+}
+
+// penandaPemakaian menulis last_used_at di luar jalur permintaan, dengan jeda per kredensial.
+//
+// Di luar jalur permintaan karena penandaan ini tidak boleh menambah satu milidetik pun ke
+// permintaan yang sedang ditunggu pengguna, dan karena kegagalannya tidak boleh berakibat
+// apa pun selain satu baris log: yang hilang adalah ketepatan urutan giliran kredensial.
+//
+// Peta jedanya tumbuh sebanyak kredensial yang pernah dipakai proses ini — puluhan baris,
+// bukan per permintaan — jadi ia tidak butuh pembersihan.
+type penandaPemakaian struct {
+	marker CredentialUseMarker
+	jeda   time.Duration
+
+	mu    sync.Mutex
+	akhir map[string]time.Time
+}
+
+// tandai menjadwalkan penandaan bila jedanya sudah lewat.
+func (p *penandaPemakaian) tandai(id string, logger *slog.Logger) {
+	now := time.Now()
+
+	p.mu.Lock()
+	if t, ada := p.akhir[id]; ada && now.Sub(t) < p.jeda {
+		p.mu.Unlock()
+		return
+	}
+	// Waktunya dicatat SEBELUM penandaan dijalankan, bukan setelah berhasil: kalau dicatat
+	// setelah, satu UPDATE yang lambat membuat setiap permintaan yang datang selama itu
+	// menjadwalkan penandaannya sendiri, dan baris panas yang ingin dihindari justru muncul.
+	p.akhir[id] = now
+	p.mu.Unlock()
+
+	go func() {
+		ctx, batal := context.WithTimeout(context.Background(), batasTandaiPemakaian)
+		defer batal()
+		if err := p.marker.MarkUsed(ctx, id); err != nil {
+			logger.WarnContext(ctx, "pemakaian kredensial provider gagal dicatat", "error", err)
+		}
+	}()
 }
 
 // kredensial mengambil kredensial aktif provider, atau nil bila kind ini boleh tanpanya.

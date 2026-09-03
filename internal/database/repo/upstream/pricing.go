@@ -294,6 +294,44 @@ func (r *PricingRepo) Current(ctx context.Context, providerModelID string) (*Pri
 	return price, nil
 }
 
+// CurrentAll mengambil SELURUH harga yang sedang berlaku, satu baris per pemetaan
+// model-provider.
+//
+// Ada karena dua pemakai membutuhkan harga BANYAK pemetaan sekaligus, dan keduanya di
+// jalur yang tidak boleh menyentuh database: strategi lowest_cost membandingkan harga
+// setiap kandidat pada setiap permintaan, dan pencatat pemakaian menghitung biaya setiap
+// permintaan yang selesai. Memanggil Current per pemetaan berarti satu query per kandidat
+// per permintaan — pada model dengan lima provider itu lima query hanya untuk mengurutkan.
+// Pemanggil menyimpan hasilnya di memori dengan TTL pendek, pola yang sama dengan aturan
+// routing dan tabel kebijakan.
+//
+// Dilayani indeks partial model_pricing_one_current_idx, yang sekaligus menjamin paling
+// banyak satu baris per pemetaan.
+func (r *PricingRepo) CurrentAll(ctx context.Context) ([]*Price, error) {
+	const op = "mengambil seluruh harga berlaku"
+
+	rows, err := r.q.Query(ctx, `select `+priceColumns+`
+		from model_pricing where effective_to is null
+		order by provider_model_id`)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	defer rows.Close()
+
+	var out []*Price
+	for rows.Next() {
+		price, err := scanPrice(rows)
+		if err != nil {
+			return nil, repo.Err(op, err)
+		}
+		out = append(out, price)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return out, nil
+}
+
 // At mengambil harga yang berlaku pada satu titik waktu.
 //
 // Inilah yang dipakai menghitung biaya request lampau: laporan bulan lalu harus tetap

@@ -44,6 +44,11 @@ type Metrics struct {
 	TimeToFirstByte *prometheus.HistogramVec
 	TokensTotal     *prometheus.CounterVec
 	CostTotal       *prometheus.CounterVec
+	// UpstreamFailures memecah kegagalan per KATEGORI, bukan per status HTTP. Tingkat
+	// timeout tidak bisa dibaca dari RequestsTotal: timeout, koneksi terputus, dan 5xx
+	// upstream semuanya menjadi 502 atau 504 di sisi klien, sehingga status HTTP saja
+	// tidak bisa membedakan "provider lambat" dari "provider menolak".
+	UpstreamFailures *prometheus.CounterVec
 
 	// --- Ketahanan ---
 	RetriesTotal      *prometheus.CounterVec
@@ -55,6 +60,11 @@ type Metrics struct {
 	// --- Kesehatan upstream ---
 	ProviderUp        *prometheus.GaugeVec
 	ProviderLatencyMS *prometheus.GaugeVec
+	// ProviderAvailability berasal dari HASIL permintaan nyata, bukan dari health check.
+	// Keduanya berbeda dan keduanya diperlukan: probe yang lolos tidak membuktikan
+	// permintaan pelanggan berhasil, dan provider bisa sehat menurut probe sambil
+	// menolak setiap permintaan sungguhan karena kuota.
+	ProviderAvailability *prometheus.GaugeVec
 
 	// --- HTTP admin & dashboard ---
 	HTTPRequestsTotal *prometheus.CounterVec
@@ -65,6 +75,14 @@ type Metrics struct {
 	WorkerRunsTotal *prometheus.CounterVec
 	WorkerDuration  *prometheus.HistogramVec
 	PoolConnections *prometheus.GaugeVec
+
+	// UsageRecords dan UsageQueueDepth adalah pertanggungjawaban pencatat pemakaian.
+	// Pencatatan sengaja tidak boleh menggagalkan permintaan, jadi kegagalannya senyap
+	// bagi pengguna — dan tanpa kedua angka ini, gateway bisa berjalan berhari-hari
+	// tanpa mencatat satu pun baris pemakaian tanpa ada yang tahu. Alasannya sama dengan
+	// metrik gagal-terbuka pada pembatas laju.
+	UsageRecords    *prometheus.CounterVec
+	UsageQueueDepth prometheus.Gauge
 }
 
 // NewMetrics membuat registry baru berisi seluruh metrik aplikasi, plus kolektor
@@ -106,6 +124,11 @@ func NewMetrics() *Metrics {
 			Help: "Estimasi biaya kumulatif dalam USD berdasarkan harga di registry model.",
 		}, []string{"provider", "model"}),
 
+		UpstreamFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "routex_gateway_upstream_failures_total",
+			Help: "Kegagalan upstream per kategori (timeout, network, rate_limit, auth, ...).",
+		}, []string{"provider", "kind"}),
+
 		RetriesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "routex_gateway_retries_total",
 			Help: "Jumlah percobaan ulang ke upstream, dipecah per alasan.",
@@ -141,6 +164,11 @@ func NewMetrics() *Metrics {
 			Help: "Latensi health check terakhir per provider dalam milidetik.",
 		}, []string{"provider"}),
 
+		ProviderAvailability: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "routex_provider_availability_ratio",
+			Help: "Rasio permintaan yang berhasil per provider pada jendela pengukuran terakhir, 0..1.",
+		}, []string{"provider"}),
+
 		HTTPRequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "routex_http_requests_total",
 			Help: "Request HTTP ke API admin dan dashboard.",
@@ -172,14 +200,26 @@ func NewMetrics() *Metrics {
 			Name: "routex_pool_connections",
 			Help: "Jumlah koneksi pool per backend (postgres, redis) dan state (total, idle, in_use).",
 		}, []string{"backend", "state"}),
+
+		UsageRecords: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "routex_usage_records_total",
+			Help: "Baris pemakaian yang diproses pencatat, dipecah per hasil (written, failed, dropped).",
+		}, []string{"outcome"}),
+
+		UsageQueueDepth: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "routex_usage_queue_depth",
+			Help: "Jumlah catatan pemakaian yang menunggu ditulis ke database.",
+		}),
 	}
 
 	reg.MustRegister(
 		m.RequestsTotal, m.RequestDuration, m.TimeToFirstByte, m.TokensTotal, m.CostTotal,
+		m.UpstreamFailures,
 		m.RetriesTotal, m.FailoversTotal, m.CircuitBreaker, m.RateLimitRejected, m.ContentBlocked,
-		m.ProviderUp, m.ProviderLatencyMS,
+		m.ProviderUp, m.ProviderLatencyMS, m.ProviderAvailability,
 		m.HTTPRequestsTotal, m.HTTPDuration, m.HTTPInFlight,
 		m.WorkerRunsTotal, m.WorkerDuration, m.PoolConnections,
+		m.UsageRecords, m.UsageQueueDepth,
 	)
 	return m
 }

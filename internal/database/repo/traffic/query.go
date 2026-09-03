@@ -50,7 +50,16 @@ type Filter struct {
 
 	// Status menerima kode persis (mis. "429") atau kelas ("2xx", "4xx", "5xx").
 	Status string
-	// OnlyErrors membatasi ke status >= 400, memanfaatkan indeks partial requests_errors_idx.
+	// OnlyErrors membatasi ke request yang GAGAL, dan gagal di sini berarti status >= 400
+	// ATAU error_type terisi.
+	//
+	// Bagian kedua bukan kelengkapan berlebihan: aliran yang terputus setelah sebagian
+	// terkirim sampai ke klien sebagai 200, karena pada titik itu status sudah terkunci dan
+	// klien memang menerima jawaban sebagian. Menyaring dengan status saja membuat seluruh
+	// kelas kegagalan streaming tidak pernah muncul di chip "Errors" — kegagalan yang justru
+	// paling ingin dilihat operator. Harganya: indeks partial requests_errors_idx tidak lagi
+	// melayani syarat ini seluruhnya, dan sisanya disaring di atas indeks rentang waktu.
+	// Definisi yang sama dipakai agregasi di stats.go dan rollup.go.
 	OnlyErrors bool
 
 	// Search mencocokkan request_id, nama model yang diminta, atau nama provider.
@@ -170,7 +179,7 @@ func (r *Repo) List(ctx context.Context, f Filter, p repo.Page) (Result, error) 
 		add("api_key_id = $%d", f.APIKeyID)
 	}
 	if f.OnlyErrors {
-		conds = append(conds, "status_code >= 400")
+		conds = append(conds, "(status_code >= 400 or error_type is not null)")
 	}
 	if f.Status != "" {
 		switch strings.ToLower(f.Status) {

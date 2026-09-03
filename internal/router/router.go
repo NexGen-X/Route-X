@@ -114,8 +114,12 @@ func (t TokenEstimate) IsZero() bool { return t.InputTokens == 0 && t.OutputToke
 //
 // Yang diminta persentil, bukan rata-rata: rata-rata latensi menyembunyikan provider yang
 // biasanya cepat tetapi kadang menggantung, dan justru ekor itulah yang dirasakan
-// pengguna. Fase 9 memasang implementasi yang membacanya dari histogram usage; sebelum itu
-// ada FromHealthSnapshot yang memakai latensi health check terakhir.
+// pengguna.
+//
+// Dipenuhi *usage.Index, yang menghitungnya dari baris requests pada jendela terakhir dan
+// menyegarkannya di latar. Kalau sumbernya belum punya pengukuran untuk sebuah pemetaan,
+// Selector jatuh ke last_latency_ms dari health check terakhir — lihat Selector.latensi —
+// dan bila itu pun tidak ada, kandidatnya diurutkan paling belakang.
 type LatencySource interface {
 	// LatencyP95 mengembalikan p95 untuk satu pemetaan (provider, model).
 	//

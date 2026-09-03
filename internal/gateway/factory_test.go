@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
@@ -583,4 +584,101 @@ func TestFactoryKredensialDiambilSetiapPermintaan(t *testing.T) {
 	if got := creds.jumlahPanggilan(); got != 3 {
 		t.Errorf("jumlah panggilan Active = %d, mau 3", got)
 	}
+}
+
+// --- Penandaan pemakaian kredensial ------------------------------------------
+
+// penandaTiruan mencatat kredensial yang ditandai terpakai.
+type penandaTiruan struct {
+	mu sync.Mutex
+	id []string
+	// selesai ditutup setiap kali satu penandaan selesai, supaya test tidak perlu tidur.
+	selesai chan struct{}
+	err     error
+}
+
+func (p *penandaTiruan) MarkUsed(_ context.Context, id string) error {
+	p.mu.Lock()
+	p.id = append(p.id, id)
+	p.mu.Unlock()
+	if p.selesai != nil {
+		p.selesai <- struct{}{}
+	}
+	return p.err
+}
+
+func (p *penandaTiruan) semua() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.id...)
+}
+
+// tungguPenandaan menunggu satu penandaan selesai, atau menggagalkan test.
+func tungguPenandaan(t *testing.T, p *penandaTiruan) {
+	t.Helper()
+	select {
+	case <-p.selesai:
+	case <-time.After(3 * time.Second):
+		t.Fatal("penandaan pemakaian kredensial tidak pernah berjalan")
+	}
+}
+
+func TestFactoryMenandaiPemakaianKredensialDenganJeda(t *testing.T) {
+	srv := serverUji(t)
+	tanda := &penandaTiruan{selesai: make(chan struct{}, 8)}
+	f := pabrikUji(t, kredensialUji(), nil, WithCredentialUseMarker(tanda))
+
+	for range 5 {
+		if _, err := f.Provider(context.Background(), kandidatUji(providers.KindOpenAI, srv.URL)); err != nil {
+			t.Fatalf("Provider: %v", err)
+		}
+	}
+	tungguPenandaan(t, tanda)
+
+	// Lima permintaan, satu penandaan: jedanya yang menahan sisanya. Tanpa jeda, setiap
+	// permintaan inference menghasilkan satu UPDATE ke baris yang sama.
+	if got := tanda.semua(); len(got) != 1 {
+		t.Fatalf("penandaan = %v, mau tepat satu di dalam satu jeda", got)
+	}
+
+	// Setelah jedanya lewat, penandaan berikutnya boleh jalan — itulah yang membuat beberapa
+	// kredensial pada satu provider benar-benar bergiliran.
+	f.tandai.mu.Lock()
+	f.tandai.akhir["cred-1"] = time.Now().Add(-2 * jedaTandaiPemakaian)
+	f.tandai.mu.Unlock()
+
+	if _, err := f.Provider(context.Background(), kandidatUji(providers.KindOpenAI, srv.URL)); err != nil {
+		t.Fatalf("Provider setelah jeda: %v", err)
+	}
+	tungguPenandaan(t, tanda)
+	if got := tanda.semua(); len(got) != 2 {
+		t.Fatalf("penandaan setelah jeda = %v, mau dua", got)
+	}
+}
+
+func TestFactoryTanpaPenandaTidakMenulisApaPun(t *testing.T) {
+	srv := serverUji(t)
+	f := pabrikUji(t, kredensialUji(), nil)
+
+	if _, err := f.Provider(context.Background(), kandidatUji(providers.KindOpenAI, srv.URL)); err != nil {
+		t.Fatalf("Provider: %v", err)
+	}
+	// Tanpa penanda, last_used_at tidak pernah ditulis dan Active terus memilih kredensial
+	// yang sama. Itu keadaan yang sah, dan yang penting ia tidak nil-pointer.
+	if f.tandai != nil {
+		t.Error("penanda terpasang tanpa diminta")
+	}
+}
+
+// Kegagalan penandaan tidak boleh berakibat apa pun pada permintaan: yang hilang hanya
+// ketepatan urutan giliran kredensial.
+func TestFactoryKegagalanPenandaanTidakMenggagalkanPermintaan(t *testing.T) {
+	srv := serverUji(t)
+	tanda := &penandaTiruan{selesai: make(chan struct{}, 4), err: errors.New("baris kredensial sudah dihapus")}
+	f := pabrikUji(t, kredensialUji(), nil, WithCredentialUseMarker(tanda))
+
+	if _, err := f.Provider(context.Background(), kandidatUji(providers.KindOpenAI, srv.URL)); err != nil {
+		t.Fatalf("Provider: %v", err)
+	}
+	tungguPenandaan(t, tanda)
 }

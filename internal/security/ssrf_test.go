@@ -99,18 +99,92 @@ func TestPolicyEscapeHatches(t *testing.T) {
 		}
 	})
 
-	t.Run("AllowedPrivateHosts hanya melepas host tertentu", func(t *testing.T) {
-		p := SSRFPolicy{AllowHTTP: true, AllowedPrivateHosts: []string{"127.0.0.1", "ollama.internal"}}
+	t.Run("AllowedPrivateAddrs hanya melepas alamat tertentu", func(t *testing.T) {
+		p := SSRFPolicy{AllowHTTP: true, AllowedPrivateAddrs: mustAddrs(t, "127.0.0.1", "10.8.0.0/24")}
 
-		if err := ValidateBaseURL("http://127.0.0.1:11434/v1", p); err != nil {
-			t.Errorf("host yang diizinkan ditolak: %v", err)
+		for _, raw := range []string{"http://127.0.0.1:11434/v1", "http://10.8.0.7/v1"} {
+			if err := ValidateBaseURL(raw, p); err != nil {
+				t.Errorf("alamat yang diizinkan ditolak: %s: %v", raw, err)
+			}
 		}
-		// Host lain tetap dijaga — inilah bedanya dari AllowPrivate.
-		if err := ValidateBaseURL("http://169.254.169.254/", p); err == nil {
-			t.Error("metadata cloud lolos padahal hanya 127.0.0.1 yang diizinkan")
+		// Alamat lain tetap dijaga — inilah bedanya dari AllowPrivate.
+		for _, raw := range []string{"http://169.254.169.254/", "http://10.0.0.5/", "http://192.168.1.1/"} {
+			if err := ValidateBaseURL(raw, p); err == nil {
+				t.Errorf("%s lolos padahal bukan alamat yang diizinkan", raw)
+			}
 		}
-		if err := ValidateBaseURL("http://10.0.0.5/", p); err == nil {
-			t.Error("alamat privat lain lolos")
+	})
+
+	t.Run("localhost lolos bila loopback sudah dikecualikan", func(t *testing.T) {
+		// Operator yang menjalankan Ollama menyebut mesinnya "localhost", bukan
+		// "127.0.0.1". Lapisan pertama melonggar, lapisan dial tetap memeriksa hasil
+		// resolusinya.
+		p := SSRFPolicy{AllowHTTP: true, AllowedPrivateAddrs: mustAddrs(t, "127.0.0.1")}
+		if err := ValidateBaseURL("http://localhost:11434/v1", p); err != nil {
+			t.Errorf("localhost ditolak padahal loopback dikecualikan: %v", err)
+		}
+		// Tanpa pengecualian itu, localhost tetap ditolak.
+		if err := ValidateBaseURL("http://localhost:11434/v1", SSRFPolicy{AllowHTTP: true}); err == nil {
+			t.Error("localhost lolos tanpa pengecualian apa pun")
+		}
+	})
+}
+
+// mustAddrs mengurai daftar alamat pengecualian atau menggagalkan test.
+func mustAddrs(t *testing.T, values ...string) []netip.Prefix {
+	t.Helper()
+	out, err := ParsePrivateAddrs(values)
+	if err != nil {
+		t.Fatalf("ParsePrivateAddrs(%v): %v", values, err)
+	}
+	return out
+}
+
+// ParsePrivateAddrs menolak nama host, dan pesannya harus menjelaskan jalan keluarnya —
+// operator yang mengetik "localhost" perlu tahu bahwa yang diminta adalah alamat, bukan
+// bahwa pengecualiannya tidak bisa dipakai.
+func TestParsePrivateAddrs(t *testing.T) {
+	t.Run("menerima IP dan CIDR", func(t *testing.T) {
+		got, err := ParsePrivateAddrs([]string{"127.0.0.1", "10.8.0.0/24", " ::1 ", "", "fd00::/8"})
+		if err != nil {
+			t.Fatalf("err = %v, mau nil", err)
+		}
+		if len(got) != 4 {
+			t.Fatalf("len = %d, mau 4 (baris kosong dilewati): %v", len(got), got)
+		}
+		// Alamat tunggal menjadi prefix sepanjang penuh, supaya pemeriksaannya seragam.
+		if got[0].String() != "127.0.0.1/32" {
+			t.Errorf("got[0] = %s, mau 127.0.0.1/32", got[0])
+		}
+		if got[2].String() != "::1/128" {
+			t.Errorf("got[2] = %s, mau ::1/128", got[2])
+		}
+	})
+
+	t.Run("menolak nama host dengan pesan yang mengarahkan", func(t *testing.T) {
+		_, err := ParsePrivateAddrs([]string{"ollama.internal"})
+		if err == nil {
+			t.Fatal("nama host diterima; seharusnya ditolak")
+		}
+		if !errors.Is(err, ErrInvalidBaseURL) {
+			t.Errorf("err = %v, mau membungkus ErrInvalidBaseURL", err)
+		}
+		for _, petunjuk := range []string{"per alamat", "nama host"} {
+			if !strings.Contains(err.Error(), petunjuk) {
+				t.Errorf("pesan %q tidak menyebut %q", err.Error(), petunjuk)
+			}
+		}
+	})
+
+	t.Run("CIDR dinormalkan ke bentuk masked", func(t *testing.T) {
+		// "10.8.0.7/24" menyebut alamat di dalam blok, bukan awal bloknya. Tanpa Masked,
+		// Contains pada prefix seperti itu tidak berperilaku seperti yang operator kira.
+		got, err := ParsePrivateAddrs([]string{"10.8.0.7/24"})
+		if err != nil {
+			t.Fatalf("err = %v", err)
+		}
+		if got[0].String() != "10.8.0.0/24" {
+			t.Errorf("got[0] = %s, mau 10.8.0.0/24", got[0])
 		}
 	})
 }
@@ -183,6 +257,61 @@ func TestGuardedTransportBlocksRealLoopbackRequest(t *testing.T) {
 			t.Errorf("status = %d", resp.StatusCode)
 		}
 	})
+}
+
+// Regresi untuk cacat yang nyata: AllowedPrivateAddrs harus berlaku di KEDUA lapisan.
+//
+// Sebelum perbaikan, ValidateBaseURL menghormati pengecualian ini tetapi CheckAddr tidak,
+// sehingga operator yang menjalankan model lokal dan mengizinkan 127.0.0.1 lolos validasi
+// lalu diblokir tepat saat menghubungi. Jalan keluar yang didokumentasikan tidak bekerja
+// ujung-ke-ujung, dan yang benar-benar berfungsi hanya AllowPrivate — yang melepas
+// perlindungan untuk SELURUH provider, termasuk yang dibuat pengguna BYOK.
+//
+// Test ini menempuh dua lapisan itu berurutan pada satu server sungguhan, karena cacatnya
+// hanya terlihat bila keduanya diperiksa dalam satu alur.
+func TestAllowedPrivateAddrsBerlakuDiValidasiDanDial(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	policy := SSRFPolicy{AllowHTTP: true, AllowedPrivateAddrs: mustAddrs(t, "127.0.0.1")}
+
+	// Lapisan 1.
+	if err := ValidateBaseURL(srv.URL, policy); err != nil {
+		t.Fatalf("lapisan 1 menolak %s: %v", srv.URL, err)
+	}
+	// Lapisan 2, langsung.
+	if err := CheckAddr(netip.MustParseAddr("127.0.0.1"), policy); err != nil {
+		t.Fatalf("lapisan 2 menolak alamat yang dikecualikan: %v", err)
+	}
+	// Lapisan 2, lewat socket sungguhan.
+	cl := &http.Client{Transport: &http.Transport{DialContext: GuardedDialContext(policy, &net.Dialer{})}}
+	resp, err := cl.Get(srv.URL)
+	if err != nil {
+		t.Fatalf("dial ditolak padahal alamatnya dikecualikan: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("status = %d, mau 200", resp.StatusCode)
+	}
+
+	// Yang TIDAK boleh ikut lolos: alamat privat lain, termasuk metadata cloud. Inilah
+	// yang membedakan pengecualian per alamat dari AllowPrivate — dan inilah alasan
+	// pengecualiannya berisi alamat, bukan nama: nama yang dibelokkan ke alamat privat
+	// LAIN tetap tertolak di sini.
+	for _, lain := range []string{"169.254.169.254", "10.0.0.5", "::1", "192.168.1.1"} {
+		if err := CheckAddr(netip.MustParseAddr(lain), policy); err == nil {
+			t.Errorf("CheckAddr(%s) = nil padahal hanya 127.0.0.1 yang dikecualikan", lain)
+		}
+	}
+
+	// ::ffff:127.0.0.1 adalah bentuk terbungkus dari alamat yang sama dan harus ikut
+	// dikenali — kalau tidak, pengecualian per alamat bisa dilewati justru oleh operator
+	// yang menuliskannya dengan benar.
+	if err := CheckAddr(netip.MustParseAddr("::ffff:127.0.0.1"), policy); err != nil {
+		t.Errorf("bentuk IPv4-in-IPv6 dari alamat yang dikecualikan ditolak: %v", err)
+	}
 }
 
 // Pengalihan (redirect) ke alamat internal juga harus terblokir — dan itu terjadi

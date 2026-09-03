@@ -234,7 +234,23 @@ type StreamEvent struct {
 	FinishReason string
 	// Usage terisi pada peristiwa penutup bila provider melaporkannya.
 	Usage *Usage
-	// Raw adalah muatan SSE dalam bentuk dialek OpenAI, siap diteruskan ke klien.
+	// Raw adalah MUATAN satu peristiwa SSE dalam dialek OpenAI — objek
+	// "chat.completion.chunk" berbentuk JSON, dan HANYA itu.
+	//
+	// Bukan blok SSE lengkap. Framing-nya (awalan "data: ", baris kosong pemisah, dan
+	// penanda penutup "[DONE]") dibuat lapisan HTTP gateway, bukan adapter. Pembagian ini
+	// harus tegas karena kalau tidak, salah satu dari dua kegagalan pasti terjadi: adapter
+	// yang ikut memasang framing membuat gateway mengirim "data: data: {...}" pada provider
+	// tertentu saja, atau gateway yang mengandalkan adapter memasangnya membuat aliran dari
+	// provider lain tidak pernah punya penutup. Keduanya hanya muncul di provider tertentu,
+	// yaitu kelas cacat yang paling sulit terlihat di test.
+	//
+	// Adapter berdialek OpenAI meneruskan muatan upstream apa adanya di sini — menyusunnya
+	// ulang dari field di atas akan menghapus field yang belum dikenal gateway. Adapter
+	// dialek lain mengisinya dengan hasil terjemahannya ke bentuk chunk OpenAI.
+	//
+	// Kosong berarti peristiwa ini tidak punya padanan yang perlu diteruskan ke klien
+	// (mis. peristiwa pembuka milik Anthropic yang hanya membawa metadata).
 	Raw []byte
 }
 
@@ -291,9 +307,28 @@ type HealthResult struct {
 
 // Provider adalah kontrak satu upstream.
 //
-// Semua method menghormati pembatalan context. Implementasi TIDAK boleh menyimpan
-// kredensial di dalam struct dalam bentuk plaintext yang bisa tercetak — pakai
-// security.Secret.
+// Semua method menghormati pembatalan context.
+//
+// # Kewajiban redaksi
+//
+// Implementasi TIDAK boleh menyimpan kredensial dalam bentuk plaintext yang bisa
+// tercetak — pakai security.Secret. Tetapi security.Secret SENDIRI TIDAK CUKUP bila
+// disimpan sebagai field TAK DIEKSPOR: fmt tidak boleh memanggil metode pada field
+// seperti itu (reflect.Value.CanInterface bernilai false), sehingga "%v" pada struct
+// pemuatnya mencetak isi Secret apa adanya, bukan "[REDACTED]".
+//
+// Karena itu setiap tipe yang memuat security.Secret di field tak diekspor WAJIB
+// menyediakan sendiri:
+//
+//	func (p T) String() string    // fmt: %v, %s
+//	func (p T) GoString() string  // fmt: %#v
+//	func (p T) LogValue() slog.Value
+//
+// Receiver-nya WAJIB nilai, bukan pointer. Dengan receiver pointer, mencetak struct
+// nilainya langsung ("%v" pada T, bukan *T) tetap melewati metode dan tetap bocor.
+//
+// Kewajiban ini dijaga TestRedaksiFieldTakDiekspor di internal/security, yang membaca
+// seluruh sumber repo dan menggagalkan build test bila ada tipe baru yang melewatkannya.
 type Provider interface {
 	// Kind mengembalikan salah satu konstanta Kind di atas.
 	Kind() string

@@ -177,6 +177,28 @@ func applyPoolSettings(poolCfg *pgxpool.Config, cfg *config.Config) {
 	}
 }
 
+// String menyamarkan seluruh isi DB.
+//
+// Field dsn bertipe security.Secret, tetapi itu TIDAK cukup: fmt tidak boleh memanggil
+// metode pada field yang tidak diekspor, jadi tanpa metode di tingkat struct "%v" pada DB
+// mencetak connection string apa adanya — lengkap dengan passwordnya. Sudah diuji.
+//
+// Receiver-nya nilai supaya DB maupun *DB sama-sama lewat sini.
+func (db DB) String() string { return "database.DB{dsn:[REDACTED]}" }
+
+// GoString menutup jalur "%#v".
+func (db DB) GoString() string { return db.String() }
+
+// LogValue menutup jalur slog.
+func (db DB) LogValue() slog.Value { return slog.StringValue(db.String()) }
+
+// Verifikasi bahwa jalur keluaran umum benar-benar tertutup.
+var (
+	_ fmt.Stringer   = DB{}
+	_ fmt.GoStringer = DB{}
+	_ slog.LogValuer = DB{}
+)
+
 // Close menutup seluruh koneksi dan menunggu yang masih dipakai selesai. Aman
 // dipanggil pada DB nil maupun dua kali.
 func (db *DB) Close() {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -21,8 +22,29 @@ const testKey = "AIzaSyRAHASIA-JANGAN-BOCOR-0123456789"
 
 // testPolicy melonggarkan penjaga SSRF supaya test bisa menghubungi httptest.Server yang
 // selalu berada di 127.0.0.1 lewat http.
+//
+// Yang dipakai adalah pengecualian PER ALAMAT, bukan AllowPrivate. Bedanya bukan kosmetik:
+// AllowPrivate melepas seluruh penjagaan rentang, sehingga test tidak akan menyadari kalau
+// adapter ini mulai menghubungi alamat internal yang lain — misalnya endpoint metadata
+// cloud lewat base URL yang dibelokkan. Dengan hanya 127.0.0.1 yang dikecualikan, test
+// tetap bicara dengan test double-nya sendiri sementara sisa penjagaannya masih aktif.
+//
+// Sebelum lapisan dial ikut menghormati pengecualian ini, cara ini tidak bisa dipakai dan
+// test terpaksa memakai AllowPrivate.
 func testPolicy() security.SSRFPolicy {
-	return security.SSRFPolicy{AllowHTTP: true, AllowPrivate: true}
+	return security.SSRFPolicy{AllowHTTP: true, AllowedPrivateAddrs: loopbackSaja()}
+}
+
+// loopbackSaja mengembalikan pengecualian untuk kedua bentuk alamat loopback.
+//
+// Keduanya diperlukan karena httptest.Server bisa mendengarkan di 127.0.0.1 maupun [::1]
+// tergantung tumpukan jaringan mesin yang menjalankan test.
+func loopbackSaja() []netip.Prefix {
+	addrs, err := security.ParsePrivateAddrs([]string{"127.0.0.1", "::1"})
+	if err != nil {
+		panic(err)
+	}
+	return addrs
 }
 
 // requestLog merekam permintaan yang diterima server tiruan.

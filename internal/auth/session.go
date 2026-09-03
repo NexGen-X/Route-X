@@ -72,6 +72,21 @@ type Service struct {
 	limiter *LoginLimiter
 }
 
+// String menyamarkan seluruh isi Service.
+//
+// cfg adalah field TAK DIEKSPOR yang memuat DATABASE_URL, REDIS_URL, dan SESSION_SECRET,
+// dan fmt tidak boleh memanggil metode pada nilai yang diperoleh dari field tak diekspor.
+// Tanpa metode di tingkat struct, "%s" pada Service menempuh jalur verb-salah milik fmt
+// yang membongkar isi struct beserta ketiga nilai itu. Dijaga TestRedaksiFieldTakDiekspor
+// di internal/security.
+func (s Service) String() string { return "auth.Service{[REDACTED]}" }
+
+// GoString menutup jalur "%#v".
+func (s Service) GoString() string { return s.String() }
+
+// LogValue menutup jalur slog.
+func (s Service) LogValue() slog.Value { return slog.StringValue(s.String()) }
+
 // Option menyetel Service saat konstruksi.
 type Option func(*Service)
 

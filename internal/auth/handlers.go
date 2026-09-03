@@ -38,6 +38,21 @@ type Handlers struct {
 	logger  *slog.Logger
 }
 
+// String menyamarkan seluruh isi Handlers.
+//
+// svc adalah field TAK DIEKSPOR yang menjangkau security.Secret lewat config.Config, dan
+// fmt tidak boleh memanggil metode pada nilai yang diperoleh dari field tak diekspor.
+// Tanpa metode di tingkat struct, "%s" pada Handlers menempuh jalur verb-salah milik fmt
+// yang membongkar isi struct — lengkap dengan DATABASE_URL dan SESSION_SECRET. Dijaga
+// TestRedaksiFieldTakDiekspor di internal/security.
+func (h Handlers) String() string { return "auth.Handlers{[REDACTED]}" }
+
+// GoString menutup jalur "%#v".
+func (h Handlers) GoString() string { return h.String() }
+
+// LogValue menutup jalur slog.
+func (h Handlers) LogValue() slog.Value { return slog.StringValue(h.String()) }
+
 // NewHandlers membuat handler di atas layanan sesi.
 func NewHandlers(svc *Service) *Handlers {
 	return &Handlers{

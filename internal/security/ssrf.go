@@ -84,27 +84,93 @@ type SSRFPolicy struct {
 	// untuk SELURUH provider, termasuk yang dibuat pengguna BYOK — jadi pemakaiannya
 	// harus keputusan sadar operator, bukan bawaan.
 	AllowPrivate bool
-	// AllowedPrivateHosts adalah jalan tengah yang lebih baik daripada AllowPrivate:
-	// hanya host tertentu (mis. "127.0.0.1", "localhost", "ollama.internal") yang
-	// dikecualikan, sisanya tetap dijaga.
-	AllowedPrivateHosts []string
+	// AllowedPrivateAddrs adalah jalan tengah yang lebih baik daripada AllowPrivate:
+	// hanya ALAMAT tertentu yang dikecualikan, sisanya tetap dijaga. Operator yang
+	// menjalankan Ollama di 127.0.0.1:11434 memasang 127.0.0.1/32 di sini dan tidak
+	// perlu melepas perlindungan untuk provider lain.
+	//
+	// Isinya ALAMAT, bukan nama host, dan itu keputusan yang sengaja diambil. Pengecualian
+	// ini harus berlaku di DUA tempat: saat base URL divalidasi, dan saat socket benar-benar
+	// dibuka. Di tempat kedua nama host sudah tidak ada — yang tersisa hanya hasil
+	// resolusinya. Pengecualian bernama karena itu cuma bisa dijalankan dengan meresolusi
+	// nama saat kebijakan dibuat, lalu mempercayai hasilnya saat menghubungi; dan itu
+	// tepat DNS rebinding yang dijaga lapisan dial. Pengecualian per alamat tidak punya
+	// celah itu: nama yang dibelokkan ke alamat privat LAIN tetap ditolak.
+	//
+	// Pakai ParsePrivateAddrs untuk mengubah masukan operator menjadi nilai ini; ia menolak
+	// nama host dengan pesan yang menjelaskan mengapa.
+	AllowedPrivateAddrs []netip.Prefix
 }
 
 // DefaultSSRFPolicy adalah kebijakan paling ketat: hanya https, tanpa alamat internal.
 func DefaultSSRFPolicy() SSRFPolicy { return SSRFPolicy{} }
 
-// allowsHost melaporkan apakah host ini dikecualikan dari penjagaan rentang.
-func (p SSRFPolicy) allowsHost(host string) bool {
+// ParsePrivateAddrs mengurai daftar literal IP atau CIDR menjadi prefix.
+//
+// Nama host ditolak, bukan diresolusi: lihat alasannya di AllowedPrivateAddrs. Pesannya
+// menyebutkan jalan keluarnya supaya operator tidak menyimpulkan pengecualian ini tidak
+// bisa dipakai untuk layanan yang ia kenal lewat nama.
+func ParsePrivateAddrs(values []string) ([]netip.Prefix, error) {
+	out := make([]netip.Prefix, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if pfx, err := netip.ParsePrefix(v); err == nil {
+			out = append(out, pfx.Masked())
+			continue
+		}
+		addr, err := netip.ParseAddr(v)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %q bukan alamat IP atau CIDR — pengecualian ini "+
+				"berlaku per alamat, bukan per nama host; tulis alamat hasil resolusinya",
+				ErrInvalidBaseURL, v)
+		}
+		// Alamat tunggal disimpan sebagai prefix /32 atau /128 supaya pemeriksaannya
+		// seragam dengan bentuk CIDR.
+		addr = unmap4In6(addr)
+		out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+	}
+	return out, nil
+}
+
+// allowsAddr melaporkan apakah alamat ini dikecualikan dari penjagaan rentang.
+func (p SSRFPolicy) allowsAddr(addr netip.Addr) bool {
 	if p.AllowPrivate {
 		return true
 	}
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	for _, h := range p.AllowedPrivateHosts {
-		if strings.ToLower(strings.TrimSuffix(h, ".")) == host {
+	addr = unmap4In6(addr)
+	for _, pfx := range p.AllowedPrivateAddrs {
+		// Perbandingan hanya bermakna bila keluarga alamatnya sama.
+		if pfx.Addr().Is4() == addr.Is4() && pfx.Contains(addr) {
 			return true
 		}
 	}
 	return false
+}
+
+// allowsLoopbackName melaporkan apakah nama yang pasti menunjuk ke mesin ini boleh lolos
+// validasi URL.
+//
+// Diperlukan supaya "http://localhost:11434" tetap bisa dipakai operator yang sudah
+// mengecualikan loopback lewat alamat. Ini hanya melonggarkan LAPISAN PERTAMA; alamat
+// hasil resolusinya tetap diperiksa saat dial, jadi nama yang ternyata menunjuk ke tempat
+// lain tetap ditolak di sana.
+func (p SSRFPolicy) allowsLoopbackName() bool {
+	return p.allowsAddr(netip.MustParseAddr("127.0.0.1")) ||
+		p.allowsAddr(netip.MustParseAddr("::1"))
+}
+
+// unmap4In6 mengembalikan bentuk IPv4 dari alamat IPv4 yang dibungkus IPv6.
+//
+// Tanpa ini, ::ffff:127.0.0.1 melewati seluruh daftar rentang IPv4 hanya karena
+// dituliskan dalam bentuk terbungkus.
+func unmap4In6(addr netip.Addr) netip.Addr {
+	if addr.Is4In6() {
+		return addr.Unmap()
+	}
+	return addr
 }
 
 // ValidateBaseURL memeriksa base URL provider sebelum disimpan.
@@ -144,21 +210,20 @@ func ValidateBaseURL(raw string, policy SSRFPolicy) error {
 	if host == "" {
 		return fmt.Errorf("%w: host kosong", ErrInvalidBaseURL)
 	}
-	if policy.allowsHost(host) {
-		return nil
-	}
 
-	// Bila host sudah berupa alamat IP, bisa langsung diperiksa. Bila berupa nama, tidak
+	// Bila host sudah berupa alamat IP, bisa langsung diperiksa — termasuk terhadap
+	// AllowedPrivateAddrs, karena CheckAddr yang menghormatinya. Bila berupa nama, tidak
 	// diresolusi di sini: hasil resolusi saat menyimpan tidak menjamin apa pun tentang
 	// hasil resolusi saat menghubungi, dan pemeriksaan yang sesungguhnya ada di Dialer.
 	if addr, err := netip.ParseAddr(host); err == nil {
-		if err := CheckAddr(addr, policy); err != nil {
-			return err
-		}
+		return CheckAddr(addr, policy)
 	}
+
 	// Nama yang terang-terangan menunjuk ke dalam ditolak lebih awal supaya operator
-	// mendapat pesan yang jelas, bukan kegagalan koneksi yang membingungkan.
-	if isObviousLocalName(host) {
+	// mendapat pesan yang jelas, bukan kegagalan koneksi yang membingungkan — kecuali
+	// operator memang sudah mengecualikan loopback lewat alamat, yang berarti dia sedang
+	// menjalankan model lokal dan menyebutnya "localhost".
+	if isObviousLocalName(host) && !policy.allowsLoopbackName() {
 		return fmt.Errorf("%w: %q menunjuk ke mesin ini", ErrBlockedAddress, host)
 	}
 	return nil
@@ -171,6 +236,13 @@ func isObviousLocalName(host string) bool {
 }
 
 // CheckAddr memeriksa satu alamat IP terhadap kebijakan.
+//
+// Inilah satu-satunya tempat keputusan "boleh atau tidak" diambil, dan karena itu ia yang
+// menghormati AllowedPrivateAddrs. Sebelumnya pengecualian itu hanya dibaca ValidateBaseURL,
+// sehingga operator yang mengizinkan 127.0.0.1 lolos validasi lalu diblokir tepat saat
+// menghubungi — jalan keluar yang tidak bekerja ujung-ke-ujung, dan satu-satunya yang
+// benar-benar berfungsi adalah AllowPrivate yang melepas perlindungan untuk SELURUH
+// provider termasuk BYOK.
 func CheckAddr(addr netip.Addr, policy SSRFPolicy) error {
 	if policy.AllowPrivate {
 		return nil
@@ -182,8 +254,12 @@ func CheckAddr(addr netip.Addr, policy SSRFPolicy) error {
 	// IPv4 yang dibungkus IPv6 (::ffff:127.0.0.1) harus diperiksa sebagai IPv4-nya,
 	// kalau tidak seluruh daftar rentang IPv4 bisa dilewati hanya dengan menuliskan
 	// alamat dalam bentuk terbungkus.
-	if addr.Is4In6() {
-		addr = addr.Unmap()
+	addr = unmap4In6(addr)
+
+	// Pengecualian diperiksa SEBELUM daftar terlarang: seluruh gunanya adalah melepas
+	// alamat yang justru ada di daftar itu.
+	if policy.allowsAddr(addr) {
+		return nil
 	}
 
 	for _, p := range blockedPrefixes {

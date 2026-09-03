@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -103,6 +104,26 @@ type stream struct {
 	toolIndex map[int]int
 	nextTool  int
 }
+
+// String menyamarkan seluruh isi stream.
+//
+// provider adalah field TAK DIEKSPOR yang memuat kredensial upstream, dan fmt tidak boleh
+// memanggil metode pada nilai yang diperoleh dari field tak diekspor. Tanpa metode di
+// tingkat struct, "%s" pada *stream menempuh jalur verb-salah milik fmt yang membongkar
+// isi struct beserta kredensialnya.
+//
+// Receiver-nya POINTER, bukan nilai: struct ini memuat sync.Once, dan go vet menolak
+// metode ber-receiver nilai di atas struct berlock ("String passes lock by value").
+// Itu aman justru karena larangan yang sama berlaku bagi siapa pun yang mencoba menyalin
+// nilainya, sehingga "%v" pada bentuk nilai tidak bisa ditulis tanpa vet ikut merah.
+// Dijaga TestRedaksiFieldTakDiekspor di internal/security.
+func (s *stream) String() string { return "anthropic.stream{[REDACTED]}" }
+
+// GoString menutup jalur "%#v".
+func (s *stream) GoString() string { return s.String() }
+
+// LogValue menutup jalur slog.
+func (s *stream) LogValue() slog.Value { return slog.StringValue(s.String()) }
 
 // Recv mengembalikan peristiwa berikutnya, atau io.EOF saat aliran selesai normal.
 func (s *stream) Recv() (*providers.StreamEvent, error) {

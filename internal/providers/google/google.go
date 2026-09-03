@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -154,6 +155,35 @@ func (p *Provider) Kind() string { return p.kind }
 
 // Name mengembalikan nama provider.
 func (p *Provider) Name() string { return p.name }
+
+// String menyamarkan seluruh isi Provider.
+//
+// security.Secret pada field credential TIDAK cukup di sini. fmt tidak boleh memanggil
+// metode pada field yang tidak diekspor (reflect.Value.CanInterface bernilai false untuk
+// nilai seperti itu), jadi tanpa metode di tingkat struct "%v" pada Provider mencetak isi
+// mentah Secret alih-alih "[REDACTED]". Sudah diuji langsung, dan itulah cara paling mudah
+// sebuah API key masuk ke log tanpa ada satu pun kode yang tampak mencetaknya.
+//
+// Receiver-nya nilai, bukan pointer, supaya "%v" pada Provider maupun pada *Provider
+// sama-sama lewat sini — dengan receiver pointer, mencetak struct-nya langsung tetap bocor.
+func (p Provider) String() string {
+	return fmt.Sprintf("google.Provider{name:%q kind:%q}", p.name, p.kind)
+}
+
+// GoString menutup jalur "%#v".
+func (p Provider) GoString() string { return p.String() }
+
+// LogValue menutup jalur slog.
+func (p Provider) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("provider", p.name), slog.String("kind", p.kind))
+}
+
+// Verifikasi bahwa jalur keluaran umum benar-benar tertutup.
+var (
+	_ fmt.Stringer   = Provider{}
+	_ fmt.GoStringer = Provider{}
+	_ slog.LogValuer = Provider{}
+)
 
 // endpoint menyusun URL absolut satu endpoint Gemini.
 func (p *Provider) endpoint(path string) string { return providers.JoinURL(p.baseURL, path) }

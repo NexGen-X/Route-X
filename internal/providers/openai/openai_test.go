@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -97,6 +98,18 @@ func (u *upstream) lastBody() map[string]any {
 	return decoded
 }
 
+// loopbackSaja mengembalikan pengecualian SSRF untuk kedua bentuk alamat loopback.
+//
+// Keduanya diperlukan karena httptest.Server bisa mendengarkan di 127.0.0.1 maupun [::1]
+// tergantung tumpukan jaringan mesin yang menjalankan test.
+func loopbackSaja() []netip.Prefix {
+	addrs, err := security.ParsePrivateAddrs([]string{"127.0.0.1", "::1"})
+	if err != nil {
+		panic(err)
+	}
+	return addrs
+}
+
 // testProvider membuat Provider yang menunjuk ke test double.
 func testProvider(t *testing.T, baseURL string, tweak func(*Config)) *Provider {
 	t.Helper()
@@ -107,10 +120,12 @@ func testProvider(t *testing.T, baseURL string, tweak func(*Config)) *Provider {
 		Credential: security.Secret(testKey),
 		Timeout:    3 * time.Second,
 		// httptest mendengarkan di 127.0.0.1, tepat di rentang yang dijaga penjaga SSRF.
-		// Melepas alamat privat adalah satu-satunya cara test bicara dengan test double-nya
-		// sendiri — dan itu memang pilihan yang tersedia bagi operator yang menjalankan
-		// model lokal.
-		SSRFPolicy: security.SSRFPolicy{AllowHTTP: true, AllowPrivate: true},
+		// Yang dipakai adalah pengecualian PER ALAMAT, bukan AllowPrivate: AllowPrivate
+		// melepas seluruh penjagaan rentang, sehingga test tidak akan menyadari kalau
+		// adapter ini mulai menghubungi alamat internal LAIN — misalnya endpoint metadata
+		// cloud lewat base URL yang dibelokkan. Dengan hanya loopback yang dikecualikan,
+		// sisa penjagaannya tetap aktif selama test berjalan.
+		SSRFPolicy: security.SSRFPolicy{AllowHTTP: true, AllowedPrivateAddrs: loopbackSaja()},
 	}
 	if tweak != nil {
 		tweak(&cfg)

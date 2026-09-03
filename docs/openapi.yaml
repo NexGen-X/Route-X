@@ -1,0 +1,751 @@
+openapi: 3.1.0
+info:
+  title: Route-X AI Gateway API
+  description: |
+    Spesifikasi resmi antarmuka Route-X AI Gateway — gateway inferensi LLM berperforma tinggi dengan
+    enkripsi kredensial AES-256-GCM, perutean adaptif ber-failover otomatis, pemutus arus terdistribusi,
+    pengawasan anggaran berpresisi finansial skala 8 desimal (upstream.USD), jejak audit menyeluruh,
+    dan dashboard operasional tersemat.
+  version: 1.0.0
+  contact:
+    name: Route-X Engineering Team
+    email: admin@routex.internal
+  license:
+    name: Hak Cipta Dilindungi
+
+servers:
+  - url: /
+    description: Instance Gateway Lokal / Produksi
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ============================================================================
+  # 1. Inferencing Endpoints (/v1)
+  # ============================================================================
+  /v1/chat/completions:
+    post:
+      tags:
+        - Inferencing
+      summary: Eksekusi Chat Completions
+      description: |
+        Mengirimkan percakapan chat ke upstream provider model terbaik sesuai strategi perutean.
+        Mendukung streaming respon SSE (Server-Sent Events), function/tool calling, pencatatan latensi TTFT,
+        dan kalkulasi pemakaian token serta biaya moneter secara instan.
+      operationId: createChatCompletion
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+      responses:
+        '200':
+          description: Berhasil memproses permintaan chat (atau stream text/event-stream)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: Aliran SSE token teks per potongan
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '429':
+          $ref: '#/components/responses/429RateLimited'
+        '502':
+          $ref: '#/components/responses/502BadGateway'
+
+  /v1/responses:
+    post:
+      tags:
+        - Inferencing
+      summary: Eksekusi Responses API
+      description: Endpoint kompatibel OpenAI Responses API untuk format keluaran terstruktur.
+      operationId: createResponse
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model, input]
+              properties:
+                model:
+                  type: string
+                  example: gpt-4o
+                input:
+                  type: string
+                  example: Analisis tren pasar kecerdasan buatan kuartal ini.
+      responses:
+        '200':
+          description: Jawaban terstruktur berhasil dihasilkan
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /v1/embeddings:
+    post:
+      tags:
+        - Inferencing
+      summary: Buat Representasi Vektor (Embeddings)
+      description: Menghasilkan representasi vektor teks untuk pencarian semantik dan basis pengetahuan RAG.
+      operationId: createEmbedding
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbeddingRequest'
+      responses:
+        '200':
+          description: Vektor embeddings berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbeddingResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /v1/models:
+    get:
+      tags:
+        - Inferencing
+      summary: Daftar Model Tersedia
+      description: Mengembalikan katalog model kanonik dan alias yang aktif di Route-X Gateway.
+      operationId: listModels
+      security:
+        - BearerAuth: []
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Daftar model berhasil dimuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelListResponse'
+
+  /v1/models/{model}:
+    get:
+      tags:
+        - Inferencing
+      summary: Detail Model Spesifik
+      description: Mengambil informasi detail model berdasarkan ID atau nama alias kanoniknya.
+      operationId: getModel
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: string
+          example: gpt-4o
+      responses:
+        '200':
+          description: Detail model ditemukan
+        '404':
+          $ref: '#/components/responses/404NotFound'
+
+  # ============================================================================
+  # 2. Health & Observability Endpoints
+  # ============================================================================
+  /healthz:
+    get:
+      tags:
+        - Health & Telemetry
+      summary: Liveness Probe
+      description: Memastikan biner gateway hidup dan dapat menerima lalu lintas HTTP.
+      operationId: livenessProbe
+      security: []
+      responses:
+        '200':
+          description: Gateway dalam keadaan aktif
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: v1.0.0
+                  commit:
+                    type: string
+                    example: a1b2c3d
+                  uptime_seconds:
+                    type: integer
+                    example: 3600
+
+  /readyz:
+    get:
+      tags:
+        - Health & Telemetry
+      summary: Readiness Probe
+      description: Memeriksa kesiapan dependensi kritis (PostgreSQL connection pool dan Redis client).
+      operationId: readinessProbe
+      security: []
+      responses:
+        '200':
+          description: Seluruh dependensi sehat dan siap melayani permintaan
+        '503':
+          description: Salah satu dependensi gagal atau terputus
+
+  /metrics:
+    get:
+      tags:
+        - Health & Telemetry
+      summary: Prometheus Telemetry Metrics
+      description: Menyajikan eksposur metrik internal format teks Prometheus untuk scraping Prometheus/Grafana.
+      operationId: getPrometheusMetrics
+      security: []
+      responses:
+        '200':
+          description: Data metrik Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  # ============================================================================
+  # 3. Authentication & Session Management (/api/auth)
+  # ============================================================================
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Masuk Sesi Konsol Admin
+      description: Memvalidasi kredensial email dan kata sandi menggunakan hashing Argon2id dan menetapkan cookie sesi.
+      operationId: loginAdmin
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@routex.internal
+                password:
+                  type: string
+                  format: password
+                  example: Passw0rdRahasia!
+                keep_signed_in:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Login berhasil, cookie routex_session dan routex_csrf terpasang
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '429':
+          $ref: '#/components/responses/429RateLimited'
+
+  /api/auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Keluar Sesi Konsol
+      description: Menghapus token sesi dari database dan mencabut cookie sesi aktif.
+      operationId: logoutAdmin
+      security:
+        - SessionCookie: []
+        - CSRFToken: []
+      responses:
+        '200':
+          description: Sesi berhasil ditutup
+
+  /api/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Informasi Pengguna & Hak Akses Sesi
+      description: Mengambil data pengguna login saat ini, peran RBAC, dan katalog izin efektif.
+      operationId: getPrincipalMe
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Informasi identitas berhasil dimuat
+
+  /api/auth/change-password:
+    post:
+      tags:
+        - Authentication
+      summary: Perbarui Kata Sandi Pengguna
+      description: Mengubah kata sandi pengguna aktif dan mencabut sesi aktif lainnya.
+      operationId: changePassword
+      security:
+        - SessionCookie: []
+        - CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 12
+      responses:
+        '200':
+          description: Kata sandi berhasil diperbarui
+
+  # ============================================================================
+  # 4. Administrative REST API (/api/admin/*)
+  # ============================================================================
+  /api/admin/observability/summary:
+    get:
+      tags:
+        - Admin Observability
+      summary: Ringkasan Metrik Operasional
+      description: Agregasi volume request, token in/out, total biaya USD, latensi rata-rata, p95, dan rasio error.
+      operationId: getAdminSummary
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum: [1h, 24h, 7d, 30d]
+            default: 24h
+      responses:
+        '200':
+          description: Ringkasan metrik berhasil dimuat
+
+  /api/admin/requests:
+    get:
+      tags:
+        - Admin Requests
+      summary: Log Permintaan Inferensi (Keyset Pagination)
+      description: Menelusuri rekaman request log dengan pencarian teks, filter provider, status, dan sorting.
+      operationId: listAdminRequests
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 25
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: status_class
+          in: query
+          schema:
+            type: string
+            enum: [2xx, 4xx, 5xx, error]
+      responses:
+        '200':
+          description: Halaman request log berhasil dimuat
+
+  /api/admin/upstreams/providers:
+    get:
+      tags:
+        - Admin Upstreams
+      summary: Daftar Upstream Providers
+      description: Mengambil seluruh upstream provider LLM beserta status kesehatan dan bobot alokasi.
+      operationId: listProviders
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Daftar provider berhasil diambil
+    post:
+      tags:
+        - Admin Upstreams
+      summary: Buat Upstream Provider Baru
+      description: Mendaftarkan provider AI hulu baru dengan validasi SSRF ketat pada base URL.
+      operationId: createProvider
+      security:
+        - SessionCookie: []
+        - CSRFToken: []
+      responses:
+        '201':
+          description: Provider berhasil dibuat
+
+  /api/admin/upstreams/providers/{id}/probe:
+    post:
+      tags:
+        - Admin Upstreams
+      summary: Diagnostic Health Probe
+      description: Melakukan pemeriksaan kesehatan langsung ke endpoint upstream provider melalui adapter nyata.
+      operationId: probeProvider
+      security:
+        - SessionCookie: []
+        - CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Hasil pemeriksaan probe kesehatan
+
+  /api/admin/gateway/routing-rules:
+    get:
+      tags:
+        - Admin Gateway
+      summary: Daftar Aturan Perutean (Routing Rules)
+      operationId: listRoutingRules
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Aturan routing berhasil dimuat
+
+  /api/admin/gateway/budgets:
+    get:
+      tags:
+        - Admin Gateway
+      summary: Alokasi Anggaran Biaya Moneter
+      operationId: listBudgets
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Daftar alokasi anggaran biaya USD
+
+  /api/admin/access/api-keys:
+    get:
+      tags:
+        - Admin Access
+      summary: Daftar Kunci API Klien
+      operationId: listAPIKeys
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Kunci API tersamar berhasil dimuat
+    post:
+      tags:
+        - Admin Access
+      summary: Buat Kunci API Klien Baru
+      description: Menghasilkan token API key baru (format sk_live_...) dan mengembalikan kunci plaintext sekali tampil.
+      operationId: createAPIKey
+      security:
+        - SessionCookie: []
+        - CSRFToken: []
+      responses:
+        '201':
+          description: Kunci API berhasil dibuat
+
+  /api/admin/system/diagnostics:
+    get:
+      tags:
+        - Admin System
+      summary: Diagnostik Server & Koneksi Pool
+      description: Informasi runtime memori Go, versi kompilator, uptime, dan statistik koneksi pgxpool.
+      operationId: getDiagnostics
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Status diagnostik sistem berhasil diambil
+
+# ============================================================================
+# Components & Schemas
+# ============================================================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API-Key
+      description: Kunci API klien Route-X format `sk_live_<random>`.
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: routex_session
+      description: Cookie sesi login konsol administratif.
+    CSRFToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Token proteksi CSRF double-submit token.
+
+  schemas:
+    ChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          description: ID model kanonik atau alias yang diminta
+          example: gpt-4o
+        messages:
+          type: array
+          description: Urutan pesan dialog percakapan
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        temperature:
+          type: number
+          default: 1.0
+          minimum: 0.0
+          maximum: 2.0
+          example: 0.7
+        max_tokens:
+          type: integer
+          description: Batas maksimal token keluaran yang dihasilkan
+          example: 1024
+        stream:
+          type: boolean
+          default: false
+          description: Aktifkan streaming potongan teks via Server-Sent Events (SSE)
+
+    ChatMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [system, user, assistant, tool]
+          example: user
+        content:
+          type: string
+          example: Jelaskan arsitektur routing pada Route-X AI Gateway.
+        name:
+          type: string
+          example: Ahmad
+
+    ChatCompletionResponse:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - model
+        - choices
+        - usage
+      properties:
+        id:
+          type: string
+          example: chatcmpl-8k123abc456
+        object:
+          type: string
+          example: chat.completion
+        created:
+          type: integer
+          example: 1725380000
+        model:
+          type: string
+          example: gpt-4o
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+                example: 0
+              message:
+                $ref: '#/components/schemas/ChatMessage'
+              finish_reason:
+                type: string
+                example: stop
+        usage:
+          $ref: '#/components/schemas/UsageInfo'
+
+    EmbeddingRequest:
+      type: object
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+          example: text-embedding-3-small
+        input:
+          oneOf:
+            - type: string
+              example: Dokumen kebijakan privasi dan keamanan sistem.
+            - type: array
+              items:
+                type: string
+
+    EmbeddingResponse:
+      type: object
+      required:
+        - object
+        - data
+        - model
+        - usage
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              object:
+                type: string
+                example: embedding
+              index:
+                type: integer
+                example: 0
+              embedding:
+                type: array
+                items:
+                  type: number
+        model:
+          type: string
+          example: text-embedding-3-small
+        usage:
+          type: object
+          properties:
+            prompt_tokens:
+              type: integer
+              example: 8
+            total_tokens:
+              type: integer
+              example: 8
+
+    ModelListResponse:
+      type: object
+      required:
+        - object
+        - data
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: gpt-4o
+              object:
+                type: string
+                example: model
+              created:
+                type: integer
+                example: 1700000000
+              owned_by:
+                type: string
+                example: openai
+
+    UsageInfo:
+      type: object
+      required:
+        - prompt_tokens
+        - completion_tokens
+        - total_tokens
+      properties:
+        prompt_tokens:
+          type: integer
+          example: 125
+        completion_tokens:
+          type: integer
+          example: 450
+        total_tokens:
+          type: integer
+          example: 575
+        cost_usd:
+          type: string
+          description: Biaya moneter skala 8 desimal USD
+          example: "0.00342500"
+
+    ErrorEnvelope:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+              example: Kunci API tidak sah atau tidak ditemukan.
+            type:
+              type: string
+              example: authentication_error
+            code:
+              type: string
+              example: invalid_api_key
+            param:
+              type: string
+              nullable: true
+            request_id:
+              type: string
+              example: 3b15169b-ad67-43f1-87f7-5cbcfa88c759
+
+  responses:
+    400BadRequest:
+      description: Masukan payload tidak valid atau melanggar aturan format
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    401Unauthorized:
+      description: Autentikasi gagal atau kredensial tidak disertakan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    403Forbidden:
+      description: Hak akses tidak mencukupi atau token CSRF ditolak
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    404NotFound:
+      description: Entitas atau endpoint tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    429RateLimited:
+      description: Batas kuota laju permintaan atau anggaran terlampaui
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    502BadGateway:
+      description: Seluruh upstream provider gagal atau sirkuit terbuka
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'

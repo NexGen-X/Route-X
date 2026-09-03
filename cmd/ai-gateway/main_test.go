@@ -281,3 +281,25 @@ func TestRuntimeVersion(t *testing.T) {
 		t.Errorf("runtimeVersion() = %q", runtimeVersion())
 	}
 }
+
+func TestDocsRouteMounted(t *testing.T) {
+	r := newTestRouter(t, testConfig(config.EnvDevelopment))
+
+	// 1. GET /docs menyajikan UI dokumentasi interaktif
+	recDocs := do(t, r, http.MethodGet, "/docs")
+	if recDocs.Code != http.StatusOK {
+		t.Errorf("/docs status = %d, mau 200", recDocs.Code)
+	}
+	if !strings.Contains(recDocs.Body.String(), "Route-X") {
+		t.Errorf("/docs tidak memuat judul Route-X: %s", recDocs.Body.String())
+	}
+
+	// 2. GET /docs/openapi.yaml menyajikan spesifikasi OpenAPI 3.1
+	recYAML := do(t, r, http.MethodGet, "/docs/openapi.yaml")
+	if recYAML.Code != http.StatusOK {
+		t.Errorf("/docs/openapi.yaml status = %d, mau 200", recYAML.Code)
+	}
+	if !strings.Contains(recYAML.Body.String(), "openapi: 3.1.0") {
+		t.Errorf("/docs/openapi.yaml tidak memuat versi OpenAPI 3.1.0")
+	}
+}

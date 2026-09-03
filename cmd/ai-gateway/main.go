@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/NexGen-X/Route-X/docs"
 	"github.com/NexGen-X/Route-X/internal/admin"
 	"github.com/NexGen-X/Route-X/internal/apikey"
 	"github.com/NexGen-X/Route-X/internal/auth"
@@ -265,6 +266,9 @@ func buildRouter(
 	if v1 != nil {
 		r.Mount("/v1", v1)
 	}
+
+	// --- Dokumentasi API OpenAPI (Fase 13) ---
+	r.Mount("/docs", docs.Handler())
 
 	// --- Dashboard (fallback untuk seluruh path yang tidak cocok rute di atas) ---
 	dashboard, err := dashboardHandler(logger)

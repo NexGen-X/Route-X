@@ -54,8 +54,8 @@ menyajikan API gateway, dashboard admin, dan aset statis dari proses yang sama.
 | 10 — Worker | ✅ Selesai | `internal/worker` (supervisor, isolasi panic/error, advisory lock RXWO, 6 background jobs), `internal/webhooks` (HMAC-SHA256, equal jitter backoff, AAD terikat, FOR UPDATE SKIP LOCKED, stuck lease recovery), 6 event webhook terpasang |
 | 11 — Admin REST API | ✅ Selesai | `internal/admin` (7 domain REST API, otorisasi RBAC 4 peran, proteksi CSRF double-submit token, keyset pagination, audit log otomatis, live pool stats); terpasang di `/api/admin` pada router gateway |
 | 12 — Dashboard | ✅ Selesai | React 18 + TS + Vite + Tailwind CSS + Recharts + TanStack Query; 5 grup sidebar, 20 halaman interaktif terhubung 100% ke API Fase 11, dark theme, tersemat di biner tunggal 25 MB |
-| 13 — Dokumentasi API | ⏳ Berikutnya | `docs/openapi.yaml` untuk semua endpoint publik, disajikan di `/docs` |
-| 14 — Pengerasan & verifikasi | ⬜ | |
+| 13 — Dokumentasi API | ✅ Selesai | `docs/openapi.yaml` (OpenAPI 3.1) disematkan via package `docs`; disajikan di `/docs` dengan antarmuka interaktif Scalar dark theme dan `/docs/openapi.yaml` |
+| 14 — Pengerasan & verifikasi | ⏳ Berikutnya | `go test -race ./...`, uji beban ringan, unit systemd, README operasional, verifikasi end-to-end |
 
 
 ## Tech stack
@@ -925,6 +925,21 @@ Aplikasi frontend Single Page Application (SPA) dibangun secara penuh di dalam d
 - `make vet`: 100% lulus.
 - `go test -race ./cmd/ai-gateway ./internal/admin`: 100% lulus.
 - `make build`: Biner tunggal `./ai-gateway` 25 MB berhasil dibangun dan diuji menyajikan `/healthz` (200 OK) serta dokumen HTML SPA dashboard di `/` (200 OK) dan fallback rute client-side.
+
+## Catatan hasil Fase 13
+
+Spesifikasi antarmuka terpadu **OpenAPI 3.1.0** disusun secara lengkap pada berkas `docs/openapi.yaml`. Berkas ini mendokumentasikan seluruh endpoint inferensi publik kompatibel OpenAI (`/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/models`), probe kesehatan (`/healthz`, `/readyz`, `/metrics`), autentikasi sesi (`/api/auth/*`), dan konsol REST API manajemen administratif (`/api/admin/*`).
+
+**Penyematan Biner & Endpoint Dokumentasi Interaktif:**
+1. **Penyematan Langsung (`package docs`)**: Menggunakan direktif `//go:embed openapi.yaml` pada paket `docs` di `docs/embed.go` sehingga spesifikasi ikut terkompilasi ke dalam biner tanpa membaca filesystem fisik saat runtime.
+2. **Interactive Visual Reference (`/docs`)**: Menyajikan antarmuka visual dokumentasi interaktif Scalar yang diselaraskan dengan tema gelap Route-X (`#0A0A0A`, `#101010`, aksen lime `#BEF264`), lengkap dengan fitur pencarian instan, pengujian langsung (try-it-out), contoh payload multi-bahasa (curl, JS, Python, Go), dan navigasi skema.
+3. **Raw Specification (`/docs/openapi.yaml`)**: Menyajikan berkas mentah dengan header `Content-Type: application/yaml; charset=utf-8` dan caching HTTP yang optimal untuk integrasi tooling Swagger/Postman/Insomnia.
+
+**Verifikasi & Kualitas:**
+- `docs/embed_test.go`: Uji unit memverifikasi bahwa spesifikasi OpenAPI memuat OpenAPI 3.1.0 dan handler melayani `/docs` (200 OK) serta `/docs/openapi.yaml` (200 OK).
+- `cmd/ai-gateway/main_test.go`: Uji integrasi `TestDocsRouteMounted` memastikan rute `/docs` terpasang secara tepat pada router gateway.
+- `make fmt` & `make vet`: Lolos 100% tanpa error maupun peringatan.
+- `make build`: Biner `./ai-gateway` terkompilasi bersih dan terbukti melayani permintaan `/docs` secara live.
 
 ## Fase implementasi
 

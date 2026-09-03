@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strings"
@@ -23,16 +24,20 @@ import (
 
 	"github.com/NexGen-X/Route-X/internal/apikey"
 	"github.com/NexGen-X/Route-X/internal/auth"
+	"github.com/NexGen-X/Route-X/internal/billing"
 	"github.com/NexGen-X/Route-X/internal/cache"
 	"github.com/NexGen-X/Route-X/internal/config"
+	"github.com/NexGen-X/Route-X/internal/contentfilter"
 	"github.com/NexGen-X/Route-X/internal/database"
 	"github.com/NexGen-X/Route-X/internal/database/repo/keys"
+	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/gateway"
 	"github.com/NexGen-X/Route-X/internal/health"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
+	"github.com/NexGen-X/Route-X/internal/ratelimit"
 	"github.com/NexGen-X/Route-X/internal/router"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/web"
@@ -296,9 +301,32 @@ func buildGatewaySurface(
 		logger.Warn("pemanasan skrip pemutus arus gagal", "error", err)
 	}
 
-	limiter := apikey.NewLimiter(rdb, metrics, logger)
+	// --- Kebijakan yang membatasi lalu lintas ---
+	//
+	// Ketiganya membaca tabelnya sendiri dan menyimpan salinan ber-TTL. Repository yang sama
+	// dipakai bersama supaya hanya ada satu jalur pembacaan untuk keempat tabel kebijakan.
+	policyRepo := policy.New(db.Pool)
+	rates := ratelimit.NewEngine(policyRepo, logger)
+	budgets := billing.NewEnforcer(policyRepo, logger)
+	filters := contentfilter.NewEngine(policyRepo, logger)
+
+	// Cakupan pembatasan untuk middleware: key, pengguna, IP, dan global. Cakupan MODEL
+	// sengaja tidak di sini — modelnya baru diketahui setelah body diurai, dan memeriksanya
+	// dua kali berarti setiap permintaan memakan dua jatah kuota pada penghitung yang sama.
+	limiter := apikey.NewLimiter(rdb, metrics, logger,
+		apikey.WithScopeResolver(func(ctx context.Context, p *apikey.Principal, ip netip.Addr) []apikey.ScopeLimits {
+			return rates.Requests(ctx, gateway.TargetsFor(p, "", ip), p.RequestLimits())
+		}),
+	)
 	if err := limiter.Warm(ctx); err != nil {
 		logger.Warn("pemanasan skrip pembatas laju gagal", "error", err)
+	}
+
+	if inert := filters.Inert(); len(inert) > 0 {
+		// Penyaring yang aktif di database tetapi tidak menegakkan apa pun adalah kegagalan
+		// yang paling mahal yang bisa dimiliki tabel itu: operator melihatnya "enabled" dan
+		// menyangka perlindungannya berjalan. Dilaporkan saat start, bukan hanya di dashboard.
+		logger.Warn("ada penyaring konten aktif yang TIDAK menegakkan apa pun", "penyaring", inert)
 	}
 
 	models := upstream.NewModelRepo(db.Pool)
@@ -317,7 +345,14 @@ func buildGatewaySurface(
 		// Pembatasan model dan provider per API key. Bukan opsional di produksi: tanpa ini
 		// setiap key boleh memakai setiap model.
 		Restrict: keyRepo,
-		Logger:   logger,
+		Guard: gateway.NewGuard(gateway.GuardDeps{
+			Filters: filters,
+			Budgets: budgets,
+			Rates:   rates,
+			Limiter: limiter,
+			Logger:  logger,
+		}),
+		Logger: logger,
 	})
 	if err != nil {
 		return nil, err

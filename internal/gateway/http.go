@@ -21,11 +21,14 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/NexGen-X/Route-X/internal/apikey"
+	"github.com/NexGen-X/Route-X/internal/contentfilter"
 	"github.com/NexGen-X/Route-X/internal/database/repo"
+	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
@@ -84,6 +87,7 @@ type Handlers struct {
 	factory    ProviderFactory
 	engine     *router.Engine
 	exec       *Executor
+	guard      *Guard
 	logger     *slog.Logger
 }
 
@@ -101,7 +105,10 @@ type HandlersDeps struct {
 
 	// Restrict boleh nil, yang berarti tanpa pembatasan model/provider per API key.
 	Restrict KeyRestrictions
-	Logger   *slog.Logger
+	// Guard menegakkan penyaring konten, batas laju cakupan model dan provider, serta
+	// anggaran biaya. nil berarti tidak satu pun kebijakan itu ditegakkan.
+	Guard  *Guard
+	Logger *slog.Logger
 }
 
 // NewHandlers membuat Handlers. Mengembalikan error bila ada dependensi wajib yang kosong.
@@ -131,10 +138,17 @@ func NewHandlers(d HandlersDeps) (*Handlers, error) {
 		logger = slog.New(slog.DiscardHandler)
 	}
 
+	guard := d.Guard
+	if guard == nil {
+		// Guard kosong, bukan nil: setiap pemeriksaan di dalamnya sudah menangani dependensi
+		// yang tidak terpasang, jadi jalur request tidak perlu memeriksa nil di enam tempat.
+		guard = NewGuard(GuardDeps{Logger: logger})
+	}
+
 	return &Handlers{
 		models: d.Models, lister: d.Lister, candidates: d.Candidates,
 		restrict: d.Restrict, factory: d.Factory,
-		engine: engine, exec: d.Executor, logger: logger,
+		engine: engine, exec: d.Executor, guard: guard, logger: logger,
 	}, nil
 }
 
@@ -166,6 +180,13 @@ type persiapan struct {
 	model    *upstream.Model
 	decision router.Decision
 	plan     Plan
+
+	// principal dan targets dibawa dari tahap persiapan supaya pencatatan token dan
+	// pemeriksaan kebijakan sesudahnya tidak perlu menyusunnya ulang — dan supaya keduanya
+	// pasti memakai daftar cakupan yang SAMA dengan yang dipakai saat menggerbangi
+	// permintaan ini. Daftar yang disusun dua kali adalah daftar yang bisa berbeda.
+	principal *apikey.Principal
+	targets   []policy.Target
 }
 
 // siapkanChat menjalankan seluruh langkah yang harus selesai sebelum satu byte respons
@@ -190,6 +211,17 @@ func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request) (*persiap
 		return nil, false
 	}
 
+	// Penyaring konten fase pertama: ukuran dan pola, keduanya bisa dijawab dari body saja.
+	// Dijalankan sebelum resolusi model supaya permintaan yang jelas ditolak tidak menyentuh
+	// database sama sekali.
+	if rj := h.guard.SaringPermintaan(r.Context(), contentfilter.Subject{
+		Text:  teksPermintaan(req),
+		Bytes: int64(len(body)),
+	}); rj != nil {
+		rj.Tulis(w, r)
+		return nil, false
+	}
+
 	model, ok := h.selesaikanModel(w, r, req.Model)
 	if !ok {
 		return nil, false
@@ -197,6 +229,12 @@ func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request) (*persiap
 
 	p, _ := apikey.PrincipalFrom(r.Context())
 	if !h.izinModel(w, r, p, model) {
+		return nil, false
+	}
+
+	clientIP, _ := httpx.ClientIPFrom(r.Context())
+	targets := TargetsFor(p, model.ID, clientIP)
+	if !h.kebijakan(w, r, p, model, targets) {
 		return nil, false
 	}
 
@@ -223,11 +261,85 @@ func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request) (*persiap
 
 	return &persiapan{
 		req: req, model: model, decision: keputusan,
+		principal: p, targets: targets,
 		// Nama model kanonik, bukan nama upstream, menjadi bagian kunci pemutus arus:
 		// satu model kanonik dipetakan ke nama berbeda di setiap provider, dan kunci yang
 		// memakai nama upstream tidak bisa dibaca dashboard sebagai satu kesatuan.
 		plan: PlanFromRule(keputusan.Rule, model.ModelID, keputusan.Candidates),
 	}, true
+}
+
+// kebijakan menjalankan pemeriksaan yang menuntut model sudah diketahui: pembatasan model,
+// batas laju cakupan model, anggaran biaya, dan gerbang anggaran token.
+//
+// Urutannya dari yang paling murah: pembatasan model dijawab dari memori, batas laju dan
+// gerbang token satu perjalanan ke Redis, anggaran satu pembacaan dari salinan ber-TTL.
+//
+// ok false berarti jawaban sudah ditulis.
+func (h *Handlers) kebijakan(
+	w http.ResponseWriter, r *http.Request,
+	p *apikey.Principal, model *upstream.Model, targets []policy.Target,
+) bool {
+	if rj := h.guard.SaringPermintaan(r.Context(), contentfilter.Subject{ModelID: model.ID}); rj != nil {
+		rj.Tulis(w, r)
+		return false
+	}
+	if rj := h.guard.PeriksaBatasModel(r.Context(), model.ModelID); rj != nil {
+		rj.Tulis(w, r)
+		return false
+	}
+	if rj := h.guard.PeriksaAnggaran(r.Context(), targets); rj != nil {
+		rj.Tulis(w, r)
+		return false
+	}
+	if rj := h.guard.GerbangToken(r.Context(), p, targets); rj != nil {
+		rj.Tulis(w, r)
+		return false
+	}
+	return true
+}
+
+// teksPermintaan menggabungkan seluruh teks pesan untuk diperiksa penyaring konten.
+//
+// Yang digabungkan hanya bagian TEKS: data URI gambar dan audio base64 bukan teks yang
+// bermakna bagi pola konten, dan menyertakannya berarti setiap aturan pola dijalankan atas
+// megabyte base64 pada setiap permintaan multimodal. providers.Message.Text() yang
+// memutuskan bagian mana yang ikut.
+func teksPermintaan(req *providers.ChatRequest) string {
+	if req == nil || len(req.Messages) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i := range req.Messages {
+		t := req.Messages[i].Text()
+		if t == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(t)
+	}
+	return b.String()
+}
+
+// teksJawaban menggabungkan seluruh teks jawaban untuk diperiksa penyaring konten.
+func teksJawaban(resp *providers.ChatResponse) string {
+	if resp == nil {
+		return ""
+	}
+	var b strings.Builder
+	for i := range resp.Choices {
+		t := resp.Choices[i].Message.Text()
+		if t == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(t)
+	}
+	return b.String()
 }
 
 // bacaBody membaca body permintaan dengan batas.
@@ -337,22 +449,28 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 		return nil, false
 	}
 
-	if h.restrict == nil || p.ID() == "" {
-		return cands, true
-	}
+	periksaKey := h.restrict != nil && p.ID() != ""
 
 	diingat := make(map[string]bool, len(cands))
 	out := make([]*upstream.RouteCandidate, 0, len(cands))
 	for _, c := range cands {
 		boleh, ada := diingat[c.ProviderID]
 		if !ada {
-			var err error
-			boleh, err = h.restrict.AllowsProvider(r.Context(), p.ID(), c.ProviderID)
-			if err != nil {
-				h.logger.ErrorContext(r.Context(), "pemeriksaan pembatasan provider gagal",
-					"api_key", p.Masked(), "error", err)
-				httpx.InternalError(w, r)
-				return nil, false
+			// Pembatasan provider dari penyaring konten MENYARING kandidat, tidak menolak
+			// permintaan: selama masih ada kandidat lain, permintaan tetap dilayani lewat
+			// kandidat itu. Kalau semuanya tersaring, tolakNyaTanpaKandidat yang menjelaskan
+			// sebabnya — jauh lebih bisa ditindaklanjuti daripada 502 dari provider yang
+			// sengaja tidak pernah dihubungi.
+			boleh = !h.guard.ProviderDilarang(r.Context(), c.ProviderID)
+			if boleh && periksaKey {
+				var err error
+				boleh, err = h.restrict.AllowsProvider(r.Context(), p.ID(), c.ProviderID)
+				if err != nil {
+					h.logger.ErrorContext(r.Context(), "pemeriksaan pembatasan provider gagal",
+						"api_key", p.Masked(), "error", err)
+					httpx.InternalError(w, r)
+					return nil, false
+				}
 			}
 			diingat[c.ProviderID] = boleh
 		}
@@ -465,6 +583,9 @@ func (h *Handlers) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan) {
 	out := Execute(r.Context(), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.ChatResponse, error) {
+			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
+				return nil, perr
+			}
 			p, err := h.adapter(ctx, c)
 			if err != nil {
 				return nil, err
@@ -476,6 +597,18 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 
 	if out.Err != nil {
 		tulisKegagalan(w, r, out.Err)
+		return
+	}
+
+	// Pemakaian token dicatat SEBELUM penyaring jawaban: permintaannya sudah dijalankan dan
+	// tokennya sudah ditagihkan upstream, jadi jawaban yang kemudian ditolak penyaring pun
+	// tetap harus memakan kuota. Kalau dibalik, klien bisa menghabiskan token tanpa batas
+	// dengan mengirim permintaan yang jawabannya selalu tertahan penyaring.
+	h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(out.Value.Usage.TotalTokens))
+
+	if rj := h.guard.SaringJawaban(r.Context(), teksJawaban(out.Value),
+		pr.model.ID, out.Candidate.ProviderID); rj != nil {
+		rj.Tulis(w, r)
 		return
 	}
 
@@ -590,6 +723,9 @@ var (
 func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *persiapan) {
 	out := ExecuteStream(r.Context(), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
+			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
+				return nil, perr
+			}
 			p, err := h.adapter(ctx, c)
 			if err != nil {
 				return nil, err
@@ -617,7 +753,17 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 	}
 
 	rc := http.NewResponseController(w)
-	var terkirim int64
+	var (
+		terkirim int64
+		usage    providers.Usage
+	)
+	// Pencatatan token dijalankan lewat defer, bukan hanya di jalur selesai-normal: aliran
+	// bisa berakhir karena klien menutup koneksi atau upstream terputus di tengah, dan token
+	// yang sudah dihasilkan sampai titik itu tetap ditagihkan provider. Melewatkannya berarti
+	// klien yang selalu memutus aliran lebih awal tidak pernah memakan kuota tokennya.
+	defer func() {
+		h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(usage.TotalTokens))
+	}()
 
 	for {
 		ev, err := out.Value.Recv()
@@ -629,6 +775,11 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 			// Kegagalan setelah header terkirim hanya bisa dilaporkan di dalam stream.
 			h.kegagalanDalamAliran(r, w, rc, err, terkirim)
 			return
+		}
+		if ev.Usage != nil {
+			// Chunk penutup membawa jumlah token final. Ditimpa, bukan dijumlahkan: provider
+			// mengirim total, dan menjumlahkan beberapa laporan total akan menagih berkali-kali.
+			usage = *ev.Usage
 		}
 		// Peristiwa tanpa muatan tidak punya padanan yang perlu diteruskan ke klien —
 		// mis. peristiwa pembuka Anthropic yang hanya membawa metadata. Diteruskan sebagai
@@ -760,12 +911,28 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Penyaring konten atas masukan embedding. Sama seperti jalur chat, dijalankan sebelum
+	// resolusi model supaya permintaan yang jelas ditolak tidak menyentuh database.
+	if rj := h.guard.SaringPermintaan(r.Context(), contentfilter.Subject{
+		Text:  strings.Join(req.Input, "\n"),
+		Bytes: int64(len(body)),
+	}); rj != nil {
+		rj.Tulis(w, r)
+		return
+	}
+
 	model, ok := h.selesaikanModel(w, r, req.Model)
 	if !ok {
 		return
 	}
 	p, _ := apikey.PrincipalFrom(r.Context())
 	if !h.izinModel(w, r, p, model) {
+		return
+	}
+
+	clientIP, _ := httpx.ClientIPFrom(r.Context())
+	targets := TargetsFor(p, model.ID, clientIP)
+	if !h.kebijakan(w, r, p, model, targets) {
 		return
 	}
 
@@ -791,6 +958,9 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 
 	out := Execute(r.Context(), h.exec, plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.EmbeddingsResponse, error) {
+			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
+				return nil, perr
+			}
 			prov, err := h.adapter(ctx, c)
 			if err != nil {
 				return nil, err
@@ -804,6 +974,7 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 		tulisKegagalan(w, r, out.Err)
 		return
 	}
+	h.guard.CatatToken(r.Context(), p, targets, int64(out.Value.Usage.TotalTokens))
 	if len(out.Value.Raw) == 0 {
 		h.logger.ErrorContext(r.Context(), "adapter embedding mengembalikan respons tanpa body mentah",
 			"provider", namaProvider(out.Candidate))

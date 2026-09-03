@@ -242,6 +242,27 @@ func (p *Principal) Masked() string {
 
 // Can melaporkan apakah key memiliki satu cakupan. Cakupan kosong selalu false, supaya
 // "tanpa syarat cakupan" tidak bisa ditulis dengan memanggil ini memakai string kosong.
+// RequestLimits mengembalikan batas berbasis jumlah request milik key ini.
+//
+// Aman pada penerima nil, seperti seluruh method Principal lainnya. Itu bukan kenyamanan:
+// jalur yang tidak berautentikasi API key mendapat principal nil dari context, dan pembacaan
+// p.Key di sana adalah nil-pointer yang hanya muncul di produksi pada rute yang jarang
+// dilewati.
+func (p *Principal) RequestLimits() Limits {
+	if p == nil {
+		return Limits{}
+	}
+	return LimitsFromKey(p.Key)
+}
+
+// TokenLimits mengembalikan batas berbasis jumlah token milik key ini. Aman pada penerima nil.
+func (p *Principal) TokenLimits() TokenLimits {
+	if p == nil {
+		return TokenLimits{}
+	}
+	return TokenLimitsFromKey(p.Key)
+}
+
 func (p *Principal) Can(scope string) bool {
 	if p == nil || p.Key == nil || scope == "" {
 		return false

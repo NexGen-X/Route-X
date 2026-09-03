@@ -39,7 +39,25 @@ const (
 	ScopeAPIKey = "apikey"
 	// ScopeIP membatasi per alamat klien hasil resolusi httpx.RealIP.
 	ScopeIP = "ip"
+	// ScopeGlobal membatasi seluruh lalu lintas gateway ini. Tidak punya pengenal, jadi
+	// pemanggil memakai satu nilai tetap sebagai ID-nya (lihat GlobalID).
+	ScopeGlobal = "global"
+	// ScopeUser membatasi per pemilik API key.
+	ScopeUser = "user"
+	// ScopeProvider membatasi lalu lintas KELUAR ke satu provider, supaya kuota pihak
+	// ketiga tidak terlanggar dari sisi kami.
+	ScopeProvider = "provider"
+	// ScopeModel membatasi per model kanonik.
+	ScopeModel = "model"
 )
+
+// GlobalID adalah pengenal yang dipakai untuk cakupan global.
+//
+// Cakupan global tidak punya entitas, tetapi kunci Redis butuh bagian pengenal. Nilai
+// tetap ini yang mengisinya, dan ia sengaja bukan string kosong: kunci dengan bagian
+// kosong menghasilkan dua pemisah berurutan yang menyulitkan pembacaan saat seseorang
+// menelusuri kunci di Redis.
+const GlobalID = "all"
 
 // Jenis batas. Ikut ke dalam kunci Redis sebagai awalan label jendela, sehingga dua
 // jenis batas tidak mungkin memakai kunci yang sama walau nomor jendelanya kebetulan
@@ -72,13 +90,13 @@ func (l Limits) IsZero() bool {
 	return l.RPS <= 0 && l.RPM <= 0 && l.Daily <= 0 && l.Monthly <= 0
 }
 
-// withDefaults mengisi batas yang kosong dari cakupan yang lebih luas.
+// WithDefaults mengisi batas yang kosong dari cakupan yang lebih luas.
 //
 // Penggabungan dilakukan per field, bukan "pakai default hanya bila key tidak punya
 // batas apa pun". Itu mengikuti maksud skema: kolom batas di api_keys yang NULL berarti
 // "warisi dari cakupan yang lebih luas", jadi key yang hanya menyetel RPS tetap tunduk
 // pada batas harian bawaan.
-func (l Limits) withDefaults(def Limits) Limits {
+func (l Limits) WithDefaults(def Limits) Limits {
 	if l.RPS <= 0 {
 		l.RPS = def.RPS
 	}
@@ -121,6 +139,21 @@ type TokenLimits struct {
 // IsZero melaporkan apakah tidak ada satu pun batas token yang aktif.
 func (l TokenLimits) IsZero() bool {
 	return l.TPM <= 0 && l.Daily <= 0 && l.Monthly <= 0
+}
+
+// WithDefaults mengisi batas token yang kosong dari cakupan yang lebih luas, per field,
+// dengan alasan yang sama seperti Limits.WithDefaults.
+func (l TokenLimits) WithDefaults(def TokenLimits) TokenLimits {
+	if l.TPM <= 0 {
+		l.TPM = def.TPM
+	}
+	if l.Daily <= 0 {
+		l.Daily = def.Daily
+	}
+	if l.Monthly <= 0 {
+		l.Monthly = def.Monthly
+	}
+	return l
 }
 
 // TokenLimitsFromKey membaca batas token dari baris api_keys.
@@ -370,6 +403,10 @@ type Limiter struct {
 	keyDefaults Limits
 	ipLimits    Limits
 
+	// resolver menyusun daftar cakupan lengkap dari sumber di luar paket ini (tabel
+	// rate_limits). nil berarti hanya cakupan key dan IP yang ditegakkan.
+	resolver ScopeResolver
+
 	// now bisa diganti test untuk memeriksa perpindahan jendela tanpa menunggu waktu
 	// nyata berjalan.
 	now func() time.Time
@@ -380,10 +417,12 @@ type LimiterOption func(*Limiter)
 
 // WithKeyLimitDefaults menetapkan batas yang dipakai saat kolom batas di api_keys NULL.
 //
-// Bawaannya kosong, yang berarti key tanpa batas tersendiri tidak dibatasi. Ini tempat
-// batas dari tabel rate_limits pada cakupan yang lebih luas akan masuk begitu jalur
-// pembacaannya ada; sampai saat itu, satu-satunya sumber batas per key adalah kolom di
-// api_keys dan nilai yang dipasang di sini.
+// Bawaannya kosong, yang berarti key tanpa batas tersendiri tidak dibatasi.
+//
+// DIABAIKAN ketika WithScopeResolver dipasang: sejak tabel rate_limits punya jalur
+// pembacaannya sendiri di internal/ratelimit, batas cakupan yang lebih luas datang dari sana,
+// dan resolver menyerahkan daftar cakupan yang sudah lengkap. Opsi ini tetap ada untuk
+// pemasangan yang tidak memakai tabel itu sama sekali.
 func WithKeyLimitDefaults(l Limits) LimiterOption {
 	return func(lim *Limiter) { lim.keyDefaults = l }
 }
@@ -403,6 +442,41 @@ func WithKeyLimitDefaults(l Limits) LimiterOption {
 // klien yang lepas kendali tanpa mengganggu pemakaian normal.
 func WithIPLimits(l Limits) LimiterOption {
 	return func(lim *Limiter) { lim.ipLimits = l }
+}
+
+// ScopeResolver menyusun SELURUH cakupan pembatasan yang berlaku bagi satu permintaan.
+//
+// Dipasang oleh perakit aplikasi supaya paket ini tidak perlu tahu apa pun tentang tabel
+// rate_limits maupun cache-nya: yang di sini adalah mesin jendela di Redis, dan dari mana
+// angka batasnya datang bukan urusannya.
+//
+// Kontraknya LENGKAP, bukan tambahan: hasilnya menggantikan cakupan key dan IP bawaan, dan
+// karena itu wajib menyertakan keduanya bila keduanya masih ingin ditegakkan. Sengaja
+// begitu — kalau hasilnya digabungkan, cakupan key akan diperiksa dua kali dan setiap
+// request memakan dua jatah kuota, yaitu kegagalan yang hanya terlihat sebagai "batasnya
+// separuh dari yang saya setel".
+type ScopeResolver func(ctx context.Context, p *Principal, ip netip.Addr) []ScopeLimits
+
+// WithScopeResolver memasang penyusun cakupan pembatasan.
+func WithScopeResolver(f ScopeResolver) LimiterOption {
+	return func(lim *Limiter) { lim.resolver = f }
+}
+
+// TokenScopes menyusun cakupan batas token dari kolom di baris api_keys saja.
+//
+// Dipakai ketika tabel rate_limits tidak dipakai sama sekali. Tidak ada padanan
+// ScopeResolver untuk sisi token, dan itu disengaja: cakupan batas token yang lengkap memuat
+// cakupan MODEL, dan modelnya baru diketahui di jalur gateway — bukan di middleware, tempat
+// resolver dipasang. Penyusunnya karena itu tinggal di jalur gateway (gateway.Guard), dan
+// yang di sini hanyalah keadaan tanpa tabel.
+func (l *Limiter) TokenScopes(_ context.Context, p *Principal) []ScopeTokenLimits {
+	if l == nil {
+		return nil
+	}
+	if limits := p.TokenLimits(); !limits.IsZero() {
+		return []ScopeTokenLimits{{Scope: ScopeAPIKey, ID: p.ID(), Limits: limits}}
+	}
+	return nil
 }
 
 // NewLimiter membuat pembatas laju di atas Redis.
@@ -519,24 +593,28 @@ func requestWindows(scope, id string, l Limits, now time.Time) []window {
 	return out
 }
 
-// tokenWindows menyusun jendela untuk batas berbasis token. Selalu bercakupan key:
-// jumlah token adalah pemakaian yang ditagihkan ke pemilik key, bukan sifat alamat asal.
-func tokenWindows(keyID string, l TokenLimits, now time.Time) []window {
-	if keyID == "" || l.IsZero() {
+// tokenWindows menyusun jendela untuk batas berbasis token pada satu cakupan.
+//
+// Cakupannya parameter, bukan selalu key: batas token juga bisa dipasang operator pada
+// cakupan yang lebih luas (global, pengguna, model) lewat tabel rate_limits, dan jumlah
+// token yang dipakai satu model adalah angka yang memang ingin dibatasi terpisah dari
+// jumlah requestnya.
+func tokenWindows(scope, id string, l TokenLimits, now time.Time) []window {
+	if id == "" || l.IsZero() {
 		return nil
 	}
 	out := make([]window, 0, 3)
 	if l.TPM > 0 {
 		bucket, resetAt := minuteWindow(now)
-		out = append(out, window{ScopeAPIKey, LimitTPM, keyID, bucket, int64(l.TPM), resetAt})
+		out = append(out, window{scope, LimitTPM, id, bucket, int64(l.TPM), resetAt})
 	}
 	if l.Daily > 0 {
 		bucket, resetAt := dayWindow(now)
-		out = append(out, window{ScopeAPIKey, LimitDailyTokens, keyID, bucket, l.Daily, resetAt})
+		out = append(out, window{scope, LimitDailyTokens, id, bucket, l.Daily, resetAt})
 	}
 	if l.Monthly > 0 {
 		bucket, resetAt := monthWindow(now)
-		out = append(out, window{ScopeAPIKey, LimitMonthlyTokens, keyID, bucket, l.Monthly, resetAt})
+		out = append(out, window{scope, LimitMonthlyTokens, id, bucket, l.Monthly, resetAt})
 	}
 	return out
 }
@@ -586,11 +664,102 @@ func (l *Limiter) Allow(ctx context.Context, keyID string, limits Limits, ip net
 
 	// Batas key lebih dulu: itu yang tertulis pada key pelanggan, jadi itu yang paling
 	// pantas dilaporkan lewat header bila keduanya sama-sama membatasi.
-	windows := requestWindows(ScopeAPIKey, keyID, limits.withDefaults(l.keyDefaults), now)
+	scopes := []ScopeLimits{{Scope: ScopeAPIKey, ID: keyID, Limits: limits.WithDefaults(l.keyDefaults)}}
 	if ip.IsValid() {
-		windows = append(windows, requestWindows(ScopeIP, ip.String(), l.ipLimits, now)...)
+		scopes = append(scopes, ScopeLimits{Scope: ScopeIP, ID: ip.String(), Limits: l.ipLimits})
+	}
+	return l.allowScopesAt(ctx, scopes, now)
+}
+
+// ScopeLimits adalah satu cakupan pembatasan beserta batas request-nya.
+//
+// Ada karena batas laju bukan hanya milik API key. Operator memasang batas pada cakupan
+// yang lebih luas lewat tabel rate_limits — global, pengguna, model, provider — dan
+// semuanya harus diperiksa dalam SATU keputusan. Kalau diperiksa berurutan, request yang
+// ditolak batas per detik tetap sudah memakan jatah kuota harian cakupan lain, dan klien
+// bisa kehabisan kuota harinya tanpa satu pun request berhasil.
+type ScopeLimits struct {
+	// Scope adalah salah satu konstanta Scope di atas; ikut ke kunci Redis dan label metrik.
+	Scope string
+	// ID adalah pengenal entitasnya. Kosong berarti cakupan ini dilewati.
+	ID     string
+	Limits Limits
+}
+
+// ScopeTokenLimits adalah satu cakupan beserta batas token-nya.
+type ScopeTokenLimits struct {
+	Scope  string
+	ID     string
+	Limits TokenLimits
+}
+
+// AllowScopes memeriksa batas request pada BEBERAPA cakupan sekaligus.
+//
+// Seluruh jendela dari seluruh cakupan diperiksa dalam satu pemanggilan skrip, dan
+// penghitung baru dinaikkan bila semuanya lolos. Urutan cakupan menentukan batas mana yang
+// dilaporkan lewat header ketika lebih dari satu membatasi, jadi pemanggil menaruh yang
+// paling relevan bagi klien di depan.
+func (l *Limiter) AllowScopes(ctx context.Context, scopes []ScopeLimits) Decision {
+	if l == nil || l.redis == nil {
+		return Decision{Allowed: true}
+	}
+	return l.allowScopesAt(ctx, scopes, l.now())
+}
+
+// allowScopesAt adalah AllowScopes dengan waktu yang sudah ditentukan pemanggil, supaya
+// Allow dan AllowScopes memakai satu jalur yang sama tanpa memanggil l.now() dua kali —
+// dua pembacaan waktu dalam satu keputusan bisa jatuh di dua jendela yang berbeda.
+func (l *Limiter) allowScopesAt(ctx context.Context, scopes []ScopeLimits, now time.Time) Decision {
+	if l == nil || l.redis == nil {
+		return Decision{Allowed: true}
+	}
+	var windows []window
+	for _, s := range scopes {
+		windows = append(windows, requestWindows(s.Scope, s.ID, s.Limits, now)...)
 	}
 	return l.run(ctx, modeEnforce, 1, windows, now, "enforce")
+}
+
+// TokensExceededScopes melaporkan apakah anggaran token salah satu cakupan sudah habis,
+// tanpa mengubah penghitung apa pun.
+//
+// Gerbang sebelum request diteruskan ke upstream. Allowed false berarti request ini layak
+// dibalas 429: token yang sudah terpakai melewati batas, dan menerima satu request lagi
+// berarti membiarkan pemakaian melampaui batas semakin jauh.
+func (l *Limiter) TokensExceededScopes(ctx context.Context, scopes []ScopeTokenLimits) Decision {
+	if l == nil || l.redis == nil {
+		return Decision{Allowed: true}
+	}
+	now := l.now()
+	return l.run(ctx, modePeek, 0, tokenWindowsFor(scopes, now), now, "peek")
+}
+
+// RecordTokensScopes mencatat pemakaian token pada seluruh cakupan sekaligus.
+//
+// SENGAJA tidak menolak apa pun: saat jumlah token diketahui, request-nya sudah dilayani
+// dan biayanya sudah dikeluarkan ke upstream. Yang bisa dilakukan hanyalah mencatatnya lalu
+// memakai catatan itu untuk menggerbangi request berikutnya lewat TokensExceededScopes.
+//
+// Kegagalannya tidak boleh menggagalkan apa pun; yang hilang adalah ketepatan penghitung,
+// bukan responsnya.
+func (l *Limiter) RecordTokensScopes(ctx context.Context, scopes []ScopeTokenLimits, tokens int64) Decision {
+	if l == nil || l.redis == nil {
+		return Decision{Allowed: true}
+	}
+	if tokens <= 0 {
+		return l.TokensExceededScopes(ctx, scopes)
+	}
+	now := l.now()
+	return l.run(ctx, modeRecord, tokens, tokenWindowsFor(scopes, now), now, "record")
+}
+
+// tokenWindowsFor menggabungkan jendela token dari beberapa cakupan.
+func tokenWindowsFor(scopes []ScopeTokenLimits, now time.Time) []window {
+	var out []window
+	for _, s := range scopes {
+		out = append(out, tokenWindows(s.Scope, s.ID, s.Limits, now)...)
+	}
+	return out
 }
 
 // RecordTokens mencatat pemakaian token dan melaporkan apakah anggarannya sudah habis.
@@ -613,7 +782,7 @@ func (l *Limiter) RecordTokens(ctx context.Context, keyID string, limits TokenLi
 		return l.TokensExceeded(ctx, keyID, limits)
 	}
 	now := l.now()
-	return l.run(ctx, modeRecord, tokens, tokenWindows(keyID, limits, now), now, "record")
+	return l.run(ctx, modeRecord, tokens, tokenWindows(ScopeAPIKey, keyID, limits, now), now, "record")
 }
 
 // TokensExceeded melaporkan apakah anggaran token key ini sudah habis, tanpa mengubah
@@ -627,7 +796,7 @@ func (l *Limiter) TokensExceeded(ctx context.Context, keyID string, limits Token
 		return Decision{Allowed: true}
 	}
 	now := l.now()
-	return l.run(ctx, modePeek, 0, tokenWindows(keyID, limits, now), now, "peek")
+	return l.run(ctx, modePeek, 0, tokenWindows(ScopeAPIKey, keyID, limits, now), now, "peek")
 }
 
 // run menjalankan skrip untuk sekumpulan jendela dan menerjemahkan hasilnya.
@@ -794,7 +963,15 @@ func (l *Limiter) Limit() func(http.Handler) http.Handler {
 			}
 
 			clientIP, _ := httpx.ClientIPFrom(ctx)
-			decision := l.Allow(ctx, principal.ID(), LimitsFromKey(principal.Key), clientIP)
+			// Dengan resolver, seluruh cakupan datang dari sana — termasuk cakupan key dan
+			// IP. Lihat kontrak ScopeResolver soal mengapa hasilnya menggantikan, bukan
+			// menambah.
+			var decision Decision
+			if l.resolver != nil {
+				decision = l.AllowScopes(ctx, l.resolver(ctx, principal, clientIP))
+			} else {
+				decision = l.Allow(ctx, principal.ID(), LimitsFromKey(principal.Key), clientIP)
+			}
 			decision.SetHeaders(w)
 
 			if !decision.Allowed {

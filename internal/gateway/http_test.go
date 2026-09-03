@@ -338,7 +338,17 @@ func providerSukses() *providerTiruan {
 	return &providerTiruan{
 		nama: "utama", kind: providers.KindOpenAI,
 		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
-			return &providers.ChatResponse{ID: "chatcmpl-1", Raw: json.RawMessage(rawUpstream)}, nil
+			// Choices ikut diisi, bukan hanya Raw: adapter sungguhan mengisi keduanya, dan
+			// bagian yang terurai itulah yang dibaca penyaring konten fase jawaban.
+			return &providers.ChatResponse{
+				ID:  "chatcmpl-1",
+				Raw: json.RawMessage(rawUpstream),
+				Choices: []providers.Choice{{
+					Index:        0,
+					Message:      providers.Message{Role: providers.RoleAssistant, Content: "hai"},
+					FinishReason: providers.FinishStop,
+				}},
+			}, nil
 		},
 		alir: func(_ context.Context, _ *providers.ChatRequest) (providers.Stream, error) {
 			return &aliranTiruan{ev: []*providers.StreamEvent{peristiwa("hai")}}, nil

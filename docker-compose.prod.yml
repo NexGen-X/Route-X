@@ -1,0 +1,23 @@
+# Docker Compose untuk Produksi Lengkap dengan Reverse Proxy Caddy (Otomatis HTTPS TLS)
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: routex-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - gateway
+    networks:
+      - routex_internal
+
+volumes:
+  caddy_data:
+    name: routex_caddy_data
+  caddy_config:
+    name: routex_caddy_config

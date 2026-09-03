@@ -197,8 +197,47 @@ main();
 
 ---
 
-## Penerapan Produksi (Systemd Service)
+## Penerapan dengan Docker & Docker Compose (Opsi Kontainer)
 
+Route-X menyediakan konfigurasi Docker multi-stage dan Docker Compose siap pakai yang memaketkan Gateway, PostgreSQL 16, dan Redis 7.
+
+### 1. Menjalankan Docker Compose Mandiri
+```bash
+# Salin konfigurasi environment docker
+cp .env.docker.example .env
+
+# Jalankan seluruh stack (Route-X Gateway + PostgreSQL 16 + Redis 7)
+docker compose up -d --build
+```
+Layanan akan aktif di `http://localhost:8080`.
+
+### 2. Menjalankan Docker Compose Produksi (dengan Caddy TLS)
+Untuk mengaktifkan otomatisasi sertifikat HTTPS via Let's Encrypt / ZeroSSL:
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+---
+
+## Penerapan Produksi Linux (Bare-Metal & VPS)
+
+Tersedia dua opsi konfigurasi penerapan langsung pada server Linux:
+
+### Opsi A: Skrip Otomasi Terpadu (Direkomendasikan)
+Gunakan skrip otomatisasi di [`deploy/scripts/setup_production.sh`](deploy/scripts/setup_production.sh):
+```bash
+# Build biner terlebih dahulu
+make build
+
+# Jalankan pemasangan otomatis
+sudo ./deploy/scripts/setup_production.sh ./ai-gateway
+
+# Nyalakan layanan
+sudo systemctl start route-x
+sudo systemctl status route-x
+```
+
+### Opsi B: Pemasangan Manual Systemd
 Unit layanan systemd yang telah diperkeras (*security-hardened*) tersedia di [`deploy/systemd/route-x.service`](deploy/systemd/route-x.service).
 
 1. Pasang biner dan berkas konfigurasi:
@@ -212,7 +251,7 @@ Unit layanan systemd yang telah diperkeras (*security-hardened*) tersedia di [`d
 
 2. Buat pengguna sistem `routex`:
    ```bash
-   sudo useradd -r -s /bin/false routex
+   sudo useradd -r -s /bin/false -d /var/lib/route-x routex
    sudo chown -R routex:routex /var/lib/route-x
    ```
 
@@ -223,6 +262,40 @@ Unit layanan systemd yang telah diperkeras (*security-hardened*) tersedia di [`d
    sudo systemctl enable --now route-x
    sudo systemctl status route-x
    ```
+
+---
+
+## Konfigurasi Reverse Proxy & Streaming SSE
+
+Untuk menyajikan gateway di balik domain publik dengan sertifikat TLS dan memastikan streaming inferensi teks (Server-Sent Events) tidak mengalami buffering:
+
+### 1. Caddy (Otomatis HTTPS Let's Encrypt)
+Konfigurasi Caddy siap pakai tersedia di [`deploy/caddy/Caddyfile`](deploy/caddy/Caddyfile). Bagian terpenting adalah parameter `flush_interval -1` yang menonaktifkan buffer respon streaming:
+```caddy
+gateway.example.com {
+    reverse_proxy 127.0.0.1:8080 {
+        flush_interval -1
+    }
+}
+```
+
+### 2. Nginx
+Konfigurasi Nginx siap pakai tersedia di [`deploy/nginx/route-x.conf`](deploy/nginx/route-x.conf):
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # KRITIS untuk streaming SSE (Server-Sent Events)
+    proxy_buffering off;
+    proxy_cache off;
+    chunked_transfer_encoding on;
+    proxy_read_timeout 600s;
+}
+```
 
 ---
 

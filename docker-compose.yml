@@ -1,0 +1,73 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: routex-gateway
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - PORT=8080
+      - DATABASE_URL=postgres://${POSTGRES_USER:-routex}:${POSTGRES_PASSWORD:-routex_secure_password}@postgres:5432/${POSTGRES_DB:-routex}?sslmode=disable
+      - REDIS_URL=redis://redis:6379/0
+      - SESSION_SECRET=${SESSION_SECRET:-nq7HDUGi5YfuB3x3BPACa0em/XnX457SPJF4rmsvtuDQ39aN6Y0TxzYFHKcVPF62}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-cb11NcUCxuuKMyQW1HTxWq5RfJG6kIqr0M3QWXpV2nw=}
+      - API_KEY_PEPPER=${API_KEY_PEPPER:-FvWc/8PKKoM266+bZ23NiqFS6Cd3ip3RK5H9rX7gI6c=}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@routex.internal}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-AdminSecurePass123!@#}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - UPSTREAM_TIMEOUT=${UPSTREAM_TIMEOUT:-120s}
+      - SHUTDOWN_GRACE=${SHUTDOWN_GRACE:-25s}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - routex_internal
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: routex-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-routex}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-routex_secure_password}
+      POSTGRES_DB: ${POSTGRES_DB:-routex}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-routex} -d ${POSTGRES_DB:-routex}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - routex_internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: routex-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel notice
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - routex_internal
+
+volumes:
+  pgdata:
+    name: routex_pgdata
+  redisdata:
+    name: routex_redisdata
+
+networks:
+  routex_internal:
+    name: routex_internal
+    driver: bridge

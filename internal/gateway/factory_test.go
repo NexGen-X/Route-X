@@ -682,3 +682,51 @@ func TestFactoryKegagalanPenandaanTidakMenggagalkanPermintaan(t *testing.T) {
 	}
 	tungguPenandaan(t, tanda)
 }
+
+// TestFactoryProviderForHealthCheckBerbagiCacheDenganKandidat memastikan pemanggilan ProviderFor
+// langsung dari baris tabel providers (tanpa pemetaan model) menghasilkan adapter yang valid
+// dan memanfaatkan cache yang sama dengan pemanggilan kandidat rute.
+func TestFactoryProviderForHealthCheckBerbagiCacheDenganKandidat(t *testing.T) {
+	srv := serverUji(t)
+	f := pabrikUji(t, kredensialUji(), nil)
+
+	p := &upstream.Provider{
+		ID:        "p-1",
+		Name:      "test-prov",
+		Kind:      providers.KindOpenAI,
+		BaseURL:   srv.URL,
+		TimeoutMS: 5000,
+	}
+
+	// 1. Ambil adapter lewat ProviderFor (misalnya dari health checker).
+	adapter1, err := f.ProviderFor(context.Background(), p)
+	if err != nil {
+		t.Fatalf("ProviderFor gagal: %v", err)
+	}
+	if adapter1.Name() != "test-prov" {
+		t.Errorf("adapter Name() = %q, mau test-prov", adapter1.Name())
+	}
+
+	// 2. Ambil adapter untuk provider yang sama lewat kandidat rute.
+	cand := &upstream.RouteCandidate{
+		ProviderID:   "p-1",
+		ProviderName: "test-prov",
+		Kind:         providers.KindOpenAI,
+		BaseURL:      srv.URL,
+		TimeoutMS:    5000,
+	}
+	adapter2, err := f.Provider(context.Background(), cand)
+	if err != nil {
+		t.Fatalf("Provider gagal: %v", err)
+	}
+
+	// Harus instance adapter yang identik dari cache.
+	if adapter1 != adapter2 {
+		t.Errorf("adapter dari ProviderFor dan Provider seharusnya berbagi entri cache yang sama")
+	}
+
+	// Provider kosong harus ditolak secara bersih.
+	if _, err := f.ProviderFor(context.Background(), nil); err == nil {
+		t.Error("ProviderFor dengan provider nil seharusnya gagal")
+	}
+}

@@ -42,6 +42,8 @@ import (
 	"github.com/NexGen-X/Route-X/internal/router"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/usage"
+	"github.com/NexGen-X/Route-X/internal/webhooks"
+	"github.com/NexGen-X/Route-X/internal/worker"
 	"github.com/NexGen-X/Route-X/web"
 )
 
@@ -321,13 +323,41 @@ func buildGatewaySurface(
 		logger.Warn("pemanasan skrip pemutus arus gagal", "error", err)
 	}
 
+	// --- Webhook & Otomasi Fase 10 ---
+	webhookRepo := webhooks.NewRepo(db.Pool)
+	webhookDispatcher := webhooks.NewDispatcher(
+		webhookRepo, cipher, nil, cfg.UpstreamSSRFPolicy(), logger,
+	)
+
+	// Pasang pemantau perpindahan status circuit breaker untuk memproduksi event
+	// circuit.opened dan circuit.closed ke antrean webhook.
+	breaker.SetStateChangeListener(func(ctx context.Context, providerID, model string, state gateway.State, total, failures int64) {
+		ev := "circuit.opened"
+		if state == gateway.StateClosed {
+			ev = "circuit.closed"
+		}
+		payload := map[string]any{
+			"event":       ev,
+			"provider_id": providerID,
+			"model":       model,
+			"state":       string(state),
+			"samples":     total,
+			"failures":    failures,
+			"timestamp":   time.Now().UTC().Format(time.RFC3339),
+		}
+		if _, err := webhookRepo.Enqueue(ctx, ev, payload); err != nil {
+			logger.WarnContext(ctx, "gagal memasukkan event circuit breaker ke antrean webhook",
+				"event", ev, "provider_id", providerID, "model", model, "error", err)
+		}
+	})
+
 	// --- Kebijakan yang membatasi lalu lintas ---
 	//
 	// Ketiganya membaca tabelnya sendiri dan menyimpan salinan ber-TTL. Repository yang sama
 	// dipakai bersama supaya hanya ada satu jalur pembacaan untuk keempat tabel kebijakan.
 	policyRepo := policy.New(db.Pool)
 	rates := ratelimit.NewEngine(policyRepo, logger)
-	budgets := billing.NewEnforcer(policyRepo, logger)
+	budgets := billing.NewEnforcer(policyRepo, logger, billing.WithWebhookEnqueuer(webhookRepo))
 	filters := contentfilter.NewEngine(policyRepo, logger)
 
 	// Cakupan pembatasan untuk middleware: key, pengguna, IP, dan global. Cakupan MODEL
@@ -381,16 +411,18 @@ func buildGatewaySurface(
 	})
 
 	models := upstream.NewModelRepo(db.Pool)
+	providersRepo := upstream.NewProviderRepo(db.Pool)
+
+	// Pabrik adapter provider dipakai bersama antara permintaan inferensi dan health checker
+	// worker, menegakkan kebijakan SSRF dan cache instance yang konsisten (Aturan 14).
+	factory := gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
+		gateway.WithCredentialUseMarker(creds))
+
 	handlers, err := gateway.NewHandlers(gateway.HandlersDeps{
 		Models:     models,
 		Lister:     models,
-		Candidates: upstream.NewProviderRepo(db.Pool),
-		// Penanda pemakaian kredensial dipasang eksplisit karena ia MENGUBAH PERILAKU:
-		// last_used_at yang tertulis membuat CredentialRepo.Active bergiliran antar kredensial
-		// pada provider yang punya lebih dari satu. Kunci cache adapter sudah memuat
-		// kredensialnya, jadi setiap kredensial punya connection pool-nya sendiri.
-		Factory: gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
-			gateway.WithCredentialUseMarker(creds)),
+		Candidates: providersRepo,
+		Factory:    factory,
 		Engine: router.NewEngine(upstream.NewRoutingRepo(db.Pool),
 			router.NewSelector(
 				router.WithLatencySource(index),
@@ -415,16 +447,56 @@ func buildGatewaySurface(
 		return nil, nil, err
 	}
 
+	// --- Background Worker Supervisor (Fase 10) ---
+	workerSup := worker.NewSupervisor(metrics, logger)
+
+	// 1. Health checker provider: mengecek endpoint upstream dan mencatat latensi serta metrik
+	healthJob := worker.NewHealthCheckerJob(
+		db.Pool, providersRepo, factory, webhookRepo, metrics, logger,
+	)
+	workerSup.Register(healthJob, cfg.HealthCheckInterval, 5*time.Second)
+
+	// 2. Rollup scheduler: menghitung agregasi token & biaya hourly dan daily
+	rollupJob := worker.NewRollupWorker(db.Pool, trafficRepo, logger)
+	workerSup.Register(rollupJob, cfg.UsageRollupInterval, 10*time.Second)
+
+	// 3. Retention cleaner: membuang partisi lampau dan menghapus batch payload serta delivery
+	retentionJob := worker.NewRetentionWorker(
+		db.Pool, webhookRepo, trafficRepo,
+		cfg.RequestLogRetentionDays, cfg.RequestBodyRetentionDays, logger,
+	)
+	workerSup.Register(retentionJob, 1*time.Hour, 30*time.Second)
+
+	// 4. Partition maintainer: membuat partisi bulanan masa depan dan mengaudit partisi default
+	partitionJob := worker.NewPartitionMaintainerJob(db.Pool, logger)
+	workerSup.Register(partitionJob, 12*time.Hour, 15*time.Second)
+
+	// 5. Budget period resetter: memajukan periode anggaran kedaluwarsa dan menghitung ulang pemakaian
+	budgetJob := worker.NewBudgetResetterJob(db.Pool, policyRepo, logger)
+	workerSup.Register(budgetJob, 1*time.Minute, 5*time.Second)
+
+	// 6. Webhook delivery worker: memproses antrean pengiriman webhook dengan FOR UPDATE SKIP LOCKED
+	webhookJob := worker.NewWebhookWorker(db.Pool, webhookRepo, webhookDispatcher, logger)
+	workerSup.Register(webhookJob, 1*time.Second, 2*time.Second)
+
+	workerSup.Start(ctx)
+
 	authn := apikey.NewAuthenticator(keyRepo, metrics, logger)
 
 	r := chi.NewRouter()
 	r.Use(authn.Authenticate(), limiter.Limit())
 	r.Mount("/", handlers.Routes())
-	return r, recorder.Close, nil
+
+	closeAll := func(c context.Context) error {
+		workerSup.Stop()
+		return recorder.Close(c)
+	}
+
+	return r, closeAll, nil
 }
 
 // dashboardHandler menyajikan aset frontend yang tersemat.
-//
+
 // Kalau frontend belum pernah di-build, handler ini menjelaskan cara membangunnya
 // alih-alih membalas 404 yang membingungkan.
 func dashboardHandler(logger *slog.Logger) (http.Handler, error) {

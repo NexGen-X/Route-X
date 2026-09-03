@@ -128,6 +128,38 @@ func (r *Repo) ActiveBudgets(ctx context.Context) ([]*Budget, error) {
 	return out, nil
 }
 
+// ExpiredBudgets mengembalikan anggaran aktif yang batas period_end-nya sudah lewat.
+//
+// ActiveBudgets sengaja mengecualikan baris-baris ini agar lalu lintas baru tidak diblokir
+// oleh pemakaian periode lampau. Fungsi ini adalah pasangannya untuk background worker:
+// menemukan anggaran yang periodenya sudah selesai agar bisa dimajukan ke periode berikutnya.
+func (r *Repo) ExpiredBudgets(ctx context.Context, asOf time.Time) ([]*Budget, error) {
+	const op = "mengambil anggaran kedaluwarsa"
+
+	rows, err := r.q.Query(ctx, `
+		select `+budgetColumns+`
+		from budgets
+		where enabled and period_end is not null and period_end <= $1
+		order by created_at, id`, asOf)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	defer rows.Close()
+
+	var out []*Budget
+	for rows.Next() {
+		b, err := scanBudget(rows)
+		if err != nil {
+			return nil, repo.Err(op, err)
+		}
+		out = append(out, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return out, nil
+}
+
 // CreateBudgetParams adalah masukan pembuatan anggaran.
 type CreateBudgetParams struct {
 	Name    string
@@ -245,6 +277,62 @@ func (r *Repo) ResetPeriod(ctx context.Context, id string, start time.Time, end 
 		return nil, repo.Err(op, err)
 	}
 	return b, nil
+}
+
+// ResetPeriodWithSpend memulai periode baru dengan nilai spent_usd terhitung ulang dan
+// penanda peringatan dilepas.
+//
+// Dipakai worker reset periode. spent_usd diisi dari hasil hitung ulang requests.cost_usd
+// (skala 8) agar tidak ada pembulatan yang tertimbun dan memperhitungkan request yang mungkin
+// sudah mendarat di periode baru sebelum worker sempat mereset.
+func (r *Repo) ResetPeriodWithSpend(ctx context.Context, id string, start time.Time, end *time.Time, spent upstream.USD) (*Budget, error) {
+	const op = "mereset periode anggaran dengan pemakaian terhitung"
+	if !idOK(id) {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	row := r.q.QueryRow(ctx, `
+		update budgets
+		set spent_usd = $2::numeric, period_start = $3, period_end = $4, alerted_at = null, updated_at = now()
+		where id = $1
+		returning `+budgetColumns, id, spent.Decimal(), start, end)
+
+	b, err := scanBudget(row)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return b, nil
+}
+
+// CalculateSpend menghitung ulang akumulasi biaya nyata dari requests.cost_usd (skala 8).
+//
+// Dipakai saat reset periode anggaran: kolom budgets.spent_usd bertipe numeric(14,6) sehingga
+// setiap AddSpend dibulatkan PostgreSQL (selisih hingga 5e-7 USD per permintaan). Menghitung
+// ulang dari tabel requests memulihkan presisi penuh 8 desimal sebelum periode baru dimulai.
+func (r *Repo) CalculateSpend(ctx context.Context, scope, scopeID string, from time.Time, to *time.Time) (upstream.USD, error) {
+	const op = "menghitung pemakaian riil dari log request"
+
+	row := r.q.QueryRow(ctx, `
+		select coalesce(sum(cost_usd), 0)::text
+		from requests
+		where created_at >= $1 and ($2::timestamptz is null or created_at < $2)
+		  and (
+		    ($3 = 'global')
+		    or ($3 = 'api_key' and api_key_id = nullif($4, '')::uuid)
+		    or ($3 = 'user' and user_id = nullif($4, '')::uuid)
+		    or ($3 = 'provider' and provider_id = nullif($4, '')::uuid)
+		    or ($3 = 'model' and model_id = nullif($4, '')::uuid)
+		  )`, from, to, scope, scopeID)
+
+	var valText string
+	if err := row.Scan(&valText); err != nil {
+		return 0, repo.Err(op, err)
+	}
+	usd, err := upstream.ParseUSD(valText)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+	return usd, nil
 }
 
 // MarkAlerted menandai bahwa peringatan ambang sudah dikirim.

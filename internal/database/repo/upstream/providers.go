@@ -404,6 +404,29 @@ func (r *ProviderRepo) List(ctx context.Context, f ProviderFilter, page repo.Pag
 	return out, next, nil
 }
 
+// ActiveProviders mengembalikan seluruh provider aktif untuk health checker dan routing.
+func (r *ProviderRepo) ActiveProviders(ctx context.Context) ([]*Provider, error) {
+	const op = "mengambil provider aktif"
+	rows, err := r.q.Query(ctx, `select `+providerColumns+` from providers where enabled = true order by name`)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	defer rows.Close()
+
+	var out []*Provider
+	for rows.Next() {
+		provider, err := scanProvider(rows)
+		if err != nil {
+			return nil, repo.Err(op, err)
+		}
+		out = append(out, provider)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return out, nil
+}
+
 // RouteCandidate adalah satu provider yang siap melayani sebuah model, berikut semua
 // yang dibutuhkan mesin routing untuk memanggilnya tanpa query tambahan.
 //

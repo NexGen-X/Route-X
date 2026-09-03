@@ -337,3 +337,16 @@ func TestZero(t *testing.T) {
 		}
 	}
 }
+
+// TestWebhookAADDiikatKeIDWebhook memastikan format AAD webhook terikat ke ID dan membedakan tiap webhook.
+func TestWebhookAADDiikatKeIDWebhook(t *testing.T) {
+	if got := WebhookAAD("wh_123"); got != "webhook:wh_123" {
+		t.Errorf("WebhookAAD salah: dapat %q, ingin webhook:wh_123", got)
+	}
+	if WebhookAAD("wh_1") == WebhookAAD("wh_2") {
+		t.Error("WebhookAAD tidak boleh sama untuk ID webhook yang berbeda")
+	}
+	if WebhookAAD("123") == CredentialAAD("123") {
+		t.Error("WebhookAAD tidak boleh bertabrakan dengan CredentialAAD untuk ID yang sama")
+	}
+}

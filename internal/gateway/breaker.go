@@ -528,8 +528,9 @@ type Breaker struct {
 	// yang berarti test yang lambat, atau yang cepat tetapi tidak menguji perpindahannya.
 	now func() time.Time
 
-	mu   sync.RWMutex
-	memo map[string]memoEntry
+	mu            sync.RWMutex
+	memo          map[string]memoEntry
+	onStateChange StateChangeListener
 }
 
 // memoEntry adalah satu keputusan yang di-cache di memori proses.
@@ -556,8 +557,23 @@ func NewBreaker(rdb *cache.Redis, cfg BreakerConfig, logger *slog.Logger) *Break
 	}
 }
 
-// Warm memuat ketiga skrip ke cache skrip Redis.
+// StateChangeListener adalah fungsi pemanggil saat status circuit breaker berpindah.
 //
+// Dipakai terutama untuk memproduksi webhook event circuit.opened dan circuit.closed.
+type StateChangeListener func(ctx context.Context, providerID, model string, state State, total, failures int64)
+
+// SetStateChangeListener memasang pemantau perpindahan status circuit breaker.
+func (b *Breaker) SetStateChangeListener(fn StateChangeListener) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	b.onStateChange = fn
+	b.mu.Unlock()
+}
+
+// Warm memuat ketiga skrip ke cache skrip Redis.
+
 // Tidak wajib — jalur keputusan tetap benar tanpanya — tetapi ia memindahkan satu putaran
 // EVALSHA yang gagal ditambah EVAL berisi badan skrip dari permintaan pertama ke jalur
 // start.
@@ -678,6 +694,13 @@ func (b *Breaker) Record(ctx context.Context, providerID, model string, sukses b
 			slog.Int64("gagal", failures),
 			slog.Int64("sisa_open_ms", openRemaining.Milliseconds()),
 		)
+
+		b.mu.RLock()
+		listener := b.onStateChange
+		b.mu.RUnlock()
+		if listener != nil {
+			go listener(context.WithoutCancel(ctx), providerID, model, state, total, failures)
+		}
 	}
 	return nil
 }

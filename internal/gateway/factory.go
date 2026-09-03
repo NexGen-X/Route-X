@@ -202,6 +202,72 @@ func NewFactory(
 }
 
 // Provider mengembalikan adapter siap pakai untuk kandidat ini.
+// ProviderTarget memuat kebutuhan minimum penyusunan adapter provider tanpa pemetaan model.
+//
+// Struktur ini dipakai baik oleh jalur routing inference maupun oleh health checker provider
+// di background worker. Menghindari penyusunan kandidat palsu yang mengarang ProviderModelID
+// atau UpstreamModelName.
+type ProviderTarget struct {
+	ID           string
+	Name         string
+	Kind         string
+	BaseURL      string
+	TimeoutMS    int
+	EgressPoolID *string
+}
+
+// ProviderFor mengembalikan adapter siap pakai langsung dari baris tabel providers,
+// tanpa membutuhkan pemetaan model atau RouteCandidate tiruan.
+//
+// Dipakai terutama oleh background worker untuk health check provider. Jalur pembuatan,
+// cache koneksi, dan penjagaan SSRF yang digunakan identik dengan jalur permintaan inference.
+func (f *Factory) ProviderFor(ctx context.Context, p *upstream.Provider) (providers.Provider, error) {
+	if p == nil {
+		return nil, errors.New("provider kosong")
+	}
+	return f.ProviderForTarget(ctx, ProviderTarget{
+		ID:           p.ID,
+		Name:         p.Name,
+		Kind:         p.Kind,
+		BaseURL:      p.BaseURL,
+		TimeoutMS:    p.TimeoutMS,
+		EgressPoolID: p.EgressPoolID,
+	})
+}
+
+// ProviderForTarget mengembalikan adapter siap pakai dari ProviderTarget.
+func (f *Factory) ProviderForTarget(ctx context.Context, t ProviderTarget) (providers.Provider, error) {
+	if t.ID == "" {
+		return nil, errors.New("target provider tanpa ID")
+	}
+	if !dilayani(t.Kind) {
+		return nil, fmt.Errorf("kind provider %q tidak dilayani gateway ini", t.Kind)
+	}
+
+	cred, err := f.kredensialTarget(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+	proxy, err := f.proxyTarget(ctx, t)
+	if err != nil {
+		return nil, err
+	}
+
+	kunci := kunciAdapterTarget(t, cred, proxy)
+	if p, ok := f.dariCache(kunci); ok {
+		f.tandaiPemakaian(cred)
+		return p, nil
+	}
+
+	p, err := f.buatTarget(t, cred, proxy)
+	if err != nil {
+		return nil, err
+	}
+	f.tandaiPemakaian(cred)
+	return f.keCache(kunci, p), nil
+}
+
+// Provider mengembalikan adapter siap pakai untuk kandidat ini.
 //
 // Error dari sini sampai ke pemanggil sebagai "kandidat ini tidak bisa dipakai" dan boleh
 // dialihkan ke kandidat berikutnya — lihat Handlers.adapter, yang juga menahan sebab
@@ -213,37 +279,14 @@ func (f *Factory) Provider(ctx context.Context, c *upstream.RouteCandidate) (pro
 	if c.ProviderID == "" {
 		return nil, errors.New("kandidat rute tanpa ID provider")
 	}
-	if !dilayani(c.Kind) {
-		// Kind tak dikenal adalah error, bukan jatuh ke openai: mengirim body bergaya
-		// OpenAI ke upstream yang bicara dialek lain menghasilkan 400 yang tampak seperti
-		// masalah permintaan pengguna, padahal ini salah konfigurasi provider.
-		return nil, fmt.Errorf("kind provider %q tidak dilayani gateway ini", c.Kind)
-	}
-
-	cred, err := f.kredensial(ctx, c)
-	if err != nil {
-		return nil, err
-	}
-	proxy, err := f.proxy(ctx, c)
-	if err != nil {
-		return nil, err
-	}
-
-	kunci := kunciAdapter(c, cred, proxy)
-	if p, ok := f.dariCache(kunci); ok {
-		f.tandaiPemakaian(cred)
-		return p, nil
-	}
-
-	p, err := f.buat(c, cred, proxy)
-	if err != nil {
-		return nil, err
-	}
-	// Ditandai setelah adapternya benar-benar jadi, bukan setelah kredensialnya diambil:
-	// last_used_at berarti "kredensial ini dipakai menghubungi provider", dan kandidat yang
-	// gagal disiapkan tidak pernah menghubungi apa pun.
-	f.tandaiPemakaian(cred)
-	return f.keCache(kunci, p), nil
+	return f.ProviderForTarget(ctx, ProviderTarget{
+		ID:           c.ProviderID,
+		Name:         c.ProviderName,
+		Kind:         c.Kind,
+		BaseURL:      c.BaseURL,
+		TimeoutMS:    c.TimeoutMS,
+		EgressPoolID: c.EgressPoolID,
+	})
 }
 
 // tandaiPemakaian mencatat pemakaian kredensial bila penandanya terpasang.
@@ -294,23 +337,35 @@ func (p *penandaPemakaian) tandai(id string, logger *slog.Logger) {
 	}()
 }
 
-// kredensial mengambil kredensial aktif provider, atau nil bila kind ini boleh tanpanya.
+// kredensial mengambil kredensial aktif provider untuk kandidat rute.
 func (f *Factory) kredensial(ctx context.Context, c *upstream.RouteCandidate) (*upstream.ActiveCredential, error) {
+	if c == nil {
+		return nil, errors.New("kandidat rute kosong")
+	}
+	return f.kredensialTarget(ctx, ProviderTarget{
+		ID:   c.ProviderID,
+		Name: c.ProviderName,
+		Kind: c.Kind,
+	})
+}
+
+// kredensialTarget mengambil kredensial aktif provider dari ProviderTarget.
+func (f *Factory) kredensialTarget(ctx context.Context, t ProviderTarget) (*upstream.ActiveCredential, error) {
 	if f.creds == nil {
-		if kredensialOpsional(c.Kind) {
+		if kredensialOpsional(t.Kind) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("provider %q butuh kredensial tetapi pabrik dibuat tanpa sumber kredensial", c.ProviderName)
+		return nil, fmt.Errorf("provider %q butuh kredensial tetapi pabrik dibuat tanpa sumber kredensial", t.Name)
 	}
 
 	// Active, bukan Reveal: Active-lah yang memilih kredensial mana yang aktif — yang paling
 	// sedikit gagal autentikasi lebih dulu — sehingga kunci yang sedang ditolak upstream
 	// tidak dicoba terus-menerus selama masih ada yang lain.
-	cred, err := f.creds.Active(ctx, c.ProviderID)
+	cred, err := f.creds.Active(ctx, t.ID)
 	if err == nil {
 		return cred, nil
 	}
-	if errors.Is(err, repo.ErrNotFound) && kredensialOpsional(c.Kind) {
+	if errors.Is(err, repo.ErrNotFound) && kredensialOpsional(t.Kind) {
 		// Server berdialek OpenAI yang dijalankan sendiri (Ollama, vLLM, LM Studio) umumnya
 		// berjalan tanpa autentikasi. Menuntut kredensial di sana hanya membuat operator
 		// mengisi nilai palsu supaya lolos.
@@ -319,50 +374,68 @@ func (f *Factory) kredensial(ctx context.Context, c *upstream.RouteCandidate) (*
 	if errors.Is(err, repo.ErrNotFound) {
 		// Pesan sendiri, bukan errornya: "data tidak ditemukan" tidak memberi tahu operator
 		// data apa yang mana.
-		return nil, fmt.Errorf("provider %q tidak punya satu pun kredensial aktif", c.ProviderName)
+		return nil, fmt.Errorf("provider %q tidak punya satu pun kredensial aktif", t.Name)
 	}
-	return nil, fmt.Errorf("kredensial provider %q tidak bisa diambil: %w", c.ProviderName, err)
+	return nil, fmt.Errorf("kredensial provider %q tidak bisa diambil: %w", t.Name, err)
 }
 
 // proxy mengambil URL egress proxy kandidat ini, kosong bila tidak memakai egress pool.
 func (f *Factory) proxy(ctx context.Context, c *upstream.RouteCandidate) (security.Secret, error) {
-	if c.EgressPoolID == nil || *c.EgressPoolID == "" {
+	if c == nil {
+		return "", errors.New("kandidat rute kosong")
+	}
+	return f.proxyTarget(ctx, ProviderTarget{
+		Name:         c.ProviderName,
+		EgressPoolID: c.EgressPoolID,
+	})
+}
+
+// proxyTarget mengambil URL egress proxy untuk ProviderTarget.
+func (f *Factory) proxyTarget(ctx context.Context, t ProviderTarget) (security.Secret, error) {
+	if t.EgressPoolID == nil || *t.EgressPoolID == "" {
 		return "", nil
 	}
 	if f.egress == nil {
-		return "", fmt.Errorf("provider %q memakai egress pool tetapi pabrik dibuat tanpa sumbernya", c.ProviderName)
+		return "", fmt.Errorf("provider %q memakai egress pool tetapi pabrik dibuat tanpa sumbernya", t.Name)
 	}
-	url, err := f.egress.ProxyURL(ctx, *c.EgressPoolID)
+	url, err := f.egress.ProxyURL(ctx, *t.EgressPoolID)
 	if err != nil {
-		return "", fmt.Errorf("URL egress provider %q tidak bisa diambil: %w", c.ProviderName, err)
+		return "", fmt.Errorf("URL egress provider %q tidak bisa diambil: %w", t.Name, err)
 	}
 	return url, nil
 }
 
-// kunciAdapter menyusun kunci cache satu adapter.
+// kunciAdapter menyusun kunci cache satu adapter dari RouteCandidate.
+func kunciAdapter(c *upstream.RouteCandidate, cred *upstream.ActiveCredential, proxy security.Secret) string {
+	if c == nil {
+		return ""
+	}
+	return kunciAdapterTarget(ProviderTarget{
+		ID:           c.ProviderID,
+		Kind:         c.Kind,
+		BaseURL:      c.BaseURL,
+		TimeoutMS:    c.TimeoutMS,
+		EgressPoolID: c.EgressPoolID,
+	}, cred, proxy)
+}
+
+// kunciAdapterTarget menyusun kunci cache satu adapter dari ProviderTarget.
 //
 // Seluruh bahan yang dibekukan ke dalam adapter masuk ke SHA-256, lalu ID provider
 // ditempelkan di depan sebagai bagian yang boleh dibaca manusia. Nilai kredensial dan URL
 // proxy karena itu tidak pernah muncul apa adanya, sementara perubahan sekecil apa pun pada
 // keduanya tetap menghasilkan kunci yang berbeda.
-//
-// Kredensial diwakili ID barisnya DAN sidik jari nilainya. ID saja tidak cukup: operator
-// bisa mengganti isi kredensial tanpa mengganti barisnya, dan gateway akan terus memakai
-// nilai lama sampai proses direstart.
-func kunciAdapter(c *upstream.RouteCandidate, cred *upstream.ActiveCredential, proxy security.Secret) string {
+func kunciAdapterTarget(t ProviderTarget, cred *upstream.ActiveCredential, proxy security.Secret) string {
 	h := sha256.New()
 	bagian := func(s string) {
-		// Panjang ikut ditulis supaya dua rangkaian bagian yang berbeda tidak bisa
-		// menghasilkan byte yang sama. Base URL boleh memuat karakter apa pun, termasuk
-		// pemisah apa pun yang bisa kami pilih.
 		_, _ = h.Write([]byte(strconv.Itoa(len(s))))
 		_, _ = h.Write([]byte{0})
 		_, _ = h.Write([]byte(s))
 	}
 
-	bagian(c.Kind)
-	bagian(c.BaseURL)
-	bagian(strconv.Itoa(c.TimeoutMS))
+	bagian(t.Kind)
+	bagian(t.BaseURL)
+	bagian(strconv.Itoa(t.TimeoutMS))
 	if cred != nil {
 		bagian(cred.ID)
 		bagian(cred.Secret.Reveal())
@@ -370,19 +443,38 @@ func kunciAdapter(c *upstream.RouteCandidate, cred *upstream.ActiveCredential, p
 		bagian("")
 		bagian("")
 	}
-	if c.EgressPoolID != nil {
-		bagian(*c.EgressPoolID)
+	if t.EgressPoolID != nil {
+		bagian(*t.EgressPoolID)
 	} else {
 		bagian("")
 	}
 	bagian(proxy.Reveal())
 
-	return c.ProviderID + ":" + hex.EncodeToString(h.Sum(nil))
+	return t.ID + ":" + hex.EncodeToString(h.Sum(nil))
 }
 
-// buat membuat adapter baru untuk kandidat ini.
+// buat membuat adapter baru untuk kandidat rute.
 func (f *Factory) buat(
 	c *upstream.RouteCandidate,
+	cred *upstream.ActiveCredential,
+	proxy security.Secret,
+) (providers.Provider, error) {
+	if c == nil {
+		return nil, errors.New("kandidat rute kosong")
+	}
+	return f.buatTarget(ProviderTarget{
+		ID:           c.ProviderID,
+		Name:         c.ProviderName,
+		Kind:         c.Kind,
+		BaseURL:      c.BaseURL,
+		TimeoutMS:    c.TimeoutMS,
+		EgressPoolID: c.EgressPoolID,
+	}, cred, proxy)
+}
+
+// buatTarget membuat adapter baru dari ProviderTarget.
+func (f *Factory) buatTarget(
+	t ProviderTarget,
 	cred *upstream.ActiveCredential,
 	proxy security.Secret,
 ) (providers.Provider, error) {
@@ -390,9 +482,9 @@ func (f *Factory) buat(
 	if cred != nil {
 		rahasia = cred.Secret
 	}
-	timeout := time.Duration(c.TimeoutMS) * time.Millisecond
+	timeout := time.Duration(t.TimeoutMS) * time.Millisecond
 
-	switch c.Kind {
+	switch t.Kind {
 	case providers.KindOpenAI, providers.KindOpenAICompatible, providers.KindCustom:
 		// Base URL divalidasi DI SINI karena openai.New sengaja tidak melakukannya — kontrak
 		// providers.ClientConfig menyatakan pemanggil yang memvalidasi, dan pemanggil itu
@@ -405,13 +497,13 @@ func (f *Factory) buat(
 		// bukan tujuan akhir. Untuk kandidat berproxy, pemeriksaan di sini adalah satu-satunya
 		// yang melihat tujuan sebenarnya. Karena itu juga egress pool hanya boleh diisi
 		// operator, bukan pengguna.
-		if err := security.ValidateBaseURL(c.BaseURL, f.policy); err != nil {
-			return nil, fmt.Errorf("base URL provider %q tidak sah: %w", c.ProviderName, err)
+		if err := security.ValidateBaseURL(t.BaseURL, f.policy); err != nil {
+			return nil, fmt.Errorf("base URL provider %q tidak sah: %w", t.Name, err)
 		}
 		return openai.New(openai.Config{
-			Name:       c.ProviderName,
-			Kind:       c.Kind,
-			BaseURL:    c.BaseURL,
+			Name:       t.Name,
+			Kind:       t.Kind,
+			BaseURL:    t.BaseURL,
 			Credential: rahasia,
 			Timeout:    timeout,
 			SSRFPolicy: f.policy,
@@ -424,9 +516,9 @@ func (f *Factory) buat(
 		// menyalin pemeriksaan yang sudah ada di tempatnya membuat dua tempat yang harus
 		// berubah bersamaan.
 		return anthropic.New(anthropic.Config{
-			Name:       c.ProviderName,
-			Kind:       c.Kind,
-			BaseURL:    c.BaseURL,
+			Name:       t.Name,
+			Kind:       t.Kind,
+			BaseURL:    t.BaseURL,
 			Credential: rahasia,
 			Timeout:    timeout,
 			SSRFPolicy: f.policy,
@@ -435,9 +527,9 @@ func (f *Factory) buat(
 
 	case providers.KindGoogle:
 		return google.New(google.Config{
-			Name:       c.ProviderName,
-			Kind:       c.Kind,
-			BaseURL:    c.BaseURL,
+			Name:       t.Name,
+			Kind:       t.Kind,
+			BaseURL:    t.BaseURL,
 			Credential: rahasia,
 			Timeout:    timeout,
 			SSRFPolicy: f.policy,
@@ -445,7 +537,7 @@ func (f *Factory) buat(
 		})
 
 	default:
-		return nil, fmt.Errorf("kind provider %q tidak dilayani gateway ini", c.Kind)
+		return nil, fmt.Errorf("kind provider %q tidak dilayani gateway ini", t.Kind)
 	}
 }
 

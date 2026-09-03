@@ -244,3 +244,51 @@ func TestAmanDipakaiBersamaan(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+type antreanWebhookUji struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (a *antreanWebhookUji) Enqueue(ctx context.Context, event string, payload any) (int, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.events = append(a.events, event)
+	return 1, nil
+}
+
+// TestAnnounceEnqueueWebhookEvents memastikan event budget.threshold dan budget.exceeded
+// dimasukkan ke antrean webhook saat ambang peringatan dan batas terlewati.
+func TestAnnounceEnqueueWebhookEvents(t *testing.T) {
+	src := &sumber{
+		budgets: []*policy.Budget{
+			anggaran("budget-threshold", policy.ScopeGlobal, "", "100", "85", nil),
+			anggaran("budget-exceeded", policy.ScopeGlobal, "", "50", "55", func(b *policy.Budget) {
+				b.AlertThresholdPct = 0
+			}),
+		},
+		tandaiOK: true,
+	}
+
+	queue := &antreanWebhookUji{}
+	e := NewEnforcer(src, nil, WithWebhookEnqueuer(queue))
+
+	v := e.Check(context.Background(), nil)
+	if len(v.Alerts) != 2 {
+		t.Fatalf("Alerts count = %d, mau 2", len(v.Alerts))
+	}
+
+	e.Announce(context.Background(), v.Alerts)
+
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
+	if len(queue.events) != 2 {
+		t.Fatalf("jumlah event diantrekan = %d, mau 2", len(queue.events))
+	}
+	if queue.events[0] != "budget.threshold" {
+		t.Errorf("event 0 = %s, mau budget.threshold", queue.events[0])
+	}
+	if queue.events[1] != "budget.exceeded" {
+		t.Errorf("event 1 = %s, mau budget.exceeded", queue.events[1])
+	}
+}

@@ -517,6 +517,69 @@ func TestResetPeriodMelepasPenandaPeringatan(t *testing.T) {
 	}
 }
 
+// TestExpiredBudgetsDanResetDenganBiaya memastikan anggaran yang period_end-nya lewat
+// ditemukan oleh ExpiredBudgets dan bisa direset dengan nilai biaya terhitung.
+func TestExpiredBudgetsDanResetDenganBiaya(t *testing.T) {
+	ctx, r := newRepo(t)
+
+	kemarin := time.Now().Add(-24 * time.Hour)
+	tadi := time.Now().Add(-1 * time.Hour)
+
+	b, err := r.CreateBudget(ctx, CreateBudgetParams{
+		Name:        "anggaran-kedaluwarsa",
+		Scope:       ScopeGlobal,
+		Period:      PeriodDaily,
+		LimitUSD:    upstream.MustParseUSD("100"),
+		PeriodStart: kemarin,
+		PeriodEnd:   &tadi,
+	})
+	if err != nil {
+		t.Fatalf("CreateBudget: %v", err)
+	}
+
+	// Pastikan tidak muncul di ActiveBudgets karena period_end sudah lewat.
+	aktif, err := r.ActiveBudgets(ctx)
+	if err != nil {
+		t.Fatalf("ActiveBudgets: %v", err)
+	}
+	for _, a := range aktif {
+		if a.ID == b.ID {
+			t.Errorf("anggaran kedaluwarsa seharusnya tidak muncul di ActiveBudgets")
+		}
+	}
+
+	// Harus ditemukan oleh ExpiredBudgets.
+	kedaluwarsa, err := r.ExpiredBudgets(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("ExpiredBudgets: %v", err)
+	}
+	ditemukan := false
+	for _, k := range kedaluwarsa {
+		if k.ID == b.ID {
+			ditemukan = true
+			break
+		}
+	}
+	if !ditemukan {
+		t.Errorf("anggaran kedaluwarsa tidak ditemukan oleh ExpiredBudgets")
+	}
+
+	// Reset dengan biaya yang dihitung ulang (misal 12.34 USD).
+	biayaBaru := upstream.MustParseUSD("12.34000000")
+	mulaiBaru := time.Now()
+	selesaiBaru := mulaiBaru.Add(24 * time.Hour)
+	direset, err := r.ResetPeriodWithSpend(ctx, b.ID, mulaiBaru, &selesaiBaru, biayaBaru)
+	if err != nil {
+		t.Fatalf("ResetPeriodWithSpend: %v", err)
+	}
+	if direset.SpentUSD != biayaBaru {
+		t.Errorf("SpentUSD = %s, mau %s", direset.SpentUSD, biayaBaru)
+	}
+	if direset.AlertedAt != nil {
+		t.Errorf("AlertedAt seharusnya nil setelah reset")
+	}
+}
+
 // --- Blokir ------------------------------------------------------------------
 
 func TestBanSiklusHidup(t *testing.T) {

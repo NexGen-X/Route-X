@@ -1,0 +1,289 @@
+package webhooks
+
+import (
+	"bytes"
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/NexGen-X/Route-X/internal/security"
+)
+
+const (
+	// DefaultBaseBackoff adalah jeda awal untuk backoff webhook.
+	DefaultBaseBackoff = 2 * time.Second
+	// MaxWebhookBackoff membatasi jeda pengulangan maksimum ke 1 jam.
+	MaxWebhookBackoff = 1 * time.Hour
+	// DefaultDeliveryTimeout adalah batas waktu pengiriman jika webhook tidak menyetelnya.
+	DefaultDeliveryTimeout = 10 * time.Second
+)
+
+// Dispatcher bertugas mengirim satu webhook delivery melalui HTTP, menandatangani payload
+// dengan HMAC-SHA256, dan mencatat hasilnya kembali ke repositori.
+type Dispatcher struct {
+	repo       *Repo
+	cipher     *security.Cipher
+	client     *http.Client
+	ssrfPolicy security.SSRFPolicy
+	logger     *slog.Logger
+	randJitter func(int64) int64
+}
+
+// NewDispatcher membuat instance baru Dispatcher webhook.
+func NewDispatcher(
+	repo *Repo,
+	cipher *security.Cipher,
+	client *http.Client,
+	ssrfPolicy security.SSRFPolicy,
+	logger *slog.Logger,
+) *Dispatcher {
+	if client == nil {
+		client = &http.Client{Timeout: DefaultDeliveryTimeout}
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Dispatcher{
+		repo:       repo,
+		cipher:     cipher,
+		client:     client,
+		ssrfPolicy: ssrfPolicy,
+		logger:     logger,
+		randJitter: defaultCryptoRandJitter,
+	}
+}
+
+// SetRandJitter mengganti fungsi pengacak jitter (berguna untuk test deterministik).
+func (d *Dispatcher) SetRandJitter(fn func(int64) int64) {
+	d.randJitter = fn
+}
+
+// Dispatch memproses satu antrean delivery: mendekripsi secret, menandatangani payload,
+// mengirim HTTP POST, dan memperbarui status baris.
+func (d *Dispatcher) Dispatch(ctx context.Context, delivery *Delivery) error {
+	if delivery == nil {
+		return errors.New("delivery webhook kosong")
+	}
+
+	wh, err := d.repo.Get(ctx, delivery.WebhookID)
+	if err != nil {
+		d.logger.WarnContext(ctx, "webhook tidak ditemukan untuk antrean delivery",
+			"delivery_id", delivery.ID, "webhook_id", delivery.WebhookID, "error", err)
+		// Bila webhook induk sudah dihapus, delivery ini tidak bisa dikirim lagi.
+		return d.repo.RecordFailure(ctx, delivery.ID, delivery.WebhookID, delivery.AttemptCount+1, 0,
+			time.Now(), nil, "webhook induk tidak ditemukan")
+	}
+
+	// Jika endpoint dinonaktifkan manual oleh operator, batalkan pengiriman.
+	if !wh.Enabled {
+		d.logger.InfoContext(ctx, "webhook dinonaktifkan oleh operator, pengiriman ditinggalkan",
+			"delivery_id", delivery.ID, "webhook_id", wh.ID)
+		return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, wh.MaxRetries, wh.MaxRetries,
+			time.Now(), nil, "webhook dinonaktifkan operator")
+	}
+
+	// 1. Dekripsi secret webhook memakai AAD terikat ke ID webhook.
+	aad := security.WebhookAAD(wh.ID)
+	secretBytes, err := d.cipher.Decrypt(wh.SecretCiphertext, aad)
+	if err != nil {
+		d.logger.ErrorContext(ctx, "gagal mendekripsi secret webhook",
+			"delivery_id", delivery.ID, "webhook_id", wh.ID, "error", err)
+		return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, wh.MaxRetries, wh.MaxRetries,
+			time.Now(), nil, "gagal mendekripsi secret webhook")
+	}
+
+	// 2. Hitung tanda tangan HMAC-SHA256 dari payload mentah.
+	mac := hmac.New(sha256.New, secretBytes)
+	mac.Write(delivery.Payload)
+	sigHex := hex.EncodeToString(mac.Sum(nil))
+
+	// 3. Siapkan HTTP Request dengan batas waktu timeout_ms.
+	timeout := time.Duration(wh.TimeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		timeout = DefaultDeliveryTimeout
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Validasi URL terhadap SSRF guard sebelum dial.
+	if err := security.ValidateBaseURL(wh.URL, d.ssrfPolicy); err != nil {
+		sanitizedErr := SanitizeErrorMessage(err.Error())
+		d.logger.WarnContext(ctx, "URL webhook melanggar kebijakan SSRF",
+			"delivery_id", delivery.ID, "webhook_id", wh.ID, "error", sanitizedErr)
+		return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, wh.MaxRetries, wh.MaxRetries,
+			time.Now(), nil, "SSRF: "+sanitizedErr)
+	}
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, wh.URL, bytes.NewReader(delivery.Payload))
+	if err != nil {
+		sanitizedErr := SanitizeErrorMessage(err.Error())
+		return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, delivery.AttemptCount+1, wh.MaxRetries,
+			time.Now().Add(d.backoff(delivery.AttemptCount+1)), nil, sanitizedErr)
+	}
+
+	nowUnix := strconv.FormatInt(time.Now().Unix(), 10)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Route-X-Webhook/1.0")
+	req.Header.Set("X-RouteX-Delivery", strconv.FormatInt(delivery.ID, 10))
+	req.Header.Set("X-RouteX-Event", delivery.Event)
+	req.Header.Set("X-RouteX-Timestamp", nowUnix)
+	req.Header.Set("X-RouteX-Signature", "sha256="+sigHex)
+	req.Header.Set("X-Hub-Signature-256", "sha256="+sigHex)
+
+	// 4. Kirim request HTTP.
+	resp, err := d.client.Do(req)
+	now := time.Now()
+	if err != nil {
+		sanitizedErr := SanitizeErrorMessage(err.Error())
+		newAttempt := delivery.AttemptCount + 1
+		nextAt := now.Add(d.backoff(newAttempt))
+		d.logger.WarnContext(ctx, "pengiriman webhook gagal menghubungi endpoint",
+			"delivery_id", delivery.ID, "webhook_id", wh.ID, "attempt", newAttempt, "error", sanitizedErr)
+		return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, newAttempt, wh.MaxRetries, nextAt, nil, sanitizedErr)
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close()
+	}()
+
+	// 5. Evaluasi kode status respons HTTP.
+	// 2xx dianggap sukses; di luar 2xx dianggap gagal dan dijadwalkan ulang bila retry masih ada.
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return d.repo.RecordSuccess(ctx, delivery.ID, wh.ID, resp.StatusCode)
+	}
+
+	newAttempt := delivery.AttemptCount + 1
+	nextAt := now.Add(d.backoff(newAttempt))
+	errMsg := fmt.Sprintf("HTTP %d", resp.StatusCode)
+	d.logger.WarnContext(ctx, "endpoint webhook mengembalikan status non-2xx",
+		"delivery_id", delivery.ID, "webhook_id", wh.ID, "status_code", resp.StatusCode, "attempt", newAttempt)
+	return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, newAttempt, wh.MaxRetries, nextAt, &resp.StatusCode, errMsg)
+}
+
+func (d *Dispatcher) backoff(attempt int) time.Duration {
+	return CalculateBackoff(attempt, DefaultBaseBackoff, MaxWebhookBackoff, d.randJitter)
+}
+
+// CalculateBackoff menghitung jeda eksponensial dengan equal jitter.
+//
+// Separuh jeda dijamin dan separuhnya diundi acak, sama seperti backoff upstream di executor.go.
+// Ini mencegah efek kawanan (thundering herd) ketika banyak pengiriman mengulang serentak.
+func CalculateBackoff(
+	attempt int,
+	base time.Duration,
+	maxBackoff time.Duration,
+	randFn func(int64) int64,
+) time.Duration {
+	if base <= 0 || attempt < 1 {
+		return 0
+	}
+	// Batasi pergeseran bit agar tidak meluap menjadi negatif
+	geser := min(attempt-1, 20)
+	d := base << geser
+	if d <= 0 || d > maxBackoff {
+		d = maxBackoff
+	}
+	separuh := int64(d / 2)
+	if separuh <= 0 {
+		return d
+	}
+	if randFn == nil {
+		randFn = defaultCryptoRandJitter
+	}
+	return time.Duration(separuh + randFn(separuh))
+}
+
+// defaultCryptoRandJitter mengundi bilangan acak dari 0 sampai n-1 menggunakan crypto/rand.
+func defaultCryptoRandJitter(n int64) int64 {
+	if n <= 0 {
+		return 0
+	}
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return 0
+	}
+	val := int64(binary.LittleEndian.Uint64(b[:]) & 0x7fffffffffffffff)
+	return val % n
+}
+
+// urlQueryRegex menangkap query parameter pada URL dalam pesan teks.
+var urlQueryRegex = regexp.MustCompile(`(\?|&)[^ \t\r\n"'<>()]+`)
+
+// SanitizeErrorMessage menyaring pesan error agar tidak membocorkan query parameter URL atau rahasia.
+//
+// Aturan 9: URL webhook bisa memuat token atau secret di query string; jangan pernah
+// menulis error mentah klien HTTP ke basis data.
+func SanitizeErrorMessage(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	// Ganti query parameter URL dengan [TERSEMBUNYI]
+	clean := urlQueryRegex.ReplaceAllString(raw, "?[TERSEMBUNYI]")
+
+	// Jika ada URL eksplisit, bersihkan query-nya
+	if strings.Contains(clean, "http://") || strings.Contains(clean, "https://") {
+		parts := strings.Fields(clean)
+		for i, p := range parts {
+			if strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://") {
+				if u, err := url.Parse(p); err == nil {
+					u.RawQuery = ""
+					parts[i] = u.String()
+				}
+			}
+		}
+		clean = strings.Join(parts, " ")
+	}
+
+	// Potong agar panjang pesan wajar dan tidak memenuhi kolom basis data
+	const maxLen = 400
+	if len(clean) > maxLen {
+		clean = clean[:maxLen] + "..."
+	}
+	return clean
+}
+
+// MaskSecret menyamarkan secret webhook untuk tampilan dashboard, mis. "whsec_****1b7e".
+func MaskSecret(secret string) string {
+	s := strings.TrimSpace(secret)
+	if len(s) == 0 {
+		return "whsec_****"
+	}
+	if len(s) <= 4 {
+		return "whsec_****" + s
+	}
+	last4 := s[len(s)-4:]
+	return "whsec_****" + last4
+}
+
+// VerifySignature memverifikasi tanda tangan payload webhook menggunakan secret HMAC-SHA256.
+//
+// Menggunakan hmac.Equal agar kebal terhadap serangan timing attack.
+func VerifySignature(payload []byte, secret []byte, sigHeader string) bool {
+	sig := strings.TrimSpace(sigHeader)
+	if strings.HasPrefix(sig, "sha256=") {
+		sig = strings.TrimPrefix(sig, "sha256=")
+	}
+	expectedHex, err := hex.DecodeString(sig)
+	if err != nil {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(payload)
+	computed := mac.Sum(nil)
+
+	return hmac.Equal(computed, expectedHex)
+}

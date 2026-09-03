@@ -195,3 +195,12 @@ func zero(b []byte) {
 func CredentialAAD(credentialID string) string {
 	return "provider_credential:" + credentialID
 }
+
+// WebhookAAD membentuk data terotentikasi tambahan (AAD) standar untuk rahasia webhook.
+//
+// AAD ini WAJIB diikat ke ID baris webhook: tanpa pengikatan ini, ciphertext yang sah
+// dari satu webhook bisa disalin langsung ke webhook lain (ciphertext splicing) dan
+// didekripsi dengan sukses oleh instance mana pun yang memegang kunci enkripsi yang sama.
+func WebhookAAD(webhookID string) string {
+	return "webhook:" + webhookID
+}

@@ -51,8 +51,9 @@ menyajikan API gateway, dashboard admin, dan aset statis dari proses yang sama.
 | 7 — Endpoint gateway | ✅ Selesai | `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/models`; SSE, codec dua arah, pabrik adapter bercache; terpasang di biner |
 | 8 — Rate limit, budget, ban, filter | ✅ Selesai | `repo/policy` (4 tabel), `internal/ratelimit` (6 cakupan), `internal/billing` (anggaran), `internal/contentfilter` (6 jenis aturan); semuanya terpasang di jalur `/v1` |
 | 9 — Usage, cost, observability | ✅ Selesai | `internal/usage` 90,0% (pencatat asinkron, harga, cuplikan latensi), `repo/traffic` 88,6% (rollup jam & hari + agregasi baca), `internal/gateway` 89,2%; `lowest_cost` dan `lowest_latency` akhirnya benar-benar berbeda dari `priority`; `budgets.spent_usd` bergerak |
-| 10 — Worker | ⏳ Berikutnya | Penjadwal rollup, health checker, retensi, dan pemeliharaan partisi. Repository-nya sudah ada; yang belum ada penjadwalnya |
-| 11 — Admin REST API | ⬜ | |
+| 10 — Worker | ✅ Selesai | `internal/worker` (supervisor, isolasi panic/error, advisory lock RXWO, 6 background jobs), `internal/webhooks` (HMAC-SHA256, equal jitter backoff, AAD terikat, FOR UPDATE SKIP LOCKED, stuck lease recovery), 6 event webhook terpasang |
+| 11 — Admin REST API | ⏳ Berikutnya | Endpoint nyata untuk seluruh halaman dashboard, filter/search/sort, pagination keyset |
+
 | 12 — Dashboard | ⬜ | Acuan visual sudah ada |
 | 13 — Dokumentasi API | ⬜ | |
 | 14 — Pengerasan & verifikasi | ⬜ | |
@@ -810,7 +811,31 @@ commit Fase 2 sudah dibuat, jadi perubahan itu ikut di commit Fase 3. Kodenya
 terverifikasi (gate lengkap dijalankan atas isi yang di-commit), hanya penempatan
 commit-nya yang tidak rapi.
 
+## Catatan hasil Fase 10
+
+
+Dua paket baru dibangun dan diintegrasikan: `internal/webhooks` (domain model, HMAC-SHA256 signature, sanitasi URL & query token, backoff equal jitter, pengambilan batch `FOR UPDATE SKIP LOCKED`, stuck lease recovery, retensi pengiriman), dan `internal/worker` (supervisor multigoroutine, isolasi panic/error, penanganan `pg_advisory_lock` berbasis namespace `0x5258574F00000000`, 6 background jobs). Seluruh test paket lolos 100% dengan race detector aktif.
+
+**Komponen dan Job yang dibangun:**
+1. **Advisory Lock Namespace Worker**: Memakai prefiks `0x5258574F00000000` ("RXWO") pada koneksi pgxpool mandiri. Dijamin tidak bertabrakan dengan kunci migrasi database `0x524F55544558` ("ROUTEX").
+2. **Provider Health Checker (`HealthCheckerJob`)**: Memeriksa provider aktif via `factory.ProviderFor(ctx, p)` yang berbagi cache, jalur adapter, SSRF guard, dan egress proxy dengan lalu lintas inferensi (tanpa RouteCandidate tiruan). Mengisi Prometheus `routex_provider_up` dan `routex_provider_health_latency_ms`. Mendeteksi pergantian status dan memproduksi event `provider.unhealthy` atau `provider.recovered`.
+3. **Usage Rollup Scheduler (`RollupWorker`)**: Mengeksekusi agregasi token dan biaya dengan jendela mundur 3 jam ke belakang (`RollupRange`) untuk menangkap data terlambat. Rollup selalu tuntas sebelum retensi membersihkan partisi.
+4. **Retention Cleaner (`RetentionWorker`)**: Menjalankan dua mekanisme retensi:
+   - Drop partition untuk tabel besar (`requests`, `request_events`, `usage_hourly`) hanya jika seluruh rentang partisi lebih tua dari batas retensi log.
+   - Penghapusan berbatch dengan jeda 50ms untuk `request_payloads` (`RequestBodyRetentionDays`) dan `webhook_deliveries` (`delivered`/`abandoned`).
+5. **Partition Maintainer (`PartitionMaintainerJob`)**: Membuat partisi bulanan ke depan (`requests`, `request_events`, `request_payloads`, `usage_hourly`) via `create_monthly_partition` dan mengaudit partisi `*_default`. Memberi log peringatan kritis jika partisi default tidak kosong.
+6. **Budget Period Resetter (`BudgetResetterJob`)**: Mencari anggaran kedaluwarsa via `policyRepo.ExpiredBudgets`, menghitung ulang pemakaian nyata dari `requests.cost_usd` skala 8 desimal via `policyRepo.CalculateSpend`, dan memajukan periode via `policyRepo.ResetPeriodWithSpend`.
+7. **Webhook Worker (`WebhookWorker`)**: Mengambil antrean siap kirim dengan `FOR UPDATE SKIP LOCKED` sehingga beberapa worker bisa paralel tanpa bentrok. Memulihkan sewa macet (`delivering` > 5 menit) secara berkala.
+8. **Webhook Event Sinks**: Memproduksi tepat 6 event: `provider.unhealthy`, `provider.recovered`, `budget.threshold`, `budget.exceeded`, `circuit.opened`, `circuit.closed`.
+
+**Verifikasi end-to-end pada biner sungguhan:**
+- `./ai-gateway` start bersih, seluruh worker aktif, metrik Prometheus `routex_worker_runs_total` dan `routex_worker_duration_seconds` bertambah.
+- Health check `/healthz` menjawab HTTP 200.
+- Partisi bulanan masa depan terbuat otomatis di PostgreSQL.
+- Shutdown anggun via `pkill -x ai-gateway` menghentikan HTTP server dan seluruh worker tanpa error.
+
 ## Fase implementasi
+
 
 Setiap fase ditutup dengan `gofmt`, `go vet`, `go build`, dan `go test ./...` hijau sebelum
 lanjut. Tidak ada fase yang meninggalkan TODO pada fungsi inti.

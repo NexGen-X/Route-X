@@ -55,25 +55,38 @@ type Verdict struct {
 	Alerts []*policy.Budget
 }
 
+// WebhookEnqueuer adalah antarmuka untuk memasukkan event notifikasi ke antrean webhook.
+type WebhookEnqueuer interface {
+	Enqueue(ctx context.Context, event string, payload any) (int, error)
+}
+
 // Enforcer menyimpan salinan anggaran dan menjawab apakah permintaan boleh jalan.
 //
 // Aman dipakai bersamaan oleh banyak goroutine.
 type Enforcer struct {
-	source Source
-	logger *slog.Logger
-	ttl    time.Duration
-	now    func() time.Time
+	source   Source
+	enqueuer WebhookEnqueuer
+	logger   *slog.Logger
+	ttl      time.Duration
+	now      func() time.Time
 
 	mu     sync.RWMutex
 	dimuat time.Time
 	// global adalah anggaran bercakupan global.
 	global []*policy.Budget
-	// perCakupan[scope][scopeID] memuat anggaran satu entitas.
+	// perCakupan diindeks per [scope][scope_id].
 	perCakupan map[string]map[string][]*policy.Budget
 }
 
-// Option menyetel Enforcer saat konstruksi.
+// Option adalah penyetel opsional penegak anggaran.
 type Option func(*Enforcer)
+
+// WithWebhookEnqueuer memasang antrean webhook untuk notifikasi budget.threshold dan budget.exceeded.
+func WithWebhookEnqueuer(enqueuer WebhookEnqueuer) Option {
+	return func(e *Enforcer) {
+		e.enqueuer = enqueuer
+	}
+}
 
 // WithTTL mengubah umur salinan anggaran. Nilai <= 0 diabaikan.
 func WithTTL(d time.Duration) Option {
@@ -131,7 +144,7 @@ func (e *Enforcer) Check(ctx context.Context, targets []policy.Target) Verdict {
 
 	var v Verdict
 	periksa := func(b *policy.Budget) {
-		if b.ShouldAlert() {
+		if b.ShouldAlert() || (b.AlertedAt == nil && b.LimitUSD > 0 && b.SpentUSD >= b.LimitUSD) {
 			v.Alerts = append(v.Alerts, b)
 		}
 		if !b.Blocks() {
@@ -157,13 +170,10 @@ func (e *Enforcer) Check(ctx context.Context, targets []policy.Target) Verdict {
 }
 
 // Announce menandai anggaran yang melewati ambang sebagai sudah diberitahukan, dan mencatat
-// peringatannya ke log.
+// peringatannya ke log serta memproduksi webhook event budget.threshold / budget.exceeded.
 //
 // Penandaannya bersyarat di database (alerted_at masih NULL), sehingga beberapa instance
-// yang memeriksa ambang bersamaan hanya menghasilkan satu peringatan. Pengiriman webhook-nya
-// milik Fase 10; sampai itu ada, log inilah satu-satunya jalur peringatannya — dan itu lebih
-// baik daripada menahan penandaan sampai webhook ada, karena penandaan yang tertunda berarti
-// setiap permintaan mengulangi pemeriksaan yang sama.
+// yang memeriksa ambang bersamaan hanya menghasilkan satu peringatan.
 //
 // Kegagalannya tidak boleh menggagalkan permintaan: yang hilang adalah satu notifikasi.
 func (e *Enforcer) Announce(ctx context.Context, budgets []*policy.Budget) {
@@ -187,6 +197,35 @@ func (e *Enforcer) Announce(ctx context.Context, budgets []*policy.Budget) {
 			"ambang_persen", b.AlertThresholdPct,
 			"terpakai_usd", b.SpentUSD.String(),
 			"batas_usd", b.LimitUSD.String())
+
+		// Produksi event webhook Fase 10 (budget.threshold atau budget.exceeded).
+		if e.enqueuer != nil {
+			var event string
+			payload := map[string]any{
+				"budget_id":   b.ID,
+				"budget_name": b.Name,
+				"scope":       b.Scope,
+				"scope_id":    b.ScopeID,
+				"spent_usd":   b.SpentUSD.Decimal(),
+				"limit_usd":   b.LimitUSD.Decimal(),
+				"timestamp":   time.Now().UTC().Format(time.RFC3339),
+			}
+			if b.SpentUSD >= b.LimitUSD {
+				event = "budget.exceeded"
+				payload["action"] = b.ActionOnExceed
+			} else {
+				event = "budget.threshold"
+				if b.AlertThresholdPct > 0 {
+					payload["threshold_pct"] = b.AlertThresholdPct
+				}
+			}
+
+			payload["event"] = event
+			if _, err := e.enqueuer.Enqueue(ctx, event, payload); err != nil {
+				e.logger.WarnContext(ctx, "gagal memasukkan notifikasi anggaran ke antrean webhook",
+					"anggaran", b.Name, "event", event, "error", err)
+			}
+		}
 	}
 	// Salinan di memori masih memuat alerted_at yang lama; membatalkannya di sini membuat
 	// pemeriksaan berikutnya membaca keadaan yang sudah ditandai alih-alih mengumpulkan

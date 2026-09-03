@@ -831,3 +831,31 @@ func TestBreakerWarm(t *testing.T) {
 		}
 	}
 }
+
+// TestBreakerStateChangeListenerMemproduksiPerpindahanState memeriksa callback listener
+// dipanggil saat status circuit breaker berubah (misal dari closed ke open).
+func TestBreakerStateChangeListenerMemproduksiPerpindahanState(t *testing.T) {
+	e := newBreakerEnv(t, cfgUji())
+	ctx := context.Background()
+
+	perubahan := make(chan State, 4)
+	e.breaker.SetStateChangeListener(func(ctx context.Context, providerID, model string, state State, total, failures int64) {
+		perubahan <- state
+	})
+
+	// Rekam kegagalan berturut-turut hingga breaker terbuka
+	for i := 0; i < 5; i++ {
+		if err := e.breaker.Record(ctx, "prov-1", "model-1", false); err != nil {
+			t.Fatalf("Record: %v", err)
+		}
+	}
+
+	select {
+	case st := <-perubahan:
+		if st != StateOpen {
+			t.Errorf("state yang diterima listener = %s, mau open", st)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout menunggu callback listener state change")
+	}
+}

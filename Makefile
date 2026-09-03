@@ -12,7 +12,7 @@ BUILT_AT   := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -s -w \
   -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.builtAt=$(BUILT_AT)
 
-.PHONY: help deps fe build run dev fmt vet test test-unit test-integration race cover clean db-shell redis-shell
+.PHONY: help deps fe build run dev fmt vet test test-unit test-integration race cover clean db-shell redis-shell require-db
 
 help: ## Tampilkan daftar target
 > @grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -47,20 +47,43 @@ vet: ## Analisis statis bawaan Go
 # pemeriksaan itu saling menuduh bila paket berjalan paralel. Karena itu -p 1.
 TESTFLAGS := -count=1 -p 1
 
-test: ## Semua test (unit + integrasi, butuh Postgres & Redis)
-> $(GO) test $(TESTFLAGS) $(PKG)
+# ENVLOAD memuat .env sebelum test dijalankan.
+#
+# Ini bukan kenyamanan. Test integrasi MELEWATI DIRINYA SENDIRI ketika DATABASE_URL tidak
+# ada di environment, dan pelewatan itu tidak membuat gate merah — jadi tanpa baris ini
+# `make test` melaporkan hijau sambil tidak menjalankan satu pun test yang menyentuh
+# Postgres. Itu kegagalan terburuk yang bisa dimiliki sebuah gate: bukan salah menilai,
+# melainkan tidak menilai apa pun sambil terlihat menilai.
+#
+# Terukur: `make race` tanpa ini selesai dalam 1 detik untuk paket repository dan
+# melewatkan seluruh test integrasinya; dengan ini paket yang sama memakan 29 detik.
+ENVLOAD = set -a; [ -f ./.env ] && . ./.env; set +a;
+
+# require-db menggagalkan target integrasi lebih awal bila kredensialnya tidak ada, dengan
+# pesan yang menyebut jalan keluarnya. Lebih baik merah dan jelas daripada hijau dan hampa.
+.PHONY: require-db
+require-db:
+> @$(ENVLOAD) if [ -z "$$DATABASE_URL" ]; then \
+>   echo "DATABASE_URL tidak diset dan .env tidak memuatnya."; \
+>   echo "Test integrasi akan MELEWATI dirinya sendiri dan gate tetap hijau, jadi target ini berhenti di sini."; \
+>   echo "Isi DATABASE_URL di ./.env, atau jalankan 'make test-unit' bila memang hanya unit test yang dimaksud."; \
+>   exit 1; \
+>  fi
+
+test: require-db ## Semua test (unit + integrasi, butuh Postgres & Redis)
+> $(ENVLOAD) $(GO) test $(TESTFLAGS) $(PKG)
 
 test-unit: ## Hanya unit test (tanpa Postgres/Redis, bisa paralel)
 > $(GO) test -count=1 -short $(PKG)
 
-test-integration: ## Hanya test integrasi
-> $(GO) test $(TESTFLAGS) -run Integration $(PKG)
+test-integration: require-db ## Hanya test integrasi
+> $(ENVLOAD) $(GO) test $(TESTFLAGS) -run Integration $(PKG)
 
-race: ## Test dengan race detector
-> $(GO) test $(TESTFLAGS) -race $(PKG)
+race: require-db ## Test dengan race detector
+> $(ENVLOAD) $(GO) test $(TESTFLAGS) -race $(PKG)
 
-cover: ## Test + laporan coverage
-> $(GO) test $(TESTFLAGS) -coverprofile=coverage.out -covermode=atomic $(PKG)
+cover: require-db ## Test + laporan coverage
+> $(ENVLOAD) $(GO) test $(TESTFLAGS) -coverprofile=coverage.out -covermode=atomic $(PKG)
 > $(GO) tool cover -func=coverage.out | tail -1
 
 # PERINGATAN: ini menghapus SEMUA schema berawalan test_, termasuk milik test yang

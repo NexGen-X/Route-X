@@ -551,7 +551,14 @@ func dashboardHandler(logger *slog.Logger) (http.Handler, error) {
 		return notBuiltHandler(), nil
 	}
 
-	return httpx.SPAHandler(distFS, httpx.SPAOptions{}), nil
+	spa := httpx.SPAHandler(distFS, httpx.SPAOptions{})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAPIPath(r.URL.Path) {
+			httpx.NotFound(w, r, "Endpoint tidak ditemukan.")
+			return
+		}
+		spa.ServeHTTP(w, r)
+	}), nil
 }
 
 // apiPathPrefixes adalah path yang selalu dijawab sebagai API, bukan sebagai

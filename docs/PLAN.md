@@ -53,8 +53,8 @@ menyajikan API gateway, dashboard admin, dan aset statis dari proses yang sama.
 | 9 — Usage, cost, observability | ✅ Selesai | `internal/usage` 90,0% (pencatat asinkron, harga, cuplikan latensi), `repo/traffic` 88,6% (rollup jam & hari + agregasi baca), `internal/gateway` 89,2%; `lowest_cost` dan `lowest_latency` akhirnya benar-benar berbeda dari `priority`; `budgets.spent_usd` bergerak |
 | 10 — Worker | ✅ Selesai | `internal/worker` (supervisor, isolasi panic/error, advisory lock RXWO, 6 background jobs), `internal/webhooks` (HMAC-SHA256, equal jitter backoff, AAD terikat, FOR UPDATE SKIP LOCKED, stuck lease recovery), 6 event webhook terpasang |
 | 11 — Admin REST API | ✅ Selesai | `internal/admin` (7 domain REST API, otorisasi RBAC 4 peran, proteksi CSRF double-submit token, keyset pagination, audit log otomatis, live pool stats); terpasang di `/api/admin` pada router gateway |
-| 12 — Dashboard | ⏳ Berikutnya | Desain dark mode, TanStack Query, Recharts, terhubung 100% ke REST API Fase 11 |
-| 13 — Dokumentasi API | ⬜ | |
+| 12 — Dashboard | ✅ Selesai | React 18 + TS + Vite + Tailwind CSS + Recharts + TanStack Query; 5 grup sidebar, 20 halaman interaktif terhubung 100% ke API Fase 11, dark theme, tersemat di biner tunggal 25 MB |
+| 13 — Dokumentasi API | ⏳ Berikutnya | `docs/openapi.yaml` untuk semua endpoint publik, disajikan di `/docs` |
 | 14 — Pengerasan & verifikasi | ⬜ | |
 
 
@@ -877,6 +877,54 @@ Paket baru `internal/admin` dibangun dan diintegrasikan secara menyeluruh ke dal
 - `go test -race ./internal/admin/...`: Lolos 100% dengan database nyata, seluruh pengujian autentikasi, pembatasan RBAC viewer (403), penegakan CSRF (403 tanpa token / 201 dengan token), keyset pagination, dan pembersihan skema otomatis tuntas tanpa skema tertinggal.
 - `internal/security`: Uji redaksi struct `redaction_lint_test.go` lolos 100% dengan receiver nilai `func (h Handlers) String/GoString/LogValue`.
 - `make build`: Biner `ai-gateway` terkompilasi bersih (24 MB) siap pakai untuk melayani Frontend Dashboard di Fase 12.
+
+## Catatan hasil Fase 12
+
+Aplikasi frontend Single Page Application (SPA) dibangun secara penuh di dalam direktori `web/` menggunakan **React 18**, **TypeScript**, **Vite**, **Tailwind CSS**, **Recharts**, dan **Lucide Icons**. Seluruh bundel hasil build (`web/dist`) disematkan langsung ke dalam biner `./ai-gateway` tunggal (25 MB) menggunakan `go:embed all:dist` melalui paket `web` dan `httpx.SPAHandler`.
+
+**Bahasa Visual & Desain:**
+- Sepenuhnya mengadopsi design tokens dari screenshot acuan:
+  - Latar halaman dark `#0A0A0A`, sidebar `#0C0C0C` dengan border `#1C1C1C`, kartu `#101010`, kartu bersarang/header `#141414`, garis pembatas `#1F1F1F`.
+  - Warna aksen Lime `#BEF264` dan latar chip `rgba(190, 242, 100, 0.10)`.
+  - Tipografi dua baris per sel (nama tebal di atas, monospace redup di bawah), sans geometris untuk antarmuka, dan monospace untuk ID/token/latensi/biaya.
+
+**Arsitektur Navigasi 5 Grup & 20 Halaman Interaktif:**
+1. **Overview & Logs**:
+   - `Dashboard` (`/`): Ringkasan 4 metrik utama (Total Permintaan, Total Token, Estimasi Biaya USD, Latensi P95), grafik Recharts deret waktu 24 jam, grid status kesehatan provider hulu, tautan cepat.
+   - `Observability` (`/observability`): Visualisasi metrik deret waktu dengan selektor (requests, tokens, cost, latency p95), filter rentang waktu (1h, 24h, 7d, 30d), dekomposisi penggunaan per-provider/model/key, dan diagnostik real-time connection pool pgx.
+   - `Requests Inspector` (`/requests`): Log penelusuran lalu lintas lengkap dengan filter chip (`All`, `Success 2xx`, `Errors 4xx/5xx`), pencarian teks bebas, keyset pagination, serta modal inspector interaktif yang menampilkan detail request, timeline failover `request_events`, dan viewer payload masukan/keluaran `request_payloads`.
+2. **Upstreams**:
+   - `Providers` (`/upstreams/providers`): Manajemen provider AI (OpenAI, Anthropic, Google, vLLM, Ollama), toggle status, probe kesehatan live langsung ke gateway, dan modal kredensial terenkripsi AES-256-GCM.
+   - `Models & Pricing` (`/upstreams/models`): Katalog model kanonik, pemetaan alias, dan penetapan harga bertingkat berpresisi moneter skala 8 desimal `upstream.USD`.
+   - `Egress Pools` (`/upstreams/egress`): Manajemen pool proxy keluar HTTP/HTTPS/SOCKS5.
+3. **Gateway & Policies**:
+   - `Routing Rules` (`/gateway/routing`): Mesin aturan perutean upstream (Priority, Lowest Cost, Lowest Latency, Weighted, Round-Robin), failover threshold, dan jeda backoff.
+   - `Rate Limits` (`/gateway/rate-limits`): Pembatasan kuota laju terdistribusi (RPM, TPM) per-key, IP, atau model.
+   - `Budgets` (`/gateway/budgets`): Alokasi batas biaya moneter USD dengan progress bar visual, ambang peringatan, dan tombol reset periode manual.
+   - `Content Filters` (`/gateway/filters`): Aturan penyaring konten masukan/keluaran (`blocked_pattern`, `allowed_pattern`) dengan substring dan regex.
+   - `Active Bans` (`/gateway/bans`): Daftar pemblokiran aktif subjek (IP atau API key) dan pencabutan blokir instan.
+   - `Circuit Breakers` (`/gateway/breakers`): Pengawasan status pemutus arus (Closed, Half-Open, Open) dan reset status darurat.
+4. **Access & Automation**:
+   - `Client API Keys` (`/access/api-keys`): Manajemen kunci API klien, modal salin kunci plaintext sekali tampil (`sk_live_...`), rotasi atomik dalam transaksi pool, dan pencabutan kunci.
+   - `Users & RBAC` (`/access/users`): Manajemen pengguna, peran multi-role, paksa ganti sandi, dan pemutusan sesi.
+   - `Active Sessions` (`/access/sessions`): Pengawasan sesi login aktif, alamat IP, user-agent, dan pemutusan sesi mandiri.
+   - `Webhooks & Deliveries` (`/automation/webhooks`): Manajemen endpoint webhook bertanda tangan HMAC-SHA256, pengujian ping test kirim langsung, dan riwayat log pengiriman.
+5. **System & Settings**:
+   - `Runtime Settings` (`/system/settings`): Konfigurasi runtime dinamis tanpa restart biner.
+   - `Background Jobs` (`/system/jobs`): Pengawasan supervisor worker Route-X dan pemicuan job on-demand.
+   - `Audit Logs` (`/system/audit`): Jejak audit administratif lengkap dengan modal viewer JSON metadata perubahan.
+   - `System Diagnostics` (`/system/diagnostics`): Uptime, versi biner, Go compiler, penggunaan memori Go runtime, GC cycles, dan statistik koneksi pgxpool.
+
+**Autentikasi & Keamanan Frontend:**
+- Halaman Login (`/login`) dan Ganti Sandi Pertama (`/change-password`) terisolasi secara otomatis.
+- Otomatis membaca cookie `routex_csrf` dan menyertakan header `X-CSRF-Token` pada seluruh mutasi POST/PUT/DELETE.
+- Tidak ada angka karangan dan tidak ada tombol mati: seluruh aksi terhubung langsung ke API `/api/admin/*` dan `/api/auth/*`.
+
+**Verifikasi & Kualitas:**
+- `make fmt`: 100% lulus.
+- `make vet`: 100% lulus.
+- `go test -race ./cmd/ai-gateway ./internal/admin`: 100% lulus.
+- `make build`: Biner tunggal `./ai-gateway` 25 MB berhasil dibangun dan diuji menyajikan `/healthz` (200 OK) serta dokumen HTML SPA dashboard di `/` (200 OK) dan fallback rute client-side.
 
 ## Fase implementasi
 

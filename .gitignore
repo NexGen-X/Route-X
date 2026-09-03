@@ -12,6 +12,7 @@
 # Frontend
 node_modules/
 web/.vite/
+*.tsbuildinfo
 web/dist/*
 !web/dist/.gitkeep
 

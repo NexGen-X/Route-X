@@ -131,14 +131,21 @@ func TestAPIPathsGet404NotDashboardMessage(t *testing.T) {
 	}
 }
 
-// Path dashboard tetap mendapat penjelasan cara membangunnya.
+// Path dashboard tetap mendapat penjelasan cara membangunnya jika belum di-build,
+// atau menyajikan SPA (200 OK) bila sudah di-build di Fase 12.
 func TestDashboardPathsExplainMissingBuild(t *testing.T) {
 	r := newTestRouter(t, testConfig(config.EnvDevelopment))
 
 	for _, path := range []string{"/", "/dashboard", "/requests"} {
 		rec := do(t, r, http.MethodGet, path)
+		if rec.Code == http.StatusOK {
+			if !strings.Contains(rec.Body.String(), "html") && !strings.Contains(rec.Body.String(), "<!DOCTYPE") {
+				t.Errorf("%s status 200 tetapi bukan HTML: %s", path, rec.Body.String())
+			}
+			continue
+		}
 		if rec.Code != http.StatusServiceUnavailable {
-			t.Errorf("%s status = %d, mau 503", path, rec.Code)
+			t.Errorf("%s status = %d, mau 503 atau 200", path, rec.Code)
 		}
 		if !strings.Contains(rec.Body.String(), "dashboard_not_built") {
 			t.Errorf("%s tidak menjelaskan penyebabnya: %s", path, rec.Body.String())

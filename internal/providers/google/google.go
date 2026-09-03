@@ -381,6 +381,10 @@ func (p *Provider) Embeddings(ctx context.Context, req *providers.EmbeddingsRequ
 	return p.embedBatch(ctx, req)
 }
 
+// EmbeddingsRequest.Extra sengaja tidak diteruskan di sini, alasannya sama dengan
+// ChatRequest.Extra di translate.go: isinya field berdialek OpenAI, dan body :embedContent
+// bentuknya berbeda seluruhnya — meneruskannya apa adanya hanya menghasilkan 400 dari
+// Gemini untuk field yang tidak dikenalnya.
 func (p *Provider) embedSingle(ctx context.Context, req *providers.EmbeddingsRequest) (*providers.EmbeddingsResponse, error) {
 	body, err := json.Marshal(embedRequest{
 		Content:              textContent(req.Input[0]),

@@ -32,7 +32,9 @@ func testConfig(env config.Env) *config.Config {
 // sehingga tidak butuh Postgres maupun Redis.
 func newTestRouter(t *testing.T, cfg *config.Config, checkers ...health.Checker) http.Handler {
 	t.Helper()
-	r, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, checkers...)
+	// v1 nil: perakitan permukaan /v1 butuh Postgres dan Redis, dan yang diuji di berkas
+	// ini adalah rantai middleware serta rute yang tidak bergantung padanya.
+	r, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, nil, checkers...)
 	if err != nil {
 		t.Fatalf("buildRouter: %v", err)
 	}
@@ -200,11 +202,45 @@ func TestHSTSOnlyInProduction(t *testing.T) {
 	}
 }
 
+// TestBuildRouterMountsV1 menjaga pemasangan permukaan API.
+//
+// Tanpa ini, seluruh Fase 7 bisa lengkap dan teruji sementara binernya tetap menjawab
+// /v1/chat/completions dengan halaman dashboard — kegagalan yang tidak muncul di satu pun
+// test paket internal/gateway, karena yang hilang justru satu baris di berkas ini.
+func TestBuildRouterMountsV1(t *testing.T) {
+	cfg := testConfig(config.EnvDevelopment)
+	v1 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+		_, _ = w.Write([]byte(r.URL.Path))
+	})
+
+	r, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, v1)
+	if err != nil {
+		t.Fatalf("buildRouter: %v", err)
+	}
+
+	for _, jalur := range []string{"/v1/chat/completions", "/v1/responses", "/v1/embeddings", "/v1/models"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, jalur, nil))
+		if w.Code != http.StatusTeapot {
+			t.Errorf("%s: status = %d, mau %d; permukaan /v1 tidak terpasang",
+				jalur, w.Code, http.StatusTeapot)
+		}
+		// chi TIDAK menulis ulang r.URL.Path saat Mount: pemotongan prefiks terjadi di
+		// RouteContext.RoutePath, dan itulah yang dipakai sub-router untuk mencocokkan.
+		// Diperiksa di sini supaya perubahan perilaku itu tidak lewat tanpa disadari —
+		// handler yang membaca r.URL.Path (mis. untuk log) memang menerima path lengkap.
+		if got := w.Body.String(); got != jalur {
+			t.Errorf("%s: path yang diteruskan = %q, mau %q", jalur, got, jalur)
+		}
+	}
+}
+
 func TestBuildRouterRejectsBadTrustedProxies(t *testing.T) {
 	cfg := testConfig(config.EnvDevelopment)
 	cfg.TrustedProxies = []string{"bukan-cidr"}
 
-	if _, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil); err == nil {
+	if _, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, nil); err == nil {
 		t.Fatal("TRUSTED_PROXIES tidak valid seharusnya menggagalkan startup")
 	}
 }

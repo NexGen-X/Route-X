@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -73,9 +74,29 @@ type Config struct {
 
 	MaxRequestBytes int64
 	UpstreamTimeout time.Duration
-	ShutdownGrace   time.Duration
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
+
+	// UpstreamAllowHTTP mengizinkan base URL provider berskema http://.
+	//
+	// Bawaannya false. Yang membutuhkannya adalah upstream yang dijalankan sendiri di
+	// jaringan tepercaya (Ollama, vLLM, LM Studio) — bukan api.openai.com, yang selalu
+	// https. Karena itu ia setelan, bukan bawaan: mengizinkan http untuk semua provider
+	// berarti kredensial upstream bisa terkirim tanpa enkripsi ke host mana pun yang
+	// diketikkan operator.
+	UpstreamAllowHTTP bool
+
+	// UpstreamAllowedPrivateAddrs adalah alamat privat yang boleh dihubungi meski penjaga
+	// SSRF menolak seluruh rentang privat.
+	//
+	// Bentuknya ALAMAT, bukan nama host, dan itu keharusan bukan pilihan: di lapisan dial
+	// nama host sudah hilang, jadi pengecualian bernama hanya bisa bekerja dengan
+	// meresolusi nama saat kebijakan dibuat lalu mempercayai hasilnya saat menghubungi —
+	// yaitu DNS rebinding yang justru dijaga lapisan itu.
+	//
+	// Contoh isi untuk Ollama di mesin yang sama: "127.0.0.1,::1".
+	UpstreamAllowedPrivateAddrs []netip.Prefix
+	ShutdownGrace               time.Duration
+	ReadTimeout                 time.Duration
+	WriteTimeout                time.Duration
 
 	RequestLogRetentionDays  int
 	RequestBodyRetentionDays int
@@ -86,6 +107,18 @@ type Config struct {
 
 // Addr mengembalikan alamat listen untuk http.Server.
 func (c *Config) Addr() string { return ":" + strconv.Itoa(c.Port) }
+
+// UpstreamSSRFPolicy menyusun kebijakan SSRF untuk seluruh panggilan ke provider.
+//
+// Satu tempat, bukan disusun ulang di setiap pemanggil: kebijakan yang berbeda antar jalur
+// berarti satu jalur yang lebih longgar dari yang lain, dan yang paling longgar itulah yang
+// menentukan apa yang benar-benar bisa dihubungi.
+func (c *Config) UpstreamSSRFPolicy() security.SSRFPolicy {
+	return security.SSRFPolicy{
+		AllowHTTP:           c.UpstreamAllowHTTP,
+		AllowedPrivateAddrs: c.UpstreamAllowedPrivateAddrs,
+	}
+}
 
 // Load membaca .env bila ada lalu memuat konfigurasi dari environment.
 //
@@ -130,9 +163,12 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 
 		MaxRequestBytes: int64(r.intRange("MAX_REQUEST_MIB", defaultMaxRequestMiB, 1, 1024)) << 20,
 		UpstreamTimeout: r.duration("UPSTREAM_TIMEOUT", 120*time.Second),
-		ShutdownGrace:   r.duration("SHUTDOWN_GRACE", 25*time.Second),
-		ReadTimeout:     r.duration("READ_TIMEOUT", 30*time.Second),
-		WriteTimeout:    r.duration("WRITE_TIMEOUT", 0), // 0 = tanpa batas, wajib untuk SSE
+
+		UpstreamAllowHTTP:           r.boolean("UPSTREAM_ALLOW_HTTP", false),
+		UpstreamAllowedPrivateAddrs: r.privateAddrs("UPSTREAM_ALLOWED_PRIVATE_ADDRS"),
+		ShutdownGrace:               r.duration("SHUTDOWN_GRACE", 25*time.Second),
+		ReadTimeout:                 r.duration("READ_TIMEOUT", 30*time.Second),
+		WriteTimeout:                r.duration("WRITE_TIMEOUT", 0), // 0 = tanpa batas, wajib untuk SSE
 
 		RequestLogRetentionDays:  r.intRange("REQUEST_LOG_RETENTION_DAYS", 30, 1, 3650),
 		RequestBodyRetentionDays: r.intRange("REQUEST_BODY_RETENTION_DAYS", 7, 1, 3650),
@@ -358,4 +394,42 @@ func (r *reader) decodeKey(key string) []byte {
 		return nil
 	}
 	return b
+}
+
+// boolean membaca setelan boolean.
+//
+// Yang diterima hanya bentuk yang dikenal strconv.ParseBool. Nilai yang tidak dikenal
+// menjadi error, bukan diperlakukan sebagai false: setelan yang mengendurkan penjagaan
+// keamanan tidak boleh salah dibaca ke arah mana pun tanpa satu pun keluhan, dan "yes"
+// atau "on" adalah yang paling mungkin diketikkan operator.
+func (r *reader) boolean(key string, def bool) bool {
+	v, ok := r.raw(key)
+	if !ok {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		r.fail("%s harus true atau false, dapat %q", key, v)
+		return def
+	}
+	return b
+}
+
+// privateAddrs membaca daftar alamat atau prefix yang dikecualikan penjaga SSRF.
+//
+// Diurai di sini, bukan di titik pemakaian, supaya nilai yang salah menggagalkan START
+// dengan pesan jelas. Kalau diurai saat request pertama, kesalahan ketik pada setelan ini
+// muncul sebagai provider yang tidak bisa dihubungi — gejala yang menuntun operator
+// menyelidiki jaringan, bukan berkas konfigurasinya.
+func (r *reader) privateAddrs(key string) []netip.Prefix {
+	values := r.csv(key)
+	if len(values) == 0 {
+		return nil
+	}
+	prefixes, err := security.ParsePrivateAddrs(values)
+	if err != nil {
+		r.fail("%s: %v", key, err)
+		return nil
+	}
+	return prefixes
 }

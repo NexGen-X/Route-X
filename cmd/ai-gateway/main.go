@@ -21,14 +21,19 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/NexGen-X/Route-X/internal/apikey"
 	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/cache"
 	"github.com/NexGen-X/Route-X/internal/config"
 	"github.com/NexGen-X/Route-X/internal/database"
+	"github.com/NexGen-X/Route-X/internal/database/repo/keys"
+	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
+	"github.com/NexGen-X/Route-X/internal/gateway"
 	"github.com/NexGen-X/Route-X/internal/health"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
+	"github.com/NexGen-X/Route-X/internal/router"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/web"
 )
@@ -135,7 +140,15 @@ func run(migrateOnly bool) error {
 	authSvc := auth.NewService(db.Pool, cfg, logger,
 		auth.WithLoginLimiter(auth.NewLoginLimiter(rdb, logger)))
 
-	router, err := buildRouter(cfg, logger, metrics, authSvc,
+	// Permukaan /v1: inilah yang dilihat aplikasi klien. Dirakit sebelum router supaya
+	// kegagalan perakitannya menghentikan start, bukan muncul sebagai 404 pada permintaan
+	// pertama pelanggan.
+	v1, err := buildGatewaySurface(ctx, cfg, logger, metrics, db, rdb)
+	if err != nil {
+		return fmt.Errorf("merakit permukaan /v1: %w", err)
+	}
+
+	mux, err := buildRouter(cfg, logger, metrics, authSvc, v1,
 		health.NewChecker("postgres", db.Ping),
 		health.NewChecker("redis", rdb.Ping),
 	)
@@ -143,7 +156,7 @@ func run(migrateOnly bool) error {
 		return err
 	}
 
-	srv := httpx.NewServer(cfg, router, logger)
+	srv := httpx.NewServer(cfg, mux, logger)
 	logger.Info("siap menerima permintaan", "addr", srv.Addr(), "dashboard", dashboardURL(cfg, srv.Addr()))
 
 	return srv.Run(ctx)
@@ -155,6 +168,7 @@ func buildRouter(
 	logger *slog.Logger,
 	metrics *observability.Metrics,
 	authSvc *auth.Service,
+	v1 http.Handler,
 	checkers ...health.Checker,
 ) (http.Handler, error) {
 	trusted, err := httpx.ParseTrustedProxies(cfg.TrustedProxies)
@@ -208,6 +222,15 @@ func buildRouter(
 		r.Mount("/api/auth", auth.NewHandlers(authSvc).Routes())
 	}
 
+	// --- Permukaan API /v1 ---
+	//
+	// Rantai middleware-nya dirakit di buildGatewaySurface, bukan di sini, karena urutan
+	// autentikasi dan pembatasan laju adalah bagian dari kontrak paket apikey — dan
+	// memasangnya di dua tempat berarti satu tempat yang bisa lupa.
+	if v1 != nil {
+		r.Mount("/v1", v1)
+	}
+
 	// --- Dashboard (fallback untuk seluruh path yang tidak cocok rute di atas) ---
 	dashboard, err := dashboardHandler(logger)
 	if err != nil {
@@ -215,6 +238,96 @@ func buildRouter(
 	}
 	r.NotFound(dashboard.ServeHTTP)
 
+	return r, nil
+}
+
+// buildGatewaySurface merakit permukaan API /v1 beserta rantai middleware-nya.
+//
+// Urutan rantainya menentukan kebenaran, bukan kerapian:
+//
+//  1. Authenticate lebih dulu — pemilik kuota adalah key yang sudah terverifikasi.
+//  2. Limit sesudahnya — tanpa principal di context tidak ada yang bisa dibatasi, dan
+//     Limiter memang menolak rute yang dipasang tanpa Authenticate di depannya.
+//  3. Handler gateway paling dalam.
+//
+// CSRF sengaja TIDAK ada di rantai ini, dan itu bukan kelalaian: rute ini berautentikasi
+// Bearer API key, dan browser tidak pernah melampirkan header Authorization sendiri pada
+// permintaan lintas situs. CSRF hanya bermakna untuk kredensial yang dikirim browser
+// otomatis, yaitu cookie sesi dashboard.
+func buildGatewaySurface(
+	ctx context.Context,
+	cfg *config.Config,
+	logger *slog.Logger,
+	metrics *observability.Metrics,
+	db *database.DB,
+	rdb *cache.Redis,
+) (http.Handler, error) {
+	cipher, err := security.NewCipher(cfg.EncryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("menyiapkan cipher kredensial: %w", err)
+	}
+	creds, err := upstream.NewCredentialRepo(db.Pool, cipher)
+	if err != nil {
+		return nil, fmt.Errorf("repository kredensial provider: %w", err)
+	}
+	egress, err := upstream.NewEgressRepo(db.Pool, cipher)
+	if err != nil {
+		return nil, fmt.Errorf("repository egress pool: %w", err)
+	}
+	keyRepo, err := keys.New(db.Pool, cfg.APIKeyPepper)
+	if err != nil {
+		return nil, fmt.Errorf("repository API key: %w", err)
+	}
+
+	if len(cfg.UpstreamAllowedPrivateAddrs) > 0 || cfg.UpstreamAllowHTTP {
+		// Dicatat karena keduanya mengendurkan penjagaan yang menutup SSRF lewat base URL
+		// provider. Operator yang mewarisi pemasangan orang lain harus bisa melihatnya di
+		// log start, bukan hanya di berkas .env yang mungkin tidak ia pegang.
+		logger.Info("penjagaan jalur keluar ke provider dilonggarkan lewat konfigurasi",
+			"alamat_privat_diizinkan", cfg.UpstreamAllowedPrivateAddrs,
+			"http_diizinkan", cfg.UpstreamAllowHTTP)
+	}
+
+	// State pemutus arus disimpan di Redis supaya seluruh instance sepakat provider mana
+	// yang sedang rusak. Pemanasan skrip tidak wajib — jalur keputusannya tetap benar
+	// tanpanya — jadi kegagalannya dicatat, bukan menghentikan start.
+	breaker := gateway.NewBreaker(rdb, gateway.DefaultBreakerConfig(), logger)
+	if err := breaker.Warm(ctx); err != nil {
+		logger.Warn("pemanasan skrip pemutus arus gagal", "error", err)
+	}
+
+	limiter := apikey.NewLimiter(rdb, metrics, logger)
+	if err := limiter.Warm(ctx); err != nil {
+		logger.Warn("pemanasan skrip pembatas laju gagal", "error", err)
+	}
+
+	models := upstream.NewModelRepo(db.Pool)
+	handlers, err := gateway.NewHandlers(gateway.HandlersDeps{
+		Models:     models,
+		Lister:     models,
+		Candidates: upstream.NewProviderRepo(db.Pool),
+		Factory:    gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger),
+		// Selector tanpa sumber latensi maupun biaya: keduanya baru ada di Fase 9. Sampai
+		// itu, lowest_latency dan lowest_cost memperlakukan seluruh kandidat sebagai "belum
+		// diketahui", dan menurut aturan paket router nilai yang tidak diketahui diurutkan
+		// PALING BELAKANG — sehingga hasilnya urutan prioritas, bukan urutan yang dikarang
+		// dari angka yang tidak ada.
+		Engine:   router.NewEngine(upstream.NewRoutingRepo(db.Pool), router.NewSelector(), logger),
+		Executor: gateway.NewExecutor(breaker, logger),
+		// Pembatasan model dan provider per API key. Bukan opsional di produksi: tanpa ini
+		// setiap key boleh memakai setiap model.
+		Restrict: keyRepo,
+		Logger:   logger,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	authn := apikey.NewAuthenticator(keyRepo, metrics, logger)
+
+	r := chi.NewRouter()
+	r.Use(authn.Authenticate(), limiter.Limit())
+	r.Mount("/", handlers.Routes())
 	return r, nil
 }
 

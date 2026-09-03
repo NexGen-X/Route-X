@@ -48,6 +48,11 @@ func (p *Provider) Embeddings(ctx context.Context, req *providers.EmbeddingsRequ
 		body["encoding_format"] = req.EncodingFormat
 	}
 
+	// Aturannya sama dengan chatPayload: field yang sudah diisi gateway tidak bisa ditimpa,
+	// sisanya diteruskan apa adanya. Tanpa ini, parameter embedding yang belum dikenal
+	// gateway hilang di perjalanan tanpa satu pun tanda bagi pengirimnya.
+	applyExtra(body, req.Extra)
+
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,

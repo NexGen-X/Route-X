@@ -271,6 +271,17 @@ type EmbeddingsRequest struct {
 	User       string
 	// EncodingFormat: "float" atau "base64". Kosong berarti float.
 	EncodingFormat string
+
+	// Extra memuat field yang tidak dikenal dari body klien, dengan aturan yang sama
+	// seperti ChatRequest.Extra: diteruskan apa adanya oleh adapter berdialek OpenAI dan
+	// diabaikan oleh adapter dialek lain yang tidak punya padanan untuknya.
+	//
+	// Ada di sini karena permukaan embeddings juga bertumbuh — dimensions dan
+	// encoding_format keduanya tambahan yang belum lama. Tanpa tempat ini, satu-satunya
+	// pilihan yang tersisa bagi lapisan HTTP adalah membuang field yang belum dikenal,
+	// yaitu permintaan yang diterima lalu dijalankan dengan parameter yang bukan
+	// parameter pengirimnya.
+	Extra map[string]json.RawMessage
 }
 
 // Embedding adalah satu vektor hasil.

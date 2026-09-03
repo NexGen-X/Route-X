@@ -14,7 +14,7 @@ export interface User {
 
 export interface Principal {
   user: User;
-  session_id: string;
+  session_id?: string;
   roles: string[];
   permissions: string[];
   session: {
@@ -24,6 +24,8 @@ export interface Principal {
     expires_at: string;
     created_at: string;
   };
+  csrf_token?: string;
+  must_change_password?: boolean;
 }
 
 export interface Provider {

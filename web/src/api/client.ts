@@ -43,10 +43,32 @@ export class ApiError extends Error {
   }
 }
 
-// Ambil CSRF token dari cookie routex_csrf
-function getCsrfToken(): string {
+let cachedCsrfToken = '';
+
+export function setCsrfToken(token: string) {
+  if (!token) {
+    cachedCsrfToken = '';
+    try {
+      sessionStorage.removeItem('routex_csrf');
+    } catch {}
+    return;
+  }
+  cachedCsrfToken = token;
+  try {
+    sessionStorage.setItem('routex_csrf', token);
+  } catch {}
+}
+
+// Ambil CSRF token dari cookie routex_csrf atau fallback cache / sessionStorage
+export function getCsrfToken(): string {
   const match = document.cookie.match(/(?:^|;\s*)(?:__Host-)?routex_csrf=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+  if (match) return decodeURIComponent(match[1]);
+  if (cachedCsrfToken) return cachedCsrfToken;
+  try {
+    return sessionStorage.getItem('routex_csrf') || '';
+  } catch {
+    return '';
+  }
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -82,6 +104,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     data = await res.text();
   }
 
+  // Tangkap CSRF token jika dikembalikan di respons
+  if (data && typeof data === 'object' && typeof data.csrf_token === 'string') {
+    setCsrfToken(data.csrf_token);
+  }
+
   if (!res.ok) {
     const errObj = data?.error || {};
     throw new ApiError(
@@ -100,7 +127,7 @@ export const api = {
   auth: {
     me: () => request<Principal>('/api/auth/me'),
     login: (credentials: { email: string; password: string; keep_signed_in?: boolean }) =>
-      request<{ principal: Principal }>('/api/auth/login', {
+      request<Principal>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify(credentials),
       }),

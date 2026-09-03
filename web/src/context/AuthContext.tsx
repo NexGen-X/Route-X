@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api, ApiError } from '../api/client';
+import { api, ApiError, setCsrfToken } from '../api/client';
 import type { Principal, User } from '../types';
 
 interface AuthContextType {
@@ -21,8 +21,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refresh = async () => {
     try {
-      const p = await api.auth.me();
-      setPrincipal(p);
+      const res: any = await api.auth.me();
+      if (res) {
+        const p: Principal = res.principal || res;
+        if (!p.session_id && p.session?.id) {
+          p.session_id = p.session.id;
+        }
+        if ((res as any).csrf_token) {
+          setCsrfToken((res as any).csrf_token);
+        }
+        setPrincipal(p);
+      } else {
+        setPrincipal(null);
+      }
     } catch (err) {
       setPrincipal(null);
     } finally {
@@ -35,8 +46,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (email: string, pass: string, keep = false) => {
-    const res = await api.auth.login({ email, password: pass, keep_signed_in: keep });
-    setPrincipal(res.principal);
+    const res: any = await api.auth.login({ email, password: pass, keep_signed_in: keep });
+    const p: Principal = res.principal || res;
+    if (!p.session_id && p.session?.id) {
+      p.session_id = p.session.id;
+    }
+    if ((res as any).csrf_token) {
+      setCsrfToken((res as any).csrf_token);
+    }
+    setPrincipal(p);
   };
 
   const logout = async () => {
@@ -44,6 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await api.auth.logout();
     } finally {
       setPrincipal(null);
+      setCsrfToken('');
       window.location.hash = '#/login';
     }
   };

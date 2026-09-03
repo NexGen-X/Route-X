@@ -500,6 +500,137 @@ func (r *Repo) GetDelivery(ctx context.Context, id int64) (*Delivery, error) {
 	return d, nil
 }
 
+// UpdateWebhookParams berisi opsi pembaruan webhook.
+type UpdateWebhookParams struct {
+	Name       *string
+	URL        *string
+	Events     []string
+	Enabled    *bool
+	MaxRetries *int
+	TimeoutMS  *int
+}
+
+// Update memperbarui konfigurasi webhook.
+func (r *Repo) Update(ctx context.Context, id string, p UpdateWebhookParams) (*Webhook, error) {
+	const op = "memperbarui webhook"
+	var (
+		setClauses []string
+		args       []any
+	)
+	args = append(args, id)
+
+	if p.Name != nil {
+		args = append(args, *p.Name)
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", len(args)))
+	}
+	if p.URL != nil {
+		args = append(args, *p.URL)
+		setClauses = append(setClauses, fmt.Sprintf("url = $%d", len(args)))
+	}
+	if p.Events != nil {
+		args = append(args, p.Events)
+		setClauses = append(setClauses, fmt.Sprintf("events = $%d", len(args)))
+	}
+	if p.Enabled != nil {
+		args = append(args, *p.Enabled)
+		setClauses = append(setClauses, fmt.Sprintf("enabled = $%d", len(args)))
+	}
+	if p.MaxRetries != nil {
+		args = append(args, *p.MaxRetries)
+		setClauses = append(setClauses, fmt.Sprintf("max_retries = $%d", len(args)))
+	}
+	if p.TimeoutMS != nil {
+		args = append(args, *p.TimeoutMS)
+		setClauses = append(setClauses, fmt.Sprintf("timeout_ms = $%d", len(args)))
+	}
+
+	if len(setClauses) == 0 {
+		return r.Get(ctx, id)
+	}
+
+	setClauses = append(setClauses, "updated_at = now()")
+	query := fmt.Sprintf(`update webhooks set %s where id = $1::uuid returning %s`,
+		strings.Join(setClauses, ", "), webhookColumns)
+
+	row := r.q.QueryRow(ctx, query, args...)
+	w, err := scanWebhook(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, repo.ErrNotFound
+		}
+		return nil, repo.Err(op, err)
+	}
+	return w, nil
+}
+
+// SetEnabled mengaktifkan atau menonaktifkan endpoint webhook.
+func (r *Repo) SetEnabled(ctx context.Context, id string, enabled bool) (*Webhook, error) {
+	return r.Update(ctx, id, UpdateWebhookParams{Enabled: &enabled})
+}
+
+// Delete menghapus konfigurasi webhook beserta seluruh data delivery terkait.
+func (r *Repo) Delete(ctx context.Context, id string) error {
+	const op = "menghapus webhook"
+	tag, err := r.q.Exec(ctx, `delete from webhooks where id = $1::uuid`, id)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return repo.ErrNotFound
+	}
+	return nil
+}
+
+// ListDeliveries mengambil riwayat pengiriman per webhook dengan keyset pagination berurutan id desc.
+func (r *Repo) ListDeliveries(ctx context.Context, webhookID string, page repo.Page) ([]*Delivery, string, error) {
+	const op = "mendaftar delivery webhook"
+	limit := page.Normalize()
+
+	var (
+		query strings.Builder
+		args  []any
+	)
+	args = append(args, webhookID)
+	query.WriteString(`select ` + deliveryColumns + ` from webhook_deliveries where webhook_id = $1::uuid `)
+
+	if page.Cursor != "" {
+		var cursorID int64
+		if _, err := fmt.Sscanf(page.Cursor, "%d", &cursorID); err == nil && cursorID > 0 {
+			args = append(args, cursorID)
+			query.WriteString(fmt.Sprintf(`and id < $%d `, len(args)))
+		}
+	}
+
+	args = append(args, limit+1)
+	query.WriteString(fmt.Sprintf(`order by id desc limit $%d`, len(args)))
+
+	rows, err := r.q.Query(ctx, query.String(), args...)
+	if err != nil {
+		return nil, "", repo.Err(op, err)
+	}
+	defer rows.Close()
+
+	var items []*Delivery
+	for rows.Next() {
+		d, err := scanDelivery(rows)
+		if err != nil {
+			return nil, "", repo.Err(op, err)
+		}
+		items = append(items, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", repo.Err(op, err)
+	}
+
+	var next string
+	if len(items) > limit {
+		items = items[:limit]
+		next = fmt.Sprintf("%d", items[limit-1].ID)
+	}
+
+	return items, next, nil
+}
+
 // newID menghasilkan UUID v4 acak untuk pengenal entitas sebelum disimpan.
 func newID() (string, error) {
 	var b [16]byte

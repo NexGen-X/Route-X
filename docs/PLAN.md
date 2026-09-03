@@ -834,6 +834,51 @@ Dua paket baru dibangun dan diintegrasikan: `internal/webhooks` (domain model, H
 - Partisi bulanan masa depan terbuat otomatis di PostgreSQL.
 - Shutdown anggun via `pkill -x ai-gateway` menghentikan HTTP server dan seluruh worker tanpa error.
 
+## Catatan hasil Fase 11
+
+Paket baru `internal/admin` dibangun dan diintegrasikan secara menyeluruh ke dalam permukaan HTTP `/api/admin/*` di `cmd/ai-gateway/main.go`. Semua handler REST API mencakup 7 domain administratif Route-X, dilindungi oleh autentikasi berbasis sesi mandiri, penegakan CSRF double-submit token untuk seluruh mutasi, dan otorisasi RBAC berbutir halus (Super Admin, Admin, Operator, Viewer) dengan redaksi rahasia penuh dan jejak audit otomatis pada setiap perubahan status atau konfigurasi.
+
+**Domain dan Endpoint yang dibangun:**
+1. **Observability (`/api/admin/observability/*`)**:
+   - `/summary`: Agregasi volume request, token in/out, total biaya USD, latensi rata-rata, persentil p95, rasio error, dan provider aktif.
+   - `/series`: Deret waktu metrik dengan bucket adaptif (1 menit hingga 1 hari).
+   - `/breakdown`: Komposisi lalu lintas berdasarkan provider, model, dan API key.
+   - `/health`: Status kesehatan terkini seluruh provider upstream dan riwayat kegagalan.
+   - `/metrics/live`: Statistik live koneksi pgxpool, pool idle/in-use, dan runtime memory stats.
+2. **Requests Inspector (`/api/admin/requests/*`)**:
+   - Keyset pagination $O(1)$ untuk log lalu lintas dengan filter pencarian fleksibel (provider, model, status/error class, rentang waktu, API key).
+   - Detail request utuh, timeline runut peristiwa (`request_events`), dan muatan payload terenkripsi/terkompresi (`request_payloads`).
+3. **Upstreams Management (`/api/admin/upstreams/*`)**:
+   - Providers: CRUD, aktivasi/deaktivasi, riwayat health check, dan probe diagnostik langsung via adapter gateway nyata.
+   - Credentials: Penambahan kredensial terenkripsi AES-256-GCM + AAD, rotasi, dan penghapusan aman tanpa kebocoran plaintext.
+   - Models: Registrasi model kanonik, manajemen alias, pemetaan provider model (`attach`/`detach`), dan histori penetapan harga bertingkat (`model_pricing`).
+   - Egress Pools: CRUD pool jalur keluar HTTP/HTTPS/SOCKS5 dengan URL proxy terenkripsi.
+4. **Gateway Policy (`/api/admin/gateway/*`)**:
+   - Routing Rules: CRUD aturan pemilihan provider, konfigurasi strategi (priority, latency, cost, weighted, round-robin), retry policy, timeout, dan failover.
+   - Rate Limits & Budgets: CRUD batas laju per-key/model/tier, alokasi anggaran moneter dengan presisi `upstream.USD`, dan reset anggaran on-demand.
+   - Bans: Daftar dan pencabutan blokir IP/kunci/subjek.
+   - Content Filters: CRUD aturan penyaringan konten (`blocked_pattern`, `allowed_pattern`, `model_restriction`, `request_size`, `moderation`) dengan paginasi keyset.
+   - Circuit Breakers: Monitoring status pemutus arus terdistribusi dan reset status darurat.
+5. **Access Control & Identity (`/api/admin/access/*`)**:
+   - API Keys: CRUD kunci API klien dengan hashing HMAC-SHA256 ber-pepper, batasan model/provider yang diizinkan, rotasi aman di dalam transaksi pool, dan pencabutan kunci.
+   - Users & Sessions: Manajemen pengguna, pengaitan peran ganda, pemaksaan ganti kata sandi, pencabutan sesi aktif, dan pengawasan sesi login.
+   - Roles & Permissions: Pengaturan izin peran secara granular.
+6. **Automation & Webhooks (`/api/admin/automation/*`)**:
+   - Webhooks: CRUD webhook endpoint dengan secret rahasia terenkripsi AES-256-GCM, pengujian ping pengiriman langsung via dispatcher.
+   - Deliveries: Log riwayat pengiriman per webhook dan status percobaan retry.
+7. **System & Diagnostics (`/api/admin/system/*`)**:
+   - Settings: Konfigurasi runtime dinamis (key-value).
+   - Jobs: Daftar background workers dan pemicuan job secara on-demand.
+   - Audit Logs: Penelusuran audit log keyset lengkap (siapa, kapan, aksi apa, perubahan metadata apa).
+   - Diagnostics: Uptime aplikasi, versi Go, metrik alokasi memori, goroutine count, dan pool statistik.
+
+**Verifikasi & Kualitas Kode:**
+- `make fmt`: 100% lulus.
+- `make vet`: 100% lulus tanpa peringatan.
+- `go test -race ./internal/admin/...`: Lolos 100% dengan database nyata, seluruh pengujian autentikasi, pembatasan RBAC viewer (403), penegakan CSRF (403 tanpa token / 201 dengan token), keyset pagination, dan pembersihan skema otomatis tuntas tanpa skema tertinggal.
+- `internal/security`: Uji redaksi struct `redaction_lint_test.go` lolos 100% dengan receiver nilai `func (h Handlers) String/GoString/LogValue`.
+- `make build`: Biner `ai-gateway` terkompilasi bersih (24 MB) siap pakai untuk melayani Frontend Dashboard di Fase 12.
+
 ## Fase implementasi
 
 

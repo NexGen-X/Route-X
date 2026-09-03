@@ -177,7 +177,13 @@ func RotateKey(ctx context.Context, pool *pgxpool.Pool, pepper []byte, id string
 	return out, nil
 }
 
+// RotateWithPool menjalankan rotasi key di dalam transaksi pool menggunakan pepper milik repo.
+func (r *Repo) RotateWithPool(ctx context.Context, pool *pgxpool.Pool, id string, createdBy *string) (*Created, error) {
+	return RotateKey(ctx, pool, r.pepper, id, createdBy)
+}
+
 // Revoke mencabut key selamanya: status menjadi 'revoked' dan waktu, pelaku, serta
+
 // alasan pencabutan dicatat.
 //
 // Idempoten. Mencabut key yang sudah dicabut bukan error dan tidak mengubah apa pun

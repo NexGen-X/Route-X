@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
@@ -31,7 +32,9 @@ type Budget struct {
 	AlertThresholdPct int
 	AlertedAt         *time.Time
 
-	Enabled bool
+	Enabled   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Exceeded melaporkan apakah pemakaian sudah mencapai batas.
@@ -72,7 +75,8 @@ func (b *Budget) Remaining() upstream.USD {
 // dan satu-satunya yang bisa diurai tanpa kehilangan.
 const budgetColumns = `id::text, name, scope, coalesce(scope_id, ''), period,
 	limit_usd::text, spent_usd::text,
-	period_start, period_end, action_on_exceed, alert_threshold_pct, alerted_at, enabled`
+	period_start, period_end, action_on_exceed, alert_threshold_pct, alerted_at, enabled,
+	created_at, updated_at`
 
 // scanBudget membaca satu baris budgets sesuai budgetColumns.
 func scanBudget(s interface{ Scan(...any) error }) (*Budget, error) {
@@ -82,7 +86,8 @@ func scanBudget(s interface{ Scan(...any) error }) (*Budget, error) {
 	)
 	err := s.Scan(&b.ID, &b.Name, &b.Scope, &b.ScopeID, &b.Period,
 		&limitText, &spentText,
-		&b.PeriodStart, &b.PeriodEnd, &b.ActionOnExceed, &b.AlertThresholdPct, &b.AlertedAt, &b.Enabled)
+		&b.PeriodStart, &b.PeriodEnd, &b.ActionOnExceed, &b.AlertThresholdPct, &b.AlertedAt, &b.Enabled,
+		&b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -388,4 +393,129 @@ func (r *Repo) DeleteBudget(ctx context.Context, id string) error {
 		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 	return nil
+}
+
+// GetBudget mengambil satu baris budgets berdasarkan id.
+func (r *Repo) GetBudget(ctx context.Context, id string) (*Budget, error) {
+	const op = "mengambil anggaran"
+	if !idOK(id) {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	row := r.q.QueryRow(ctx, `select `+budgetColumns+` from budgets where id = $1`, id)
+	b, err := scanBudget(row)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return b, nil
+}
+
+// UpdateBudgetParams berisi opsi pembaruan konfigurasi anggaran.
+type UpdateBudgetParams struct {
+	Name              *string
+	LimitUSD          *upstream.USD
+	ActionOnExceed    *string
+	AlertThresholdPct *int
+	Enabled           *bool
+}
+
+// UpdateBudget memperbarui konfigurasi anggaran.
+func (r *Repo) UpdateBudget(ctx context.Context, id string, p UpdateBudgetParams) (*Budget, error) {
+	const op = "memperbarui anggaran"
+	if !idOK(id) {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	var (
+		setClauses []string
+		args       []any
+	)
+	args = append(args, id)
+
+	if p.Name != nil {
+		args = append(args, *p.Name)
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", len(args)))
+	}
+	if p.LimitUSD != nil {
+		args = append(args, p.LimitUSD.String())
+		setClauses = append(setClauses, fmt.Sprintf("limit_usd = $%d::numeric", len(args)))
+	}
+	if p.ActionOnExceed != nil {
+		args = append(args, *p.ActionOnExceed)
+		setClauses = append(setClauses, fmt.Sprintf("action_on_exceed = $%d", len(args)))
+	}
+	if p.AlertThresholdPct != nil {
+		args = append(args, *p.AlertThresholdPct)
+		setClauses = append(setClauses, fmt.Sprintf("alert_threshold_pct = $%d", len(args)))
+	}
+	if p.Enabled != nil {
+		args = append(args, *p.Enabled)
+		setClauses = append(setClauses, fmt.Sprintf("enabled = $%d", len(args)))
+	}
+
+	if len(setClauses) == 0 {
+		return r.GetBudget(ctx, id)
+	}
+
+	setClauses = append(setClauses, "updated_at = now()")
+	query := fmt.Sprintf(`update budgets set %s where id = $1 returning %s`,
+		strings.Join(setClauses, ", "), budgetColumns)
+
+	row := r.q.QueryRow(ctx, query, args...)
+	b, err := scanBudget(row)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return b, nil
+}
+
+// ListBudgets mengambil seluruh anggaran dengan keyset pagination.
+func (r *Repo) ListBudgets(ctx context.Context, page repo.Page) ([]*Budget, string, error) {
+	const op = "mendaftar anggaran"
+	limit := page.Normalize()
+
+	var (
+		query strings.Builder
+		args  []any
+	)
+	query.WriteString(`select ` + budgetColumns + ` from budgets `)
+
+	if page.Cursor != "" {
+		ts, id, err := decodeCursor(op, page.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		args = append(args, ts, id)
+		query.WriteString(fmt.Sprintf(`where (created_at, id) < ($1, $2) `))
+	}
+
+	args = append(args, limit+1)
+	query.WriteString(fmt.Sprintf(`order by created_at desc, id desc limit $%d`, len(args)))
+
+	rows, err := r.q.Query(ctx, query.String(), args...)
+	if err != nil {
+		return nil, "", repo.Err(op, err)
+	}
+	defer rows.Close()
+
+	var items []*Budget
+	for rows.Next() {
+		b, err := scanBudget(rows)
+		if err != nil {
+			return nil, "", repo.Err(op, err)
+		}
+		items = append(items, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", repo.Err(op, err)
+	}
+
+	var next string
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[limit-1]
+		next = encodeCursor(last.CreatedAt, last.ID)
+	}
+
+	return items, next, nil
 }

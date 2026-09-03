@@ -3,6 +3,8 @@ package policy
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 )
@@ -26,13 +28,15 @@ type RateLimit struct {
 	DailyTokenLimit     *int64
 	MonthlyTokenLimit   *int64
 
-	Enabled bool
+	Enabled   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 const rateLimitColumns = `id::text, scope, coalesce(scope_id, ''),
 	requests_per_second, requests_per_minute, tokens_per_minute,
 	daily_request_limit, monthly_request_limit, daily_token_limit, monthly_token_limit,
-	enabled`
+	enabled, created_at, updated_at`
 
 // scanRateLimit membaca satu baris rate_limits sesuai rateLimitColumns.
 func scanRateLimit(s interface{ Scan(...any) error }) (*RateLimit, error) {
@@ -40,7 +44,7 @@ func scanRateLimit(s interface{ Scan(...any) error }) (*RateLimit, error) {
 	err := s.Scan(&l.ID, &l.Scope, &l.ScopeID,
 		&l.RequestsPerSecond, &l.RequestsPerMinute, &l.TokensPerMinute,
 		&l.DailyRequestLimit, &l.MonthlyRequestLimit, &l.DailyTokenLimit, &l.MonthlyTokenLimit,
-		&l.Enabled)
+		&l.Enabled, &l.CreatedAt, &l.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -174,4 +178,144 @@ func (r *Repo) DeleteRateLimit(ctx context.Context, id string) error {
 		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 	return nil
+}
+
+// GetRateLimit mengambil satu baris rate_limits berdasarkan id.
+func (r *Repo) GetRateLimit(ctx context.Context, id string) (*RateLimit, error) {
+	const op = "mengambil batas laju"
+	if !idOK(id) {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	row := r.q.QueryRow(ctx, `select `+rateLimitColumns+` from rate_limits where id = $1`, id)
+	l, err := scanRateLimit(row)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return l, nil
+}
+
+// UpdateRateLimitParams berisi opsi pembaruan batas laju.
+type UpdateRateLimitParams struct {
+	RequestsPerSecond   *int
+	RequestsPerMinute   *int
+	TokensPerMinute     *int
+	DailyRequestLimit   *int64
+	MonthlyRequestLimit *int64
+	DailyTokenLimit     *int64
+	MonthlyTokenLimit   *int64
+	Enabled             *bool
+}
+
+// UpdateRateLimit memperbarui nilai pembatasan laju.
+func (r *Repo) UpdateRateLimit(ctx context.Context, id string, p UpdateRateLimitParams) (*RateLimit, error) {
+	const op = "memperbarui batas laju"
+	if !idOK(id) {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	var (
+		setClauses []string
+		args       []any
+	)
+	args = append(args, id)
+
+	if p.RequestsPerSecond != nil {
+		args = append(args, *p.RequestsPerSecond)
+		setClauses = append(setClauses, fmt.Sprintf("requests_per_second = $%d", len(args)))
+	}
+	if p.RequestsPerMinute != nil {
+		args = append(args, *p.RequestsPerMinute)
+		setClauses = append(setClauses, fmt.Sprintf("requests_per_minute = $%d", len(args)))
+	}
+	if p.TokensPerMinute != nil {
+		args = append(args, *p.TokensPerMinute)
+		setClauses = append(setClauses, fmt.Sprintf("tokens_per_minute = $%d", len(args)))
+	}
+	if p.DailyRequestLimit != nil {
+		args = append(args, *p.DailyRequestLimit)
+		setClauses = append(setClauses, fmt.Sprintf("daily_request_limit = $%d", len(args)))
+	}
+	if p.MonthlyRequestLimit != nil {
+		args = append(args, *p.MonthlyRequestLimit)
+		setClauses = append(setClauses, fmt.Sprintf("monthly_request_limit = $%d", len(args)))
+	}
+	if p.DailyTokenLimit != nil {
+		args = append(args, *p.DailyTokenLimit)
+		setClauses = append(setClauses, fmt.Sprintf("daily_token_limit = $%d", len(args)))
+	}
+	if p.MonthlyTokenLimit != nil {
+		args = append(args, *p.MonthlyTokenLimit)
+		setClauses = append(setClauses, fmt.Sprintf("monthly_token_limit = $%d", len(args)))
+	}
+	if p.Enabled != nil {
+		args = append(args, *p.Enabled)
+		setClauses = append(setClauses, fmt.Sprintf("enabled = $%d", len(args)))
+	}
+
+	if len(setClauses) == 0 {
+		return r.GetRateLimit(ctx, id)
+	}
+
+	setClauses = append(setClauses, "updated_at = now()")
+	query := fmt.Sprintf(`update rate_limits set %s where id = $1 returning %s`,
+		strings.Join(setClauses, ", "), rateLimitColumns)
+
+	row := r.q.QueryRow(ctx, query, args...)
+	l, err := scanRateLimit(row)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return l, nil
+}
+
+// ListRateLimits mengambil daftar seluruh aturan rate_limits dengan keyset pagination.
+func (r *Repo) ListRateLimits(ctx context.Context, page repo.Page) ([]*RateLimit, string, error) {
+	const op = "mendaftar batas laju"
+	limit := page.Normalize()
+
+	var (
+		query strings.Builder
+		args  []any
+	)
+	query.WriteString(`select ` + rateLimitColumns + ` from rate_limits `)
+
+	if page.Cursor != "" {
+		ts, id, err := decodeCursor(op, page.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		args = append(args, ts, id)
+		query.WriteString(fmt.Sprintf(`where (created_at, id) < ($1, $2) `))
+	}
+
+	args = append(args, limit+1)
+	query.WriteString(fmt.Sprintf(`order by created_at desc, id desc limit $%d`, len(args)))
+
+	rows, err := r.q.Query(ctx, query.String(), args...)
+	if err != nil {
+		return nil, "", repo.Err(op, err)
+	}
+	defer rows.Close()
+
+	var items []*RateLimit
+	for rows.Next() {
+		l, err := scanRateLimit(rows)
+		if err != nil {
+			return nil, "", repo.Err(op, err)
+		}
+		items = append(items, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", repo.Err(op, err)
+	}
+
+	var next string
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[limit-1]
+		next = encodeCursor(last.CreatedAt, last.ID)
+	}
+
+	return items, next, nil
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/security"
 )
 
@@ -436,5 +438,79 @@ func TestIntegrationWebhooksPembersihanRetensi(t *testing.T) {
 	}
 	if dPending.Status != StatusPending {
 		t.Errorf("status baris pending kuno berubah: %s", dPending.Status)
+	}
+}
+
+func TestIntegrationWebhooksCRUDDanListDeliveries(t *testing.T) {
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("DATABASE_URL tidak disetel, melewati pengujian integrasi database")
+	}
+
+	ctx := context.Background()
+	pool, cipher := testPool(t)
+
+	r := NewRepo(pool)
+
+	// 1. Buat webhook awal
+	wh, err := r.Create(ctx, CreateWebhookParams{
+		Name:      "webhook-crud-test",
+		URL:       "https://example.com/hooks",
+		Events:    []string{"provider.unhealthy"},
+		RawSecret: "whsec_secret123",
+		Cipher:    cipher,
+	})
+	if err != nil {
+		t.Fatalf("Create webhook: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = r.Delete(ctx, wh.ID)
+	})
+
+	// 2. Uji Update
+	newName := "webhook-crud-updated"
+	newURL := "https://example.com/hooks/v2"
+	updated, err := r.Update(ctx, wh.ID, UpdateWebhookParams{
+		Name: &newName,
+		URL:  &newURL,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.Name != newName || updated.URL != newURL {
+		t.Errorf("Update hasil tidak sesuai: name=%s, url=%s", updated.Name, updated.URL)
+	}
+
+	// 3. Uji SetEnabled
+	disabled, err := r.SetEnabled(ctx, wh.ID, false)
+	if err != nil {
+		t.Fatalf("SetEnabled false: %v", err)
+	}
+	if disabled.Enabled {
+		t.Errorf("webhook seharusnya disabled")
+	}
+
+	// 4. Enqueue & ListDeliveries
+	_, err = r.Enqueue(ctx, "provider.unhealthy", map[string]any{"status": "down"})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	// Aktifkan kembali agar bisa claim atau list
+	_, _ = r.SetEnabled(ctx, wh.ID, true)
+
+	deliveries, _, err := r.ListDeliveries(ctx, wh.ID, repo.Page{Limit: 10})
+	if err != nil {
+		t.Fatalf("ListDeliveries: %v", err)
+	}
+	_ = deliveries
+
+	// 5. Uji Delete
+	if err := r.Delete(ctx, wh.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	_, err = r.Get(ctx, wh.ID)
+	if !errors.Is(err, repo.ErrNotFound) {
+		t.Errorf("Get setelah Delete seharusnya ErrNotFound, dapat: %v", err)
 	}
 }

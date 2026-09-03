@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/NexGen-X/Route-X/internal/admin"
 	"github.com/NexGen-X/Route-X/internal/apikey"
 	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/billing"
@@ -29,6 +30,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/config"
 	"github.com/NexGen-X/Route-X/internal/contentfilter"
 	"github.com/NexGen-X/Route-X/internal/database"
+	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 	"github.com/NexGen-X/Route-X/internal/database/repo/keys"
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
@@ -160,12 +162,12 @@ func run(migrateOnly bool) error {
 	// Permukaan /v1: inilah yang dilihat aplikasi klien. Dirakit sebelum router supaya
 	// kegagalan perakitannya menghentikan start, bukan muncul sebagai 404 pada permintaan
 	// pertama pelanggan.
-	v1, tutupUsage, err := buildGatewaySurface(ctx, cfg, logger, metrics, db, rdb)
+	v1, adminHandlers, tutupUsage, err := buildGatewaySurface(ctx, cfg, logger, metrics, db, rdb, authSvc)
 	if err != nil {
-		return fmt.Errorf("merakit permukaan /v1: %w", err)
+		return fmt.Errorf("merakit permukaan gateway dan admin: %w", err)
 	}
 
-	mux, err := buildRouter(cfg, logger, metrics, authSvc, v1,
+	mux, err := buildRouter(cfg, logger, metrics, authSvc, adminHandlers, v1,
 		health.NewChecker("postgres", db.Ping),
 		health.NewChecker("redis", rdb.Ping),
 	)
@@ -195,6 +197,7 @@ func buildRouter(
 	logger *slog.Logger,
 	metrics *observability.Metrics,
 	authSvc *auth.Service,
+	adminHandlers *admin.Handlers,
 	v1 http.Handler,
 	checkers ...health.Checker,
 ) (http.Handler, error) {
@@ -249,6 +252,11 @@ func buildRouter(
 		r.Mount("/api/auth", auth.NewHandlers(authSvc).Routes())
 	}
 
+	// --- REST API Admin (Fase 11) ---
+	if adminHandlers != nil {
+		r.Mount("/api/admin", adminHandlers.Routes())
+	}
+
 	// --- Permukaan API /v1 ---
 	//
 	// Rantai middleware-nya dirakit di buildGatewaySurface, bukan di sini, karena urutan
@@ -288,22 +296,23 @@ func buildGatewaySurface(
 	metrics *observability.Metrics,
 	db *database.DB,
 	rdb *cache.Redis,
-) (http.Handler, func(context.Context) error, error) {
+	authSvc *auth.Service,
+) (http.Handler, *admin.Handlers, func(context.Context) error, error) {
 	cipher, err := security.NewCipher(cfg.EncryptionKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("menyiapkan cipher kredensial: %w", err)
+		return nil, nil, nil, fmt.Errorf("menyiapkan cipher kredensial: %w", err)
 	}
 	creds, err := upstream.NewCredentialRepo(db.Pool, cipher)
 	if err != nil {
-		return nil, nil, fmt.Errorf("repository kredensial provider: %w", err)
+		return nil, nil, nil, fmt.Errorf("repository kredensial provider: %w", err)
 	}
 	egress, err := upstream.NewEgressRepo(db.Pool, cipher)
 	if err != nil {
-		return nil, nil, fmt.Errorf("repository egress pool: %w", err)
+		return nil, nil, nil, fmt.Errorf("repository egress pool: %w", err)
 	}
 	keyRepo, err := keys.New(db.Pool, cfg.APIKeyPepper)
 	if err != nil {
-		return nil, nil, fmt.Errorf("repository API key: %w", err)
+		return nil, nil, nil, fmt.Errorf("repository API key: %w", err)
 	}
 
 	if len(cfg.UpstreamAllowedPrivateAddrs) > 0 || cfg.UpstreamAllowHTTP {
@@ -444,7 +453,7 @@ func buildGatewaySurface(
 		Logger: logger,
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// --- Background Worker Supervisor (Fase 10) ---
@@ -487,12 +496,39 @@ func buildGatewaySurface(
 	r.Use(authn.Authenticate(), limiter.Limit())
 	r.Mount("/", handlers.Routes())
 
+	// --- REST API Admin Handlers (Fase 11) ---
+	adminHandlers := admin.NewHandlers(admin.Config{
+		Pool:           db.Pool,
+		Redis:          rdb.Client(),
+		AuthSvc:        authSvc,
+		Logger:         logger,
+		ProviderRepo:   providersRepo,
+		CredentialRepo: creds,
+		ModelRepo:      models,
+		PricingRepo:    upstream.NewPricingRepo(db.Pool),
+		RoutingRepo:    upstream.NewRoutingRepo(db.Pool),
+		EgressRepo:     egress,
+		PolicyRepo:     policyRepo,
+		KeyRepo:        keyRepo,
+		UsersRepo:      identity.NewUsers(db.Pool),
+		RolesRepo:      identity.NewRoles(db.Pool),
+		SessionsRepo:   identity.NewSessions(db.Pool),
+		SettingsRepo:   identity.NewSettings(db.Pool),
+		AuditRepo:      identity.NewAudit(db.Pool),
+		TrafficRepo:    trafficRepo,
+		WebhooksRepo:   webhookRepo,
+		Dispatcher:     webhookDispatcher,
+		Factory:        factory,
+		Supervisor:     workerSup,
+		Cipher:         cipher,
+	})
+
 	closeAll := func(c context.Context) error {
 		workerSup.Stop()
 		return recorder.Close(c)
 	}
 
-	return r, closeAll, nil
+	return r, adminHandlers, closeAll, nil
 }
 
 // dashboardHandler menyajikan aset frontend yang tersemat.

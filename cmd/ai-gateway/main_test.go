@@ -32,9 +32,7 @@ func testConfig(env config.Env) *config.Config {
 // sehingga tidak butuh Postgres maupun Redis.
 func newTestRouter(t *testing.T, cfg *config.Config, checkers ...health.Checker) http.Handler {
 	t.Helper()
-	// v1 nil: perakitan permukaan /v1 butuh Postgres dan Redis, dan yang diuji di berkas
-	// ini adalah rantai middleware serta rute yang tidak bergantung padanya.
-	r, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, nil, checkers...)
+	r, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, nil, nil, checkers...)
 	if err != nil {
 		t.Fatalf("buildRouter: %v", err)
 	}
@@ -214,7 +212,7 @@ func TestBuildRouterMountsV1(t *testing.T) {
 		_, _ = w.Write([]byte(r.URL.Path))
 	})
 
-	r, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, v1)
+	r, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, nil, v1)
 	if err != nil {
 		t.Fatalf("buildRouter: %v", err)
 	}
@@ -240,7 +238,7 @@ func TestBuildRouterRejectsBadTrustedProxies(t *testing.T) {
 	cfg := testConfig(config.EnvDevelopment)
 	cfg.TrustedProxies = []string{"bukan-cidr"}
 
-	if _, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, nil); err == nil {
+	if _, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, nil, nil); err == nil {
 		t.Fatal("TRUSTED_PROXIES tidak valid seharusnya menggagalkan startup")
 	}
 }

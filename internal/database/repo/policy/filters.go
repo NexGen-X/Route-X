@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
@@ -44,14 +45,16 @@ type ContentFilter struct {
 	ModerationCategories    []string
 	ModerationThreshold     *float64
 
-	Enabled bool
+	Enabled   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 const filterColumns = `id::text, name, coalesce(description, ''), kind, priority, applies_to, action,
 	coalesce(pattern, ''), coalesce(pattern_type, ''), case_sensitive, max_eval_ms,
 	coalesce(model_id::text, ''), coalesce(provider_id::text, ''), max_request_bytes,
 	coalesce(moderation_integration_id::text, ''), moderation_categories, moderation_threshold,
-	enabled`
+	enabled, created_at, updated_at`
 
 // scanFilter membaca satu baris content_filters sesuai filterColumns.
 func scanFilter(s interface{ Scan(...any) error }) (*ContentFilter, error) {
@@ -60,7 +63,7 @@ func scanFilter(s interface{ Scan(...any) error }) (*ContentFilter, error) {
 		&f.Pattern, &f.PatternType, &f.CaseSensitive, &f.MaxEvalMS,
 		&f.ModelID, &f.ProviderID, &f.MaxRequestBytes,
 		&f.ModerationIntegrationID, &f.ModerationCategories, &f.ModerationThreshold,
-		&f.Enabled)
+		&f.Enabled, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -288,4 +291,154 @@ func (r *Repo) TimingOutFilters(ctx context.Context, page repo.Page) ([]*FilterS
 		return nil, repo.Err(op, err)
 	}
 	return out, nil
+}
+
+// GetFilter mengambil satu baris content_filters berdasarkan id.
+func (r *Repo) GetFilter(ctx context.Context, id string) (*ContentFilter, error) {
+	const op = "mengambil penyaring konten"
+	if !idOK(id) {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	row := r.q.QueryRow(ctx, `select `+filterColumns+` from content_filters where id = $1`, id)
+	f, err := scanFilter(row)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return f, nil
+}
+
+// UpdateFilterParams berisi opsi pembaruan penyaring konten.
+type UpdateFilterParams struct {
+	Name          *string
+	Description   *string
+	Priority      *int
+	AppliesTo     *string
+	Action        *string
+	Pattern       *string
+	PatternType   *string
+	CaseSensitive *bool
+	MaxEvalMS     *int
+	Enabled       *bool
+}
+
+// UpdateFilter memperbarui konfigurasi penyaring konten.
+func (r *Repo) UpdateFilter(ctx context.Context, id string, p UpdateFilterParams) (*ContentFilter, error) {
+	const op = "memperbarui penyaring konten"
+	if !idOK(id) {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	var (
+		setClauses []string
+		args       []any
+	)
+	args = append(args, id)
+
+	if p.Name != nil {
+		args = append(args, *p.Name)
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", len(args)))
+	}
+	if p.Description != nil {
+		args = append(args, *p.Description)
+		setClauses = append(setClauses, fmt.Sprintf("description = $%d", len(args)))
+	}
+	if p.Priority != nil {
+		args = append(args, *p.Priority)
+		setClauses = append(setClauses, fmt.Sprintf("priority = $%d", len(args)))
+	}
+	if p.AppliesTo != nil {
+		args = append(args, *p.AppliesTo)
+		setClauses = append(setClauses, fmt.Sprintf("applies_to = $%d", len(args)))
+	}
+	if p.Action != nil {
+		args = append(args, *p.Action)
+		setClauses = append(setClauses, fmt.Sprintf("action = $%d", len(args)))
+	}
+	if p.Pattern != nil {
+		args = append(args, *p.Pattern)
+		setClauses = append(setClauses, fmt.Sprintf("pattern = $%d", len(args)))
+	}
+	if p.PatternType != nil {
+		args = append(args, *p.PatternType)
+		setClauses = append(setClauses, fmt.Sprintf("pattern_type = $%d", len(args)))
+	}
+	if p.CaseSensitive != nil {
+		args = append(args, *p.CaseSensitive)
+		setClauses = append(setClauses, fmt.Sprintf("case_sensitive = $%d", len(args)))
+	}
+	if p.MaxEvalMS != nil {
+		args = append(args, *p.MaxEvalMS)
+		setClauses = append(setClauses, fmt.Sprintf("max_eval_ms = $%d", len(args)))
+	}
+	if p.Enabled != nil {
+		args = append(args, *p.Enabled)
+		setClauses = append(setClauses, fmt.Sprintf("enabled = $%d", len(args)))
+	}
+
+	if len(setClauses) == 0 {
+		return r.GetFilter(ctx, id)
+	}
+
+	setClauses = append(setClauses, "updated_at = now()")
+	query := fmt.Sprintf(`update content_filters set %s where id = $1 returning %s`,
+		strings.Join(setClauses, ", "), filterColumns)
+
+	row := r.q.QueryRow(ctx, query, args...)
+	f, err := scanFilter(row)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return f, nil
+}
+
+// ListFilters mengambil seluruh penyaring konten dengan keyset pagination.
+func (r *Repo) ListFilters(ctx context.Context, page repo.Page) ([]*ContentFilter, string, error) {
+	const op = "mendaftar penyaring konten"
+	limit := page.Normalize()
+
+	var (
+		query strings.Builder
+		args  []any
+	)
+	query.WriteString(`select ` + filterColumns + ` from content_filters `)
+
+	if page.Cursor != "" {
+		ts, id, err := decodeCursor(op, page.Cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		args = append(args, ts, id)
+		query.WriteString(fmt.Sprintf(`where (created_at, id) < ($1, $2) `))
+	}
+
+	args = append(args, limit+1)
+	query.WriteString(fmt.Sprintf(`order by created_at desc, id desc limit $%d`, len(args)))
+
+	rows, err := r.q.Query(ctx, query.String(), args...)
+	if err != nil {
+		return nil, "", repo.Err(op, err)
+	}
+	defer rows.Close()
+
+	var items []*ContentFilter
+	for rows.Next() {
+		f, err := scanFilter(rows)
+		if err != nil {
+			return nil, "", repo.Err(op, err)
+		}
+		items = append(items, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", repo.Err(op, err)
+	}
+
+	var next string
+	if len(items) > limit {
+		items = items[:limit]
+		last := items[limit-1]
+		next = encodeCursor(last.CreatedAt, last.ID)
+	}
+
+	return items, next, nil
 }

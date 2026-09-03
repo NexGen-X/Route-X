@@ -19,6 +19,10 @@
 package policy
 
 import (
+	"fmt"
+	"strings"
+	"time"
+
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 )
 
@@ -167,4 +171,24 @@ func scopeArrays(targets []Target) (scopes, ids []string) {
 		ids = append(ids, t.ID)
 	}
 	return scopes, ids
+}
+
+const cursorSep = "|"
+
+// encodeCursor merakit kursor keyset dari waktu dan pengenal baris.
+func encodeCursor(ts time.Time, id string) string {
+	return ts.UTC().Format(time.RFC3339Nano) + cursorSep + id
+}
+
+// decodeCursor memecah kursor keyset menjadi waktu dan ID.
+func decodeCursor(op, cursor string) (time.Time, string, error) {
+	ts, id, ok := strings.Cut(cursor, cursorSep)
+	if !ok || id == "" {
+		return time.Time{}, "", fmt.Errorf("%s: %w: kursor tidak berbentuk waktu|id", op, repo.ErrConstraint)
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return time.Time{}, "", fmt.Errorf("%s: %w: format waktu kursor tidak sah", op, repo.ErrConstraint)
+	}
+	return parsed, id, nil
 }

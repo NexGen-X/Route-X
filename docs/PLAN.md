@@ -52,9 +52,8 @@ menyajikan API gateway, dashboard admin, dan aset statis dari proses yang sama.
 | 8 — Rate limit, budget, ban, filter | ✅ Selesai | `repo/policy` (4 tabel), `internal/ratelimit` (6 cakupan), `internal/billing` (anggaran), `internal/contentfilter` (6 jenis aturan); semuanya terpasang di jalur `/v1` |
 | 9 — Usage, cost, observability | ✅ Selesai | `internal/usage` 90,0% (pencatat asinkron, harga, cuplikan latensi), `repo/traffic` 88,6% (rollup jam & hari + agregasi baca), `internal/gateway` 89,2%; `lowest_cost` dan `lowest_latency` akhirnya benar-benar berbeda dari `priority`; `budgets.spent_usd` bergerak |
 | 10 — Worker | ✅ Selesai | `internal/worker` (supervisor, isolasi panic/error, advisory lock RXWO, 6 background jobs), `internal/webhooks` (HMAC-SHA256, equal jitter backoff, AAD terikat, FOR UPDATE SKIP LOCKED, stuck lease recovery), 6 event webhook terpasang |
-| 11 — Admin REST API | ⏳ Berikutnya | Endpoint nyata untuk seluruh halaman dashboard, filter/search/sort, pagination keyset |
-
-| 12 — Dashboard | ⬜ | Acuan visual sudah ada |
+| 11 — Admin REST API | ✅ Selesai | `internal/admin` (7 domain REST API, otorisasi RBAC 4 peran, proteksi CSRF double-submit token, keyset pagination, audit log otomatis, live pool stats); terpasang di `/api/admin` pada router gateway |
+| 12 — Dashboard | ⏳ Berikutnya | Desain dark mode, TanStack Query, Recharts, terhubung 100% ke REST API Fase 11 |
 | 13 — Dokumentasi API | ⬜ | |
 | 14 — Pengerasan & verifikasi | ⬜ | |
 

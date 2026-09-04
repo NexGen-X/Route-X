@@ -20,10 +20,10 @@ GATEWAY_PORT="${PORT:-8088}"
 BASE_URL="http://127.0.0.1:${GATEWAY_PORT}"
 COOKIE_JAR="$(mktemp /tmp/routex-live-cookie.XXXXXX)"
 
-UPSTREAM_API_KEY="${ANTHROPIC_API_KEY:-sk-BiA3R7PyhaYX2EfEp9Rzl4LiaO9g4Q80FaVuhWL2XkLNQ9Bw}"
-UPSTREAM_BASE_URL="${ANTHROPIC_BASE_URL:-https://api.justwoker.icu}"
-ADMIN_EMAIL="admin@route-x.local"
-ADMIN_PASS="BaruPassword123!@#"
+UPSTREAM_API_KEY="${ANTHROPIC_API_KEY:-${UPSTREAM_API_KEY:?Variabel ANTHROPIC_API_KEY atau UPSTREAM_API_KEY wajib disetel}}"
+UPSTREAM_BASE_URL="${ANTHROPIC_BASE_URL:-${UPSTREAM_BASE_URL:?Variabel ANTHROPIC_BASE_URL atau UPSTREAM_BASE_URL wajib disetel}}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-${INITIAL_ADMIN_EMAIL:?Variabel ADMIN_EMAIL atau INITIAL_ADMIN_EMAIL wajib disetel}}"
+ADMIN_PASS="${ADMIN_PASS:-${INITIAL_ADMIN_PASSWORD:?Variabel ADMIN_PASS atau INITIAL_ADMIN_PASSWORD wajib disetel}}"
 
 cleanup() {
   echo ""
@@ -99,10 +99,8 @@ LOGIN_RES=$(curl -s -c "$COOKIE_JAR" -X POST "${BASE_URL}/api/auth/login" \
   -d "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASS}\"}")
 
 if echo "$LOGIN_RES" | grep -q "login_failed"; then
-  ADMIN_PASS="cnyjueHRlgHn82ElKVt9DfLK"
-  LOGIN_RES=$(curl -s -c "$COOKIE_JAR" -X POST "${BASE_URL}/api/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASS}\"}")
+  echo "❌ Login gagal dengan kredensial yang diberikan: $LOGIN_RES"
+  exit 1
 fi
 
 CSRF_TOKEN=$(grep "routex_csrf" "$COOKIE_JAR" | awk '{print $7}' || true)
@@ -113,12 +111,14 @@ fi
 
 if echo "$LOGIN_RES" | grep -q '"must_change_password":true'; then
   echo "    Mengubah sandi awal admin..."
+  NEW_ADMIN_PASS="${NEW_ADMIN_PASSWORD:-$(openssl rand -base64 16)}"
   curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X POST "${BASE_URL}/api/auth/change-password" \
     -H "Content-Type: application/json" \
     -H "Origin: ${BASE_URL}" \
     -H "X-CSRF-Token: ${CSRF_TOKEN}" \
-    -d "{\"current_password\":\"${ADMIN_PASS}\",\"new_password\":\"BaruPassword123!@#\"}" > /dev/null
+    -d "{\"current_password\":\"${ADMIN_PASS}\",\"new_password\":\"${NEW_ADMIN_PASS}\"}" > /dev/null
   CSRF_TOKEN=$(grep "routex_csrf" "$COOKIE_JAR" | awk '{print $7}' || true)
+  ADMIN_PASS="${NEW_ADMIN_PASS}"
 fi
 echo "    Login Admin berhasil."
 

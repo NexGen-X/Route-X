@@ -204,3 +204,10 @@ func CredentialAAD(credentialID string) string {
 func WebhookAAD(webhookID string) string {
 	return "webhook:" + webhookID
 }
+
+// EgressAAD membentuk data terotentikasi tambahan (AAD) standar untuk proxy URL di egress pool.
+// Sesuai implementasi di internal/database/repo/upstream/egress.go, AAD ini memanfaatkan CredentialAAD
+// yang mengikat pengenal unik record ke payload terenkripsi.
+func EgressAAD(egressID string) string {
+	return CredentialAAD(egressID)
+}

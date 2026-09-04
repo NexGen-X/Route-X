@@ -118,16 +118,15 @@ echo "      Healthz OK, Readyz OK, Docs UI OK (200 OK)."
 
 # 4. Login Admin dan Dapatkan CSRF Token
 echo "[4/7] Melakukan autentikasi sesi admin di /api/auth/login..."
-ADMIN_PASS="cnyjueHRlgHn82ElKVt9DfLK"
+ADMIN_EMAIL="${ADMIN_EMAIL:-${INITIAL_ADMIN_EMAIL:-admin@route-x.local}}"
+ADMIN_PASS="${ADMIN_PASS:-${INITIAL_ADMIN_PASSWORD:?Variabel ADMIN_PASS atau INITIAL_ADMIN_PASSWORD wajib disetel}}"
 LOGIN_RES=$(curl -s -c "$COOKIE_JAR" -X POST "http://127.0.0.1:${GATEWAY_PORT}/api/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"admin@route-x.local\",\"password\":\"${ADMIN_PASS}\"}")
+  -d "{\"email\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASS}\"}")
 
 if echo "$LOGIN_RES" | grep -q "login_failed"; then
-  ADMIN_PASS="BaruPassword123!@#"
-  LOGIN_RES=$(curl -s -c "$COOKIE_JAR" -X POST "http://127.0.0.1:${GATEWAY_PORT}/api/auth/login" \
-    -H "Content-Type: application/json" \
-    -d "{\"email\":\"admin@route-x.local\",\"password\":\"${ADMIN_PASS}\"}")
+  echo "FAIL: Autentikasi admin gagal: $LOGIN_RES"
+  exit 1
 fi
 
 CSRF_TOKEN=$(grep "routex_csrf" "$COOKIE_JAR" | awk '{print $7}' || true)
@@ -139,12 +138,14 @@ echo "      Login berhasil, CSRF Token: ${CSRF_TOKEN:0:16}..."
 
 if echo "$LOGIN_RES" | grep -q '"must_change_password":true'; then
   echo "      Sandi awal terdeteksi wajib diganti, memperbarui kata sandi..."
+  NEW_ADMIN_PASS="${NEW_ADMIN_PASSWORD:-$(openssl rand -base64 16)}"
   curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X POST "http://127.0.0.1:${GATEWAY_PORT}/api/auth/change-password" \
     -H "Content-Type: application/json" \
     -H "Origin: http://127.0.0.1:${GATEWAY_PORT}" \
     -H "X-CSRF-Token: $CSRF_TOKEN" \
-    -d "{\"current_password\":\"${ADMIN_PASS}\",\"new_password\":\"BaruPassword123!@#\"}" > /dev/null
+    -d "{\"current_password\":\"${ADMIN_PASS}\",\"new_password\":\"${NEW_ADMIN_PASS}\"}" > /dev/null
   CSRF_TOKEN=$(grep "routex_csrf" "$COOKIE_JAR" | awk '{print $7}' || true)
+  ADMIN_PASS="${NEW_ADMIN_PASS}"
 fi
 
 # 5. Daftarkan Upstream Provider dan Kunci API Klien
@@ -171,11 +172,12 @@ echo "      Provider dibuat, ID: $PROVIDER_ID"
 
 # Buat kredensial provider
 if [ -n "$PROVIDER_ID" ]; then
+  MOCK_KEY="mock-cred-key-$(head -c 16 /dev/urandom | xxd -p || echo 'e2e-random-token')"
   curl -s -b "$COOKIE_JAR" -X POST "http://127.0.0.1:${GATEWAY_PORT}/api/admin/upstreams/providers/${PROVIDER_ID}/credentials" \
     -H "Content-Type: application/json" \
     -H "Origin: http://127.0.0.1:${GATEWAY_PORT}" \
     -H "X-CSRF-Token: $CSRF_TOKEN" \
-    -d '{"label":"mock-cred","api_key":"sk-mock12345678"}' > /dev/null
+    -d "{\"label\":\"mock-cred\",\"api_key\":\"${MOCK_KEY}\"}" > /dev/null
 
   # Sambungkan mapping model gpt-5 ke provider ini
   curl -s -b "$COOKIE_JAR" -X POST "http://127.0.0.1:${GATEWAY_PORT}/api/admin/upstreams/models/gpt-5/mappings" \

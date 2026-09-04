@@ -26,9 +26,10 @@ fe: ## Build frontend ke web/dist (di-embed ke binary)
 > @if [ -f web/package.json ]; then cd web && npm run build; \
 >  else echo "web/package.json belum ada — dilewati (Fase 12)"; fi
 
-build: fe ## Build biner produksi ./ai-gateway
+build: fe ## Build biner produksi ./ai-gateway dan perkakas rotasi
 > CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o $(BINARY) ./cmd/ai-gateway
-> @ls -lh $(BINARY)
+> CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o routex-rotate ./cmd/routex-rotate
+> @ls -lh $(BINARY) routex-rotate
 
 run: build ## Build lalu jalankan
 > ./$(BINARY)
@@ -95,7 +96,7 @@ schemas-clean: ## Hapus schema test tertinggal (jangan jalankan saat test aktif)
 >    psql "$$DATABASE_URL" -q -c "drop schema \"$$s\" cascade"; done; true
 
 clean: ## Hapus artefak build
-> rm -f $(BINARY) coverage.out
+> rm -f $(BINARY) routex-rotate coverage.out
 > rm -rf web/dist/assets
 
 db-shell: ## psql ke database aplikasi

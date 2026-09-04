@@ -1,5 +1,6 @@
 # Binary hasil build
 /ai-gateway
+/routex-rotate
 /dist/
 
 # Rahasia — jangan pernah di-commit
@@ -30,3 +31,7 @@ coverage.*
 
 # Scratch lokal
 /_artifacts/
+
+# Prompt kerja untuk agen (bukan bagian produk)
+/faseprompt.md
+/remediasi-prompt.md

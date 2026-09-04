@@ -37,14 +37,15 @@ chmod 750 /var/lib/route-x
 # 3. Salin berkas lingkungan jika belum ada
 echo "[3/5] Memeriksa berkas konfigurasi /etc/route-x/route-x.env..."
 if [ ! -f /etc/route-x/route-x.env ]; then
-  if [ -f .env ]; then
-    cp .env /etc/route-x/route-x.env
+  if [ -f deploy/production.env.example ]; then
+    cp deploy/production.env.example /etc/route-x/route-x.env
   else
     cp .env.example /etc/route-x/route-x.env
   fi
   chmod 600 /etc/route-x/route-x.env
   chown root:root /etc/route-x/route-x.env
-  echo "      Berkas /etc/route-x/route-x.env disalin dengan izin ketat 600."
+  echo "      Berkas templat /etc/route-x/route-x.env dibuat dari templat produksi (izin 600)."
+  echo "      PERINGATAN: Operator wajib melengkapi nilai rahasia di /etc/route-x/route-x.env sebelum menyalakan layanan."
 else
   echo "      Berkas /etc/route-x/route-x.env sudah tersedia."
 fi

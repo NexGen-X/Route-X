@@ -1,5 +1,12 @@
-# Docker Compose untuk Produksi Lengkap dengan Reverse Proxy Caddy (Otomatis HTTPS TLS)
 services:
+  gateway:
+    # Port 8080 di-reset agar TIDAK dipublikasikan langsung ke host di lingkungan produksi.
+    # Seluruh lalu lintas eksternal wajib melalui reverse proxy Caddy (port 80 & 443) demi penegakan TLS dan HSTS.
+    ports: !reset []
+    environment:
+      - APP_ENV=production
+      - PUBLIC_URL=${PUBLIC_URL:?PUBLIC_URL wajib disetel untuk produksi}
+
   caddy:
     image: caddy:2-alpine
     container_name: routex-caddy

@@ -100,15 +100,15 @@ cp .env.example .env
 
 Sesuaikan nilai pada `.env`:
 ```ini
-APP_ENV=production
+APP_ENV=development
 PORT=8080
 DATABASE_URL=postgres://routex:password@127.0.0.1:5432/routex?sslmode=disable
 REDIS_URL=redis://127.0.0.1:6379/0
-SESSION_SECRET=kunci-rahasia-sesi-minimal-32-karakter-acak
-ENCRYPTION_KEY=kunci-enkripsi-aes-256-gcm-base64-32-byte
-API_KEY_PEPPER=kunci-pepper-hmac-sha256-base64-32-byte
+SESSION_SECRET=
+ENCRYPTION_KEY=
+API_KEY_PEPPER=
 INITIAL_ADMIN_EMAIL=admin@routex.internal
-INITIAL_ADMIN_PASSWORD=KataSandiAman123!@#
+INITIAL_ADMIN_PASSWORD=
 ```
 
 ### 2. Kompilasi Biner Tunggal
@@ -201,19 +201,21 @@ main();
 
 Route-X menyediakan konfigurasi Docker multi-stage dan Docker Compose siap pakai yang memaketkan Gateway, PostgreSQL 16, dan Redis 7.
 
-### 1. Menjalankan Docker Compose Mandiri
+### 1. Menjalankan Docker Compose Mandiri (Pengembangan Lokal)
 ```bash
 # Salin konfigurasi environment docker
 cp .env.docker.example .env
+# Lengkapi variabel rahasia di .env
 
 # Jalankan seluruh stack (Route-X Gateway + PostgreSQL 16 + Redis 7)
 docker compose up -d --build
 ```
-Layanan akan aktif di `http://localhost:8080`.
+Layanan akan aktif di `http://localhost:8080` (lingkungan development).
 
 ### 2. Menjalankan Docker Compose Produksi (dengan Caddy TLS)
-Untuk mengaktifkan otomatisasi sertifikat HTTPS via Let's Encrypt / ZeroSSL:
+Untuk mengaktifkan otomatisasi sertifikat HTTPS via Let's Encrypt / ZeroSSL dengan port 8080 tertutup rapat dari akses luar:
 ```bash
+# Pastikan .env memiliki APP_ENV=production dan PUBLIC_URL=https://<domain>
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
@@ -232,6 +234,9 @@ make build
 # Jalankan pemasangan otomatis
 sudo ./deploy/scripts/setup_production.sh ./ai-gateway
 
+# Lengkapi nilai rahasia di /etc/route-x/route-x.env
+sudo nano /etc/route-x/route-x.env
+
 # Nyalakan layanan
 sudo systemctl start route-x
 sudo systemctl status route-x
@@ -240,13 +245,15 @@ sudo systemctl status route-x
 ### Opsi B: Pemasangan Manual Systemd
 Unit layanan systemd yang telah diperkeras (*security-hardened*) tersedia di [`deploy/systemd/route-x.service`](deploy/systemd/route-x.service).
 
-1. Pasang biner dan berkas konfigurasi:
+1. Pasang biner dan berkas konfigurasi templat produksi (JANGAN salin `.env` lokal):
    ```bash
    sudo cp ./ai-gateway /usr/local/bin/ai-gateway
    sudo mkdir -p /etc/route-x /var/lib/route-x
-   sudo cp .env /etc/route-x/route-x.env
+   sudo cp deploy/production.env.example /etc/route-x/route-x.env
    sudo chown -R root:root /etc/route-x
    sudo chmod 600 /etc/route-x/route-x.env
+   # Buka dan lengkapi rahasia mandiri:
+   sudo nano /etc/route-x/route-x.env
    ```
 
 2. Buat pengguna sistem `routex`:

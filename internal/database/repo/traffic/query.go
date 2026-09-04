@@ -149,7 +149,7 @@ func (r *Repo) List(ctx context.Context, f Filter, p repo.Page) (Result, error) 
 	}
 	sortCol, ok := sortColumns[sortKey]
 	if !ok {
-		return Result{}, fmt.Errorf("%s: kolom pengurutan %q tidak dikenal", op, f.Sort)
+		return Result{}, fmt.Errorf("%s: %w: kolom pengurutan %q tidak dikenal", op, repo.ErrConstraint, f.Sort)
 	}
 
 	from, to := f.From, f.To

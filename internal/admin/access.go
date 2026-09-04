@@ -1,9 +1,11 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"net/netip"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -146,17 +148,27 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	var exp *time.Time
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
-		if t, err := time.Parse(time.RFC3339, *req.ExpiresAt); err == nil {
-			exp = &t
+		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err != nil {
+			httpx.BadRequest(w, r, "invalid_expires_at", fmt.Sprintf("format expires_at tidak sah (harus RFC3339): %v", err))
+			return
 		}
+		exp = &t
 	}
 
 	var ips []netip.Prefix
 	for _, s := range req.IPAllowlist {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
 		if p, err := netip.ParsePrefix(s); err == nil {
 			ips = append(ips, p)
 		} else if addr, err := netip.ParseAddr(s); err == nil {
 			ips = append(ips, netip.PrefixFrom(addr, addr.BitLen()))
+		} else {
+			httpx.BadRequest(w, r, "invalid_ip_allowlist", fmt.Sprintf("entri ip_allowlist tidak sah: %q", s))
+			return
 		}
 	}
 
@@ -174,29 +186,35 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		scopes = []string{"inference"}
 	}
 
-	created, err := h.keyRepo.Create(ctx, keys.CreateParams{
-		Name:                req.Name,
-		OwnerUserID:         ownerID,
-		Live:                req.Live,
-		Scopes:              scopes,
-		RateLimitRPS:        req.RateLimitRPS,
-		RateLimitRPM:        req.RateLimitRPM,
-		RateLimitTPM:        req.RateLimitTPM,
-		DailyRequestLimit:   req.DailyRequestLimit,
-		MonthlyRequestLimit: req.MonthlyRequestLimit,
-		DailyTokenLimit:     req.DailyTokenLimit,
-		MonthlyTokenLimit:   req.MonthlyTokenLimit,
-		IPAllowlist:         ips,
-		ExpiresAt:           exp,
-		CreatedBy:           actorID,
+	// Bungkus pembuatan key beserta seluruh pembatasannya dalam SATU transaksi atomik.
+	// Jika pembatasan model/provider gagal, key tidak boleh tercipta bebas ke publik.
+	var created *keys.Created
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txKeyRepo := h.keyRepo.WithQuerier(q)
+		var err error
+		created, err = txKeyRepo.Create(ctx, keys.CreateParams{
+			Name:                req.Name,
+			OwnerUserID:         ownerID,
+			Live:                req.Live,
+			Scopes:              scopes,
+			RateLimitRPS:        req.RateLimitRPS,
+			RateLimitRPM:        req.RateLimitRPM,
+			RateLimitTPM:        req.RateLimitTPM,
+			DailyRequestLimit:   req.DailyRequestLimit,
+			MonthlyRequestLimit: req.MonthlyRequestLimit,
+			DailyTokenLimit:     req.DailyTokenLimit,
+			MonthlyTokenLimit:   req.MonthlyTokenLimit,
+			IPAllowlist:         ips,
+			ExpiresAt:           exp,
+			CreatedBy:           actorID,
+			AllowedModelIDs:     req.ModelIDs,
+			AllowedProviderIDs:  req.ProviderIDs,
+		})
+		return err
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "api key")
 		return
-	}
-
-	if len(req.ModelIDs) > 0 || len(req.ProviderIDs) > 0 {
-		_ = h.keyRepo.SetAllowed(ctx, created.Key.ID, req.ModelIDs, req.ProviderIDs)
 	}
 
 	h.writeAudit(ctx, r, "create", "api_key", created.Key.ID, map[string]any{"name": created.Key.Name, "prefix": created.Key.Prefix})
@@ -231,19 +249,29 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 	var ips []netip.Prefix
 	if req.IPAllowlist != nil {
 		for _, s := range req.IPAllowlist {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
 			if p, err := netip.ParsePrefix(s); err == nil {
 				ips = append(ips, p)
 			} else if addr, err := netip.ParseAddr(s); err == nil {
 				ips = append(ips, netip.PrefixFrom(addr, addr.BitLen()))
+			} else {
+				httpx.BadRequest(w, r, "invalid_ip_allowlist", fmt.Sprintf("entri ip_allowlist tidak sah: %q", s))
+				return
 			}
 		}
 	}
 
 	var exp *time.Time
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
-		if t, err := time.Parse(time.RFC3339, *req.ExpiresAt); err == nil {
-			exp = &t
+		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err != nil {
+			httpx.BadRequest(w, r, "invalid_expires_at", fmt.Sprintf("format expires_at tidak sah (harus RFC3339): %v", err))
+			return
 		}
+		exp = &t
 	}
 
 	var params keys.UpdateParams

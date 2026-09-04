@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -188,8 +189,14 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var params upstream.UpdateProviderParams
+	if req.Name != "" {
+		params.Name = &req.Name
+	}
 	if req.DisplayName != "" {
 		params.DisplayName = &req.DisplayName
+	}
+	if req.Kind != "" {
+		params.Kind = &req.Kind
 	}
 	if req.BaseURL != "" {
 		params.BaseURL = &req.BaseURL
@@ -388,9 +395,12 @@ func (h *Handlers) createCredential(w http.ResponseWriter, r *http.Request) {
 
 	var exp *time.Time
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
-		if t, err := time.Parse(time.RFC3339, *req.ExpiresAt); err == nil {
-			exp = &t
+		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err != nil {
+			httpx.BadRequest(w, r, "invalid_expires_at", fmt.Sprintf("format expires_at tidak sah (harus RFC3339): %v", err))
+			return
 		}
+		exp = &t
 	}
 
 	var actorID *string
@@ -574,6 +584,9 @@ func (h *Handlers) updateModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var params upstream.UpdateModelParams
+	if req.ModelID != "" {
+		params.ModelID = &req.ModelID
+	}
 	if req.DisplayName != "" {
 		params.DisplayName = &req.DisplayName
 	}
@@ -586,6 +599,12 @@ func (h *Handlers) updateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.MaxOutputTokens != nil {
 		params.MaxOutputTokens = upstream.Set(*req.MaxOutputTokens)
+	}
+	if req.RoutingPriority != nil {
+		params.RoutingPriority = req.RoutingPriority
+	}
+	if req.RoutingStrategy != nil {
+		params.RoutingStrategy = upstream.Set(*req.RoutingStrategy)
 	}
 	params.Enabled = req.Enabled
 

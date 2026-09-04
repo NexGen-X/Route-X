@@ -182,14 +182,14 @@ func (r *Users) Create(ctx context.Context, in NewUser) (User, error) {
 	const op = "membuat pengguna"
 
 	if err := security.ValidatePasswordStrength(in.Password.Reveal()); err != nil {
-		return User{}, fmt.Errorf("%s: %w", op, err)
+		return User{}, fmt.Errorf("%s: %w: %w", op, repo.ErrConstraint, err)
 	}
 	status := in.Status
 	if status == "" {
 		status = UserStatusActive
 	}
 	if !status.Valid() {
-		return User{}, fmt.Errorf("%s: %w: status %q tidak dikenal", op, ErrInvalidInput, status)
+		return User{}, fmt.Errorf("%s: %w: %w: status %q tidak dikenal", op, repo.ErrConstraint, ErrInvalidInput, status)
 	}
 
 	hash, err := security.HashPassword(in.Password.Reveal())
@@ -364,7 +364,7 @@ func (r *Users) ChangePassword(ctx context.Context, id string, password security
 		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 	if err := security.ValidatePasswordStrength(password.Reveal()); err != nil {
-		return fmt.Errorf("%s: %w", op, err)
+		return fmt.Errorf("%s: %w: %w", op, repo.ErrConstraint, err)
 	}
 
 	hash, err := security.HashPassword(password.Reveal())
@@ -419,7 +419,7 @@ func (r *Users) SetStatus(ctx context.Context, id string, status UserStatus) (Us
 		return User{}, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 	if !status.Valid() {
-		return User{}, fmt.Errorf("%s: %w: status %q tidak dikenal", op, ErrInvalidInput, status)
+		return User{}, fmt.Errorf("%s: %w: %w: status %q tidak dikenal", op, repo.ErrConstraint, ErrInvalidInput, status)
 	}
 
 	const query = `update users set status = $2 where id = $1 returning ` + userColumns

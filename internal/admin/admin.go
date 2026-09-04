@@ -231,7 +231,7 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 			slog.String("resource", resource),
 			slog.String("error", err.Error()),
 		)
-		httpx.BadRequest(w, r, "constraint_violation", fmt.Sprintf("nilai input melanggar batasan untuk %s: %v", resource, err))
+		httpx.BadRequest(w, r, "constraint_violation", fmt.Sprintf("nilai input melanggar batasan untuk %s", resource))
 	default:
 		observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelError,
 			"kegagalan database di admin API",

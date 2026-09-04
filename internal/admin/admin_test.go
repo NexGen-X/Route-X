@@ -614,3 +614,324 @@ func TestAdminSystemEndpoints(t *testing.T) {
 		t.Errorf("jumlah izin katalog = %d, mau >= 20", len(permsResp.Items))
 	}
 }
+
+// TestBatch4ValidationsAndConsistency memvalidasi secara ketat kepatuhan perbaikan Batch 4:
+// penolakan masukan tidak sah (400 bukan 500), atomisitas transaksi, kelengkapan pembaruan field,
+// dan pencegahan kebocoran error constraint internal.
+func TestBatch4ValidationsAndConsistency(t *testing.T) {
+	env := setupTestEnv(t)
+	client := env.newClient(t)
+
+	client.login("superadmin@routex.internal", testPassword)
+
+	// 4.1 Validasi IP Allowlist
+	t.Run("4.1 IP allowlist tidak sah harus ditolak dengan HTTP 400", func(t *testing.T) {
+		res, body := client.do(http.MethodPost, "/api/admin/access/api-keys", map[string]any{
+			"name":         "Kunci IP Rusak",
+			"ip_allowlist": []string{"203.0.113.0/33"},
+		}, true)
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status = %d, mau 400 Bad Request", res.StatusCode)
+		}
+		if !strings.Contains(string(body), "invalid_ip_allowlist") {
+			t.Errorf("respons tidak memuat kode invalid_ip_allowlist: %s", string(body))
+		}
+	})
+
+	// 4.2 Validasi ExpiresAt
+	t.Run("4.2 expires_at tidak sah harus ditolak dengan HTTP 400", func(t *testing.T) {
+		// Pada API Key
+		resKey, bodyKey := client.do(http.MethodPost, "/api/admin/access/api-keys", map[string]any{
+			"name":       "Kunci Expired Rusak",
+			"expires_at": "tanggal-palsu",
+		}, true)
+		if resKey.StatusCode != http.StatusBadRequest {
+			t.Fatalf("API key status = %d, mau 400", resKey.StatusCode)
+		}
+		if !strings.Contains(string(bodyKey), "invalid_expires_at") {
+			t.Errorf("respons tidak memuat invalid_expires_at: %s", string(bodyKey))
+		}
+
+		// Pada Ban
+		resBan, bodyBan := client.do(http.MethodPost, "/api/admin/gateway/bans", map[string]any{
+			"subject_kind": "ip",
+			"subject":      "10.0.0.1",
+			"reason":       "uji ban kadaluarsa",
+			"expires_at":   "bukan-rfc3339",
+		}, true)
+		if resBan.StatusCode != http.StatusBadRequest {
+			t.Fatalf("Ban status = %d, mau 400", resBan.StatusCode)
+		}
+		if !strings.Contains(string(bodyBan), "invalid_expires_at") {
+			t.Errorf("respons tidak memuat invalid_expires_at: %s", string(bodyBan))
+		}
+	})
+
+	// 4.3 Atomisitas Transaksi API Key dan Pembatasan Model
+	t.Run("4.3 pembuatan api key beserta allowed models atomik dalam satu transaksi", func(t *testing.T) {
+		invalidModelID := "00000000-0000-0000-0000-000000000999"
+		resKey, _ := client.do(http.MethodPost, "/api/admin/access/api-keys", map[string]any{
+			"name":      "Kunci Model Gagal",
+			"model_ids": []string{invalidModelID},
+		}, true)
+		if resKey.StatusCode != http.StatusBadRequest {
+			t.Fatalf("API key status = %d, mau 400 Bad Request", resKey.StatusCode)
+		}
+
+		// Pastikan key tidak terbuat di database (rollback penuh)
+		resList, bodyList := client.do(http.MethodGet, "/api/admin/access/api-keys", nil, false)
+		if resList.StatusCode != http.StatusOK {
+			t.Fatalf("list key status = %d", resList.StatusCode)
+		}
+		if strings.Contains(string(bodyList), "Kunci Model Gagal") {
+			t.Errorf("API key dengan model tidak sah bocor ke database (transaksi tidak di-rollback)")
+		}
+	})
+
+	// 4.4 Atomisitas Transaksi Routing Rule dan Provider
+	t.Run("4.4 pembuatan routing rule beserta provider atomik dalam satu transaksi", func(t *testing.T) {
+		invalidProvID := "00000000-0000-0000-0000-000000000888"
+		resRule, _ := client.do(http.MethodPost, "/api/admin/gateway/routing-rules", map[string]any{
+			"name":         "Aturan Gagal Provider",
+			"strategy":     "priority",
+			"provider_ids": []string{invalidProvID},
+			"weights":      map[string]int{invalidProvID: 100},
+		}, true)
+		if resRule.StatusCode != http.StatusBadRequest {
+			t.Fatalf("routing rule status = %d, mau 400 Bad Request", resRule.StatusCode)
+		}
+
+		// Pastikan rule tidak terbuat di database (rollback penuh)
+		resList, bodyList := client.do(http.MethodGet, "/api/admin/gateway/routing-rules", nil, false)
+		if resList.StatusCode != http.StatusOK {
+			t.Fatalf("list routing rules status = %d", resList.StatusCode)
+		}
+		if strings.Contains(string(bodyList), "Aturan Gagal Provider") {
+			t.Errorf("routing rule dengan provider tidak sah bocor ke database (transaksi tidak di-rollback)")
+		}
+	})
+
+	// 4.5 Pembaruan Content Filter, Provider, dan Model
+	t.Run("4.5 pembaruan filter, provider, dan model mempertahankan field terkait", func(t *testing.T) {
+		// Filter Konten: blocked_pattern
+		resCF, bodyCF := client.do(http.MethodPost, "/api/admin/gateway/content-filters", map[string]any{
+			"name":         "Filter Uji Batch 4 Pattern",
+			"description":  "Filter awal",
+			"kind":         "blocked_pattern",
+			"priority":     10,
+			"applies_to":   "request",
+			"action":       "block",
+			"pattern":      "kunci_rahasia",
+			"pattern_type": "substring",
+		}, true)
+		if resCF.StatusCode != http.StatusCreated {
+			t.Fatalf("buat filter pattern gagal: %d, body: %s", resCF.StatusCode, string(bodyCF))
+		}
+		var createdCF struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(bodyCF, &createdCF)
+
+		// Update Filter: ubah pattern_type dari substring ke regex
+		resUpdateCF, _ := client.do(http.MethodPut, "/api/admin/gateway/content-filters/"+createdCF.ID, map[string]any{
+			"pattern_type": "regex",
+		}, true)
+		if resUpdateCF.StatusCode != http.StatusOK {
+			t.Fatalf("update filter pattern status = %d, mau 200", resUpdateCF.StatusCode)
+		}
+
+		resGetCF, bodyGetCF := client.do(http.MethodGet, "/api/admin/gateway/content-filters/"+createdCF.ID, nil, false)
+		if resGetCF.StatusCode != http.StatusOK {
+			t.Fatalf("get filter pattern status = %d", resGetCF.StatusCode)
+		}
+		var gotCF struct {
+			PatternType *string `json:"pattern_type"`
+		}
+		_ = json.Unmarshal(bodyGetCF, &gotCF)
+		if gotCF.PatternType == nil || *gotCF.PatternType != "regex" {
+			t.Errorf("pattern_type filter = %v, mau 'regex'", gotCF.PatternType)
+		}
+
+		// Filter Konten: request_size
+		maxBytes := int64(4096)
+		resCFSize, bodyCFSize := client.do(http.MethodPost, "/api/admin/gateway/content-filters", map[string]any{
+			"name":              "Filter Uji Batch 4 Size",
+			"kind":              "request_size",
+			"priority":          20,
+			"max_request_bytes": maxBytes,
+		}, true)
+		if resCFSize.StatusCode != http.StatusCreated {
+			t.Fatalf("buat filter size gagal: %d, body: %s", resCFSize.StatusCode, string(bodyCFSize))
+		}
+		var createdCFSize struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(bodyCFSize, &createdCFSize)
+
+		// Update Filter Size: kecilkan max_request_bytes ke 2048
+		newMaxBytes := int64(2048)
+		resUpdateCFSize, _ := client.do(http.MethodPut, "/api/admin/gateway/content-filters/"+createdCFSize.ID, map[string]any{
+			"max_request_bytes": newMaxBytes,
+		}, true)
+		if resUpdateCFSize.StatusCode != http.StatusOK {
+			t.Fatalf("update filter size status = %d, mau 200", resUpdateCFSize.StatusCode)
+		}
+
+		resGetCFSize, bodyGetCFSize := client.do(http.MethodGet, "/api/admin/gateway/content-filters/"+createdCFSize.ID, nil, false)
+		if resGetCFSize.StatusCode != http.StatusOK {
+			t.Fatalf("get filter size status = %d", resGetCFSize.StatusCode)
+		}
+		var gotCFSize struct {
+			MaxRequestBytes *int64 `json:"max_request_bytes"`
+		}
+		_ = json.Unmarshal(bodyGetCFSize, &gotCFSize)
+		if gotCFSize.MaxRequestBytes == nil || *gotCFSize.MaxRequestBytes != 2048 {
+			t.Errorf("max_request_bytes = %v, mau 2048", gotCFSize.MaxRequestBytes)
+		}
+
+		// Update Provider: ubah name dan kind
+		resProv, bodyProv := client.do(http.MethodPost, "/api/admin/upstreams/providers", map[string]any{
+			"name":     "prov-batch4-lama",
+			"kind":     "openai",
+			"base_url": "https://api.openai.com/v1",
+		}, true)
+		if resProv.StatusCode != http.StatusCreated {
+			t.Fatalf("buat provider status = %d, body: %s", resProv.StatusCode, string(bodyProv))
+		}
+		var createdProv struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(bodyProv, &createdProv)
+
+		resUpdateProv, _ := client.do(http.MethodPut, "/api/admin/upstreams/providers/"+createdProv.ID, map[string]any{
+			"name": "prov-batch4-baru",
+			"kind": "anthropic",
+		}, true)
+		if resUpdateProv.StatusCode != http.StatusOK {
+			t.Fatalf("update provider status = %d, mau 200", resUpdateProv.StatusCode)
+		}
+
+		resGetProv, bodyGetProv := client.do(http.MethodGet, "/api/admin/upstreams/providers/"+createdProv.ID, nil, false)
+		if resGetProv.StatusCode != http.StatusOK {
+			t.Fatalf("get provider status = %d", resGetProv.StatusCode)
+		}
+		var gotProv struct {
+			Name string `json:"name"`
+			Kind string `json:"kind"`
+		}
+		_ = json.Unmarshal(bodyGetProv, &gotProv)
+		if gotProv.Name != "prov-batch4-baru" {
+			t.Errorf("name provider = %q, mau 'prov-batch4-baru'", gotProv.Name)
+		}
+		if gotProv.Kind != "anthropic" {
+			t.Errorf("kind provider = %q, mau 'anthropic'", gotProv.Kind)
+		}
+
+		// Update Model: ubah model_id, routing_priority, routing_strategy
+		resModel, bodyModel := client.do(http.MethodPost, "/api/admin/upstreams/models", map[string]any{
+			"model_id":     "gpt-batch4-lama",
+			"display_name": "Model Batch 4",
+		}, true)
+		if resModel.StatusCode != http.StatusCreated {
+			t.Fatalf("buat model status = %d, body: %s", resModel.StatusCode, string(bodyModel))
+		}
+		var createdModel struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(bodyModel, &createdModel)
+
+		prio := 42
+		strat := "lowest_cost"
+		resUpdateModel, _ := client.do(http.MethodPut, "/api/admin/upstreams/models/"+createdModel.ID, map[string]any{
+			"model_id":         "gpt-batch4-baru",
+			"routing_priority": prio,
+			"routing_strategy": strat,
+		}, true)
+		if resUpdateModel.StatusCode != http.StatusOK {
+			t.Fatalf("update model status = %d, mau 200", resUpdateModel.StatusCode)
+		}
+
+		resGetModel, bodyGetModel := client.do(http.MethodGet, "/api/admin/upstreams/models/"+createdModel.ID, nil, false)
+		if resGetModel.StatusCode != http.StatusOK {
+			t.Fatalf("get model status = %d", resGetModel.StatusCode)
+		}
+		var gotDetail struct {
+			Model struct {
+				ModelID         string  `json:"model_id"`
+				RoutingPriority int     `json:"routing_priority"`
+				RoutingStrategy *string `json:"routing_strategy"`
+			} `json:"model"`
+		}
+		_ = json.Unmarshal(bodyGetModel, &gotDetail)
+		gotModel := gotDetail.Model
+		if gotModel.ModelID != "gpt-batch4-baru" {
+			t.Errorf("model_id = %q, mau 'gpt-batch4-baru'", gotModel.ModelID)
+		}
+		if gotModel.RoutingPriority != 42 {
+			t.Errorf("routing_priority = %d, mau 42", gotModel.RoutingPriority)
+		}
+		if gotModel.RoutingStrategy == nil || *gotModel.RoutingStrategy != "lowest_cost" {
+			t.Errorf("routing_strategy = %v, mau 'lowest_cost'", gotModel.RoutingStrategy)
+		}
+	})
+
+	// 4.6 & 4.7 Penanganan ErrConstraint (400 bukan 500, tanpa kebocoran %v, dan format raw_key)
+	t.Run("4.6 dan 4.7 penanganan batasan mengembalikan 400 tanpa kebocoran %v", func(t *testing.T) {
+		// Pembuatan user dengan password lemah (<8 karakter) harus 400 Bad Request, BUKAN 500
+		resUser, bodyUser := client.do(http.MethodPost, "/api/admin/access/users", map[string]any{
+			"email":    "user-lemah@routex.test",
+			"password": "pendek",
+			"name":     "User Pendek",
+		}, true)
+		if resUser.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status user password pendek = %d, diharapkan 400 (bukan 500)", resUser.StatusCode)
+		}
+		if !strings.Contains(string(bodyUser), "constraint_violation") {
+			t.Errorf("respons tidak memuat error code constraint_violation: %s", string(bodyUser))
+		}
+		// 4.7 Verifikasi tidak ada nama operasi internal Go / SQL leaked
+		if strings.Contains(string(bodyUser), "membuat pengguna:") {
+			t.Errorf("respons membocorkan nama operasi/constraint internal: %s", string(bodyUser))
+		}
+
+		// Kueri traffic dengan kolom sort fiktif harus 400 Bad Request, BUKAN 500
+		resTraffic, bodyTraffic := client.do(http.MethodGet, "/api/admin/requests?sort=kolom_fiktif_123", nil, false)
+		if resTraffic.StatusCode != http.StatusBadRequest {
+			t.Fatalf("status traffic sort invalid = %d, diharapkan 400 (bukan 500)", resTraffic.StatusCode)
+		}
+		if !strings.Contains(string(bodyTraffic), "constraint_violation") {
+			t.Errorf("respons traffic tidak memuat constraint_violation: %s", string(bodyTraffic))
+		}
+
+		// Rotasi API Key harus mengembalikan raw_key
+		resKey, bodyKey := client.do(http.MethodPost, "/api/admin/access/api-keys", map[string]any{
+			"name": "Kunci Rotasi Uji",
+		}, true)
+		if resKey.StatusCode != http.StatusCreated {
+			t.Fatalf("buat key status = %d, body: %s", resKey.StatusCode, string(bodyKey))
+		}
+		var createdKey struct {
+			Key struct {
+				ID string `json:"id"`
+			} `json:"key"`
+			RawKey string `json:"raw_key"`
+		}
+		_ = json.Unmarshal(bodyKey, &createdKey)
+		if createdKey.RawKey == "" {
+			t.Errorf("raw_key tidak boleh kosong pada pembuatan")
+		}
+
+		resRotate, bodyRotate := client.do(http.MethodPost, "/api/admin/access/api-keys/"+createdKey.Key.ID+"/rotate", nil, true)
+		if resRotate.StatusCode != http.StatusOK {
+			t.Fatalf("rotasi key status = %d, body: %s", resRotate.StatusCode, string(bodyRotate))
+		}
+		var rotatedResp map[string]any
+		_ = json.Unmarshal(bodyRotate, &rotatedResp)
+		if _, ok := rotatedResp["raw_key"]; !ok {
+			t.Errorf("respons rotasi wajib memuat raw_key")
+		}
+		if _, ok := rotatedResp["token"]; ok {
+			t.Errorf("respons rotasi tidak boleh memuat token ganda")
+		}
+	})
+}

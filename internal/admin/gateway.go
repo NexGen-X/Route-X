@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -171,30 +172,48 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 		actorID = &p.User.ID
 	}
 
-	rule, err := h.routingRepo.Create(ctx, upstream.CreateRoutingRuleParams{
-		Name:              req.Name,
-		Description:       desc,
-		Priority:          prio,
-		MatchModelID:      req.MatchModelID,
-		MatchAPIKeyID:     req.MatchAPIKeyID,
-		MatchCapabilities: req.MatchCapabilities,
-		Strategy:          req.Strategy,
-		MaxAttempts:       req.MaxAttempts,
-		BackoffMS:         req.BackoffMS,
-		FailureThreshold:  req.FailureThreshold,
-		OpenDurationMS:    req.OpenDurationMS,
-		HalfOpenProbes:    req.HalfOpenProbes,
-		Enabled:           req.Enabled,
-		CreatedBy:         actorID,
+	var rule *upstream.RoutingRule
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRouting := upstream.NewRoutingRepo(q)
+		var err error
+		rule, err = txRouting.Create(ctx, upstream.CreateRoutingRuleParams{
+			Name:              req.Name,
+			Description:       desc,
+			Priority:          prio,
+			MatchModelID:      req.MatchModelID,
+			MatchAPIKeyID:     req.MatchAPIKeyID,
+			MatchCapabilities: req.MatchCapabilities,
+			Strategy:          req.Strategy,
+			MaxAttempts:       req.MaxAttempts,
+			BackoffMS:         req.BackoffMS,
+			FailureThreshold:  req.FailureThreshold,
+			OpenDurationMS:    req.OpenDurationMS,
+			HalfOpenProbes:    req.HalfOpenProbes,
+			Enabled:           req.Enabled,
+			CreatedBy:         actorID,
+		})
+		if err != nil {
+			return err
+		}
+
+		if len(req.ProviderIDs) > 0 {
+			if err := txRouting.SetProviders(ctx, rule.ID, req.ProviderIDs, req.Weights); err != nil {
+				return err
+			}
+			rule, err = txRouting.Get(ctx, rule.ID)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "aturan routing")
 		return
 	}
-
-	if len(req.ProviderIDs) > 0 {
-		_ = h.routingRepo.SetProviders(ctx, rule.ID, req.ProviderIDs, req.Weights)
-		rule, _ = h.routingRepo.Get(ctx, rule.ID)
+	if rule == nil {
+		httpx.InternalError(w, r)
+		return
 	}
 
 	h.writeAudit(ctx, r, "create", "routing_rule", rule.ID, map[string]any{"name": rule.Name, "strategy": rule.Strategy})
@@ -238,15 +257,33 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	p.HalfOpenProbes = req.HalfOpenProbes
 	p.Enabled = req.Enabled
 
-	rule, err := h.routingRepo.Update(ctx, id, p)
+	var rule *upstream.RoutingRule
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRouting := upstream.NewRoutingRepo(q)
+		var err error
+		rule, err = txRouting.Update(ctx, id, p)
+		if err != nil {
+			return err
+		}
+
+		if req.ProviderIDs != nil {
+			if err := txRouting.SetProviders(ctx, id, req.ProviderIDs, req.Weights); err != nil {
+				return err
+			}
+			rule, err = txRouting.Get(ctx, id)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		mapRepoError(w, r, err, "aturan routing")
 		return
 	}
-
-	if req.ProviderIDs != nil {
-		_ = h.routingRepo.SetProviders(ctx, id, req.ProviderIDs, req.Weights)
-		rule, _ = h.routingRepo.Get(ctx, id)
+	if rule == nil {
+		httpx.InternalError(w, r)
+		return
 	}
 
 	h.writeAudit(ctx, r, "update", "routing_rule", id, map[string]any{"name": rule.Name})
@@ -695,9 +732,12 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) {
 
 	var exp *time.Time
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
-		if t, err := time.Parse(time.RFC3339, *req.ExpiresAt); err == nil {
-			exp = &t
+		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
+		if err != nil {
+			httpx.BadRequest(w, r, "invalid_expires_at", fmt.Sprintf("format expires_at tidak sah (harus RFC3339): %v", err))
+			return
 		}
+		exp = &t
 	}
 
 	var actorID string
@@ -853,6 +893,9 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 	if req.Description != "" {
 		p.Description = &req.Description
 	}
+	if req.Kind != "" {
+		p.Kind = &req.Kind
+	}
 	if req.Priority > 0 {
 		p.Priority = &req.Priority
 	}
@@ -871,6 +914,15 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 	p.CaseSensitive = &req.CaseSensitive
 	if req.MaxEvalMS > 0 {
 		p.MaxEvalMS = &req.MaxEvalMS
+	}
+	if req.ModelID != "" {
+		p.ModelID = &req.ModelID
+	}
+	if req.ProviderID != "" {
+		p.ProviderID = &req.ProviderID
+	}
+	if req.MaxRequestBytes != nil {
+		p.MaxRequestBytes = req.MaxRequestBytes
 	}
 	p.Enabled = req.Enabled
 

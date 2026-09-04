@@ -310,16 +310,20 @@ func (r *Repo) GetFilter(ctx context.Context, id string) (*ContentFilter, error)
 
 // UpdateFilterParams berisi opsi pembaruan penyaring konten.
 type UpdateFilterParams struct {
-	Name          *string
-	Description   *string
-	Priority      *int
-	AppliesTo     *string
-	Action        *string
-	Pattern       *string
-	PatternType   *string
-	CaseSensitive *bool
-	MaxEvalMS     *int
-	Enabled       *bool
+	Name            *string
+	Description     *string
+	Kind            *string
+	Priority        *int
+	AppliesTo       *string
+	Action          *string
+	Pattern         *string
+	PatternType     *string
+	CaseSensitive   *bool
+	MaxEvalMS       *int
+	ModelID         *string
+	ProviderID      *string
+	MaxRequestBytes *int64
+	Enabled         *bool
 }
 
 // UpdateFilter memperbarui konfigurasi penyaring konten.
@@ -342,6 +346,10 @@ func (r *Repo) UpdateFilter(ctx context.Context, id string, p UpdateFilterParams
 	if p.Description != nil {
 		args = append(args, *p.Description)
 		setClauses = append(setClauses, fmt.Sprintf("description = $%d", len(args)))
+	}
+	if p.Kind != nil {
+		args = append(args, *p.Kind)
+		setClauses = append(setClauses, fmt.Sprintf("kind = $%d", len(args)))
 	}
 	if p.Priority != nil {
 		args = append(args, *p.Priority)
@@ -370,6 +378,18 @@ func (r *Repo) UpdateFilter(ctx context.Context, id string, p UpdateFilterParams
 	if p.MaxEvalMS != nil {
 		args = append(args, *p.MaxEvalMS)
 		setClauses = append(setClauses, fmt.Sprintf("max_eval_ms = $%d", len(args)))
+	}
+	if p.ModelID != nil {
+		args = append(args, *p.ModelID)
+		setClauses = append(setClauses, fmt.Sprintf("model_id = $%d", len(args)))
+	}
+	if p.ProviderID != nil {
+		args = append(args, *p.ProviderID)
+		setClauses = append(setClauses, fmt.Sprintf("provider_id = $%d", len(args)))
+	}
+	if p.MaxRequestBytes != nil {
+		args = append(args, *p.MaxRequestBytes)
+		setClauses = append(setClauses, fmt.Sprintf("max_request_bytes = $%d", len(args)))
 	}
 	if p.Enabled != nil {
 		args = append(args, *p.Enabled)

@@ -148,6 +148,12 @@ func New(q repo.Querier, pepper []byte) (*Repo, error) {
 	return &Repo{q: q, pepper: pepper}, nil
 }
 
+// WithQuerier membuat salinan Repo yang berjalan di atas Querier baru (misal transaksi pgx.Tx dari repo.InTx).
+// Dibutuhkan agar pembuatan key beserta batasannya berjalan dalam satu transaksi atomik.
+func (r *Repo) WithQuerier(q repo.Querier) *Repo {
+	return &Repo{q: q, pepper: r.pepper}
+}
+
 // kolom yang selalu dibaca, disatukan agar semua query memilih bentuk baris yang sama.
 const keyColumns = `
 	id::text, name, key_prefix, last4, owner_user_id::text, status, scopes,

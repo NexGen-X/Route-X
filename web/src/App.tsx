@@ -24,6 +24,7 @@ import { Settings } from './pages/Settings';
 import { Jobs } from './pages/Jobs';
 import { AuditLogs } from './pages/AuditLogs';
 import { Diagnostics } from './pages/Diagnostics';
+import { PageErrorBoundary } from './components/common/PageErrorBoundary';
 import { Loader2 } from 'lucide-react';
 
 const Shell: React.FC = () => {
@@ -216,7 +217,9 @@ const Shell: React.FC = () => {
           onOpenMobileMenu={() => setIsMobileOpen(true)}
         />
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
-          {content}
+          <PageErrorBoundary key={currentPath} pageName={title}>
+            {content}
+          </PageErrorBoundary>
         </main>
       </div>
     </div>

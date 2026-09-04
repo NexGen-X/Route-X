@@ -23,7 +23,6 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  Shield,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -54,7 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setIsMobileOpen,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const { user, principal, logout, can } = useAuth();
+  const { user, principal, logout } = useAuth();
 
   const navGroups: NavGroup[] = [
     {

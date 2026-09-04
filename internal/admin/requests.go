@@ -11,7 +11,6 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
-	"github.com/NexGen-X/Route-X/internal/httpx"
 )
 
 func (h *Handlers) requestsRoutes(r chi.Router) {
@@ -56,9 +55,14 @@ func (h *Handlers) listRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       res.Rows,
-		"next_cursor": res.NextCursor,
+	rows := make([]TrafficRowDTO, 0, len(res.Rows))
+	for _, row := range res.Rows {
+		rows = append(rows, toTrafficRowDTO(row))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[TrafficRowDTO]{
+		Items:      rows,
+		NextCursor: res.NextCursor,
 	})
 }
 
@@ -81,7 +85,7 @@ func (h *Handlers) getRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, detail)
+	_ = h.respond(w, r, http.StatusOK, toTrafficDetailDTO(&detail))
 }
 
 func (h *Handlers) getRequestEvents(w http.ResponseWriter, r *http.Request) {
@@ -103,8 +107,14 @@ func (h *Handlers) getRequestEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": events,
+	evs := make([]TrafficEventDTO, 0, len(events))
+	for _, e := range events {
+		evs = append(evs, toTrafficEventDTO(e))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, TrafficEventsResponse{
+		Items:  evs,
+		Events: evs,
 	})
 }
 
@@ -127,5 +137,5 @@ func (h *Handlers) getRequestPayload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, payload)
+	_ = h.respond(w, r, http.StatusOK, toTrafficPayloadDTO(&payload))
 }

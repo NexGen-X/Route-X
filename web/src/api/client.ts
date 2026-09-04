@@ -244,21 +244,21 @@ export const api = {
         method: 'DELETE',
       }),
     attachProvider: (id: string, data: Partial<ProviderModel>) =>
-      request<ProviderModel>(`/api/admin/upstreams/models/${id}/providers`, {
+      request<ProviderModel>(`/api/admin/upstreams/models/${id}/mappings`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    detachProvider: (id: string, mappingId: string) =>
-      request<void>(`/api/admin/upstreams/models/${id}/providers/${mappingId}`, {
+    detachProvider: (_id: string, mappingId: string) =>
+      request<void>(`/api/admin/upstreams/models/mappings/${mappingId}`, {
         method: 'DELETE',
       }),
     setPrice: (mappingId: string, data: { input_per_1m_usd: string; output_per_1m_usd: string; cached_input_per_1m_usd?: string }) =>
-      request<Price>(`/api/admin/upstreams/mappings/${mappingId}/pricing`, {
+      request<Price>(`/api/admin/upstreams/models/mappings/${mappingId}/pricing`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
     pricingHistory: (mappingId: string) =>
-      request<{ items: Price[] }>(`/api/admin/upstreams/mappings/${mappingId}/pricing/history`),
+      request<{ items: Price[] }>(`/api/admin/upstreams/models/mappings/${mappingId}/pricing/history`),
   },
 
   egress: {
@@ -370,7 +370,7 @@ export const api = {
         body: JSON.stringify(data),
       }),
     lift: (id: string) =>
-      request<void>(`/api/admin/gateway/bans/${id}`, { method: 'DELETE' }),
+      request<Ban>(`/api/admin/gateway/bans/${id}/lift`, { method: 'POST' }),
   },
 
   breakers: {
@@ -401,8 +401,11 @@ export const api = {
       }),
     rotate: (id: string) =>
       request<APIKey>(`/api/admin/access/api-keys/${id}/rotate`, { method: 'POST' }),
-    revoke: (id: string) =>
-      request<void>(`/api/admin/access/api-keys/${id}`, { method: 'DELETE' }),
+    revoke: (id: string, reason?: string) =>
+      request<void>(`/api/admin/access/api-keys/${id}/revoke`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reason || 'dicabut oleh admin' }),
+      }),
     toggle: (id: string, enabled: boolean) =>
       request<APIKey>(`/api/admin/access/api-keys/${id}/toggle`, {
         method: 'POST',
@@ -491,7 +494,7 @@ export const api = {
       }),
     jobs: () => request<{ items: BackgroundJob[] }>('/api/admin/system/jobs'),
     triggerJob: (name: string) =>
-      request<{ message: string }>(`/api/admin/system/jobs/${name}/trigger`, { method: 'POST' }),
+      request<{ status: string; job: string; message: string }>(`/api/admin/system/jobs/${name}/run`, { method: 'POST' }),
     auditLogs: (params?: Record<string, any>) => {
       const q = new URLSearchParams(params || {});
       return request<{ items: AuditLogEntry[]; next_cursor?: string }>(`/api/admin/system/audit-logs?${q.toString()}`);

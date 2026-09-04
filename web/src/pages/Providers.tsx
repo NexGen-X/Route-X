@@ -15,7 +15,6 @@ export const Providers: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [probingId, setProbingId] = useState<string | null>(null);
   const [probeResult, setProbeResult] = useState<any | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
 
   // Form states
   const [newProv, setNewProv] = useState({
@@ -34,12 +33,11 @@ export const Providers: React.FC = () => {
   });
 
   const loadProviders = async () => {
-    setIsLoading(true);
     try {
       const res = await api.providers.list();
       setProviders(res.items || []);
-    } finally {
-      setIsLoading(false);
+    } catch (err) {
+      console.error(err);
     }
   };
 

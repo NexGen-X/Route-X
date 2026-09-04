@@ -6,16 +6,7 @@ import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import {
-  Terminal,
   Search,
-  Filter,
-  ArrowUpDown,
-  Clock,
-  Coins,
-  Cpu,
-  Layers,
-  FileText,
-  AlertCircle,
   RefreshCw,
   ChevronRight,
 } from 'lucide-react';
@@ -30,7 +21,6 @@ export const Requests: React.FC = () => {
   const [reqPayload, setReqPayload] = useState<RequestPayload | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
 
   const loadRequests = async (cursor?: string) => {
     setIsLoading(true);
@@ -62,7 +52,6 @@ export const Requests: React.FC = () => {
   const handleInspect = async (req: RequestLog) => {
     setSelectedReq(req);
     setIsInspectorOpen(true);
-    setIsLoadingDetails(true);
     try {
       const [eventsRes, payloadRes] = await Promise.all([
         api.requests.events(req.request_id).catch(() => ({ events: [] })),
@@ -70,8 +59,8 @@ export const Requests: React.FC = () => {
       ]);
       setReqEvents(eventsRes.events || []);
       setReqPayload(payloadRes);
-    } finally {
-      setIsLoadingDetails(false);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -183,7 +172,9 @@ export const Requests: React.FC = () => {
                     </td>
 
                     <td className="py-3 px-4">
-                      <div className="font-mono text-text-primary">{r.total_tokens.toLocaleString()} tokens</div>
+                      <div className="font-mono text-text-primary">
+                        {r.total_tokens != null ? r.total_tokens.toLocaleString() : '-'} tokens
+                      </div>
                       <div className="text-[11px] text-text-muted font-mono">
                         ${parseFloat(r.cost_usd || '0').toFixed(6)}
                       </div>
@@ -249,7 +240,9 @@ export const Requests: React.FC = () => {
               </div>
               <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
                 <span className="text-[10px] text-text-muted uppercase">Total Token</span>
-                <div className="mt-1 font-mono font-bold text-white">{selectedReq.total_tokens.toLocaleString()}</div>
+                <div className="mt-1 font-mono font-bold text-white">
+                  {selectedReq.total_tokens != null ? selectedReq.total_tokens.toLocaleString() : '-'}
+                </div>
               </div>
               <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
                 <span className="text-[10px] text-text-muted uppercase">Biaya USD</span>

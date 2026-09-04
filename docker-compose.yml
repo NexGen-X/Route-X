@@ -10,7 +10,7 @@ services:
     environment:
       - APP_ENV=${APP_ENV:?Variabel APP_ENV wajib disetel (development | staging | production)}
       - PORT=8080
-      - DATABASE_URL=postgres://${POSTGRES_USER:-routex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wajib disetel}@postgres:5432/${POSTGRES_DB:-routex}?sslmode=${DB_SSLMODE:-disable}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-routex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wajib disetel}@postgres:5432/${POSTGRES_DB:-routex}?sslmode=${DB_SSLMODE:?DB_SSLMODE wajib disetel (require | verify-ca | verify-full)}
       - REDIS_URL=redis://redis:6379/0
       - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET wajib disetel}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY wajib disetel}

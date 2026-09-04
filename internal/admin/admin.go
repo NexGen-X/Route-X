@@ -238,3 +238,10 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 		httpx.InternalError(w, r)
 	}
 }
+
+// respond menuliskan respons JSON yang mewajibkan tipe data mengimplementasikan antarmuka dto.
+// Penegakan ini dilakukan oleh compiler Go sehingga tidak ada struct repository atau map inline
+// yang dapat lolos ke respons publik tanpa melalui kontrak DTO yang telah diaudit.
+func (h *Handlers) respond(w http.ResponseWriter, r *http.Request, status int, body dto) error {
+	return httpx.JSON(w, status, body)
+}

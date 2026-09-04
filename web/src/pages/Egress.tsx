@@ -83,7 +83,7 @@ export const Egress: React.FC = () => {
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-white">{p.name}</h4>
-                    <span className="text-[11px] text-text-muted font-mono">{p.kind.toUpperCase()} • {p.region || 'global'}</span>
+                    <span className="text-[11px] text-text-muted font-mono">{(p.kind || 'PROXY').toUpperCase()} • {p.region || 'global'}</span>
                   </div>
                 </div>
                 <Badge variant={p.enabled ? 'success' : 'neutral'}>

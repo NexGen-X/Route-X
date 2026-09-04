@@ -35,3 +35,4 @@ coverage.*
 # Prompt kerja untuk agen (bukan bagian produk)
 /faseprompt.md
 /remediasi-prompt.md
+/batch2-prompt.md

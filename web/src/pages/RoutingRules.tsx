@@ -5,7 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
-import { GitFork, Plus, Trash2, Sliders } from 'lucide-react';
+import { GitFork, Plus, Trash2 } from 'lucide-react';
 
 export const RoutingRules: React.FC = () => {
   const [rules, setRules] = useState<RoutingRule[]>([]);

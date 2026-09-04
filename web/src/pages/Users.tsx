@@ -5,7 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
-import { Users as UsersIcon, Plus, Key, Shield, LogOut } from 'lucide-react';
+import { Plus, Key, LogOut } from 'lucide-react';
 
 export const Users: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);

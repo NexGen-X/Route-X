@@ -88,7 +88,7 @@ export const ContentFilters: React.FC = () => {
                   </div>
                 </div>
                 <Badge variant={f.action === 'block' ? 'error' : 'warn'}>
-                  {f.action.toUpperCase()}
+                  {(f.action || 'block').toUpperCase()}
                 </Badge>
               </div>
 

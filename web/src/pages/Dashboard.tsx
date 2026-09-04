@@ -7,11 +7,8 @@ import { Button } from '../components/common/Button';
 import {
   Activity,
   ArrowUpRight,
-  CheckCircle2,
-  AlertTriangle,
   Clock,
   Coins,
-  Cpu,
   Server,
   Zap,
   RefreshCw,

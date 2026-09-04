@@ -104,9 +104,14 @@ func (h *Handlers) listRoutingRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"next_cursor": next,
+	dtos := make([]RoutingRuleDTO, 0, len(items))
+	for _, it := range items {
+		dtos = append(dtos, toRoutingRuleDTO(it))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[RoutingRuleDTO]{
+		Items:      dtos,
+		NextCursor: next,
 	})
 }
 
@@ -120,7 +125,7 @@ func (h *Handlers) getRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, rule)
+	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
 type createRoutingRuleReq struct {
@@ -190,7 +195,7 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "routing_rule", rule.ID, map[string]any{"name": rule.Name, "strategy": rule.Strategy})
-	_ = httpx.JSON(w, http.StatusCreated, rule)
+	_ = h.respond(w, r, http.StatusCreated, toRoutingRuleDTO(rule))
 }
 
 func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
@@ -242,7 +247,7 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "routing_rule", id, map[string]any{"name": rule.Name})
-	_ = httpx.JSON(w, http.StatusOK, rule)
+	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
 func (h *Handlers) deleteRoutingRule(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +260,7 @@ func (h *Handlers) deleteRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "routing_rule", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleRoutingRule(w http.ResponseWriter, r *http.Request) {
@@ -277,7 +282,7 @@ func (h *Handlers) toggleRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "routing_rule", id, map[string]any{"enabled": req.Enabled})
-	_ = httpx.JSON(w, http.StatusOK, rule)
+	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
 func (h *Handlers) setRuleProviders(w http.ResponseWriter, r *http.Request) {
@@ -300,7 +305,7 @@ func (h *Handlers) setRuleProviders(w http.ResponseWriter, r *http.Request) {
 
 	rule, _ := h.routingRepo.Get(ctx, id)
 	h.writeAudit(ctx, r, "set_providers", "routing_rule", id, map[string]any{"providers": req.ProviderIDs})
-	_ = httpx.JSON(w, http.StatusOK, rule)
+	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
 // -----------------------------------------------------------------------------
@@ -320,9 +325,14 @@ func (h *Handlers) listRateLimits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"next_cursor": next,
+	dtos := make([]RateLimitDTO, 0, len(items))
+	for _, it := range items {
+		dtos = append(dtos, toRateLimitDTO(it))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[RateLimitDTO]{
+		Items:      dtos,
+		NextCursor: next,
 	})
 }
 
@@ -336,7 +346,7 @@ func (h *Handlers) getRateLimit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, l)
+	_ = h.respond(w, r, http.StatusOK, toRateLimitDTO(l))
 }
 
 type createRateLimitReq struct {
@@ -382,7 +392,7 @@ func (h *Handlers) createRateLimit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "rate_limit", l.ID, map[string]any{"scope": l.Scope, "scope_id": l.ScopeID})
-	_ = httpx.JSON(w, http.StatusCreated, l)
+	_ = h.respond(w, r, http.StatusCreated, toRateLimitDTO(l))
 }
 
 func (h *Handlers) updateRateLimit(w http.ResponseWriter, r *http.Request) {
@@ -420,7 +430,7 @@ func (h *Handlers) updateRateLimit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "rate_limit", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, l)
+	_ = h.respond(w, r, http.StatusOK, toRateLimitDTO(l))
 }
 
 func (h *Handlers) deleteRateLimit(w http.ResponseWriter, r *http.Request) {
@@ -433,7 +443,7 @@ func (h *Handlers) deleteRateLimit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "rate_limit", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleRateLimit(w http.ResponseWriter, r *http.Request) {
@@ -455,7 +465,7 @@ func (h *Handlers) toggleRateLimit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "rate_limit", id, map[string]any{"enabled": req.Enabled})
-	_ = httpx.JSON(w, http.StatusOK, l)
+	_ = h.respond(w, r, http.StatusOK, toRateLimitDTO(l))
 }
 
 // -----------------------------------------------------------------------------
@@ -475,9 +485,14 @@ func (h *Handlers) listBudgets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"next_cursor": next,
+	dtos := make([]BudgetDTO, 0, len(items))
+	for _, it := range items {
+		dtos = append(dtos, toBudgetDTO(it))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[BudgetDTO]{
+		Items:      dtos,
+		NextCursor: next,
 	})
 }
 
@@ -491,7 +506,7 @@ func (h *Handlers) getBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, b)
+	_ = h.respond(w, r, http.StatusOK, toBudgetDTO(b))
 }
 
 type createBudgetReq struct {
@@ -539,7 +554,7 @@ func (h *Handlers) createBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "budget", b.ID, map[string]any{"name": b.Name, "limit_usd": limitUSD.String()})
-	_ = httpx.JSON(w, http.StatusCreated, b)
+	_ = h.respond(w, r, http.StatusCreated, toBudgetDTO(b))
 }
 
 func (h *Handlers) updateBudget(w http.ResponseWriter, r *http.Request) {
@@ -581,7 +596,7 @@ func (h *Handlers) updateBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "budget", id, map[string]any{"name": b.Name})
-	_ = httpx.JSON(w, http.StatusOK, b)
+	_ = h.respond(w, r, http.StatusOK, toBudgetDTO(b))
 }
 
 func (h *Handlers) deleteBudget(w http.ResponseWriter, r *http.Request) {
@@ -594,7 +609,7 @@ func (h *Handlers) deleteBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "budget", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleBudget(w http.ResponseWriter, r *http.Request) {
@@ -616,7 +631,7 @@ func (h *Handlers) toggleBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "budget", id, map[string]any{"enabled": req.Enabled})
-	_ = httpx.JSON(w, http.StatusOK, b)
+	_ = h.respond(w, r, http.StatusOK, toBudgetDTO(b))
 }
 
 func (h *Handlers) resetBudget(w http.ResponseWriter, r *http.Request) {
@@ -631,7 +646,7 @@ func (h *Handlers) resetBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "reset", "budget", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, b)
+	_ = h.respond(w, r, http.StatusOK, toBudgetDTO(b))
 }
 
 // -----------------------------------------------------------------------------
@@ -650,8 +665,13 @@ func (h *Handlers) listBans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": items,
+	dtos := make([]BanDTO, 0, len(items))
+	for _, it := range items {
+		dtos = append(dtos, toBanDTO(it))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[BanDTO]{
+		Items: dtos,
 	})
 }
 
@@ -695,7 +715,7 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "ban", ban.ID, map[string]any{"kind": ban.SubjectKind, "subject": ban.Subject})
-	_ = httpx.JSON(w, http.StatusCreated, ban)
+	_ = h.respond(w, r, http.StatusCreated, toBanDTO(ban))
 }
 
 func (h *Handlers) liftBan(w http.ResponseWriter, r *http.Request) {
@@ -714,7 +734,7 @@ func (h *Handlers) liftBan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "lift", "ban", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, ban)
+	_ = h.respond(w, r, http.StatusOK, toBanDTO(ban))
 }
 
 // -----------------------------------------------------------------------------
@@ -734,9 +754,14 @@ func (h *Handlers) listContentFilters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"next_cursor": next,
+	dtos := make([]ContentFilterDTO, 0, len(items))
+	for _, it := range items {
+		dtos = append(dtos, toContentFilterDTO(it))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[ContentFilterDTO]{
+		Items:      dtos,
+		NextCursor: next,
 	})
 }
 
@@ -750,7 +775,7 @@ func (h *Handlers) getContentFilter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, f)
+	_ = h.respond(w, r, http.StatusOK, toContentFilterDTO(f))
 }
 
 type createFilterReq struct {
@@ -805,7 +830,7 @@ func (h *Handlers) createContentFilter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "content_filter", f.ID, map[string]any{"name": f.Name, "kind": f.Kind})
-	_ = httpx.JSON(w, http.StatusCreated, f)
+	_ = h.respond(w, r, http.StatusCreated, toContentFilterDTO(f))
 }
 
 func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
@@ -853,7 +878,7 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "content_filter", id, map[string]any{"name": f.Name})
-	_ = httpx.JSON(w, http.StatusOK, f)
+	_ = h.respond(w, r, http.StatusOK, toContentFilterDTO(f))
 }
 
 func (h *Handlers) deleteContentFilter(w http.ResponseWriter, r *http.Request) {
@@ -866,7 +891,7 @@ func (h *Handlers) deleteContentFilter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "content_filter", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleContentFilter(w http.ResponseWriter, r *http.Request) {
@@ -888,7 +913,7 @@ func (h *Handlers) toggleContentFilter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "content_filter", id, map[string]any{"enabled": req.Enabled})
-	_ = httpx.JSON(w, http.StatusOK, f)
+	_ = h.respond(w, r, http.StatusOK, toContentFilterDTO(f))
 }
 
 // -----------------------------------------------------------------------------
@@ -897,26 +922,22 @@ func (h *Handlers) toggleContentFilter(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) listCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	type BreakerInfo struct {
-		Key   string `json:"key"`
-		State string `json:"state"`
-	}
 
-	var items []BreakerInfo
+	items := make([]CircuitBreakerDTO, 0)
 	if h.redis != nil {
 		iter := h.redis.Scan(ctx, 0, "routex:breaker:*", 500).Iterator()
 		for iter.Next(ctx) {
 			k := iter.Val()
 			val, _ := h.redis.Get(ctx, k).Result()
-			items = append(items, BreakerInfo{
+			items = append(items, CircuitBreakerDTO{
 				Key:   k,
 				State: val,
 			})
 		}
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": items,
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[CircuitBreakerDTO]{
+		Items: items,
 	})
 }
 
@@ -935,5 +956,5 @@ func (h *Handlers) resetCircuitBreaker(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "reset", "circuit_breaker", req.Key, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "reset"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "reset"})
 }

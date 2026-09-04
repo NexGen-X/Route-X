@@ -7,14 +7,12 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-import { Activity, RefreshCw, Layers, Database } from 'lucide-react';
+import { RefreshCw, Database } from 'lucide-react';
 
 export const Observability: React.FC = () => {
   const [windowTime, setWindowTime] = useState('24h');
@@ -174,13 +172,13 @@ export const Observability: React.FC = () => {
                   <div className="flex justify-between text-xs">
                     <span className="font-semibold text-text-primary">{item.name || item.id}</span>
                     <span className="font-mono text-text-secondary">
-                      {item.requests.toLocaleString()} reqs ({item.percentage.toFixed(1)}%)
+                      {(item.requests ?? 0).toLocaleString()} reqs ({(item.percentage ?? 0).toFixed(1)}%)
                     </span>
                   </div>
                   <div className="w-full h-2 bg-bg-surface-2 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-accent transition-all duration-500 rounded-full"
-                      style={{ width: `${Math.min(100, Math.max(2, item.percentage))}%` }}
+                      style={{ width: `${Math.min(100, Math.max(2, item.percentage ?? 0))}%` }}
                     />
                   </div>
                 </div>
@@ -199,23 +197,23 @@ export const Observability: React.FC = () => {
                   PostgreSQL Pool
                 </span>
                 <span className="font-mono font-bold text-accent">
-                  {diag?.db_pool.total_conns ?? 0} / {diag?.db_pool.max_conns ?? 0}
+                  {diag?.db_pool?.total_conns ?? 0} / {diag?.db_pool?.max_conns ?? 0}
                 </span>
               </div>
               <div className="text-[11px] text-text-muted font-mono flex justify-between">
-                <span>Idle: {diag?.db_pool.idle_conns ?? 0}</span>
-                <span>Acquired: {diag?.db_pool.acquired_conns ?? 0}</span>
+                <span>Idle: {diag?.db_pool?.idle_conns ?? 0}</span>
+                <span>Acquired: {diag?.db_pool?.acquired_conns ?? 0}</span>
               </div>
             </div>
 
             <div className="space-y-2 text-xs">
               <div className="flex justify-between py-1 border-b border-border/40">
                 <span className="text-text-muted">Versi Gateway</span>
-                <span className="font-mono font-semibold text-white">{diag?.version || 'v1.0.0'}</span>
+                <span className="font-mono font-semibold text-white">{diag?.version || 'tidak tersedia'}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-border/40">
                 <span className="text-text-muted">Go Runtime</span>
-                <span className="font-mono text-text-secondary">{diag?.go_version || 'go1.24'}</span>
+                <span className="font-mono text-text-secondary">{diag?.go_version || 'tidak tersedia'}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-border/40">
                 <span className="text-text-muted">Goroutines</span>

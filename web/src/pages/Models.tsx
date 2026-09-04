@@ -1,19 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { Model, Provider } from '../types';
+import type { Model } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
-import { Cpu, Plus, DollarSign, Layers } from 'lucide-react';
+import { Cpu, Plus, DollarSign } from 'lucide-react';
 
 export const Models: React.FC = () => {
   const [models, setModels] = useState<Model[]>([]);
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isPriceOpen, setIsPriceOpen] = useState(false);
-  const [targetMappingId, setTargetMappingId] = useState<string>('');
 
   const [newModel, setNewModel] = useState({
     model_id: '',
@@ -23,17 +19,10 @@ export const Models: React.FC = () => {
     max_output_tokens: 4096,
   });
 
-  const [pricingForm, setPricingForm] = useState({
-    input_usd: '2.50',
-    output_usd: '10.00',
-    cached_input_usd: '1.25',
-  });
-
   const loadModels = async () => {
     try {
-      const [mRes, pRes] = await Promise.all([api.models.list(), api.providers.list()]);
+      const mRes = await api.models.list();
       setModels(mRes.items || []);
-      setProviders(pRes.items || []);
     } catch (err) {
       console.error(err);
     }
@@ -122,10 +111,8 @@ export const Models: React.FC = () => {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => {
-                  setSelectedModel(m);
-                  setIsPriceOpen(true);
-                }}
+                disabled
+                title="Konfigurasi harga akan diimplementasikan pada Batch 3"
                 icon={<DollarSign className="w-3.5 h-3.5" />}
               >
                 Pricing

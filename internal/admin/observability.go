@@ -10,7 +10,6 @@ import (
 	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
-	"github.com/NexGen-X/Route-X/internal/httpx"
 )
 
 func (h *Handlers) observabilityRoutes(r chi.Router) {
@@ -60,7 +59,7 @@ func (h *Handlers) getSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, stats)
+	_ = h.respond(w, r, http.StatusOK, toTrafficStatsDTO(&stats))
 }
 
 func (h *Handlers) getSeries(w http.ResponseWriter, r *http.Request) {
@@ -83,8 +82,14 @@ func (h *Handlers) getSeries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": points,
+	pts := make([]TrafficPointDTO, 0, len(points))
+	for _, p := range points {
+		pts = append(pts, toTrafficPointDTO(p))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, TrafficSeriesResponse{
+		Items:  pts,
+		Points: pts,
 	})
 }
 
@@ -126,9 +131,19 @@ func (h *Handlers) getBreakdown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"dimension": dim,
-		"items":     slices,
+	var totalReqs int64
+	for _, s := range slices {
+		totalReqs += s.Requests
+	}
+
+	items := make([]TrafficSliceDTO, 0, len(slices))
+	for _, s := range slices {
+		items = append(items, toTrafficSliceDTO(s, totalReqs))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, TrafficBreakdownResponse{
+		Dimension: string(dim),
+		Items:     items,
 	})
 }
 
@@ -141,47 +156,41 @@ func (h *Handlers) getHealthSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type ProviderHealthStatus struct {
-		ID            string `json:"id"`
-		Name          string `json:"name"`
-		Status        string `json:"status"`
-		LastError     string `json:"last_error,omitempty"`
-		LastCheckedAt string `json:"last_checked_at,omitempty"`
-	}
-
-	var statuses []ProviderHealthStatus
+	statuses := make([]ProviderHealthDTO, 0, len(providers))
 	for _, p := range providers {
 		status := "unknown"
 		if p.LastHealthStatus != nil {
 			status = *p.LastHealthStatus
 		}
-		st := ProviderHealthStatus{
-			ID:     p.ID,
-			Name:   p.Name,
-			Status: status,
-		}
+		var checkedAt *string
 		if p.LastHealthAt != nil {
-			st.LastCheckedAt = p.LastHealthAt.UTC().Format(time.RFC3339)
+			s := p.LastHealthAt.UTC().Format(time.RFC3339)
+			checkedAt = &s
 		}
-		statuses = append(statuses, st)
+		statuses = append(statuses, ProviderHealthDTO{
+			ID:            p.ID,
+			Name:          p.Name,
+			Status:        status,
+			LastCheckedAt: checkedAt,
+		})
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"providers": statuses,
+	_ = h.respond(w, r, http.StatusOK, HealthSummaryResponse{
+		Providers: statuses,
 	})
 }
 
 func (h *Handlers) getLiveMetrics(w http.ResponseWriter, r *http.Request) {
 	stat := h.pool.Stat()
 
-	resp := map[string]any{
-		"db_pool": map[string]any{
-			"total_conns":        stat.TotalConns(),
-			"idle_conns":         stat.IdleConns(),
-			"acquired_conns":     stat.AcquiredConns(),
-			"max_conns":          stat.MaxConns(),
-			"acquire_count":      stat.AcquireCount(),
-			"empty_acquire_wait": stat.EmptyAcquireCount(),
+	resp := LiveMetricsResponse{
+		DBPool: DBPoolStatsDTO{
+			TotalConns:       stat.TotalConns(),
+			IdleConns:        stat.IdleConns(),
+			AcquiredConns:    stat.AcquiredConns(),
+			MaxConns:         stat.MaxConns(),
+			AcquireCount:     stat.AcquireCount(),
+			EmptyAcquireWait: stat.EmptyAcquireCount(),
 		},
 	}
 
@@ -192,11 +201,11 @@ func (h *Handlers) getLiveMetrics(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			redisStatus = "error"
 		}
-		resp["redis"] = map[string]any{
-			"status": redisStatus,
-			"ping":   pong,
+		resp.Redis = &RedisStatsDTO{
+			Status: redisStatus,
+			Ping:   pong,
 		}
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, resp)
+	_ = h.respond(w, r, http.StatusOK, resp)
 }

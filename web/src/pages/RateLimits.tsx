@@ -11,11 +11,11 @@ export const RateLimits: React.FC = () => {
   const [limits, setLimits] = useState<RateLimit[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newLimit, setNewLimit] = useState({
-    name: '',
     scope: 'api_key',
-    limit_type: 'requests',
-    max_value: 60,
-    window_seconds: 60,
+    scope_id: 'default',
+    requests_per_minute: 60,
+    tokens_per_minute: 100000,
+    requests_per_second: 10,
   });
 
   const loadLimits = async () => {
@@ -58,7 +58,7 @@ export const RateLimits: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-white">Rate Limits</h2>
           <p className="text-xs text-text-secondary mt-1">
-            Pembatasan laju permintaan terdistribusi via Redis (RPM, TPM, concurrent requests) per IP, API key, atau tier.
+            Pembatasan laju permintaan terdistribusi via Redis (RPM, TPM, RPS) per IP, API key, atau global.
           </p>
         </div>
         <Button
@@ -81,8 +81,8 @@ export const RateLimits: React.FC = () => {
                     <Gauge className="w-5 h-5" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-bold text-white">{l.name}</h4>
-                    <span className="text-[11px] text-text-muted font-mono">{l.scope}</span>
+                    <h4 className="text-sm font-bold text-white uppercase">{l.scope}</h4>
+                    <span className="text-[11px] text-text-muted font-mono">{l.scope_id || 'Semua'}</span>
                   </div>
                 </div>
                 <Badge variant={l.enabled ? 'success' : 'neutral'}>
@@ -92,14 +92,28 @@ export const RateLimits: React.FC = () => {
 
               <div className="mt-4 space-y-2 text-xs">
                 <div className="flex justify-between py-1 border-b border-border/40">
-                  <span className="text-text-muted">Batas Maksimal</span>
+                  <span className="text-text-muted">Requests Per Minute (RPM)</span>
                   <span className="font-mono text-white font-semibold">
-                    {l.max_value.toLocaleString()} {l.limit_type}
+                    {l.requests_per_minute ? `${l.requests_per_minute.toLocaleString()} req/m` : '-'}
                   </span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/40">
-                  <span className="text-text-muted">Jendela Waktu</span>
-                  <span className="font-mono text-accent">{l.window_seconds} detik</span>
+                  <span className="text-text-muted">Tokens Per Minute (TPM)</span>
+                  <span className="font-mono text-accent">
+                    {l.tokens_per_minute ? `${l.tokens_per_minute.toLocaleString()} tok/m` : '-'}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-border/40">
+                  <span className="text-text-muted">Requests Per Second (RPS)</span>
+                  <span className="font-mono text-text-secondary">
+                    {l.requests_per_second ? `${l.requests_per_second} req/s` : '-'}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-text-muted">Batas Harian</span>
+                  <span className="font-mono text-text-secondary">
+                    {l.daily_request_limit ? `${l.daily_request_limit.toLocaleString()} req/hari` : '-'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -125,17 +139,6 @@ export const RateLimits: React.FC = () => {
         subtitle="Terapkan pembatasan kuota laju pada tingkat Redis terdistribusi"
       >
         <form onSubmit={handleCreate} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Aturan</label>
-            <input
-              type="text"
-              required
-              placeholder="Standard Key 60 RPM"
-              value={newLimit.name}
-              onChange={(e) => setNewLimit({ ...newLimit, name: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
-            />
-          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold text-text-secondary uppercase mb-1">Cakupan (Scope)</label>
@@ -146,39 +149,46 @@ export const RateLimits: React.FC = () => {
               >
                 <option value="api_key">Per Kunci API</option>
                 <option value="ip">Per Alamat IP Klien</option>
-                <option value="model">Per Model Inferensi</option>
+                <option value="global">Global Gateway</option>
               </select>
             </div>
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Tipe Batasan</label>
-              <select
-                value={newLimit.limit_type}
-                onChange={(e) => setNewLimit({ ...newLimit, limit_type: e.target.value })}
+              <label className="block font-semibold text-text-secondary uppercase mb-1">Scope ID / Target</label>
+              <input
+                type="text"
+                required
+                placeholder="ID atau IP (default: default)"
+                value={newLimit.scope_id}
+                onChange={(e) => setNewLimit({ ...newLimit, scope_id: e.target.value })}
                 className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
-              >
-                <option value="requests">Jumlah Requests</option>
-                <option value="tokens">Jumlah Tokens</option>
-              </select>
+              />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Batas Kuota</label>
+              <label className="block font-semibold text-text-secondary uppercase mb-1">Req / Menit (RPM)</label>
               <input
                 type="number"
-                required
-                value={newLimit.max_value}
-                onChange={(e) => setNewLimit({ ...newLimit, max_value: parseInt(e.target.value) || 0 })}
+                value={newLimit.requests_per_minute}
+                onChange={(e) => setNewLimit({ ...newLimit, requests_per_minute: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
               />
             </div>
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Jendela Detik</label>
+              <label className="block font-semibold text-text-secondary uppercase mb-1">Token / Menit (TPM)</label>
               <input
                 type="number"
-                required
-                value={newLimit.window_seconds}
-                onChange={(e) => setNewLimit({ ...newLimit, window_seconds: parseInt(e.target.value) || 0 })}
+                value={newLimit.tokens_per_minute}
+                onChange={(e) => setNewLimit({ ...newLimit, tokens_per_minute: parseInt(e.target.value) || 0 })}
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-text-secondary uppercase mb-1">Req / Detik (RPS)</label>
+              <input
+                type="number"
+                value={newLimit.requests_per_second}
+                onChange={(e) => setNewLimit({ ...newLimit, requests_per_second: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
               />
             </div>

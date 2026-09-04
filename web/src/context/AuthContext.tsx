@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api, ApiError, setCsrfToken } from '../api/client';
+import { api, setCsrfToken } from '../api/client';
 import type { Principal, User } from '../types';
 
 interface AuthContextType {

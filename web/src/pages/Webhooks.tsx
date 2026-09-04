@@ -245,7 +245,7 @@ export const Webhooks: React.FC = () => {
                     </div>
                   </div>
                   <Badge variant={d.status === 'delivered' ? 'success' : 'warn'}>
-                    {d.status.toUpperCase()} ({d.response_status_code || 0})
+                    {(d.status || 'pending').toUpperCase()} ({d.response_status_code || 0})
                   </Badge>
                 </div>
               ))

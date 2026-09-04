@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu, Activity, ShieldCheck, ExternalLink } from 'lucide-react';
+import { Menu, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../common/Badge';
 
@@ -14,7 +14,7 @@ export const Header: React.FC<HeaderProps> = ({
   subtitle,
   onOpenMobileMenu,
 }) => {
-  const { user, principal } = useAuth();
+  const { principal } = useAuth();
 
   return (
     <header className="h-16 border-b border-border bg-bg-base/80 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30">
@@ -32,11 +32,6 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-chip bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="font-mono">Gateway Active</span>
-        </div>
-
         {principal && (
           <Badge variant="lime" size="md">
             <ShieldCheck className="w-3.5 h-3.5" />

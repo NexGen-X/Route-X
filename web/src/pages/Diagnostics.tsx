@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import type { Diagnostics as DiagType } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
-import { HeartPulse, Cpu, Database, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 export const Diagnostics: React.FC = () => {
   const [diag, setDiag] = useState<DiagType | null>(null);
@@ -52,15 +52,15 @@ export const Diagnostics: React.FC = () => {
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Versi Gateway</span>
-              <span className="font-mono font-bold text-accent">{diag?.version}</span>
+              <span className="font-mono font-bold text-accent">{diag?.version || 'tidak tersedia'}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Git Commit</span>
-              <span className="font-mono text-white">{diag?.commit}</span>
+              <span className="font-mono text-white">{diag?.commit || 'tidak tersedia'}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Go Compiler</span>
-              <span className="font-mono text-text-secondary">{diag?.go_version}</span>
+              <span className="font-mono text-text-secondary">{diag?.go_version || 'tidak tersedia'}</span>
             </div>
             <div className="flex justify-between py-1">
               <span className="text-text-muted">Uptime Proses</span>
@@ -75,19 +75,25 @@ export const Diagnostics: React.FC = () => {
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Memory Allocated</span>
-              <span className="font-mono font-bold text-white">{diag?.memory_allocated_mb} MB</span>
+              <span className="font-mono font-bold text-white">
+                {diag?.memory?.alloc_bytes ? (diag.memory.alloc_bytes / 1024 / 1024).toFixed(1) : (diag?.memory_allocated_mb ?? '-')} MB
+              </span>
             </div>
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Total Allocations</span>
-              <span className="font-mono text-text-secondary">{diag?.memory_total_alloc_mb} MB</span>
+              <span className="font-mono text-text-secondary">
+                {diag?.memory?.total_alloc_bytes ? (diag.memory.total_alloc_bytes / 1024 / 1024).toFixed(1) : (diag?.memory_total_alloc_mb ?? '-')} MB
+              </span>
             </div>
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">System Reserved</span>
-              <span className="font-mono text-text-secondary">{diag?.memory_sys_mb} MB</span>
+              <span className="font-mono text-text-secondary">
+                {diag?.memory?.sys_bytes ? (diag.memory.sys_bytes / 1024 / 1024).toFixed(1) : (diag?.memory_sys_mb ?? '-')} MB
+              </span>
             </div>
             <div className="flex justify-between py-1">
               <span className="text-text-muted">GC Cycles</span>
-              <span className="font-mono text-accent">{diag?.num_gc} kali</span>
+              <span className="font-mono text-accent">{diag?.memory?.num_gc ?? diag?.num_gc ?? 0} kali</span>
             </div>
           </div>
         </Card>
@@ -96,19 +102,19 @@ export const Diagnostics: React.FC = () => {
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Total Koneksi</span>
-              <span className="font-mono font-bold text-accent">{diag?.db_pool.total_conns}</span>
+              <span className="font-mono font-bold text-accent">{diag?.db_pool?.total_conns ?? '-'}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Koneksi Idle</span>
-              <span className="font-mono text-white">{diag?.db_pool.idle_conns}</span>
+              <span className="font-mono text-white">{diag?.db_pool?.idle_conns ?? '-'}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Koneksi Aktif (Acquired)</span>
-              <span className="font-mono text-white">{diag?.db_pool.acquired_conns}</span>
+              <span className="font-mono text-white">{diag?.db_pool?.acquired_conns ?? '-'}</span>
             </div>
             <div className="flex justify-between py-1">
               <span className="text-text-muted">Batas Maksimal</span>
-              <span className="font-mono text-text-secondary">{diag?.db_pool.max_conns}</span>
+              <span className="font-mono text-text-secondary">{diag?.db_pool?.max_conns ?? '-'}</span>
             </div>
           </div>
         </Card>

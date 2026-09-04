@@ -40,8 +40,13 @@ func (h *Handlers) listWebhooks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": items,
+	whs := make([]WebhookDTO, 0, len(items))
+	for _, wh := range items {
+		whs = append(whs, toWebhookDTO(wh))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[WebhookDTO]{
+		Items: whs,
 	})
 }
 
@@ -55,7 +60,7 @@ func (h *Handlers) getWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, wh)
+	_ = h.respond(w, r, http.StatusOK, toWebhookDTO(wh))
 }
 
 type createWebhookReq struct {
@@ -110,7 +115,7 @@ func (h *Handlers) createWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "webhook", wh.ID, map[string]any{"name": wh.Name, "url": wh.URL})
-	_ = httpx.JSON(w, http.StatusCreated, wh)
+	_ = h.respond(w, r, http.StatusCreated, toWebhookDTO(wh))
 }
 
 func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
@@ -144,7 +149,7 @@ func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "webhook", id, map[string]any{"name": wh.Name})
-	_ = httpx.JSON(w, http.StatusOK, wh)
+	_ = h.respond(w, r, http.StatusOK, toWebhookDTO(wh))
 }
 
 func (h *Handlers) deleteWebhook(w http.ResponseWriter, r *http.Request) {
@@ -157,7 +162,7 @@ func (h *Handlers) deleteWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "webhook", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleWebhook(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +184,7 @@ func (h *Handlers) toggleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "webhook", id, map[string]any{"enabled": req.Enabled})
-	_ = httpx.JSON(w, http.StatusOK, wh)
+	_ = h.respond(w, r, http.StatusOK, toWebhookDTO(wh))
 }
 
 func (h *Handlers) testWebhookPing(w http.ResponseWriter, r *http.Request) {
@@ -207,9 +212,9 @@ func (h *Handlers) testWebhookPing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "test_ping", "webhook", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"status":   "enqueued",
-		"enqueued": n,
+	_ = h.respond(w, r, http.StatusOK, WebhookPingResponse{
+		Status:   "enqueued",
+		Enqueued: n,
 	})
 }
 
@@ -235,9 +240,14 @@ func (h *Handlers) listWebhookDeliveries(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"next_cursor": next,
+	deliveries := make([]DeliveryDTO, 0, len(items))
+	for _, d := range items {
+		deliveries = append(deliveries, toDeliveryDTO(d))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[DeliveryDTO]{
+		Items:      deliveries,
+		NextCursor: next,
 	})
 }
 
@@ -257,5 +267,5 @@ func (h *Handlers) getDelivery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, d)
+	_ = h.respond(w, r, http.StatusOK, toDeliveryDTO(d))
 }

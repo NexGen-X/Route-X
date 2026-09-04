@@ -143,13 +143,15 @@ export interface RoutingRule {
 
 export interface RateLimit {
   id: string;
-  name: string;
-  description?: string;
   scope: string;
-  scope_id?: string;
-  limit_type: string;
-  max_value: number;
-  window_seconds: number;
+  scope_id: string;
+  requests_per_second?: number;
+  requests_per_minute?: number;
+  tokens_per_minute?: number;
+  daily_request_limit?: number;
+  monthly_request_limit?: number;
+  daily_token_limit?: number;
+  monthly_token_limit?: number;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -382,18 +384,27 @@ export interface AuditLogEntry {
   metadata?: Record<string, any>;
 }
 
+export interface DiagnosticsMemory {
+  alloc_bytes: number;
+  total_alloc_bytes: number;
+  sys_bytes: number;
+  num_gc: number;
+}
+
 export interface Diagnostics {
-  version: string;
-  commit: string;
-  built_at: string;
+  version?: string;
+  commit?: string;
+  built_at?: string;
   uptime_seconds: number;
   go_version: string;
   num_goroutine: number;
-  memory_allocated_mb: number;
-  memory_total_alloc_mb: number;
-  memory_sys_mb: number;
-  num_gc: number;
-  db_pool: {
+  num_cpu?: number;
+  memory?: DiagnosticsMemory;
+  memory_allocated_mb?: number;
+  memory_total_alloc_mb?: number;
+  memory_sys_mb?: number;
+  num_gc?: number;
+  db_pool?: {
     total_conns: number;
     idle_conns: number;
     acquired_conns: number;

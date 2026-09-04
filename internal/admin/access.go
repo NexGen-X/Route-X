@@ -91,22 +91,14 @@ func (h *Handlers) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type KeyItem struct {
-		*keys.Key
-		Masked string `json:"masked"`
-	}
-
-	var formatted []KeyItem
+	keysDTO := make([]KeyDTO, 0, len(items))
 	for _, k := range items {
-		formatted = append(formatted, KeyItem{
-			Key:    k,
-			Masked: k.Masked(),
-		})
+		keysDTO = append(keysDTO, toKeyDTO(k, nil, nil))
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       formatted,
-		"next_cursor": next,
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[KeyDTO]{
+		Items:      keysDTO,
+		NextCursor: next,
 	})
 }
 
@@ -120,9 +112,9 @@ func (h *Handlers) getAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"key":    k,
-		"masked": k.Masked(),
+	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
+		Key:    toKeyDTO(k, nil, nil),
+		Masked: k.Masked(),
 	})
 }
 
@@ -208,11 +200,10 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "api_key", created.Key.ID, map[string]any{"name": created.Key.Name, "prefix": created.Key.Prefix})
-	_ = httpx.JSON(w, http.StatusCreated, map[string]any{
-		"key":     created.Key,
-		"masked":  created.Key.Masked(),
-		"token":   created.Raw.Reveal(), // Token mentah hanya dikembalikan saat pembuatan!
-		"raw_key": created.Raw.Reveal(),
+	_ = h.respond(w, r, http.StatusCreated, KeyCreatedResponse{
+		Key:    toKeyDTO(created.Key, req.ModelIDs, req.ProviderIDs),
+		Masked: created.Key.Masked(),
+		RawKey: created.Raw.Reveal(),
 	})
 }
 
@@ -290,9 +281,9 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "api_key", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"key":    k,
-		"masked": k.Masked(),
+	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
+		Key:    toKeyDTO(k, nil, nil),
+		Masked: k.Masked(),
 	})
 }
 
@@ -312,10 +303,10 @@ func (h *Handlers) rotateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "rotate", "api_key", id, map[string]any{"new_key_id": created.Key.ID})
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"key":    created.Key,
-		"masked": created.Key.Masked(),
-		"token":  created.Raw.Reveal(),
+	_ = h.respond(w, r, http.StatusOK, KeyCreatedResponse{
+		Key:    toKeyDTO(created.Key, nil, nil),
+		Masked: created.Key.Masked(),
+		RawKey: created.Raw.Reveal(),
 	})
 }
 
@@ -345,9 +336,9 @@ func (h *Handlers) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "revoke", "api_key", id, map[string]any{"reason": reason})
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"key":    k,
-		"masked": k.Masked(),
+	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
+		Key:    toKeyDTO(k, nil, nil),
+		Masked: k.Masked(),
 	})
 }
 
@@ -370,9 +361,9 @@ func (h *Handlers) toggleAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "api_key", id, map[string]any{"status": req.Status})
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"key":    k,
-		"masked": k.Masked(),
+	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
+		Key:    toKeyDTO(k, nil, nil),
+		Masked: k.Masked(),
 	})
 }
 
@@ -395,7 +386,7 @@ func (h *Handlers) setAllowedAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "set_allowed", "api_key", id, map[string]any{"models": req.ModelIDs, "providers": req.ProviderIDs})
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "updated"})
 }
 
 // -----------------------------------------------------------------------------
@@ -415,9 +406,14 @@ func (h *Handlers) listUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       userPage.Users,
-		"next_cursor": userPage.NextCursor,
+	usersDTO := make([]UserDTO, 0, len(userPage.Users))
+	for _, u := range userPage.Users {
+		usersDTO = append(usersDTO, toUserDTO(&u, nil))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[UserDTO]{
+		Items:      usersDTO,
+		NextCursor: userPage.NextCursor,
 	})
 }
 
@@ -434,10 +430,20 @@ func (h *Handlers) getUser(w http.ResponseWriter, r *http.Request) {
 	userRoles, _ := h.rolesRepo.OfUser(ctx, id)
 	perms, _ := h.rolesRepo.EffectivePermissions(ctx, id)
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"user":        u,
-		"roles":       userRoles,
-		"permissions": perms,
+	roleNames := make([]string, 0, len(userRoles))
+	roleDTOs := make([]RoleDTO, 0, len(userRoles))
+	for _, role := range userRoles {
+		roleNames = append(roleNames, role.Name)
+		roleDTOs = append(roleDTOs, toRoleDTO(role.Role))
+	}
+	if perms == nil {
+		perms = make([]string, 0)
+	}
+
+	_ = h.respond(w, r, http.StatusOK, UserDetailResponse{
+		User:        toUserDTO(&u, roleNames),
+		Roles:       roleDTOs,
+		Permissions: perms,
 	})
 }
 
@@ -492,7 +498,12 @@ func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "user", createdUser.ID, map[string]any{"email": createdUser.Email})
-	_ = httpx.JSON(w, http.StatusCreated, createdUser)
+	userRoles, _ := h.rolesRepo.OfUser(ctx, createdUser.ID)
+	roleNames := make([]string, 0, len(userRoles))
+	for _, role := range userRoles {
+		roleNames = append(roleNames, role.Name)
+	}
+	_ = h.respond(w, r, http.StatusCreated, toUserDTO(&createdUser, roleNames))
 }
 
 func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
@@ -528,7 +539,12 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 
 	u, _ := h.usersRepo.GetByID(ctx, id)
 	h.writeAudit(ctx, r, "update", "user", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, u)
+	userRoles, _ := h.rolesRepo.OfUser(ctx, id)
+	roleNames := make([]string, 0, len(userRoles))
+	for _, role := range userRoles {
+		roleNames = append(roleNames, role.Name)
+	}
+	_ = h.respond(w, r, http.StatusOK, toUserDTO(&u, roleNames))
 }
 
 func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
@@ -541,7 +557,7 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "user", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) grantUserRole(w http.ResponseWriter, r *http.Request) {
@@ -567,7 +583,7 @@ func (h *Handlers) grantUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "grant_role", "user", id, map[string]any{"role_id": req.RoleID})
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "granted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "granted"})
 }
 
 func (h *Handlers) revokeUserRole(w http.ResponseWriter, r *http.Request) {
@@ -581,7 +597,7 @@ func (h *Handlers) revokeUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "revoke_role", "user", id, map[string]any{"role_id": roleID})
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "revoked"})
 }
 
 func (h *Handlers) forceResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -605,7 +621,7 @@ func (h *Handlers) forceResetPassword(w http.ResponseWriter, r *http.Request) {
 	_, _ = h.sessionsRepo.RevokeAllOfUser(ctx, id)
 
 	h.writeAudit(ctx, r, "force_reset_password", "user", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "password_reset"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "password_reset"})
 }
 
 func (h *Handlers) revokeUserSessions(w http.ResponseWriter, r *http.Request) {
@@ -619,7 +635,7 @@ func (h *Handlers) revokeUserSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "revoke_sessions", "user", id, map[string]any{"count": count})
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{"status": "revoked", "count": count})
+	_ = h.respond(w, r, http.StatusOK, StatusCountResponse{Status: "revoked", Count: int64(count)})
 }
 
 // -----------------------------------------------------------------------------
@@ -634,8 +650,13 @@ func (h *Handlers) listRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": roles,
+	rolesDTO := make([]RoleDTO, 0, len(roles))
+	for _, rl := range roles {
+		rolesDTO = append(rolesDTO, toRoleDTO(rl))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[RoleDTO]{
+		Items: rolesDTO,
 	})
 }
 
@@ -649,7 +670,7 @@ func (h *Handlers) getRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, detail)
+	_ = h.respond(w, r, http.StatusOK, toRoleDetailDTO(&detail))
 }
 
 func (h *Handlers) createRole(w http.ResponseWriter, r *http.Request) {
@@ -692,7 +713,7 @@ func (h *Handlers) createRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "role", createdRole.ID, map[string]any{"name": createdRole.Name})
-	_ = httpx.JSON(w, http.StatusCreated, createdRole)
+	_ = h.respond(w, r, http.StatusCreated, toRoleDTO(createdRole))
 }
 
 func (h *Handlers) deleteRole(w http.ResponseWriter, r *http.Request) {
@@ -705,7 +726,7 @@ func (h *Handlers) deleteRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "role", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) setRolePermissions(w http.ResponseWriter, r *http.Request) {
@@ -726,7 +747,7 @@ func (h *Handlers) setRolePermissions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "set_permissions", "role", id, map[string]any{"permissions": req.Permissions})
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "updated"})
 }
 
 func (h *Handlers) listPermissions(w http.ResponseWriter, r *http.Request) {
@@ -737,8 +758,13 @@ func (h *Handlers) listPermissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": perms,
+	permDTOs := make([]PermissionDTO, 0, len(perms))
+	for _, p := range perms {
+		permDTOs = append(permDTOs, toPermissionDTO(p))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[PermissionDTO]{
+		Items: permDTOs,
 	})
 }
 
@@ -761,8 +787,13 @@ func (h *Handlers) listSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": sessions,
+	sessionDTOs := make([]SessionDTO, 0, len(sessions))
+	for _, s := range sessions {
+		sessionDTOs = append(sessionDTOs, toSessionDTO(s))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[SessionDTO]{
+		Items: sessionDTOs,
 	})
 }
 
@@ -776,5 +807,5 @@ func (h *Handlers) revokeSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "revoke", "session", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "revoked"})
 }

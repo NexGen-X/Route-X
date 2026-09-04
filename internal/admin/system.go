@@ -51,8 +51,13 @@ func (h *Handlers) listSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": items,
+	dtos := make([]SettingDTO, 0, len(items))
+	for _, it := range items {
+		dtos = append(dtos, toSettingDTO(it))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[SettingDTO]{
+		Items: dtos,
 	})
 }
 
@@ -66,7 +71,7 @@ func (h *Handlers) getSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, s)
+	_ = h.respond(w, r, http.StatusOK, toSettingDTO(s))
 }
 
 func (h *Handlers) putSetting(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +104,7 @@ func (h *Handlers) putSetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "put", "setting", key, map[string]any{"key": key})
-	_ = httpx.JSON(w, http.StatusOK, s)
+	_ = h.respond(w, r, http.StatusOK, toSettingDTO(s))
 }
 
 func (h *Handlers) deleteSetting(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +117,7 @@ func (h *Handlers) deleteSetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "setting", key, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 // -----------------------------------------------------------------------------
@@ -120,13 +125,7 @@ func (h *Handlers) deleteSetting(w http.ResponseWriter, r *http.Request) {
 // -----------------------------------------------------------------------------
 
 func (h *Handlers) listJobs(w http.ResponseWriter, r *http.Request) {
-	type JobInfo struct {
-		Name     string `json:"name"`
-		Schedule string `json:"schedule"`
-		Status   string `json:"status"`
-	}
-
-	jobs := []JobInfo{
+	jobs := []JobDTO{
 		{Name: "health_checker", Schedule: "every 30s", Status: "running"},
 		{Name: "usage_rollup", Schedule: "every 5m", Status: "running"},
 		{Name: "retention_cleaner", Schedule: "every 1h", Status: "running"},
@@ -135,8 +134,8 @@ func (h *Handlers) listJobs(w http.ResponseWriter, r *http.Request) {
 		{Name: "webhook_worker", Schedule: "continuous poll 250ms", Status: "running"},
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": jobs,
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[JobDTO]{
+		Items: jobs,
 	})
 }
 
@@ -146,10 +145,10 @@ func (h *Handlers) runJob(w http.ResponseWriter, r *http.Request) {
 
 	// Trigger manual seketika pada worker yang mendukung
 	h.writeAudit(ctx, r, "trigger_job", "system_job", name, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"status":  "triggered",
-		"job":     name,
-		"message": "pekerjaan berhasil dipicu di latar belakang",
+	_ = h.respond(w, r, http.StatusOK, JobRunResponse{
+		Status:  "triggered",
+		Job:     name,
+		Message: "pekerjaan berhasil dipicu di latar belakang",
 	})
 }
 
@@ -179,9 +178,14 @@ func (h *Handlers) listAuditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       auditPage.Entries,
-		"next_cursor": auditPage.NextCursor,
+	dtos := make([]AuditEntryDTO, 0, len(auditPage.Entries))
+	for _, e := range auditPage.Entries {
+		dtos = append(dtos, toAuditEntryDTO(e))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[AuditEntryDTO]{
+		Items:      dtos,
+		NextCursor: auditPage.NextCursor,
 	})
 }
 
@@ -193,20 +197,34 @@ func (h *Handlers) getDiagnostics(w http.ResponseWriter, r *http.Request) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	diag := map[string]any{
-		"uptime_seconds": int64(time.Since(appStartTime).Seconds()),
-		"go_version":     runtime.Version(),
-		"num_goroutine":  runtime.NumGoroutine(),
-		"num_cpu":        runtime.NumCPU(),
-		"memory": map[string]any{
-			"alloc_bytes":       m.Alloc,
-			"total_alloc_bytes": m.TotalAlloc,
-			"sys_bytes":         m.Sys,
-			"heap_alloc_bytes":  m.HeapAlloc,
-			"heap_inuse_bytes":  m.HeapInuse,
-			"num_gc":            m.NumGC,
-		},
+	var poolStats *DBPoolStatsDTO
+	if h.pool != nil {
+		stat := h.pool.Stat()
+		poolStats = &DBPoolStatsDTO{
+			TotalConns:       stat.TotalConns(),
+			IdleConns:        stat.IdleConns(),
+			AcquiredConns:    stat.AcquiredConns(),
+			MaxConns:         stat.MaxConns(),
+			AcquireCount:     stat.AcquireCount(),
+			EmptyAcquireWait: stat.EmptyAcquireCount(),
+		}
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, diag)
+	diag := DiagnosticsDTO{
+		UptimeSeconds: int64(time.Since(appStartTime).Seconds()),
+		GoVersion:     runtime.Version(),
+		NumGoroutine:  runtime.NumGoroutine(),
+		NumCPU:        runtime.NumCPU(),
+		Memory: DiagnosticsMemoryDTO{
+			AllocBytes:      m.Alloc,
+			TotalAllocBytes: m.TotalAlloc,
+			SysBytes:        m.Sys,
+			HeapAllocBytes:  m.HeapAlloc,
+			HeapInuseBytes:  m.HeapInuse,
+			NumGC:           m.NumGC,
+		},
+		DBPool: poolStats,
+	}
+
+	_ = h.respond(w, r, http.StatusOK, diag)
 }

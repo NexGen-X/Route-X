@@ -101,9 +101,14 @@ func (h *Handlers) listProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"next_cursor": next,
+	provs := make([]ProviderDTO, 0, len(items))
+	for _, p := range items {
+		provs = append(provs, toProviderDTO(p))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[ProviderDTO]{
+		Items:      provs,
+		NextCursor: next,
 	})
 }
 
@@ -117,7 +122,7 @@ func (h *Handlers) getProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, p)
+	_ = h.respond(w, r, http.StatusOK, toProviderDTO(p))
 }
 
 type createProviderReq struct {
@@ -169,7 +174,7 @@ func (h *Handlers) createProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "provider", p.ID, map[string]any{"name": p.Name})
-	_ = httpx.JSON(w, http.StatusCreated, p)
+	_ = h.respond(w, r, http.StatusCreated, toProviderDTO(p))
 }
 
 func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +220,7 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "provider", p.ID, map[string]any{"name": p.Name})
-	_ = httpx.JSON(w, http.StatusOK, p)
+	_ = h.respond(w, r, http.StatusOK, toProviderDTO(p))
 }
 
 func (h *Handlers) deleteProvider(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +233,7 @@ func (h *Handlers) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "provider", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleProvider(w http.ResponseWriter, r *http.Request) {
@@ -250,7 +255,7 @@ func (h *Handlers) toggleProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "provider", id, map[string]any{"enabled": req.Enabled})
-	_ = httpx.JSON(w, http.StatusOK, p)
+	_ = h.respond(w, r, http.StatusOK, toProviderDTO(p))
 }
 
 func (h *Handlers) listProviderHealthChecks(w http.ResponseWriter, r *http.Request) {
@@ -268,9 +273,14 @@ func (h *Handlers) listProviderHealthChecks(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"next_cursor": next,
+	checks := make([]HealthCheckDTO, 0, len(items))
+	for _, chk := range items {
+		checks = append(checks, toHealthCheckDTO(chk))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[HealthCheckDTO]{
+		Items:      checks,
+		NextCursor: next,
 	})
 }
 
@@ -325,10 +335,10 @@ func (h *Handlers) probeProvider(w http.ResponseWriter, r *http.Request) {
 		ErrorMessage: sanitizedErr,
 	})
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"status":     status,
-		"latency_ms": latMS,
-		"error":      sanitizedErr,
+	_ = h.respond(w, r, http.StatusOK, ProbeProviderResponse{
+		Status:    status,
+		LatencyMS: latMS,
+		Error:     sanitizedErr,
 	})
 }
 
@@ -346,8 +356,13 @@ func (h *Handlers) listCredentials(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": items,
+	creds := make([]CredentialMetaDTO, 0, len(items))
+	for _, c := range items {
+		creds = append(creds, toCredentialMetaDTO(c))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[CredentialMetaDTO]{
+		Items: creds,
 	})
 }
 
@@ -396,7 +411,7 @@ func (h *Handlers) createCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "credential", cred.ID, map[string]any{"provider_id": providerID, "label": cred.Label})
-	_ = httpx.JSON(w, http.StatusCreated, cred)
+	_ = h.respond(w, r, http.StatusCreated, toCredentialMetaDTO(cred))
 }
 
 func (h *Handlers) deleteCredential(w http.ResponseWriter, r *http.Request) {
@@ -409,7 +424,7 @@ func (h *Handlers) deleteCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "credential", credID, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleCredential(w http.ResponseWriter, r *http.Request) {
@@ -431,7 +446,7 @@ func (h *Handlers) toggleCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "credential", credID, map[string]any{"enabled": req.Enabled})
-	_ = httpx.JSON(w, http.StatusOK, cred)
+	_ = h.respond(w, r, http.StatusOK, toCredentialMetaDTO(cred))
 }
 
 // -----------------------------------------------------------------------------
@@ -467,9 +482,14 @@ func (h *Handlers) listModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"next_cursor": next,
+	models := make([]ModelDTO, 0, len(items))
+	for _, m := range items {
+		models = append(models, toModelDTO(m))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[ModelDTO]{
+		Items:      models,
+		NextCursor: next,
 	})
 }
 
@@ -486,10 +506,20 @@ func (h *Handlers) getModel(w http.ResponseWriter, r *http.Request) {
 	aliases, _ := h.modelRepo.ListAliases(ctx, id)
 	mappings, _ := h.modelRepo.ListProviderModels(ctx, upstream.ProviderModelFilter{ModelID: id})
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"model":    m,
-		"aliases":  aliases,
-		"mappings": mappings,
+	aliasesDTO := make([]ModelAliasDTO, 0, len(aliases))
+	for _, a := range aliases {
+		aliasesDTO = append(aliasesDTO, toModelAliasDTO(a))
+	}
+
+	mappingsDTO := make([]ModelMappingDTO, 0, len(mappings))
+	for _, pm := range mappings {
+		mappingsDTO = append(mappingsDTO, toModelMappingDTO(pm))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ModelDetailResponse{
+		Model:    toModelDTO(m),
+		Aliases:  aliasesDTO,
+		Mappings: mappingsDTO,
 	})
 }
 
@@ -530,7 +560,7 @@ func (h *Handlers) createModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "model", m.ID, map[string]any{"model_id": m.ModelID})
-	_ = httpx.JSON(w, http.StatusCreated, m)
+	_ = h.respond(w, r, http.StatusCreated, toModelDTO(m))
 }
 
 func (h *Handlers) updateModel(w http.ResponseWriter, r *http.Request) {
@@ -566,7 +596,7 @@ func (h *Handlers) updateModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "model", m.ID, map[string]any{"model_id": m.ModelID})
-	_ = httpx.JSON(w, http.StatusOK, m)
+	_ = h.respond(w, r, http.StatusOK, toModelDTO(m))
 }
 
 func (h *Handlers) deleteModel(w http.ResponseWriter, r *http.Request) {
@@ -579,7 +609,7 @@ func (h *Handlers) deleteModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "model", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) addModelAlias(w http.ResponseWriter, r *http.Request) {
@@ -601,7 +631,7 @@ func (h *Handlers) addModelAlias(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "add_alias", "model", modelID, map[string]any{"alias": req.Alias})
-	_ = httpx.JSON(w, http.StatusCreated, alias)
+	_ = h.respond(w, r, http.StatusCreated, toModelAliasDTO(alias))
 }
 
 func (h *Handlers) removeModelAlias(w http.ResponseWriter, r *http.Request) {
@@ -615,7 +645,7 @@ func (h *Handlers) removeModelAlias(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "remove_alias", "model", modelID, map[string]any{"alias": alias})
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 type attachProviderReq struct {
@@ -656,7 +686,7 @@ func (h *Handlers) attachProviderModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "attach_provider", "model", modelID, map[string]any{"provider_id": req.ProviderID, "upstream_model": req.UpstreamModel})
-	_ = httpx.JSON(w, http.StatusCreated, pm)
+	_ = h.respond(w, r, http.StatusCreated, toModelMappingDTO(pm))
 }
 
 func (h *Handlers) detachProviderModel(w http.ResponseWriter, r *http.Request) {
@@ -669,7 +699,7 @@ func (h *Handlers) detachProviderModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "detach_provider", "provider_model", mappingID, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 type setPriceReq struct {
@@ -728,7 +758,7 @@ func (h *Handlers) setPricing(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "set_pricing", "provider_model", mappingID, map[string]any{
 		"input": inUSD.String(), "output": outUSD.String(), "cached": cachedUSD.String(),
 	})
-	_ = httpx.JSON(w, http.StatusCreated, price)
+	_ = h.respond(w, r, http.StatusCreated, toPriceDTO(price))
 }
 
 func (h *Handlers) listPricingHistory(w http.ResponseWriter, r *http.Request) {
@@ -746,9 +776,14 @@ func (h *Handlers) listPricingHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items":       items,
-		"next_cursor": next,
+	prices := make([]PriceDTO, 0, len(items))
+	for _, p := range items {
+		prices = append(prices, toPriceDTO(p))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[PriceDTO]{
+		Items:      prices,
+		NextCursor: next,
 	})
 }
 
@@ -766,8 +801,13 @@ func (h *Handlers) listEgressPools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, map[string]any{
-		"items": items,
+	pools := make([]EgressPoolDTO, 0, len(items))
+	for _, ep := range items {
+		pools = append(pools, toEgressPoolDTO(ep))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[EgressPoolDTO]{
+		Items: pools,
 	})
 }
 
@@ -781,7 +821,7 @@ func (h *Handlers) getEgressPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = httpx.JSON(w, http.StatusOK, ep)
+	_ = h.respond(w, r, http.StatusOK, toEgressPoolDTO(ep))
 }
 
 type createEgressReq struct {
@@ -815,7 +855,7 @@ func (h *Handlers) createEgressPool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "egress_pool", ep.ID, map[string]any{"name": ep.Name})
-	_ = httpx.JSON(w, http.StatusCreated, ep)
+	_ = h.respond(w, r, http.StatusCreated, toEgressPoolDTO(ep))
 }
 
 func (h *Handlers) updateEgressPool(w http.ResponseWriter, r *http.Request) {
@@ -849,7 +889,7 @@ func (h *Handlers) updateEgressPool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "egress_pool", ep.ID, map[string]any{"name": ep.Name})
-	_ = httpx.JSON(w, http.StatusOK, ep)
+	_ = h.respond(w, r, http.StatusOK, toEgressPoolDTO(ep))
 }
 
 func (h *Handlers) deleteEgressPool(w http.ResponseWriter, r *http.Request) {
@@ -862,5 +902,5 @@ func (h *Handlers) deleteEgressPool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "egress_pool", id, nil)
-	_ = httpx.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }

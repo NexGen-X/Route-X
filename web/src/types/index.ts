@@ -165,9 +165,12 @@ export interface Budget {
   scope_id?: string;
   period: string;
   max_spend_usd: string;
+  limit_usd?: string;
   spent_usd: string;
   alert_threshold: number;
+  alert_threshold_pct?: number;
   action: string;
+  action_on_exceed?: string;
   period_start: string;
   period_end: string;
   enabled: boolean;

@@ -13,16 +13,8 @@ import { Egress } from './pages/Egress';
 import { RoutingRules } from './pages/RoutingRules';
 import { RateLimits } from './pages/RateLimits';
 import { Budgets } from './pages/Budgets';
-import { ContentFilters } from './pages/ContentFilters';
-import { Bans } from './pages/Bans';
-import { Breakers } from './pages/Breakers';
 import { APIKeys } from './pages/APIKeys';
-import { Users } from './pages/Users';
-import { Sessions } from './pages/Sessions';
-import { Webhooks } from './pages/Webhooks';
 import { Settings } from './pages/Settings';
-import { Jobs } from './pages/Jobs';
-import { AuditLogs } from './pages/AuditLogs';
 import { Diagnostics } from './pages/Diagnostics';
 import { PageErrorBoundary } from './components/common/PageErrorBoundary';
 import { Loader2 } from 'lucide-react';
@@ -121,74 +113,33 @@ const Shell: React.FC = () => {
         };
       case '/gateway/budgets':
         return {
-          title: 'Budgets & Cost Control',
-          subtitle: 'Alokasi anggaran USD skala 8 desimal dan pencegahan pembengkakan biaya',
+          title: 'Budgets & Cost Limits',
+          subtitle: 'Alokasi pagu pengeluaran USD skala 8 desimal dan pencegahan pembengkakan biaya',
           content: <Budgets />,
-        };
-      case '/gateway/filters':
-        return {
-          title: 'Content Filters',
-          subtitle: 'Penyaringan konten masukan/keluaran dan deteksi pola sensitif',
-          content: <ContentFilters />,
-        };
-      case '/gateway/bans':
-        return {
-          title: 'Active Bans',
-          subtitle: 'Daftar pemblokiran IP dan kunci API yang mencurigakan',
-          content: <Bans />,
         };
       case '/gateway/breakers':
         return {
-          title: 'Circuit Breakers',
-          subtitle: 'Status pemutus arus terdistribusi dan pemulihan darurat',
-          content: <Breakers />,
+          title: 'Routing & Failover',
+          subtitle: 'Mesin aturan pemilihan provider, kebijakan failover, dan pemutus sirkuit terdistribusi',
+          content: <RoutingRules />,
         };
       case '/access/api-keys':
         return {
           title: 'Client API Keys',
-          subtitle: 'Kunci otentikasi klien dengan hashing HMAC-SHA256 ber-pepper',
+          subtitle: 'Kunci otentikasi klien untuk Cursor, Cline, Open WebUI, dan skrip personal',
           content: <APIKeys />,
-        };
-      case '/access/users':
-        return {
-          title: 'Users & RBAC',
-          subtitle: 'Manajemen akun konsol dan hak akses berbutir halus',
-          content: <Users />,
-        };
-      case '/access/sessions':
-        return {
-          title: 'Active Sessions',
-          subtitle: 'Pengawasan sesi login aktif dan pemutusan instan',
-          content: <Sessions />,
-        };
-      case '/automation/webhooks':
-        return {
-          title: 'Webhooks & Deliveries',
-          subtitle: 'Pengiriman notifikasi otomatis ke endpoint eksternal',
-          content: <Webhooks />,
         };
       case '/system/settings':
         return {
           title: 'Runtime Settings',
-          subtitle: 'Konfigurasi parameter gateway dinamis',
+          subtitle: 'Konfigurasi parameter gateway dinamis dan profil pemilik',
           content: <Settings />,
         };
       case '/system/jobs':
-        return {
-          title: 'Background Jobs',
-          subtitle: 'Supervisor tugas latar belakang Route-X',
-          content: <Jobs />,
-        };
-      case '/system/audit':
-        return {
-          title: 'Audit Logs',
-          subtitle: 'Jejak audit perubahan konfigurasi dan aksi administratif',
-          content: <AuditLogs />,
-        };
       case '/system/diagnostics':
         return {
-          title: 'System Diagnostics',
-          subtitle: 'Status memori Go runtime dan statistik koneksi PostgreSQL',
+          title: 'System Diagnostics & Workers',
+          subtitle: 'Status memori Go runtime, koneksi PostgreSQL, dan supervisor worker latar belakang',
           content: <Diagnostics />,
         };
       default:

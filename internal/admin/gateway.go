@@ -555,8 +555,11 @@ type createBudgetReq struct {
 	ScopeID           string `json:"scope_id"`
 	Period            string `json:"period"`
 	LimitUSD          string `json:"limit_usd"`
+	MaxSpendUSD       string `json:"max_spend_usd"`
 	ActionOnExceed    string `json:"action_on_exceed"`
+	Action            string `json:"action"`
 	AlertThresholdPct int    `json:"alert_threshold_pct"`
+	AlertThreshold    int    `json:"alert_threshold"`
 }
 
 func (h *Handlers) createBudget(w http.ResponseWriter, r *http.Request) {
@@ -565,6 +568,16 @@ func (h *Handlers) createBudget(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
+	}
+
+	if req.LimitUSD == "" && req.MaxSpendUSD != "" {
+		req.LimitUSD = req.MaxSpendUSD
+	}
+	if req.ActionOnExceed == "" && req.Action != "" {
+		req.ActionOnExceed = req.Action
+	}
+	if req.AlertThresholdPct == 0 && req.AlertThreshold != 0 {
+		req.AlertThresholdPct = req.AlertThreshold
 	}
 
 	limitUSD, err := upstream.ParseUSD(req.LimitUSD)
@@ -604,13 +617,26 @@ func (h *Handlers) updateBudget(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name              *string `json:"name"`
 		LimitUSD          *string `json:"limit_usd"`
+		MaxSpendUSD       *string `json:"max_spend_usd"`
 		ActionOnExceed    *string `json:"action_on_exceed"`
+		Action            *string `json:"action"`
 		AlertThresholdPct *int    `json:"alert_threshold_pct"`
+		AlertThreshold    *int    `json:"alert_threshold"`
 		Enabled           *bool   `json:"enabled"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
+	}
+
+	if req.LimitUSD == nil && req.MaxSpendUSD != nil {
+		req.LimitUSD = req.MaxSpendUSD
+	}
+	if req.ActionOnExceed == nil && req.Action != nil {
+		req.ActionOnExceed = req.Action
+	}
+	if req.AlertThresholdPct == nil && req.AlertThreshold != nil {
+		req.AlertThresholdPct = req.AlertThreshold
 	}
 
 	var lim *upstream.USD

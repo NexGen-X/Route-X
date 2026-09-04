@@ -45,7 +45,12 @@ export const Budgets: React.FC = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.budgets.create(newBudget);
+      await api.budgets.create({
+        ...newBudget,
+        limit_usd: newBudget.max_spend_usd,
+        alert_threshold_pct: newBudget.alert_threshold,
+        action_on_exceed: newBudget.action,
+      });
       setIsCreateOpen(false);
       loadBudgets();
     } catch (err) {

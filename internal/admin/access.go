@@ -436,7 +436,12 @@ func (h *Handlers) listUsers(w http.ResponseWriter, r *http.Request) {
 
 	usersDTO := make([]UserDTO, 0, len(userPage.Users))
 	for _, u := range userPage.Users {
-		usersDTO = append(usersDTO, toUserDTO(&u, nil))
+		roles, _ := h.rolesRepo.OfUser(ctx, u.ID)
+		roleNames := make([]string, 0, len(roles))
+		for _, r := range roles {
+			roleNames = append(roleNames, r.Name)
+		}
+		usersDTO = append(usersDTO, toUserDTO(&u, roleNames))
 	}
 
 	_ = h.respond(w, r, http.StatusOK, ListEnvelope[UserDTO]{

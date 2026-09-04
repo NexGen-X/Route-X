@@ -36,7 +36,7 @@ export const APIKeys: React.FC = () => {
     try {
       const res = await api.apiKeys.create({
         ...newKey,
-        scopes: ['chat:completions', 'embeddings'],
+        scopes: ['inference'],
         allowed_models: [],
         allowed_providers: [],
       });

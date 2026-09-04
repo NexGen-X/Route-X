@@ -337,18 +337,6 @@ func (p *penandaPemakaian) tandai(id string, logger *slog.Logger) {
 	}()
 }
 
-// kredensial mengambil kredensial aktif provider untuk kandidat rute.
-func (f *Factory) kredensial(ctx context.Context, c *upstream.RouteCandidate) (*upstream.ActiveCredential, error) {
-	if c == nil {
-		return nil, errors.New("kandidat rute kosong")
-	}
-	return f.kredensialTarget(ctx, ProviderTarget{
-		ID:   c.ProviderID,
-		Name: c.ProviderName,
-		Kind: c.Kind,
-	})
-}
-
 // kredensialTarget mengambil kredensial aktif provider dari ProviderTarget.
 func (f *Factory) kredensialTarget(ctx context.Context, t ProviderTarget) (*upstream.ActiveCredential, error) {
 	if f.creds == nil {
@@ -379,17 +367,6 @@ func (f *Factory) kredensialTarget(ctx context.Context, t ProviderTarget) (*upst
 	return nil, fmt.Errorf("kredensial provider %q tidak bisa diambil: %w", t.Name, err)
 }
 
-// proxy mengambil URL egress proxy kandidat ini, kosong bila tidak memakai egress pool.
-func (f *Factory) proxy(ctx context.Context, c *upstream.RouteCandidate) (security.Secret, error) {
-	if c == nil {
-		return "", errors.New("kandidat rute kosong")
-	}
-	return f.proxyTarget(ctx, ProviderTarget{
-		Name:         c.ProviderName,
-		EgressPoolID: c.EgressPoolID,
-	})
-}
-
 // proxyTarget mengambil URL egress proxy untuk ProviderTarget.
 func (f *Factory) proxyTarget(ctx context.Context, t ProviderTarget) (security.Secret, error) {
 	if t.EgressPoolID == nil || *t.EgressPoolID == "" {
@@ -403,20 +380,6 @@ func (f *Factory) proxyTarget(ctx context.Context, t ProviderTarget) (security.S
 		return "", fmt.Errorf("URL egress provider %q tidak bisa diambil: %w", t.Name, err)
 	}
 	return url, nil
-}
-
-// kunciAdapter menyusun kunci cache satu adapter dari RouteCandidate.
-func kunciAdapter(c *upstream.RouteCandidate, cred *upstream.ActiveCredential, proxy security.Secret) string {
-	if c == nil {
-		return ""
-	}
-	return kunciAdapterTarget(ProviderTarget{
-		ID:           c.ProviderID,
-		Kind:         c.Kind,
-		BaseURL:      c.BaseURL,
-		TimeoutMS:    c.TimeoutMS,
-		EgressPoolID: c.EgressPoolID,
-	}, cred, proxy)
 }
 
 // kunciAdapterTarget menyusun kunci cache satu adapter dari ProviderTarget.
@@ -451,25 +414,6 @@ func kunciAdapterTarget(t ProviderTarget, cred *upstream.ActiveCredential, proxy
 	bagian(proxy.Reveal())
 
 	return t.ID + ":" + hex.EncodeToString(h.Sum(nil))
-}
-
-// buat membuat adapter baru untuk kandidat rute.
-func (f *Factory) buat(
-	c *upstream.RouteCandidate,
-	cred *upstream.ActiveCredential,
-	proxy security.Secret,
-) (providers.Provider, error) {
-	if c == nil {
-		return nil, errors.New("kandidat rute kosong")
-	}
-	return f.buatTarget(ProviderTarget{
-		ID:           c.ProviderID,
-		Name:         c.ProviderName,
-		Kind:         c.Kind,
-		BaseURL:      c.BaseURL,
-		TimeoutMS:    c.TimeoutMS,
-		EgressPoolID: c.EgressPoolID,
-	}, cred, proxy)
 }
 
 // buatTarget membuat adapter baru dari ProviderTarget.

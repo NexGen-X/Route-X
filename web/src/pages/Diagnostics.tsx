@@ -1,19 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { Diagnostics as DiagType } from '../types';
+import type { Diagnostics as DiagType, BackgroundJob } from '../types';
 import { Card } from '../components/common/Card';
+import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Clock, Play } from 'lucide-react';
 
 export const Diagnostics: React.FC = () => {
   const [diag, setDiag] = useState<DiagType | null>(null);
+  const [jobs, setJobs] = useState<BackgroundJob[]>([]);
+  const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const loadDiag = async () => {
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      const res = await api.system.diagnostics();
-      setDiag(res);
+      const [resDiag, resJobs] = await Promise.all([
+        api.system.diagnostics(),
+        api.system.jobs().catch(() => ({ items: [] })),
+      ]);
+      setDiag(resDiag);
+      setJobs(resJobs.items || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -22,8 +29,21 @@ export const Diagnostics: React.FC = () => {
   };
 
   useEffect(() => {
-    loadDiag();
+    loadData();
   }, []);
+
+  const handleTriggerJob = async (name: string) => {
+    setTriggeringJob(name);
+    try {
+      const res = await api.system.triggerJob(name);
+      alert(res.message || 'Job berhasil dipicu.');
+      loadData();
+    } catch (err) {
+      alert('Gagal memicu job: ' + err);
+    } finally {
+      setTriggeringJob(null);
+    }
+  };
 
   const formatUptime = (sec: number) => {
     const d = Math.floor(sec / 86400);
@@ -42,7 +62,7 @@ export const Diagnostics: React.FC = () => {
             Status runtime Go, alokasi memori heap/stack, garbage collector, dan koneksi pgxpool.
           </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={loadDiag} isLoading={isLoading}>
+        <Button variant="secondary" size="sm" onClick={loadData} isLoading={isLoading}>
           <RefreshCw className="w-3.5 h-3.5" />
         </Button>
       </div>
@@ -118,6 +138,73 @@ export const Diagnostics: React.FC = () => {
             </div>
           </div>
         </Card>
+      </div>
+
+      {/* Background Workers Section */}
+      <div className="pt-6 border-t border-border/40">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+              <Clock className="w-4 h-4 text-accent" />
+              Supervisor Background Workers & Tasks
+            </h3>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Status eksekusi rutin latar belakang: health check provider, rollup penggunaan, dan retensi data.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {jobs.length === 0 ? (
+            <div className="col-span-3 p-6 text-center rounded-box bg-bg-surface-1 border border-border/40 text-xs text-text-muted">
+              Tidak ada worker latar belakang yang terdaftar atau sedang berjalan.
+            </div>
+          ) : (
+            jobs.map((j) => (
+              <Card key={j.name} className="p-4 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-white font-mono">{j.name}</h4>
+                      <span className="text-[11px] text-text-muted">Interval: {j.interval}</span>
+                    </div>
+                    <Badge variant={j.last_status === 'ok' ? 'success' : j.last_status === 'running' ? 'warn' : 'error'}>
+                      {j.last_status?.toUpperCase() || 'IDLE'}
+                    </Badge>
+                  </div>
+
+                  <div className="mt-3 text-xs space-y-1">
+                    <div className="flex justify-between text-text-muted">
+                      <span>Eksekusi Terakhir:</span>
+                      <span className="font-mono text-white">
+                        {j.last_run_at ? new Date(j.last_run_at).toLocaleTimeString() : 'Belum pernah'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-text-muted">
+                      <span>Durasi Terakhir:</span>
+                      <span className="font-mono text-accent">
+                        {j.last_duration_ms ?? 0} ms
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-border">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => handleTriggerJob(j.name)}
+                    isLoading={triggeringJob === j.name}
+                    icon={<Play className="w-3.5 h-3.5 text-accent" />}
+                  >
+                    Jalankan Sekarang
+                  </Button>
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

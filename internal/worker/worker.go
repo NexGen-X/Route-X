@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -98,14 +99,41 @@ type ScheduledJob struct {
 	InitialDelay time.Duration
 }
 
+// ErrJobNotFound dikembalikan ketika nama job yang dipicu tidak terdaftar pada supervisor.
+var ErrJobNotFound = errors.New("worker: job tidak ditemukan")
+
+// JobInfo memuat informasi status terkini dari satu background job untuk admin dan observabilitas.
+type JobInfo struct {
+	Name           string        `json:"name"`
+	Schedule       string        `json:"schedule"`
+	Interval       string        `json:"interval"`
+	Status         string        `json:"status"`
+	LastRunAt      *time.Time    `json:"last_run_at,omitempty"`
+	LastDuration   time.Duration `json:"last_duration"`
+	LastDurationMS int64         `json:"last_duration_ms"`
+	LastStatus     string        `json:"last_status"`
+	LastError      string        `json:"last_error,omitempty"`
+}
+
+// jobRuntimeState menyimpan state eksekusi internal satu job berjadwal.
+type jobRuntimeState struct {
+	job          ScheduledJob
+	lastRunAt    *time.Time
+	lastDuration time.Duration
+	lastStatus   string // "ok", "failed", "running", "idle"
+	lastError    string
+}
+
 // Supervisor mengelola siklus hidup seluruh background worker goroutine.
 //
 // Menyediakan isolasi kegagalan mutlak:
 // 1. Panic di satu job ditangkap (recover), dicatat ke log, dan dihitung di metrik routex_worker_runs_total{outcome="panic"}.
 // 2. Error di satu job TIDAK BOLEH mematikan proses atau job lain.
 // 3. Durasi setiap eksekusi dicatat ke routex_worker_duration_seconds.
+// 4. Status eksekusi dan durasi riil dilaporkan ke dashboard admin.
 type Supervisor struct {
-	jobs    []ScheduledJob
+	mu      sync.RWMutex
+	jobs    []*jobRuntimeState
 	metrics *observability.Metrics
 	logger  *slog.Logger
 
@@ -129,19 +157,110 @@ func (s *Supervisor) Register(job Job, interval time.Duration, initialDelay time
 	if interval <= 0 {
 		interval = 1 * time.Minute
 	}
-	s.jobs = append(s.jobs, ScheduledJob{
-		Job:          job,
-		Interval:     interval,
-		InitialDelay: initialDelay,
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.jobs = append(s.jobs, &jobRuntimeState{
+		job: ScheduledJob{
+			Job:          job,
+			Interval:     interval,
+			InitialDelay: initialDelay,
+		},
+		lastStatus: "idle",
 	})
+}
+
+// formatSchedule memformat durasi interval menjadi string jadwal manusiawi yang deskriptif.
+func formatSchedule(d time.Duration) string {
+	if d <= 0 {
+		return "manual"
+	}
+	if d >= 24*time.Hour && d%(24*time.Hour) == 0 {
+		return fmt.Sprintf("every %dh", int(d.Hours()))
+	}
+	if d >= time.Hour && d%time.Hour == 0 {
+		return fmt.Sprintf("every %dh", int(d.Hours()))
+	}
+	if d >= time.Minute && d%time.Minute == 0 {
+		return fmt.Sprintf("every %dm", int(d.Minutes()))
+	}
+	if d >= time.Second && d%time.Second == 0 {
+		return fmt.Sprintf("every %ds", int(d.Seconds()))
+	}
+	return fmt.Sprintf("every %s", d.String())
+}
+
+// Jobs mengembalikan status terkini dari seluruh background job yang terdaftar secara thread-safe.
+func (s *Supervisor) Jobs() []JobInfo {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]JobInfo, len(s.jobs))
+	for i, st := range s.jobs {
+		sched := formatSchedule(st.job.Interval)
+		status := "running"
+		if s.cancel == nil {
+			status = "stopped"
+		}
+		var runAt *time.Time
+		if st.lastRunAt != nil {
+			t := *st.lastRunAt
+			runAt = &t
+		}
+		result[i] = JobInfo{
+			Name:           st.job.Job.Name(),
+			Schedule:       sched,
+			Interval:       sched,
+			Status:         status,
+			LastRunAt:      runAt,
+			LastDuration:   st.lastDuration,
+			LastDurationMS: st.lastDuration.Milliseconds(),
+			LastStatus:     st.lastStatus,
+			LastError:      st.lastError,
+		}
+	}
+	return result
+}
+
+// TriggerJob memicu eksekusi manual satu job tertentu berdasarkan nama di latar belakang.
+// Mengembalikan ErrJobNotFound jika nama tidak ditemukan di supervisor.
+func (s *Supervisor) TriggerJob(ctx context.Context, name string) error {
+	if s == nil {
+		return errors.New("worker: supervisor belum diinisialisasi")
+	}
+
+	s.mu.RLock()
+	var target *jobRuntimeState
+	for _, j := range s.jobs {
+		if j.job.Job.Name() == name {
+			target = j
+			break
+		}
+	}
+	s.mu.RUnlock()
+
+	if target == nil {
+		return fmt.Errorf("%w: %s", ErrJobNotFound, name)
+	}
+
+	// Eksekusi di goroutine terpisah agar respons HTTP tidak terblokir
+	go s.executeOnce(context.Background(), target)
+	return nil
 }
 
 // Start menjalankan seluruh worker yang terdaftar dalam goroutine terpisah.
 func (s *Supervisor) Start(ctx context.Context) {
+	s.mu.Lock()
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
+	jobsCopy := make([]*jobRuntimeState, len(s.jobs))
+	copy(jobsCopy, s.jobs)
+	s.mu.Unlock()
 
-	for _, sj := range s.jobs {
+	for _, sj := range jobsCopy {
 		s.wg.Add(1)
 		go s.runLoop(runCtx, sj)
 	}
@@ -149,57 +268,87 @@ func (s *Supervisor) Start(ctx context.Context) {
 
 // Stop menghentikan seluruh worker dengan tertib dan menunggu hingga semua putaran aktif selesai.
 func (s *Supervisor) Stop() {
-	if s.cancel != nil {
-		s.cancel()
+	s.mu.Lock()
+	cancel := s.cancel
+	s.cancel = nil
+	s.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
 	}
 	s.wg.Wait()
 }
 
 // runLoop menjalankan perulangan satu job dengan penanganan panic dan pencatatan metrik.
-func (s *Supervisor) runLoop(ctx context.Context, sj ScheduledJob) {
+func (s *Supervisor) runLoop(ctx context.Context, st *jobRuntimeState) {
 	defer s.wg.Done()
 
-	if sj.InitialDelay > 0 {
-
+	if st.job.InitialDelay > 0 {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(sj.InitialDelay):
+		case <-time.After(st.job.InitialDelay):
 		}
 	}
 
-	ticker := time.NewTicker(sj.Interval)
+	ticker := time.NewTicker(st.job.Interval)
 	defer ticker.Stop()
 
 	// Jalankan langsung pada putaran pertama
-	s.executeOnce(ctx, sj.Job)
+	s.executeOnce(ctx, st)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.executeOnce(ctx, sj.Job)
+			s.executeOnce(ctx, st)
 		}
 	}
 }
 
 // executeOnce mengeksekusi satu kali run job dengan perlindungan panic, isolasi error, dan observabilitas.
-func (s *Supervisor) executeOnce(ctx context.Context, j Job) {
-	name := j.Name()
+func (s *Supervisor) executeOnce(ctx context.Context, st *jobRuntimeState) {
+	name := st.job.Job.Name()
 	start := time.Now()
 	outcome := OutcomeSuccess
 
+	s.mu.Lock()
+	st.lastRunAt = &start
+	st.lastStatus = "running"
+	s.mu.Unlock()
+
+	var runErr error
 	defer func() {
 		duration := time.Since(start)
+		errMsg := ""
+		lastStat := "ok"
+
 		if r := recover(); r != nil {
 			outcome = OutcomePanic
+			lastStat = "failed"
+			errMsg = fmt.Sprintf("panic: %v", r)
 			s.logger.ErrorContext(ctx, "panic tertangkap pada background worker",
 				"worker", name,
 				"panic", fmt.Sprint(r),
 				"durasi_ms", duration.Milliseconds(),
 			)
+		} else if runErr != nil {
+			outcome = OutcomeError
+			lastStat = "failed"
+			errMsg = runErr.Error()
+			s.logger.WarnContext(ctx, "eksekusi background worker gagal",
+				"worker", name,
+				"error", runErr,
+				"durasi_ms", duration.Milliseconds(),
+			)
 		}
+
+		s.mu.Lock()
+		st.lastDuration = duration
+		st.lastStatus = lastStat
+		st.lastError = errMsg
+		s.mu.Unlock()
 
 		// Laporkan metrik jika tersedia
 		if s.metrics != nil {
@@ -208,13 +357,5 @@ func (s *Supervisor) executeOnce(ctx context.Context, j Job) {
 		}
 	}()
 
-	if err := j.Run(ctx); err != nil {
-		outcome = OutcomeError
-		s.logger.WarnContext(ctx, "eksekusi background worker gagal",
-			"worker", name,
-			"error", err,
-			"durasi_ms", time.Since(start).Milliseconds(),
-		)
-		return
-	}
+	runErr = st.job.Job.Run(ctx)
 }

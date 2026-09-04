@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/NexGen-X/Route-X/internal/admin"
 )
@@ -81,7 +84,7 @@ func TestDTOSerializationSecurity(t *testing.T) {
 		admin.StatusResponse{Status: "ok"},
 		admin.StatusCountResponse{Status: "ok", Count: 1},
 		admin.JobRunResponse{Status: "triggered", Job: "test", Message: "ok"},
-		admin.WebhookPingResponse{Status: "enqueued", Enqueued: 1},
+		admin.WebhookPingResponse{Status: "ok", StatusCode: 200, DurationMS: 25},
 		admin.ProbeProviderResponse{Status: "ok", LatencyMS: 50},
 		admin.TrafficStatsDTO{
 			TotalRequests:    10,
@@ -260,8 +263,11 @@ func TestDTOSerializationSecurity(t *testing.T) {
 			UpdatedAt: now,
 		},
 		admin.CircuitBreakerDTO{
-			Key:   "routex:breaker:openai",
-			State: "closed",
+			Key:          "routex:cb:openai:gpt-4o",
+			ProviderID:   "openai",
+			Model:        "gpt-4o",
+			State:        "closed",
+			FailureCount: 0,
 		},
 		admin.KeyDTO{
 			ID:          "k-1",
@@ -442,24 +448,60 @@ func TestClientRouteMatching(t *testing.T) {
 	clientEndpoints := make(map[string]bool)
 	for _, m := range matches {
 		endpoint := m[1]
-		// Normalisasi parameter dinamis misal ${id} -> {id}
+		// Buang variabel query string seperti ${q} atau ${query}
+		endpoint = regexp.MustCompile(`\$\{q[^}]*\}`).ReplaceAllString(endpoint, "")
+		// Normalisasi parameter dinamis path misal ${id} -> {param}
 		endpoint = regexp.MustCompile(`\$\{[^}]+\}`).ReplaceAllString(endpoint, "{param}")
 		clientEndpoints[endpoint] = true
 	}
 
-	// 7 rute yang salah diidentifikasi di Bagian 7.3:
-	// Pastikan client.ts tidak lagi memakai endpoint keliru ini
-	forbiddenClientCalls := []string{
-		"/api/admin/gateway/bans/{param}", // harusnya lift via POST
-		"/api/admin/upstreams/models/{param}/providers",
-		"/api/admin/upstreams/models/{param}/providers/{param}",
-		"/api/admin/upstreams/mappings/{param}/pricing",
-		"/api/admin/upstreams/mappings/{param}/pricing/history",
+	// 7 rute yang salah diidentifikasi di Bagian 7.3 & Batch 3:
+	// 1. DELETE /gateway/bans/{id} (server: POST .../lift)
+	if strings.Contains(string(content), "/gateway/bans/${id}`, { method: 'DELETE'") ||
+		strings.Contains(string(content), "/gateway/bans/${id}\", { method: 'DELETE'") {
+		t.Errorf("PELANGGARAN KONTRAK RUTE: DELETE /gateway/bans/{id} tidak boleh dipanggil; gunakan POST .../lift")
 	}
 
-	for _, bad := range forbiddenClientCalls {
+	// 2. DELETE /access/api-keys/{id} (server: POST .../revoke)
+	if strings.Contains(string(content), "/access/api-keys/${id}`, { method: 'DELETE'") ||
+		strings.Contains(string(content), "/access/api-keys/${id}\", { method: 'DELETE'") {
+		t.Errorf("PELANGGARAN KONTRAK RUTE: DELETE /access/api-keys/{id} tidak boleh dipanggil; gunakan POST .../revoke")
+	}
+
+	// 3-7. Path API yang salah terdaftar
+	forbiddenPathCalls := []string{
+		"/api/admin/system/jobs/{param}/trigger",                // harusnya run via POST
+		"/api/admin/upstreams/models/{param}/providers",         // harusnya /mappings
+		"/api/admin/upstreams/models/{param}/providers/{param}", // harusnya /mappings/{mapping_id}
+		"/api/admin/upstreams/mappings/{param}/pricing",         // harusnya di bawah /upstreams/models/mappings/{mapping_id}/pricing
+		"/api/admin/upstreams/mappings/{param}/pricing/history", // harusnya di bawah /upstreams/models/mappings/{mapping_id}/pricing/history
+	}
+
+	for _, bad := range forbiddenPathCalls {
 		if clientEndpoints[bad] {
-			t.Errorf("Path terlarang %q masih ditemukan di client.ts; harus diselaraskan dengan rute server resmi", bad)
+			t.Errorf("PELANGGARAN KONTRAK RUTE: Path terlarang %q masih ditemukan di client.ts; harus diselaraskan dengan rute server resmi", bad)
+		}
+	}
+
+	// Verifikasi bahwa seluruh endpoint yang dipanggil client.ts terdaftar di chi Router server
+	h := admin.NewHandlers(admin.Config{})
+	serverRouter := chi.NewRouter()
+	serverRouter.Mount("/api/admin", h.Routes())
+
+	registeredRoutes := make(map[string]bool)
+	_ = chi.Walk(serverRouter, func(method, route string, handler http.Handler, middlewares ...func(http.Handler) http.Handler) error {
+		// Normalisasi parameter rute server: misal /api/admin/access/users/{id} -> /api/admin/access/users/{param}
+		normalized := regexp.MustCompile(`\{[^}]+\}`).ReplaceAllString(route, "{param}")
+		// Bersihkan trailing slash
+		normalized = strings.TrimSuffix(normalized, "/")
+		registeredRoutes[normalized] = true
+		return nil
+	})
+
+	for clientRoute := range clientEndpoints {
+		normClient := strings.TrimSuffix(clientRoute, "/")
+		if !registeredRoutes[normClient] {
+			t.Errorf("PELANGGARAN RUTE CLIENT: Endpoint %q yang dipanggil client.ts tidak terdaftar di server router!", clientRoute)
 		}
 	}
 }

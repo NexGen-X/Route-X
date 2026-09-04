@@ -523,6 +523,7 @@ func buildGatewaySurface(
 		WebhooksRepo:   webhookRepo,
 		Dispatcher:     webhookDispatcher,
 		Factory:        factory,
+		Breaker:        breaker,
 		Supervisor:     workerSup,
 		Cipher:         cipher,
 	})

@@ -32,6 +32,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
+	"github.com/NexGen-X/Route-X/internal/worker"
 )
 
 const schemaPrefix = "test_admin_"
@@ -249,6 +250,10 @@ func setupTestEnv(t *testing.T) *testEnv {
 	trafficRepo := traffic.New(pool)
 	webhooksRepo := webhooks.NewRepo(pool)
 	dispatcher := webhooks.NewDispatcher(webhooksRepo, cipher, nil, cfg.UpstreamSSRFPolicy(), logger)
+	sup := worker.NewSupervisor(nil, logger)
+	sup.Register(worker.JobFunc{JobName: "health_checker", Fn: func(ctx context.Context) error { return nil }}, 30*time.Second, 0)
+	sup.Register(worker.JobFunc{JobName: "usage_rollup", Fn: func(ctx context.Context) error { return nil }}, 5*time.Minute, 0)
+	sup.Register(worker.JobFunc{JobName: "retention_cleaner", Fn: func(ctx context.Context) error { return nil }}, 1*time.Hour, 0)
 
 	handlers := NewHandlers(Config{
 		Pool:           pool,
@@ -270,6 +275,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		TrafficRepo:    trafficRepo,
 		WebhooksRepo:   webhooksRepo,
 		Dispatcher:     dispatcher,
+		Supervisor:     sup,
 		Cipher:         cipher,
 	})
 
@@ -577,6 +583,18 @@ func TestAdminSystemEndpoints(t *testing.T) {
 	}
 	if len(jobsResp.Items) == 0 {
 		t.Errorf("daftar background jobs kosong")
+	}
+
+	// Uji pemicuan job valid: harus berhasil 200 OK
+	resTrig, _ := client.do(http.MethodPost, "/api/admin/system/jobs/health_checker/run", nil, true)
+	if resTrig.StatusCode != http.StatusOK {
+		t.Errorf("pemicuan job valid status = %d, diharapkan 200", resTrig.StatusCode)
+	}
+
+	// Uji pemicuan job yang tidak ada: harus ditolak 404 Not Found
+	resInvalid, _ := client.do(http.MethodPost, "/api/admin/system/jobs/job_fiktif_tidak_ada/run", nil, true)
+	if resInvalid.StatusCode != http.StatusNotFound {
+		t.Errorf("pemicuan job tidak dikenal status = %d, diharapkan 404", resInvalid.StatusCode)
 	}
 
 	// 3. Permissions Catalog

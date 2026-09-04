@@ -1,9 +1,9 @@
 package admin
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -197,24 +197,38 @@ func (h *Handlers) testWebhookPing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Buat payload uji ping
-	pingPayload := map[string]any{
-		"event":      "ping",
-		"webhook_id": wh.ID,
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
-		"message":    "Uji koneksi webhook dari Route-X Admin",
-	}
-
-	n, err := h.webhooksRepo.Enqueue(ctx, "ping", pingPayload)
-	if err != nil {
-		mapRepoError(w, r, err, "antrean webhook test")
+	if h.dispatcher == nil {
+		httpx.BadRequest(w, r, "dispatcher_unavailable", "dispatcher webhook tidak aktif")
 		return
 	}
 
-	h.writeAudit(ctx, r, "test_ping", "webhook", id, nil)
+	// Kirim langsung melalui dispatcher tanpa menyentuh antrean database.
+	// Ini mencegah tes ping menyebar ke pelanggan event wildcard (*) dan mematuhi format event berdomain.
+	statusCode, duration, pingErr := h.dispatcher.Ping(ctx, wh)
+	h.writeAudit(ctx, r, "test_ping", "webhook", id, map[string]any{
+		"status_code": statusCode,
+		"duration_ms": duration.Milliseconds(),
+		"success":     pingErr == nil && statusCode >= 200 && statusCode < 300,
+	})
+
+	if pingErr != nil {
+		_ = h.respond(w, r, http.StatusOK, WebhookPingResponse{
+			Status:     "failed",
+			StatusCode: statusCode,
+			DurationMS: duration.Milliseconds(),
+			Error:      pingErr.Error(),
+		})
+		return
+	}
+
+	statusStr := "ok"
+	if statusCode >= 400 {
+		statusStr = fmt.Sprintf("HTTP %d", statusCode)
+	}
 	_ = h.respond(w, r, http.StatusOK, WebhookPingResponse{
-		Status:   "enqueued",
-		Enqueued: n,
+		Status:     statusStr,
+		StatusCode: statusCode,
+		DurationMS: duration.Milliseconds(),
 	})
 }
 

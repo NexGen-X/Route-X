@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { Model } from '../types';
+import type { Model, ProviderModel, Price } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
@@ -10,6 +10,20 @@ import { Cpu, Plus, DollarSign } from 'lucide-react';
 export const Models: React.FC = () => {
   const [models, setModels] = useState<Model[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+  // State untuk Modal Pricing
+  const [isPricingOpen, setIsPricingOpen] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<Model | null>(null);
+  const [mappings, setMappings] = useState<ProviderModel[]>([]);
+  const [selectedMappingId, setSelectedMappingId] = useState<string>('');
+  const [pricingHistory, setPricingHistory] = useState<Price[]>([]);
+  const [pricingForm, setPricingForm] = useState({
+    input_per_1m_usd: '',
+    output_per_1m_usd: '',
+    cached_input_per_1m_usd: '',
+  });
+  const [isPricingLoading, setIsPricingLoading] = useState(false);
+  const [isSavingPrice, setIsSavingPrice] = useState(false);
 
   const [newModel, setNewModel] = useState({
     model_id: '',
@@ -43,6 +57,71 @@ export const Models: React.FC = () => {
       loadModels();
     } catch (err) {
       alert('Gagal membuat model: ' + err);
+    }
+  };
+
+  const loadPricingForMapping = async (mappingId: string) => {
+    try {
+      const res = await api.models.pricingHistory(mappingId);
+      const items = res.items || [];
+      setPricingHistory(items);
+      if (items.length > 0) {
+        const latest = items[0];
+        setPricingForm({
+          input_per_1m_usd: latest.input_per_1m_usd || '',
+          output_per_1m_usd: latest.output_per_1m_usd || '',
+          cached_input_per_1m_usd: latest.cached_input_per_1m_usd || '',
+        });
+      }
+    } catch (err) {
+      console.error('Gagal memuat riwayat harga:', err);
+    }
+  };
+
+  const handleOpenPricing = async (m: Model) => {
+    setSelectedModel(m);
+    setIsPricingOpen(true);
+    setIsPricingLoading(true);
+    setMappings([]);
+    setSelectedMappingId('');
+    setPricingHistory([]);
+    setPricingForm({
+      input_per_1m_usd: '',
+      output_per_1m_usd: '',
+      cached_input_per_1m_usd: '',
+    });
+
+    try {
+      const detail = await api.models.get(m.id);
+      const mps = detail.mappings || [];
+      setMappings(mps);
+      if (mps.length > 0) {
+        setSelectedMappingId(mps[0].id);
+        await loadPricingForMapping(mps[0].id);
+      }
+    } catch (err) {
+      console.error('Gagal memuat detail pemetaan model:', err);
+    } finally {
+      setIsPricingLoading(false);
+    }
+  };
+
+  const handleSavePrice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMappingId) return;
+    setIsSavingPrice(true);
+    try {
+      await api.models.setPrice(selectedMappingId, {
+        input_per_1m_usd: pricingForm.input_per_1m_usd,
+        output_per_1m_usd: pricingForm.output_per_1m_usd,
+        cached_input_per_1m_usd: pricingForm.cached_input_per_1m_usd || undefined,
+      });
+      alert('Harga model berhasil disimpan.');
+      await loadPricingForMapping(selectedMappingId);
+    } catch (err) {
+      alert('Gagal menyimpan harga model: ' + err);
+    } finally {
+      setIsSavingPrice(false);
     }
   };
 
@@ -111,8 +190,7 @@ export const Models: React.FC = () => {
               <Button
                 variant="secondary"
                 size="sm"
-                disabled
-                title="Konfigurasi harga akan diimplementasikan pada Batch 3"
+                onClick={() => handleOpenPricing(m)}
                 icon={<DollarSign className="w-3.5 h-3.5" />}
               >
                 Pricing
@@ -186,6 +264,113 @@ export const Models: React.FC = () => {
             Simpan Model
           </Button>
         </form>
+      </Modal>
+
+      {/* Modal Pricing */}
+      <Modal
+        isOpen={isPricingOpen}
+        onClose={() => setIsPricingOpen(false)}
+        title={`Konfigurasi Harga: ${selectedModel?.display_name || selectedModel?.model_id || 'Model'}`}
+        subtitle="Atur tarif token per 1M (USD) untuk model ini pada provider upstream terkait"
+      >
+        {isPricingLoading ? (
+          <div className="py-8 text-center text-xs text-text-muted">Memuat pemetaan model...</div>
+        ) : mappings.length === 0 ? (
+          <div className="py-6 text-center text-xs text-text-muted space-y-2">
+            <p>Model ini belum memiliki pemetaan ke upstream provider.</p>
+            <p className="text-[11px]">Hubungkan provider terlebih dahulu sebelum mengatur struktur harga.</p>
+          </div>
+        ) : (
+          <form onSubmit={handleSavePrice} className="space-y-4 text-xs">
+            <div>
+              <label className="block font-semibold text-text-secondary uppercase mb-1">
+                Pilih Pemetaan Provider
+              </label>
+              <select
+                value={selectedMappingId}
+                onChange={(e) => {
+                  setSelectedMappingId(e.target.value);
+                  loadPricingForMapping(e.target.value);
+                }}
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+              >
+                {mappings.map((mp) => (
+                  <option key={mp.id} value={mp.id}>
+                    {mp.provider_id} &rarr; {mp.upstream_model_name} (ID: {mp.id.slice(0, 8)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-text-secondary uppercase mb-1">
+                  Input / 1M Token (USD) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="2.50"
+                  value={pricingForm.input_per_1m_usd}
+                  onChange={(e) => setPricingForm({ ...pricingForm, input_per_1m_usd: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-text-secondary uppercase mb-1">
+                  Output / 1M Token (USD) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="10.00"
+                  value={pricingForm.output_per_1m_usd}
+                  onChange={(e) => setPricingForm({ ...pricingForm, output_per_1m_usd: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-semibold text-text-secondary uppercase mb-1">
+                Cached Input / 1M Token (USD) (Opsional)
+              </label>
+              <input
+                type="text"
+                placeholder="1.25"
+                value={pricingForm.cached_input_per_1m_usd}
+                onChange={(e) => setPricingForm({ ...pricingForm, cached_input_per_1m_usd: e.target.value })}
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+              />
+            </div>
+
+            {pricingHistory.length > 0 && (
+              <div className="pt-2">
+                <span className="block font-semibold text-text-secondary uppercase mb-1">
+                  Riwayat Penetapan Harga
+                </span>
+                <div className="max-h-32 overflow-y-auto space-y-1 rounded border border-border p-2 bg-bg-base">
+                  {pricingHistory.map((h, i) => (
+                    <div key={i} className="flex justify-between text-[11px] font-mono text-text-secondary">
+                      <span>In: ${h.input_per_1m_usd} | Out: ${h.output_per_1m_usd}</span>
+                      <span className="text-text-muted">{new Date(h.effective_from).toLocaleDateString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-3 flex justify-end gap-2 border-t border-border">
+              <Button type="button" variant="secondary" onClick={() => setIsPricingOpen(false)}>
+                Batal
+              </Button>
+              <Button type="submit" variant="primary" isLoading={isSavingPrice}>
+                Simpan Harga
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

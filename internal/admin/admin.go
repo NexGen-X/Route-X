@@ -60,6 +60,7 @@ type Handlers struct {
 	webhooksRepo   *webhooks.Repo
 	dispatcher     *webhooks.Dispatcher
 	factory        *gateway.Factory
+	breaker        *gateway.Breaker
 	supervisor     *worker.Supervisor
 	cipher         *security.Cipher
 }
@@ -87,6 +88,7 @@ type Config struct {
 	WebhooksRepo   *webhooks.Repo
 	Dispatcher     *webhooks.Dispatcher
 	Factory        *gateway.Factory
+	Breaker        *gateway.Breaker
 	Supervisor     *worker.Supervisor
 	Cipher         *security.Cipher
 }
@@ -128,6 +130,7 @@ func NewHandlers(cfg Config) *Handlers {
 		webhooksRepo:   cfg.WebhooksRepo,
 		dispatcher:     cfg.Dispatcher,
 		factory:        cfg.Factory,
+		breaker:        cfg.Breaker,
 		supervisor:     cfg.Supervisor,
 		cipher:         cfg.Cipher,
 	}

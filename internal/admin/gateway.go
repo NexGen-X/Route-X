@@ -2,12 +2,15 @@ package admin
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/NexGen-X/Route-X/internal/auth"
+	"github.com/NexGen-X/Route-X/internal/cache"
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
@@ -925,13 +928,56 @@ func (h *Handlers) listCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 
 	items := make([]CircuitBreakerDTO, 0)
 	if h.redis != nil {
-		iter := h.redis.Scan(ctx, 0, "routex:breaker:*", 500).Iterator()
+		// Pindai kunci di bawah namespace sirkuit breaker resmi routex:cb:*
+		pattern := cache.Key(cache.NamespaceCircuitBreaker) + ":*"
+		iter := h.redis.Scan(ctx, 0, pattern, 500).Iterator()
 		for iter.Next(ctx) {
 			k := iter.Val()
-			val, _ := h.redis.Get(ctx, k).Result()
+			// Segmen kunci: routex:cb:<provider_id>[:<model>]
+			parts := strings.Split(k, ":")
+			if len(parts) < 3 {
+				continue
+			}
+			providerID, _ := url.PathUnescape(parts[2])
+			model := ""
+			if len(parts) >= 4 {
+				model, _ = url.PathUnescape(parts[3])
+			}
+
+			// Ambil status keputusan state sesungguhnya dari Breaker.State()
+			stateStr := "closed"
+			if h.breaker != nil {
+				st, err := h.breaker.State(ctx, providerID, model)
+				if err == nil {
+					stateStr = string(st)
+				}
+			}
+
+			// Ambil metrik kegagalan dan jadwal probe dari Redis hash
+			hashData, _ := h.redis.HGetAll(ctx, k).Result()
+			var failureCount int64
+			for fKey, fVal := range hashData {
+				if strings.HasPrefix(fKey, "f") {
+					if cnt, err := strconv.ParseInt(fVal, 10, 64); err == nil {
+						failureCount += cnt
+					}
+				}
+			}
+
+			var nextProbeAt string
+			if openUntilStr, ok := hashData["open_until"]; ok {
+				if openUntilMs, err := strconv.ParseInt(openUntilStr, 10, 64); err == nil && openUntilMs > 0 {
+					nextProbeAt = time.UnixMilli(openUntilMs).Format(time.RFC3339)
+				}
+			}
+
 			items = append(items, CircuitBreakerDTO{
-				Key:   k,
-				State: val,
+				Key:          k,
+				ProviderID:   providerID,
+				Model:        model,
+				State:        stateStr,
+				FailureCount: failureCount,
+				NextProbeAt:  nextProbeAt,
 			})
 		}
 	}
@@ -941,20 +987,41 @@ func (h *Handlers) listCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type resetBreakerReq struct {
+	ProviderID string `json:"provider_id"`
+	Model      string `json:"model"`
+}
+
 func (h *Handlers) resetCircuitBreaker(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	var req struct {
-		Key string `json:"key"`
-	}
+	var req resetBreakerReq
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
 	}
 
-	if h.redis != nil && req.Key != "" {
-		_ = h.redis.Del(ctx, req.Key).Err()
+	if strings.TrimSpace(req.ProviderID) == "" {
+		httpx.BadRequest(w, r, "invalid_request", "provider_id wajib diisi")
+		return
 	}
 
-	h.writeAudit(ctx, r, "reset", "circuit_breaker", req.Key, nil)
+	// Kunci Redis SELALU dirakit di sisi server menggunakan helper cache.CircuitBreakerKey.
+	// Klien dilarang menyuplai kunci Redis mentah untuk mencegah penghapusan namespace lain
+	// (misal routex:rl:apikey:* untuk menghapus rate limit).
+	serverKey := cache.CircuitBreakerKey(req.ProviderID, req.Model)
+
+	if h.breaker != nil {
+		if err := h.breaker.Reset(ctx, req.ProviderID, req.Model); err != nil {
+			httpx.InternalError(w, r)
+			return
+		}
+	} else if h.redis != nil {
+		_ = h.redis.Del(ctx, serverKey).Err()
+	}
+
+	h.writeAudit(ctx, r, "reset", "circuit_breaker", serverKey, map[string]any{
+		"provider_id": req.ProviderID,
+		"model":       req.Model,
+	})
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "reset"})
 }

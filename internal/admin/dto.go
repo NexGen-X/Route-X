@@ -60,10 +60,13 @@ type JobRunResponse struct {
 
 func (JobRunResponse) adalahDTO() {}
 
-// WebhookPingResponse adalah respons hasil antrean tes webhook ping.
+// WebhookPingResponse adalah respons hasil tes koneksi langsung ke endpoint webhook.
 type WebhookPingResponse struct {
-	Status   string `json:"status"`
-	Enqueued int    `json:"enqueued"`
+	Status     string `json:"status"`
+	StatusCode int    `json:"status_code,omitempty"`
+	DurationMS int64  `json:"duration_ms"`
+	Enqueued   int    `json:"enqueued,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 func (WebhookPingResponse) adalahDTO() {}
@@ -574,8 +577,13 @@ func (ContentFilterDTO) adalahDTO() {}
 
 // CircuitBreakerDTO memuat status sirkuit breaker individual dari Redis.
 type CircuitBreakerDTO struct {
-	Key   string `json:"key"`
-	State string `json:"state"`
+	Key           string `json:"key,omitempty"`
+	ProviderID    string `json:"provider_id"`
+	Model         string `json:"model"`
+	State         string `json:"state"`
+	FailureCount  int64  `json:"failure_count"`
+	LastFailureAt string `json:"last_failure_at,omitempty"`
+	NextProbeAt   string `json:"next_probe_at,omitempty"`
 }
 
 func (CircuitBreakerDTO) adalahDTO() {}
@@ -765,9 +773,14 @@ func (SettingDTO) adalahDTO() {}
 
 // JobDTO adalah status konfigurasi background scheduler internal.
 type JobDTO struct {
-	Name     string `json:"name"`
-	Schedule string `json:"schedule"`
-	Status   string `json:"status"`
+	Name           string     `json:"name"`
+	Schedule       string     `json:"schedule"`
+	Interval       string     `json:"interval,omitempty"`
+	Status         string     `json:"status"`
+	LastRunAt      *time.Time `json:"last_run_at,omitempty"`
+	LastStatus     string     `json:"last_status,omitempty"`
+	LastDurationMS int64      `json:"last_duration_ms"`
+	LastError      string     `json:"last_error,omitempty"`
 }
 
 func (JobDTO) adalahDTO() {}

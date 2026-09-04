@@ -287,3 +287,66 @@ func VerifySignature(payload []byte, secret []byte, sigHeader string) bool {
 
 	return hmac.Equal(computed, expectedHex)
 }
+
+// Ping mengirimkan HTTP POST uji koneksi langsung ke endpoint webhook tanpa melalui antrean database.
+// Ini mencegah tes ping menyebar ke pelanggan event wildcard (*) dan mematuhi konvensi event berformat valid.
+func (d *Dispatcher) Ping(ctx context.Context, wh *Webhook) (int, time.Duration, error) {
+	if wh == nil {
+		return 0, 0, errors.New("webhook tidak boleh nil")
+	}
+
+	// 1. Dekripsi secret webhook memakai AAD terikat ke ID webhook
+	aad := security.WebhookAAD(wh.ID)
+	secretBytes, err := d.cipher.Decrypt(wh.SecretCiphertext, aad)
+	if err != nil {
+		return 0, 0, fmt.Errorf("gagal mendekripsi secret webhook: %w", err)
+	}
+
+	// 2. Siapkan payload uji ping dengan event berformat domain.aksi valid
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+	payload := []byte(fmt.Sprintf(`{"event":"ping.test","webhook_id":%q,"timestamp":%q,"message":"Uji koneksi webhook dari Route-X Admin"}`, wh.ID, nowStr))
+
+	// 3. Hitung HMAC-SHA256
+	mac := hmac.New(sha256.New, secretBytes)
+	mac.Write(payload)
+	sigHex := hex.EncodeToString(mac.Sum(nil))
+
+	// 4. Validasi SSRF
+	if err := security.ValidateBaseURL(wh.URL, d.ssrfPolicy); err != nil {
+		return 0, 0, fmt.Errorf("SSRF: %s", SanitizeErrorMessage(err.Error()))
+	}
+
+	timeout := time.Duration(wh.TimeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		timeout = DefaultDeliveryTimeout
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, wh.URL, bytes.NewReader(payload))
+	if err != nil {
+		return 0, 0, fmt.Errorf("membuat request ping: %w", err)
+	}
+
+	nowUnix := strconv.FormatInt(time.Now().Unix(), 10)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Route-X-Webhook/1.0")
+	req.Header.Set("X-RouteX-Delivery", "0")
+	req.Header.Set("X-RouteX-Event", "ping.test")
+	req.Header.Set("X-RouteX-Timestamp", nowUnix)
+	req.Header.Set("X-RouteX-Signature", "sha256="+sigHex)
+	req.Header.Set("X-Hub-Signature-256", "sha256="+sigHex)
+
+	start := time.Now()
+	resp, err := d.client.Do(req)
+	dur := time.Since(start)
+	if err != nil {
+		return 0, dur, fmt.Errorf("gagal menghubungi endpoint: %s", SanitizeErrorMessage(err.Error()))
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
+		_ = resp.Body.Close()
+	}()
+
+	return resp.StatusCode, dur, nil
+}

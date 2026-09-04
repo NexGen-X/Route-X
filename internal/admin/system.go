@@ -2,6 +2,8 @@ package admin
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"runtime"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/worker"
 )
 
 var appStartTime = time.Now()
@@ -125,13 +128,26 @@ func (h *Handlers) deleteSetting(w http.ResponseWriter, r *http.Request) {
 // -----------------------------------------------------------------------------
 
 func (h *Handlers) listJobs(w http.ResponseWriter, r *http.Request) {
-	jobs := []JobDTO{
-		{Name: "health_checker", Schedule: "every 30s", Status: "running"},
-		{Name: "usage_rollup", Schedule: "every 5m", Status: "running"},
-		{Name: "retention_cleaner", Schedule: "every 1h", Status: "running"},
-		{Name: "partition_maintainer", Schedule: "every 24h", Status: "running"},
-		{Name: "budget_resetter", Schedule: "every 1m", Status: "running"},
-		{Name: "webhook_worker", Schedule: "continuous poll 250ms", Status: "running"},
+	if h.supervisor == nil {
+		_ = h.respond(w, r, http.StatusOK, ListEnvelope[JobDTO]{
+			Items: make([]JobDTO, 0),
+		})
+		return
+	}
+
+	workerJobs := h.supervisor.Jobs()
+	jobs := make([]JobDTO, len(workerJobs))
+	for i, j := range workerJobs {
+		jobs[i] = JobDTO{
+			Name:           j.Name,
+			Schedule:       j.Schedule,
+			Interval:       j.Interval,
+			Status:         j.Status,
+			LastRunAt:      j.LastRunAt,
+			LastStatus:     j.LastStatus,
+			LastDurationMS: j.LastDurationMS,
+			LastError:      j.LastError,
+		}
 	}
 
 	_ = h.respond(w, r, http.StatusOK, ListEnvelope[JobDTO]{
@@ -143,7 +159,21 @@ func (h *Handlers) runJob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := chi.URLParam(r, "name")
 
-	// Trigger manual seketika pada worker yang mendukung
+	if h.supervisor == nil {
+		httpx.BadRequest(w, r, "supervisor_unavailable", "supervisor worker latar belakang tidak aktif")
+		return
+	}
+
+	if err := h.supervisor.TriggerJob(ctx, name); err != nil {
+		if errors.Is(err, worker.ErrJobNotFound) {
+			httpx.NotFound(w, r, fmt.Sprintf("pekerjaan latar belakang %q tidak ditemukan", name))
+			return
+		}
+		httpx.InternalError(w, r)
+		return
+	}
+
+	// Trigger manual seketika pada worker yang valid
 	h.writeAudit(ctx, r, "trigger_job", "system_job", name, nil)
 	_ = h.respond(w, r, http.StatusOK, JobRunResponse{
 		Status:  "triggered",

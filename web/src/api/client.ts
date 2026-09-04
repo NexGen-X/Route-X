@@ -339,10 +339,12 @@ export const api = {
   },
 
   filters: {
-    list: (cursor?: string) =>
-      request<{ items: ContentFilter[]; next_cursor?: string }>(
-        `/api/admin/gateway/content-filters${cursor ? `?cursor=${cursor}` : ''}`
-      ),
+    list: (cursor?: string) => {
+      const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+      return request<{ items: ContentFilter[]; next_cursor?: string }>(
+        `/api/admin/gateway/content-filters${q}`
+      );
+    },
     create: (data: Partial<ContentFilter>) =>
       request<ContentFilter>('/api/admin/gateway/content-filters', {
         method: 'POST',

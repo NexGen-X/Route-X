@@ -145,7 +145,7 @@ func TestSupervisorIsolasiPanicDanError(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	cancel()
-	sup.Stop()
+	_ = sup.Stop(context.Background())
 
 	if runsJobSehat.Load() < 2 {
 		t.Errorf("jobSehat dieksekusi %d kali, ingin minimal 2", runsJobSehat.Load())
@@ -199,10 +199,16 @@ func (s *dummyProviderSource) ActiveProviders(context.Context) ([]*upstream.Prov
 	return s.providers, nil
 }
 
-func (s *dummyProviderSource) RecordHealth(_ context.Context, _ string, h upstream.HealthReport) error {
+func (s *dummyProviderSource) RecordHealth(_ context.Context, id string, h upstream.HealthReport) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reports = append(s.reports, h)
+	for _, p := range s.providers {
+		if p.ID == id {
+			st := h.Status
+			p.LastHealthStatus = &st
+		}
+	}
 	return nil
 }
 

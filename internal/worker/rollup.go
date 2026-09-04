@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 )
 
 // RollupRepo mendefinisikan operasi agregasi usage. Dipenuhi oleh *traffic.Repo.
@@ -47,10 +49,10 @@ func (w *RollupWorker) Name() string { return "usage_rollup_scheduler" }
 func (w *RollupWorker) Run(ctx context.Context) error {
 	unlock, ok, err := TryAdvisoryLock(ctx, w.pool, LockRollup)
 	if err != nil {
-		return fmt.Errorf("advisory lock rollup: %w", err)
+		return repo.Err("advisory lock rollup", err)
 	}
 	if !ok {
-		return nil
+		return ErrJobSkipped
 	}
 	defer unlock()
 
@@ -61,7 +63,7 @@ func (w *RollupWorker) Run(ctx context.Context) error {
 
 	jam, hari, err := w.repo.RollupRange(ctx, from, to)
 	if err != nil {
-		return fmt.Errorf("eksekusi RollupRange [%s..%s]: %w", from.Format(time.RFC3339), to.Format(time.RFC3339), err)
+		return repo.Err(fmt.Sprintf("eksekusi RollupRange [%s..%s]", from.Format(time.RFC3339), to.Format(time.RFC3339)), err)
 	}
 
 	w.logger.DebugContext(ctx, "rollup pemakaian berhasil dieksekusi",

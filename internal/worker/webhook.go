@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
 
@@ -80,7 +81,7 @@ func (w *WebhookWorker) Run(ctx context.Context) error {
 	// 2. Ambil batch delivery yang due dengan FOR UPDATE SKIP LOCKED
 	deliveries, err := w.repo.ClaimDue(ctx, w.workerID, w.batchSize)
 	if err != nil {
-		return fmt.Errorf("mengambil antrean webhook due: %w", err)
+		return repo.Err("mengambil antrean webhook due", err)
 	}
 
 	if len(deliveries) == 0 {

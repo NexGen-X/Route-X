@@ -6,12 +6,14 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -43,6 +45,9 @@ type Dispatcher struct {
 }
 
 // NewDispatcher membuat instance baru Dispatcher webhook.
+//
+// Menggunakan transport berpenjaga dial (security.GuardedDialContext) untuk menutup celah DNS rebinding
+// serta memasang CheckRedirect untuk mencegah SSRF lewat celah pengalihan (redirect) HTTP hop.
 func NewDispatcher(
 	repo *Repo,
 	cipher *security.Cipher,
@@ -50,8 +55,45 @@ func NewDispatcher(
 	ssrfPolicy security.SSRFPolicy,
 	logger *slog.Logger,
 ) *Dispatcher {
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	defaultTr := &http.Transport{
+		DialContext:           security.GuardedDialContext(ssrfPolicy, dialer),
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   32,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     true,
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
+	}
+
+	checkRedirect := func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("terlalu banyak pengalihan (redirect limit 10 tercapai)")
+		}
+		// Validasi setiap hop redirect terhadap SSRF policy (skema, kredensial userinfo, IP privat)
+		if err := security.ValidateBaseURL(req.URL.String(), ssrfPolicy); err != nil {
+			return fmt.Errorf("pengalihan URL melanggar kebijakan SSRF: %w", err)
+		}
+		return nil
+	}
+
 	if client == nil {
-		client = &http.Client{Timeout: DefaultDeliveryTimeout}
+		client = &http.Client{
+			Timeout:       DefaultDeliveryTimeout,
+			Transport:     defaultTr,
+			CheckRedirect: checkRedirect,
+		}
+	} else {
+		if client.Transport == nil {
+			client.Transport = defaultTr
+		}
+		if client.CheckRedirect == nil {
+			client.CheckRedirect = checkRedirect
+		}
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -222,30 +264,36 @@ func defaultCryptoRandJitter(n int64) int64 {
 // urlQueryRegex menangkap query parameter pada URL dalam pesan teks.
 var urlQueryRegex = regexp.MustCompile(`(\?|&)[^ \t\r\n"'<>()]+`)
 
-// SanitizeErrorMessage menyaring pesan error agar tidak membocorkan query parameter URL atau rahasia.
+// urlInTextRegex menangkap URL berprotokol http atau https dalam teks pesan error.
+var urlInTextRegex = regexp.MustCompile(`https?://[^\s"'<>()]+`)
+
+// SanitizeErrorMessage menyaring pesan error agar tidak membocorkan query parameter URL atau userinfo (kredensial).
 //
-// Aturan 9: URL webhook bisa memuat token atau secret di query string; jangan pernah
-// menulis error mentah klien HTTP ke basis data.
+// Aturan 9: URL webhook bisa memuat token atau secret di query string atau kredensial userinfo;
+// jangan pernah menulis error mentah klien HTTP ke basis data tanpa disanitasi.
 func SanitizeErrorMessage(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	// Ganti query parameter URL dengan [TERSEMBUNYI]
-	clean := urlQueryRegex.ReplaceAllString(raw, "?[TERSEMBUNYI]")
 
-	// Jika ada URL eksplisit, bersihkan query-nya
-	if strings.Contains(clean, "http://") || strings.Contains(clean, "https://") {
-		parts := strings.Fields(clean)
-		for i, p := range parts {
-			if strings.HasPrefix(p, "http://") || strings.HasPrefix(p, "https://") {
-				if u, err := url.Parse(p); err == nil {
-					u.RawQuery = ""
-					parts[i] = u.String()
-				}
-			}
+	// Ganti semua kemunculan URL dengan representasi tersanitasi (tanpa query dan dengan userinfo tersamarkan lewat u.Redacted())
+	clean := urlInTextRegex.ReplaceAllStringFunc(raw, func(rawURL string) string {
+		suffix := ""
+		trimmed := rawURL
+		for len(trimmed) > 0 && (strings.HasSuffix(trimmed, ":") || strings.HasSuffix(trimmed, ",") || strings.HasSuffix(trimmed, ".")) {
+			suffix = trimmed[len(trimmed)-1:] + suffix
+			trimmed = trimmed[:len(trimmed)-1]
 		}
-		clean = strings.Join(parts, " ")
-	}
+		u, err := url.Parse(trimmed)
+		if err != nil {
+			return "[URL_TIDAK_SAH]" + suffix
+		}
+		u.RawQuery = ""
+		return u.Redacted() + suffix
+	})
+
+	// Jaring pengaman tambahan untuk query parameter sisa
+	clean = urlQueryRegex.ReplaceAllString(clean, "?[TERSEMBUNYI]")
 
 	// Potong agar panjang pesan wajar dan tidak memenuhi kolom basis data
 	const maxLen = 400

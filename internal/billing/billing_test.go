@@ -39,6 +39,17 @@ func (s *sumber) MarkAlerted(_ context.Context, id string) (bool, error) {
 	return s.tandaiOK, s.tandaiErr
 }
 
+func (s *sumber) MarkThresholdAlerted(ctx context.Context, id string) (bool, error) {
+	return s.MarkAlerted(ctx, id)
+}
+
+func (s *sumber) MarkExceededAlerted(_ context.Context, id string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ditandai = append(s.ditandai, id+":exceeded")
+	return s.tandaiOK, s.tandaiErr
+}
+
 func (s *sumber) jumlahDibaca() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -291,4 +302,53 @@ func TestAnnounceEnqueueWebhookEvents(t *testing.T) {
 	if queue.events[1] != "budget.exceeded" {
 		t.Errorf("event 1 = %s, mau budget.exceeded", queue.events[1])
 	}
+}
+
+// TestPemisahanPeringatanThresholdDanExceeded memverifikasi bahwa sebuah anggaran yang
+// telah menerima notifikasi budget.threshold tetap dapat memicu event budget.exceeded
+// ketika pemakaiannya menembus 100% dari batas limit.
+func TestPemisahanPeringatanThresholdDanExceeded(t *testing.T) {
+	b := anggaran("b-shared", policy.ScopeGlobal, "", "100", "85", nil)
+	src := &sumber{
+		budgets:  []*policy.Budget{b},
+		tandaiOK: true,
+	}
+
+	queue := &antreanWebhookUji{}
+	e := NewEnforcer(src, nil, WithWebhookEnqueuer(queue))
+
+	// Tahap 1: Pemakaian 85% memicu budget.threshold
+	v1 := e.Check(context.Background(), nil)
+	if len(v1.Alerts) != 1 {
+		t.Fatalf("Tahap 1: diharapkan 1 alert, didapat %d", len(v1.Alerts))
+	}
+	e.Announce(context.Background(), v1.Alerts)
+
+	queue.mu.Lock()
+	if len(queue.events) != 1 || queue.events[0] != "budget.threshold" {
+		t.Fatalf("Tahap 1: event yang diantrekan salah: %v", queue.events)
+	}
+	queue.mu.Unlock()
+
+	// Simulasi DB: setelah threshold terkirim, alerted_at sudah terisi
+	now := time.Now()
+	b.AlertedAt = &now
+	// Pemakaian bertambah menjadi 105% (melampaui limit 100)
+	b.SpentUSD = upstream.MustParseUSD("105")
+
+	// Tahap 2: Pemakaian 105% WAJIB memicu budget.exceeded meskipun alerted_at sudah terisi
+	v2 := e.Check(context.Background(), nil)
+	if len(v2.Alerts) != 1 {
+		t.Fatalf("Tahap 2: diharapkan 1 alert untuk budget.exceeded, didapat %d", len(v2.Alerts))
+	}
+	e.Announce(context.Background(), v2.Alerts)
+
+	queue.mu.Lock()
+	if len(queue.events) != 2 {
+		t.Fatalf("Tahap 2: total event seharusnya 2, didapat %d (%v)", len(queue.events), queue.events)
+	}
+	if queue.events[1] != "budget.exceeded" {
+		t.Errorf("Tahap 2: event kedua seharusnya budget.exceeded, didapat %s", queue.events[1])
+	}
+	queue.mu.Unlock()
 }

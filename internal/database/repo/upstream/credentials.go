@@ -64,6 +64,11 @@ func NewCredentialRepo(q repo.Querier, cipher *security.Cipher) (*CredentialRepo
 	return &CredentialRepo{q: q, cipher: cipher}, nil
 }
 
+// WithQuerier membuat salinan CredentialRepo yang berjalan di atas Querier baru (misal transaksi pgx.Tx).
+func (r *CredentialRepo) WithQuerier(q repo.Querier) *CredentialRepo {
+	return &CredentialRepo{q: q, cipher: r.cipher}
+}
+
 // ActiveKeyID mengembalikan pengenal kunci enkripsi yang sedang aktif. Baris yang
 // encryption_key_id-nya berbeda masih memakai kunci lama dan perlu diputar.
 func (r *CredentialRepo) ActiveKeyID() string { return r.cipher.KeyID() }
@@ -277,6 +282,22 @@ func (r *CredentialRepo) SetEnabled(ctx context.Context, id string, enabled bool
 	return meta, nil
 }
 
+// SetEnabledOfProvider mengubah status kredensial yang dipastikan milik provider tertentu.
+func (r *CredentialRepo) SetEnabledOfProvider(ctx context.Context, providerID, credID string, enabled bool) (*CredentialMeta, error) {
+	const op = "mengubah status kredensial provider bersarang"
+	if !idOK(providerID) || !idOK(credID) {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	meta, err := scanCredential(r.q.QueryRow(ctx, `
+		update provider_credentials set enabled = $3 where id = $1 and provider_id = $2
+		returning `+credentialColumns, credID, providerID, enabled))
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return meta, nil
+}
+
 // Delete menghapus kredensial.
 func (r *CredentialRepo) Delete(ctx context.Context, id string) error {
 	const op = "menghapus kredensial provider"
@@ -285,6 +306,24 @@ func (r *CredentialRepo) Delete(ctx context.Context, id string) error {
 	}
 
 	tag, err := r.q.Exec(ctx, `delete from provider_credentials where id = $1`, id)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	return nil
+}
+
+// DeleteOfProvider menghapus kredensial yang dipastikan milik provider tertentu.
+// Memastikan integritas hierarki sumber daya bersarang /providers/{id}/credentials/{cred_id}.
+func (r *CredentialRepo) DeleteOfProvider(ctx context.Context, providerID, credID string) error {
+	const op = "menghapus kredensial provider bersarang"
+	if !idOK(providerID) || !idOK(credID) {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	tag, err := r.q.Exec(ctx, `delete from provider_credentials where id = $1 and provider_id = $2`, credID, providerID)
 	if err != nil {
 		return repo.Err(op, err)
 	}

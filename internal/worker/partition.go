@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 )
 
 // PartitionMaintainerJob memastikan partisi bulanan masa depan selalu tersedia dan
@@ -37,24 +39,26 @@ func (p *PartitionMaintainerJob) Name() string { return "partition_maintainer" }
 func (p *PartitionMaintainerJob) Run(ctx context.Context) error {
 	unlock, ok, err := TryAdvisoryLock(ctx, p.pool, LockPartition)
 	if err != nil {
-		return fmt.Errorf("advisory lock partition: %w", err)
+		return repo.Err("advisory lock partition", err)
 	}
 	if !ok {
-		return nil
+		return ErrJobSkipped
 	}
 	defer unlock()
 
 	tables := []string{"requests", "request_events", "request_payloads", "usage_hourly"}
 	now := time.Now().UTC()
 
-	// 1. Buat partisi untuk bulan ini, bulan depan, dan 2 bulan ke depan
-	for m := 0; m <= 2; m++ {
-		targetDate := now.AddDate(0, m, 0)
+	// 1. Buat partisi untuk bulan ini, bulan depan, dan 2 bulan ke depan.
+	// Ratakan ke hari ke-1 awal bulan sebelum penambahan bulan untuk mencegah normalisasi tanggal meluap
+	// (misal 31 Januari + 1 bulan di Go menjadi 3 Maret bila tidak diratakan ke awal bulan).
+	partitionMonths := CalculatePartitionMonths(now, 2)
+	for _, targetDate := range partitionMonths {
 		for _, table := range tables {
 			var createdPart string
 			err := p.pool.QueryRow(ctx, "select create_monthly_partition($1, $2::date)", table, targetDate).Scan(&createdPart)
 			if err != nil {
-				return fmt.Errorf("membuat partisi %s untuk %s: %w", table, targetDate.Format("2006-01"), err)
+				return repo.Err(fmt.Sprintf("membuat partisi %s untuk %s", table, targetDate.Format("2006-01")), err)
 			}
 			p.logger.DebugContext(ctx, "partisi bulanan siap", "tabel", table, "partisi", createdPart)
 		}
@@ -77,4 +81,18 @@ func (p *PartitionMaintainerJob) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// CalculatePartitionMonths menghitung awal bulan (tanggal 1) untuk n bulan ke depan.
+//
+// Tanggal selalu diratakan ke hari ke-1 bulan berjalan sebelum penambahan bulan.
+// Tanpa perataan ini, pemanggilan pada tanggal 31 Januari akan dinormalkan Go menjadi
+// 3 Maret (karena 31 Februari meluap), sehingga partisi bulan Februari terlewatkan secara diam-diam.
+func CalculatePartitionMonths(now time.Time, count int) []time.Time {
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	dates := make([]time.Time, 0, count+1)
+	for m := 0; m <= count; m++ {
+		dates = append(dates, startOfMonth.AddDate(0, m, 0))
+	}
+	return dates
 }

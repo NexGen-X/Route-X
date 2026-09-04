@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -18,6 +19,33 @@ import (
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
+
+// authorizeProviderAccess memeriksa izin akses terhadap provider.
+//
+// Aturan Keamanan BYOK: Provider dengan is_byok = true hanya boleh diakses oleh
+// pemiliknya (owner_user_id == principal.User.ID) atau Super Admin. Bila bukan pemiliknya,
+// fungsi mengembalikan repo.ErrNotFound agar keberadaan ID provider milik penyewa lain tidak bocor.
+func (h *Handlers) authorizeProviderAccess(ctx context.Context, providerID string) (*upstream.Provider, error) {
+	p, err := h.providerRepo.Get(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+	if !p.IsBYOK {
+		return p, nil
+	}
+
+	principal, ok := auth.PrincipalFrom(ctx)
+	if !ok || principal == nil {
+		return nil, repo.ErrNotFound
+	}
+	if slices.Contains(principal.Roles, seed.RoleSuperAdmin) {
+		return p, nil
+	}
+	if p.OwnerUserID == nil || *p.OwnerUserID != principal.User.ID {
+		return nil, repo.ErrNotFound
+	}
+	return p, nil
+}
 
 func (h *Handlers) upstreamsRoutes(r chi.Router) {
 	// 1. Providers
@@ -90,6 +118,21 @@ func (h *Handlers) listProviders(w http.ResponseWriter, r *http.Request) {
 		en := s == "true"
 		filter.Enabled = &en
 	}
+	if s := r.URL.Query().Get("is_byok"); s != "" {
+		byok := s == "true"
+		filter.IsBYOK = &byok
+	}
+	if s := r.URL.Query().Get("owner_user_id"); s != "" {
+		filter.OwnerUserID = s
+	}
+
+	// Isolasi BYOK: Pengguna non-superadmin hanya dapat melihat provider publik
+	// atau provider BYOK miliknya sendiri.
+	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
+		if !slices.Contains(p.Roles, seed.RoleSuperAdmin) {
+			filter.AccessibleByUserID = p.User.ID
+		}
+	}
 
 	page := repo.Page{
 		Limit:  limit,
@@ -117,7 +160,7 @@ func (h *Handlers) getProvider(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	p, err := h.providerRepo.Get(ctx, id)
+	p, err := h.authorizeProviderAccess(ctx, id)
 	if err != nil {
 		mapRepoError(w, r, err, "provider")
 		return
@@ -168,19 +211,33 @@ func (h *Handlers) createProvider(w http.ResponseWriter, r *http.Request) {
 		Metadata:      req.Metadata,
 	}
 
-	p, err := h.providerRepo.Create(ctx, params)
+	var p *upstream.Provider
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRepo := h.providerRepo.WithQuerier(q)
+		var err error
+		p, err = txRepo.Create(ctx, params)
+		if err != nil {
+			return err
+		}
+		return h.writeAuditTx(ctx, q, r, "create", "provider", p.ID, map[string]any{"name": p.Name})
+	})
 	if err != nil {
 		mapRepoError(w, r, err, "provider")
 		return
 	}
 
-	h.writeAudit(ctx, r, "create", "provider", p.ID, map[string]any{"name": p.Name})
 	_ = h.respond(w, r, http.StatusCreated, toProviderDTO(p))
 }
 
 func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
+
+	// Isolasi BYOK: pastikan pemanggil adalah pemilik provider atau Super Admin
+	if _, err := h.authorizeProviderAccess(ctx, id); err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
 
 	var req createProviderReq
 	if err := decodeJSON(r, &req); err != nil {
@@ -220,13 +277,21 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	params.Metadata = req.Metadata
 
-	p, err := h.providerRepo.Update(ctx, id, params)
+	var p *upstream.Provider
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRepo := h.providerRepo.WithQuerier(q)
+		var err error
+		p, err = txRepo.Update(ctx, id, params)
+		if err != nil {
+			return err
+		}
+		return h.writeAuditTx(ctx, q, r, "update", "provider", p.ID, map[string]any{"name": p.Name})
+	})
 	if err != nil {
 		mapRepoError(w, r, err, "provider")
 		return
 	}
 
-	h.writeAudit(ctx, r, "update", "provider", p.ID, map[string]any{"name": p.Name})
 	_ = h.respond(w, r, http.StatusOK, toProviderDTO(p))
 }
 
@@ -234,18 +299,36 @@ func (h *Handlers) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	if err := h.providerRepo.Delete(ctx, id); err != nil {
+	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
+	if _, err := h.authorizeProviderAccess(ctx, id); err != nil {
 		mapRepoError(w, r, err, "provider")
 		return
 	}
 
-	h.writeAudit(ctx, r, "delete", "provider", id, nil)
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRepo := h.providerRepo.WithQuerier(q)
+		if err := txRepo.Delete(ctx, id); err != nil {
+			return err
+		}
+		return h.writeAuditTx(ctx, q, r, "delete", "provider", id, nil)
+	})
+	if err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
+
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleProvider(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
+
+	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
+	if _, err := h.authorizeProviderAccess(ctx, id); err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
 
 	var req struct {
 		Enabled bool `json:"enabled"`
@@ -255,19 +338,33 @@ func (h *Handlers) toggleProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := h.providerRepo.SetEnabled(ctx, id, req.Enabled)
+	var p *upstream.Provider
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRepo := h.providerRepo.WithQuerier(q)
+		var err error
+		p, err = txRepo.SetEnabled(ctx, id, req.Enabled)
+		if err != nil {
+			return err
+		}
+		return h.writeAuditTx(ctx, q, r, "toggle", "provider", id, map[string]any{"enabled": req.Enabled})
+	})
 	if err != nil {
 		mapRepoError(w, r, err, "provider")
 		return
 	}
 
-	h.writeAudit(ctx, r, "toggle", "provider", id, map[string]any{"enabled": req.Enabled})
 	_ = h.respond(w, r, http.StatusOK, toProviderDTO(p))
 }
 
 func (h *Handlers) listProviderHealthChecks(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
+
+	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
+	if _, err := h.authorizeProviderAccess(ctx, id); err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
 
 	page := repo.Page{
 		Limit:  repo.DefaultPageLimit,
@@ -295,7 +392,8 @@ func (h *Handlers) probeProvider(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	p, err := h.providerRepo.Get(ctx, id)
+	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
+	p, err := h.authorizeProviderAccess(ctx, id)
 	if err != nil {
 		mapRepoError(w, r, err, "provider")
 		return
@@ -342,6 +440,13 @@ func (h *Handlers) probeProvider(w http.ResponseWriter, r *http.Request) {
 		ErrorMessage: sanitizedErr,
 	})
 
+	// 5.8: Tulis catatan audit untuk probe provider karena memicu panggilan jaringan keluar nyata
+	h.writeAudit(ctx, r, "probe", "provider", id, map[string]any{
+		"status":     status,
+		"latency_ms": latMS,
+		"healthy":    result.Healthy,
+	})
+
 	_ = h.respond(w, r, http.StatusOK, ProbeProviderResponse{
 		Status:    status,
 		LatencyMS: latMS,
@@ -356,6 +461,12 @@ func (h *Handlers) probeProvider(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) listCredentials(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
+
+	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
+	if _, err := h.authorizeProviderAccess(ctx, id); err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
 
 	items, err := h.credentialRepo.List(ctx, id)
 	if err != nil {
@@ -383,6 +494,12 @@ func (h *Handlers) createCredential(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	providerID := chi.URLParam(r, "id")
 
+	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
+	if _, err := h.authorizeProviderAccess(ctx, providerID); err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
+
 	var req createCredentialReq
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
@@ -408,38 +525,67 @@ func (h *Handlers) createCredential(w http.ResponseWriter, r *http.Request) {
 		actorID = &p.User.ID
 	}
 
-	cred, err := h.credentialRepo.Create(ctx, upstream.CreateCredentialParams{
-		ProviderID: providerID,
-		Label:      req.Label,
-		Secret:     security.Secret(req.APIKey),
-		ExpiresAt:  exp,
-		CreatedBy:  actorID,
+	var cred *upstream.CredentialMeta
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRepo := h.credentialRepo.WithQuerier(q)
+		var err error
+		cred, err = txRepo.Create(ctx, upstream.CreateCredentialParams{
+			ProviderID: providerID,
+			Label:      req.Label,
+			Secret:     security.Secret(req.APIKey),
+			ExpiresAt:  exp,
+			CreatedBy:  actorID,
+		})
+		if err != nil {
+			return err
+		}
+		return h.writeAuditTx(ctx, q, r, "create", "credential", cred.ID, map[string]any{"provider_id": providerID, "label": cred.Label})
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "kredensial")
 		return
 	}
 
-	h.writeAudit(ctx, r, "create", "credential", cred.ID, map[string]any{"provider_id": providerID, "label": cred.Label})
 	_ = h.respond(w, r, http.StatusCreated, toCredentialMetaDTO(cred))
 }
 
 func (h *Handlers) deleteCredential(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	providerID := chi.URLParam(r, "id")
 	credID := chi.URLParam(r, "cred_id")
 
-	if err := h.credentialRepo.Delete(ctx, credID); err != nil {
+	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
+	if _, err := h.authorizeProviderAccess(ctx, providerID); err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
+
+	// 5.1 & 5.8: Hapus kredensial bersyarat provider_id dan lakukan audit log di dalam transaksi yang sama
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRepo := h.credentialRepo.WithQuerier(q)
+		if err := txRepo.DeleteOfProvider(ctx, providerID, credID); err != nil {
+			return err
+		}
+		return h.writeAuditTx(ctx, q, r, "delete", "credential", credID, map[string]any{"provider_id": providerID})
+	})
+	if err != nil {
 		mapRepoError(w, r, err, "kredensial")
 		return
 	}
 
-	h.writeAudit(ctx, r, "delete", "credential", credID, nil)
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleCredential(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	providerID := chi.URLParam(r, "id")
 	credID := chi.URLParam(r, "cred_id")
+
+	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
+	if _, err := h.authorizeProviderAccess(ctx, providerID); err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
 
 	var req struct {
 		Enabled bool `json:"enabled"`
@@ -449,13 +595,22 @@ func (h *Handlers) toggleCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cred, err := h.credentialRepo.SetEnabled(ctx, credID, req.Enabled)
+	// 5.1 & 5.8: Modifikasi status kredensial bersyarat provider_id dan lakukan audit log di dalam transaksi
+	var cred *upstream.CredentialMeta
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRepo := h.credentialRepo.WithQuerier(q)
+		var err error
+		cred, err = txRepo.SetEnabledOfProvider(ctx, providerID, credID, req.Enabled)
+		if err != nil {
+			return err
+		}
+		return h.writeAuditTx(ctx, q, r, "toggle", "credential", credID, map[string]any{"provider_id": providerID, "enabled": req.Enabled})
+	})
 	if err != nil {
 		mapRepoError(w, r, err, "kredensial")
 		return
 	}
 
-	h.writeAudit(ctx, r, "toggle", "credential", credID, map[string]any{"enabled": req.Enabled})
 	_ = h.respond(w, r, http.StatusOK, toCredentialMetaDTO(cred))
 }
 

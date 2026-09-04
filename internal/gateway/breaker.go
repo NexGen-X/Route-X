@@ -11,6 +11,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/cache"
@@ -531,6 +532,8 @@ type Breaker struct {
 	mu            sync.RWMutex
 	memo          map[string]memoEntry
 	onStateChange StateChangeListener
+	wg            sync.WaitGroup
+	isClosed      atomic.Bool
 }
 
 // memoEntry adalah satu keputusan yang di-cache di memori proses.
@@ -698,11 +701,46 @@ func (b *Breaker) Record(ctx context.Context, providerID, model string, sukses b
 		b.mu.RLock()
 		listener := b.onStateChange
 		b.mu.RUnlock()
-		if listener != nil {
-			go listener(context.WithoutCancel(ctx), providerID, model, state, total, failures)
+		if listener != nil && !b.isClosed.Load() {
+			b.wg.Add(1)
+			go func() {
+				defer b.wg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						b.log(ctx).ErrorContext(ctx, "panic tertangkap pada circuit breaker state listener",
+							"provider", providerID,
+							"model", model,
+							"panic", fmt.Sprint(r),
+						)
+					}
+				}()
+				listener(context.WithoutCancel(ctx), providerID, model, state, total, failures)
+			}()
 		}
 	}
 	return nil
+}
+
+// Close menandai breaker berhenti menerima eksekusi listener baru dan menunggu seluruh
+// goroutine listener yang sedang berjalan selesai sampai batas tenggat context.
+func (b *Breaker) Close(ctx context.Context) error {
+	if b == nil {
+		return nil
+	}
+	b.isClosed.Store(true)
+
+	done := make(chan struct{})
+	go func() {
+		b.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // State membaca state tanpa mengubah apa pun, untuk dashboard dan metrik.

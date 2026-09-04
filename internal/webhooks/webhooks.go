@@ -422,7 +422,10 @@ func (r *Repo) RecordFailure(
 	const op = "mencatat kegagalan pengiriman webhook"
 
 	status := StatusFailed
-	if attemptCount >= maxRetries {
+	// Sesuai definisi skema, max_retries adalah percobaan ulang SETELAH percobaan pertama,
+	// sehingga total percobaan adalah 1 + max_retries. Status beralih ke abandoned jika
+	// attemptCount sudah melampaui maxRetries.
+	if attemptCount > maxRetries {
 		status = StatusAbandoned
 	}
 

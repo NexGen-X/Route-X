@@ -31,6 +31,7 @@ type Budget struct {
 	ActionOnExceed    string
 	AlertThresholdPct int
 	AlertedAt         *time.Time
+	ExceededAlertedAt *time.Time
 
 	Enabled   bool
 	CreatedAt time.Time
@@ -51,14 +52,32 @@ func (b *Budget) Exceeded() bool { return b.SpentUSD >= b.LimitUSD }
 // mematikan produksi milik operator yang justru memilih untuk tidak diblokir.
 func (b *Budget) Blocks() bool { return b.Enabled && b.ActionOnExceed == ActionBlock && b.Exceeded() }
 
-// ShouldAlert melaporkan apakah ambang peringatan sudah terlewati dan belum diberitahukan.
-func (b *Budget) ShouldAlert() bool {
-	if !b.Enabled || b.AlertedAt != nil || b.LimitUSD <= 0 {
+// ShouldAlertThreshold melaporkan apakah ambang peringatan sudah terlewati dan belum diberitahukan.
+// Hanya berlaku sebelum batas limit terlampaui (b.SpentUSD < b.LimitUSD) dan AlertThresholdPct > 0.
+func (b *Budget) ShouldAlertThreshold() bool {
+	if !b.Enabled || b.AlertedAt != nil || b.LimitUSD <= 0 || b.AlertThresholdPct <= 0 {
+		return false
+	}
+	if b.Exceeded() {
 		return false
 	}
 	// Perbandingan dilakukan dengan bilangan bulat: spent * 100 >= limit * pct. Membagi
 	// lebih dulu akan memaksa floating point pada nilai uang, tepat yang dihindari tipe USD.
 	return int64(b.SpentUSD)*100 >= int64(b.LimitUSD)*int64(b.AlertThresholdPct)
+}
+
+// ShouldAlertExceeded melaporkan apakah batas anggaran sudah terlampaui dan belum diberitahukan.
+func (b *Budget) ShouldAlertExceeded() bool {
+	if !b.Enabled || b.ExceededAlertedAt != nil || b.LimitUSD <= 0 {
+		return false
+	}
+	return b.Exceeded()
+}
+
+// ShouldAlert melaporkan apakah ambang peringatan sudah terlewati dan belum diberitahukan.
+// Dipertahankan demi kompatibilitas balik pemanggil yang memeriksa ambang batas.
+func (b *Budget) ShouldAlert() bool {
+	return b.ShouldAlertThreshold()
 }
 
 // Remaining mengembalikan sisa anggaran, nol bila sudah terlampaui.
@@ -75,7 +94,7 @@ func (b *Budget) Remaining() upstream.USD {
 // dan satu-satunya yang bisa diurai tanpa kehilangan.
 const budgetColumns = `id::text, name, scope, coalesce(scope_id, ''), period,
 	limit_usd::text, spent_usd::text,
-	period_start, period_end, action_on_exceed, alert_threshold_pct, alerted_at, enabled,
+	period_start, period_end, action_on_exceed, alert_threshold_pct, alerted_at, exceeded_alerted_at, enabled,
 	created_at, updated_at`
 
 // scanBudget membaca satu baris budgets sesuai budgetColumns.
@@ -86,7 +105,7 @@ func scanBudget(s interface{ Scan(...any) error }) (*Budget, error) {
 	)
 	err := s.Scan(&b.ID, &b.Name, &b.Scope, &b.ScopeID, &b.Period,
 		&limitText, &spentText,
-		&b.PeriodStart, &b.PeriodEnd, &b.ActionOnExceed, &b.AlertThresholdPct, &b.AlertedAt, &b.Enabled,
+		&b.PeriodStart, &b.PeriodEnd, &b.ActionOnExceed, &b.AlertThresholdPct, &b.AlertedAt, &b.ExceededAlertedAt, &b.Enabled,
 		&b.CreatedAt, &b.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -273,7 +292,7 @@ func (r *Repo) ResetPeriod(ctx context.Context, id string, start time.Time, end 
 
 	row := r.q.QueryRow(ctx, `
 		update budgets
-		set spent_usd = 0, period_start = $2, period_end = $3, alerted_at = null, updated_at = now()
+		set spent_usd = 0, period_start = $2, period_end = $3, alerted_at = null, exceeded_alerted_at = null, updated_at = now()
 		where id = $1
 		returning `+budgetColumns, id, start, end)
 
@@ -298,7 +317,7 @@ func (r *Repo) ResetPeriodWithSpend(ctx context.Context, id string, start time.T
 
 	row := r.q.QueryRow(ctx, `
 		update budgets
-		set spent_usd = $2::numeric, period_start = $3, period_end = $4, alerted_at = null, updated_at = now()
+		set spent_usd = $2::numeric, period_start = $3, period_end = $4, alerted_at = null, exceeded_alerted_at = null, updated_at = now()
 		where id = $1
 		returning `+budgetColumns, id, spent.Decimal(), start, end)
 
@@ -340,13 +359,13 @@ func (r *Repo) CalculateSpend(ctx context.Context, scope, scopeID string, from t
 	return usd, nil
 }
 
-// MarkAlerted menandai bahwa peringatan ambang sudah dikirim.
+// MarkThresholdAlerted menandai bahwa peringatan ambang batas (budget.threshold) sudah dikirim.
 //
 // Bersyarat pada alerted_at yang masih NULL, sehingga dua instance yang memeriksa ambang
 // pada saat yang sama hanya menghasilkan satu notifikasi. false berarti instance lain sudah
 // mengirimkannya.
-func (r *Repo) MarkAlerted(ctx context.Context, id string) (bool, error) {
-	const op = "menandai peringatan anggaran"
+func (r *Repo) MarkThresholdAlerted(ctx context.Context, id string) (bool, error) {
+	const op = "menandai peringatan ambang anggaran"
 	if !idOK(id) {
 		return false, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
@@ -357,6 +376,29 @@ func (r *Repo) MarkAlerted(ctx context.Context, id string) (bool, error) {
 		return false, repo.Err(op, err)
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+// MarkExceededAlerted menandai bahwa peringatan batas terlampaui (budget.exceeded) sudah dikirim.
+//
+// Bersyarat pada exceeded_alerted_at yang masih NULL, sehingga notifikasi budget.exceeded
+// terkirim tepat satu kali walaupun peringatan ambang (budget.threshold) telah dikirim sebelumnya.
+func (r *Repo) MarkExceededAlerted(ctx context.Context, id string) (bool, error) {
+	const op = "menandai peringatan batas terlampaui anggaran"
+	if !idOK(id) {
+		return false, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	tag, err := r.q.Exec(ctx,
+		`update budgets set exceeded_alerted_at = now(), updated_at = now() where id = $1 and exceeded_alerted_at is null`, id)
+	if err != nil {
+		return false, repo.Err(op, err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// MarkAlerted menandai bahwa peringatan ambang sudah dikirim (kompatibilitas balik).
+func (r *Repo) MarkAlerted(ctx context.Context, id string) (bool, error) {
+	return r.MarkThresholdAlerted(ctx, id)
 }
 
 // SetBudgetEnabled menyalakan atau mematikan satu anggaran.

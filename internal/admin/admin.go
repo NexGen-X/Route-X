@@ -141,12 +141,10 @@ func (h Handlers) String() string       { return "admin.Handlers{[REDACTED]}" }
 func (h Handlers) GoString() string     { return h.String() }
 func (h Handlers) LogValue() slog.Value { return slog.StringValue(h.String()) }
 
-// writeAudit mencatat aktivitas administratif ke audit_logs dengan identitas aktor dari session.
-func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, resourceType, resourceID string, metadata any) {
-	if h.auditRepo == nil {
-		return
-	}
-
+// writeAuditTx mencatat satu aksi audit di dalam transaksi yang sedang berjalan (atau pool).
+// Memastikan integritas ACID: bila transaksi dibatalkan (rollback), catatan audit ikut
+// dibatalkan agar tidak meninggalkan jejak mutasi yang sebenarnya gagal.
+func (h *Handlers) writeAuditTx(ctx context.Context, q repo.Querier, r *http.Request, action, resourceType, resourceID string, metadata any) error {
 	var actor identity.Actor
 	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
 		role := ""
@@ -191,7 +189,12 @@ func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, reso
 		Metadata:     metaMap,
 	}
 
-	if err := h.auditRepo.Write(ctx, event); err != nil {
+	audit := identity.NewAudit(q)
+	return audit.Write(ctx, event)
+}
+
+func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, resourceType, resourceID string, metadata any) {
+	if err := h.writeAuditTx(ctx, h.pool, r, action, resourceType, resourceID, metadata); err != nil {
 		h.logger.LogAttrs(ctx, slog.LevelError, "gagal menulis audit log",
 			slog.String("action", action),
 			slog.String("resource_type", resourceType),

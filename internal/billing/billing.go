@@ -41,6 +41,8 @@ const defaultTTL = 5 * time.Second
 type Source interface {
 	ActiveBudgets(ctx context.Context) ([]*policy.Budget, error)
 	MarkAlerted(ctx context.Context, id string) (bool, error)
+	MarkThresholdAlerted(ctx context.Context, id string) (bool, error)
+	MarkExceededAlerted(ctx context.Context, id string) (bool, error)
 }
 
 // Verdict adalah hasil pemeriksaan anggaran satu permintaan.
@@ -144,7 +146,7 @@ func (e *Enforcer) Check(ctx context.Context, targets []policy.Target) Verdict {
 
 	var v Verdict
 	periksa := func(b *policy.Budget) {
-		if b.ShouldAlert() || (b.AlertedAt == nil && b.LimitUSD > 0 && b.SpentUSD >= b.LimitUSD) {
+		if b.ShouldAlertThreshold() || b.ShouldAlertExceeded() {
 			v.Alerts = append(v.Alerts, b)
 		}
 		if !b.Blocks() {
@@ -169,67 +171,91 @@ func (e *Enforcer) Check(ctx context.Context, targets []policy.Target) Verdict {
 	return v
 }
 
-// Announce menandai anggaran yang melewati ambang sebagai sudah diberitahukan, dan mencatat
-// peringatannya ke log serta memproduksi webhook event budget.threshold / budget.exceeded.
+// Announce menandai anggaran yang melewati ambang atau batas sebagai sudah diberitahukan,
+// mencatat peringatan ke log, serta memproduksi webhook event budget.threshold dan budget.exceeded.
 //
-// Penandaannya bersyarat di database (alerted_at masih NULL), sehingga beberapa instance
-// yang memeriksa ambang bersamaan hanya menghasilkan satu peringatan.
+// Penandaan terpisah di database (alerted_at untuk ambang, exceeded_alerted_at untuk batas)
+// memastikan event budget.exceeded tetap terkirim saat anggaran habis, walaupun peringatan
+// budget.threshold telah terkirim sebelumnya saat menyentuh 80%.
 //
-// Kegagalannya tidak boleh menggagalkan permintaan: yang hilang adalah satu notifikasi.
+// Kegagalannya tidak boleh menggagalkan permintaan: yang hilang hanyalah satu notifikasi.
 func (e *Enforcer) Announce(ctx context.Context, budgets []*policy.Budget) {
 	if e == nil || e.source == nil {
 		return
 	}
 	for _, b := range budgets {
-		pertama, err := e.source.MarkAlerted(ctx, b.ID)
-		if err != nil {
-			e.logger.WarnContext(ctx, "penandaan peringatan anggaran gagal",
-				"anggaran", b.Name, "error", err)
-			continue
-		}
-		if !pertama {
-			continue
-		}
-		e.logger.WarnContext(ctx, "anggaran melewati ambang peringatan",
-			"anggaran", b.Name,
-			"cakupan", b.Scope,
-			"periode", b.Period,
-			"ambang_persen", b.AlertThresholdPct,
-			"terpakai_usd", b.SpentUSD.String(),
-			"batas_usd", b.LimitUSD.String())
+		// 1. Periksa dan kirim peringatan ambang batas (budget.threshold)
+		if b.ShouldAlertThreshold() {
+			pertama, err := e.source.MarkThresholdAlerted(ctx, b.ID)
+			if err != nil {
+				e.logger.WarnContext(ctx, "penandaan peringatan ambang anggaran gagal",
+					"anggaran", b.Name, "error", err)
+			} else if pertama {
+				e.logger.WarnContext(ctx, "anggaran melewati ambang peringatan",
+					"anggaran", b.Name,
+					"cakupan", b.Scope,
+					"periode", b.Period,
+					"ambang_persen", b.AlertThresholdPct,
+					"terpakai_usd", b.SpentUSD.String(),
+					"batas_usd", b.LimitUSD.String())
 
-		// Produksi event webhook Fase 10 (budget.threshold atau budget.exceeded).
-		if e.enqueuer != nil {
-			var event string
-			payload := map[string]any{
-				"budget_id":   b.ID,
-				"budget_name": b.Name,
-				"scope":       b.Scope,
-				"scope_id":    b.ScopeID,
-				"spent_usd":   b.SpentUSD.Decimal(),
-				"limit_usd":   b.LimitUSD.Decimal(),
-				"timestamp":   time.Now().UTC().Format(time.RFC3339),
-			}
-			if b.SpentUSD >= b.LimitUSD {
-				event = "budget.exceeded"
-				payload["action"] = b.ActionOnExceed
-			} else {
-				event = "budget.threshold"
-				if b.AlertThresholdPct > 0 {
-					payload["threshold_pct"] = b.AlertThresholdPct
+				if e.enqueuer != nil {
+					payload := map[string]any{
+						"budget_id":     b.ID,
+						"budget_name":   b.Name,
+						"scope":         b.Scope,
+						"scope_id":      b.ScopeID,
+						"spent_usd":     b.SpentUSD.Decimal(),
+						"limit_usd":     b.LimitUSD.Decimal(),
+						"timestamp":     time.Now().UTC().Format(time.RFC3339),
+						"event":         "budget.threshold",
+						"threshold_pct": b.AlertThresholdPct,
+					}
+					if _, err := e.enqueuer.Enqueue(ctx, "budget.threshold", payload); err != nil {
+						e.logger.WarnContext(ctx, "gagal memasukkan notifikasi budget.threshold ke antrean webhook",
+							"anggaran", b.Name, "error", err)
+					}
 				}
 			}
+		}
 
-			payload["event"] = event
-			if _, err := e.enqueuer.Enqueue(ctx, event, payload); err != nil {
-				e.logger.WarnContext(ctx, "gagal memasukkan notifikasi anggaran ke antrean webhook",
-					"anggaran", b.Name, "event", event, "error", err)
+		// 2. Periksa dan kirim peringatan batas anggaran terlampaui (budget.exceeded)
+		if b.ShouldAlertExceeded() {
+			pertama, err := e.source.MarkExceededAlerted(ctx, b.ID)
+			if err != nil {
+				e.logger.WarnContext(ctx, "penandaan peringatan batas terlampaui anggaran gagal",
+					"anggaran", b.Name, "error", err)
+			} else if pertama {
+				e.logger.WarnContext(ctx, "anggaran terlampaui",
+					"anggaran", b.Name,
+					"cakupan", b.Scope,
+					"periode", b.Period,
+					"terpakai_usd", b.SpentUSD.String(),
+					"batas_usd", b.LimitUSD.String(),
+					"tindakan", b.ActionOnExceed)
+
+				if e.enqueuer != nil {
+					payload := map[string]any{
+						"budget_id":   b.ID,
+						"budget_name": b.Name,
+						"scope":       b.Scope,
+						"scope_id":    b.ScopeID,
+						"spent_usd":   b.SpentUSD.Decimal(),
+						"limit_usd":   b.LimitUSD.Decimal(),
+						"timestamp":   time.Now().UTC().Format(time.RFC3339),
+						"event":       "budget.exceeded",
+						"action":      b.ActionOnExceed,
+					}
+					if _, err := e.enqueuer.Enqueue(ctx, "budget.exceeded", payload); err != nil {
+						e.logger.WarnContext(ctx, "gagal memasukkan notifikasi budget.exceeded ke antrean webhook",
+							"anggaran", b.Name, "error", err)
+					}
+				}
 			}
 		}
 	}
-	// Salinan di memori masih memuat alerted_at yang lama; membatalkannya di sini membuat
-	// pemeriksaan berikutnya membaca keadaan yang sudah ditandai alih-alih mengumpulkan
-	// peringatan yang sama sampai TTL habis.
+	// Salinan di memori dibatalkan agar pembacaan berikutnya memuat status alerted_at
+	// dan exceeded_alerted_at terbaru dari database.
 	e.Invalidate()
 }
 

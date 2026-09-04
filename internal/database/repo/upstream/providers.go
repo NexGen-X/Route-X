@@ -58,6 +58,11 @@ type ProviderRepo struct {
 // NewProviderRepo membuat ProviderRepo di atas pool maupun transaksi.
 func NewProviderRepo(q repo.Querier) *ProviderRepo { return &ProviderRepo{q: q} }
 
+// WithQuerier membuat salinan ProviderRepo yang berjalan di atas Querier baru (misal transaksi pgx.Tx).
+func (r *ProviderRepo) WithQuerier(q repo.Querier) *ProviderRepo {
+	return &ProviderRepo{q: q}
+}
+
 // providerColumns disatukan supaya setiap query menghasilkan bentuk baris yang sama.
 // Kolom uuid dibaca sebagai teks karena pengenal di API paket ini bertipe string.
 const providerColumns = `
@@ -314,6 +319,8 @@ type ProviderFilter struct {
 	IsBYOK *bool
 	// OwnerUserID hanya bermakna untuk provider BYOK.
 	OwnerUserID string
+	// AccessibleByUserID membatasi hasil ke provider bersama (non-BYOK) atau BYOK milik pengguna ini.
+	AccessibleByUserID string
 	// Search mencocokkan nama dan nama tampilan.
 	Search string
 }
@@ -350,6 +357,12 @@ func (r *ProviderRepo) List(ctx context.Context, f ProviderFilter, page repo.Pag
 			return nil, "", fmt.Errorf("%s: %w: owner_user_id bukan UUID", op, repo.ErrInvalidReference)
 		}
 		add("owner_user_id = $%d", f.OwnerUserID)
+	}
+	if f.AccessibleByUserID != "" {
+		if !idOK(f.AccessibleByUserID) {
+			return nil, "", fmt.Errorf("%s: %w: accessible_by_user_id bukan UUID", op, repo.ErrInvalidReference)
+		}
+		add("(not is_byok or owner_user_id = $%d::uuid)", f.AccessibleByUserID)
 	}
 	if f.Search != "" {
 		// Satu argumen dipakai dua kali, jadi kondisinya dirakit langsung.

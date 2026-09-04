@@ -2,12 +2,12 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 )
@@ -51,17 +51,17 @@ func (b *BudgetResetterJob) Name() string { return "budget_period_resetter" }
 func (b *BudgetResetterJob) Run(ctx context.Context) error {
 	unlock, ok, err := TryAdvisoryLock(ctx, b.pool, LockBudget)
 	if err != nil {
-		return fmt.Errorf("advisory lock budget reset: %w", err)
+		return repo.Err("advisory lock budget reset", err)
 	}
 	if !ok {
-		return nil
+		return ErrJobSkipped
 	}
 	defer unlock()
 
 	now := time.Now().UTC()
 	expired, err := b.repo.ExpiredBudgets(ctx, now)
 	if err != nil {
-		return fmt.Errorf("mengambil anggaran kedaluwarsa: %w", err)
+		return repo.Err("mengambil anggaran kedaluwarsa", err)
 	}
 
 	for _, bg := range expired {
@@ -106,12 +106,12 @@ func (b *BudgetResetterJob) resetOne(ctx context.Context, bg *policy.Budget, now
 	// Hitung ulang pemakaian riil dari requests.cost_usd (skala 8 desimal)
 	spend, err := b.repo.CalculateSpend(ctx, bg.Scope, bg.ScopeID, newStart, &newEnd)
 	if err != nil {
-		return fmt.Errorf("menghitung ulang pemakaian: %w", err)
+		return repo.Err("menghitung ulang pemakaian", err)
 	}
 
 	updated, err := b.repo.ResetPeriodWithSpend(ctx, bg.ID, newStart, &newEnd, spend)
 	if err != nil {
-		return fmt.Errorf("mereset periode di database: %w", err)
+		return repo.Err("mereset periode di database", err)
 	}
 
 	b.logger.InfoContext(ctx, "periode anggaran berhasil dimajukan",

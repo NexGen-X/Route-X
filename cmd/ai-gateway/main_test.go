@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/config"
 	"github.com/NexGen-X/Route-X/internal/health"
 	"github.com/NexGen-X/Route-X/internal/observability"
@@ -35,6 +36,17 @@ func newTestRouter(t *testing.T, cfg *config.Config, checkers ...health.Checker)
 	r, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), nil, nil, nil, checkers...)
 	if err != nil {
 		t.Fatalf("buildRouter: %v", err)
+	}
+	return r
+}
+
+// newTestRouterWithAuth menyusun router dengan auth.Service aktif.
+func newTestRouterWithAuth(t *testing.T, cfg *config.Config, checkers ...health.Checker) http.Handler {
+	t.Helper()
+	authSvc := auth.NewService(nil, cfg, testLogger())
+	r, err := buildRouter(cfg, testLogger(), observability.NewMetrics(), authSvc, nil, nil, checkers...)
+	if err != nil {
+		t.Fatalf("buildRouter with auth: %v", err)
 	}
 	return r
 }
@@ -301,5 +313,30 @@ func TestDocsRouteMounted(t *testing.T) {
 	}
 	if !strings.Contains(recYAML.Body.String(), "openapi: 3.1.0") {
 		t.Errorf("/docs/openapi.yaml tidak memuat versi OpenAPI 3.1.0")
+	}
+}
+
+// TestMetricsAndDocsRequireAuthWhenAuthSvcEnabled memverifikasi bahwa endpoint /metrics
+// dan /docs dilindungi oleh autentikasi sesi admin saat auth.Service aktif.
+func TestMetricsAndDocsRequireAuthWhenAuthSvcEnabled(t *testing.T) {
+	cfg := testConfig(config.EnvDevelopment)
+	r := newTestRouterWithAuth(t, cfg)
+
+	// 1. /metrics tanpa sesi admin harus ditolak 401 Unauthorized
+	recMetrics := do(t, r, http.MethodGet, "/metrics")
+	if recMetrics.Code != http.StatusUnauthorized {
+		t.Errorf("status /metrics tanpa sesi = %d, mau 401", recMetrics.Code)
+	}
+
+	// 2. /docs tanpa sesi admin harus ditolak 401 Unauthorized
+	recDocs := do(t, r, http.MethodGet, "/docs")
+	if recDocs.Code != http.StatusUnauthorized {
+		t.Errorf("status /docs tanpa sesi = %d, mau 401", recDocs.Code)
+	}
+
+	// 3. /docs/openapi.yaml tanpa sesi admin harus ditolak 401 Unauthorized
+	recYAML := do(t, r, http.MethodGet, "/docs/openapi.yaml")
+	if recYAML.Code != http.StatusUnauthorized {
+		t.Errorf("status /docs/openapi.yaml tanpa sesi = %d, mau 401", recYAML.Code)
 	}
 }

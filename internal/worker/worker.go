@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/observability"
 )
 
@@ -39,6 +40,10 @@ const (
 	OutcomeSkipped = "skipped"
 )
 
+// ErrJobSkipped dikembalikan job ketika advisory lock sedang dipegang instance lain,
+// sehingga Supervisor dapat mencatat putaran tersebut sebagai OutcomeSkipped.
+var ErrJobSkipped = errors.New("worker: pekerjaan dilewati karena advisory lock sedang dipegang instance lain")
+
 // TryAdvisoryLock mencoba mendapatkan advisory lock PostgreSQL tingkat sesi.
 //
 // Menggunakan koneksi mandiri yang dipinjam dari pool (pool.Acquire). Bila berhasil, fungsi
@@ -51,14 +56,14 @@ func TryAdvisoryLock(ctx context.Context, pool *pgxpool.Pool, lockKey int64) (fu
 
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
-		return nil, false, fmt.Errorf("mengambil koneksi untuk advisory lock: %w", err)
+		return nil, false, repo.Err("mengambil koneksi untuk advisory lock", err)
 	}
 
 	var acquired bool
 	err = conn.QueryRow(ctx, "select pg_try_advisory_lock($1)", lockKey).Scan(&acquired)
 	if err != nil {
 		conn.Release()
-		return nil, false, fmt.Errorf("mengeksekusi pg_try_advisory_lock: %w", err)
+		return nil, false, repo.Err("mengeksekusi pg_try_advisory_lock", err)
 	}
 
 	if !acquired {
@@ -266,8 +271,9 @@ func (s *Supervisor) Start(ctx context.Context) {
 	}
 }
 
-// Stop menghentikan seluruh worker dengan tertib dan menunggu hingga semua putaran aktif selesai.
-func (s *Supervisor) Stop() {
+// Stop menghentikan seluruh worker dengan tertib dan menunggu hingga semua putaran aktif selesai
+// atau batas tenggat waktu context tercapai.
+func (s *Supervisor) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	cancel := s.cancel
 	s.cancel = nil
@@ -276,7 +282,19 @@ func (s *Supervisor) Stop() {
 	if cancel != nil {
 		cancel()
 	}
-	s.wg.Wait()
+
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // runLoop menjalankan perulangan satu job dengan penanganan panic dan pencatatan metrik.
@@ -331,6 +349,14 @@ func (s *Supervisor) executeOnce(ctx context.Context, st *jobRuntimeState) {
 			s.logger.ErrorContext(ctx, "panic tertangkap pada background worker",
 				"worker", name,
 				"panic", fmt.Sprint(r),
+				"durasi_ms", duration.Milliseconds(),
+			)
+		} else if errors.Is(runErr, ErrJobSkipped) {
+			outcome = OutcomeSkipped
+			lastStat = "skipped"
+			s.logger.DebugContext(ctx, "eksekusi background worker dilewati",
+				"worker", name,
+				"alasan", "advisory_lock_held_by_peer",
 				"durasi_ms", duration.Milliseconds(),
 			)
 		} else if runErr != nil {

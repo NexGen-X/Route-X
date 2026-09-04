@@ -60,6 +60,14 @@ func (s *sumberKebijakan) MarkAlerted(_ context.Context, id string) (bool, error
 	return true, nil
 }
 
+func (s *sumberKebijakan) MarkThresholdAlerted(ctx context.Context, id string) (bool, error) {
+	return s.MarkAlerted(ctx, id)
+}
+
+func (s *sumberKebijakan) MarkExceededAlerted(ctx context.Context, id string) (bool, error) {
+	return s.MarkAlerted(ctx, id)
+}
+
 func (s *sumberKebijakan) RecordEvalTimeout(context.Context, string) error { return nil }
 
 // limiterUji menyalakan Redis tiruan lalu menyambungkannya lewat jalur produksi.

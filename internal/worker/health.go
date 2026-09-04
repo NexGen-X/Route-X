@@ -2,13 +2,12 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/providers"
@@ -39,9 +38,6 @@ type HealthCheckerJob struct {
 	enqueuer webhooks.EnqueueSink
 	metrics  *observability.Metrics
 	logger   *slog.Logger
-
-	mu         sync.Mutex
-	lastStatus map[string]string
 }
 
 // NewHealthCheckerJob membuat instance baru HealthCheckerJob.
@@ -57,13 +53,12 @@ func NewHealthCheckerJob(
 		logger = slog.Default()
 	}
 	return &HealthCheckerJob{
-		pool:       pool,
-		source:     source,
-		factory:    factory,
-		enqueuer:   enqueuer,
-		metrics:    metrics,
-		logger:     logger,
-		lastStatus: make(map[string]string),
+		pool:     pool,
+		source:   source,
+		factory:  factory,
+		enqueuer: enqueuer,
+		metrics:  metrics,
+		logger:   logger,
 	}
 }
 
@@ -73,17 +68,17 @@ func (h *HealthCheckerJob) Name() string { return "provider_health_checker" }
 func (h *HealthCheckerJob) Run(ctx context.Context) error {
 	unlock, ok, err := TryAdvisoryLock(ctx, h.pool, LockHealth)
 	if err != nil {
-		return fmt.Errorf("advisory lock health check: %w", err)
+		return repo.Err("advisory lock health check", err)
 	}
 	if !ok {
-		// Instance lain sedang menjalankan health check, lewati putaran ini dengan tenang
-		return nil
+		// Instance lain sedang menjalankan health check, tandai putaran ini dilewati
+		return ErrJobSkipped
 	}
 	defer unlock()
 
 	list, err := h.source.ActiveProviders(ctx)
 	if err != nil {
-		return fmt.Errorf("mengambil daftar provider aktif: %w", err)
+		return repo.Err("mengambil daftar provider aktif", err)
 	}
 
 	for _, p := range list {
@@ -149,6 +144,15 @@ func (h *HealthCheckerJob) recordResult(ctx context.Context, p *upstream.Provide
 		ErrorMessage: sanitizedErr,
 	}
 
+	// Deteksi perpindahan status langsung dari keadaan sebelumnya di database (p.LastHealthStatus),
+	// bukan dari memory map lokal yang rentan desync antar instance dan hilang saat restart.
+	var prevStatus string
+	known := false
+	if p.LastHealthStatus != nil && *p.LastHealthStatus != "" {
+		prevStatus = *p.LastHealthStatus
+		known = true
+	}
+
 	if err := h.source.RecordHealth(ctx, p.ID, report); err != nil {
 		h.logger.WarnContext(ctx, "gagal mencatat hasil health check ke database",
 			"provider_id", p.ID, "provider_name", p.Name, "error", err)
@@ -163,12 +167,6 @@ func (h *HealthCheckerJob) recordResult(ctx context.Context, p *upstream.Provide
 		h.metrics.ProviderUp.WithLabelValues(p.Name).Set(upVal)
 		h.metrics.ProviderLatencyMS.WithLabelValues(p.Name).Set(float64(res.Latency.Milliseconds()))
 	}
-
-	// Deteksi perpindahan status untuk memproduksi event webhook
-	h.mu.Lock()
-	prevStatus, known := h.lastStatus[p.ID]
-	h.lastStatus[p.ID] = status
-	h.mu.Unlock()
 
 	// Hanya produksi event saat terjadi transisi konkret
 	if known && prevStatus != status && h.enqueuer != nil {
@@ -201,4 +199,6 @@ func (h *HealthCheckerJob) recordResult(ctx context.Context, p *upstream.Provide
 			}
 		}
 	}
+
+	p.LastHealthStatus = &status
 }

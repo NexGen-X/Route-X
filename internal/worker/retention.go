@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 )
 
 // WebhookRetentionCleaner mendefinisikan pembersihan retensi webhook.
@@ -73,10 +75,10 @@ func (w *RetentionWorker) Name() string { return "retention_cleaner" }
 func (w *RetentionWorker) Run(ctx context.Context) error {
 	unlock, ok, err := TryAdvisoryLock(ctx, w.pool, LockRetention)
 	if err != nil {
-		return fmt.Errorf("advisory lock retention: %w", err)
+		return repo.Err("advisory lock retention", err)
 	}
 	if !ok {
-		return nil
+		return ErrJobSkipped
 	}
 	defer unlock()
 
@@ -128,11 +130,12 @@ func (w *RetentionWorker) dropOldPartitions(ctx context.Context, parentTable str
 		parentTable,
 	)
 	if err != nil {
-		return fmt.Errorf("query partisi %s: %w", parentTable, err)
+		return repo.Err("query partisi "+parentTable, err)
 	}
 	defer rows.Close()
 
 	var toDrop []string
+	var unrolledPartitions []string
 	for rows.Next() {
 		var partName string
 		if err := rows.Scan(&partName); err != nil {
@@ -154,13 +157,36 @@ func (w *RetentionWorker) dropOldPartitions(ctx context.Context, parentTable str
 			continue
 		}
 
-		// Akhir rentang partisi bulanan adalah tanggal 1 bulan berikutnya
+		startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 		endDate := time.Date(year, time.Month(month+1), 1, 0, 0, 0, 0, time.UTC)
 
-		// HANYA drop jika SELURUH rentang partisi lebih tua dari cutoff
-		if endDate.Before(cutoff) {
-			toDrop = append(toDrop, partName)
+		// HANYA pertimbangkan drop jika SELURUH rentang partisi lebih tua dari cutoff
+		if !endDate.Before(cutoff) {
+			continue
 		}
+
+		// Aturan 5.6: Sinkronisasi Rollup & Retensi.
+		// Retensi WAJIB menolak membuang partisi requests yang jam-jamnya belum pernah ter-rollup
+		// ke usage_hourly, untuk mencegah lubang permanen pada data statistik lalu lintas.
+		if parentTable == "requests" {
+			var unrolled int
+			checkQuery := fmt.Sprintf(`
+				select 1 from %s r
+				where not exists (
+					select 1 from usage_hourly u
+					where u.bucket = date_trunc('hour', r.created_at, 'UTC')
+				) limit 1`, partName)
+			errCheck := w.pool.QueryRow(ctx, checkQuery).Scan(&unrolled)
+			if errCheck == nil {
+				w.logger.ErrorContext(ctx, "PENOLAKAN DROP PARTISI: terdapat data request yang belum ter-rollup ke usage_hourly",
+					"table", parentTable, "partition", partName,
+					"start", startDate.Format("2006-01-02"), "end", endDate.Format("2006-01-02"))
+				unrolledPartitions = append(unrolledPartitions, partName)
+				continue
+			}
+		}
+
+		toDrop = append(toDrop, partName)
 	}
 	if err := rows.Err(); err != nil {
 		return err
@@ -172,8 +198,12 @@ func (w *RetentionWorker) dropOldPartitions(ctx context.Context, parentTable str
 		// Detach dan drop
 		query := fmt.Sprintf("drop table if exists %s", part)
 		if _, err := w.pool.Exec(ctx, query); err != nil {
-			return fmt.Errorf("drop table %s: %w", part, err)
+			return repo.Err("drop table "+part, err)
 		}
+	}
+
+	if len(unrolledPartitions) > 0 {
+		return fmt.Errorf("partisi %v ditolak untuk dibuang karena masih memuat data yang belum ter-rollup ke usage_hourly", unrolledPartitions)
 	}
 
 	return nil
@@ -199,7 +229,7 @@ func (w *RetentionWorker) deletePayloadsBatch(ctx context.Context, cutoff time.T
 			cutoff, w.batchSize,
 		)
 		if err != nil {
-			return fmt.Errorf("delete batch request_payloads: %w", err)
+			return repo.Err("delete batch request_payloads", err)
 		}
 
 		if tag.RowsAffected() == 0 {
@@ -223,7 +253,7 @@ func (w *RetentionWorker) deleteWebhookDeliveriesBatch(ctx context.Context, cuto
 
 		n, err := w.webhookRepo.DeleteRetention(ctx, cutoff, w.batchSize)
 		if err != nil {
-			return fmt.Errorf("delete retention webhook deliveries: %w", err)
+			return repo.Err("delete retention webhook deliveries", err)
 		}
 
 		if n == 0 {

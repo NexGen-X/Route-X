@@ -235,13 +235,17 @@ func buildRouter(
 	}
 
 	// --- Metrik ---
-	// Endpoint ini belum berautentikasi: middleware auth baru ada di fase berikutnya.
-	// Sampai saat itu, jangan paparkan port ini langsung ke internet di produksi.
-	if cfg.AppEnv.IsProduction() {
-		logger.Warn("/metrics belum berautentikasi",
-			"saran", "batasi akses di reverse proxy atau firewall sampai autentikasi admin terpasang")
+	// Endpoint ini dilindungi di balik sesi admin untuk mencegah kebocoran informasi operasional,
+	// seperti volume request, nama provider, latensi per model, dan status circuit breaker ke publik.
+	if authSvc != nil {
+		r.With(authSvc.RequireSession()).Handle("/metrics", metrics.Handler())
+	} else {
+		if cfg.AppEnv.IsProduction() {
+			logger.Warn("/metrics belum berautentikasi",
+				"saran", "pastikan authSvc aktif di lingkungan produksi untuk melindungi data operasional")
+		}
+		r.Handle("/metrics", metrics.Handler())
 	}
-	r.Handle("/metrics", metrics.Handler())
 
 	// --- Autentikasi dashboard ---
 	//
@@ -268,7 +272,12 @@ func buildRouter(
 	}
 
 	// --- Dokumentasi API OpenAPI (Fase 13) ---
-	r.Mount("/docs", docs.Handler())
+	// Endpoint dokumentasi dilindungi di balik sesi admin untuk mencegah kebocoran peta lengkap 110+ endpoint admin.
+	if authSvc != nil {
+		r.With(authSvc.RequireSession()).Mount("/docs", docs.Handler())
+	} else {
+		r.Mount("/docs", docs.Handler())
+	}
 
 	// --- Dashboard (fallback untuk seluruh path yang tidak cocok rute di atas) ---
 	dashboard, err := dashboardHandler(logger)
@@ -529,7 +538,8 @@ func buildGatewaySurface(
 	})
 
 	closeAll := func(c context.Context) error {
-		workerSup.Stop()
+		_ = workerSup.Stop(c)
+		_ = breaker.Close(c)
 		return recorder.Close(c)
 	}
 

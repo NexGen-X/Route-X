@@ -53,6 +53,39 @@ func TestSanitizeErrorMessage(t *testing.T) {
 	if !strings.Contains(clean, "endpoint.com/hook") {
 		t.Errorf("SanitizeErrorMessage membuang host URL yang sah: %s", clean)
 	}
+
+	// 5.3: Pengujian kredensial userinfo (user:password@host) wajib disamarkan
+	rawUserInfo := `Post "https://admin:kata_sandi_sangat_rahasia@webhook.example.com/endpoint?key=secret": dial tcp: lookup failed`
+	cleanUserInfo := SanitizeErrorMessage(rawUserInfo)
+	if strings.Contains(cleanUserInfo, "kata_sandi_sangat_rahasia") {
+		t.Errorf("SanitizeErrorMessage membocorkan kata sandi userinfo: %s", cleanUserInfo)
+	}
+	if strings.Contains(cleanUserInfo, "secret") {
+		t.Errorf("SanitizeErrorMessage membocorkan query secret: %s", cleanUserInfo)
+	}
+	if !strings.Contains(cleanUserInfo, "webhook.example.com/endpoint") {
+		t.Errorf("SanitizeErrorMessage membuang host URL: %s", cleanUserInfo)
+	}
+}
+
+// 5.2: Verifikasi bahwa redirect webhook ke alamat privat/metadata (169.254.169.254) ditolak oleh CheckRedirect SSRF.
+func TestDispatcherSSRFRedirectBlocked(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
+	}))
+	defer ts.Close()
+
+	d := NewDispatcher(nil, nil, nil, security.DefaultSSRFPolicy(), nil)
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL, nil)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+
+	_, err = d.client.Do(req)
+	if err == nil {
+		t.Fatal("pengalihan ke 169.254.169.254 berhasil diikuti, seharusnya ditolak oleh CheckRedirect")
+	}
 }
 
 func TestCalculateBackoffEqualJitter(t *testing.T) {

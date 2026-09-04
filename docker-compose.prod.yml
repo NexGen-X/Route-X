@@ -5,6 +5,7 @@ services:
     ports: !reset []
     environment:
       - APP_ENV=production
+      - DB_SSLMODE=require
       - PUBLIC_URL=${PUBLIC_URL:?PUBLIC_URL wajib disetel untuk produksi}
 
   caddy:

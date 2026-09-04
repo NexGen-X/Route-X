@@ -21,11 +21,12 @@ Urutan di bawah ini **WAJIB dipatuhi**. Melompat atau membalikkan urutan dapat m
 
 ```mermaid
 graph TD
-    A[Langkah 1: Generate Kunci Baru Mandiri] --> B[Langkah 2: Jalankan Perkakas routex-rotate]
-    B --> C[Langkah 3: Perbarui /etc/route-x/route-x.env & Restart Gateway]
-    C --> D[Langkah 4: Cabut API Key Uji & Hapus Provider e2e-mock]
-    D --> E[Langkah 5: Rotasi Kredensial di Upstream AI Provider]
-    E --> F[Langkah 6: Pembersihan Riwayat Git]
+    A[Langkah 1: Generate Kunci Baru Mandiri] --> B[Hentikan Gateway: systemctl stop route-x]
+    B --> C[Langkah 2: Jalankan routex-rotate dalam 1 Transaksi Tunggal]
+    C --> D[Langkah 3: Perbarui /etc/route-x/route-x.env & Nyalakan Gateway]
+    D --> E[Langkah 4: Cabut API Key Uji & Hapus Provider e2e-mock]
+    E --> F[Langkah 5: Rotasi Kredensial di Upstream AI Provider]
+    F --> G[Langkah 6: Pembersihan Riwayat Git]
 ```
 
 ### Langkah 1: Generate Kunci Kriptografis Baru secara Mandiri
@@ -56,14 +57,18 @@ export DATABASE_URL="<isi_dengan_DATABASE_URL_produksi>"
 
 ---
 
-### Langkah 2: Jalankan Perkakas Rotasi Database (`routex-rotate`)
+### Langkah 2: Hentikan Gateway dan Jalankan Perkakas Rotasi Database (`routex-rotate`)
 
-*Alasan Urutan*:  
-Tabel `provider_credentials` (kredensial upstream), `webhooks` (rahasia tanda tangan), dan `egress_pool` (URL proxy) menyimpan data yang dienkripsi menggunakan AES-256-GCM terikat `OLD_ENCRYPTION_KEY`.  
-Jika gateway dimuat ulang dengan `NEW_ENCRYPTION_KEY` **sebelum** data di database dienkripsi ulang, seluruh pemanggilan inferensi AI ke upstream dan pengiriman webhook akan langsung **gagal** karena error `ErrKeyMismatch`.
+> [!IMPORTANT]
+> **Layanan gateway WAJIB DIHENTIKAN sebelum menjalankan perkakas rotasi:**
+> ```bash
+> sudo systemctl stop route-x
+> ```
+> **Mengapa rotasi menuntut downtime singkat?**  
+> Kode gateway (`internal/security/crypto.go`) hanya mendukung **satu kunci aktif dalam satu waktu** (`NewCipher(key)`), meskipun skema database memuat kolom `encryption_key_id`. Jika gateway tetap berjalan saat `routex-rotate` mengeksekusi re-enkripsi, terdapat jendela waktu di mana database sudah memuat kunci baru sementara gateway masih memegang kunci lama. Pada jendela tersebut, setiap inferensi AI akan gagal total karena `ErrKeyMismatch`. Menghentikan layanan secara terkontrol menjamin tidak ada permintaan inferensi yang gagal di tengah proses rotasi.
 
 #### 2.1 Jalankan Simulasi (Dry-Run)
-Perkakas mendukung verifikasi tanpa penulisan ke database. Pada mode dry-run, perkakas membaca seluruh baris yang menggunakan kunci lama, menguji dekripsinya, dan memastikan integritas data tanpa mengubah apa pun:
+Perkakas mendukung verifikasi tanpa penulisan ke basis data. Pada mode dry-run, perkakas membaca seluruh baris yang menggunakan kunci lama, menguji dekripsinya, dan memastikan integritas data tanpa mengubah apa pun:
 
 ```bash
 ./routex-rotate \
@@ -88,17 +93,17 @@ Setelah mode simulasi sukses, jalankan eksekusi nyata:
 ```
 
 *Jaminan Arsitektur:*
-- **Isolasi Transaksi**: Pembaruan berjalan di dalam 1 transaksi per tabel. Jika terjadi error di tengah baris satu tabel, transaksi tabel tersebut dibatalkan secara bersih (*rollback*).
+- **Atomisitas 1 Transaksi Tunggal untuk KETIGA Tabel**: Seluruh pembaruan tabel `provider_credentials`, `webhooks`, dan `egress_pool` dieksekusi di dalam **SATU transaksi basis data tunggal**. Jika terjadi kegagalan di tabel mana pun, seluruh transaksi dibatalkan (*full rollback*), mencegah kondisi bencana di mana sebagian data terenkripsi kunci baru dan sebagian masih kunci lama.
 - **Atomisitas Ciphertext & Key ID**: Kolom `ciphertext` dan `encryption_key_id` selalu diperbarui bersamaan dalam 1 query `UPDATE`.
-- **Pengikatan AAD**: AAD tetap terikat unik ke ID baris (`security.CredentialAAD(id)` / `security.WebhookAAD(id)`), mencegah celah serangan ciphertext swapping.
+- **Pengikatan AAD Konsisten**: AAD tetap terikat unik ke ID baris (`security.CredentialAAD(id)` untuk kredensial provider & egress pool; `security.WebhookAAD(id)` untuk webhooks), mencegah celah serangan ciphertext swapping.
 - **Idempoten**: Menjalankan perkakas ini berulang kali dengan parameter kunci yang sama aman dan tidak akan mengubah baris yang sudah dirotasi.
 
 ---
 
-### Langkah 3: Perbarui Berkas Konfigurasi & Restart Gateway
+### Langkah 3: Perbarui Berkas Konfigurasi & Nyalakan Kembali Gateway
 
 *Alasan Urutan*:  
-Setelah database siap dengan kunci baru, konfigurasi runtime gateway dapat diperbarui ke kunci baru.
+Setelah database siap dengan kunci baru, konfigurasi runtime gateway dapat diperbarui ke kunci baru lalu layanan dinyalakan kembali.
 
 1. Buka berkas `/etc/route-x/route-x.env` pada server:
    ```bash
@@ -110,14 +115,14 @@ Setelah database siap dengan kunci baru, konfigurasi runtime gateway dapat diper
    ENCRYPTION_KEY=<masukkan $NEW_ENCRYPTION_KEY>
    API_KEY_PEPPER=<masukkan $NEW_API_KEY_PEPPER>
    ```
-3. Restart layanan gateway:
+3. Nyalakan kembali layanan gateway:
    ```bash
-   sudo systemctl restart route-x
+   sudo systemctl start route-x
    sudo systemctl status route-x
    ```
    *Dampak Operasional*:
    - Pergantian `SESSION_SECRET` akan otomatis menganulir seluruh sesi login admin yang sedang aktif. Seluruh pengguna akan diminta login kembali (perilaku keamanan yang diharapkan).
-   - Gateway langsung dapat mendekripsi kredensial di database karena data sudah dirotasi di Langkah 2.
+   - Gateway langsung dapat mendekripsi seluruh kredensial di database karena data sudah dirotasi di Langkah 2.
 
 ---
 

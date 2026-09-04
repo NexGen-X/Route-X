@@ -19,8 +19,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NexGen-X/Route-X/internal/database"
+	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/security/rotation"
+	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
 
 func TestParseKey(t *testing.T) {
@@ -102,77 +104,64 @@ func TestRotationIntegration(t *testing.T) {
 		t.Fatalf("security.NewCipher(baru): %v", err)
 	}
 
-	// 1. Siapkan data baris uji pada ketiga tabel
-	// a. provider_credentials
-	var providerID string
-	err = pool.QueryRow(ctx, `
-		INSERT INTO providers (name, display_name, kind, base_url)
-		VALUES ('test-prov-rot', 'Test Provider Rotasi', 'openai', 'https://api.openai.com/v1')
-		RETURNING id::text`).Scan(&providerID)
+	// 1. Siapkan data baris uji melalui repository SUNGGUHAN aplikasi.
+	// Ini menjamin baris ditulis persis seperti aplikasi nyata menulisnya (termasuk AAD dan format kolom).
+
+	// a. provider_credentials lewat upstream.ProviderRepo dan upstream.CredentialRepo
+	provRepo := upstream.NewProviderRepo(pool)
+	prov, err := provRepo.Create(ctx, upstream.CreateProviderParams{
+		Name:        "test-prov-rot",
+		DisplayName: "Test Provider Rotasi",
+		Kind:        "openai",
+		BaseURL:     "https://api.openai.com/v1",
+	})
 	if err != nil {
-		t.Fatalf("membuat provider uji: %v", err)
+		t.Fatalf("provRepo.Create: %v", err)
+	}
+
+	credRepoLama, err := upstream.NewCredentialRepo(pool, cipherLama)
+	if err != nil {
+		t.Fatalf("upstream.NewCredentialRepo(lama): %v", err)
 	}
 
 	const plainCred = "sk-kredensial-uji-rotasi-1234567890"
-	var credID string
-	err = pool.QueryRow(ctx, `SELECT gen_random_uuid()::text`).Scan(&credID)
+	credMeta, err := credRepoLama.Create(ctx, upstream.CreateCredentialParams{
+		ProviderID: prov.ID,
+		Label:      "primary",
+		Secret:     security.Secret(plainCred),
+	})
 	if err != nil {
-		t.Fatalf("gen_random_uuid: %v", err)
+		t.Fatalf("credRepoLama.Create: %v", err)
 	}
 
-	credCiphertext, err := cipherLama.Encrypt([]byte(plainCred), security.CredentialAAD(credID))
-	if err != nil {
-		t.Fatalf("enkripsi cred uji: %v", err)
-	}
-
-	_, err = pool.Exec(ctx, `
-		INSERT INTO provider_credentials (id, provider_id, label, ciphertext, encryption_key_id, masked_hint)
-		VALUES ($1::uuid, $2::uuid, 'primary', $3, $4, 'sk-****7890')`,
-		credID, providerID, credCiphertext, cipherLama.KeyID())
-	if err != nil {
-		t.Fatalf("insert provider_credentials uji: %v", err)
-	}
-
-	// b. webhooks
+	// b. webhooks lewat webhooks.Repo
+	whRepo := webhooks.NewRepo(pool)
 	const plainWebhookSecret = "whsec_rahasia_webhook_untuk_dirotasi_998877"
-	var webhookID string
-	err = pool.QueryRow(ctx, `SELECT gen_random_uuid()::text`).Scan(&webhookID)
+	wh, err := whRepo.Create(ctx, webhooks.CreateWebhookParams{
+		Name:      "test-hook",
+		URL:       "https://example.com/webhook",
+		Events:    []string{"*"},
+		RawSecret: plainWebhookSecret,
+		Cipher:    cipherLama,
+	})
 	if err != nil {
-		t.Fatalf("gen_random_uuid webhook: %v", err)
+		t.Fatalf("whRepo.Create: %v", err)
 	}
 
-	whCiphertext, err := cipherLama.Encrypt([]byte(plainWebhookSecret), security.WebhookAAD(webhookID))
+	// c. egress_pool lewat upstream.EgressRepo
+	egressRepoLama, err := upstream.NewEgressRepo(pool, cipherLama)
 	if err != nil {
-		t.Fatalf("enkripsi webhook uji: %v", err)
+		t.Fatalf("upstream.NewEgressRepo(lama): %v", err)
 	}
 
-	_, err = pool.Exec(ctx, `
-		INSERT INTO webhooks (id, name, url, events, secret_ciphertext, encryption_key_id, masked_hint)
-		VALUES ($1::uuid, 'test-hook', 'https://example.com/webhook', array['*'], $2, $3, 'whsec_****8877')`,
-		webhookID, whCiphertext, cipherLama.KeyID())
-	if err != nil {
-		t.Fatalf("insert webhooks uji: %v", err)
-	}
-
-	// c. egress_pool
 	const plainProxyURL = "http://user123:secretpass@proxy.internal:3128"
-	var egressID string
-	err = pool.QueryRow(ctx, `SELECT gen_random_uuid()::text`).Scan(&egressID)
+	egress, err := egressRepoLama.Create(ctx, upstream.CreateEgressParams{
+		Name:     "default-proxy",
+		Kind:     "http",
+		ProxyURL: security.Secret(plainProxyURL),
+	})
 	if err != nil {
-		t.Fatalf("gen_random_uuid egress: %v", err)
-	}
-
-	egressCiphertext, err := cipherLama.Encrypt([]byte(plainProxyURL), security.EgressAAD(egressID))
-	if err != nil {
-		t.Fatalf("enkripsi egress uji: %v", err)
-	}
-
-	_, err = pool.Exec(ctx, `
-		INSERT INTO egress_pool (id, name, kind, proxy_url_encrypted, encryption_key_id, masked_hint)
-		VALUES ($1::uuid, 'default-proxy', 'http', $2, $3, 'http://user123:****@proxy.internal:3128')`,
-		egressID, egressCiphertext, cipherLama.KeyID())
-	if err != nil {
-		t.Fatalf("insert egress_pool uji: %v", err)
+		t.Fatalf("egressRepoLama.Create: %v", err)
 	}
 
 	// 2. Jalankan Mode Dry-Run (Simulasi)
@@ -197,17 +186,16 @@ func TestRotationIntegration(t *testing.T) {
 		t.Errorf("dryRes.TotalRotated = %d, ingin 3", dryRes.TotalRotated)
 	}
 
-	// Verifikasi bahwa basis data TIDAK berubah selama dry run
-	var dryKeyID string
-	err = pool.QueryRow(ctx, `SELECT encryption_key_id FROM provider_credentials WHERE id = $1::uuid`, credID).Scan(&dryKeyID)
+	// Verifikasi bahwa basis data TIDAK berubah selama dry run: repository lama masih bisa membaca plaintext
+	revealedBefore, err := credRepoLama.Reveal(ctx, credMeta.ID)
 	if err != nil {
-		t.Fatalf("cek encryption_key_id pasca dry-run: %v", err)
+		t.Fatalf("credRepoLama.Reveal pasca dry-run: %v", err)
 	}
-	if dryKeyID != cipherLama.KeyID() {
-		t.Errorf("dry-run memodifikasi baris! key_id = %s, ingin tetap %s", dryKeyID, cipherLama.KeyID())
+	if revealedBefore.Reveal() != plainCred {
+		t.Errorf("plaintext sebelum rotasi = %q, ingin %q", revealedBefore.Reveal(), plainCred)
 	}
 
-	// 3. Jalankan Rotasi Nyata
+	// 3. Jalankan Rotasi Nyata (SATU Transaksi Tunggal untuk Ketiga Tabel)
 	realRotator, err := rotation.NewRotator(rotation.Config{
 		DB:     pool,
 		OldKey: kunciLamaB64,
@@ -226,63 +214,70 @@ func TestRotationIntegration(t *testing.T) {
 		t.Errorf("realRes.TotalRotated = %d, ingin 3", realRes.TotalRotated)
 	}
 
-	// 4. Verifikasi bahwa data berhasil dirotasi dan dekripsi kunci baru menghasilkan plaintext awal
-	// a. provider_credentials
-	var nextCredCipher, nextCredKeyID string
-	err = pool.QueryRow(ctx, `SELECT ciphertext, encryption_key_id FROM provider_credentials WHERE id = $1::uuid`, credID).
-		Scan(&nextCredCipher, &nextCredKeyID)
+	// 4. Verifikasi bahwa data berhasil dibaca kembali oleh repository SUNGGUHAN yang memakai cipherBaru
+
+	// a. provider_credentials dibaca lewat upstream.CredentialRepo(cipherBaru).Reveal
+	credRepoBaru, err := upstream.NewCredentialRepo(pool, cipherBaru)
 	if err != nil {
-		t.Fatalf("membaca cred pasca rotasi: %v", err)
-	}
-	if nextCredKeyID != cipherBaru.KeyID() {
-		t.Errorf("cred key_id = %s, ingin %s", nextCredKeyID, cipherBaru.KeyID())
-	}
-	decryptedCred, err := cipherBaru.Decrypt(nextCredCipher, security.CredentialAAD(credID))
-	if err != nil {
-		t.Fatalf("cipherBaru.Decrypt cred: %v", err)
-	}
-	if string(decryptedCred) != plainCred {
-		t.Errorf("decrypted cred = %q, ingin %q", string(decryptedCred), plainCred)
-	}
-	// Kunci lama wajib gagal mendekripsi
-	if _, err := cipherLama.Decrypt(nextCredCipher, security.CredentialAAD(credID)); !errors.Is(err, security.ErrKeyMismatch) {
-		t.Errorf("cipherLama.Decrypt ingin ErrKeyMismatch, dapat %v", err)
+		t.Fatalf("upstream.NewCredentialRepo(baru): %v", err)
 	}
 
-	// b. webhooks
-	var nextWhCipher, nextWhKeyID string
-	err = pool.QueryRow(ctx, `SELECT secret_ciphertext, encryption_key_id FROM webhooks WHERE id = $1::uuid`, webhookID).
-		Scan(&nextWhCipher, &nextWhKeyID)
+	revealedCred, err := credRepoBaru.Reveal(ctx, credMeta.ID)
 	if err != nil {
-		t.Fatalf("membaca webhook pasca rotasi: %v", err)
+		t.Fatalf("credRepoBaru.Reveal gagal mendekripsi pasca rotasi: %v", err)
 	}
-	if nextWhKeyID != cipherBaru.KeyID() {
-		t.Errorf("webhook key_id = %s, ingin %s", nextWhKeyID, cipherBaru.KeyID())
+	if revealedCred.Reveal() != plainCred {
+		t.Errorf("revealedCred = %q, ingin %q", revealedCred.Reveal(), plainCred)
 	}
-	decryptedWh, err := cipherBaru.Decrypt(nextWhCipher, security.WebhookAAD(webhookID))
+	// Kredensial aktif juga harus bisa diambil oleh executor gateway
+	activeCred, err := credRepoBaru.Active(ctx, prov.ID)
 	if err != nil {
-		t.Fatalf("cipherBaru.Decrypt webhook: %v", err)
+		t.Fatalf("credRepoBaru.Active gagal: %v", err)
 	}
-	if string(decryptedWh) != plainWebhookSecret {
-		t.Errorf("decrypted webhook = %q, ingin %q", string(decryptedWh), plainWebhookSecret)
+	if activeCred.Secret.Reveal() != plainCred {
+		t.Errorf("activeCred secret = %q, ingin %q", activeCred.Secret.Reveal(), plainCred)
+	}
+	// Repository kunci lama wajib gagal membaca
+	if _, err := credRepoLama.Reveal(ctx, credMeta.ID); err == nil {
+		t.Errorf("credRepoLama.Reveal seharusnya gagal dengan ErrKeyMismatch pasca rotasi")
 	}
 
-	// c. egress_pool
-	var nextEgressCipher, nextEgressKeyID string
-	err = pool.QueryRow(ctx, `SELECT proxy_url_encrypted, encryption_key_id FROM egress_pool WHERE id = $1::uuid`, egressID).
-		Scan(&nextEgressCipher, &nextEgressKeyID)
+	// b. egress_pool dibaca lewat upstream.EgressRepo(cipherBaru).ProxyURL
+	egressRepoBaru, err := upstream.NewEgressRepo(pool, cipherBaru)
 	if err != nil {
-		t.Fatalf("membaca egress pasca rotasi: %v", err)
+		t.Fatalf("upstream.NewEgressRepo(baru): %v", err)
 	}
-	if nextEgressKeyID != cipherBaru.KeyID() {
-		t.Errorf("egress key_id = %s, ingin %s", nextEgressKeyID, cipherBaru.KeyID())
-	}
-	decryptedEgress, err := cipherBaru.Decrypt(nextEgressCipher, security.EgressAAD(egressID))
+
+	revealedProxy, err := egressRepoBaru.ProxyURL(ctx, egress.ID)
 	if err != nil {
-		t.Fatalf("cipherBaru.Decrypt egress: %v", err)
+		t.Fatalf("egressRepoBaru.ProxyURL gagal mendekripsi pasca rotasi: %v", err)
 	}
-	if string(decryptedEgress) != plainProxyURL {
-		t.Errorf("decrypted egress = %q, ingin %q", string(decryptedEgress), plainProxyURL)
+	if revealedProxy.Reveal() != plainProxyURL {
+		t.Errorf("revealedProxy = %q, ingin %q", revealedProxy.Reveal(), plainProxyURL)
+	}
+	// Repository kunci lama wajib gagal membaca proxy URL
+	if _, err := egressRepoLama.ProxyURL(ctx, egress.ID); err == nil {
+		t.Errorf("egressRepoLama.ProxyURL seharusnya gagal dengan ErrKeyMismatch pasca rotasi")
+	}
+
+	// c. webhooks dibaca lewat webhooks.Repo dan didekripsi dengan cipherBaru
+	whUpdated, err := whRepo.Get(ctx, wh.ID)
+	if err != nil {
+		t.Fatalf("whRepo.Get pasca rotasi: %v", err)
+	}
+	if whUpdated.EncryptionKeyID != cipherBaru.KeyID() {
+		t.Errorf("webhook key_id = %s, ingin %s", whUpdated.EncryptionKeyID, cipherBaru.KeyID())
+	}
+	decryptedSecret, err := cipherBaru.Decrypt(whUpdated.SecretCiphertext, security.WebhookAAD(wh.ID))
+	if err != nil {
+		t.Fatalf("cipherBaru.Decrypt webhook gagal pasca rotasi: %v", err)
+	}
+	if string(decryptedSecret) != plainWebhookSecret {
+		t.Errorf("decrypted webhook = %q, ingin %q", string(decryptedSecret), plainWebhookSecret)
+	}
+	// Kunci lama wajib gagal mendekripsi secret webhook
+	if _, err := cipherLama.Decrypt(whUpdated.SecretCiphertext, security.WebhookAAD(wh.ID)); err == nil {
+		t.Errorf("cipherLama.Decrypt webhook seharusnya gagal pasca rotasi")
 	}
 
 	// 5. Uji Idempotensi: Jalankan rotasi kedua kali dengan parameter yang sama
@@ -292,6 +287,12 @@ func TestRotationIntegration(t *testing.T) {
 	}
 	if secondRunRes.TotalRotated != 0 {
 		t.Errorf("pemanggilan kedua seharusnya memproses 0 baris, tetapi memproses %d baris", secondRunRes.TotalRotated)
+	}
+
+	// Pastikan data tetap dapat dibaca tanpa cacat setelah eksekusi kedua
+	revealedProxySecond, err := egressRepoBaru.ProxyURL(ctx, egress.ID)
+	if err != nil || revealedProxySecond.Reveal() != plainProxyURL {
+		t.Fatalf("ProxyURL pasca eksekusi rotasi kedua rusak: %v", err)
 	}
 }
 

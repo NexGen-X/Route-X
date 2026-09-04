@@ -23,7 +23,7 @@ deps: ## Unduh dependensi Go dan npm
 > @if [ -f web/package.json ]; then cd web && npm ci; fi
 
 fe: ## Build frontend ke web/dist (di-embed ke binary)
-> @if [ -f web/package.json ]; then cd web && npm run build; \
+> @if [ -f web/package.json ]; then cd web && npm run build && touch dist/.gitkeep; \
 >  else echo "web/package.json belum ada — dilewati (Fase 12)"; fi
 
 build: fe ## Build biner produksi ./ai-gateway dan perkakas rotasi
@@ -98,6 +98,7 @@ schemas-clean: ## Hapus schema test tertinggal (jangan jalankan saat test aktif)
 clean: ## Hapus artefak build
 > rm -f $(BINARY) routex-rotate coverage.out
 > rm -rf web/dist/assets
+> touch web/dist/.gitkeep
 
 db-shell: ## psql ke database aplikasi
 > @set -a; . ./.env; set +a; psql "$$DATABASE_URL"

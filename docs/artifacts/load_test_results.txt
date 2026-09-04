@@ -1,0 +1,18 @@
+================================================================
+Route-X AI Gateway — Hasil Pengujian Beban Inferensi (/v1)
+Waktu Pengujian       : 2026-09-04T18:17:33Z
+Endpoint              : /v1/chat/completions (model: gpt-5)
+Total Permintaan      : 200
+Konkurensi Paralel    : 10
+----------------------------------------------------------------
+Metrik Hasil:
+  Total Respon        : 200 / 200
+  Sukses (HTTP 200)   : 200
+  Gagal (Non-200)     : 0
+  Durasi Uji          : 0.931 detik (931 ms)
+  Throughput (RPS)    : 214.8 req/detik
+  Latensi Rata-rata   : 10.63 ms
+  Latensi P50         : 9.23 ms
+  Latensi P90         : 15.46 ms
+  Latensi P95         : 18.63 ms
+================================================================

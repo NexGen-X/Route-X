@@ -7,18 +7,23 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NexGen-X/Route-X/internal/database"
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/security"
 )
@@ -144,13 +149,32 @@ func TestVerifySignature(t *testing.T) {
 	}
 }
 
-// --- Integrasi PostgreSQL ---------------------------------------------------
+const schemaPrefix = "test_webhooks_"
 
-func testPool(t *testing.T) (*pgxpool.Pool, *security.Cipher) {
-	t.Helper()
-	dsn := os.Getenv("DATABASE_URL")
+func TestMain(m *testing.M) {
+	code := m.Run()
+
+	if !testing.Short() {
+		if left := leftoverSchemas(); len(left) > 0 {
+			fmt.Fprintf(os.Stderr, "schema test webhooks tertinggal: %s\n", strings.Join(left, ", "))
+			if code == 0 {
+				code = 1
+			}
+		}
+	}
+	os.Exit(code)
+}
+
+func leftoverSchemas() []string {
+	dsn := ""
+	for _, key := range []string{"TEST_DATABASE_URL", "DATABASE_URL"} {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			dsn = v
+			break
+		}
+	}
 	if dsn == "" {
-		t.Skip("DATABASE_URL tidak disetel, melewati pengujian integrasi database")
+		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -158,9 +182,95 @@ func testPool(t *testing.T) (*pgxpool.Pool, *security.Cipher) {
 
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
-		t.Fatalf("koneksi database gagal: %v", err)
+		return nil
+	}
+	defer pool.Close()
+
+	rows, err := pool.Query(ctx,
+		`select schema_name from information_schema.schemata where schema_name like $1`,
+		schemaPrefix+"%")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return out
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
+func testDSN(t *testing.T) string {
+	t.Helper()
+	for _, key := range []string{"TEST_DATABASE_URL", "DATABASE_URL"} {
+		dsn := strings.TrimSpace(os.Getenv(key))
+		if dsn == "" {
+			continue
+		}
+		if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
+			t.Skipf("%s bukan URL postgres:// sehingga search_path test tidak bisa dipasang", key)
+		}
+		return dsn
+	}
+	t.Skip("TEST_DATABASE_URL maupun DATABASE_URL tidak diset — test integrasi dilewati")
+	return ""
+}
+
+func testPool(t *testing.T) (*pgxpool.Pool, *security.Cipher) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("melewati test integrasi webhooks pada -short")
+	}
+	baseDSN := testDSN(t)
+	ctx := context.Background()
+
+	admin, err := pgxpool.New(ctx, baseDSN)
+	if err != nil {
+		t.Fatalf("membuka koneksi admin: %v", err)
+	}
+	t.Cleanup(admin.Close)
+
+	var buf [6]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		t.Fatalf("membuat nama schema acak: %v", err)
+	}
+	schema := schemaPrefix + hex.EncodeToString(buf[:])
+	ident := pgx.Identifier{schema}.Sanitize()
+
+	if _, err := admin.Exec(ctx, "create schema "+ident); err != nil {
+		t.Fatalf("membuat schema %s: %v", schema, err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := admin.Exec(cleanupCtx, "drop schema "+ident+" cascade"); err != nil {
+			t.Errorf("membersihkan schema %s: %v", schema, err)
+		}
+	})
+
+	u, err := url.Parse(baseDSN)
+	if err != nil {
+		t.Fatalf("DSN test tidak bisa diparse: %v", err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+
+	pool, err := pgxpool.New(ctx, u.String())
+	if err != nil {
+		t.Fatalf("membuka pool test: %v", err)
 	}
 	t.Cleanup(pool.Close)
+
+	logger := slog.New(slog.DiscardHandler)
+	if _, err := database.Migrate(ctx, &database.DB{Pool: pool}, logger); err != nil {
+		t.Fatalf("menjalankan migrasi ke schema %s: %v", schema, err)
+	}
 
 	key := make([]byte, 32)
 	_, _ = rand.Read(key)

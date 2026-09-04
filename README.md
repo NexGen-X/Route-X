@@ -112,11 +112,16 @@ INITIAL_ADMIN_PASSWORD=
 ```
 
 ### 2. Kompilasi Biner Tunggal
-Target `make build` akan membangun bundel antarmuka web dan mengompilasi seluruh sistem ke dalam satu biner:
+
+Jalur kompilasi resmi Route-X adalah melalui **`make build`**, yang secara otomatis memicu proses build frontend Vite (`npm run build`), menghasilkan artefak SPA di `web/dist`, dan menanamkannya langsung ke dalam biner Go tunggal:
 ```bash
 make build
 ```
-Hasil kompilasi akan berada di `./ai-gateway` (ukuran ~25 MB).
+Hasil kompilasi biner produksi mandiri akan berada di `./ai-gateway` (ukuran ~25 MB) serta perkakas rotasi rahasia `./routex-rotate`.
+
+> **Catatan Kebijakan Artefak Git & Kompatibilitas `go build`:**
+> Berkas bundel hasil kompilasi frontend (`web/dist/*`) diabaikan oleh git dan tidak di-commit untuk mencegah penggelembungan repositori (*repository bloat*), kecuali berkas penanda `web/dist/.gitkeep`.
+> Jika Anda mengompilasi biner menggunakan `go build ./cmd/ai-gateway` langsung pada clone bersih yang belum pernah menjalankan build frontend, kompilasi tetap berhasil (berkat `.gitkeep`), dan biner akan memberikan respons ramah saat endpoint `/` diakses yang mengarahkan operator untuk menjalankan `make build`.
 
 ### 3. Menjalankan Gateway
 ```bash

@@ -51,6 +51,12 @@ func TestDocsHandlerEndpoints(t *testing.T) {
 			wantContains: "openapi: 3.1.0",
 		},
 		{
+			name:         "Script Lokal scalar.standalone.js",
+			path:         "/docs/scalar.standalone.js",
+			wantCode:     http.StatusOK,
+			wantContains: "Scalar",
+		},
+		{
 			name:         "Path tidak dikenal",
 			path:         "/docs/tidak-ada",
 			wantCode:     http.StatusNotFound,

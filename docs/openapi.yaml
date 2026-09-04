@@ -17,9 +17,6 @@ servers:
   - url: /
     description: Instance Gateway Lokal / Produksi
 
-security:
-  - BearerAuth: []
-
 paths:
   # ============================================================================
   # 1. Inferencing Endpoints (/v1)
@@ -131,7 +128,6 @@ paths:
       operationId: listModels
       security:
         - BearerAuth: []
-        - SessionCookie: []
       responses:
         '200':
           description: Daftar model berhasil dimuat
@@ -139,28 +135,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ModelListResponse'
-
-  /v1/models/{model}:
-    get:
-      tags:
-        - Inferencing
-      summary: Detail Model Spesifik
-      description: Mengambil informasi detail model berdasarkan ID atau nama alias kanoniknya.
-      operationId: getModel
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: model
-          in: path
-          required: true
-          schema:
-            type: string
-          example: gpt-4o
-      responses:
-        '200':
-          description: Detail model ditemukan
-        '404':
-          $ref: '#/components/responses/404NotFound'
 
   # ============================================================================
   # 2. Health & Observability Endpoints
@@ -215,7 +189,8 @@ paths:
       summary: Prometheus Telemetry Metrics
       description: Menyajikan eksposur metrik internal format teks Prometheus untuk scraping Prometheus/Grafana.
       operationId: getPrometheusMetrics
-      security: []
+      security:
+        - SessionCookie: []
       responses:
         '200':
           description: Data metrik Prometheus
@@ -271,7 +246,7 @@ paths:
       operationId: logoutAdmin
       security:
         - SessionCookie: []
-        - CSRFToken: []
+          CSRFToken: []
       responses:
         '200':
           description: Sesi berhasil ditutup
@@ -298,7 +273,7 @@ paths:
       operationId: changePassword
       security:
         - SessionCookie: []
-        - CSRFToken: []
+          CSRFToken: []
       requestBody:
         required: true
         content:
@@ -387,7 +362,7 @@ paths:
       operationId: createProvider
       security:
         - SessionCookie: []
-        - CSRFToken: []
+          CSRFToken: []
       responses:
         '201':
           description: Provider berhasil dibuat
@@ -401,7 +376,7 @@ paths:
       operationId: probeProvider
       security:
         - SessionCookie: []
-        - CSRFToken: []
+          CSRFToken: []
       parameters:
         - name: id
           in: path
@@ -455,7 +430,7 @@ paths:
       operationId: createAPIKey
       security:
         - SessionCookie: []
-        - CSRFToken: []
+          CSRFToken: []
       responses:
         '201':
           description: Kunci API berhasil dibuat

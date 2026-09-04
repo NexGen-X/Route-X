@@ -53,9 +53,9 @@ menyajikan API gateway, dashboard admin, dan aset statis dari proses yang sama.
 | 9 — Usage, cost, observability | ✅ Selesai | `internal/usage` 90,0% (pencatat asinkron, harga, cuplikan latensi), `repo/traffic` 88,6% (rollup jam & hari + agregasi baca), `internal/gateway` 89,2%; `lowest_cost` dan `lowest_latency` akhirnya benar-benar berbeda dari `priority`; `budgets.spent_usd` bergerak |
 | 10 — Worker | ✅ Selesai | `internal/worker` (supervisor, isolasi panic/error, advisory lock RXWO, 6 background jobs), `internal/webhooks` (HMAC-SHA256, equal jitter backoff, AAD terikat, FOR UPDATE SKIP LOCKED, stuck lease recovery), 6 event webhook terpasang |
 | 11 — Admin REST API | ✅ Selesai | `internal/admin` (7 domain REST API, otorisasi RBAC 4 peran, proteksi CSRF double-submit token, keyset pagination, audit log otomatis, live pool stats); terpasang di `/api/admin` pada router gateway |
-| 12 — Dashboard | ✅ Selesai | React 18 + TS + Vite + Tailwind CSS + Recharts + TanStack Query; 5 grup sidebar, 20 halaman interaktif terhubung 100% ke API Fase 11, dark theme, tersemat di biner tunggal 25 MB |
-| 13 — Dokumentasi API | ✅ Selesai | `docs/openapi.yaml` (OpenAPI 3.1) disematkan via package `docs`; disajikan di `/docs` dengan antarmuka interaktif Scalar dark theme dan `/docs/openapi.yaml` |
-| 14 — Pengerasan & verifikasi | ✅ Selesai | `go test -race ./...` 100% hijau di 31 paket, uji beban 260+ RPS tanpa galat (`scripts/load_test.sh`), verifikasi end-to-end menyeluruh (`scripts/e2e_verify.sh`), unit systemd diperkeras, README operasional lengkap |
+| 12 — Dashboard | ✅ Diremediasi | React 18 + TS + Vite + Tailwind CSS + Recharts + TanStack Query; 5 grup sidebar, 20 halaman interaktif, dark theme tersemat di biner tunggal. Seluruh error muatan pertama dan integrasi API diremediasi, font Inter & JetBrains Mono disematkan lokal mematuhi CSP `font-src 'self' data:`. |
+| 13 — Dokumentasi API | ✅ Diremediasi (Cakupan Inti) | `docs/openapi.yaml` menyajikan 21 operasi endpoint inferensi publik `/v1/*` dan endpoint administratif inti; skema autentikasi diperbaiki (kepatuhan SessionCookie & CSRFToken AND, BearerAuth murni pada `/v1`); antarmuka Scalar JS dan font disematkan lokal mematuhi CSP `script-src 'self'`. |
+| 14 — Pengerasan & verifikasi | ✅ Diremediasi | 32 paket Go lolos `go test -race ./...`; uji beban riil inferensi `/v1/chat/completions` menghasilkan **214,8 req/detik** (10,63 ms rata-rata, 0% error) dengan artefak nyata di `docs/artifacts/load_test_results.txt`; perkakas e2e direlokasi ke `scripts/e2e/` dengan pembersihan otomatis. |
 
 
 ## Tech stack
@@ -915,67 +915,68 @@ Aplikasi frontend Single Page Application (SPA) dibangun secara penuh di dalam d
    - `Audit Logs` (`/system/audit`): Jejak audit administratif lengkap dengan modal viewer JSON metadata perubahan.
    - `System Diagnostics` (`/system/diagnostics`): Uptime, versi biner, Go compiler, penggunaan memori Go runtime, GC cycles, dan statistik koneksi pgxpool.
 
-**Autentikasi & Keamanan Frontend:**
-- Halaman Login (`/login`) dan Ganti Sandi Pertama (`/change-password`) terisolasi secara otomatis.
-- Otomatis membaca cookie `routex_csrf` dan menyertakan header `X-CSRF-Token` pada seluruh mutasi POST/PUT/DELETE.
-- Tidak ada angka karangan dan tidak ada tombol mati: seluruh aksi terhubung langsung ke API `/api/admin/*` dan `/api/auth/*`.
+**Hasil Remediasi Dashboard & Tipografi CSP:**
+- Pada audit pasca-rilis awal, terdeteksi 6 halaman mengalami kesalahan rendering pada kondisi data awal kosong/null dan font eksternal dari CDN Google Fonts diblokir oleh Content Security Policy (`font-src 'self' data:`).
+- Seluruh 6 halaman telah diremediasi secara menyeluruh dengan pengecekan data aman (safe navigation) dan visual fallback.
+- Dependensi CDN Google Fonts dihilangkan dan diganti dengan paket `@fontsource/inter` dan `@fontsource/jetbrains-mono` yang dibundel langsung ke aset statis lokal (`dist/assets/*.woff2`).
+- Konfigurasi `web/vite.config.ts` diatur dengan `emptyOutDir: false` guna menjaga integritas berkas penanda `web/dist/.gitkeep`.
 
 **Verifikasi & Kualitas:**
 - `make fmt`: 100% lulus.
 - `make vet`: 100% lulus.
 - `go test -race ./cmd/ai-gateway ./internal/admin`: 100% lulus.
-- `make build`: Biner tunggal `./ai-gateway` 25 MB berhasil dibangun dan diuji menyajikan `/healthz` (200 OK) serta dokumen HTML SPA dashboard di `/` (200 OK) dan fallback rute client-side.
+- `make build`: Biner tunggal `./ai-gateway` 25 MB berhasil dibangun dan melayani aset dashboard secara lokal.
 
 ## Catatan hasil Fase 13
 
-Spesifikasi antarmuka terpadu **OpenAPI 3.1.0** disusun secara lengkap pada berkas `docs/openapi.yaml`. Berkas ini mendokumentasikan seluruh endpoint inferensi publik kompatibel OpenAI (`/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/models`), probe kesehatan (`/healthz`, `/readyz`, `/metrics`), autentikasi sesi (`/api/auth/*`), dan konsol REST API manajemen administratif (`/api/admin/*`).
+Spesifikasi antarmuka **OpenAPI 3.1.0** disusun pada berkas `docs/openapi.yaml`. Berkas ini mencakup seluruh endpoint inferensi publik kompatibel OpenAI (`/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/models`), probe telemetri (`/healthz`, `/readyz`, `/metrics`), autentikasi sesi (`/api/auth/*`), dan subset operasional REST API admin inti (21 endpoint).
 
-**Penyematan Biner & Endpoint Dokumentasi Interaktif:**
-1. **Penyematan Langsung (`package docs`)**: Menggunakan direktif `//go:embed openapi.yaml` pada paket `docs` di `docs/embed.go` sehingga spesifikasi ikut terkompilasi ke dalam biner tanpa membaca filesystem fisik saat runtime.
-2. **Interactive Visual Reference (`/docs`)**: Menyajikan antarmuka visual dokumentasi interaktif Scalar yang diselaraskan dengan tema gelap Route-X (`#0A0A0A`, `#101010`, aksen lime `#BEF264`), lengkap dengan fitur pencarian instan, pengujian langsung (try-it-out), contoh payload multi-bahasa (curl, JS, Python, Go), dan navigasi skema.
-3. **Raw Specification (`/docs/openapi.yaml`)**: Menyajikan berkas mentah dengan header `Content-Type: application/yaml; charset=utf-8` dan caching HTTP yang optimal untuk integrasi tooling Swagger/Postman/Insomnia.
+**Hasil Remediasi Skema & Kepatuhan CSP:**
+1. **Koreksi Skema Autentikasi**:
+   - Skema `BearerAuth` global di tingkat root dihapus agar endpoint admin tidak mewarisi otentikasi kunci klien secara keliru.
+   - Endpoint `/v1/models` dikembalikan murni ke autentikasi `BearerAuth` (menghapus opsi `SessionCookie`).
+   - Endpoint hantu `/v1/models/{model}` yang tidak pernah didaftarkan router telah dihapus.
+   - Endpoint `/metrics` diberi perlindungan autentikasi `SessionCookie`.
+   - Seluruh mutasi admin (POST/PUT/DELETE) disatukan menjadi satu dictionary item yang merepresentasikan operasi logika AND (`SessionCookie` DAN `CSRFToken`).
+2. **Penyematan Lokal Scalar Reference (`/docs`)**:
+   - Biner standalone Scalar JS (`docs/scalar.standalone.js`) diunduh dan disematkan langsung ke dalam biner Go menggunakan direktif `//go:embed scalar.standalone.js` pada paket `docs`.
+   - Handler `docs.Handler()` menyajikan skrip lokal pada endpoint `/docs/scalar.standalone.js`.
+   - Seluruh pemanggilan pustaka dan font eksternal (`cdn.jsdelivr.net` dan Google Fonts) dihilangkan, menyelesaikan masalah layar putih (*blank screen*) dan mematuhi CSP `script-src 'self'`.
 
 **Verifikasi & Kualitas:**
-- `docs/embed_test.go`: Uji unit memverifikasi bahwa spesifikasi OpenAPI memuat OpenAPI 3.1.0 dan handler melayani `/docs` (200 OK) serta `/docs/openapi.yaml` (200 OK).
+- `docs/embed_test.go`: Uji unit memverifikasi bahwa spesifikasi OpenAPI memuat OpenAPI 3.1.0 dan handler melayani `/docs` (200 OK), `/docs/openapi.yaml` (200 OK), serta `/docs/scalar.standalone.js` (200 OK).
 - `cmd/ai-gateway/main_test.go`: Uji integrasi `TestDocsRouteMounted` memastikan rute `/docs` terpasang secara tepat pada router gateway.
 - `make fmt` & `make vet`: Lolos 100% tanpa error maupun peringatan.
-- `make build`: Biner `./ai-gateway` terkompilasi bersih dan terbukti melayani permintaan `/docs` secara live.
 
 ## Catatan hasil Fase 14
 
-Fase 14 menandai penyelesaian akhir dari seluruh rencana arsitektur Route-X, mencakup pengerasan konkurensi, uji beban ringan, pengujian siklus penuh end-to-end, unit systemd produksi, dan dokumentasi operasional lengkap.
+Fase 14 mencakup pengerasan konkurensi, uji beban terverifikasi, verifikasi siklus penuh end-to-end dengan pembersihan otomatis, unit systemd produksi, dan dokumentasi operasional.
 
 **1. Pengujian Menyeluruh & Race Detection (`-race`):**
-- Seluruh 31 paket Go dalam repositori diuji secara konkuren dengan `go test -race ./...` dan mencatatkan kelulusan 100% tanpa satu pun race condition atau kebocoran resource:
-  - `cmd/ai-gateway`, `docs`, `internal/admin`, `internal/apikey`, `internal/auth`, `internal/billing`, `internal/cache`, `internal/config`, `internal/contentfilter`, `internal/database`, `internal/database/repo/*`, `internal/database/seed`, `internal/gateway`, `internal/health`, `internal/httpx`, `internal/observability`, `internal/providers/*`, `internal/ratelimit`, `internal/router`, `internal/security`, `internal/usage`, `internal/webhooks`, `internal/worker`.
+- Seluruh 32 paket Go dalam repositori diuji secara konkuren dengan `go test -race ./...` dan mencatatkan kelulusan 100% tanpa race condition atau kebocoran resource:
+  - `cmd/ai-gateway`, `cmd/routex-rotate`, `docs`, `internal/admin`, `internal/apikey`, `internal/auth`, `internal/billing`, `internal/cache`, `internal/config`, `internal/contentfilter`, `internal/database`, `internal/database/repo/*`, `internal/database/seed`, `internal/gateway`, `internal/health`, `internal/httpx`, `internal/observability`, `internal/providers/*`, `internal/ratelimit`, `internal/router`, `internal/security`, `internal/usage`, `internal/webhooks`, `internal/worker`.
 
-**2. Uji Beban Ringan Konkurensi (`scripts/load_test.sh`):**
-- Pengujian beban konkurensi mengirimkan 300-500 permintaan konkuren ke gateway instance nyata.
-- Hasil pengujian:
-  - Total Permintaan: 300 / 300 berhasil (HTTP 200).
+**2. Uji Beban Nyata Gateway (`scripts/e2e/load_test.sh`):**
+- Pengujian beban konkurensi dilakukan langsung terhadap endpoint inferensi `/v1/chat/completions` dengan model kanonik `gpt-5` dan mock upstream lokal terisolasi.
+- Hasil pengujian tercatat secara faktual dalam artefak nyata [`docs/artifacts/load_test_results.txt`](load_test_results.txt):
+  - Total Permintaan: **200 / 200 berhasil** (HTTP 200 OK).
   - Rasio Kegagalan: **0,00%** (0 galat).
-  - Throughput: **261,8 req/detik**.
-  - Latensi Rata-rata: **6,76 ms**.
+  - Throughput: **214,8 req/detik**.
+  - Latensi Rata-rata: **10,63 ms**.
+  - Persentil: P50: **9,23 ms**, P90: **14,56 ms**, P95: **18,63 ms**, P99: **28,12 ms**.
 
-**3. Verifikasi Siklus Penuh End-to-End (`scripts/e2e_verify.sh`):**
-- Skrip pengujian otomatis mengeksekusi dan memverifikasi siklus operasional end-to-end secara mandiri:
-  1. Startup biner `./ai-gateway` dan migrasi database otomatis.
-  2. Verifikasi probe `/healthz`, `/readyz`, dan antarmuka `/docs`.
-  3. Autentikasi sesi konsol `/api/auth/login`, penanganan kewajiban penggantian kata sandi awal `/api/auth/change-password`, dan ekstraksi token CSRF double-submit.
-  4. Pendaftaran provider hulu baru via `/api/admin/upstreams/providers`.
-  5. Penyimpanan kredensial provider terenkripsi AES-256-GCM via `/credentials`.
-  6. Pemetaan model kanonik `gpt-5` ke provider via `/mappings` dengan resolusi nama model otomatis.
-  7. Pembuatan kunci API klien via `/api/admin/access/api-keys` dengan penanganan otomatis `owner_user_id` dan validasi scope `inference`.
-  8. Eksekusi inferensi chat completions non-streaming via `/v1/chat/completions` (HTTP 200, valid OpenAI wire envelope).
-  9. Eksekusi inferensi chat completions streaming via Server-Sent Events (SSE) dengan potongan delta dan penutup `[DONE]`.
-  10. Audit log permintaan terverifikasi tersimpan di tabel partisi `request_logs` via `/api/admin/requests` lengkap dengan jumlah token dan latensi.
-  11. Penghentian anggun (graceful shutdown) tanpa error.
+**3. Verifikasi Siklus Penuh End-to-End & Pembersihan Total (`scripts/e2e/`):**
+- Seluruh perkakas pengujian direlokasi ke direktori mandiri `scripts/e2e/`:
+  - `mock_upstream.py`: Server tiruan mandiri yang melayani protokol model OpenAI, health check, dan streaming SSE.
+  - `stop.sh`: Menghentikan proses secara presisi dengan `pkill -x ai-gateway` tanpa risiko mematikan shell pemanggil.
+  - `clean.sh`: Membersihkan seluruh baris dan data uji (`providers`, `api_keys`, `requests`) secara tuntas dari PostgreSQL.
+  - `e2e_verify.sh`: Menjalankan siklus verifikasi end-to-end lengkap dan otomatis mengeksekusi pembersihan pasca-pengujian via mekanisme trap exit.
 
 **4. Pengerasan Layanan Produksi Linux (`deploy/systemd/route-x.service`):**
 - Layanan systemd mandiri dengan hak non-root (`User=routex`), restart otomatis saat crash, batas deskriptor `LimitNOFILE=65536`, dan pengerasan sandboxing ketat: `ProtectSystem=strict`, `ProtectHome=yes`, `NoNewPrivileges=yes`, `PrivateTmp=yes`, `PrivateDevices=yes`, pembatasan namespace, dan `CapabilityBoundingSet=`.
 
 **5. Dokumentasi Operasional Terpadu (`README.md`):**
-- Menjelaskan seluruh kapabilitas gateway, diagram alir sistem Mermaid, panduan instalasi, konfigurasi `.env`, contoh integrasi klien OpenAI SDK (Python, TypeScript, cURL), dan tata cara penerapan produksi.
+- Menjelaskan kebijakan kompilasi resmi `make build`, kompatibilitas direktif `//go:embed` dengan berkas penanda `.gitkeep`, konfigurasi `.env`, dan panduan penerapan produksi.
 
 ## Fase implementasi
 
@@ -1167,3 +1168,32 @@ sisa penjagaan rentang tetap aktif selama test berjalan.
 bukan blok SSE lengkap — framing `data: `, baris kosong, dan `[DONE]` dibuat lapisan HTTP
 gateway di Fase 7. Adapter anthropic/google harus mengikuti bentuk yang sama, dan doc
 `StreamEvent.Raw` di `providers.go` perlu diperjelas agar tidak ambigu.
+
+## Catatan hasil remediasi
+
+Seksi ini merangkum seluruh keputusan arsitektural dan teknis yang diambil selama proses audit dan remediasi menyeluruh (Batch 1 hingga Batch 6):
+
+1. **Otorisasi Kunci Klien & Isolasi BYOK (Bring Your Own Key):**
+   Memastikan integritas multi-tenant dengan melarang keras akses kunci API lintas akun pengguna. Seluruh evaluasi kunci API memeriksa kepemilikan subjek (`owner_user_id`), memvalidasi batasan cakupan (*scope*), dan memutus permintaan jika kuota atau masa berlaku kunci telah habis.
+
+2. **Perlindungan SSRF Guard & Penanganan Redirect:**
+   Validasi alamat URL upstream via `security.SSRFPolicy` diperketat dengan penanganan pengalihan HTTP (`CheckRedirect`). Kebijakan ini secara aktif memblokir pengalihan respon 3xx yang mengarah ke subnet IP privat (RFC 1918), rentang loopback (127.0.0.0/8), link-local, maupun endpoint metadata cloud (169.254.169.254).
+
+3. **Pemisahan Alert Anggaran (Budget Alert) & Siklus Reset:**
+   Logika pemantauan anggaran biaya memisahkan secara tegas ambang batas peringatan (*warning alert threshold*) dari penegakan batas keras (*hard budget limit*). Worker pemelihara periode (`RetentionWorker` dan `BudgetPeriodMaintainer`) secara berkala mereset akumulasi `spent_usd` pada pergantian periode kalender secara konsisten tanpa menghapus riwayat agregasi penggunaan.
+
+4. **Isolasi Database Pengujian via Skema Acak Sementara:**
+   Seluruh suite pengujian integrasi (`internal/worker`, `internal/webhooks`, dan paket repository) mewajibkan isolasi skema PostgreSQL sementara (`test_<pkg>_<hex>`). Migrasi skema dijalankan di dalam ruang nama terisolasi tersebut dan dibersihkan secara tuntas menggunakan perintah `DROP SCHEMA ... CASCADE` saat `t.Cleanup()`. Hal ini menghentikan pencemaran data uji ke skema publik produksi.
+
+5. **Standarisasi Perkakas E2E & Manajemen Sinyal Proses:**
+   Seluruh skrip verifikasi otomatis direlokasi ke direktori terstruktur `scripts/e2e/`. Skrip terminasi proses (`stop.sh`) beralih dari `pkill -f` ke `pkill -x ai-gateway` guna mencegah shell pemanggil terbunuh secara mendadak. Skrip pembersih `clean.sh` menjamin database bersih dari sisa data uji pasca-eksekusi.
+
+6. **Pengujian Beban Riil Berbasis Artefak:**
+   Tolok ukur performa gateway diverifikasi langsung pada endpoint inferensi `/v1/chat/completions` menggunakan beban konkurensi paralel. Hasil pengujian dicatat secara permanen di `docs/artifacts/load_test_results.txt` membuktikan throughput **214,8 req/detik** dengan latensi p95 **18,63 ms** dan rasio keberhasilan 100%.
+
+7. **Kepatuhan Content Security Policy (CSP) & Penyerahan Aset Mandiri:**
+   Mematuhi prinsip *fail-closed* tanpa melonggarkan header CSP (`script-src 'self'`, `font-src 'self' data:`). Dokumentasi antarmuka Scalar disematkan ke dalam biner berekstensi lokal (`docs/scalar.standalone.js`), dan font sistem antarmuka web disajikan melalui bundel pustaka `@fontsource/inter` dan `@fontsource/jetbrains-mono`, meniadakan ketergantungan pada CDN publik eksternal.
+
+8. **Stabilitas Kompilasi & Pelestarian `.gitkeep`:**
+   Konfigurasi Vite (`web/vite.config.ts`) dikonfigurasi dengan `emptyOutDir: false` dan resep Makefile `fe` diperkuat dengan `touch dist/.gitkeep`. Langkah ini memastikan bahwa berkas penanda `web/dist/.gitkeep` tidak hilang saat build, sehingga kompilasi standar `go build` pada repositori bersih tetap dapat dilakukan tanpa mengalami kegagalan direktif `//go:embed`.
+

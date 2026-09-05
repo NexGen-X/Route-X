@@ -36,11 +36,7 @@ func (h *Handlers) listDetectedCLIs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
-	gwURL := fmt.Sprintf("%s://%s/v1", scheme, r.Host)
+	gwURL := h.resolveGatewayURL(r)
 
 	tools, err := h.cliManager.Scan(ctx, gwURL)
 	if err != nil {
@@ -112,13 +108,9 @@ func (h *Handlers) configureCLI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
 	gwURL := req.GatewayURL
 	if gwURL == "" {
-		gwURL = fmt.Sprintf("%s://%s/v1", scheme, r.Host)
+		gwURL = h.resolveGatewayURL(r)
 	}
 
 	params := cliconfig.ConfigureParams{

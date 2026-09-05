@@ -469,4 +469,22 @@ export interface CLIExportScriptResponse {
   file_path: string;
 }
 
+export interface DomainConfig {
+  domain: string;
+  mode: 'letsencrypt' | 'cloudflare';
+  status: 'unconfigured' | 'verifying' | 'active' | 'warning' | 'error';
+  public_url: string;
+  base_url: string;
+  server_ip: string;
+  resolved_ips?: string[];
+  dns_matched: boolean;
+  last_checked?: string;
+  message?: string;
+}
+
+export interface DomainUpdateRequest {
+  domain: string;
+  mode: 'letsencrypt' | 'cloudflare';
+}
+
 

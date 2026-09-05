@@ -62,8 +62,8 @@ else
   echo "[1/4] Menggunakan konfigurasi yang ada di .env."
 fi
 
-# 3. Bangun dan jalankan seluruh stack 3 kontainer
-echo "[2/4] Menjalankan 3 kontainer terpadu (Gateway, PostgreSQL 16, Redis 7)..."
+# 3. Bangun dan jalankan seluruh stack kontainer
+echo "[2/4] Menjalankan stack kontainer terpadu (Gateway, PostgreSQL 16, Redis 7, Caddy Auto-TLS)..."
 docker compose up -d --build
 
 # 4. Tunggu hingga service gateway siap melayani
@@ -83,7 +83,7 @@ if [ "$GATEWAY_READY" = false ]; then
   exit 1
 fi
 
-echo "[4/4] Seluruh 3 layanan telah aktif dan sehat!"
+echo "[4/4] Seluruh layanan (Gateway, DB, Redis, Caddy) telah aktif dan sehat!"
 echo ""
 # Deteksi IP Publik / IP Host untuk kenyamanan akses jarak jauh
 PUBLIC_IP=$(curl -s -m 2 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
@@ -91,10 +91,11 @@ PUBLIC_IP=$(curl -s -m 2 https://api.ipify.org 2>/dev/null || hostname -I | awk 
 echo "=================================================================="
 echo "               Route-X Berhasil Dijalankan!                       "
 echo "=================================================================="
-echo "  🌐 Dashboard Lokal   : http://localhost:8080"
+echo "  🌐 Dashboard HTTP    : http://localhost:8080"
 if [ -n "$PUBLIC_IP" ]; then
-echo "  🌐 Dashboard Publik  : http://${PUBLIC_IP}:8080"
+echo "  🌐 Dashboard IP      : http://${PUBLIC_IP}:8080 (atau http://${PUBLIC_IP})"
 fi
+echo "  🔒 Caddy HTTPS Port  : Port 80 & 443 (Auto-TLS On-Demand Aktif)"
 echo "  🤖 API Gateway       : http://localhost:8080/v1/chat/completions"
 echo "  🩺 Health Probe      : http://localhost:8080/readyz"
 echo ""

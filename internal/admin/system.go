@@ -29,6 +29,13 @@ func (h *Handlers) systemRoutes(r chi.Router) {
 		sr.With(auth.RequirePermission(seed.PermSettingsWrite)).Delete("/{key}", h.deleteSetting)
 	})
 
+	// Domain & Automatic HTTPS Management
+	r.Route("/domain", func(dr chi.Router) {
+		dr.With(auth.RequirePermission(seed.PermSettingsRead)).Get("/", h.getDomainStatus)
+		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Post("/", h.updateDomainConfig)
+		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Delete("/", h.deleteDomainConfig)
+	})
+
 	// Background Jobs
 	r.Route("/jobs", func(jr chi.Router) {
 		jr.With(auth.RequirePermission(seed.PermHealthRead)).Get("/", h.listJobs)

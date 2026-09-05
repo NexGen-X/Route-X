@@ -771,6 +771,28 @@ type SettingDTO struct {
 
 func (SettingDTO) adalahDTO() {}
 
+// DomainConfigDTO merepresentasikan konfigurasi nama domain publik dan status HTTPS otomatis.
+type DomainConfigDTO struct {
+	Domain      string     `json:"domain"`
+	Mode        string     `json:"mode"`
+	Status      string     `json:"status"`
+	PublicURL   string     `json:"public_url"`
+	BaseURL     string     `json:"base_url"`
+	ServerIP    string     `json:"server_ip"`
+	ResolvedIPs []string   `json:"resolved_ips,omitempty"`
+	DNSMatched  bool       `json:"dns_matched"`
+	LastChecked *time.Time `json:"last_checked,omitempty"`
+	Message     string     `json:"message,omitempty"`
+}
+
+func (DomainConfigDTO) adalahDTO() {}
+
+// UpdateDomainRequestDTO adalah masukan untuk mengubah konfigurasi nama domain sistem.
+type UpdateDomainRequestDTO struct {
+	Domain string `json:"domain"`
+	Mode   string `json:"mode"`
+}
+
 // JobDTO adalah status konfigurasi background scheduler internal.
 type JobDTO struct {
 	Name           string     `json:"name"`

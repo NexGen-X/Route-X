@@ -34,6 +34,8 @@ import type {
   CLIConfigureRequest,
   CLIConfigureResponse,
   CLIExportScriptResponse,
+  DomainConfig,
+  DomainUpdateRequest,
 } from '../types';
 
 export class ApiError extends Error {
@@ -519,6 +521,18 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ enabled, ttl_seconds: ttlSeconds }),
       }),
+    domain: {
+      get: () => request<DomainConfig>('/api/admin/system/domain'),
+      update: (data: DomainUpdateRequest) =>
+        request<DomainConfig>('/api/admin/system/domain', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }),
+      delete: () =>
+        request<{ status: string }>('/api/admin/system/domain', {
+          method: 'DELETE',
+        }),
+    },
   },
 
   // CLI Integrations (Fitur 4)

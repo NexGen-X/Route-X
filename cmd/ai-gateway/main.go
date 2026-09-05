@@ -262,6 +262,7 @@ func buildRouter(
 	// --- REST API Admin (Fase 11) ---
 	if adminHandlers != nil {
 		r.Mount("/api/admin", adminHandlers.Routes())
+		r.Get("/api/internal/tls-check", adminHandlers.CaddyTLSCheck)
 	}
 
 	// --- Permukaan API /v1 ---

@@ -87,6 +87,16 @@ func TestDTOSerializationSecurity(t *testing.T) {
 		admin.JobRunResponse{Status: "triggered", Job: "test", Message: "ok"},
 		admin.WebhookPingResponse{Status: "ok", StatusCode: 200, DurationMS: 25},
 		admin.ProbeProviderResponse{Status: "ok", LatencyMS: 50},
+		admin.DomainConfigDTO{
+			Domain:     "ai.example.com",
+			Mode:       "letsencrypt",
+			Status:     "active",
+			PublicURL:  "https://ai.example.com",
+			BaseURL:    "https://ai.example.com/v1",
+			ServerIP:   "54.179.116.100",
+			DNSMatched: true,
+			Message:    "ok",
+		},
 		admin.TrafficStatsDTO{
 			TotalRequests:    10,
 			SuccessRequests:  9,

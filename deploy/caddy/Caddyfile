@@ -1,18 +1,21 @@
 # ==============================================================================
-# Route-X — Production Caddyfile (Otomatis TLS / HTTPS dengan Let's Encrypt)
+# Route-X — Caddyfile Reverse Proxy dengan Automatic TLS / On-Demand HTTPS
 # ==============================================================================
 
-{$PUBLIC_DOMAIN:localhost} {
-    # Logging akses terstruktur JSON
-    log {
-        output stdout
-        format json
+{
+    admin 0.0.0.0:2019
+    on_demand_tls {
+        ask http://gateway:8080/api/internal/tls-check
+    }
+}
+
+https:// {
+    tls {
+        on_demand
     }
 
-    # Kompresi gzip dan zstd untuk aset statis dan respon JSON non-streaming
     encode zstd gzip
 
-    # Header keamanan pelengkap
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options "nosniff"
@@ -20,14 +23,22 @@
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 
-    # Reverse proxy ke container atau service Route-X
-    # Catatan: flush_interval -1 KRITIS untuk streaming Server-Sent Events (SSE),
-    # agar potongan token teks langsung diteruskan ke klien tanpa buffer Caddy.
     reverse_proxy gateway:8080 {
         flush_interval -1
         header_up Host {host}
         header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Proto https
+    }
+}
+
+http:// {
+    @isDomain header_regexp host Host ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?$
+    redir @isDomain https://{host}{uri} permanent
+
+    reverse_proxy gateway:8080 {
+        flush_interval -1
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto http
     }
 }

@@ -513,6 +513,26 @@ func getCuratedProviderModels(kind, name string) []string {
 		return []string{"meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-R1", "Qwen/Qwen2.5-72B-Instruct-Turbo"}
 	case strings.Contains(n, "perplexity"):
 		return []string{"sonar-pro", "sonar", "sonar-reasoning"}
+	case strings.Contains(n, "cerebras"):
+		return []string{"llama-3.3-70b", "llama-3.1-8b", "deepseek-r1-distill-llama-70b"}
+	case strings.Contains(n, "sambanova"):
+		return []string{"Meta-Llama-3.1-405B-Instruct", "Meta-Llama-3.3-70B-Instruct", "DeepSeek-R1"}
+	case strings.Contains(n, "fireworks"):
+		return []string{"accounts/fireworks/models/deepseek-r1", "accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/qwen2p5-coder-32b-instruct"}
+	case strings.Contains(n, "qwen") || strings.Contains(n, "dashscope") || strings.Contains(n, "alibaba"):
+		return []string{"qwen2.5-coder-32b-instruct", "qwen2.5-72b-instruct", "qwen-max", "qwen-plus"}
+	case strings.Contains(n, "siliconflow") || strings.Contains(n, "siliconcloud"):
+		return []string{"deepseek-ai/DeepSeek-R1", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"}
+	case strings.Contains(n, "novita"):
+		return []string{"deepseek/deepseek-r1", "meta-llama/llama-3.3-70b-instruct"}
+	case strings.Contains(n, "cloudflare"):
+		return []string{"@cf/meta/llama-3.3-70b-instruct", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"}
+	case strings.Contains(n, "huggingface") || strings.Contains(n, "hf"):
+		return []string{"meta-llama/Llama-3.3-70B-Instruct", "deepseek-ai/DeepSeek-R1"}
+	case strings.Contains(n, "lmstudio") || strings.Contains(n, "lm-studio"):
+		return []string{"local-model:default"}
+	case strings.Contains(n, "vllm"):
+		return []string{"default-vllm-model"}
 	case strings.Contains(n, "xai") || strings.Contains(n, "grok"):
 		return []string{"grok-2", "grok-2-mini", "grok-beta"}
 	case strings.Contains(n, "ollama") || k == "ollama":

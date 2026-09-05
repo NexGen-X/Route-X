@@ -8,6 +8,7 @@ import type {
   ProviderModel,
   Price,
   EgressPool,
+  EgressProbeResult,
   RoutingRule,
   RateLimit,
   Budget,
@@ -287,6 +288,8 @@ export const api = {
       }),
     delete: (id: string) =>
       request<void>(`/api/admin/upstreams/egress-pools/${id}`, { method: 'DELETE' }),
+    test: (id: string) =>
+      request<EgressProbeResult>(`/api/admin/upstreams/egress-pools/${id}/test`, { method: 'POST' }),
   },
 
   // Gateway Policies

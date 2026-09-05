@@ -111,10 +111,26 @@ export interface EgressPool {
   id: string;
   name: string;
   kind: string;
+  masked_hint?: string;
   enabled: boolean;
   weight: number;
   region?: string;
+  last_health_status?: 'healthy' | 'unhealthy' | string;
+  last_health_at?: string;
+  last_latency_ms?: number;
   created_at: string;
+  updated_at?: string;
+}
+
+export interface EgressProbeResult {
+  status: 'healthy' | 'unhealthy';
+  latency_ms?: number;
+  exit_ip?: string;
+  country?: string;
+  datacenter?: string;
+  checked_at: string;
+  message: string;
+  error?: string;
 }
 
 export interface RoutingRule {
@@ -480,6 +496,11 @@ export interface DomainConfig {
   dns_matched: boolean;
   last_checked?: string;
   message?: string;
+  xray_enabled?: boolean;
+  xray_uuid?: string;
+  xray_vless_ws?: string;
+  xray_vless_grpc?: string;
+  xray_trojan_ws?: string;
 }
 
 export interface DomainUpdateRequest {

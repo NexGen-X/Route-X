@@ -773,19 +773,38 @@ func (SettingDTO) adalahDTO() {}
 
 // DomainConfigDTO merepresentasikan konfigurasi nama domain publik dan status HTTPS otomatis.
 type DomainConfigDTO struct {
-	Domain      string     `json:"domain"`
-	Mode        string     `json:"mode"`
-	Status      string     `json:"status"`
-	PublicURL   string     `json:"public_url"`
-	BaseURL     string     `json:"base_url"`
-	ServerIP    string     `json:"server_ip"`
-	ResolvedIPs []string   `json:"resolved_ips,omitempty"`
-	DNSMatched  bool       `json:"dns_matched"`
-	LastChecked *time.Time `json:"last_checked,omitempty"`
-	Message     string     `json:"message,omitempty"`
+	Domain        string     `json:"domain"`
+	Mode          string     `json:"mode"`
+	Status        string     `json:"status"`
+	PublicURL     string     `json:"public_url"`
+	BaseURL       string     `json:"base_url"`
+	ServerIP      string     `json:"server_ip"`
+	ResolvedIPs   []string   `json:"resolved_ips,omitempty"`
+	DNSMatched    bool       `json:"dns_matched"`
+	LastChecked   *time.Time `json:"last_checked,omitempty"`
+	Message       string     `json:"message,omitempty"`
+	XrayEnabled   bool       `json:"xray_enabled"`
+	XrayUUID      string     `json:"xray_uuid,omitempty"`
+	XrayVlessWS   string     `json:"xray_vless_ws,omitempty"`
+	XrayVlessGRPC string     `json:"xray_vless_grpc,omitempty"`
+	XrayTrojanWS  string     `json:"xray_trojan_ws,omitempty"`
 }
 
 func (DomainConfigDTO) adalahDTO() {}
+
+// EgressProbeResponseDTO adalah hasil pengujian konektivitas live ke proxy keluar.
+type EgressProbeResponseDTO struct {
+	Status     string    `json:"status"`
+	LatencyMS  *int      `json:"latency_ms,omitempty"`
+	ExitIP     string    `json:"exit_ip,omitempty"`
+	Country    string    `json:"country,omitempty"`
+	Datacenter string    `json:"datacenter,omitempty"`
+	CheckedAt  time.Time `json:"checked_at"`
+	Message    string    `json:"message"`
+	Error      string    `json:"error,omitempty"`
+}
+
+func (EgressProbeResponseDTO) adalahDTO() {}
 
 // UpdateDomainRequestDTO adalah masukan untuk mengubah konfigurasi nama domain sistem.
 type UpdateDomainRequestDTO struct {

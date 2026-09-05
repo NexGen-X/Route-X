@@ -15,6 +15,9 @@ import {
   ExternalLink,
   Trash2,
   Info,
+  Copy,
+  Check,
+  Zap,
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -23,6 +26,7 @@ export const Settings: React.FC = () => {
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
 
   // Domain & HTTPS state
   const [domainConfig, setDomainConfig] = useState<DomainConfig | null>(null);
@@ -135,6 +139,13 @@ export const Settings: React.FC = () => {
     } finally {
       setIsDomainSaving(false);
     }
+  };
+
+  const handleCopyLink = (key: string, text?: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedLinkKey(key);
+    setTimeout(() => setCopiedLinkKey(null), 2500);
   };
 
   const serverIP = domainConfig?.server_ip || '54.179.116.100';
@@ -277,6 +288,106 @@ export const Settings: React.FC = () => {
                   <span className="text-emerald-400 font-mono font-semibold">{domainConfig.base_url}</span>
                 </div>
               </div>
+
+              {/* Integrasi Otomatis Xray Stealth Tunnel (Port 443 Multiplexed) */}
+              {domainConfig.xray_enabled && (
+                <div className="mt-4 pt-4 border-t border-accent/20 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                        <Zap className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-bold text-white">Xray Stealth Tunnel (Port 443 Multiplexed)</span>
+                    </div>
+                    <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      Auto-Configured
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-text-muted">
+                    Xray-Core aktif dan dimultipleks bersama Caddy di port 443. Salin tautan berikut ke aplikasi proxy luar (v2rayN, Sing-box, Shadowrocket) atau gunakan sebagai jalur keluar di menu <strong>Egress Proxy Pool</strong>.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                    {/* VLESS WS */}
+                    <div className="p-2.5 rounded-lg bg-bg-surface-2 border border-border flex flex-col justify-between gap-2">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-white">VLESS (WebSocket)</span>
+                          <span className="text-[10px] font-mono text-accent">TLS 443</span>
+                        </div>
+                        <span className="text-[10px] text-text-muted block mt-0.5 font-mono">Path: /routex-xray-ws</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyLink('vless_ws', domainConfig.xray_vless_ws)}
+                        className="w-full py-1.5 px-2 rounded bg-bg-surface-1 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        {copiedLinkKey === 'vless_ws' ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" /> <span className="text-emerald-400 font-semibold">Tersalin!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3 text-text-muted" /> Salin Link VLESS-WS
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* VLESS gRPC */}
+                    <div className="p-2.5 rounded-lg bg-bg-surface-2 border border-border flex flex-col justify-between gap-2">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-white">VLESS (gRPC)</span>
+                          <span className="text-[10px] font-mono text-blue-400">TLS 443</span>
+                        </div>
+                        <span className="text-[10px] text-text-muted block mt-0.5 font-mono">Service: routex-grpc</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyLink('vless_grpc', domainConfig.xray_vless_grpc)}
+                        className="w-full py-1.5 px-2 rounded bg-bg-surface-1 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        {copiedLinkKey === 'vless_grpc' ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" /> <span className="text-emerald-400 font-semibold">Tersalin!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3 text-text-muted" /> Salin Link gRPC
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Trojan WS */}
+                    <div className="p-2.5 rounded-lg bg-bg-surface-2 border border-border flex flex-col justify-between gap-2">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-white">Trojan (WebSocket)</span>
+                          <span className="text-[10px] font-mono text-purple-400">TLS 443</span>
+                        </div>
+                        <span className="text-[10px] text-text-muted block mt-0.5 font-mono">Password Auth</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyLink('trojan_ws', domainConfig.xray_trojan_ws)}
+                        className="w-full py-1.5 px-2 rounded bg-bg-surface-1 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        {copiedLinkKey === 'trojan_ws' ? (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" /> <span className="text-emerald-400 font-semibold">Tersalin!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3 text-text-muted" /> Salin Link Trojan
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

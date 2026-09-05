@@ -21,6 +21,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-debug}
       - UPSTREAM_TIMEOUT=${UPSTREAM_TIMEOUT:-120s}
       - SHUTDOWN_GRACE=${SHUTDOWN_GRACE:-25s}
+    volumes:
+      - ./deploy/xray:/etc/xray
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +64,16 @@ services:
     networks:
       - routex_internal
 
+  xray:
+    image: teddysun/xray:latest
+    container_name: routex-xray
+    restart: unless-stopped
+    volumes:
+      - ./deploy/xray:/etc/xray
+    entrypoint: ["/bin/sh", "/etc/xray/entrypoint.sh"]
+    networks:
+      - routex_internal
+
   caddy:
     image: caddy:2-alpine
     container_name: routex-caddy
@@ -76,6 +88,8 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+      xray:
+        condition: service_started
     networks:
       - routex_internal
 

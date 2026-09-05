@@ -3,6 +3,7 @@ package admin
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -75,5 +76,22 @@ func TestCaddyTLSCheck_Localhost(t *testing.T) {
 
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("status domain liar = %d, diharapkan %d", rr.Code, http.StatusForbidden)
+	}
+}
+
+func TestGetXrayLinks(t *testing.T) {
+	h := &Handlers{}
+	state, links := h.getXrayLinks(t.Context(), "ai.gateway.test")
+	if state.UUID == "" {
+		t.Error("UUID Xray kosong")
+	}
+	if !strings.HasPrefix(links.VlessWS, "vless://") {
+		t.Errorf("VlessWS tidak valid: %s", links.VlessWS)
+	}
+	if !strings.Contains(links.VlessWS, "ai.gateway.test") {
+		t.Errorf("VlessWS tidak memuat domain: %s", links.VlessWS)
+	}
+	if !strings.HasPrefix(links.TrojanWS, "trojan://") {
+		t.Errorf("TrojanWS tidak valid: %s", links.TrojanWS)
 	}
 }

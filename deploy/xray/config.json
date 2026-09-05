@@ -1,0 +1,110 @@
+{
+  "inbounds": [
+    {
+      "listen": "0.0.0.0",
+      "port": 10808,
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      },
+      "tag": "socks-internal"
+    },
+    {
+      "listen": "0.0.0.0",
+      "port": 10001,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "4236f4cc-7722-4897-a0c2-bf3d29a64d44",
+            "level": 0
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/routex-xray-ws"
+        }
+      },
+      "tag": "vless-ws-in"
+    },
+    {
+      "listen": "0.0.0.0",
+      "port": 10002,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "4236f4cc-7722-4897-a0c2-bf3d29a64d44",
+            "level": 0
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "grpcSettings": {
+          "serviceName": "routex-grpc"
+        },
+        "network": "grpc"
+      },
+      "tag": "vless-grpc-in"
+    },
+    {
+      "listen": "0.0.0.0",
+      "port": 10003,
+      "protocol": "trojan",
+      "settings": {
+        "clients": [
+          {
+            "level": 0,
+            "password": "f764b476dd6e1000455b80d325c114201a3ef7d3fa669a02"
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": {
+          "path": "/routex-trojan-ws"
+        }
+      },
+      "tag": "trojan-ws-in"
+    }
+  ],
+  "log": {
+    "loglevel": "warning"
+  },
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIP"
+      },
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "settings": {},
+      "tag": "blocked"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "ip": [
+          "geoip:private"
+        ],
+        "outboundTag": "blocked",
+        "type": "field"
+      },
+      {
+        "network": "tcp,udp",
+        "outboundTag": "direct",
+        "type": "field"
+      }
+    ]
+  }
+}

@@ -23,6 +23,29 @@ https:// {
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 
+    # 1. Jalur VLESS WebSocket Tersembunyi (Stealth Tunnel)
+    @xray_ws {
+        path /routex-xray-ws*
+    }
+    reverse_proxy @xray_ws xray:10001
+
+    # 2. Jalur VLESS gRPC Tersembunyi
+    @xray_grpc {
+        path /routex-grpc/*
+    }
+    reverse_proxy @xray_grpc xray:10002 {
+        transport http {
+            versions h2c
+        }
+    }
+
+    # 3. Jalur Trojan WebSocket Tersembunyi
+    @trojan_ws {
+        path /routex-trojan-ws*
+    }
+    reverse_proxy @trojan_ws xray:10003
+
+    # 4. Route-X Gateway & Web Dashboard
     reverse_proxy gateway:8080 {
         flush_interval -1
         header_up Host {host}

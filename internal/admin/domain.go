@@ -14,7 +14,10 @@ import (
 
 	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
+	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/security"
+	"github.com/NexGen-X/Route-X/internal/xray"
 )
 
 const (
@@ -22,6 +25,8 @@ const (
 	SettingKeyDomainConfig = "system:domain:config"
 	// SettingKeyPublicURL adalah kunci penyimpanan URL kanonikal publik sistem.
 	SettingKeyPublicURL = "system:public_url"
+	// SettingKeyXrayConfig adalah kunci penyimpanan status kredensial dan konfigurasi Xray-core.
+	SettingKeyXrayConfig = "system:xray:config"
 )
 
 var (
@@ -158,18 +163,25 @@ func (h *Handlers) getDomainStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	xrayState, xrayLinks := h.getXrayLinks(ctx, cfg.Domain)
+
 	now := time.Now().UTC()
 	res := DomainConfigDTO{
-		Domain:      cfg.Domain,
-		Mode:        cfg.Mode,
-		Status:      status,
-		PublicURL:   fmt.Sprintf("https://%s", cfg.Domain),
-		BaseURL:     fmt.Sprintf("https://%s/v1", cfg.Domain),
-		ServerIP:    serverIP,
-		ResolvedIPs: ips,
-		DNSMatched:  dnsMatched,
-		LastChecked: &now,
-		Message:     message,
+		Domain:        cfg.Domain,
+		Mode:          cfg.Mode,
+		Status:        status,
+		PublicURL:     fmt.Sprintf("https://%s", cfg.Domain),
+		BaseURL:       fmt.Sprintf("https://%s/v1", cfg.Domain),
+		ServerIP:      serverIP,
+		ResolvedIPs:   ips,
+		DNSMatched:    dnsMatched,
+		LastChecked:   &now,
+		Message:       message,
+		XrayEnabled:   true,
+		XrayUUID:      xrayState.UUID,
+		XrayVlessWS:   xrayLinks.VlessWS,
+		XrayVlessGRPC: xrayLinks.VlessGRPC,
+		XrayTrojanWS:  xrayLinks.TrojanWS,
 	}
 
 	_ = h.respond(w, r, http.StatusOK, res)
@@ -282,17 +294,25 @@ func (h *Handlers) updateDomainConfig(w http.ResponseWriter, r *http.Request) {
 		"ips":  ips,
 	})
 
+	// Sinkronisasi otomatis konfigurasi Xray-core dan registrasi Egress Pool
+	xrayState, xrayLinks := h.syncXrayConfig(ctx, domain, actorID)
+
 	res := DomainConfigDTO{
-		Domain:      domain,
-		Mode:        mode,
-		Status:      "active",
-		PublicURL:   fmt.Sprintf("https://%s", domain),
-		BaseURL:     fmt.Sprintf("https://%s/v1", domain),
-		ServerIP:    serverIP,
-		ResolvedIPs: ips,
-		DNSMatched:  dnsMatched,
-		LastChecked: &now,
-		Message:     "Domain dan HTTPS otomatis berhasil diaktifkan. Anda kini dapat mengakses dashboard dan API via HTTPS.",
+		Domain:        domain,
+		Mode:          mode,
+		Status:        "active",
+		PublicURL:     fmt.Sprintf("https://%s", domain),
+		BaseURL:       fmt.Sprintf("https://%s/v1", domain),
+		ServerIP:      serverIP,
+		ResolvedIPs:   ips,
+		DNSMatched:    dnsMatched,
+		LastChecked:   &now,
+		Message:       "Domain dan HTTPS otomatis berhasil diaktifkan. Anda kini dapat mengakses dashboard dan API via HTTPS.",
+		XrayEnabled:   true,
+		XrayUUID:      xrayState.UUID,
+		XrayVlessWS:   xrayLinks.VlessWS,
+		XrayVlessGRPC: xrayLinks.VlessGRPC,
+		XrayTrojanWS:  xrayLinks.TrojanWS,
 	}
 
 	_ = h.respond(w, r, http.StatusOK, res)
@@ -360,4 +380,84 @@ func (h *Handlers) resolveGatewayURL(r *http.Request) string {
 		}
 	}
 	return reqGWURL
+}
+
+// syncXrayConfig menyelaraskan konfigurasi Xray-core saat nama domain kustom disimpan.
+// Fungsi ini memastikan kredensial tersimpan di database, menulis berkas config.json,
+// serta mendaftarkan pool egress bawaan untuk routing lalu lintas.
+func (h *Handlers) syncXrayConfig(ctx context.Context, domain string, actorID string) (xray.State, xray.Links) {
+	state := xray.DefaultState(domain)
+
+	if h.settingsRepo != nil {
+		if s, err := h.settingsRepo.Get(ctx, SettingKeyXrayConfig); err == nil && len(s.Value) > 0 {
+			var existing xray.State
+			if err := json.Unmarshal(s.Value, &existing); err == nil && existing.UUID != "" {
+				state = existing
+				state.Domain = domain
+				state.UpdatedAt = time.Now().UTC()
+			}
+		}
+
+		stateBytes, _ := json.Marshal(state)
+		_, _ = h.settingsRepo.Put(ctx, identity.SettingWrite{
+			Key:         SettingKeyXrayConfig,
+			Value:       stateBytes,
+			Description: "Konfigurasi runtime Xray-core dan stealth proxy tunnel",
+			UpdatedBy:   actorID,
+		})
+	}
+
+	cfgBytes, err := xray.GenerateConfig(state)
+	if err == nil {
+		_, _ = xray.SyncToFileCandidates(cfgBytes, "/etc/xray/config.json", "./deploy/xray/config.json")
+	}
+
+	if h.egressRepo != nil {
+		h.ensureXrayEgressPool(ctx)
+	}
+
+	links := xray.GenerateShareLinks(state)
+	return state, links
+}
+
+// ensureXrayEgressPool memastikan entitas Egress Pool untuk jalur Xray lokal telah terdaftar di database.
+func (h *Handlers) ensureXrayEgressPool(ctx context.Context) {
+	if h.egressRepo == nil {
+		return
+	}
+	pools, err := h.egressRepo.List(ctx, false)
+	if err != nil {
+		return
+	}
+	for _, p := range pools {
+		if strings.Contains(p.Name, "Xray") {
+			return
+		}
+	}
+
+	region := "local"
+	enabled := true
+	_, _ = h.egressRepo.Create(ctx, upstream.CreateEgressParams{
+		Name:     "⚡ Xray Stealth Tunnel (Local)",
+		Kind:     "socks5",
+		ProxyURL: security.Secret("socks5://xray:10808"),
+		Region:   &region,
+		Enabled:  &enabled,
+	})
+}
+
+// getXrayLinks menghasilkan tautan share URL VLESS/Trojan untuk domain aktif saat ini.
+func (h *Handlers) getXrayLinks(ctx context.Context, domain string) (xray.State, xray.Links) {
+	state := xray.DefaultState(domain)
+	if h.settingsRepo != nil {
+		if s, err := h.settingsRepo.Get(ctx, SettingKeyXrayConfig); err == nil && len(s.Value) > 0 {
+			var existing xray.State
+			if err := json.Unmarshal(s.Value, &existing); err == nil && existing.UUID != "" {
+				state = existing
+				state.Domain = domain
+			}
+		}
+	}
+	links := xray.GenerateShareLinks(state)
+	return state, links
 }

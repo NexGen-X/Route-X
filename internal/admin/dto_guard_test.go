@@ -97,6 +97,11 @@ func TestDTOSerializationSecurity(t *testing.T) {
 			DNSMatched: true,
 			Message:    "ok",
 		},
+		admin.EgressProbeResponseDTO{
+			Status:    "healthy",
+			CheckedAt: now,
+			Message:   "ok",
+		},
 		admin.TrafficStatsDTO{
 			TotalRequests:    10,
 			SuccessRequests:  9,

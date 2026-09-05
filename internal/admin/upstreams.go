@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,6 +101,7 @@ func (h *Handlers) upstreamsRoutes(r chi.Router) {
 		er.With(auth.RequirePermission(seed.PermProvidersRead)).Get("/{id}", h.getEgressPool)
 		er.With(auth.RequirePermission(seed.PermProvidersWrite)).Put("/{id}", h.updateEgressPool)
 		er.With(auth.RequirePermission(seed.PermProvidersWrite)).Delete("/{id}", h.deleteEgressPool)
+		er.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/{id}/test", h.testEgressPool)
 	})
 }
 
@@ -1353,4 +1355,111 @@ func (h *Handlers) deleteEgressPool(w http.ResponseWriter, r *http.Request) {
 
 	h.writeAudit(ctx, r, "delete", "egress_pool", id, nil)
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
+}
+
+// testEgressPool melakukan uji konektivitas riil ke jalur proxy keluar via endpoint Cloudflare trace,
+// mengukur latensi jaringan riil, serta mendeteksi IP keluar publik dan negara.
+func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	ep, err := h.egressRepo.Get(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "egress pool")
+		return
+	}
+
+	proxySecret, err := h.egressRepo.ProxyURL(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "egress pool proxy_url")
+		return
+	}
+
+	proxyRaw := proxySecret.Reveal()
+	if proxyRaw == "" {
+		httpx.BadRequest(w, r, "empty_proxy_url", "URL proxy kosong")
+		return
+	}
+
+	parsedProxy, err := url.Parse(proxyRaw)
+	if err != nil {
+		httpx.BadRequest(w, r, "invalid_proxy_url", "Format URL proxy tidak valid: "+err.Error())
+		return
+	}
+
+	transport := &http.Transport{
+		Proxy:             http.ProxyURL(parsedProxy),
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: false},
+		DisableKeepAlives: true,
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   7 * time.Second,
+	}
+
+	start := time.Now()
+	probeReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://cloudflare.com/cdn-cgi/trace", nil)
+	if err != nil {
+		httpx.InternalError(w, r)
+		return
+	}
+	probeReq.Header.Set("User-Agent", "Route-X-Probe/1.0")
+
+	resp, err := client.Do(probeReq)
+	duration := int(time.Since(start).Milliseconds())
+
+	now := time.Now().UTC()
+	if err != nil {
+		_ = h.egressRepo.RecordHealth(ctx, id, "unhealthy", nil)
+		_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
+			Status:    "unhealthy",
+			CheckedAt: now,
+			Message:   fmt.Sprintf("Gagal terhubung melalui proxy %s: %v", ep.Name, err),
+			Error:     err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		_ = h.egressRepo.RecordHealth(ctx, id, "unhealthy", nil)
+		_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
+			Status:    "unhealthy",
+			CheckedAt: now,
+			Message:   fmt.Sprintf("Proxy merespons dengan kode status HTTP %d", resp.StatusCode),
+			Error:     fmt.Sprintf("HTTP status %d", resp.StatusCode),
+		})
+		return
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	lines := strings.Split(string(body), "\n")
+	var exitIP, loc, colo string
+	for _, l := range lines {
+		parts := strings.SplitN(l, "=", 2)
+		if len(parts) == 2 {
+			k := strings.TrimSpace(parts[0])
+			v := strings.TrimSpace(parts[1])
+			switch k {
+			case "ip":
+				exitIP = v
+			case "loc":
+				loc = v
+			case "colo":
+				colo = v
+			}
+		}
+	}
+
+	_ = h.egressRepo.RecordHealth(ctx, id, "healthy", &duration)
+
+	_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
+		Status:     "healthy",
+		LatencyMS:  &duration,
+		ExitIP:     exitIP,
+		Country:    loc,
+		Datacenter: colo,
+		CheckedAt:  now,
+		Message:    fmt.Sprintf("Koneksi berhasil (Latensi: %dms, IP Keluar: %s, Negara: %s)", duration, exitIP, loc),
+	})
 }

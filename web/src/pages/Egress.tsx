@@ -355,6 +355,49 @@ export const Egress: React.FC = () => {
       >
         <form onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
+            <label className="block font-semibold text-text-secondary uppercase mb-1">Preset / Sumber Proxy</label>
+            <select
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'custom') return;
+                if (val === 'xray_socks') {
+                  setNewPool({
+                    ...newPool,
+                    name: '⚡ Xray SOCKS5 Bridge (Local)',
+                    kind: 'socks5',
+                    proxy_url: 'socks5://xray:10808',
+                    region: 'local',
+                  });
+                } else if (val === 'xray_http') {
+                  setNewPool({
+                    ...newPool,
+                    name: '⚡ Xray HTTP Bridge (Local)',
+                    kind: 'http',
+                    proxy_url: 'http://xray:10809',
+                    region: 'local',
+                  });
+                } else if (val === 'xray_tunnel') {
+                  setNewPool({
+                    ...newPool,
+                    name: '⚡ Xray Stealth Tunnel (Multiplexed)',
+                    kind: 'socks5',
+                    proxy_url: 'socks5://xray:10808',
+                    region: 'auto',
+                  });
+                }
+              }}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-accent/40 rounded-nav text-white text-xs font-medium focus:outline-none focus:border-accent"
+            >
+              <option value="custom">Kustom / Manual (Masukkan Proxy Luar)</option>
+              <option value="xray_socks">⚡ Xray SOCKS5 Internal Bridge (socks5://xray:10808)</option>
+              <option value="xray_http">⚡ Xray HTTP Internal Bridge (http://xray:10809)</option>
+              <option value="xray_tunnel">⚡ Xray Stealth Tunnel (Auto Multiplexed)</option>
+            </select>
+            <span className="text-[11px] text-text-muted block mt-1">
+              Pilih preset untuk mengisi otomatis URL dan konfigurasi Xray tanpa perlu mengetik manual.
+            </span>
+          </div>
+          <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Pool</label>
             <input
               type="text"
@@ -428,6 +471,37 @@ export const Egress: React.FC = () => {
         subtitle="Perbarui konfigurasi proxy keluar atau lakukan rotasi kredensial"
       >
         <form onSubmit={handleUpdate} className="space-y-4 text-xs">
+          <div>
+            <label className="block font-semibold text-text-secondary uppercase mb-1">Preset / Sumber Proxy</label>
+            <select
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'custom') return;
+                if (val === 'xray_socks') {
+                  setEditForm({
+                    ...editForm,
+                    name: '⚡ Xray SOCKS5 Bridge (Local)',
+                    kind: 'socks5',
+                    proxy_url: 'socks5://xray:10808',
+                    region: 'local',
+                  });
+                } else if (val === 'xray_http') {
+                  setEditForm({
+                    ...editForm,
+                    name: '⚡ Xray HTTP Bridge (Local)',
+                    kind: 'http',
+                    proxy_url: 'http://xray:10809',
+                    region: 'local',
+                  });
+                }
+              }}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-accent/40 rounded-nav text-white text-xs font-medium focus:outline-none focus:border-accent"
+            >
+              <option value="custom">Pertahankan / Masukkan URL Manual</option>
+              <option value="xray_socks">⚡ Xray SOCKS5 Internal Bridge (socks5://xray:10808)</option>
+              <option value="xray_http">⚡ Xray HTTP Internal Bridge (http://xray:10809)</option>
+            </select>
+          </div>
           <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Pool</label>
             <input

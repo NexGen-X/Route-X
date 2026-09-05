@@ -27,7 +27,6 @@ export const Settings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
-
   // Domain & HTTPS state
   const [domainConfig, setDomainConfig] = useState<DomainConfig | null>(null);
   const [inputDomain, setInputDomain] = useState('');
@@ -35,6 +34,7 @@ export const Settings: React.FC = () => {
   const [isDomainLoading, setIsDomainLoading] = useState(false);
   const [isDomainSaving, setIsDomainSaving] = useState(false);
   const [domainFeedback, setDomainFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const [protocolFilter, setProtocolFilter] = useState<string>('all');
 
   const loadSettings = async () => {
     setIsLoading(true);
@@ -289,102 +289,260 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
 
-              {/* Integrasi Otomatis Xray Stealth Tunnel (Port 443 Multiplexed) */}
+              {/* Integrasi Lengkap Multi-Protokol Xray-Core */}
               {domainConfig.xray_enabled && (
-                <div className="mt-4 pt-4 border-t border-accent/20 space-y-3">
-                  <div className="flex items-center justify-between">
+                <div className="mt-4 pt-4 border-t border-accent/20 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <div className="w-6 h-6 rounded-md bg-amber-500/10 text-amber-400 flex items-center justify-center">
                         <Zap className="w-3.5 h-3.5" />
                       </div>
-                      <span className="text-xs font-bold text-white">Xray Stealth Tunnel (Port 443 Multiplexed)</span>
+                      <div>
+                        <span className="text-xs font-bold text-white block">Xray Multi-Protokol Stealth Suite</span>
+                        <span className="text-[10px] text-text-muted">Port 443 Multiplexed TLS, Reality, Shadowsocks & Bridge Internal</span>
+                      </div>
                     </div>
-                    <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                      Auto-Configured
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                        {domainConfig.xray_protocols?.length || 12} Protokol Siap Pakai
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-text-muted">
-                    Xray-Core aktif dan dimultipleks bersama Caddy di port 443. Salin tautan berikut ke aplikasi proxy luar (v2rayN, Sing-box, Shadowrocket) atau gunakan sebagai jalur keluar di menu <strong>Egress Proxy Pool</strong>.
-                  </p>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                    {/* VLESS WS */}
-                    <div className="p-2.5 rounded-lg bg-bg-surface-2 border border-border flex flex-col justify-between gap-2">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-white">VLESS (WebSocket)</span>
-                          <span className="text-[10px] font-mono text-accent">TLS 443</span>
-                        </div>
-                        <span className="text-[10px] text-text-muted block mt-0.5 font-mono">Path: /routex-xray-ws</span>
-                      </div>
+                  {/* Kategori Filter Tabs */}
+                  <div className="flex flex-wrap items-center gap-1 p-1 bg-bg-surface-2 rounded-lg border border-border text-[11px]">
+                    {[
+                      { id: 'all', label: 'Semua Protokol' },
+                      { id: 'vless', label: 'VLESS (WS/gRPC/Reality/XHTTP)' },
+                      { id: 'trojan', label: 'Trojan (WS/gRPC)' },
+                      { id: 'vmess', label: 'VMess (WS/gRPC)' },
+                      { id: 'shadowsocks', label: 'Shadowsocks' },
+                      { id: 'socks5', label: 'Bridge Internal' },
+                    ].map((tab) => (
                       <button
+                        key={tab.id}
                         type="button"
-                        onClick={() => handleCopyLink('vless_ws', domainConfig.xray_vless_ws)}
-                        className="w-full py-1.5 px-2 rounded bg-bg-surface-1 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
+                        onClick={() => setProtocolFilter(tab.id)}
+                        className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                          protocolFilter === tab.id
+                            ? 'bg-accent text-white shadow-sm'
+                            : 'text-text-muted hover:text-white hover:bg-bg-surface-1'
+                        }`}
                       >
-                        {copiedLinkKey === 'vless_ws' ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" /> <span className="text-emerald-400 font-semibold">Tersalin!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3 text-text-muted" /> Salin Link VLESS-WS
-                          </>
-                        )}
+                        {tab.label}
                       </button>
-                    </div>
+                    ))}
+                  </div>
 
-                    {/* VLESS gRPC */}
-                    <div className="p-2.5 rounded-lg bg-bg-surface-2 border border-border flex flex-col justify-between gap-2">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-white">VLESS (gRPC)</span>
-                          <span className="text-[10px] font-mono text-blue-400">TLS 443</span>
-                        </div>
-                        <span className="text-[10px] text-text-muted block mt-0.5 font-mono">Service: routex-grpc</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLink('vless_grpc', domainConfig.xray_vless_grpc)}
-                        className="w-full py-1.5 px-2 rounded bg-bg-surface-1 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
-                      >
-                        {copiedLinkKey === 'vless_grpc' ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" /> <span className="text-emerald-400 font-semibold">Tersalin!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3 text-text-muted" /> Salin Link gRPC
-                          </>
-                        )}
-                      </button>
-                    </div>
+                  {/* Daftar Kartu Protokol */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {(domainConfig.xray_protocols || [
+                      {
+                        id: 'vless-grpc',
+                        name: 'VLESS over gRPC',
+                        protocol: 'vless',
+                        transport: 'grpc',
+                        security: 'tls',
+                        port: 443,
+                        path_or_sni: 'routex-grpc',
+                        share_link: domainConfig.xray_vless_grpc || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Latensi ultra-rendah dengan multiplexing HTTP/2 gRPC resmi.',
+                      },
+                      {
+                        id: 'vless-ws',
+                        name: 'VLESS over WebSocket',
+                        protocol: 'vless',
+                        transport: 'ws',
+                        security: 'tls',
+                        port: 443,
+                        path_or_sni: '/routex-xray-ws',
+                        share_link: domainConfig.xray_vless_ws || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Kompatibilitas universal untuk melewati firewall dan CDN reverse proxy.',
+                      },
+                      {
+                        id: 'vless-xhttp',
+                        name: 'VLESS over SplitHTTP (XHTTP)',
+                        protocol: 'vless',
+                        transport: 'splithttp',
+                        security: 'tls',
+                        port: 443,
+                        path_or_sni: '/routex-xhttp',
+                        share_link: domainConfig.xray_vless_xhttp || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Transport tercanggih anti pemutusan sambungan CDN buffer.',
+                      },
+                      {
+                        id: 'vless-reality',
+                        name: 'VLESS Reality (XTLS-Vision)',
+                        protocol: 'vless',
+                        transport: 'tcp',
+                        security: 'reality',
+                        port: 8443,
+                        path_or_sni: 'www.apple.com',
+                        share_link: domainConfig.xray_vless_reality || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Teknologi kamuflase TLS tanpa domain dengan meminjam sertifikat Apple.',
+                      },
+                      {
+                        id: 'trojan-grpc',
+                        name: 'Trojan over gRPC',
+                        protocol: 'trojan',
+                        transport: 'grpc',
+                        security: 'tls',
+                        port: 443,
+                        path_or_sni: 'routex-trojan-grpc',
+                        share_link: domainConfig.xray_trojan_grpc || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Autentikasi sandi murni dengan transport multiplexing gRPC.',
+                      },
+                      {
+                        id: 'trojan-ws',
+                        name: 'Trojan over WebSocket',
+                        protocol: 'trojan',
+                        transport: 'ws',
+                        security: 'tls',
+                        port: 443,
+                        path_or_sni: '/routex-trojan-ws',
+                        share_link: domainConfig.xray_trojan_ws || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Penyamaran HTTPS WebSocket di balik terminasi TLS Caddy.',
+                      },
+                      {
+                        id: 'vmess-grpc',
+                        name: 'VMess over gRPC',
+                        protocol: 'vmess',
+                        transport: 'grpc',
+                        security: 'tls',
+                        port: 443,
+                        path_or_sni: 'routex-vmess-grpc',
+                        share_link: domainConfig.xray_vmess_grpc || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Format VMess Base64 terenkripsi dengan transport gRPC.',
+                      },
+                      {
+                        id: 'vmess-ws',
+                        name: 'VMess over WebSocket',
+                        protocol: 'vmess',
+                        transport: 'ws',
+                        security: 'tls',
+                        port: 443,
+                        path_or_sni: '/routex-vmess-ws',
+                        share_link: domainConfig.xray_vmess_ws || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Format tautan VMess Base64 terstandarisasi untuk semua v2ray client.',
+                      },
+                      {
+                        id: 'ss-ws',
+                        name: 'Shadowsocks WebSocket',
+                        protocol: 'shadowsocks',
+                        transport: 'ws',
+                        security: 'tls',
+                        port: 443,
+                        path_or_sni: '/routex-ss-ws',
+                        share_link: domainConfig.xray_shadowsocks_ws || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Shadowsocks AES-128-GCM dimultipleks dalam WebSocket Port 443.',
+                      },
+                      {
+                        id: 'ss-standalone',
+                        name: 'Shadowsocks 2022 Standalone',
+                        protocol: 'shadowsocks',
+                        transport: 'tcp',
+                        security: 'none',
+                        port: 8388,
+                        path_or_sni: '-',
+                        share_link: domainConfig.xray_shadowsocks || '',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Port langsung 8388 berkecepatan tinggi untuk router OpenWrt / IoT.',
+                      },
+                      {
+                        id: 'socks-internal',
+                        name: '⚡ Xray SOCKS5 Bridge',
+                        protocol: 'socks5',
+                        transport: 'tcp',
+                        security: 'none',
+                        port: 10808,
+                        path_or_sni: 'xray:10808',
+                        share_link: 'socks5://xray:10808',
+                        egress_url: 'socks5://xray:10808',
+                        description: 'Bridge internal Docker untuk routing proxy upstream AI di Egress Pool.',
+                      },
+                      {
+                        id: 'http-internal',
+                        name: '⚡ Xray HTTP Bridge',
+                        protocol: 'socks5',
+                        transport: 'tcp',
+                        security: 'none',
+                        port: 10809,
+                        path_or_sni: 'xray:10809',
+                        share_link: 'http://xray:10809',
+                        egress_url: 'http://xray:10809',
+                        description: 'Bridge HTTP CONNECT internal untuk aplikasi klien standar.',
+                      },
+                    ])
+                      .filter((p) => {
+                        if (protocolFilter === 'all') return true;
+                        if (protocolFilter === 'vless') return p.protocol === 'vless';
+                        if (protocolFilter === 'trojan') return p.protocol === 'trojan';
+                        if (protocolFilter === 'vmess') return p.protocol === 'vmess';
+                        if (protocolFilter === 'shadowsocks') return p.protocol === 'shadowsocks';
+                        if (protocolFilter === 'socks5') return p.protocol === 'socks5' || p.protocol === 'http';
+                        return true;
+                      })
+                      .map((p) => (
+                        <div
+                          key={p.id}
+                          className="p-3 rounded-lg bg-bg-surface-2 border border-border flex flex-col justify-between gap-2.5 hover:border-accent/40 transition-colors"
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-[12px] font-bold text-white leading-tight">{p.name}</span>
+                              <span
+                                className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-semibold whitespace-nowrap uppercase ${
+                                  p.security === 'reality'
+                                    ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                                    : p.security === 'tls'
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                }`}
+                              >
+                                {p.security === 'none' ? `Port ${p.port}` : `${p.security.toUpperCase()} ${p.port}`}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span className="text-[10px] text-accent font-mono bg-accent/10 px-1.5 py-0.2 rounded">
+                                {p.transport.toUpperCase()}
+                              </span>
+                              <span className="text-[10px] text-text-muted font-mono truncate max-w-[140px]">
+                                {p.path_or_sni}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-text-secondary mt-1.5 line-clamp-2">{p.description}</p>
+                          </div>
 
-                    {/* Trojan WS */}
-                    <div className="p-2.5 rounded-lg bg-bg-surface-2 border border-border flex flex-col justify-between gap-2">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold text-white">Trojan (WebSocket)</span>
-                          <span className="text-[10px] font-mono text-purple-400">TLS 443</span>
+                          <div className="pt-2 border-t border-border/50">
+                            <button
+                              type="button"
+                              onClick={() => handleCopyLink(p.id, p.share_link)}
+                              className="w-full py-1.5 px-2 rounded bg-bg-surface-1 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
+                            >
+                              {copiedLinkKey === p.id ? (
+                                <>
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  <span className="text-emerald-400 font-semibold">Tautan Tersalin!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3.5 h-3.5 text-text-muted" />
+                                  <span>Salin Tautan Klien</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                         </div>
-                        <span className="text-[10px] text-text-muted block mt-0.5 font-mono">Password Auth</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyLink('trojan_ws', domainConfig.xray_trojan_ws)}
-                        className="w-full py-1.5 px-2 rounded bg-bg-surface-1 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
-                      >
-                        {copiedLinkKey === 'trojan_ws' ? (
-                          <>
-                            <Check className="w-3 h-3 text-emerald-400" /> <span className="text-emerald-400 font-semibold">Tersalin!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3 text-text-muted" /> Salin Link Trojan
-                          </>
-                        )}
-                      </button>
-                    </div>
+                      ))}
                   </div>
                 </div>
               )}

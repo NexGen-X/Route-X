@@ -45,6 +45,44 @@ https:// {
     }
     reverse_proxy @trojan_ws xray:10003
 
+    # 4. Jalur Trojan gRPC Tersembunyi
+    @trojan_grpc {
+        path /routex-trojan-grpc/*
+    }
+    reverse_proxy @trojan_grpc xray:10004 {
+        transport http {
+            versions h2c
+        }
+    }
+
+    # 5. Jalur VMess WebSocket Tersembunyi
+    @vmess_ws {
+        path /routex-vmess-ws*
+    }
+    reverse_proxy @vmess_ws xray:10005
+
+    # 6. Jalur VMess gRPC Tersembunyi
+    @vmess_grpc {
+        path /routex-vmess-grpc/*
+    }
+    reverse_proxy @vmess_grpc xray:10006 {
+        transport http {
+            versions h2c
+        }
+    }
+
+    # 7. Jalur Shadowsocks WebSocket Tersembunyi
+    @ss_ws {
+        path /routex-ss-ws*
+    }
+    reverse_proxy @ss_ws xray:10007
+
+    # 8. Jalur VLESS SplitHTTP / XHTTP Tersembunyi
+    @xray_xhttp {
+        path /routex-xhttp*
+    }
+    reverse_proxy @xray_xhttp xray:10008
+
     # 4. Route-X Gateway & Web Dashboard
     reverse_proxy gateway:8080 {
         flush_interval -1

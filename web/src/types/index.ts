@@ -485,6 +485,19 @@ export interface CLIExportScriptResponse {
   file_path: string;
 }
 
+export interface XrayProtocolItem {
+  id: string;
+  name: string;
+  protocol: string;
+  transport: string;
+  security: string;
+  port: number;
+  path_or_sni: string;
+  share_link: string;
+  egress_url: string;
+  description: string;
+}
+
 export interface DomainConfig {
   domain: string;
   mode: 'letsencrypt' | 'cloudflare';
@@ -500,7 +513,15 @@ export interface DomainConfig {
   xray_uuid?: string;
   xray_vless_ws?: string;
   xray_vless_grpc?: string;
+  xray_vless_xhttp?: string;
+  xray_vless_reality?: string;
   xray_trojan_ws?: string;
+  xray_trojan_grpc?: string;
+  xray_vmess_ws?: string;
+  xray_vmess_grpc?: string;
+  xray_shadowsocks_ws?: string;
+  xray_shadowsocks?: string;
+  xray_protocols?: XrayProtocolItem[];
 }
 
 export interface DomainUpdateRequest {

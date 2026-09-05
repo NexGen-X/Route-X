@@ -94,4 +94,22 @@ func TestGetXrayLinks(t *testing.T) {
 	if !strings.HasPrefix(links.TrojanWS, "trojan://") {
 		t.Errorf("TrojanWS tidak valid: %s", links.TrojanWS)
 	}
+	if !strings.HasPrefix(links.TrojanGRPC, "trojan://") {
+		t.Errorf("TrojanGRPC tidak valid: %s", links.TrojanGRPC)
+	}
+	if !strings.HasPrefix(links.VmessWS, "vmess://") {
+		t.Errorf("VmessWS tidak valid: %s", links.VmessWS)
+	}
+	if !strings.HasPrefix(links.VmessGRPC, "vmess://") {
+		t.Errorf("VmessGRPC tidak valid: %s", links.VmessGRPC)
+	}
+	if !strings.HasPrefix(links.VlessReality, "vless://") {
+		t.Errorf("VlessReality tidak valid: %s", links.VlessReality)
+	}
+	if !strings.HasPrefix(links.Shadowsocks, "ss://") {
+		t.Errorf("Shadowsocks tidak valid: %s", links.Shadowsocks)
+	}
+	if len(links.Protocols) < 10 {
+		t.Errorf("daftar Protocols kurang lengkap: %d", len(links.Protocols))
+	}
 }

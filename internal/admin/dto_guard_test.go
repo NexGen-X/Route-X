@@ -102,6 +102,18 @@ func TestDTOSerializationSecurity(t *testing.T) {
 			CheckedAt: now,
 			Message:   "ok",
 		},
+		admin.XrayProtocolDTO{
+			ID:          "vless-grpc",
+			Name:        "VLESS over gRPC",
+			Protocol:    "vless",
+			Transport:   "grpc",
+			Security:    "tls",
+			Port:        443,
+			PathOrSNI:   "routex-grpc",
+			ShareLink:   "vless://...",
+			EgressURL:   "socks5://xray:10808",
+			Description: "Test",
+		},
 		admin.TrafficStatsDTO{
 			TotalRequests:    10,
 			SuccessRequests:  9,

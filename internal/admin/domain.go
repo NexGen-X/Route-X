@@ -164,24 +164,33 @@ func (h *Handlers) getDomainStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	xrayState, xrayLinks := h.getXrayLinks(ctx, cfg.Domain)
+	protocolDTOs := toXrayProtocolDTOs(xrayLinks.Protocols)
 
 	now := time.Now().UTC()
 	res := DomainConfigDTO{
-		Domain:        cfg.Domain,
-		Mode:          cfg.Mode,
-		Status:        status,
-		PublicURL:     fmt.Sprintf("https://%s", cfg.Domain),
-		BaseURL:       fmt.Sprintf("https://%s/v1", cfg.Domain),
-		ServerIP:      serverIP,
-		ResolvedIPs:   ips,
-		DNSMatched:    dnsMatched,
-		LastChecked:   &now,
-		Message:       message,
-		XrayEnabled:   true,
-		XrayUUID:      xrayState.UUID,
-		XrayVlessWS:   xrayLinks.VlessWS,
-		XrayVlessGRPC: xrayLinks.VlessGRPC,
-		XrayTrojanWS:  xrayLinks.TrojanWS,
+		Domain:            cfg.Domain,
+		Mode:              cfg.Mode,
+		Status:            status,
+		PublicURL:         fmt.Sprintf("https://%s", cfg.Domain),
+		BaseURL:           fmt.Sprintf("https://%s/v1", cfg.Domain),
+		ServerIP:          serverIP,
+		ResolvedIPs:       ips,
+		DNSMatched:        dnsMatched,
+		LastChecked:       &now,
+		Message:           message,
+		XrayEnabled:       true,
+		XrayUUID:          xrayState.UUID,
+		XrayVlessWS:       xrayLinks.VlessWS,
+		XrayVlessGRPC:     xrayLinks.VlessGRPC,
+		XrayVlessXHTTP:    xrayLinks.VlessXHTTP,
+		XrayVlessReality:  xrayLinks.VlessReality,
+		XrayTrojanWS:      xrayLinks.TrojanWS,
+		XrayTrojanGRPC:    xrayLinks.TrojanGRPC,
+		XrayVmessWS:       xrayLinks.VmessWS,
+		XrayVmessGRPC:     xrayLinks.VmessGRPC,
+		XrayShadowsocksWS: xrayLinks.ShadowsocksWS,
+		XrayShadowsocks:   xrayLinks.Shadowsocks,
+		XrayProtocols:     protocolDTOs,
 	}
 
 	_ = h.respond(w, r, http.StatusOK, res)
@@ -296,23 +305,32 @@ func (h *Handlers) updateDomainConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Sinkronisasi otomatis konfigurasi Xray-core dan registrasi Egress Pool
 	xrayState, xrayLinks := h.syncXrayConfig(ctx, domain, actorID)
+	protocolDTOs := toXrayProtocolDTOs(xrayLinks.Protocols)
 
 	res := DomainConfigDTO{
-		Domain:        domain,
-		Mode:          mode,
-		Status:        "active",
-		PublicURL:     fmt.Sprintf("https://%s", domain),
-		BaseURL:       fmt.Sprintf("https://%s/v1", domain),
-		ServerIP:      serverIP,
-		ResolvedIPs:   ips,
-		DNSMatched:    dnsMatched,
-		LastChecked:   &now,
-		Message:       "Domain dan HTTPS otomatis berhasil diaktifkan. Anda kini dapat mengakses dashboard dan API via HTTPS.",
-		XrayEnabled:   true,
-		XrayUUID:      xrayState.UUID,
-		XrayVlessWS:   xrayLinks.VlessWS,
-		XrayVlessGRPC: xrayLinks.VlessGRPC,
-		XrayTrojanWS:  xrayLinks.TrojanWS,
+		Domain:            domain,
+		Mode:              mode,
+		Status:            "active",
+		PublicURL:         fmt.Sprintf("https://%s", domain),
+		BaseURL:           fmt.Sprintf("https://%s/v1", domain),
+		ServerIP:          serverIP,
+		ResolvedIPs:       ips,
+		DNSMatched:        dnsMatched,
+		LastChecked:       &now,
+		Message:           "Domain dan HTTPS otomatis berhasil diaktifkan. Anda kini dapat mengakses dashboard dan API via HTTPS.",
+		XrayEnabled:       true,
+		XrayUUID:          xrayState.UUID,
+		XrayVlessWS:       xrayLinks.VlessWS,
+		XrayVlessGRPC:     xrayLinks.VlessGRPC,
+		XrayVlessXHTTP:    xrayLinks.VlessXHTTP,
+		XrayVlessReality:  xrayLinks.VlessReality,
+		XrayTrojanWS:      xrayLinks.TrojanWS,
+		XrayTrojanGRPC:    xrayLinks.TrojanGRPC,
+		XrayVmessWS:       xrayLinks.VmessWS,
+		XrayVmessGRPC:     xrayLinks.VmessGRPC,
+		XrayShadowsocksWS: xrayLinks.ShadowsocksWS,
+		XrayShadowsocks:   xrayLinks.Shadowsocks,
+		XrayProtocols:     protocolDTOs,
 	}
 
 	_ = h.respond(w, r, http.StatusOK, res)
@@ -397,6 +415,7 @@ func (h *Handlers) syncXrayConfig(ctx context.Context, domain string, actorID st
 				state.UpdatedAt = time.Now().UTC()
 			}
 		}
+		state.EnsureDefaults(domain)
 
 		stateBytes, _ := json.Marshal(state)
 		_, _ = h.settingsRepo.Put(ctx, identity.SettingWrite{
@@ -458,6 +477,27 @@ func (h *Handlers) getXrayLinks(ctx context.Context, domain string) (xray.State,
 			}
 		}
 	}
+	state.EnsureDefaults(domain)
 	links := xray.GenerateShareLinks(state)
 	return state, links
+}
+
+// toXrayProtocolDTOs mengonversi daftar ProtocolItem internal xray ke format DTO API admin.
+func toXrayProtocolDTOs(items []xray.ProtocolItem) []XrayProtocolDTO {
+	dtos := make([]XrayProtocolDTO, len(items))
+	for i, item := range items {
+		dtos[i] = XrayProtocolDTO{
+			ID:          item.ID,
+			Name:        item.Name,
+			Protocol:    item.Protocol,
+			Transport:   item.Transport,
+			Security:    item.Security,
+			Port:        item.Port,
+			PathOrSNI:   item.PathOrSNI,
+			ShareLink:   item.ShareLink,
+			EgressURL:   item.EgressURL,
+			Description: item.Description,
+		}
+	}
+	return dtos
 }

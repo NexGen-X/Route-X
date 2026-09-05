@@ -8,17 +8,17 @@ services:
     ports:
       - "${PORT:-8080}:8080"
     environment:
-      - APP_ENV=${APP_ENV:?Variabel APP_ENV wajib disetel (development | staging | production)}
+      - APP_ENV=${APP_ENV:-development}
       - PORT=8080
-      - DATABASE_URL=postgres://${POSTGRES_USER:-routex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wajib disetel}@postgres:5432/${POSTGRES_DB:-routex}?sslmode=${DB_SSLMODE:?DB_SSLMODE wajib disetel (require | verify-ca | verify-full)}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-routex}:${POSTGRES_PASSWORD:-routex_secret_pass}@postgres:5432/${POSTGRES_DB:-routex}?sslmode=${DB_SSLMODE:-disable}
       - REDIS_URL=redis://redis:6379/0
-      - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET wajib disetel}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY wajib disetel}
-      - API_KEY_PEPPER=${API_KEY_PEPPER:?API_KEY_PEPPER wajib disetel}
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@routex.internal}
-      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD wajib disetel}
+      - SESSION_SECRET=${SESSION_SECRET:-nq7HDUGi5YfuB3x3BPACa0em/XnX457SPJF4rmsvtuDQ39aN6Y0TxzYFHKcVPF62}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-cb11NcUCxuuKMyQW1HTxWq5RfJG6kIqr0M3QWXpV2nw=}
+      - API_KEY_PEPPER=${API_KEY_PEPPER:-FvWc/8PKKoM266+bZ23NiqFS6Cd3ip3RK5H9rX7gI6c=}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@route-x.local}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-cnyjueHRlgHn82ElKVt9DfLK}
       - PUBLIC_URL=${PUBLIC_URL:-}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
       - UPSTREAM_TIMEOUT=${UPSTREAM_TIMEOUT:-120s}
       - SHUTDOWN_GRACE=${SHUTDOWN_GRACE:-25s}
     depends_on:
@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-routex}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wajib disetel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-routex_secret_pass}
       POSTGRES_DB: ${POSTGRES_DB:-routex}
     volumes:
       - pgdata:/var/lib/postgresql/data

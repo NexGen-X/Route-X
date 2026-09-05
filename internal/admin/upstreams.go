@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -476,8 +477,53 @@ type ollamaModelDiscoveryResponse struct {
 	Models []ollamaModelDiscoveryItem `json:"models"`
 }
 
+type googleModelItem struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+}
+
+type googleModelDiscoveryResponse struct {
+	Models []googleModelItem `json:"models"`
+}
+
+// getCuratedProviderModels menyediakan daftar model kanonik unggulan untuk provider terkenal.
+// Fungsi ini menjadi jaring pengaman (fallback) apabila upstream belum mendukung discovery dinamis
+// atau endpoint /v1/models mengalami kegagalan sementara, sehingga proses onboarding tidak terblokir.
+func getCuratedProviderModels(kind, name string) []string {
+	k := strings.ToLower(kind)
+	n := strings.ToLower(name)
+	switch {
+	case strings.Contains(n, "anthropic") || k == "anthropic":
+		return []string{"claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-opus"}
+	case strings.Contains(n, "openai") || k == "openai":
+		return []string{"gpt-4o", "gpt-4o-mini", "o3-mini", "o1", "gpt-4-turbo"}
+	case strings.Contains(n, "google") || strings.Contains(n, "gemini") || k == "google":
+		return []string{"gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"}
+	case strings.Contains(n, "deepseek"):
+		return []string{"deepseek-chat", "deepseek-reasoner"}
+	case strings.Contains(n, "groq"):
+		return []string{"llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "deepseek-r1-distill-llama-70b"}
+	case strings.Contains(n, "mistral"):
+		return []string{"mistral-large-latest", "mistral-small-latest", "codestral-latest"}
+	case strings.Contains(n, "openrouter"):
+		return []string{"anthropic/claude-3.7-sonnet", "openai/gpt-4o", "deepseek/deepseek-r1", "meta-llama/llama-3.3-70b-instruct"}
+	case strings.Contains(n, "cohere"):
+		return []string{"command-r-plus", "command-r"}
+	case strings.Contains(n, "together"):
+		return []string{"meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-R1", "Qwen/Qwen2.5-72B-Instruct-Turbo"}
+	case strings.Contains(n, "perplexity"):
+		return []string{"sonar-pro", "sonar", "sonar-reasoning"}
+	case strings.Contains(n, "xai") || strings.Contains(n, "grok"):
+		return []string{"grok-2", "grok-2-mini", "grok-beta"}
+	case strings.Contains(n, "ollama") || k == "ollama":
+		return []string{"llama3.2:latest", "qwen2.5-coder:latest", "deepseek-r1:8b"}
+	default:
+		return nil
+	}
+}
+
 // syncProviderModels menarik katalog model langsung dari discovery endpoint upstream
-// (/v1/models atau /api/tags untuk Ollama) dan mendaftarkannya ke database secara idempoten.
+// (/v1/models, /api/tags untuk Ollama, atau v1beta/models untuk Google Gemini) dan mendaftarkannya ke database secara idempoten.
 func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -517,7 +563,12 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	lowerName := strings.ToLower(p.Name)
 	trimmedBase := strings.TrimRight(p.BaseURL, "/")
 
-	if lowerKind == "ollama" || strings.Contains(lowerName, "ollama") {
+	if lowerKind == "google" || strings.Contains(trimmedBase, "googleapis.com") {
+		discoveryURL = "https://generativelanguage.googleapis.com/v1beta/models"
+		if apiKey != "" {
+			discoveryURL += "?key=" + url.QueryEscape(apiKey)
+		}
+	} else if lowerKind == "ollama" || strings.Contains(lowerName, "ollama") {
 		discoveryURL = trimmedBase + "/api/tags"
 	} else if strings.HasSuffix(trimmedBase, "/v1") {
 		discoveryURL = trimmedBase + "/models"
@@ -536,58 +587,80 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		if lowerKind == "anthropic" {
 			req.Header.Set("x-api-key", apiKey)
 			req.Header.Set("anthropic-version", "2023-06-01")
+		} else if lowerKind == "google" || strings.Contains(trimmedBase, "googleapis.com") {
+			req.Header.Set("x-goog-api-key", apiKey)
 		} else {
 			req.Header.Set("Authorization", "Bearer "+apiKey)
 		}
 	}
 
+	var rawIDs []string
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		h.logger.ErrorContext(ctx, "panggilan discovery model gagal", "url", discoveryURL, "error", err)
-		httpx.BadRequest(w, r, "upstream_unreachable", fmt.Sprintf("Gagal menghubungi upstream (%s): %v", discoveryURL, err))
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		httpx.BadRequest(w, r, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d: %s", resp.StatusCode, string(bodySnippet)))
-		return
-	}
-
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 5<<20)) // 5MB limit
-	if err != nil {
-		h.logger.ErrorContext(ctx, "gagal membaca respons discovery", "error", err)
-		httpx.InternalError(w, r)
-		return
-	}
-
-	// 5. Ekstraksi model IDs
-	var rawIDs []string
-	var oaiResp openAIModelDiscoveryResponse
-	if err := json.Unmarshal(bodyBytes, &oaiResp); err == nil && len(oaiResp.Data) > 0 {
-		for _, item := range oaiResp.Data {
-			if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
-				rawIDs = append(rawIDs, trimmed)
-			}
+		h.logger.WarnContext(ctx, "panggilan discovery model gagal, mencoba katalog fallback terkurasi", "url", discoveryURL, "error", err)
+		rawIDs = getCuratedProviderModels(lowerKind, lowerName)
+		if len(rawIDs) == 0 {
+			httpx.BadRequest(w, r, "upstream_unreachable", fmt.Sprintf("Gagal menghubungi upstream (%s): %v", discoveryURL, err))
+			return
 		}
 	} else {
-		var ollamaResp ollamaModelDiscoveryResponse
-		if err := json.Unmarshal(bodyBytes, &ollamaResp); err == nil && len(ollamaResp.Models) > 0 {
-			for _, item := range ollamaResp.Models {
-				name := strings.TrimSpace(item.Name)
-				if name == "" {
-					name = strings.TrimSpace(item.Model)
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			h.logger.WarnContext(ctx, "upstream mengembalikan status non-2xx saat discovery model, mencoba fallback", "status", resp.StatusCode, "snippet", string(bodySnippet))
+			rawIDs = getCuratedProviderModels(lowerKind, lowerName)
+			if len(rawIDs) == 0 {
+				httpx.BadRequest(w, r, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d: %s", resp.StatusCode, string(bodySnippet)))
+				return
+			}
+		} else {
+			bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 5<<20)) // 5MB limit
+			if readErr != nil {
+				h.logger.ErrorContext(ctx, "gagal membaca respons discovery", "error", readErr)
+				httpx.InternalError(w, r)
+				return
+			}
+
+			// 5. Ekstraksi model IDs
+			var oaiResp openAIModelDiscoveryResponse
+			var ollamaResp ollamaModelDiscoveryResponse
+			var googleResp googleModelDiscoveryResponse
+
+			if err := json.Unmarshal(bodyBytes, &oaiResp); err == nil && len(oaiResp.Data) > 0 {
+				for _, item := range oaiResp.Data {
+					if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
+						rawIDs = append(rawIDs, trimmed)
+					}
 				}
-				if name != "" {
-					rawIDs = append(rawIDs, name)
+			} else if err := json.Unmarshal(bodyBytes, &ollamaResp); err == nil && len(ollamaResp.Models) > 0 {
+				for _, item := range ollamaResp.Models {
+					name := strings.TrimSpace(item.Name)
+					if name == "" {
+						name = strings.TrimSpace(item.Model)
+					}
+					if name != "" {
+						rawIDs = append(rawIDs, name)
+					}
 				}
+			} else if err := json.Unmarshal(bodyBytes, &googleResp); err == nil && len(googleResp.Models) > 0 {
+				for _, item := range googleResp.Models {
+					name := strings.TrimSpace(item.Name)
+					name = strings.TrimPrefix(name, "models/")
+					if name != "" {
+						rawIDs = append(rawIDs, name)
+					}
+				}
+			}
+
+			if len(rawIDs) == 0 {
+				rawIDs = getCuratedProviderModels(lowerKind, lowerName)
 			}
 		}
 	}
 
 	if len(rawIDs) == 0 {
-		httpx.BadRequest(w, r, "no_models_found", "Tidak ada model yang ditemukan dalam respons upstream.")
+		httpx.BadRequest(w, r, "no_models_found", "Tidak ada model yang ditemukan dalam respons upstream atau katalog terkurasi.")
 		return
 	}
 

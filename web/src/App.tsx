@@ -18,12 +18,14 @@ import { Settings } from './pages/Settings';
 import { Diagnostics } from './pages/Diagnostics';
 import { CLIIntegrations } from './pages/CLIIntegrations';
 import { PageErrorBoundary } from './components/common/PageErrorBoundary';
+import { CommandPalette } from './components/common/CommandPalette';
 import { Loader2 } from 'lucide-react';
 
 const Shell: React.FC = () => {
   const { principal, user, isLoading } = useAuth();
   const [currentPath, setCurrentPath] = useState('/');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     const handleHash = () => {
@@ -33,6 +35,17 @@ const Shell: React.FC = () => {
     window.addEventListener('hashchange', handleHash);
     handleHash();
     return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const navigate = (path: string) => {
@@ -173,6 +186,7 @@ const Shell: React.FC = () => {
           title={title}
           subtitle={subtitle}
           onOpenMobileMenu={() => setIsMobileOpen(true)}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
           <PageErrorBoundary key={currentPath} pageName={title}>
@@ -180,6 +194,11 @@ const Shell: React.FC = () => {
           </PageErrorBoundary>
         </main>
       </div>
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigate={navigate}
+      />
     </div>
   );
 };

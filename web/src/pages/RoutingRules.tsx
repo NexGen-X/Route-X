@@ -6,6 +6,7 @@ import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { GitFork, Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers } from 'lucide-react';
+import { RoutingPipelineVisualizer } from '../components/routing/RoutingPipelineVisualizer';
 
 export const RoutingRules: React.FC = () => {
   const [rules, setRules] = useState<RoutingRule[]>([]);
@@ -190,6 +191,9 @@ export const RoutingRules: React.FC = () => {
           Tambah Aturan
         </Button>
       </div>
+
+      {/* Visual Pipeline Canvas */}
+      <RoutingPipelineVisualizer />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {rules.map((r) => {

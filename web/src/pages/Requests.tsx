@@ -9,6 +9,10 @@ import {
   Search,
   RefreshCw,
   ChevronRight,
+  Copy,
+  Check,
+  Radio,
+  Terminal,
 } from 'lucide-react';
 
 export const Requests: React.FC = () => {
@@ -21,6 +25,8 @@ export const Requests: React.FC = () => {
   const [reqPayload, setReqPayload] = useState<RequestPayload | null>(null);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLiveFeed, setIsLiveFeed] = useState(false);
+  const [isCurlCopied, setIsCurlCopied] = useState(false);
 
   const loadRequests = async (cursor?: string) => {
     setIsLoading(true);
@@ -48,6 +54,24 @@ export const Requests: React.FC = () => {
   useEffect(() => {
     loadRequests();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!isLiveFeed) return;
+    const interval = setInterval(() => {
+      loadRequests();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [isLiveFeed, activeTab, search]);
+
+  const copyAsCurl = () => {
+    if (!selectedReq) return;
+    const gwURL = `${window.location.protocol}//${window.location.host}/v1/chat/completions`;
+    const promptText = reqPayload?.prompt_text || 'Hello Route-X';
+    const curlCmd = `curl -X POST "${gwURL}" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer rx_live_personal_gateway" \\\n  -d '{\n    "model": "${selectedReq.model_id}",\n    "messages": [{"role": "user", "content": ${JSON.stringify(promptText)}}]\n  }'`;
+    navigator.clipboard.writeText(curlCmd);
+    setIsCurlCopied(true);
+    setTimeout(() => setIsCurlCopied(false), 2000);
+  };
 
   const handleInspect = async (req: RequestLog) => {
     setSelectedReq(req);
@@ -80,15 +104,29 @@ export const Requests: React.FC = () => {
             Penelusuran audit lalu lintas inferensi AI, detail payload request/response, dan urutan failover.
           </p>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => loadRequests()}
-          isLoading={isLoading}
-          icon={<RefreshCw className="w-3.5 h-3.5" />}
-        >
-          Segarkan
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsLiveFeed(!isLiveFeed)}
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-inner text-xs font-semibold border transition-all ${
+              isLiveFeed
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/40 animate-pulse'
+                : 'bg-bg-surface-2 text-text-secondary border-border hover:text-white'
+            }`}
+          >
+            <Radio className={`w-3.5 h-3.5 ${isLiveFeed ? 'text-emerald-400' : 'text-text-muted'}`} />
+            <span>{isLiveFeed ? 'Live Polling Aktif' : 'Live Stream'}</span>
+          </button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => loadRequests()}
+            isLoading={isLoading}
+            icon={<RefreshCw className="w-3.5 h-3.5" />}
+          >
+            Segarkan
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -249,6 +287,79 @@ export const Requests: React.FC = () => {
                 <div className="mt-1 font-mono font-bold text-accent">
                   ${parseFloat(selectedReq.cost_usd || '0').toFixed(6)}
                 </div>
+              </div>
+            </div>
+
+            {/* Reproduce via cURL */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-bg-surface-2/60 rounded-inner border border-border">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+                  <Terminal className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-white block">Reproduksi Inferensi</span>
+                  <span className="text-[11px] text-text-muted">Klon request ini langsung sebagai perintah cURL terminal</span>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant={isCurlCopied ? 'primary' : 'secondary'}
+                onClick={copyAsCurl}
+                icon={isCurlCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              >
+                {isCurlCopied ? 'Tersalin ke Clipboard!' : 'Salin sebagai cURL'}
+              </Button>
+            </div>
+
+            {/* Latency Waterfall Bar */}
+            <div className="p-3.5 bg-bg-surface-2 rounded-inner border border-border space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-text-secondary">Waterfall Latensi Inferensi</span>
+                <span className="font-mono text-accent font-bold">{selectedReq.duration_ms} ms</span>
+              </div>
+              <div className="w-full h-3 bg-bg-base rounded-full overflow-hidden flex border border-border/50">
+                {reqEvents.length > 0 ? (
+                  reqEvents.map((ev, idx) => {
+                    const total = selectedReq.duration_ms || 1;
+                    const pct = Math.min(100, Math.max(8, Math.round((ev.latency_ms / total) * 100)));
+                    const colors = [
+                      'bg-accent',
+                      'bg-cyan-500',
+                      'bg-purple-500',
+                      'bg-amber-500',
+                      'bg-emerald-500',
+                    ];
+                    return (
+                      <div
+                        key={idx}
+                        style={{ width: `${pct}%` }}
+                        title={`${ev.provider_id || ev.event_type}: ${ev.latency_ms}ms (${pct}%)`}
+                        className={`${colors[idx % colors.length]} hover:opacity-80 transition-all border-r border-black/30 first:rounded-l-full last:rounded-r-full`}
+                      />
+                    );
+                  })
+                ) : (
+                  <div
+                    style={{ width: '100%' }}
+                    className="bg-accent rounded-full"
+                    title={`Upstream Latency: ${selectedReq.duration_ms}ms`}
+                  />
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-text-muted pt-0.5">
+                {reqEvents.length > 0 ? (
+                  reqEvents.map((ev, idx) => (
+                    <span key={idx} className="flex items-center gap-1 font-mono">
+                      <span className={`w-2 h-2 rounded-full ${['bg-accent', 'bg-cyan-500', 'bg-purple-500', 'bg-amber-500'][idx % 4]}`} />
+                      {ev.provider_id || ev.event_type}: {ev.latency_ms}ms
+                    </span>
+                  ))
+                ) : (
+                  <span className="flex items-center gap-1 font-mono">
+                    <span className="w-2 h-2 rounded-full bg-accent" />
+                    Upstream roundtrip: {selectedReq.duration_ms}ms
+                  </span>
+                )}
               </div>
             </div>
 

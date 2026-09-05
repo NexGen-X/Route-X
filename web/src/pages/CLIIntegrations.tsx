@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Search,
   Filter,
+  Zap,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Card } from '../components/common/Card';
@@ -35,6 +36,27 @@ export const CLIIntegrations: React.FC = () => {
   const [applyingTool, setApplyingTool] = useState<string | null>(null);
   const [applySuccess, setApplySuccess] = useState<Record<string, string>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [pingStatus, setPingStatus] = useState<
+    Record<string, { testing: boolean; latency?: number; ok?: boolean }>
+  >({});
+
+  const handlePing = async (toolId: string) => {
+    setPingStatus((prev) => ({ ...prev, [toolId]: { testing: true } }));
+    const start = performance.now();
+    try {
+      const res = await fetch('/healthz');
+      const latency = Math.round(performance.now() - start);
+      setPingStatus((prev) => ({
+        ...prev,
+        [toolId]: { testing: false, latency, ok: res.ok },
+      }));
+    } catch {
+      setPingStatus((prev) => ({
+        ...prev,
+        [toolId]: { testing: false, latency: 0, ok: false },
+      }));
+    }
+  };
 
   // Modal skrip ekspor global
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -494,27 +516,50 @@ export const CLIIntegrations: React.FC = () => {
                     )}
 
                     {cfg.mode === 'combo' && (
-                      <select
-                        value={cfg.target}
-                        onChange={(e) => handleTargetChange(tool.id, e.target.value)}
-                        className="w-full bg-[#1C1C1C] border border-[#333] rounded px-2.5 py-1.5 text-xs text-white focus:border-accent focus:outline-none font-mono"
-                      >
-                        <option value="combo:coding-tier1-tier2">
-                          Tier 1 (Qwen/DeepSeek) ➔ Tier 2 (Claude 3.7)
-                        </option>
-                        <option value="combo:local-ollama-cloud-fallback">
-                          Tier 1 (Ollama Lokal) ➔ Tier 2 (GPT-4o Cloud)
-                        </option>
-                        <option value="combo:fast-fallback">
-                          Tier 1 (Groq Kilat) ➔ Tier 2 (Anthropic Sonnet)
-                        </option>
-                      </select>
+                      <div className="space-y-2">
+                        <select
+                          value={cfg.target}
+                          onChange={(e) => handleTargetChange(tool.id, e.target.value)}
+                          className="w-full bg-[#1C1C1C] border border-[#333] rounded px-2.5 py-1.5 text-xs text-white focus:border-accent focus:outline-none font-mono"
+                        >
+                          <option value="combo:coding-tier1-tier2">
+                            Tier 1 (Qwen/DeepSeek) ➔ Tier 2 (Claude 3.7)
+                          </option>
+                          <option value="combo:local-ollama-cloud-fallback">
+                            Tier 1 (Ollama Lokal) ➔ Tier 2 (GPT-4o Cloud)
+                          </option>
+                          <option value="combo:fast-fallback">
+                            Tier 1 (Groq Kilat) ➔ Tier 2 (Anthropic Sonnet)
+                          </option>
+                        </select>
+
+                        {/* Interactive Combo Routing Flow Diagram */}
+                        <div className="p-2 rounded-inner bg-[#121212] border border-border/60 text-[10px] font-mono space-y-1">
+                          <div className="text-text-muted flex items-center justify-between">
+                            <span>Alur Eksekusi Cascade:</span>
+                            <span className="text-accent font-semibold">Auto-Failover</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                            <span className="px-1.5 py-0.5 rounded bg-bg-surface-2 border border-border text-white whitespace-nowrap">
+                              {tool.name}
+                            </span>
+                            <span className="text-text-muted">➔</span>
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 whitespace-nowrap">
+                              Tier 1 (Cepat/Lokal)
+                            </span>
+                            <span className="text-text-muted">➔</span>
+                            <span className="px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 text-purple-400 whitespace-nowrap">
+                              Tier 2 (Flagship)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Tombol Terapkan & Snippet Shell */}
+              {/* Tombol Terapkan, Uji Latensi Ping & Snippet Shell */}
               <div className="mt-4 pt-3 border-t border-[#262626] space-y-2">
                 {successMsg && (
                   <div className="p-2 rounded bg-accent/10 border border-accent/30 text-[11px] font-mono text-accent flex items-center gap-1.5">
@@ -523,7 +568,7 @@ export const CLIIntegrations: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                   <Button
                     variant="primary"
                     size="sm"
@@ -540,6 +585,27 @@ export const CLIIntegrations: React.FC = () => {
                       'Terapkan ke CLI'
                     )}
                   </Button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePing(tool.id)}
+                    disabled={pingStatus[tool.id]?.testing}
+                    title="Uji latensi respon gateway dari browser langsung"
+                    className="h-8 px-2.5 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-xs text-text-secondary hover:text-white transition-all flex items-center gap-1 font-mono"
+                  >
+                    {pingStatus[tool.id]?.testing ? (
+                      <RefreshCw className="w-3 h-3 animate-spin text-accent" />
+                    ) : pingStatus[tool.id]?.latency !== undefined ? (
+                      <span className={pingStatus[tool.id]?.ok ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}>
+                        {pingStatus[tool.id]?.latency}ms
+                      </span>
+                    ) : (
+                      <>
+                        <Zap className="w-3 h-3 text-text-muted hover:text-accent" />
+                        <span className="hidden sm:inline text-[11px] text-text-muted">Ping</span>
+                      </>
+                    )}
+                  </button>
 
                   <Button
                     variant="ghost"

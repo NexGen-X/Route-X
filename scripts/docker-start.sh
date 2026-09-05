@@ -85,12 +85,18 @@ fi
 
 echo "[4/4] Seluruh 3 layanan telah aktif dan sehat!"
 echo ""
+# Deteksi IP Publik / IP Host untuk kenyamanan akses jarak jauh
+PUBLIC_IP=$(curl -s -m 2 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
+
 echo "=================================================================="
 echo "               Route-X Berhasil Dijalankan!                       "
 echo "=================================================================="
-echo "  🌐 Dashboard Web    : http://localhost:8080"
-echo "  🤖 API Gateway      : http://localhost:8080/v1/chat/completions"
-echo "  🩺 Health Probe     : http://localhost:8080/readyz"
+echo "  🌐 Dashboard Lokal   : http://localhost:8080"
+if [ -n "$PUBLIC_IP" ]; then
+echo "  🌐 Dashboard Publik  : http://${PUBLIC_IP}:8080"
+fi
+echo "  🤖 API Gateway       : http://localhost:8080/v1/chat/completions"
+echo "  🩺 Health Probe      : http://localhost:8080/readyz"
 echo ""
 echo "  👤 Akun Admin Bawaan:"
 echo "     Email    : $(grep -E '^INITIAL_ADMIN_EMAIL=' "$ENV_FILE" | cut -d'=' -f2- || echo 'admin@route-x.local')"

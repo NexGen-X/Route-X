@@ -87,11 +87,6 @@ func executorUji(g CircuitGuard) (*Executor, *[]time.Duration) {
 	return e, &jeda
 }
 
-// gagalDengan membuat op yang selalu gagal dengan kegagalan tertentu.
-func gagalDengan(perr *providers.Error) func(context.Context, *upstream.RouteCandidate) (string, error) {
-	return func(context.Context, *upstream.RouteCandidate) (string, error) { return "", perr }
-}
-
 func rencana(model string, maks int, base time.Duration, cands ...*upstream.RouteCandidate) Plan {
 	return Plan{Candidates: cands, Model: model, MaxAttempts: maks, BackoffBase: base}
 }

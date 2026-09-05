@@ -667,6 +667,8 @@ func (h *Handlers) cobaTier2Sekali(ctx context.Context, tier2ModelName string, p
 
 	j.pasangPercobaan(out.Attempts, out.Candidate)
 	if out.Err == nil {
+		pr.model = t2Model
+		j.pasangModel(t2Model)
 		return out
 	}
 	return nil
@@ -718,6 +720,8 @@ func (h *Handlers) cobaTier2Mengalir(ctx context.Context, tier2ModelName string,
 
 	j.pasangPercobaan(out.Attempts, out.Candidate)
 	if out.Err == nil {
+		pr.model = t2Model
+		j.pasangModel(t2Model)
 		return out
 	}
 	return nil

@@ -492,9 +492,10 @@ func TestFactoryTidakMembocorkanKredensial(t *testing.T) {
 
 	dilarang := []string{rahasiaUji, "sandiproxy"}
 	cetakan := map[string]string{
-		"%v pabrik":       fmt.Sprintf("%v", f),
-		"%+v pabrik":      fmt.Sprintf("%+v", f),
-		"%#v pabrik":      fmt.Sprintf("%#v", f),
+		"%v pabrik":  fmt.Sprintf("%v", f),
+		"%+v pabrik": fmt.Sprintf("%+v", f),
+		"%#v pabrik": fmt.Sprintf("%#v", f),
+		//lint:ignore S1025 pengujian sengaja memverifikasi format verb %s untuk redaksi rahasia
 		"%s pabrik":       fmt.Sprintf("%s", f),
 		"%v isi cache":    fmt.Sprintf("%v", f.cache),
 		"%+v isi cache":   fmt.Sprintf("%+v", f.cache),

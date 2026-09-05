@@ -429,7 +429,7 @@ func (r *Repo) ListFilters(ctx context.Context, page repo.Page) ([]*ContentFilte
 			return nil, "", err
 		}
 		args = append(args, ts, id)
-		query.WriteString(fmt.Sprintf(`where (created_at, id) < ($1, $2) `))
+		query.WriteString(`where (created_at, id) < ($1, $2) `)
 	}
 
 	args = append(args, limit+1)

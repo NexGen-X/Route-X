@@ -321,9 +321,7 @@ func MaskSecret(secret string) string {
 // Menggunakan hmac.Equal agar kebal terhadap serangan timing attack.
 func VerifySignature(payload []byte, secret []byte, sigHeader string) bool {
 	sig := strings.TrimSpace(sigHeader)
-	if strings.HasPrefix(sig, "sha256=") {
-		sig = strings.TrimPrefix(sig, "sha256=")
-	}
+	sig = strings.TrimPrefix(sig, "sha256=")
 	expectedHex, err := hex.DecodeString(sig)
 	if err != nil {
 		return false

@@ -25,6 +25,7 @@ import (
 func TestNoDirectHttpxJSONInAdminHandlers(t *testing.T) {
 	adminDir := "."
 	fset := token.NewFileSet()
+	//lint:ignore SA1019 pengujian AST statis direktori lokal admin sengaja menggunakan parser.ParseDir
 	pkgs, err := parser.ParseDir(fset, adminDir, func(fi os.FileInfo) bool {
 		// Abaikan berkas pengujian (*_test.go)
 		return !strings.HasSuffix(fi.Name(), "_test.go")

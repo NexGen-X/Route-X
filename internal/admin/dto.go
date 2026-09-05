@@ -1532,5 +1532,109 @@ func toAuditEntryDTO(e identity.Entry) AuditEntryDTO {
 	}
 }
 
+// -----------------------------------------------------------------------------
+// Response Cache DTOs (Fitur 1)
+// -----------------------------------------------------------------------------
+
+// CacheStatsDTO adalah respons statistik response cache.
+type CacheStatsDTO struct {
+	Enabled      bool  `json:"enabled"`
+	TTLSeconds   int64 `json:"ttl_seconds"`
+	Hits         int64 `json:"hits"`
+	Misses       int64 `json:"misses"`
+	TotalEntries int64 `json:"total_entries"`
+}
+
+func (CacheStatsDTO) adalahDTO() {}
+
+// CacheFlushResponseDTO adalah respons setelah cache dibersihkan.
+type CacheFlushResponseDTO struct {
+	Deleted int64  `json:"deleted"`
+	Message string `json:"message"`
+}
+
+func (CacheFlushResponseDTO) adalahDTO() {}
+
+// CacheSettingsResponseDTO adalah respons pembaruan pengaturan cache.
+type CacheSettingsResponseDTO struct {
+	Enabled    bool   `json:"enabled"`
+	TTLSeconds int64  `json:"ttl_seconds"`
+	Message    string `json:"message"`
+}
+
+func (CacheSettingsResponseDTO) adalahDTO() {}
+
+// SyncModelsResponseDTO adalah respons hasil sinkronisasi model dari provider (Fitur 2).
+type SyncModelsResponseDTO struct {
+	Count   int      `json:"count"`
+	Models  []string `json:"models"`
+	Message string   `json:"message"`
+}
+
+func (SyncModelsResponseDTO) adalahDTO() {}
+
+// -----------------------------------------------------------------------------
+// CLI Integration DTOs (Fitur 4)
+// -----------------------------------------------------------------------------
+
+// CLIToolDTO mendeskripsikan status deteksi dan konfigurasi satu perkakas AI CLI.
+type CLIToolDTO struct {
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	Category       string            `json:"category"`
+	Installed      bool              `json:"installed"`
+	Path           string            `json:"path,omitempty"`
+	Version        string            `json:"version,omitempty"`
+	ConfigPath     string            `json:"config_path,omitempty"`
+	SupportedModes []string          `json:"supported_modes"`
+	ActiveMode     string            `json:"active_mode"`
+	ActiveTarget   string            `json:"active_target"`
+	EnvVars        map[string]string `json:"env_vars"`
+	ExportSnippet  string            `json:"export_snippet"`
+	UpdatedAt      *time.Time        `json:"updated_at,omitempty"`
+}
+
+func (CLIToolDTO) adalahDTO() {}
+
+// CLIDetectedResponseDTO memuat daftar seluruh tool CLI yang terdeteksi di sistem host.
+type CLIDetectedResponseDTO struct {
+	Tools          []CLIToolDTO `json:"tools"`
+	TotalDetected  int          `json:"total_detected"`
+	TotalAvailable int          `json:"total_available"`
+	GatewayURL     string       `json:"gateway_url"`
+	DefaultEnvFile string       `json:"default_env_file"`
+}
+
+func (CLIDetectedResponseDTO) adalahDTO() {}
+
+// CLIConfigureRequestDTO adalah payload pembaruan konfigurasi perkakas CLI.
+type CLIConfigureRequestDTO struct {
+	ToolID     string `json:"tool_id"`
+	Mode       string `json:"mode"`
+	Target     string `json:"target"`
+	APIKey     string `json:"api_key,omitempty"`
+	GatewayURL string `json:"gateway_url,omitempty"`
+}
+
+// CLIConfigureResponseDTO membalas hasil mutasi konfigurasi perkakas CLI.
+type CLIConfigureResponseDTO struct {
+	Success       bool       `json:"success"`
+	Tool          CLIToolDTO `json:"tool"`
+	Message       string     `json:"message"`
+	ConfigFile    string     `json:"config_file,omitempty"`
+	ExportSnippet string     `json:"export_snippet"`
+}
+
+func (CLIConfigureResponseDTO) adalahDTO() {}
+
+// CLIExportScriptDTO adalah respons pembacaan skrip bash terpadu ~/.routex/cli-env.sh.
+type CLIExportScriptDTO struct {
+	Content  string `json:"content"`
+	FilePath string `json:"file_path"`
+}
+
+func (CLIExportScriptDTO) adalahDTO() {}
+
 // Ensure netip import is used
 var _ = netip.Prefix{}

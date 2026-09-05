@@ -1,26 +1,35 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { Diagnostics as DiagType, BackgroundJob } from '../types';
+import type { Diagnostics as DiagType, BackgroundJob, ResponseCacheStats } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
-import { RefreshCw, Clock, Play } from 'lucide-react';
+import { RefreshCw, Clock, Play, Zap, Trash2, CheckCircle2 } from 'lucide-react';
 
 export const Diagnostics: React.FC = () => {
   const [diag, setDiag] = useState<DiagType | null>(null);
   const [jobs, setJobs] = useState<BackgroundJob[]>([]);
+  const [cache, setCache] = useState<ResponseCacheStats | null>(null);
   const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
+  const [flushingCache, setFlushingCache] = useState(false);
+  const [updatingCache, setUpdatingCache] = useState(false);
+  const [ttlMinutes, setTtlMinutes] = useState<number>(60);
   const [isLoading, setIsLoading] = useState(false);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [resDiag, resJobs] = await Promise.all([
+      const [resDiag, resJobs, resCache] = await Promise.all([
         api.system.diagnostics(),
         api.system.jobs().catch(() => ({ items: [] })),
+        api.system.cacheStats().catch(() => null),
       ]);
       setDiag(resDiag);
       setJobs(resJobs.items || []);
+      if (resCache) {
+        setCache(resCache);
+        setTtlMinutes(Math.max(1, Math.floor(resCache.ttl_seconds / 60)));
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -45,6 +54,46 @@ export const Diagnostics: React.FC = () => {
     }
   };
 
+  const handleFlushCache = async () => {
+    if (!confirm('Apakah Anda yakin ingin mengosongkan seluruh entri response cache di Redis?')) return;
+    setFlushingCache(true);
+    try {
+      const res = await api.system.flushCache();
+      alert(res.message || 'Response cache berhasil dibersihkan.');
+      loadData();
+    } catch (err) {
+      alert('Gagal membersihkan cache: ' + err);
+    } finally {
+      setFlushingCache(false);
+    }
+  };
+
+  const handleToggleCache = async (newEnabled: boolean) => {
+    setUpdatingCache(true);
+    try {
+      await api.system.updateCacheSettings(newEnabled, ttlMinutes * 60);
+      loadData();
+    } catch (err) {
+      alert('Gagal memperbarui pengaturan cache: ' + err);
+    } finally {
+      setUpdatingCache(false);
+    }
+  };
+
+  const handleSaveTTL = async () => {
+    if (!cache) return;
+    setUpdatingCache(true);
+    try {
+      await api.system.updateCacheSettings(cache.enabled, Math.max(1, ttlMinutes) * 60);
+      alert('TTL Response cache berhasil disimpan.');
+      loadData();
+    } catch (err) {
+      alert('Gagal menyimpan TTL: ' + err);
+    } finally {
+      setUpdatingCache(false);
+    }
+  };
+
   const formatUptime = (sec: number) => {
     const d = Math.floor(sec / 86400);
     const h = Math.floor((sec % 86400) / 3600);
@@ -52,6 +101,9 @@ export const Diagnostics: React.FC = () => {
     const s = sec % 60;
     return `${d}h ${h}j ${m}m ${s}d`;
   };
+
+  const totalReq = (cache?.hits || 0) + (cache?.misses || 0);
+  const hitRatio = totalReq > 0 ? (((cache?.hits || 0) / totalReq) * 100).toFixed(1) : '0.0';
 
   return (
     <div className="space-y-6">
@@ -65,6 +117,108 @@ export const Diagnostics: React.FC = () => {
         <Button variant="secondary" size="sm" onClick={loadData} isLoading={isLoading}>
           <RefreshCw className="w-3.5 h-3.5" />
         </Button>
+      </div>
+
+      {/* Response Cache Card (Fitur 1) */}
+      <div className="bg-surface-light/40 border border-border/80 rounded-xl p-5 shadow-lg backdrop-blur-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-accent">
+              <Zap className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-semibold text-white">⚡ Redis Response Caching</h3>
+                <Badge variant={cache?.enabled ? 'success' : 'neutral'}>
+                  {cache?.enabled ? 'ACTIVE (< 2ms)' : 'DISABLED'}
+                </Badge>
+              </div>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Mengembalikan respons inferensi identik dalam &lt; 2ms tanpa biaya token ($0.00) ke upstream provider.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={cache?.enabled ? 'danger' : 'primary'}
+              size="sm"
+              isLoading={updatingCache}
+              onClick={() => handleToggleCache(!cache?.enabled)}
+            >
+              {cache?.enabled ? 'Nonaktifkan Cache' : 'Aktifkan Cache'}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              isLoading={flushingCache}
+              onClick={handleFlushCache}
+              className="text-red-400 hover:text-red-300 border-red-900/40 hover:bg-red-950/20"
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1" />
+              Flush Cache
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+          <div className="bg-surface/60 rounded-lg p-3 border border-border/40">
+            <span className="text-[11px] text-text-muted block">Cache Hit Ratio</span>
+            <span className="text-xl font-bold font-mono text-emerald-400 mt-1 block">
+              {hitRatio}%
+            </span>
+            <span className="text-[10px] text-text-secondary block mt-0.5">
+              {cache?.hits || 0} hit / {totalReq} total
+            </span>
+          </div>
+
+          <div className="bg-surface/60 rounded-lg p-3 border border-border/40">
+            <span className="text-[11px] text-text-muted block">Cache Hits (Hemat Biaya)</span>
+            <span className="text-xl font-bold font-mono text-white mt-1 block">
+              {cache?.hits || 0}
+            </span>
+            <span className="text-[10px] text-emerald-400/80 block mt-0.5">
+              Latensi &lt; 2ms, $0.00
+            </span>
+          </div>
+
+          <div className="bg-surface/60 rounded-lg p-3 border border-border/40">
+            <span className="text-[11px] text-text-muted block">Total Entri di Redis</span>
+            <span className="text-xl font-bold font-mono text-accent mt-1 block">
+              {cache?.total_entries || 0}
+            </span>
+            <span className="text-[10px] text-text-secondary block mt-0.5">
+              Prompt aktif tersimpan
+            </span>
+          </div>
+
+          <div className="bg-surface/60 rounded-lg p-3 border border-border/40 flex flex-col justify-between">
+            <div>
+              <span className="text-[11px] text-text-muted block">Durasi Simpan (TTL)</span>
+              <div className="flex items-center gap-1.5 mt-1">
+                <input
+                  type="number"
+                  min="1"
+                  max="10080"
+                  value={ttlMinutes}
+                  onChange={(e) => setTtlMinutes(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-16 bg-surface-dark border border-border/80 rounded px-1.5 py-0.5 text-xs text-white font-mono"
+                />
+                <span className="text-xs text-text-secondary">menit</span>
+                <button
+                  onClick={handleSaveTTL}
+                  disabled={updatingCache}
+                  className="p-1 rounded bg-accent/20 hover:bg-accent/30 text-accent ml-auto text-xs"
+                  title="Simpan TTL"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            <span className="text-[10px] text-text-muted mt-1 block">
+              Sekitar {(ttlMinutes / 60).toFixed(1)} jam masa berlaku
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

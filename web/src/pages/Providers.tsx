@@ -5,7 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
-import { Server, Plus, Key, Activity, Trash2, CheckCircle2, XCircle } from 'lucide-react';
+import { Server, Plus, Key, Activity, Trash2, CheckCircle2, XCircle, DownloadCloud } from 'lucide-react';
 
 export const Providers: React.FC = () => {
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -14,6 +14,7 @@ export const Providers: React.FC = () => {
   const [isCredModalOpen, setIsCredModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [probingId, setProbingId] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const [probeResult, setProbeResult] = useState<any | null>(null);
 
   // Form states
@@ -90,6 +91,18 @@ export const Providers: React.FC = () => {
       setProbeResult({ providerId: prov.id, status: 'error', error: err.message });
     } finally {
       setProbingId(null);
+    }
+  };
+
+  const handleSyncModels = async (prov: Provider) => {
+    setSyncingId(prov.id);
+    try {
+      const res = await api.providers.syncModels(prov.id);
+      alert(res.message || `Berhasil menyinkronkan ${res.count} model.`);
+    } catch (err: any) {
+      alert('Gagal menyinkronkan model: ' + (err.message || err));
+    } finally {
+      setSyncingId(null);
     }
   };
 
@@ -202,6 +215,16 @@ export const Providers: React.FC = () => {
                 </Button>
 
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleSyncModels(p)}
+                    isLoading={syncingId === p.id}
+                    icon={<DownloadCloud className="w-3.5 h-3.5" />}
+                    title="Tarik katalog model otomatis dari endpoint upstream provider"
+                  >
+                    Tarik Model
+                  </Button>
                   <Button
                     variant="secondary"
                     size="sm"

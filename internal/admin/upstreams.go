@@ -3,10 +3,13 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +19,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
@@ -58,6 +62,7 @@ func (h *Handlers) upstreamsRoutes(r chi.Router) {
 		pr.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/{id}/toggle", h.toggleProvider)
 		pr.With(auth.RequirePermission(seed.PermHealthRead)).Get("/{id}/health-checks", h.listProviderHealthChecks)
 		pr.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/{id}/probe", h.probeProvider)
+		pr.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/{id}/sync-models", h.syncProviderModels)
 
 		// Kredensial di bawah provider
 		pr.With(auth.RequirePermission(seed.PermProvidersRead)).Get("/{id}/credentials", h.listCredentials)
@@ -451,6 +456,184 @@ func (h *Handlers) probeProvider(w http.ResponseWriter, r *http.Request) {
 		Status:    status,
 		LatencyMS: latMS,
 		Error:     sanitizedErr,
+	})
+}
+
+type openAIModelDiscoveryItem struct {
+	ID string `json:"id"`
+}
+
+type openAIModelDiscoveryResponse struct {
+	Data []openAIModelDiscoveryItem `json:"data"`
+}
+
+type ollamaModelDiscoveryItem struct {
+	Name  string `json:"name"`
+	Model string `json:"model"`
+}
+
+type ollamaModelDiscoveryResponse struct {
+	Models []ollamaModelDiscoveryItem `json:"models"`
+}
+
+// syncProviderModels menarik katalog model langsung dari discovery endpoint upstream
+// (/v1/models atau /api/tags untuk Ollama) dan mendaftarkannya ke database secara idempoten.
+func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	// 1. Otorisasi akses provider (termasuk proteksi multi-tenant BYOK)
+	p, err := h.authorizeProviderAccess(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
+
+	// 2. Ambil kredensial aktif jika ada dan dekripsi API key
+	var apiKey string
+	if activeCred, credErr := h.credentialRepo.Active(ctx, p.ID); credErr == nil && activeCred != nil {
+		apiKey = activeCred.Secret.Reveal()
+	}
+
+	// 3. Siapkan HTTP client dengan kebijakan SSRF wajib
+	ssrfPolicy := security.DefaultSSRFPolicy()
+	if h.factory != nil {
+		ssrfPolicy = h.factory.SSRFPolicy()
+	}
+
+	httpClient, err := providers.NewHTTPClient(providers.ClientConfig{
+		Timeout:             15 * time.Second,
+		SSRFPolicy:          ssrfPolicy,
+		MaxIdleConnsPerHost: 2,
+	}, false)
+	if err != nil {
+		httpx.BadRequest(w, r, "http_client_error", err.Error())
+		return
+	}
+
+	// 4. Susun discovery URL berdasarkan dialek provider
+	var discoveryURL string
+	lowerKind := strings.ToLower(p.Kind)
+	lowerName := strings.ToLower(p.Name)
+	trimmedBase := strings.TrimRight(p.BaseURL, "/")
+
+	if lowerKind == "ollama" || strings.Contains(lowerName, "ollama") {
+		discoveryURL = trimmedBase + "/api/tags"
+	} else if strings.HasSuffix(trimmedBase, "/v1") {
+		discoveryURL = trimmedBase + "/models"
+	} else {
+		discoveryURL = trimmedBase + "/v1/models"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
+	if err != nil {
+		httpx.BadRequest(w, r, "invalid_url", err.Error())
+		return
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Route-X-Discovery/1.0")
+	if apiKey != "" {
+		if lowerKind == "anthropic" {
+			req.Header.Set("x-api-key", apiKey)
+			req.Header.Set("anthropic-version", "2023-06-01")
+		} else {
+			req.Header.Set("Authorization", "Bearer "+apiKey)
+		}
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		h.logger.ErrorContext(ctx, "panggilan discovery model gagal", "url", discoveryURL, "error", err)
+		httpx.BadRequest(w, r, "upstream_unreachable", fmt.Sprintf("Gagal menghubungi upstream (%s): %v", discoveryURL, err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		httpx.BadRequest(w, r, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d: %s", resp.StatusCode, string(bodySnippet)))
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 5<<20)) // 5MB limit
+	if err != nil {
+		h.logger.ErrorContext(ctx, "gagal membaca respons discovery", "error", err)
+		httpx.InternalError(w, r)
+		return
+	}
+
+	// 5. Ekstraksi model IDs
+	var rawIDs []string
+	var oaiResp openAIModelDiscoveryResponse
+	if err := json.Unmarshal(bodyBytes, &oaiResp); err == nil && len(oaiResp.Data) > 0 {
+		for _, item := range oaiResp.Data {
+			if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
+				rawIDs = append(rawIDs, trimmed)
+			}
+		}
+	} else {
+		var ollamaResp ollamaModelDiscoveryResponse
+		if err := json.Unmarshal(bodyBytes, &ollamaResp); err == nil && len(ollamaResp.Models) > 0 {
+			for _, item := range ollamaResp.Models {
+				name := strings.TrimSpace(item.Name)
+				if name == "" {
+					name = strings.TrimSpace(item.Model)
+				}
+				if name != "" {
+					rawIDs = append(rawIDs, name)
+				}
+			}
+		}
+	}
+
+	if len(rawIDs) == 0 {
+		httpx.BadRequest(w, r, "no_models_found", "Tidak ada model yang ditemukan dalam respons upstream.")
+		return
+	}
+
+	slices.Sort(rawIDs)
+	uniqueIDs := slices.Compact(rawIDs)
+
+	// 6. Simpan model dan pemetaan ke database secara idempoten
+	var syncedModels []string
+	for _, mid := range uniqueIDs {
+		// Pastikan model kanonik ada
+		m, err := h.modelRepo.GetByModelID(ctx, mid)
+		if errors.Is(err, repo.ErrNotFound) {
+			m, err = h.modelRepo.Create(ctx, upstream.CreateModelParams{
+				ModelID:      mid,
+				DisplayName:  mid,
+				Capabilities: []string{"text"},
+			})
+			if err != nil {
+				// Bila balapan konkurensi, coba baca ulang
+				m, _ = h.modelRepo.GetByModelID(ctx, mid)
+			}
+		}
+		if m == nil {
+			continue
+		}
+
+		// Pasang pemetaan provider_models
+		_, attachErr := h.modelRepo.AttachProvider(ctx, upstream.AttachProviderParams{
+			ModelID:           m.ID,
+			ProviderID:        p.ID,
+			UpstreamModelName: mid,
+		})
+		if attachErr == nil || errors.Is(attachErr, repo.ErrConflict) {
+			syncedModels = append(syncedModels, mid)
+		}
+	}
+
+	h.writeAudit(ctx, r, "sync_models", "provider", id, map[string]any{
+		"provider_name": p.Name,
+		"models_count":  len(syncedModels),
+	})
+
+	_ = h.respond(w, r, http.StatusOK, SyncModelsResponseDTO{
+		Count:   len(syncedModels),
+		Models:  syncedModels,
+		Message: fmt.Sprintf("Berhasil menyinkronkan %d model dari provider %s", len(syncedModels), p.DisplayName),
 	})
 }
 

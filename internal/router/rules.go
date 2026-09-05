@@ -19,9 +19,10 @@ import (
 // mendapat error, hanya tenggat sejuta kali lebih panjang. Konversinya dilakukan sekali di
 // RuleFromRow, bukan di setiap pemakaian.
 type Rule struct {
-	ID       string
-	Name     string
-	Priority int
+	ID          string
+	Name        string
+	Description string
+	Priority    int
 
 	// Kondisi pencocokan. Kosong berarti tidak membatasi.
 	MatchModelID      string
@@ -78,6 +79,9 @@ func RuleFromRow(row *upstream.RoutingRule) (*Rule, error) {
 		FailureThreshold:  row.FailureThreshold,
 		OpenDuration:      time.Duration(row.OpenDurationMS) * time.Millisecond,
 		HalfOpenProbes:    row.HalfOpenProbes,
+	}
+	if row.Description != nil {
+		r.Description = *row.Description
 	}
 	if row.MatchModelID != nil {
 		r.MatchModelID = *row.MatchModelID

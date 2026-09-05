@@ -20,6 +20,7 @@ const (
 	NamespaceRateLimit      = "rl"
 	NamespaceCircuitBreaker = "cb"
 	NamespaceHealth         = "health"
+	NamespaceResponseCache  = "rc"
 )
 
 // Key menggabungkan beberapa bagian menjadi satu kunci Redis bernamespace:

@@ -29,6 +29,11 @@ import type {
   BackgroundJob,
   AuditLogEntry,
   Diagnostics,
+  ResponseCacheStats,
+  CLIDetectedResponse,
+  CLIConfigureRequest,
+  CLIConfigureResponse,
+  CLIExportScriptResponse,
 } from '../types';
 
 export class ApiError extends Error {
@@ -200,6 +205,11 @@ export const api = {
       ),
     healthChecks: (id: string) =>
       request<{ items: any[] }>(`/api/admin/upstreams/providers/${id}/health-checks`),
+    syncModels: (id: string) =>
+      request<{ count: number; models: string[]; message: string }>(
+        `/api/admin/upstreams/providers/${id}/sync-models`,
+        { method: 'POST' }
+      ),
   },
 
   credentials: {
@@ -502,5 +512,23 @@ export const api = {
       return request<{ items: AuditLogEntry[]; next_cursor?: string }>(`/api/admin/system/audit-logs?${q.toString()}`);
     },
     diagnostics: () => request<Diagnostics>('/api/admin/system/diagnostics'),
+    cacheStats: () => request<ResponseCacheStats>('/api/admin/system/cache'),
+    flushCache: () => request<{ deleted: number; message: string }>('/api/admin/system/cache/flush', { method: 'POST' }),
+    updateCacheSettings: (enabled: boolean, ttlSeconds: number) =>
+      request<{ enabled: boolean; ttl_seconds: number; message: string }>('/api/admin/system/cache/settings', {
+        method: 'POST',
+        body: JSON.stringify({ enabled, ttl_seconds: ttlSeconds }),
+      }),
+  },
+
+  // CLI Integrations (Fitur 4)
+  cli: {
+    detected: () => request<CLIDetectedResponse>('/api/admin/cli/detected'),
+    configure: (data: CLIConfigureRequest) =>
+      request<CLIConfigureResponse>('/api/admin/cli/configure', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    exportScript: () => request<CLIExportScriptResponse>('/api/admin/cli/env-export'),
   },
 };

@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/NexGen-X/Route-X/internal/auth"
+	"github.com/NexGen-X/Route-X/internal/cliconfig"
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 	"github.com/NexGen-X/Route-X/internal/database/repo/keys"
@@ -26,6 +27,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/gateway"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
+	"github.com/NexGen-X/Route-X/internal/responsecache"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 	"github.com/NexGen-X/Route-X/internal/worker"
@@ -63,6 +65,8 @@ type Handlers struct {
 	breaker        *gateway.Breaker
 	supervisor     *worker.Supervisor
 	cipher         *security.Cipher
+	responseCache  *responsecache.Engine
+	cliManager     *cliconfig.Manager
 }
 
 // Config membawa seluruh dependensi yang dibutuhkan oleh Admin Handlers.
@@ -91,6 +95,8 @@ type Config struct {
 	Breaker        *gateway.Breaker
 	Supervisor     *worker.Supervisor
 	Cipher         *security.Cipher
+	ResponseCache  *responsecache.Engine
+	CLIManager     *cliconfig.Manager
 }
 
 // NewHandlers menginisialisasi controller REST API admin.
@@ -133,6 +139,8 @@ func NewHandlers(cfg Config) *Handlers {
 		breaker:        cfg.Breaker,
 		supervisor:     cfg.Supervisor,
 		cipher:         cfg.Cipher,
+		responseCache:  cfg.ResponseCache,
+		cliManager:     cfg.CLIManager,
 	}
 }
 

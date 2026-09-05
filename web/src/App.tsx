@@ -16,6 +16,7 @@ import { Budgets } from './pages/Budgets';
 import { APIKeys } from './pages/APIKeys';
 import { Settings } from './pages/Settings';
 import { Diagnostics } from './pages/Diagnostics';
+import { CLIIntegrations } from './pages/CLIIntegrations';
 import { PageErrorBoundary } from './components/common/PageErrorBoundary';
 import { Loader2 } from 'lucide-react';
 
@@ -104,6 +105,12 @@ const Shell: React.FC = () => {
           title: 'Routing Rules',
           subtitle: 'Mesin aturan pemilihan provider dan kebijakan failover',
           content: <RoutingRules />,
+        };
+      case '/cli-integrations':
+        return {
+          title: 'CLI Integrations & 3-Mode Configurator',
+          subtitle: 'Pemindai otomatis perkakas AI CLI di sistem host dan konfigurasi multi-mode terpadu',
+          content: <CLIIntegrations />,
         };
       case '/gateway/rate-limits':
         return {

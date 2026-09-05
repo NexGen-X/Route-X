@@ -40,6 +40,13 @@ func (h *Handlers) systemRoutes(r chi.Router) {
 
 	// Diagnostics
 	r.With(auth.RequirePermission(seed.PermHealthRead)).Get("/diagnostics", h.getDiagnostics)
+
+	// Response Cache (Fitur 1)
+	r.Route("/cache", func(cr chi.Router) {
+		cr.With(auth.RequirePermission(seed.PermHealthRead)).Get("/", h.getCacheStats)
+		cr.With(auth.RequirePermission(seed.PermSettingsWrite)).Post("/flush", h.flushCache)
+		cr.With(auth.RequirePermission(seed.PermSettingsWrite)).Post("/settings", h.updateCacheSettings)
+	})
 }
 
 // -----------------------------------------------------------------------------
@@ -257,4 +264,78 @@ func (h *Handlers) getDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = h.respond(w, r, http.StatusOK, diag)
+}
+
+// -----------------------------------------------------------------------------
+// Response Cache Handlers
+// -----------------------------------------------------------------------------
+
+type CacheSettingsRequest struct {
+	Enabled    bool  `json:"enabled"`
+	TTLSeconds int64 `json:"ttl_seconds"`
+}
+
+func (h *Handlers) getCacheStats(w http.ResponseWriter, r *http.Request) {
+	if h.responseCache == nil {
+		_ = h.respond(w, r, http.StatusOK, CacheStatsDTO{
+			Enabled:      false,
+			TTLSeconds:   0,
+			Hits:         0,
+			Misses:       0,
+			TotalEntries: 0,
+		})
+		return
+	}
+	stats, err := h.responseCache.Stats(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "gagal membaca statistik cache", "error", err)
+		httpx.InternalError(w, r)
+		return
+	}
+	_ = h.respond(w, r, http.StatusOK, CacheStatsDTO{
+		Enabled:      stats.Enabled,
+		TTLSeconds:   stats.TTLSeconds,
+		Hits:         stats.Hits,
+		Misses:       stats.Misses,
+		TotalEntries: stats.TotalEntries,
+	})
+}
+
+func (h *Handlers) flushCache(w http.ResponseWriter, r *http.Request) {
+	if h.responseCache == nil {
+		_ = h.respond(w, r, http.StatusOK, CacheFlushResponseDTO{
+			Deleted: 0,
+			Message: "Response cache engine tidak terpasang",
+		})
+		return
+	}
+	n, err := h.responseCache.Flush(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "gagal membersihkan response cache", "error", err)
+		httpx.InternalError(w, r)
+		return
+	}
+	_ = h.respond(w, r, http.StatusOK, CacheFlushResponseDTO{
+		Deleted: n,
+		Message: fmt.Sprintf("Berhasil menghapus %d entri response cache", n),
+	})
+}
+
+func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
+	if h.responseCache == nil {
+		httpx.BadRequest(w, r, "cache_unavailable", "Response cache engine tidak aktif")
+		return
+	}
+	var req CacheSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.BadRequest(w, r, "invalid_json", "Body permintaan tidak valid")
+		return
+	}
+	ttl := time.Duration(req.TTLSeconds) * time.Second
+	h.responseCache.SetSettings(req.Enabled, ttl)
+	_ = h.respond(w, r, http.StatusOK, CacheSettingsResponseDTO{
+		Enabled:    req.Enabled,
+		TTLSeconds: req.TTLSeconds,
+		Message:    "Pengaturan response cache berhasil diperbarui",
+	})
 }

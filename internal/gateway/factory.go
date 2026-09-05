@@ -201,6 +201,14 @@ func NewFactory(
 	return f
 }
 
+// SSRFPolicy mengembalikan kebijakan SSRF yang dipegang factory.
+func (f *Factory) SSRFPolicy() security.SSRFPolicy {
+	if f == nil {
+		return security.DefaultSSRFPolicy()
+	}
+	return f.policy
+}
+
 // Provider mengembalikan adapter siap pakai untuk kandidat ini.
 // ProviderTarget memuat kebutuhan minimum penyusunan adapter provider tanpa pemetaan model.
 //

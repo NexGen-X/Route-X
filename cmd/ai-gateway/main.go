@@ -28,6 +28,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/billing"
 	"github.com/NexGen-X/Route-X/internal/cache"
+	"github.com/NexGen-X/Route-X/internal/cliconfig"
 	"github.com/NexGen-X/Route-X/internal/config"
 	"github.com/NexGen-X/Route-X/internal/contentfilter"
 	"github.com/NexGen-X/Route-X/internal/database"
@@ -42,6 +43,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/ratelimit"
+	"github.com/NexGen-X/Route-X/internal/responsecache"
 	"github.com/NexGen-X/Route-X/internal/router"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/usage"
@@ -435,6 +437,9 @@ func buildGatewaySurface(
 	models := upstream.NewModelRepo(db.Pool)
 	providersRepo := upstream.NewProviderRepo(db.Pool)
 
+	// Engine response cache untuk caching cerdas inferensi prompt berulang.
+	respCache := responsecache.NewEngine(rdb, logger)
+
 	// Pabrik adapter provider dipakai bersama antara permintaan inferensi dan health checker
 	// worker, menegakkan kebijakan SSRF dan cache instance yang konsisten (Aturan 14).
 	factory := gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
@@ -462,8 +467,9 @@ func buildGatewaySurface(
 			Metrics: metrics,
 			Logger:  logger,
 		}),
-		Usage:  recorder,
-		Logger: logger,
+		Usage:         recorder,
+		ResponseCache: respCache,
+		Logger:        logger,
 	})
 	if err != nil {
 		return nil, nil, nil, err
@@ -510,6 +516,9 @@ func buildGatewaySurface(
 	r.Mount("/", handlers.Routes())
 
 	// --- REST API Admin Handlers (Fase 11) ---
+	settingsRepo := identity.NewSettings(db.Pool)
+	cliMgr := cliconfig.NewManager(settingsRepo, logger)
+
 	adminHandlers := admin.NewHandlers(admin.Config{
 		Pool:           db.Pool,
 		Redis:          rdb.Client(),
@@ -526,7 +535,7 @@ func buildGatewaySurface(
 		UsersRepo:      identity.NewUsers(db.Pool),
 		RolesRepo:      identity.NewRoles(db.Pool),
 		SessionsRepo:   identity.NewSessions(db.Pool),
-		SettingsRepo:   identity.NewSettings(db.Pool),
+		SettingsRepo:   settingsRepo,
 		AuditRepo:      identity.NewAudit(db.Pool),
 		TrafficRepo:    trafficRepo,
 		WebhooksRepo:   webhookRepo,
@@ -535,6 +544,8 @@ func buildGatewaySurface(
 		Breaker:        breaker,
 		Supervisor:     workerSup,
 		Cipher:         cipher,
+		ResponseCache:  respCache,
+		CLIManager:     cliMgr,
 	})
 
 	closeAll := func(c context.Context) error {

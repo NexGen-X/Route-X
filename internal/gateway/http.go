@@ -34,6 +34,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/providers"
+	"github.com/NexGen-X/Route-X/internal/responsecache"
 	"github.com/NexGen-X/Route-X/internal/router"
 )
 
@@ -90,6 +91,7 @@ type Handlers struct {
 	exec       *Executor
 	guard      *Guard
 	usage      UsageSink
+	respCache  *responsecache.Engine
 	logger     *slog.Logger
 }
 
@@ -114,8 +116,10 @@ type HandlersDeps struct {
 	// percobaannya. nil berarti TIDAK ADA baris log request yang ditulis dan tidak ada
 	// pemakaian anggaran yang naik — sah untuk test, tetapi di produksi berarti halaman
 	// Requests kosong dan setiap anggaran menegakkan angka yang tidak bergerak.
-	Usage  UsageSink
-	Logger *slog.Logger
+	Usage UsageSink
+	// ResponseCache opsional; jika terpasang, menghemat latensi dan biaya untuk prompt berulang.
+	ResponseCache *responsecache.Engine
+	Logger        *slog.Logger
 }
 
 // NewHandlers membuat Handlers. Mengembalikan error bila ada dependensi wajib yang kosong.
@@ -155,7 +159,8 @@ func NewHandlers(d HandlersDeps) (*Handlers, error) {
 	return &Handlers{
 		models: d.Models, lister: d.Lister, candidates: d.Candidates,
 		restrict: d.Restrict, factory: d.Factory,
-		engine: engine, exec: d.Executor, guard: guard, usage: d.Usage, logger: logger,
+		engine: engine, exec: d.Executor, guard: guard, usage: d.Usage,
+		respCache: d.ResponseCache, logger: logger,
 	}, nil
 }
 
@@ -597,8 +602,143 @@ func (h *Handlers) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	h.chatSekali(w, r, pr, j)
 }
 
+// ekstrakTier2Model membaca target fallback model dari aturan combo routing.
+// Format dalam description: [combo:tier2=<model_name>]
+func ekstrakTier2Model(rule *router.Rule) string {
+	if rule == nil || rule.Description == "" {
+		return ""
+	}
+	const prefix = "[combo:tier2="
+	idx := strings.Index(rule.Description, prefix)
+	if idx == -1 {
+		return ""
+	}
+	sub := rule.Description[idx+len(prefix):]
+	end := strings.IndexByte(sub, ']')
+	if end == -1 {
+		return ""
+	}
+	return strings.TrimSpace(sub[:end])
+}
+
+func (h *Handlers) cobaTier2Sekali(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) *Outcome[*providers.ChatResponse] {
+	t2Model, err := h.models.Resolve(ctx, tier2ModelName)
+	if err != nil {
+		h.logger.WarnContext(ctx, "resolusi tier2 combo model gagal", "tier2", tier2ModelName, "error", err)
+		return nil
+	}
+
+	var ownerUserID string
+	if pr.principal != nil {
+		ownerUserID = pr.principal.OwnerUserID()
+	}
+
+	cands, err := h.candidates.RouteCandidates(ctx, upstream.RouteQuery{
+		ModelID:     t2Model.ID,
+		OwnerUserID: ownerUserID,
+	})
+	if err != nil || len(cands) == 0 {
+		h.logger.WarnContext(ctx, "tidak ada kandidat untuk tier2 combo model", "tier2", tier2ModelName, "error", err)
+		return nil
+	}
+
+	t2Req := *pr.req
+	t2Req.Model = t2Model.ModelID
+
+	t2Plan := Plan{
+		Candidates:  cands,
+		Model:       t2Model.ModelID,
+		MaxAttempts: 2,
+		BackoffBase: 250 * time.Millisecond,
+	}
+
+	h.logger.InfoContext(ctx, "menjalankan fallback combo routing tier 2", "tier1", pr.model.ModelID, "tier2", t2Model.ModelID)
+	out := Execute(ctx, h.exec, t2Plan,
+		func(c context.Context, cand *upstream.RouteCandidate) (*providers.ChatResponse, error) {
+			if perr := h.guard.PeriksaBatasProvider(c, cand.ProviderID, cand.ProviderName); perr != nil {
+				return nil, perr
+			}
+			p, err := h.adapter(c, cand)
+			if err != nil {
+				return nil, err
+			}
+			return p.ChatCompletion(c, untukKandidat(&t2Req, cand))
+		})
+
+	j.pasangPercobaan(out.Attempts, out.Candidate)
+	if out.Err == nil {
+		return out
+	}
+	return nil
+}
+
+func (h *Handlers) cobaTier2Mengalir(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) *Outcome[providers.Stream] {
+	t2Model, err := h.models.Resolve(ctx, tier2ModelName)
+	if err != nil {
+		h.logger.WarnContext(ctx, "resolusi tier2 combo model gagal", "tier2", tier2ModelName, "error", err)
+		return nil
+	}
+
+	var ownerUserID string
+	if pr.principal != nil {
+		ownerUserID = pr.principal.OwnerUserID()
+	}
+
+	cands, err := h.candidates.RouteCandidates(ctx, upstream.RouteQuery{
+		ModelID:     t2Model.ID,
+		OwnerUserID: ownerUserID,
+	})
+	if err != nil || len(cands) == 0 {
+		h.logger.WarnContext(ctx, "tidak ada kandidat untuk tier2 combo model", "tier2", tier2ModelName, "error", err)
+		return nil
+	}
+
+	t2Req := *pr.req
+	t2Req.Model = t2Model.ModelID
+
+	t2Plan := Plan{
+		Candidates:  cands,
+		Model:       t2Model.ModelID,
+		MaxAttempts: 2,
+		BackoffBase: 250 * time.Millisecond,
+	}
+
+	h.logger.InfoContext(ctx, "menjalankan fallback streaming combo routing tier 2", "tier1", pr.model.ModelID, "tier2", t2Model.ModelID)
+	out := ExecuteStream(ctx, h.exec, t2Plan,
+		func(c context.Context, cand *upstream.RouteCandidate) (providers.Stream, error) {
+			if perr := h.guard.PeriksaBatasProvider(c, cand.ProviderID, cand.ProviderName); perr != nil {
+				return nil, perr
+			}
+			p, err := h.adapter(c, cand)
+			if err != nil {
+				return nil, err
+			}
+			return p.ChatCompletionStream(c, untukKandidat(&t2Req, cand))
+		})
+
+	j.pasangPercobaan(out.Attempts, out.Candidate)
+	if out.Err == nil {
+		return out
+	}
+	return nil
+}
+
 // chatSekali melayani completion non-streaming.
 func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
+	var cacheKey string
+	if h.respCache != nil && h.respCache.IsEnabled() {
+		cacheKey = h.respCache.ComputeKey(pr.req)
+		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.Raw) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-RouteX-Cache", "HIT")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(entry.Raw)
+			j.pasangPemakaian(entry.Usage)
+			return
+		}
+	}
+
 	out := Execute(r.Context(), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.ChatResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
@@ -613,6 +753,15 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 
 	h.catatRute(r, pr, out.Attempts, out.Candidate)
 	j.pasangPercobaan(out.Attempts, out.Candidate)
+
+	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis fallback ke Tier 2 model
+	if out.Err != nil {
+		if tier2 := ekstrakTier2Model(pr.decision.Rule); tier2 != "" {
+			if t2Out := h.cobaTier2Sekali(r.Context(), tier2, pr, j); t2Out != nil {
+				out = t2Out
+			}
+		}
+	}
 
 	if out.Err != nil {
 		j.pasangKegagalanUpstream(out.Err)
@@ -647,7 +796,18 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 	if len(out.Value.Raw) > 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-RouteX-Cache", "MISS")
 		w.WriteHeader(http.StatusOK)
+
+		if cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() {
+			_ = h.respCache.Set(r.Context(), cacheKey, &responsecache.Entry{
+				Model:    out.Candidate.UpstreamModelName,
+				Raw:      out.Value.Raw,
+				Usage:    out.Value.Usage,
+				CachedAt: time.Now(),
+			})
+		}
+
 		if _, err := w.Write(out.Value.Raw); err != nil {
 			h.logger.DebugContext(r.Context(), "penulisan respons gagal, klien kemungkinan sudah menutup koneksi",
 				"error", err)
@@ -742,6 +902,30 @@ var (
 // berhenti tanpa sebab. Harganya: klien menunggu tanpa header sampai upstream menjawab,
 // yang persis perilaku OpenAI sendiri.
 func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
+	var cacheKey string
+	if h.respCache != nil && h.respCache.IsEnabled() {
+		cacheKey = h.respCache.ComputeKey(pr.req)
+		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.StreamChunks) > 0 {
+			if err := httpx.PrepareSSE(w, r); err != nil {
+				h.logger.ErrorContext(r.Context(), "penyiapan SSE gagal", "error", err)
+				httpx.InternalError(w, r)
+				return
+			}
+			rc := http.NewResponseController(w)
+			for _, chunk := range entry.StreamChunks {
+				if _, err := tulisPeristiwa(w, []byte(chunk)); err != nil {
+					return
+				}
+				if err := rc.Flush(); err != nil {
+					return
+				}
+			}
+			h.tutupAliran(r, w, rc)
+			j.pasangPemakaian(entry.Usage)
+			return
+		}
+	}
+
 	out := ExecuteStream(r.Context(), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
@@ -756,6 +940,15 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 
 	h.catatRute(r, pr, out.Attempts, out.Candidate)
 	j.pasangPercobaan(out.Attempts, out.Candidate)
+
+	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis fallback ke Tier 2 model
+	if out.Err != nil {
+		if tier2 := ekstrakTier2Model(pr.decision.Rule); tier2 != "" {
+			if t2Out := h.cobaTier2Mengalir(r.Context(), tier2, pr, j); t2Out != nil {
+				out = t2Out
+			}
+		}
+	}
 
 	if out.Err != nil {
 		j.pasangKegagalanUpstream(out.Err)
@@ -783,8 +976,9 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 
 	rc := http.NewResponseController(w)
 	var (
-		terkirim int64
-		usage    providers.Usage
+		terkirim     int64
+		usage        providers.Usage
+		streamChunks []string
 	)
 	// Pencatatan token dijalankan lewat defer, bukan hanya di jalur selesai-normal: aliran
 	// bisa berakhir karena klien menutup koneksi atau upstream terputus di tengah, dan token
@@ -803,6 +997,14 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		ev, err := out.Value.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() && len(streamChunks) > 0 {
+					_ = h.respCache.Set(r.Context(), cacheKey, &responsecache.Entry{
+						Model:        out.Candidate.UpstreamModelName,
+						Usage:        usage,
+						StreamChunks: streamChunks,
+						CachedAt:     time.Now(),
+					})
+				}
 				h.tutupAliran(r, w, rc)
 				return
 			}
@@ -821,6 +1023,8 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		if len(ev.Raw) == 0 {
 			continue
 		}
+
+		streamChunks = append(streamChunks, string(ev.Raw))
 
 		n, err := tulisPeristiwa(w, ev.Raw)
 		terkirim += n

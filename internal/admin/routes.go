@@ -33,6 +33,7 @@ func (h *Handlers) Routes() http.Handler {
 	r.Route("/access", h.accessRoutes)
 	r.Route("/automation", h.automationRoutes)
 	r.Route("/system", h.systemRoutes)
+	r.Route("/cli", h.cliRoutes)
 
 	return r
 }

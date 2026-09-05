@@ -414,3 +414,59 @@ export interface Diagnostics {
     max_conns: number;
   };
 }
+
+export interface ResponseCacheStats {
+  enabled: boolean;
+  ttl_seconds: number;
+  hits: number;
+  misses: number;
+  total_entries: number;
+}
+
+export interface CLITool {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  installed: boolean;
+  path?: string;
+  version?: string;
+  config_path?: string;
+  supported_modes: string[];
+  active_mode: 'model_only' | 'routing' | 'combo';
+  active_target: string;
+  env_vars: Record<string, string>;
+  export_snippet: string;
+  updated_at?: string;
+}
+
+export interface CLIDetectedResponse {
+  tools: CLITool[];
+  total_detected: number;
+  total_available: number;
+  gateway_url: string;
+  default_env_file: string;
+}
+
+export interface CLIConfigureRequest {
+  tool_id: string;
+  mode: 'model_only' | 'routing' | 'combo';
+  target: string;
+  api_key?: string;
+  gateway_url?: string;
+}
+
+export interface CLIConfigureResponse {
+  success: boolean;
+  tool: CLITool;
+  message: string;
+  config_file?: string;
+  export_snippet: string;
+}
+
+export interface CLIExportScriptResponse {
+  content: string;
+  file_path: string;
+}
+
+

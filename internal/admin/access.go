@@ -122,12 +122,15 @@ func (h *Handlers) getAPIKey(w http.ResponseWriter, r *http.Request) {
 
 type createAPIKeyReq struct {
 	Name                string   `json:"name"`
+	Label               string   `json:"label"`
 	OwnerUserID         string   `json:"owner_user_id"`
 	Live                bool     `json:"live"`
 	Scopes              []string `json:"scopes"`
 	RateLimitRPS        *int     `json:"rate_limit_rps"`
 	RateLimitRPM        *int     `json:"rate_limit_rpm"`
 	RateLimitTPM        *int     `json:"rate_limit_tpm"`
+	RPMLimit            *int     `json:"rpm_limit"`
+	TPMLimit            *int     `json:"tpm_limit"`
 	DailyRequestLimit   *int64   `json:"daily_request_limit"`
 	MonthlyRequestLimit *int64   `json:"monthly_request_limit"`
 	DailyTokenLimit     *int64   `json:"daily_token_limit"`
@@ -136,6 +139,8 @@ type createAPIKeyReq struct {
 	ExpiresAt           *string  `json:"expires_at"`
 	ModelIDs            []string `json:"model_ids"`
 	ProviderIDs         []string `json:"provider_ids"`
+	AllowedModels       []string `json:"allowed_models"`
+	AllowedProviders    []string `json:"allowed_providers"`
 }
 
 func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +149,23 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
+	}
+
+	// Normalisasi alias field
+	if req.Name == "" && req.Label != "" {
+		req.Name = req.Label
+	}
+	if req.RateLimitRPM == nil && req.RPMLimit != nil {
+		req.RateLimitRPM = req.RPMLimit
+	}
+	if req.RateLimitTPM == nil && req.TPMLimit != nil {
+		req.RateLimitTPM = req.TPMLimit
+	}
+	if len(req.ModelIDs) == 0 && len(req.AllowedModels) > 0 {
+		req.ModelIDs = req.AllowedModels
+	}
+	if len(req.ProviderIDs) == 0 && len(req.AllowedProviders) > 0 {
+		req.ProviderIDs = req.AllowedProviders
 	}
 
 	var exp *time.Time
@@ -231,9 +253,12 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Name                *string  `json:"name"`
+		Label               *string  `json:"label"`
 		RateLimitRPS        *int     `json:"rate_limit_rps"`
 		RateLimitRPM        *int     `json:"rate_limit_rpm"`
 		RateLimitTPM        *int     `json:"rate_limit_tpm"`
+		RPMLimit            *int     `json:"rpm_limit"`
+		TPMLimit            *int     `json:"tpm_limit"`
 		DailyRequestLimit   *int64   `json:"daily_request_limit"`
 		MonthlyRequestLimit *int64   `json:"monthly_request_limit"`
 		DailyTokenLimit     *int64   `json:"daily_token_limit"`
@@ -244,6 +269,16 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
+	}
+
+	if req.Name == nil && req.Label != nil {
+		req.Name = req.Label
+	}
+	if req.RateLimitRPM == nil && req.RPMLimit != nil {
+		req.RateLimitRPM = req.RPMLimit
+	}
+	if req.RateLimitTPM == nil && req.TPMLimit != nil {
+		req.RateLimitTPM = req.TPMLimit
 	}
 
 	var ips []netip.Prefix

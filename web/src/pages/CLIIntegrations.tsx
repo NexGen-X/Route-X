@@ -17,9 +17,12 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
+import { Select } from '../components/common/Select';
 import type { CLITool, CLIDetectedResponse, Model, RoutingRule } from '../types';
+import { useToast } from '../context/ToastContext';
 
 export const CLIIntegrations: React.FC = () => {
+  const { toast } = useToast();
   const [data, setData] = useState<CLIDetectedResponse | null>(null);
   const [models, setModels] = useState<Model[]>([]);
   const [rules, setRules] = useState<RoutingRule[]>([]);
@@ -171,7 +174,7 @@ export const CLIIntegrations: React.FC = () => {
         });
       }
     } catch (err: any) {
-      alert(`Gagal menerapkan konfigurasi: ${err.message || 'Error tidak diketahui'}`);
+      toast.error(`Gagal menerapkan konfigurasi: ${err.message || 'Error tidak diketahui'}`, 'Gagal Konfigurasi');
     } finally {
       setApplyingTool(null);
     }
@@ -312,7 +315,7 @@ export const CLIIntegrations: React.FC = () => {
             placeholder="Cari perkakas CLI (misal: agy, claude, aider)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#1C1C1C] border border-[#333] rounded-md pl-9 pr-3 py-1.5 text-xs text-white placeholder-text-muted focus:border-accent focus:outline-none"
+            className="w-full bg-[#1C1C1C] border border-[#333] rounded-md pl-9 pr-3 py-1.5 text-xs text-white placeholder:text-text-muted focus:border-accent focus:outline-none"
           />
         </div>
 
@@ -473,65 +476,67 @@ export const CLIIntegrations: React.FC = () => {
                     </label>
 
                     {cfg.mode === 'model_only' && (
-                      <select
+                      <Select
                         value={cfg.target}
-                        onChange={(e) => handleTargetChange(tool.id, e.target.value)}
-                        className="w-full bg-[#1C1C1C] border border-[#333] rounded px-2.5 py-1.5 text-xs text-white focus:border-accent focus:outline-none font-mono"
-                      >
-                        {models.map((m) => (
-                          <option key={m.id} value={m.model_id}>
-                            {m.display_name || m.model_id} ({m.family || 'universal'})
-                          </option>
-                        ))}
-                        {models.length === 0 && (
-                          <>
-                            <option value="claude-3-7-sonnet">claude-3-7-sonnet</option>
-                            <option value="gpt-4o">gpt-4o</option>
-                            <option value="deepseek-chat">deepseek-chat</option>
-                            <option value="llama3:8b">llama3:8b</option>
-                          </>
-                        )}
-                      </select>
+                        onChange={(val) => handleTargetChange(tool.id, val)}
+                        options={
+                          models.length > 0
+                            ? models.map((m) => ({
+                                value: m.model_id,
+                                label: `${m.display_name || m.model_id} (${m.family || 'universal'})`,
+                              }))
+                            : [
+                                { value: 'claude-3-7-sonnet', label: 'claude-3-7-sonnet' },
+                                { value: 'gpt-4o', label: 'gpt-4o' },
+                                { value: 'deepseek-chat', label: 'deepseek-chat' },
+                                { value: 'llama3:8b', label: 'llama3:8b' },
+                              ]
+                        }
+                      />
                     )}
 
                     {cfg.mode === 'routing' && (
-                      <select
+                      <Select
                         value={cfg.target}
-                        onChange={(e) => handleTargetChange(tool.id, e.target.value)}
-                        className="w-full bg-[#1C1C1C] border border-[#333] rounded px-2.5 py-1.5 text-xs text-white focus:border-accent focus:outline-none font-mono"
-                      >
-                        {rules.map((r) => (
-                          <option key={r.id} value={r.name}>
-                            {r.name} ({r.strategy})
-                          </option>
-                        ))}
-                        {rules.length === 0 && (
-                          <>
-                            <option value="general-chat">general-chat (priority)</option>
-                            <option value="coding-fast">coding-fast (lowest_latency)</option>
-                            <option value="cost-effective">cost-effective (lowest_cost)</option>
-                          </>
-                        )}
-                      </select>
+                        onChange={(val) => handleTargetChange(tool.id, val)}
+                        options={
+                          rules.length > 0
+                            ? rules.map((r) => ({
+                                value: r.name,
+                                label: `${r.name} (${r.strategy})`,
+                              }))
+                            : [
+                                { value: 'general-chat', label: 'general-chat (priority)' },
+                                { value: 'coding-fast', label: 'coding-fast (lowest_latency)' },
+                                { value: 'cost-effective', label: 'cost-effective (lowest_cost)' },
+                              ]
+                        }
+                      />
                     )}
 
                     {cfg.mode === 'combo' && (
                       <div className="space-y-2">
-                        <select
+                        <Select
                           value={cfg.target}
-                          onChange={(e) => handleTargetChange(tool.id, e.target.value)}
-                          className="w-full bg-[#1C1C1C] border border-[#333] rounded px-2.5 py-1.5 text-xs text-white focus:border-accent focus:outline-none font-mono"
-                        >
-                          <option value="combo:coding-tier1-tier2">
-                            Tier 1 (Qwen/DeepSeek) ➔ Tier 2 (Claude 3.7)
-                          </option>
-                          <option value="combo:local-ollama-cloud-fallback">
-                            Tier 1 (Ollama Lokal) ➔ Tier 2 (GPT-4o Cloud)
-                          </option>
-                          <option value="combo:fast-fallback">
-                            Tier 1 (Groq Kilat) ➔ Tier 2 (Anthropic Sonnet)
-                          </option>
-                        </select>
+                          onChange={(val) => handleTargetChange(tool.id, val)}
+                          options={[
+                            {
+                              value: 'combo:coding-tier1-tier2',
+                              label: 'Tier 1 (Qwen/DeepSeek) ➔ Tier 2 (Claude 3.7)',
+                              description: 'Cascade coding hemat dengan fallback flagship',
+                            },
+                            {
+                              value: 'combo:local-ollama-cloud-fallback',
+                              label: 'Tier 1 (Ollama Lokal) ➔ Tier 2 (GPT-4o Cloud)',
+                              description: 'Prioritas lokal offline gratis dengan fallback cloud',
+                            },
+                            {
+                              value: 'combo:fast-fallback',
+                              label: 'Tier 1 (Groq Kilat) ➔ Tier 2 (Anthropic Sonnet)',
+                              description: 'Inference super kilat dengan fallback intelligence',
+                            },
+                          ]}
+                        />
 
                         {/* Interactive Combo Routing Flow Diagram */}
                         <div className="p-2 rounded-inner bg-[#121212] border border-border/60 text-[10px] font-mono space-y-1">

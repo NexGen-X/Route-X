@@ -1,4 +1,5 @@
 import React from 'react';
+import { cn } from '../../utils/cn';
 
 interface CardProps {
   children: React.ReactNode;
@@ -16,7 +17,7 @@ export const Card: React.FC<CardProps> = ({
   action,
 }) => {
   return (
-    <div className={`bg-bg-surface border border-border rounded-card overflow-hidden ${className}`}>
+    <div className={cn('bg-bg-surface border border-border rounded-card overflow-hidden', className)}>
       {(title || subtitle || action) && (
         <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-4">
           <div>

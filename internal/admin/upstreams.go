@@ -66,6 +66,12 @@ func (h *Handlers) upstreamsRoutes(r chi.Router) {
 		pr.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/{id}/probe", h.probeProvider)
 		pr.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/{id}/sync-models", h.syncProviderModels)
 
+		// Manajemen Model langsung di bawah Provider (Mode Personal / Self-Contained)
+		pr.With(auth.RequirePermission(seed.PermModelsRead)).Get("/{id}/models", h.listProviderModels)
+		pr.With(auth.RequirePermission(seed.PermModelsWrite)).Post("/{id}/models", h.addProviderModel)
+		pr.With(auth.RequirePermission(seed.PermModelsWrite)).Delete("/{id}/models/{mapping_id}", h.detachProviderModel)
+		pr.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/{id}/test-model", h.testProviderModel)
+
 		// Kredensial di bawah provider
 		pr.With(auth.RequirePermission(seed.PermProvidersRead)).Get("/{id}/credentials", h.listCredentials)
 		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Post("/{id}/credentials", h.createCredential)
@@ -202,6 +208,16 @@ func (h *Handlers) createProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Normalisasi input agar toleran terhadap variasi UI dan ramah pengguna:
+	// 1. Kind: "openai-compatible" dinormalisasi menjadi "openai_compatible"
+	req.Kind = strings.TrimSpace(req.Kind)
+	if req.Kind == "openai-compatible" {
+		req.Kind = "openai_compatible"
+	}
+	// 2. Name: Bersihkan spasi, konversi ke huruf kecil, dan ganti spasi dengan strip
+	req.Name = strings.TrimSpace(strings.ToLower(req.Name))
+	req.Name = strings.ReplaceAll(req.Name, " ", "-")
+
 	params := upstream.CreateProviderParams{
 		Name:          req.Name,
 		DisplayName:   req.DisplayName,
@@ -255,13 +271,19 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 
 	var params upstream.UpdateProviderParams
 	if req.Name != "" {
-		params.Name = &req.Name
+		nameNorm := strings.TrimSpace(strings.ToLower(req.Name))
+		nameNorm = strings.ReplaceAll(nameNorm, " ", "-")
+		params.Name = &nameNorm
 	}
 	if req.DisplayName != "" {
 		params.DisplayName = &req.DisplayName
 	}
 	if req.Kind != "" {
-		params.Kind = &req.Kind
+		kindNorm := strings.TrimSpace(req.Kind)
+		if kindNorm == "openai-compatible" {
+			kindNorm = "openai_compatible"
+		}
+		params.Kind = &kindNorm
 	}
 	if req.BaseURL != "" {
 		params.BaseURL = &req.BaseURL
@@ -729,6 +751,167 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		Count:   len(syncedModels),
 		Models:  syncedModels,
 		Message: fmt.Sprintf("Berhasil menyinkronkan %d model dari provider %s", len(syncedModels), p.DisplayName),
+	})
+}
+
+// listProviderModels mengembalikan daftar pemetaan model yang terhubung ke provider tertentu.
+func (h *Handlers) listProviderModels(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
+	if _, err := h.authorizeProviderAccess(ctx, id); err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
+
+	mappings, err := h.modelRepo.ListProviderModels(ctx, upstream.ProviderModelFilter{ProviderID: id})
+	if err != nil {
+		mapRepoError(w, r, err, "pemetaan provider model")
+		return
+	}
+
+	dtos := make([]ModelMappingDTO, 0, len(mappings))
+	for _, pm := range mappings {
+		dtos = append(dtos, toModelMappingDTO(pm))
+	}
+
+	_ = h.respond(w, r, http.StatusOK, ListEnvelope[ModelMappingDTO]{
+		Items: dtos,
+	})
+}
+
+type addProviderModelReq struct {
+	Name string `json:"name"`
+}
+
+// addProviderModel menambahkan pemetaan model secara manual ke provider yang dipilih.
+func (h *Handlers) addProviderModel(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	p, err := h.authorizeProviderAccess(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
+
+	var req addProviderModelReq
+	if err := decodeJSON(r, &req); err != nil {
+		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		httpx.BadRequest(w, r, "missing_name", "nama model wajib diisi")
+		return
+	}
+
+	// Cari atau buat model kanonik terlebih dahulu
+	m, err := h.modelRepo.GetByModelID(ctx, name)
+	if errors.Is(err, repo.ErrNotFound) {
+		m, err = h.modelRepo.Create(ctx, upstream.CreateModelParams{
+			ModelID:      name,
+			DisplayName:  name,
+			Capabilities: []string{"chat", "streaming"},
+		})
+		if err != nil {
+			m, _ = h.modelRepo.GetByModelID(ctx, name)
+		}
+	}
+	if m == nil {
+		httpx.InternalError(w, r)
+		return
+	}
+
+	pm, err := h.modelRepo.AttachProvider(ctx, upstream.AttachProviderParams{
+		ModelID:           m.ID,
+		ProviderID:        p.ID,
+		UpstreamModelName: name,
+	})
+	if err != nil {
+		if errors.Is(err, repo.ErrConflict) {
+			httpx.BadRequest(w, r, "already_attached", "model ini sudah terhubung ke provider")
+			return
+		}
+		mapRepoError(w, r, err, "pemetaan provider model")
+		return
+	}
+
+	h.writeAudit(ctx, r, "add_provider_model", "provider_model", pm.ID, map[string]any{
+		"provider_id": p.ID,
+		"model_name":  name,
+	})
+
+	_ = h.respond(w, r, http.StatusCreated, toModelMappingDTO(pm))
+}
+
+type testProviderModelReq struct {
+	Model string `json:"model"`
+}
+
+// testProviderModel menguji konektivitas model tertentu langsung ke provider upstream.
+func (h *Handlers) testProviderModel(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	p, err := h.authorizeProviderAccess(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
+
+	var req testProviderModelReq
+	if err := decodeJSON(r, &req); err != nil {
+		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+	modelName := strings.TrimSpace(req.Model)
+	if modelName == "" {
+		httpx.BadRequest(w, r, "missing_model", "nama model untuk pengujian wajib diisi")
+		return
+	}
+
+	if h.factory == nil {
+		httpx.BadRequest(w, r, "factory_unavailable", "pabrik provider tidak tersedia")
+		return
+	}
+
+	adapter, err := h.factory.ProviderFor(ctx, p)
+	if err != nil {
+		httpx.BadRequest(w, r, "adapter_error", err.Error())
+		return
+	}
+
+	testCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	// Jalankan uji inferensi cepat 1 token untuk memastikan otentikasi & responsivitas model
+	chatReq := &providers.ChatRequest{
+		Model: modelName,
+		Messages: []providers.Message{
+			{Role: providers.RoleUser, Content: "ping"},
+		},
+	}
+
+	_, chatErr := adapter.ChatCompletion(testCtx, chatReq)
+	duration := time.Since(start)
+	latMS := int(duration.Milliseconds())
+
+	if chatErr != nil {
+		_ = h.respond(w, r, http.StatusOK, TestModelResponseDTO{
+			Status:    "error",
+			LatencyMS: latMS,
+			Error:     chatErr.Error(),
+		})
+		return
+	}
+
+	_ = h.respond(w, r, http.StatusOK, TestModelResponseDTO{
+		Status:    "success",
+		LatencyMS: latMS,
+		Message:   fmt.Sprintf("Model %s berhasil merespons (%d ms)", modelName, latMS),
 	})
 }
 
@@ -1277,10 +1460,13 @@ func (h *Handlers) getEgressPool(w http.ResponseWriter, r *http.Request) {
 }
 
 type createEgressReq struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	ProxyURL    string `json:"proxy_url"`
-	Enabled     *bool  `json:"enabled"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Kind        string  `json:"kind"`
+	ProxyURL    string  `json:"proxy_url"`
+	Enabled     *bool   `json:"enabled"`
+	Weight      *int    `json:"weight"`
+	Region      *string `json:"region"`
 }
 
 func (h *Handlers) createEgressPool(w http.ResponseWriter, r *http.Request) {
@@ -1295,11 +1481,24 @@ func (h *Handlers) createEgressPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	kind := strings.TrimSpace(strings.ToLower(req.Kind))
+	if kind == "" {
+		kind = "http"
+	}
+
+	var actorID *string
+	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
+		actorID = &p.User.ID
+	}
+
 	ep, err := h.egressRepo.Create(ctx, upstream.CreateEgressParams{
-		Name:     req.Name,
-		Kind:     "http",
-		ProxyURL: security.Secret(req.ProxyURL),
-		Enabled:  req.Enabled,
+		Name:      req.Name,
+		Kind:      kind,
+		ProxyURL:  security.Secret(req.ProxyURL),
+		Enabled:   req.Enabled,
+		Weight:    req.Weight,
+		Region:    req.Region,
+		CreatedBy: actorID,
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "egress pool")
@@ -1324,7 +1523,15 @@ func (h *Handlers) updateEgressPool(w http.ResponseWriter, r *http.Request) {
 	if req.Name != "" {
 		params.Name = &req.Name
 	}
+	if req.Kind != "" {
+		kindNorm := strings.TrimSpace(strings.ToLower(req.Kind))
+		params.Kind = &kindNorm
+	}
 	params.Enabled = req.Enabled
+	params.Weight = req.Weight
+	if req.Region != nil {
+		params.Region = upstream.Set(*req.Region)
+	}
 
 	ep, err := h.egressRepo.Update(ctx, id, params)
 	if err != nil {

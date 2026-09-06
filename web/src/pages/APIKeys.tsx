@@ -1,14 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { APIKey } from '../types';
+// import type { APIKey } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { KeyRound, Plus, RotateCw, Trash2, Copy, Check } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 export const APIKeys: React.FC = () => {
-  const [keys, setKeys] = useState<APIKey[]>([]);
+  const { toast, confirmModal } = useToast();
+  const queryClient = useQueryClient();
+  const { data: keysData, isLoading } = useQuery({
+    queryKey: ['apiKeys'],
+    queryFn: () => api.apiKeys.list(),
+  });
+  const keys = keysData?.items || [];
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newKey, setNewKey] = useState({
     name: '',
@@ -18,54 +26,64 @@ export const APIKeys: React.FC = () => {
   const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const loadKeys = async () => {
-    try {
-      const res = await api.apiKeys.list();
-      setKeys(res.items || []);
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
-  useEffect(() => {
-    loadKeys();
-  }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const res = await api.apiKeys.create({
-        ...newKey,
+        name: newKey.name,
+        rate_limit_rpm: newKey.rpm_limit || undefined,
+        rate_limit_tpm: newKey.tpm_limit || undefined,
         scopes: ['inference'],
-        allowed_models: [],
-        allowed_providers: [],
+        model_ids: [],
+        provider_ids: [],
       });
       setIsCreateOpen(false);
       setCreatedRawKey(res.raw_key || null);
-      loadKeys();
-    } catch (err) {
-      alert('Gagal membuat API key: ' + err);
+      toast.success('Kunci API baru berhasil dibuat.', 'API Key Dibuat');
+      queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
+    } catch (err: any) {
+      toast.error('Gagal membuat API key: ' + (err.message || err));
     }
   };
 
   const handleRotate = async (id: string) => {
-    if (!confirm('Putar (rotate) kunci API ini? Kunci lama akan langsung tidak berlaku.')) return;
+    const ok = await confirmModal({
+      title: 'Putar Kunci API?',
+      message: 'Kunci lama akan langsung tidak berlaku dan kunci baru akan diterbitkan seketika.',
+      confirmText: 'Putar Kunci',
+      cancelText: 'Batal',
+      danger: true,
+    });
+    if (!ok) return;
+
     try {
       const res = await api.apiKeys.rotate(id);
       setCreatedRawKey(res.raw_key || null);
-      loadKeys();
-    } catch (err) {
-      alert('Gagal rotasi key: ' + err);
+      toast.success('Kunci API berhasil diputar.', 'Kunci Diperbarui');
+      queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
+    } catch (err: any) {
+      toast.error('Gagal rotasi key: ' + (err.message || err));
     }
   };
 
   const handleRevoke = async (id: string) => {
-    if (!confirm('Cabut (revoke) kunci API ini secara permanen?')) return;
+    const ok = await confirmModal({
+      title: 'Cabut Kunci API Permanen?',
+      message: 'Cabut kunci API ini secara permanen? Seluruh klien dan skrip yang menggunakannya akan langsung ditolak.',
+      confirmText: 'Ya, Cabut Kunci',
+      cancelText: 'Batal',
+      danger: true,
+    });
+    if (!ok) return;
+
     try {
       await api.apiKeys.revoke(id);
-      loadKeys();
-    } catch (err) {
-      alert('Gagal mencabut key: ' + err);
+      toast.success('Kunci API berhasil dicabut secara permanen.', 'Kunci Dicabut');
+      queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
+    } catch (err: any) {
+      toast.error('Gagal mencabut key: ' + (err.message || err));
     }
   };
 
@@ -94,9 +112,54 @@ export const APIKeys: React.FC = () => {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {keys.map((k) => (
-          <Card key={k.id} className="p-5 flex flex-col justify-between">
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <Card key={i} className="p-5 animate-pulse space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
+                <div className="space-y-2 flex-1">
+                  <div className="h-4 bg-bg-surface-2 rounded w-24" />
+                  <div className="h-3 bg-bg-surface-2 rounded w-32" />
+                </div>
+              </div>
+              <div className="space-y-2 pt-3 border-t border-border/40">
+                <div className="h-3 bg-bg-surface-2 rounded w-full" />
+                <div className="h-3 bg-bg-surface-2 rounded w-3/4" />
+              </div>
+              <div className="pt-3 border-t border-border flex justify-between">
+                <div className="h-8 bg-bg-surface-2 rounded w-20" />
+                <div className="h-8 bg-bg-surface-2 rounded w-20" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : keys.length === 0 ? (
+        <Card className="py-12 px-6 text-center">
+          <div className="max-w-md mx-auto space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-accent/10 border border-accent/20 text-accent flex items-center justify-center mx-auto shadow-inner">
+              <KeyRound className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Belum Ada Kunci API Klien</h3>
+              <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                Buat kunci API pertama untuk menghubungkan editor atau aplikasi Anda (Cursor, Cline, Open WebUI, LibreChat, atau skrip personal) ke Route-X Gateway.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              icon={<Plus className="w-4 h-4 text-black" />}
+            >
+              Buat Kunci API Pertama
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {keys.map((k) => (
+            <Card key={k.id} className="p-5 flex flex-col justify-between">
             <div>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
@@ -116,7 +179,7 @@ export const APIKeys: React.FC = () => {
               <div className="mt-4 space-y-2 text-xs">
                 <div className="flex justify-between py-1 border-b border-border/40">
                   <span className="text-text-muted">Batas RPM / TPM</span>
-                  <span className="font-mono text-white">{k.rpm_limit ?? '∞'} RPM / {k.tpm_limit ?? '∞'} TPM</span>
+                  <span className="font-mono text-white">{(k as any).rate_limit_rpm ?? k.rpm_limit ?? '∞'} RPM / {(k as any).rate_limit_tpm ?? k.tpm_limit ?? '∞'} TPM</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/40">
                   <span className="text-text-muted">Terakhir Digunakan</span>
@@ -147,7 +210,8 @@ export const APIKeys: React.FC = () => {
             </div>
           </Card>
         ))}
-      </div>
+        </div>
+      )}
 
       {/* Modal Generate Key Result */}
       {createdRawKey && (
@@ -164,9 +228,11 @@ export const APIKeys: React.FC = () => {
               </span>
               <button
                 onClick={() => copyToClipboard(createdRawKey)}
-                className="p-2 text-text-muted hover:text-accent rounded-nav ml-2 flex-shrink-0"
+                aria-label="Salin kunci API ke clipboard"
+                title="Salin kunci API ke clipboard"
+                className="p-2 text-text-muted hover:text-accent rounded-nav ml-2 flex-shrink-0 cursor-pointer"
               >
-                {copied ? <Check className="w-4 h-4 text-accent" /> : <Copy className="w-4 h-4" />}
+                {copied ? <Check className="w-4 h-4 text-accent" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
               </button>
             </div>
             <Button

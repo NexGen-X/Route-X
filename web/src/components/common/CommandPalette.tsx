@@ -18,6 +18,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { api } from '../../api/client';
+import { useToast } from '../../context/ToastContext';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -42,6 +43,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onNavigate,
   onSelectCLI,
 }) => {
+  const { toast } = useToast();
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -191,7 +193,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       action: () => {
         const gwURL = `${window.location.protocol}//${window.location.host}/v1`;
         navigator.clipboard.writeText(gwURL);
-        alert(`Base URL API berhasil disalin ke clipboard:\n${gwURL}`);
+        toast.success(`Base URL API berhasil disalin ke clipboard: ${gwURL}`);
         onClose();
       },
     },
@@ -204,9 +206,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       action: async () => {
         try {
           const res = await api.system.flushCache();
-          alert(`Cache berhasil dibersihkan: ${res.message}`);
+          toast.success(`Cache berhasil dibersihkan: ${res.message}`);
         } catch (err) {
-          alert('Gagal membersihkan cache: ' + err);
+          toast.error('Gagal membersihkan cache: ' + (err instanceof Error ? err.message : String(err)));
         }
         onClose();
       },

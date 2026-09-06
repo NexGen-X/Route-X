@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/sync/singleflight"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -49,6 +50,7 @@ type Engine struct {
 	mu      sync.RWMutex
 	enabled bool
 	ttl     time.Duration
+	sfg     singleflight.Group
 }
 
 // NewEngine membuat Engine baru. Bila redis nil, caching otomatis tidak aktif.
@@ -250,4 +252,28 @@ func (e *Engine) recordStat(ctx context.Context, metric string) {
 	}
 	key := cache.Key(cache.NamespaceResponseCache, "stats", metric)
 	_ = e.redis.Client().Incr(ctx, key).Err()
+}
+
+func (e *Engine) GetOrFetch(ctx context.Context, key string, fetchFn func() (*Entry, error)) (*Entry, bool, error) {
+	if !e.IsEnabled() || key == "" {
+		entry, err := fetchFn()
+		return entry, false, err
+	}
+
+	entry, hit, err := e.Get(ctx, key)
+	if err == nil && hit && entry != nil {
+		return entry, true, nil
+	}
+
+	res, err, _ := e.sfg.Do(key, func() (any, error) {
+		newEntry, fetchErr := fetchFn()
+		if fetchErr == nil && newEntry != nil {
+			_ = e.Set(context.WithoutCancel(ctx), key, newEntry)
+		}
+		return newEntry, fetchErr
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return res.(*Entry), false, nil
 }

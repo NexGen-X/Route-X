@@ -5,9 +5,12 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { Select } from '../components/common/Select';
 import { Gauge, Plus, Trash2 } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 export const RateLimits: React.FC = () => {
+  const { toast, confirmModal } = useToast();
   const [limits, setLimits] = useState<RateLimit[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newLimit, setNewLimit] = useState({
@@ -36,19 +39,28 @@ export const RateLimits: React.FC = () => {
     try {
       await api.rateLimits.create(newLimit);
       setIsCreateOpen(false);
+      toast.success('Aturan batas laju berhasil dibuat');
       loadLimits();
     } catch (err) {
-      alert('Gagal membuat limit: ' + err);
+      toast.error('Gagal membuat limit: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Hapus aturan batas laju ini?')) return;
+    const confirmed = await confirmModal({
+      title: 'Hapus Aturan Rate Limit',
+      message: 'Apakah Anda yakin ingin menghapus aturan pembatasan laju ini? Kebijakan fallback default akan berlaku.',
+      danger: true,
+      confirmText: 'Ya, Hapus Aturan',
+    });
+    if (!confirmed) return;
+
     try {
       await api.rateLimits.delete(id);
+      toast.success('Aturan batas laju berhasil dihapus');
       loadLimits();
     } catch (err) {
-      alert('Gagal menghapus: ' + err);
+      toast.error('Gagal menghapus: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -71,9 +83,32 @@ export const RateLimits: React.FC = () => {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {limits.map((l) => (
-          <Card key={l.id} className="p-5 flex flex-col justify-between">
+      {limits.length === 0 ? (
+        <Card className="py-12 px-6 text-center">
+          <div className="max-w-md mx-auto space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto shadow-inner">
+              <Gauge className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Belum Ada Aturan Rate Limit</h3>
+              <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                Tetapkan batasan laju kuota terdistribusi berbasis Redis (RPM, TPM, atau RPS) per Kunci API, Alamat IP Klien, atau Model untuk mencegah kelebihan beban.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              icon={<Plus className="w-4 h-4 text-black" />}
+            >
+              Tambah Rate Limit Pertama
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {limits.map((l) => (
+            <Card key={l.id} className="p-5 flex flex-col justify-between">
             <div>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
@@ -130,7 +165,8 @@ export const RateLimits: React.FC = () => {
             </div>
           </Card>
         ))}
-      </div>
+        </div>
+      )}
 
       <Modal
         isOpen={isCreateOpen}
@@ -139,19 +175,17 @@ export const RateLimits: React.FC = () => {
         subtitle="Terapkan pembatasan kuota laju pada tingkat Redis terdistribusi"
       >
         <form onSubmit={handleCreate} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Cakupan (Scope)</label>
-              <select
-                value={newLimit.scope}
-                onChange={(e) => setNewLimit({ ...newLimit, scope: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
-              >
-                <option value="api_key">Per Kunci API</option>
-                <option value="ip">Per Alamat IP Klien</option>
-                <option value="global">Global Gateway</option>
-              </select>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Cakupan (Scope)"
+              value={newLimit.scope}
+              onChange={(val) => setNewLimit({ ...newLimit, scope: val })}
+              options={[
+                { value: 'api_key', label: 'Per Kunci API', description: 'Limit berbasis token API klien individual' },
+                { value: 'ip', label: 'Per Alamat IP Klien', description: 'Limit berbasis IP publik pemanggil' },
+                { value: 'global', label: 'Global Gateway', description: 'Limit total seluruh gateway' },
+              ]}
+            />
             <div>
               <label className="block font-semibold text-text-secondary uppercase mb-1">Scope ID / Target</label>
               <input

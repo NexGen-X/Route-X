@@ -1,25 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { Login } from './pages/Login';
 import { ChangePassword } from './pages/ChangePassword';
-import { Dashboard } from './pages/Dashboard';
-import { Observability } from './pages/Observability';
-import { Requests } from './pages/Requests';
-import { Providers } from './pages/Providers';
-import { Models } from './pages/Models';
-import { Egress } from './pages/Egress';
-import { RoutingRules } from './pages/RoutingRules';
-import { RateLimits } from './pages/RateLimits';
-import { Budgets } from './pages/Budgets';
-import { APIKeys } from './pages/APIKeys';
-import { Settings } from './pages/Settings';
-import { Diagnostics } from './pages/Diagnostics';
-import { CLIIntegrations } from './pages/CLIIntegrations';
 import { PageErrorBoundary } from './components/common/PageErrorBoundary';
 import { CommandPalette } from './components/common/CommandPalette';
 import { Loader2 } from 'lucide-react';
+
+// Code-splitting dinamis via React.lazy() untuk memperkecil ukuran bundle awal dan mempercepat FCP
+const Dashboard = React.lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Observability = React.lazy(() => import('./pages/Observability').then((m) => ({ default: m.Observability })));
+const Requests = React.lazy(() => import('./pages/Requests').then((m) => ({ default: m.Requests })));
+const Providers = React.lazy(() => import('./pages/Providers').then((m) => ({ default: m.Providers })));
+const Egress = React.lazy(() => import('./pages/Egress').then((m) => ({ default: m.Egress })));
+const RoutingRules = React.lazy(() => import('./pages/RoutingRules').then((m) => ({ default: m.RoutingRules })));
+const RateLimits = React.lazy(() => import('./pages/RateLimits').then((m) => ({ default: m.RateLimits })));
+const Budgets = React.lazy(() => import('./pages/Budgets').then((m) => ({ default: m.Budgets })));
+const APIKeys = React.lazy(() => import('./pages/APIKeys').then((m) => ({ default: m.APIKeys })));
+const Settings = React.lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const Diagnostics = React.lazy(() => import('./pages/Diagnostics').then((m) => ({ default: m.Diagnostics })));
+const CLIIntegrations = React.lazy(() => import('./pages/CLIIntegrations').then((m) => ({ default: m.CLIIntegrations })));
 
 const Shell: React.FC = () => {
   const { principal, user, isLoading } = useAuth();
@@ -79,8 +81,8 @@ const Shell: React.FC = () => {
     switch (currentPath) {
       case '/':
         return {
-          title: 'Dashboard Overview',
-          subtitle: 'Ringkasan operasional lalu lintas inferensi dan performa model',
+          title: 'Dashboard',
+          subtitle: 'Live health of the inference proxy — traffic, credential pools, and upstreams.',
           content: <Dashboard onNavigate={navigate} />,
         };
       case '/observability':
@@ -96,60 +98,70 @@ const Shell: React.FC = () => {
           content: <Requests />,
         };
       case '/upstreams/providers':
+      case '/providers':
         return {
           title: 'Upstream Providers',
           subtitle: 'Koneksi provider AI, pemeriksaan kesehatan, dan kredensial',
           content: <Providers />,
         };
       case '/upstreams/models':
+      case '/models':
         return {
-          title: 'Models & Pricing',
-          subtitle: 'Katalog model kanonik dan struktur penetapan harga moneter',
-          content: <Models />,
+          title: 'Upstream Providers',
+          subtitle: 'Koneksi provider AI, pemeriksaan kesehatan, kredensial, dan katalog model',
+          content: <Providers />,
         };
       case '/upstreams/egress':
+      case '/egress':
         return {
           title: 'Egress Proxy Pools',
           subtitle: 'Manajemen pool proxy keluar HTTP/HTTPS/SOCKS5',
           content: <Egress />,
         };
       case '/gateway/routing':
+      case '/routing':
         return {
           title: 'Routing Rules',
           subtitle: 'Mesin aturan pemilihan provider dan kebijakan failover',
           content: <RoutingRules />,
         };
       case '/cli-integrations':
+      case '/integrations':
         return {
           title: 'CLI Integrations & 3-Mode Configurator',
           subtitle: 'Pemindai otomatis perkakas AI CLI di sistem host dan konfigurasi multi-mode terpadu',
           content: <CLIIntegrations />,
         };
       case '/gateway/rate-limits':
+      case '/rate-limits':
         return {
           title: 'Rate Limits',
           subtitle: 'Pembatasan laju kuota terdistribusi per-key, IP, atau model',
           content: <RateLimits />,
         };
       case '/gateway/budgets':
+      case '/budgets':
         return {
           title: 'Budgets & Cost Limits',
           subtitle: 'Alokasi pagu pengeluaran USD skala 8 desimal dan pencegahan pembengkakan biaya',
           content: <Budgets />,
         };
       case '/gateway/breakers':
+      case '/breakers':
         return {
           title: 'Routing & Failover',
           subtitle: 'Mesin aturan pemilihan provider, kebijakan failover, dan pemutus sirkuit terdistribusi',
           content: <RoutingRules />,
         };
       case '/access/api-keys':
+      case '/api-keys':
         return {
           title: 'Client API Keys',
           subtitle: 'Kunci otentikasi klien untuk Cursor, Cline, Open WebUI, dan skrip personal',
           content: <APIKeys />,
         };
       case '/system/settings':
+      case '/settings':
         return {
           title: 'Runtime Settings',
           subtitle: 'Konfigurasi parameter gateway dinamis dan profil pemilik',
@@ -157,6 +169,7 @@ const Shell: React.FC = () => {
         };
       case '/system/jobs':
       case '/system/diagnostics':
+      case '/diagnostics':
         return {
           title: 'System Diagnostics & Workers',
           subtitle: 'Status memori Go runtime, koneksi PostgreSQL, dan supervisor worker latar belakang',
@@ -164,7 +177,7 @@ const Shell: React.FC = () => {
         };
       default:
         return {
-          title: 'Dashboard Overview',
+          title: 'Dashboard',
           subtitle: 'Ringkasan operasional lalu lintas inferensi',
           content: <Dashboard onNavigate={navigate} />,
         };
@@ -188,9 +201,18 @@ const Shell: React.FC = () => {
           onOpenMobileMenu={() => setIsMobileOpen(true)}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
+        <main className="flex-1 p-3.5 sm:p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
           <PageErrorBoundary key={currentPath} pageName={title}>
-            {content}
+            <React.Suspense
+              fallback={
+                <div className="flex flex-col items-center justify-center py-24 text-text-muted">
+                  <Loader2 className="w-7 h-7 animate-spin text-accent mb-2" />
+                  <span className="text-xs font-mono">Memuat modul {title}...</span>
+                </div>
+              }
+            >
+              {content}
+            </React.Suspense>
           </PageErrorBoundary>
         </main>
       </div>
@@ -205,8 +227,10 @@ const Shell: React.FC = () => {
 
 export const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <Shell />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <Shell />
+      </AuthProvider>
+    </ToastProvider>
   );
 };

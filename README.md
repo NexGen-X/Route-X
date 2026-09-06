@@ -76,10 +76,14 @@ flowchart TD
   Pengiriman asinkron bertenaga `FOR UPDATE SKIP LOCKED`, tanda tangan digital **HMAC-SHA256**, toleransi kegagalan dengan *equal jitter exponential backoff*, dan pemulihan *stuck lease*.
 - **Supervisor Worker Mandiri**:
   Manajemen pekerjaan singleton (Health Checker, Usage Rollup, Retention Cleaner, Partition Maintainer, Budget Resetter, Webhook Worker) berpelindung isolasi panic dan PostgreSQL Advisory Lock (`pg_advisory_lock`).
-- **Dashboard Web Tersemat (Dark Theme)**:
-  Dibangun dengan React 18, TypeScript, Tailwind CSS, dan Recharts yang disematkan langsung via `go:embed all:dist` dengan palet warna elegan (`#0A0A0A`, `#101010`, aksen lime `#BEF264`).
-- **Dokumentasi Interaktif OpenAPI 3.1**:
-  Dokumentasi antarmuka publik dan administrasi yang disajikan pada `/docs` via Scalar dengan dukungan pencarian instan dan pengujian coba langsung (try-it-out).
+- **Proteksi Cache Stampede dengan Singleflight**:
+  Mesin `responsecache` berbasis Redis terintegrasi dengan deduplikasi goroutine konkuren via `golang.org/x/sync/singleflight` (`GetOrFetch`), mencegah thundering herd ke upstream LLM saat cache miss atau lonjakan traffic bersamaan.
+- **Instrumentasi Metrik Prometheus Anti-Kardinalitas**:
+  Middleware `httpx.MetricsRecorder` memetakan latensi dan request per Chi route pattern secara aman serta endpoint `/metrics` berpelindung bearer token / loopback guard.
+- **Dashboard Web Tersemat (Dark Theme & TanStack Query)**:
+  Dibangun dengan React 18, TypeScript, TanStack Query v5 (state management deklaratif & invalidasi otomatis), Tailwind CSS dengan utilitas modular `cn()` (`clsx` + `tailwind-merge`), dan Recharts yang disematkan langsung via `go:embed all:dist` dengan palet warna elegan (`#0A0A0A`, `#101010`, aksen lime `#BEF264`).
+- **Dokumentasi Interaktif OpenAPI 3.1 & Arsitektur Codemaps**:
+  Dokumentasi antarmuka publik dan administrasi yang disajikan pada `/docs` via Scalar, didukung catatan keputusan arsitektur [ADR](docs/adr/) dan peta arsitektur [CODEMAPS](docs/CODEMAPS/).
 
 ---
 
@@ -339,10 +343,13 @@ make test
 ```
 Route-X/
 ├── cmd/
-│   └── ai-gateway/             # Titik masuk aplikasi utama biner tunggal
+│   ├── ai-gateway/             # Titik masuk aplikasi utama biner tunggal
+│   └── routex-rotate/          # Utilitas rotasi enkripsi rahasia mandiri
 ├── deploy/
 │   └── systemd/                # Unit konfigurasi layanan systemd Linux
 ├── docs/
+│   ├── CODEMAPS/               # Peta arsitektur terinci per area sistem
+│   ├── adr/                    # Catatan keputusan arsitektur (ADR)
 │   ├── openapi.yaml            # Spesifikasi resmi OpenAPI 3.1.0
 │   ├── embed.go                # Handler penyaji dokumentasi interaktif Scalar
 │   └── PLAN.md                 # Rencana kerja & catatan sejarah tiap fase
@@ -357,19 +364,21 @@ Route-X/
 │   ├── database/               # Driver pgxpool, migrasi PostgreSQL, seed
 │   ├── gateway/                # Reverse proxy, codec wire-format, circuit breaker
 │   ├── health/                 # Probe kesehatan /healthz dan /readyz
-│   ├── httpx/                  # Utilitas HTTP, SPAHandler, envelope galat
+│   ├── httpx/                  # Utilitas HTTP, middleware (MetricsRecorder, CORS)
 │   ├── observability/          # Metrik Prometheus & logger terstruktur
 │   ├── providers/              # Adapter OpenAI, Anthropic, Gemini, Ollama
 │   ├── ratelimit/              # Pembatas laju kuota terdistribusi
+│   ├── responsecache/          # Cache respon inferensi + Singleflight stampede guard
 │   ├── router/                 # Strategi perutean inferensi & aturan failover
 │   ├── security/               # Cipher AES-256-GCM, SSRFPolicy, hashing
 │   ├── usage/                  # Pencatat pemakaian token & kalkulator latensi
 │   ├── webhooks/               # Dispatcher event bertanda tangan HMAC-SHA256
-│   └── worker/                 # Supervisor background worker singleton
+│   ├── worker/                 # Supervisor background worker singleton
+│   └── xray/                   # Terowongan keluar siluman multi-protokol (Reality/VMess)
 ├── scripts/
 │   ├── load_test.sh            # Skrip uji beban konkurensi & throughput
 │   └── e2e_verify.sh           # Skrip verifikasi end-to-end menyeluruh
-├── web/                        # Aplikasi SPA Frontend (React 18, Vite, Tailwind)
+├── web/                        # Aplikasi SPA Frontend (React 18, TanStack Query, Tailwind)
 └── Makefile                    # Otomasi pengujian, formatting, dan build
 ```
 

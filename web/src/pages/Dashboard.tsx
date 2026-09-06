@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { ObservabilitySummary, TimeSeriesPoint, Provider } from '../types';
-import { Card } from '../components/common/Card';
+import type { ObservabilitySummary, TimeSeriesPoint, Provider, SystemOverview, RequestLog } from '../types';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import {
@@ -12,6 +11,15 @@ import {
   Server,
   Zap,
   RefreshCw,
+  Cpu,
+  Share2,
+  ShieldCheck,
+  CheckCircle2,
+  Terminal,
+  Radio,
+  ArrowDown,
+  ArrowUp,
+  BarChart3,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -22,36 +30,79 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
+import { ProviderBrandIcon } from '../components/providers/ProviderIcons';
+import { useToast } from '../context/ToastContext';
 
 export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ onNavigate }) => {
+  const { toast } = useToast();
   const [summary, setSummary] = useState<ObservabilitySummary | null>(null);
   const [series, setSeries] = useState<TimeSeriesPoint[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
+  const [overview, setOverview] = useState<SystemOverview | null>(null);
+  const [recentRequests, setRecentRequests] = useState<RequestLog[]>([]);
+  const [timeWindow, setTimeWindow] = useState<'1h' | '6h' | '24h' | '7d'>('24h');
+  const [metricType, setMetricType] = useState<'requests' | 'latency' | 'tokens'>('requests');
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = async (showToast = false) => {
+    if (showToast) setIsRefreshing(true);
+    else setIsLoading(true);
+
     try {
-      const [sumRes, serRes, provRes] = await Promise.all([
-        api.observability.summary('24h'),
-        api.observability.series('requests', '24h'),
-        api.providers.list(),
+      const [sumRes, serRes, provRes, overRes, reqRes] = await Promise.all([
+        api.observability.summary(timeWindow).catch(() => null),
+        api.observability.series(metricType, timeWindow).catch(() => ({ points: [] })),
+        api.providers.list().catch(() => ({ items: [] })),
+        api.system.overview().catch(() => null),
+        api.requests.list({ limit: 6 }).catch(() => ({ items: [] })),
       ]);
-      setSummary(sumRes);
+
+      if (sumRes) setSummary(sumRes);
       setSeries(serRes.points || []);
       setProviders(provRes.items || []);
+      if (overRes) setOverview(overRes);
+      setRecentRequests(reqRes.items || []);
+
+      if (showToast) {
+        toast.success('Metrik telemetri dashboard berhasil disegarkan');
+      }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
+      if (showToast) {
+        toast.error('Gagal menyegarkan data: ' + (err instanceof Error ? err.message : String(err)));
+      }
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  // Polling data overview cepat setiap 5 detik
+  const refreshOverview = async () => {
+    try {
+      const [overRes, reqRes] = await Promise.all([
+        api.system.overview().catch(() => null),
+        api.requests.list({ limit: 6 }).catch(() => ({ items: [] })),
+      ]);
+      if (overRes) setOverview(overRes);
+      if (reqRes.items && reqRes.items.length > 0) {
+        setRecentRequests(reqRes.items);
+      }
+    } catch (err) {
+      // Background poll silently
     }
   };
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000); // Polling tiap 30 detik
-    return () => clearInterval(interval);
-  }, []);
+    const slowInterval = setInterval(() => loadData(false), 30000);
+    const fastInterval = setInterval(refreshOverview, 5000);
+    return () => {
+      clearInterval(slowInterval);
+      clearInterval(fastInterval);
+    };
+  }, [timeWindow, metricType]);
 
   const formatUSD = (valStr?: string) => {
     if (!valStr) return '$0.00';
@@ -59,189 +110,764 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
     return isNaN(num) ? '$0.00' : `$${num.toFixed(4)}`;
   };
 
+  const formatBytes = (bytes?: number) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+  };
+
+  const formatUptime = (sec?: number) => {
+    if (!sec || sec < 0) return '0s';
+    const d = Math.floor(sec / 86400);
+    const h = Math.floor((sec % 86400) / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+  };
+
+  const formatTimeAgo = (dateStr: string) => {
+    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+    if (diff < 5) return 'baru saja';
+    if (diff < 60) return `${diff}d lalu`;
+    const m = Math.floor(diff / 60);
+    if (m < 60) return `${m}m lalu`;
+    const h = Math.floor(m / 60);
+    return `${h}j lalu`;
+  };
+
+  // Kalkulasi persentase RAM host riil
+  const hostRAMPct = overview?.host_ram_total_bytes && overview.host_ram_total_bytes > 0
+    ? Math.min(100, Math.max(0, ((overview.host_ram_used_bytes || 0) / overview.host_ram_total_bytes) * 100))
+    : 0;
+
+  const healthyProvidersCount = providers.filter((p) => p.last_health_status === 'healthy').length;
+
   return (
-    <div className="space-y-6">
-      {/* Top Banner / Actions */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Ringkasan Sistem</h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Status operasional gerbang AI, metrik inferensi 24 jam terakhir, dan ketersediaan upstream.
-          </p>
+    <div className="space-y-6 pb-12 animate-fade-in">
+      {/* ==================================================================== */}
+      {/* 1. HERO OPERATIONAL STATUS & ACTION BAR                             */}
+      {/* ==================================================================== */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#16181D] via-[#121316] to-[#0D0E10] border border-[#23262F] p-5 shadow-2xl">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+        <div className="absolute bottom-0 left-1/3 w-64 h-64 bg-accent/5 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                GATEWAY OPERATIONAL
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono bg-[#1C1F26] border border-[#2B303C] text-text-secondary">
+                <Radio className="w-3 h-3 text-primary animate-pulse" />
+                Multi-Hop Egress Active
+              </span>
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono bg-[#1C1F26] border border-[#2B303C] text-text-secondary">
+                {healthyProvidersCount}/{providers.length || 0} Upstream Sehat
+              </span>
+            </div>
+
+            <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
+              Route-X Mission Control
+            </h2>
+            <p className="text-xs text-text-secondary max-w-2xl leading-relaxed">
+              Gateway AI enterprise dengan perutean cerdas multi-provider, fallback instan, proteksi SSRF,
+              dan isolasi egress anti-blokir berkecepatan tinggi.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#181A20] border border-[#2A2E39] text-xs font-mono text-text-primary shadow-inner">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-semibold text-white">{overview?.in_flight_requests ?? 0}</span>
+              <span className="text-text-muted">in-flight</span>
+            </div>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => loadData(true)}
+              isLoading={isLoading || isRefreshing}
+              icon={<RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />}
+            >
+              Segarkan
+            </Button>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => onNavigate('/requests')}
+              icon={<ArrowUpRight className="w-3.5 h-3.5 text-black" />}
+            >
+              Request Log
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={loadData}
-            isLoading={isLoading}
-            icon={<RefreshCw className="w-3.5 h-3.5" />}
-          >
-            Segarkan
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => onNavigate('/requests')}
-            icon={<ArrowUpRight className="w-3.5 h-3.5" />}
-          >
-            Buka Request Log
-          </Button>
+
+        {/* Quick Cluster Info Pill Strip */}
+        <div className="relative mt-5 pt-4 border-t border-[#1F232B] flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-text-secondary">
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+            <div className="flex items-center gap-1.5">
+              <span className="text-text-muted">Runtime:</span>
+              <span className="text-white font-medium">{overview?.go_version || '-'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-text-muted">OS/Arch:</span>
+              <span className="text-white font-medium">{overview?.os_arch || '-'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-text-muted">Goroutines:</span>
+              <span className="text-emerald-400 font-medium">{overview?.num_goroutine ?? 0}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-text-muted">Uptime:</span>
+              <span className="text-white font-medium">{overview ? formatUptime(overview.uptime_seconds) : '-'}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => onNavigate('/cli-integrations')}
+              className="text-[11px] text-primary hover:underline flex items-center gap-1 transition-colors"
+            >
+              <Terminal className="w-3 h-3" /> Integrasi CLI & SDK &rarr;
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 4 Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Total Permintaan</span>
-            <div className="p-2 rounded-nav bg-accent/10 text-accent">
-              <Activity className="w-4 h-4" />
+      {/* ==================================================================== */}
+      {/* 2. SYSTEM TELEMETRY — 4 HIGH-DENSITY LIVE RUNTIME CARDS              */}
+      {/* ==================================================================== */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-primary" />
+              Telemetri Runtime Gateway
+            </h2>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#1A1D24] text-text-muted border border-[#282D37] font-mono">
+              polling 5 detik
+            </span>
+          </div>
+          <span className="text-xs text-text-muted hidden sm:inline">
+            Status alokasi memori, throughput jaringan, dan pool tunnel egress
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Card 1: Memory */}
+          <div className="bg-[#121316] border border-[#20242D] rounded-xl p-4 flex flex-col justify-between hover:border-primary/40 transition-all shadow-md group">
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform">
+                    <Cpu className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-white block">Memori Gateway</span>
+                    <span className="text-[10px] text-text-muted font-mono">RSS Process</span>
+                  </div>
+                </div>
+                <Badge variant="neutral" className="text-[10px] font-mono">
+                  {overview?.go_version || '-'}
+                </Badge>
+              </div>
+
+              <div className="mt-3">
+                <div className="text-2xl font-bold text-white font-mono tracking-tight">
+                  {overview ? formatBytes(overview.process_rss_bytes) : '-'}
+                </div>
+              </div>
+
+              {/* Progress bar host RAM */}
+              <div className="mt-3">
+                <div className="flex items-center justify-between text-[10px] text-text-secondary mb-1 font-mono">
+                  <span>{hostRAMPct.toFixed(1)}% dari host RAM</span>
+                  <span>
+                    {overview ? `${formatBytes(overview.host_ram_used_bytes)} / ${formatBytes(overview.host_ram_total_bytes)}` : '-'}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 bg-[#1B1E26] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500"
+                    style={{ width: `${hostRAMPct}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Breakdown rows */}
+            <div className="mt-4 pt-3 border-t border-[#1C2029] space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-text-muted">Container RAM</span>
+                <span className="font-mono text-text-secondary">
+                  {overview ? formatBytes(overview.container_ram_bytes) : '-'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-text-muted">Go Heap</span>
+                <span className="font-mono text-text-secondary">{overview ? formatBytes(overview.go_heap_bytes) : '-'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-text-muted">GC Cycles</span>
+                <span className="font-mono text-emerald-400 font-semibold">{overview?.num_gc ?? 0}</span>
+              </div>
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold text-white font-mono">
+
+          {/* Card 2: Network */}
+          <div className="bg-[#121316] border border-[#20242D] rounded-xl p-4 flex flex-col justify-between hover:border-cyan-500/40 transition-all shadow-md group">
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:scale-105 transition-transform">
+                    <Share2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-white block">Throughput I/O</span>
+                    <span className="text-[10px] text-text-muted font-mono">Total Trafik Jaringan</span>
+                  </div>
+                </div>
+                <div className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[10px] font-mono text-cyan-400 font-semibold">
+                  {((overview?.net_rate_mb_s ?? 0)).toFixed(1)} MB/s
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <div className="text-2xl font-bold text-white font-mono tracking-tight">
+                  {overview ? formatBytes(overview.net_total_bytes) : '-'}
+                </div>
+                <span className="text-[10px] text-text-muted font-mono block mt-0.5">Sejak server boot</span>
+              </div>
+            </div>
+
+            {/* Breakdown rows with indicator bars */}
+            <div className="mt-4 pt-3 border-t border-[#1C2029] space-y-2.5 text-xs">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-text-muted flex items-center gap-1">
+                    <ArrowDown className="w-3 h-3 text-cyan-400" /> Masuk (Rx)
+                  </span>
+                  <span className="font-mono text-text-secondary">
+                    {overview ? `${formatBytes(overview.net_recv_bytes)} · ${(overview.net_recv_rate_mb_s ?? 0).toFixed(1)} MB/s` : '-'}
+                  </span>
+                </div>
+                <div className="w-full h-1 bg-[#1B1E26] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-cyan-400 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${
+                        overview?.net_total_bytes && overview.net_total_bytes > 0
+                          ? Math.min(100, Math.round(((overview.net_recv_bytes || 0) / overview.net_total_bytes) * 100))
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-text-muted flex items-center gap-1">
+                    <ArrowUp className="w-3 h-3 text-emerald-400" /> Keluar (Tx)
+                  </span>
+                  <span className="font-mono text-text-secondary">
+                    {overview ? `${formatBytes(overview.net_sent_bytes)} · ${(overview.net_sent_rate_mb_s ?? 0).toFixed(1)} MB/s` : '-'}
+                  </span>
+                </div>
+                <div className="w-full h-1 bg-[#1B1E26] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-400 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${
+                        overview?.net_total_bytes && overview.net_total_bytes > 0
+                          ? Math.min(100, Math.round(((overview.net_sent_bytes || 0) / overview.net_total_bytes) * 100))
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: Egress Pool */}
+          <div className="bg-[#121316] border border-[#20242D] rounded-xl p-4 flex flex-col justify-between hover:border-emerald-500/40 transition-all shadow-md group">
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-white block">Egress & Tunnel Pool</span>
+                    <span className="text-[10px] text-text-muted font-mono">Xray & Proxies</span>
+                  </div>
+                </div>
+                <div className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-400 font-semibold">
+                  {overview?.egress_active_mode || 'DIRECT'}
+                </div>
+              </div>
+
+              <div className="mt-3">
+                <div className="text-2xl font-bold text-white font-mono tracking-tight">
+                  {overview?.egress_total_routes ?? 0}
+                </div>
+                <span className="text-[10px] text-text-muted font-mono block mt-0.5">Total jalur keluar terdaftar</span>
+              </div>
+            </div>
+
+            {/* Breakdown rows */}
+            <div className="mt-4 pt-3 border-t border-[#1C2029] space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-text-muted">Xray & WARP</span>
+                <span className="font-mono text-white font-semibold">{overview?.egress_xray_count ?? 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-text-muted">HTTP/SOCKS</span>
+                <span className="font-mono text-text-secondary">{overview?.egress_http_count ?? 0}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-text-muted">Status Tunnel</span>
+                {(overview?.egress_total_routes ?? 0) > 0 ? (
+                  <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1 font-semibold">
+                    <CheckCircle2 className="w-3 h-3" /> Beroperasi
+                  </span>
+                ) : (
+                  <span className="text-text-muted font-mono text-[11px] flex items-center gap-1">
+                    Direct Routing
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Uptime & CPU */}
+          <div className="bg-[#121316] border border-[#20242D] rounded-xl p-4 flex flex-col justify-between hover:border-amber-500/40 transition-all shadow-md group">
+            <div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:scale-105 transition-transform">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-white block">Uptime & Komputasi</span>
+                    <span className="text-[10px] text-text-muted font-mono">PID {overview?.pid || '-'}</span>
+                  </div>
+                </div>
+                <Badge variant="neutral" className="text-[10px] font-mono">
+                  {((overview?.container_cpu_cap ?? 1)).toFixed(1)} cores
+                </Badge>
+              </div>
+
+              <div className="mt-3">
+                <div className="text-2xl font-bold text-white font-mono tracking-tight">
+                  {overview ? formatUptime(overview.uptime_seconds) : '-'}
+                </div>
+              </div>
+
+              {/* Progress bar Proxy CPU */}
+              <div className="mt-3">
+                <div className="flex items-center justify-between text-[10px] text-text-secondary mb-1 font-mono">
+                  <span>Proxy CPU</span>
+                  <span className="text-amber-400 font-bold">{((overview?.proxy_cpu_pct ?? 0)).toFixed(1)}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-[#1B1E26] rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, overview?.proxy_cpu_pct || 0)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Breakdown rows */}
+            <div className="mt-4 pt-3 border-t border-[#1C2029] space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-text-muted">Host CPU</span>
+                <span className="font-mono text-text-secondary">{((overview?.host_cpu_pct ?? 0)).toFixed(1)}%</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-text-muted">Goroutines</span>
+                <span className="font-mono text-emerald-400 font-semibold">{overview?.num_goroutine ?? 0}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ==================================================================== */}
+      {/* 3. INFERENCE PERFORMANCE METRICS RIBBON (4 CARDS)                    */}
+      {/* ==================================================================== */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        {/* Metric 1 */}
+        <div className="bg-[#121316] border border-[#20242D] rounded-xl p-3 sm:p-4.5 hover:border-primary/40 transition-all shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-wider truncate">
+              Total Permintaan
+            </span>
+            <div className="p-1.5 sm:p-2 rounded-lg bg-primary/10 text-primary border border-primary/20 shrink-0">
+              <Activity className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </div>
+          </div>
+          <div className="mt-2 sm:mt-3">
+            <div className="text-xl sm:text-2xl font-bold text-white font-mono tracking-tight truncate">
               {(summary?.total_requests ?? 0).toLocaleString()}
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs text-text-secondary">
-                {(summary?.success_requests ?? 0).toLocaleString()} berhasil
+            <div className="flex flex-wrap items-center gap-1 sm:gap-2 mt-1 sm:mt-1.5">
+              <span className="text-[10px] sm:text-xs text-text-muted font-mono">
+                {(summary?.success_requests ?? 0).toLocaleString()} ok
               </span>
-              <span className="text-text-muted text-xs">•</span>
-              <span className={`text-xs font-mono ${(summary?.error_rate ?? 0) > 5 ? 'text-status-error' : 'text-text-muted'}`}>
-                {((summary?.error_rate ?? 0)).toFixed(1)}% error
+              <span className="text-[#3A404F] text-[10px] sm:text-xs hidden xs:inline">•</span>
+              <span className={`text-[10px] sm:text-xs font-mono font-semibold ${(summary?.error_rate ?? 0) > 5 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                {((summary?.error_rate ?? 0)).toFixed(1)}% err
               </span>
             </div>
           </div>
-        </Card>
+        </div>
 
-        <Card className="p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Total Token</span>
-            <div className="p-2 rounded-nav bg-emerald-500/10 text-emerald-400">
-              <Zap className="w-4 h-4" />
+        {/* Metric 2 */}
+        <div className="bg-[#121316] border border-[#20242D] rounded-xl p-3 sm:p-4.5 hover:border-emerald-500/40 transition-all shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-wider truncate">
+              Total Token
+            </span>
+            <div className="p-1.5 sm:p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+              <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold text-white font-mono">
-              {((summary?.total_tokens ?? 0) / 1000).toFixed(1)}k
+          <div className="mt-2 sm:mt-3">
+            <div className="text-xl sm:text-2xl font-bold text-white font-mono tracking-tight truncate">
+              {((summary?.total_tokens ?? 0) >= 1000000)
+                ? `${((summary?.total_tokens ?? 0) / 1000000).toFixed(2)}M`
+                : `${((summary?.total_tokens ?? 0) / 1000).toFixed(1)}k`}
             </div>
-            <div className="text-xs text-text-secondary mt-1">
-              Prompt: {((summary?.prompt_tokens ?? 0) / 1000).toFixed(1)}k | Out: {((summary?.completion_tokens ?? 0) / 1000).toFixed(1)}k
+            <div className="text-[10px] sm:text-xs text-text-muted mt-1 sm:mt-1.5 font-mono truncate">
+              In: {((summary?.prompt_tokens ?? 0) / 1000).toFixed(1)}k · Out: {((summary?.completion_tokens ?? 0) / 1000).toFixed(1)}k
             </div>
           </div>
-        </Card>
+        </div>
 
-        <Card className="p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Estimasi Biaya</span>
-            <div className="p-2 rounded-nav bg-amber-500/10 text-amber-400">
-              <Coins className="w-4 h-4" />
+        {/* Metric 3 */}
+        <div className="bg-[#121316] border border-[#20242D] rounded-xl p-3 sm:p-4.5 hover:border-amber-500/40 transition-all shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-wider truncate">
+              Estimasi Biaya
+            </span>
+            <div className="p-1.5 sm:p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+              <Coins className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold text-white font-mono">
+          <div className="mt-2 sm:mt-3">
+            <div className="text-xl sm:text-2xl font-bold text-white font-mono tracking-tight truncate">
               {formatUSD(summary?.total_cost_usd)}
             </div>
-            <div className="text-xs text-text-secondary mt-1">
-              Akumulasi biaya upstream USD (skala 8 desimal)
+            <div className="text-[10px] sm:text-xs text-text-muted mt-1 sm:mt-1.5 font-mono truncate">
+              Presisi 8 desimal USD
             </div>
           </div>
-        </Card>
+        </div>
 
-        <Card className="p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Latensi P95</span>
-            <div className="p-2 rounded-nav bg-purple-500/10 text-purple-400">
-              <Clock className="w-4 h-4" />
+        {/* Metric 4 */}
+        <div className="bg-[#121316] border border-[#20242D] rounded-xl p-3 sm:p-4.5 hover:border-purple-500/40 transition-all shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-wider truncate">
+              Latensi P95
+            </span>
+            <div className="p-1.5 sm:p-2 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 shrink-0">
+              <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             </div>
           </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold text-white font-mono">
+          <div className="mt-2 sm:mt-3">
+            <div className="text-xl sm:text-2xl font-bold text-white font-mono tracking-tight truncate">
               {summary?.p95_latency_ms ?? 0} ms
             </div>
-            <div className="text-xs text-text-secondary mt-1">
+            <div className="text-[10px] sm:text-xs text-text-muted mt-1 sm:mt-1.5 font-mono truncate">
               Rata-rata: {summary?.avg_latency_ms ?? 0} ms
             </div>
           </div>
-        </Card>
+        </div>
       </div>
 
-      {/* Main Chart Section */}
-      <Card
-        title="Volume Lalu Lintas Permintaan (24 Jam)"
-        subtitle="Fluktuasi inferensi request per interval waktu secara kontinu"
-      >
-        <div className="h-64 w-full pt-2">
-          {series.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-xs text-text-muted">
-              Belum ada data metrik 24 jam terakhir
+      {/* ==================================================================== */}
+      {/* 4. TRAFFIC CHART & RECENT REQUESTS FEED (SIDE-BY-SIDE ON DESKTOP)     */}
+      {/* ==================================================================== */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Chart Column (2 cols) */}
+        <div className="lg:col-span-2 bg-[#121316] border border-[#20242D] rounded-xl p-5 shadow-lg flex flex-col justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-semibold text-white tracking-tight">Volume & Dinamika Lalu Lintas</h3>
+              </div>
+              <p className="text-xs text-text-muted mt-0.5">
+                Fluktuasi inferensi request gateway secara berkelanjutan.
+              </p>
             </div>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series}>
-                <defs>
-                  <linearGradient id="reqGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#BEF264" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#BEF264" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" />
-                <XAxis dataKey="timestamp" stroke="#6B7280" fontSize={11} tickLine={false} />
-                <YAxis stroke="#6B7280" fontSize={11} tickLine={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#101010',
-                    borderColor: '#1F1F1F',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    color: '#F5F5F5',
-                  }}
-                />
-                <Area type="monotone" dataKey="requests" stroke="#BEF264" fillOpacity={1} fill="url(#reqGrad)" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </Card>
 
-      {/* Upstream Providers Grid */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-base font-bold text-white tracking-tight">Status Kesehatan Upstream Providers</h3>
-          <Button variant="ghost" size="sm" onClick={() => onNavigate('/upstreams/providers')}>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Metric switcher */}
+              <div
+                role="group"
+                aria-label="Pilih jenis metrik grafik"
+                className="flex bg-[#191C24] p-1 rounded-lg border border-[#282D39] text-xs font-mono"
+              >
+                {(['requests', 'tokens', 'latency'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMetricType(m)}
+                    className={`px-3 py-1.5 min-h-[30px] rounded-md capitalize transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
+                      metricType === m
+                        ? 'bg-primary text-black font-bold shadow'
+                        : 'text-text-muted hover:text-white'
+                    }`}
+                  >
+                    {m === 'requests' ? 'Req' : m === 'tokens' ? 'Token' : 'Latensi'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Window switcher */}
+              <div
+                role="group"
+                aria-label="Pilih rentang waktu metrik"
+                className="flex bg-[#191C24] p-1 rounded-lg border border-[#282D39] text-xs font-mono"
+              >
+                {(['1h', '6h', '24h', '7d'] as const).map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => setTimeWindow(w)}
+                    className={`px-2.5 py-1.5 min-h-[30px] rounded-md transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
+                      timeWindow === w
+                        ? 'bg-[#2A2F3D] text-white font-semibold'
+                        : 'text-text-muted hover:text-white'
+                    }`}
+                  >
+                    {w}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="h-64 w-full pt-2">
+            {series.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-xs text-text-muted space-y-2">
+                <Activity className="w-6 h-6 text-[#2A2F3D]" />
+                <span>Belum ada sampel metrik untuk rentang waktu {timeWindow}</span>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={series}>
+                  <defs>
+                    <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#BEF264" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#BEF264" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1C2029" vertical={false} />
+                  <XAxis dataKey="timestamp" stroke="#525866" fontSize={11} tickLine={false} />
+                  <YAxis stroke="#525866" fontSize={11} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#16181F',
+                      borderColor: '#2E3342',
+                      borderRadius: '10px',
+                      fontSize: '12px',
+                      color: '#F5F5F5',
+                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey={metricType}
+                    stroke="#BEF264"
+                    fillOpacity={1}
+                    fill="url(#chartGradient)"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Live Recent Inference Requests Column (1 col) */}
+        <div className="bg-[#121316] border border-[#20242D] rounded-xl p-5 shadow-lg flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between pb-3 border-b border-[#1C2029]">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <h3 className="text-sm font-semibold text-white tracking-tight">Live Requests Feed</h3>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onNavigate('/requests')}
+                className="text-xs text-primary hover:text-primary-hover p-0 h-auto"
+              >
+                Semua &rarr;
+              </Button>
+            </div>
+
+            <div className="mt-3 space-y-2.5">
+              {recentRequests.length === 0 ? (
+                <div className="py-12 text-center text-xs text-text-muted space-y-2">
+                  <Activity className="w-5 h-5 mx-auto text-[#2A2F3D]" />
+                  <p>Belum ada permintaan inferensi yang tercatat.</p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onNavigate('/cli-integrations')}
+                    className="mt-2 text-xs"
+                  >
+                    Buka Panduan Integrasi
+                  </Button>
+                </div>
+              ) : (
+                recentRequests.map((req) => {
+                  const isOk = req.status_code >= 200 && req.status_code < 300;
+                  const isErr = req.status_code >= 400;
+                  return (
+                    <div
+                      key={req.id || req.request_id}
+                      onClick={() => onNavigate('/requests')}
+                      className="p-2.5 rounded-lg bg-[#181A20] border border-[#232732] hover:border-primary/40 hover:bg-[#1D2028] transition-all cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              isOk
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                : isErr
+                                ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                : 'bg-amber-500/10 text-amber-400'
+                            }`}
+                          >
+                            {req.status_code}
+                          </span>
+                          <span className="text-xs font-mono font-semibold text-white truncate max-w-[140px] group-hover:text-primary transition-colors">
+                            {req.requested_model || req.model_id || 'unknown'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-text-muted font-mono whitespace-nowrap">
+                          {formatTimeAgo(req.created_at)}
+                        </span>
+                      </div>
+
+                      <div className="mt-1.5 flex items-center justify-between text-[11px] font-mono text-text-secondary">
+                        <span className="text-text-muted flex items-center gap-1">
+                          {req.provider_name || 'auto-routed'}
+                          {req.is_stream && (
+                            <span className="text-[9px] px-1 rounded bg-[#252A36] text-primary">SSE</span>
+                          )}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-text-primary">{req.duration_ms}ms</span>
+                          <span className="text-text-muted">·</span>
+                          <span className="text-text-muted">{req.total_tokens || 0} tok</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-[#1C2029]">
+            <button
+              onClick={() => onNavigate('/requests')}
+              className="w-full py-1.5 text-center text-xs text-text-secondary hover:text-white font-mono rounded bg-[#16181F] border border-[#262B37] hover:border-[#383E4F] transition-colors"
+            >
+              Inspeksi Seluruh Jejak Audit Request &rarr;
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ==================================================================== */}
+      {/* 5. UPSTREAM PROVIDER HEALTH & STATUS MATRIX                          */}
+      {/* ==================================================================== */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
+              <Server className="w-4 h-4 text-emerald-400" />
+              Status Kesehatan Upstream Providers
+            </h3>
+            <p className="text-xs text-text-muted mt-0.5">
+              Ketersediaan koneksi upstream, status circuit breaker, dan respons latensi terkini.
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onNavigate('/upstreams/providers')}
+            className="text-xs text-primary hover:underline"
+          >
             Kelola Provider &rarr;
           </Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {providers.map((p) => {
-            const isHealthy = p.last_health_status === 'healthy';
-            const isDegraded = p.last_health_status === 'degraded';
-            return (
-              <Card key={p.id} className="p-4 hover:border-accent/40 transition-colors">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-bg-surface-2 flex items-center justify-center text-accent">
-                      <Server className="w-4 h-4" />
+          {providers.length === 0 ? (
+            <div className="col-span-full py-8 text-center text-xs text-text-muted bg-[#121316] border border-[#20242D] rounded-xl">
+              Belum ada provider upstream yang terdaftar.{' '}
+              <button
+                onClick={() => onNavigate('/upstreams/providers')}
+                className="text-primary hover:underline font-semibold"
+              >
+                Tambahkan provider sekarang
+              </button>
+            </div>
+          ) : (
+            providers.map((p) => {
+              const isHealthy = p.last_health_status === 'healthy';
+              const isDegraded = p.last_health_status === 'degraded';
+              return (
+                <div
+                  key={p.id}
+                  className="bg-[#121316] border border-[#20242D] rounded-xl p-4.5 hover:border-primary/40 transition-all flex flex-col justify-between shadow-sm group"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-[#191C24] border border-[#2A2E3B] flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
+                        <ProviderBrandIcon providerIdOrKind={p.kind} name={p.name} className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-semibold text-white group-hover:text-primary transition-colors">
+                          {p.display_name || p.name}
+                        </h4>
+                        <p className="text-[11px] text-text-muted font-mono capitalize">{p.kind}</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-white">{p.display_name || p.name}</h4>
-                      <p className="text-[11px] text-text-muted font-mono">{p.kind}</p>
-                    </div>
+                    <Badge variant={isHealthy ? 'success' : isDegraded ? 'warn' : 'error'}>
+                      {p.last_health_status || (p.enabled ? 'unknown' : 'disabled')}
+                    </Badge>
                   </div>
-                  <Badge variant={isHealthy ? 'success' : isDegraded ? 'warn' : 'error'}>
-                    {p.last_health_status || (p.enabled ? 'unknown' : 'disabled')}
-                  </Badge>
-                </div>
 
-                <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-xs">
-                  <span className="text-text-muted">Latensi Terakhir</span>
-                  <span className="font-mono text-text-primary">{p.last_latency_ms ? `${p.last_latency_ms} ms` : '-'}</span>
+                  <div className="mt-4 pt-3 border-t border-[#1C2029] flex items-center justify-between text-xs">
+                    <span className="text-text-muted">Latensi Terakhir</span>
+                    <span className="font-mono text-white font-semibold">
+                      {p.last_latency_ms ? `${p.last_latency_ms} ms` : '-'}
+                    </span>
+                  </div>
                 </div>
-              </Card>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       </div>
     </div>

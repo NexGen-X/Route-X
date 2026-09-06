@@ -225,6 +225,7 @@ func buildRouter(
 		httpx.Recover(logger),
 		httpx.SecurityHeaders(cfg),
 		httpx.MaxBytes(cfg.MaxRequestBytes),
+		httpx.MetricsRecorder(metrics),
 	)
 
 	// --- Probe kesehatan ---
@@ -237,10 +238,12 @@ func buildRouter(
 	}
 
 	// --- Metrik ---
-	// Endpoint ini dilindungi di balik sesi admin untuk mencegah kebocoran informasi operasional,
-	// seperti volume request, nama provider, latensi per model, dan status circuit breaker ke publik.
+	// Endpoint ini dilindungi di balik sesi admin atau token scraper / koneksi loopback untuk mencegah
+	// kebocoran informasi operasional ke publik, namun tetap mengizinkan scraping metrik Prometheus.
+	metricsToken := os.Getenv("METRICS_TOKEN")
+	allowLoopback := !cfg.AppEnv.IsProduction() || os.Getenv("METRICS_ALLOW_LOOPBACK") != "false"
 	if authSvc != nil {
-		r.With(authSvc.RequireSession()).Handle("/metrics", metrics.Handler())
+		r.With(authSvc.RequireSessionOrBearer(metricsToken, allowLoopback)).Handle("/metrics", metrics.Handler())
 	} else {
 		if cfg.AppEnv.IsProduction() {
 			logger.Warn("/metrics belum berautentikasi",
@@ -513,6 +516,9 @@ func buildGatewaySurface(
 	authn := apikey.NewAuthenticator(keyRepo, metrics, logger)
 
 	r := chi.NewRouter()
+	// CORS wajib dipasang sebelum autentikasi agar preflight OPTIONS dari browser direspons langsung
+	// tanpa ditolak oleh validator Authorization header.
+	r.Use(httpx.CORS(nil))
 	r.Use(authn.Authenticate(), limiter.Limit())
 	r.Mount("/", handlers.Routes())
 

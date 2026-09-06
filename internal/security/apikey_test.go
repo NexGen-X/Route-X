@@ -137,7 +137,12 @@ func TestVerifyAPIKey(t *testing.T) {
 		hash   string
 		pepper []byte
 	}{
-		{"key salah", raw[:len(raw)-1] + "Z", key.Hash, testPepper},
+		{"key salah", func() string {
+			if strings.HasSuffix(raw, "Z") {
+				return raw[:len(raw)-1] + "A"
+			}
+			return raw[:len(raw)-1] + "Z"
+		}(), key.Hash, testPepper},
 		{"key kosong", "", key.Hash, testPepper},
 		{"hash kosong", raw, "", testPepper},
 		{"pepper salah", raw, key.Hash, []byte("pepper-yang-salah-sekali-sekali!")},

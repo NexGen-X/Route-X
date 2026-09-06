@@ -175,6 +175,9 @@ func NewHandlers(d HandlersDeps) (*Handlers, error) {
 // server tetap terbaca di satu tempat.
 func (h *Handlers) Routes() http.Handler {
 	r := chi.NewRouter()
+	// CORS diizinkan untuk rute API /v1 agar aplikasi frontend eksternal (Open WebUI, LibreChat, dsb.)
+	// dapat melakukan panggilan inferensi langsung tanpa terblokir preflight OPTIONS oleh browser.
+	r.Use(httpx.CORS(nil))
 	r.Post("/chat/completions", h.ChatCompletions)
 	// /v1/responses adalah nama baru OpenAI untuk permukaan yang sama pada pemakaian
 	// percakapan biasa. Dilayani handler yang sama supaya klien yang sudah pindah ke nama

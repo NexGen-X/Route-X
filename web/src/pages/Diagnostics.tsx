@@ -5,8 +5,10 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { RefreshCw, Clock, Play, Zap, Trash2, CheckCircle2 } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 export const Diagnostics: React.FC = () => {
+  const { toast, confirmModal } = useToast();
   const [diag, setDiag] = useState<DiagType | null>(null);
   const [jobs, setJobs] = useState<BackgroundJob[]>([]);
   const [cache, setCache] = useState<ResponseCacheStats | null>(null);
@@ -45,24 +47,32 @@ export const Diagnostics: React.FC = () => {
     setTriggeringJob(name);
     try {
       const res = await api.system.triggerJob(name);
-      alert(res.message || 'Job berhasil dipicu.');
+      toast.success(res.message || 'Pekerjaan berhasil dipicu di latar belakang.', 'Worker Triggered');
       loadData();
-    } catch (err) {
-      alert('Gagal memicu job: ' + err);
+    } catch (err: any) {
+      toast.error('Gagal memicu worker: ' + (err.message || err));
     } finally {
       setTriggeringJob(null);
     }
   };
 
   const handleFlushCache = async () => {
-    if (!confirm('Apakah Anda yakin ingin mengosongkan seluruh entri response cache di Redis?')) return;
+    const ok = await confirmModal({
+      title: 'Kosongkan Response Cache?',
+      message: 'Apakah Anda yakin ingin mengosongkan seluruh entri cache inferensi di Redis? Permintaan berikutnya akan langsung menuju ke upstream.',
+      confirmText: 'Ya, Kosongkan',
+      cancelText: 'Batal',
+      danger: true,
+    });
+    if (!ok) return;
+
     setFlushingCache(true);
     try {
       const res = await api.system.flushCache();
-      alert(res.message || 'Response cache berhasil dibersihkan.');
+      toast.success(res.message || 'Response cache berhasil dibersihkan.', 'Cache Flushed');
       loadData();
-    } catch (err) {
-      alert('Gagal membersihkan cache: ' + err);
+    } catch (err: any) {
+      toast.error('Gagal membersihkan cache: ' + (err.message || err));
     } finally {
       setFlushingCache(false);
     }
@@ -72,9 +82,10 @@ export const Diagnostics: React.FC = () => {
     setUpdatingCache(true);
     try {
       await api.system.updateCacheSettings(newEnabled, ttlMinutes * 60);
+      toast.info(newEnabled ? 'Response caching diaktifkan (< 2ms)' : 'Response caching dinonaktifkan', 'Pengaturan Cache');
       loadData();
-    } catch (err) {
-      alert('Gagal memperbarui pengaturan cache: ' + err);
+    } catch (err: any) {
+      toast.error('Gagal memperbarui pengaturan cache: ' + (err.message || err));
     } finally {
       setUpdatingCache(false);
     }
@@ -85,10 +96,10 @@ export const Diagnostics: React.FC = () => {
     setUpdatingCache(true);
     try {
       await api.system.updateCacheSettings(cache.enabled, Math.max(1, ttlMinutes) * 60);
-      alert('TTL Response cache berhasil disimpan.');
+      toast.success(`TTL Response cache berhasil diperbarui ke ${ttlMinutes} menit.`, 'TTL Tersimpan');
       loadData();
-    } catch (err) {
-      alert('Gagal menyimpan TTL: ' + err);
+    } catch (err: any) {
+      toast.error('Gagal menyimpan TTL: ' + (err.message || err));
     } finally {
       setUpdatingCache(false);
     }

@@ -237,12 +237,43 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 	case errors.Is(err, repo.ErrInvalidReference):
 		httpx.BadRequest(w, r, "invalid_reference", fmt.Sprintf("referensi data untuk %s tidak valid", resource))
 	case errors.Is(err, repo.ErrConstraint):
+		cName := repo.ConstraintName(err)
 		observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelWarn,
 			"constraint violation",
 			slog.String("resource", resource),
+			slog.String("constraint", cName),
 			slog.String("error", err.Error()),
 		)
-		httpx.BadRequest(w, r, "constraint_violation", fmt.Sprintf("nilai input melanggar batasan untuk %s", resource))
+		msg := fmt.Sprintf("nilai input melanggar batasan untuk %s", resource)
+		switch cName {
+		case "providers_name_format":
+			msg = "format nama identifier provider hanya boleh diawali huruf kecil/angka dan mengandung huruf kecil, angka, tanda hubung (-), atau garis bawah (_)"
+		case "providers_kind_valid":
+			msg = "jenis adaptor provider tidak valid. Pilihan yang didukung: openai, anthropic, google, openai_compatible, custom"
+		case "providers_base_url_scheme":
+			msg = "Base URL upstream wajib diawali dengan http:// atau https://"
+		case "providers_priority_range":
+			msg = "nilai prioritas harus berada di antara 0 dan 100.000"
+		case "providers_weight_positive":
+			msg = "bobot provider harus lebih besar dari 0"
+		case "providers_timeout_range":
+			msg = "batas waktu timeout harus di antara 1.000 ms dan 900.000 ms"
+		case "providers_retries_range":
+			msg = "jumlah percobaan ulang (retries) harus di antara 0 dan 10"
+		case "budgets_scope_id_presence":
+			msg = "untuk cakupan global, target ID harus kosong; untuk cakupan selain global, target ID wajib diisi"
+		case "budgets_limit_positive":
+			msg = "batas nominal anggaran harus lebih besar dari 0 USD"
+		case "budgets_threshold_range":
+			msg = "ambang batas peringatan anggaran harus berada di antara 1% dan 100%"
+		case "egress_pool_kind_valid":
+			msg = "jenis proxy egress harus salah satu dari: http, https, atau socks5"
+		case "egress_pool_name_not_empty":
+			msg = "nama jalur egress pool tidak boleh kosong"
+		case "egress_pool_weight_positive":
+			msg = "bobot egress pool harus lebih besar dari 0"
+		}
+		httpx.BadRequest(w, r, "constraint_violation", msg)
 	default:
 		observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelError,
 			"kegagalan database di admin API",

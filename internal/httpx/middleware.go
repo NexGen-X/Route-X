@@ -370,6 +370,51 @@ func SecurityHeaders(cfg *config.Config) func(http.Handler) http.Handler {
 	}
 }
 
+// --- CORS -------------------------------------------------------------------
+
+// CORS mengizinkan pemanggilan lintas-asal (Cross-Origin Resource Sharing) untuk endpoint
+// API publik/gateway.
+//
+// Alasan implementasi: Klien web pihak ketiga (seperti Open WebUI, LibreChat, atau UI kustom
+// di browser) berkomunikasi via fetch/XHR dan mengirim preflight request OPTIONS sebelum
+// POST /v1/chat/completions. Tanpa middleware ini, browser menolak respons dan memblokir
+// inferensi. Permintaan OPTIONS dijawab langsung dengan status 204 No Content.
+func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
+	origins := slices.Clone(allowedOrigins)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin != "" {
+				allowed := "*"
+				if len(origins) > 0 {
+					allowed = ""
+					for _, o := range origins {
+						if o == "*" || o == origin {
+							allowed = origin
+							break
+						}
+					}
+				}
+
+				if allowed != "" {
+					w.Header().Set("Access-Control-Allow-Origin", allowed)
+					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+					w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, OpenAI-Organization, OpenAI-Beta, User-Agent")
+					w.Header().Set("Access-Control-Expose-Headers", "X-Request-Id")
+					w.Header().Set("Access-Control-Max-Age", "86400")
+				}
+			}
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // --- MaxBytes ---------------------------------------------------------------
 
 // MaxBytes membatasi ukuran body request menjadi n byte dan menjawab 413 dengan

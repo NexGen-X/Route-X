@@ -82,6 +82,53 @@ func (s *Service) RequireSession() func(http.Handler) http.Handler {
 	}
 }
 
+// RequireSessionOrBearer mewajibkan sesi cookie yang valid, ATAU Bearer token tertentu,
+// ATAU mengizinkan permintaan jika koneksi berasal dari loopback lokal.
+// Ini dirancang khusus untuk endpoint telemetri seperti /metrics agar dapat diakses oleh
+// scraper Prometheus internal tanpa mengorbankan keamanan data operasional dari publik.
+func (s *Service) RequireSessionOrBearer(validToken string, allowLoopback bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+
+			// 1. Periksa header Authorization Bearer jika validToken disediakan
+			if validToken != "" {
+				authHeader := r.Header.Get("Authorization")
+				if strings.HasPrefix(authHeader, "Bearer ") {
+					bearer := strings.TrimPrefix(authHeader, "Bearer ")
+					if bearer == validToken {
+						next.ServeHTTP(w, r)
+						return
+					}
+				}
+			}
+
+			// 2. Periksa apakah request berasal dari loopback lokal jika diizinkan
+			if allowLoopback {
+				if ip, ok := httpx.ClientIPFrom(ctx); ok && ip.IsLoopback() {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			// 3. Periksa sesi cookie admin
+			if s != nil && s.cookies != nil {
+				token := s.cookies.SessionToken(r)
+				if !token.IsZero() {
+					principal, err := s.Authenticate(ctx, token)
+					if err == nil && principal != nil {
+						s.touchIfStale(ctx, principal)
+						next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principal)))
+						return
+					}
+				}
+			}
+
+			unauthorized(w, r)
+		})
+	}
+}
+
 // RequirePermission menolak request yang principal-nya tidak memiliki izin tertentu.
 //
 // Izin yang kurang tidak disebutkan dalam respons, hanya di log. Bagi pengguna, nama kunci

@@ -890,6 +890,39 @@ type DiagnosticsDTO struct {
 
 func (DiagnosticsDTO) adalahDTO() {}
 
+// SystemOverviewDTO menyajikan ringkasan metrik live runtime untuk kartu System Overview di Dashboard.
+type SystemOverviewDTO struct {
+	PID               int     `json:"pid"`
+	OSArch            string  `json:"os_arch"`
+	UptimeSeconds     int64   `json:"uptime_seconds"`
+	GoVersion         string  `json:"go_version"`
+	InFlightRequests  int64   `json:"in_flight_requests"`
+	ProcessRSSBytes   uint64  `json:"process_rss_bytes"`
+	HostRAMTotalBytes uint64  `json:"host_ram_total_bytes"`
+	HostRAMUsedBytes  uint64  `json:"host_ram_used_bytes"`
+	ContainerRAMBytes uint64  `json:"container_ram_bytes"`
+	GoHeapBytes       uint64  `json:"go_heap_bytes"`
+	GoSysBytes        uint64  `json:"go_sys_bytes"`
+	StackInuseBytes   uint64  `json:"stack_inuse_bytes"`
+	NumGC             uint32  `json:"num_gc"`
+	NetTotalBytes     uint64  `json:"net_total_bytes"`
+	NetRecvBytes      uint64  `json:"net_recv_bytes"`
+	NetSentBytes      uint64  `json:"net_sent_bytes"`
+	NetRateMBSec      float64 `json:"net_rate_mb_s"`
+	NetRecvRateMBSec  float64 `json:"net_recv_rate_mb_s"`
+	NetSentRateMBSec  float64 `json:"net_sent_rate_mb_s"`
+	EgressTotalRoutes int     `json:"egress_total_routes"`
+	EgressXrayCount   int     `json:"egress_xray_count"`
+	EgressHTTPCount   int     `json:"egress_http_count"`
+	EgressActiveMode  string  `json:"egress_active_mode"`
+	ContainerCPUCap   float64 `json:"container_cpu_cap"`
+	ProxyCPUPct       float64 `json:"proxy_cpu_pct"`
+	HostCPUPct        float64 `json:"host_cpu_pct"`
+	NumGoroutine      int     `json:"num_goroutine"`
+}
+
+func (SystemOverviewDTO) adalahDTO() {}
+
 // -----------------------------------------------------------------------------
 // Fungsi Pemetaan (Mappers)
 // -----------------------------------------------------------------------------
@@ -1637,6 +1670,16 @@ type SyncModelsResponseDTO struct {
 }
 
 func (SyncModelsResponseDTO) adalahDTO() {}
+
+// TestModelResponseDTO adalah respons hasil pengujian konektivitas model ke provider upstream.
+type TestModelResponseDTO struct {
+	Status    string `json:"status"`
+	LatencyMS int    `json:"latency_ms"`
+	Message   string `json:"message,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+func (TestModelResponseDTO) adalahDTO() {}
 
 // -----------------------------------------------------------------------------
 // CLI Integration DTOs (Fitur 4)

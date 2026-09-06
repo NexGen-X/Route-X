@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type { DomainConfig } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
+import { Select } from '../components/common/Select';
 import {
   Sliders,
   Save,
@@ -19,8 +20,10 @@ import {
   Check,
   Zap,
 } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 export const Settings: React.FC = () => {
+  const { toast, confirmModal } = useToast();
   // Runtime Settings state
   const [settings, setSettings] = useState<{ key: string; value: string; description?: string }[]>([]);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
@@ -78,10 +81,10 @@ export const Settings: React.FC = () => {
     setSavingKey(key);
     try {
       await api.system.updateSetting(key, editValues[key] || '');
-      alert('Pengaturan berhasil diperbarui.');
+      toast.success('Pengaturan berhasil diperbarui');
       loadSettings();
     } catch (err) {
-      alert('Gagal menyimpan pengaturan: ' + err);
+      toast.error('Gagal menyimpan pengaturan: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSavingKey(null);
     }
@@ -117,7 +120,13 @@ export const Settings: React.FC = () => {
   };
 
   const handleDeleteDomain = async () => {
-    if (!window.confirm('Apakah Anda yakin ingin melepas domain dan mengembalikan akses ke IP publik default?')) {
+    const confirmed = await confirmModal({
+      title: 'Lepas Domain Kustom',
+      message: 'Apakah Anda yakin ingin melepas domain dan mengembalikan akses ke IP publik default?',
+      danger: true,
+      confirmText: 'Ya, Lepas Domain',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -242,20 +251,23 @@ export const Settings: React.FC = () => {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-white">Metode Penyedia SSL</label>
-              <select
+              <Select
+                label="Metode Penyedia SSL"
                 value={inputMode}
-                onChange={(e) => setInputMode(e.target.value as any)}
-                className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-xs text-white font-sans focus:outline-none focus:border-accent"
-              >
-                <option value="letsencrypt">Let's Encrypt / Standar DNS</option>
-                <option value="cloudflare">Cloudflare Proxy (Awan Oranye)</option>
-              </select>
-              <span className="text-[11px] text-text-muted block">
-                {inputMode === 'cloudflare'
-                  ? 'Gunakan opsi ini jika domain Anda di-proxy oleh Cloudflare CDN.'
-                  : 'Sertifikat otomatis diterbitkan langsung dari Let’s Encrypt / ZeroSSL.'}
-              </span>
+                onChange={(val) => setInputMode(val as any)}
+                options={[
+                  {
+                    value: 'letsencrypt',
+                    label: "Let's Encrypt / Standar DNS",
+                    description: 'Sertifikat TLS otomatis diterbitkan langsung dari Let’s Encrypt / ZeroSSL',
+                  },
+                  {
+                    value: 'cloudflare',
+                    label: 'Cloudflare Proxy (Awan Oranye)',
+                    description: 'Gunakan opsi ini jika domain Anda di-proxy oleh Cloudflare CDN (SSL Mode: Flexible / Full)',
+                  },
+                ]}
+              />
             </div>
           </div>
 

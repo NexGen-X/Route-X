@@ -30,6 +30,7 @@ import type {
   BackgroundJob,
   AuditLogEntry,
   Diagnostics,
+  SystemOverview,
   ResponseCacheStats,
   CLIDetectedResponse,
   CLIConfigureRequest,
@@ -213,6 +214,25 @@ export const api = {
         `/api/admin/upstreams/providers/${id}/sync-models`,
         { method: 'POST' }
       ),
+    models: (id: string) =>
+      request<{ items: ProviderModel[] }>(`/api/admin/upstreams/providers/${id}/models`),
+    addModel: (id: string, name: string) =>
+      request<ProviderModel>(`/api/admin/upstreams/providers/${id}/models`, {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      }),
+    deleteModel: (id: string, mappingId: string) =>
+      request<void>(`/api/admin/upstreams/providers/${id}/models/${mappingId}`, {
+        method: 'DELETE',
+      }),
+    testModel: (id: string, model: string) =>
+      request<{ status: string; latency_ms: number; message?: string; error?: string }>(
+        `/api/admin/upstreams/providers/${id}/test-model`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ model }),
+        }
+      ),
   },
 
   credentials: {
@@ -226,6 +246,11 @@ export const api = {
     delete: (providerId: string, id: string) =>
       request<void>(`/api/admin/upstreams/providers/${providerId}/credentials/${id}`, {
         method: 'DELETE',
+      }),
+    toggle: (providerId: string, id: string, enabled: boolean) =>
+      request<Credential>(`/api/admin/upstreams/providers/${providerId}/credentials/${id}/toggle`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
       }),
   },
 
@@ -517,6 +542,7 @@ export const api = {
       return request<{ items: AuditLogEntry[]; next_cursor?: string }>(`/api/admin/system/audit-logs?${q.toString()}`);
     },
     diagnostics: () => request<Diagnostics>('/api/admin/system/diagnostics'),
+    overview: () => request<SystemOverview>('/api/admin/system/overview'),
     cacheStats: () => request<ResponseCacheStats>('/api/admin/system/cache'),
     flushCache: () => request<{ deleted: number; message: string }>('/api/admin/system/cache/flush', { method: 'POST' }),
     updateCacheSettings: (enabled: boolean, ttlSeconds: number) =>

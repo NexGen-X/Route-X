@@ -242,6 +242,11 @@ export interface APIKey {
   allowed_providers: string[];
   rpm_limit?: number;
   tpm_limit?: number;
+  rate_limit_rps?: number;
+  rate_limit_rpm?: number;
+  rate_limit_tpm?: number;
+  model_ids?: string[];
+  provider_ids?: string[];
   budget_limit_usd?: string;
   enabled: boolean;
   expires_at?: string;
@@ -429,6 +434,36 @@ export interface Diagnostics {
     acquired_conns: number;
     max_conns: number;
   };
+}
+
+export interface SystemOverview {
+  pid: number;
+  os_arch: string;
+  uptime_seconds: number;
+  go_version: string;
+  in_flight_requests: number;
+  process_rss_bytes: number;
+  host_ram_total_bytes: number;
+  host_ram_used_bytes: number;
+  container_ram_bytes: number;
+  go_heap_bytes: number;
+  go_sys_bytes: number;
+  stack_inuse_bytes: number;
+  num_gc: number;
+  net_total_bytes: number;
+  net_recv_bytes: number;
+  net_sent_bytes: number;
+  net_rate_mb_s: number;
+  net_recv_rate_mb_s: number;
+  net_sent_rate_mb_s: number;
+  egress_total_routes: number;
+  egress_xray_count: number;
+  egress_http_count: number;
+  egress_active_mode: string;
+  container_cpu_cap: number;
+  proxy_cpu_pct: number;
+  host_cpu_pct: number;
+  num_goroutine: number;
 }
 
 export interface ResponseCacheStats {

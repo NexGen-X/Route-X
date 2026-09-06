@@ -45,8 +45,9 @@ func (h *Handlers) systemRoutes(r chi.Router) {
 	// Audit Logs
 	r.With(auth.RequirePermission(seed.PermAuditRead)).Get("/audit-logs", h.listAuditLogs)
 
-	// Diagnostics
+	// Diagnostics & System Overview
 	r.With(auth.RequirePermission(seed.PermHealthRead)).Get("/diagnostics", h.getDiagnostics)
+	r.With(auth.RequirePermission(seed.PermHealthRead)).Get("/overview", h.getSystemOverview)
 
 	// Response Cache (Fitur 1)
 	r.Route("/cache", func(cr chi.Router) {

@@ -6,7 +6,7 @@ export interface KnownProviderPreset {
   id: string;
   name: string;
   displayName: string;
-  kind: 'openai' | 'anthropic' | 'google' | 'openai-compatible' | 'custom';
+  kind: 'openai' | 'anthropic' | 'google' | 'openai_compatible' | 'custom';
   baseUrl: string;
   tag: string;
   description: string;
@@ -101,7 +101,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'cerebras',
     name: 'cerebras-fast',
     displayName: 'Cerebras',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.cerebras.ai/v1',
     tag: 'Tercepat Dunia (~2000 tps)',
     description: 'Inference super kilat berbasis chip wafer-scale CS-3 untuk streaming coding tanpa jeda.',
@@ -124,7 +124,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'sambanova',
     name: 'sambanova-rdu',
     displayName: 'SambaNova',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.sambanova.ai/v1',
     tag: 'RDU Llama 405B & 70B',
     description: 'Akselerator Reconfigurable Dataflow Unit (RDU) untuk menjalankan model 405B berkecepatan tinggi.',
@@ -147,7 +147,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'fireworks',
     name: 'fireworks-main',
     displayName: 'Fireworks AI',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.fireworks.ai/inference/v1',
     tag: 'Compound Inference Cepat',
     description: 'Platform inferensi serverless ultra-cepat favorit developer perkakas Cursor & Cline.',
@@ -170,7 +170,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'qwen',
     name: 'qwen-dashscope',
     displayName: 'Alibaba Qwen',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
     tag: 'Qwen 2.5 Coder No.1',
     description: 'Pencipta model open-weights coding terbaik dunia Qwen 2.5 Coder dan penalaran Qwen-Max.',
@@ -193,7 +193,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'siliconflow',
     name: 'siliconflow-main',
     displayName: 'SiliconFlow',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.siliconflow.cn/v1',
     tag: 'DeepSeek R1/V3 Cloud',
     description: 'Cloud GPU teroptimasi berbiaya rendah dengan throughput tinggi untuk DeepSeek dan Qwen.',
@@ -216,7 +216,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'deepseek',
     name: 'deepseek-main',
     displayName: 'DeepSeek',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.deepseek.com',
     tag: 'V3 & R1 Reasoner',
     description: 'Inference super hemat dan penalaran canggih resmi dari DeepSeek-R1 dan DeepSeek-V3.',
@@ -239,7 +239,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'groq',
     name: 'groq-fast',
     displayName: 'Groq LPU',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.groq.com/openai/v1',
     tag: 'LPU Latensi Rendah',
     description: 'Pemrosesan chip LPU dengan latensi instan untuk Llama-3.3, Mixtral, dan DeepSeek-R1 Distill.',
@@ -262,7 +262,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'huggingface',
     name: 'huggingface-hub',
     displayName: 'Hugging Face',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api-inference.huggingface.co/v1',
     tag: 'Hub Komunitas Terbesar',
     description: 'Inference API serverless ke ribuan model open-source komunitas Hugging Face.',
@@ -285,7 +285,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'cloudflare',
     name: 'cloudflare-ai',
     displayName: 'Cloudflare AI',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1',
     tag: 'Global Edge Network',
     description: 'Inference terdistribusi di ratusan edge data center Cloudflare di seluruh dunia.',
@@ -308,7 +308,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'openrouter',
     name: 'openrouter-hub',
     displayName: 'OpenRouter',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://openrouter.ai/api/v1',
     tag: 'Meta Aggregator 100+',
     description: 'Pintu gerbang tunggal fleksibel ke seluruh model komersial dan open-source.',
@@ -331,7 +331,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'mistral',
     name: 'mistral-main',
     displayName: 'Mistral AI',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.mistral.ai/v1',
     tag: 'Mistral Large 2 & Codestral',
     description: 'Model AI Eropa berkinerja tinggi: Mistral Large 2, Codestral, dan Pixtral.',
@@ -354,7 +354,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'novita',
     name: 'novita-ai',
     displayName: 'Novita AI',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.novita.ai/v3/openai',
     tag: 'GPU Throughput Tinggi',
     description: 'Infrastruktur GPU serverless cepat dan terjangkau untuk model DeepSeek dan Llama.',
@@ -377,7 +377,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'together',
     name: 'together-ai',
     displayName: 'Together AI',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.together.xyz/v1',
     tag: 'Open Source Cloud',
     description: 'Cloud inference untuk model open-source (Llama, Qwen, DeepSeek) kecepatan tinggi.',
@@ -400,7 +400,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'perplexity',
     name: 'perplexity-ai',
     displayName: 'Perplexity AI',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.perplexity.ai',
     tag: 'Sonar Real-Time Web',
     description: 'Model inferensi yang diperkaya kemampuan pencarian web real-time untuk riset aktual.',
@@ -423,7 +423,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'xai',
     name: 'xai-grok',
     displayName: 'xAI Grok',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.x.ai/v1',
     tag: 'Grok-2 & Grok Beta',
     description: 'Model penalaran cerdas dari xAI dengan pemahaman mendalam dan akses data real-time.',
@@ -446,7 +446,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'cohere',
     name: 'cohere-ai',
     displayName: 'Cohere',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'https://api.cohere.ai/v1',
     tag: 'Command R+ & Embeddings',
     description: 'Model enterprise untuk RAG, summarization, dan embedding multi-bahasa.',
@@ -492,7 +492,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'ollama',
     name: 'ollama-local',
     displayName: 'Ollama Local',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'http://localhost:11434',
     tag: 'Offline / Self-Hosted',
     description: 'Eksekusi model mandiri secara lokal di workstation tanpa biaya API eksternal.',
@@ -513,7 +513,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'lmstudio',
     name: 'lmstudio-local',
     displayName: 'LM Studio',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'http://localhost:1234/v1',
     tag: 'Desktop Server (1234)',
     description: 'Server API lokal kompatibel OpenAI yang dijalankan dari aplikasi desktop LM Studio.',
@@ -534,7 +534,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     id: 'vllm',
     name: 'vllm-server',
     displayName: 'vLLM Engine',
-    kind: 'openai-compatible',
+    kind: 'openai_compatible',
     baseUrl: 'http://localhost:8000/v1',
     tag: 'High-Throughput GPU',
     description: 'Engine inferensi produksi GPU mandiri dengan PagedAttention dan throughput tinggi.',
@@ -725,14 +725,39 @@ export const AzureIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h
   </svg>
 );
 
+export const CustomProviderIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    <rect x="4" y="4" width="16" height="16" rx="3.5" stroke="currentColor" strokeWidth="1.8" />
+    <rect x="8.5" y="8.5" width="7" height="7" rx="1.5" fill="currentColor" fillOpacity="0.25" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3" strokeWidth="1.8" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" />
+  </svg>
+);
+
 // Helper for dynamic provider icon selection
 export const ProviderBrandIcon: React.FC<{
   providerIdOrKind: string;
   name?: string;
   className?: string;
-}> = ({ providerIdOrKind, name = '', className = 'w-5 h-5' }) => {
+  isCustom?: boolean;
+}> = ({ providerIdOrKind, name = '', className = 'w-5 h-5', isCustom }) => {
+  if (isCustom) {
+    return <CustomProviderIcon className={className} />;
+  }
+
   const query = `${providerIdOrKind} ${name}`.toLowerCase();
 
+  if (query.includes('custom') || query.includes('manual')) {
+    return <CustomProviderIcon className={className} />;
+  }
   if (query.includes('anthropic') || query.includes('claude')) {
     return <AnthropicIcon className={className} />;
   }
@@ -799,5 +824,12 @@ export const ProviderBrandIcon: React.FC<{
   if (query.includes('azure')) {
     return <AzureIcon className={className} />;
   }
-  return <OpenAIIcon className={className} />;
+  if (
+    query.includes('openai-main') ||
+    name.toLowerCase().includes('openai') ||
+    providerIdOrKind.toLowerCase() === 'openai'
+  ) {
+    return <OpenAIIcon className={className} />;
+  }
+  return <CustomProviderIcon className={className} />;
 };

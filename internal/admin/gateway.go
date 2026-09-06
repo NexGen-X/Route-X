@@ -580,6 +580,11 @@ func (h *Handlers) createBudget(w http.ResponseWriter, r *http.Request) {
 		req.AlertThresholdPct = req.AlertThreshold
 	}
 
+	// Normalisasi cakupan global: scope_id wajib null/kosong di database
+	if req.Scope == "global" {
+		req.ScopeID = ""
+	}
+
 	limitUSD, err := upstream.ParseUSD(req.LimitUSD)
 	if err != nil {
 		httpx.BadRequest(w, r, "invalid_amount", "limit_usd tidak sah: "+err.Error())

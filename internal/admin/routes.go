@@ -2,8 +2,10 @@ package admin
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/NexGen-X/Route-X/internal/auth"
 )
@@ -11,6 +13,10 @@ import (
 // Routes mengembalikan router chi yang memuat seluruh 7 grup endpoint admin.
 func (h *Handlers) Routes() http.Handler {
 	r := chi.NewRouter()
+
+	// Batas waktu operasi admin: 60 detik mencegah query agregasi atau database lambat
+	// menahan koneksi dan goroutine server tanpa batas waktu.
+	r.Use(middleware.Timeout(60 * time.Second))
 
 	// Rantai middleware global admin:
 	// 1. Wajib memiliki sesi login aktif di cookie (RequireSession).

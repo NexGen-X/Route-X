@@ -5,9 +5,12 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { Select } from '../components/common/Select';
 import { Cpu, Plus, DollarSign } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 export const Models: React.FC = () => {
+  const { toast } = useToast();
   const [models, setModels] = useState<Model[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
@@ -54,9 +57,10 @@ export const Models: React.FC = () => {
         capabilities: ['chat', 'streaming'],
       });
       setIsCreateOpen(false);
+      toast.success('Model kanonik baru berhasil didaftarkan');
       loadModels();
     } catch (err) {
-      alert('Gagal membuat model: ' + err);
+      toast.error('Gagal membuat model: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -116,10 +120,10 @@ export const Models: React.FC = () => {
         output_per_1m_usd: pricingForm.output_per_1m_usd,
         cached_input_per_1m_usd: pricingForm.cached_input_per_1m_usd || undefined,
       });
-      alert('Harga model berhasil disimpan.');
+      toast.success('Harga model berhasil disimpan');
       await loadPricingForMapping(selectedMappingId);
     } catch (err) {
-      alert('Gagal menyimpan harga model: ' + err);
+      toast.error('Gagal menyimpan harga model: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsSavingPrice(false);
     }
@@ -180,7 +184,7 @@ export const Models: React.FC = () => {
             </div>
 
             <div className="mt-5 pt-3 border-t border-border flex items-center justify-between">
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 {m.capabilities?.map((c) => (
                   <span key={c} className="px-2 py-0.5 text-[10px] font-mono rounded bg-bg-surface-2 text-text-muted">
                     {c}
@@ -282,25 +286,19 @@ export const Models: React.FC = () => {
           </div>
         ) : (
           <form onSubmit={handleSavePrice} className="space-y-4 text-xs">
-            <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">
-                Pilih Pemetaan Provider
-              </label>
-              <select
-                value={selectedMappingId}
-                onChange={(e) => {
-                  setSelectedMappingId(e.target.value);
-                  loadPricingForMapping(e.target.value);
-                }}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
-              >
-                {mappings.map((mp) => (
-                  <option key={mp.id} value={mp.id}>
-                    {mp.provider_id} &rarr; {mp.upstream_model_name} (ID: {mp.id.slice(0, 8)})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label="Pilih Pemetaan Provider"
+              value={selectedMappingId}
+              onChange={(val) => {
+                setSelectedMappingId(val);
+                loadPricingForMapping(val);
+              }}
+              options={mappings.map((mp) => ({
+                value: mp.id,
+                label: `${mp.provider_id} → ${mp.upstream_model_name}`,
+                description: `ID Mapping: ${mp.id.slice(0, 8)}`,
+              }))}
+            />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>

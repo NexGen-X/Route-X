@@ -79,7 +79,7 @@ export const Observability: React.FC = () => {
         title="Deret Waktu Telemetri"
         subtitle={`Visualisasi metrik ${metric} pada rentang ${windowTime}`}
         action={
-          <div className="flex items-center gap-1.5 bg-bg-surface-2 p-1 rounded-nav border border-border">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border">
             {[
               { key: 'requests', label: 'Requests' },
               { key: 'tokens', label: 'Tokens' },
@@ -89,7 +89,7 @@ export const Observability: React.FC = () => {
               <button
                 key={m.key}
                 onClick={() => setMetric(m.key)}
-                className={`px-2.5 py-1 text-xs rounded-inner transition-colors ${
+                className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium ${
                   metric === m.key
                     ? 'bg-bg-surface text-accent font-semibold shadow-sm'
                     : 'text-text-muted hover:text-text-primary'

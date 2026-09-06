@@ -5,14 +5,18 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { Select } from '../components/common/Select';
 import { Coins, Plus, RotateCcw } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 export const Budgets: React.FC = () => {
+  const { toast, confirmModal } = useToast();
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newBudget, setNewBudget] = useState({
     name: '',
     scope: 'global',
+    scope_id: '',
     period: 'monthly',
     max_spend_usd: '100.00',
     alert_threshold: 80,
@@ -33,12 +37,21 @@ export const Budgets: React.FC = () => {
   }, []);
 
   const handleReset = async (id: string) => {
-    if (!confirm('Reset pemakaian anggaran periode ini kembali ke nol?')) return;
+    const ok = await confirmModal({
+      title: 'Reset Pemakaian Anggaran?',
+      message: 'Reset pemakaian anggaran periode ini kembali ke nol? Tindakan ini akan membuka kembali akses jika sebelumnya terblokir.',
+      confirmText: 'Ya, Reset',
+      cancelText: 'Batal',
+      danger: true,
+    });
+    if (!ok) return;
+
     try {
       await api.budgets.reset(id);
+      toast.success('Pemakaian anggaran periode ini berhasil direset ke nol.', 'Anggaran Direset');
       loadBudgets();
-    } catch (err) {
-      alert('Gagal reset anggaran: ' + err);
+    } catch (err: any) {
+      toast.error('Gagal reset anggaran: ' + (err.message || err));
     }
   };
 
@@ -46,15 +59,19 @@ export const Budgets: React.FC = () => {
     e.preventDefault();
     try {
       await api.budgets.create({
-        ...newBudget,
+        name: newBudget.name,
+        scope: newBudget.scope,
+        scope_id: newBudget.scope === 'global' ? undefined : (newBudget.scope_id.trim() || undefined),
+        period: newBudget.period,
         limit_usd: newBudget.max_spend_usd,
         alert_threshold_pct: newBudget.alert_threshold,
         action_on_exceed: newBudget.action,
       });
       setIsCreateOpen(false);
+      toast.success('Alokasi anggaran baru berhasil disimpan.', 'Anggaran Dibuat');
       loadBudgets();
-    } catch (err) {
-      alert('Gagal membuat budget: ' + err);
+    } catch (err: any) {
+      toast.error('Gagal membuat anggaran: ' + (err.message || err));
     }
   };
 
@@ -77,8 +94,31 @@ export const Budgets: React.FC = () => {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {budgets.map((b) => {
+      {budgets.length === 0 ? (
+        <Card className="py-12 px-6 text-center">
+          <div className="max-w-md mx-auto space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto shadow-inner">
+              <Coins className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Belum Ada Anggaran yang Dialokasikan</h3>
+              <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                Tetapkan pagu pengeluaran inferensi USD skala 8 desimal (harian, mingguan, atau bulanan) untuk mencegah lonjakan biaya upstream tanpa terduga.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              icon={<Plus className="w-4 h-4 text-black" />}
+            >
+              Alokasikan Anggaran Pertama
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {budgets.map((b) => {
           const spent = parseFloat(b.spent_usd || '0');
           const max = parseFloat(b.max_spend_usd || '1');
           const pct = Math.min(100, Math.round((spent / max) * 100));
@@ -144,7 +184,8 @@ export const Budgets: React.FC = () => {
             </Card>
           );
         })}
-      </div>
+        </div>
+      )}
 
       <Modal
         isOpen={isCreateOpen}
@@ -164,32 +205,45 @@ export const Budgets: React.FC = () => {
               className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Cakupan (Scope)</label>
-              <select
-                value={newBudget.scope}
-                onChange={(e) => setNewBudget({ ...newBudget, scope: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
-              >
-                <option value="global">Global Gateway</option>
-                <option value="api_key">Per API Key</option>
-                <option value="model">Per Model</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Periode</label>
-              <select
-                value={newBudget.period}
-                onChange={(e) => setNewBudget({ ...newBudget, period: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
-              >
-                <option value="daily">Harian</option>
-                <option value="weekly">Mingguan</option>
-                <option value="monthly">Bulanan</option>
-              </select>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Select
+              label="Cakupan (Scope)"
+              value={newBudget.scope}
+              onChange={(val) => setNewBudget({ ...newBudget, scope: val })}
+              options={[
+                { value: 'global', label: 'Global Gateway', description: 'Berlaku untuk total pemakaian seluruh gateway' },
+                { value: 'api_key', label: 'Per API Key', description: 'Membatasi pengeluaran kunci API tertentu' },
+                { value: 'model', label: 'Per Model', description: 'Membatasi pengeluaran kuota model tertentu' },
+              ]}
+            />
+            <Select
+              label="Periode"
+              value={newBudget.period}
+              onChange={(val) => setNewBudget({ ...newBudget, period: val })}
+              options={[
+                { value: 'daily', label: 'Harian', description: 'Reset pagu setiap 24 jam' },
+                { value: 'weekly', label: 'Mingguan', description: 'Reset pagu setiap awal pekan' },
+                { value: 'monthly', label: 'Bulanan', description: 'Reset pagu setiap tanggal 1 bulan' },
+              ]}
+            />
           </div>
+
+          {newBudget.scope !== 'global' && (
+            <div>
+              <label className="block font-semibold text-text-secondary uppercase mb-1">
+                Target {newBudget.scope === 'api_key' ? 'ID Kunci API' : 'ID Model'}
+              </label>
+              <input
+                type="text"
+                required
+                placeholder={newBudget.scope === 'api_key' ? 'Masukkan UUID Kunci API...' : 'Masukkan Canonical Slug Model (contoh: gpt-4o)...'}
+                value={newBudget.scope_id}
+                onChange={(e) => setNewBudget({ ...newBudget, scope_id: e.target.value })}
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+              />
+            </div>
+          )}
+
           <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">Batas Maksimal (USD)</label>
             <input

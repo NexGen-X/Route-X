@@ -13,6 +13,7 @@ import {
   Check,
   Radio,
   Terminal,
+  Activity,
 } from 'lucide-react';
 
 export const Requests: React.FC = () => {
@@ -165,82 +166,176 @@ export const Requests: React.FC = () => {
           </div>
         </div>
 
-        {/* Requests Table: Two Lines Per Cell */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-border text-text-muted uppercase tracking-wider text-[11px] bg-bg-surface-2/40">
-                <th className="py-3 px-4 font-semibold">Status & Request ID</th>
-                <th className="py-3 px-4 font-semibold">Model & Provider</th>
-                <th className="py-3 px-4 font-semibold">Token & Cost</th>
-                <th className="py-3 px-4 font-semibold">Durasi & TTFT</th>
-                <th className="py-3 px-4 font-semibold">Waktu & Klien</th>
-                <th className="py-3 px-4 text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {requests.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-text-muted">
-                    {isLoading ? 'Memuat log permintaan...' : 'Tidak ada catatan permintaan yang sesuai filter.'}
-                  </td>
-                </tr>
-              ) : (
-                requests.map((r) => (
-                  <tr
-                    key={r.id || r.request_id}
-                    onClick={() => handleInspect(r)}
-                    className="hover:bg-bg-surface-2/60 cursor-pointer transition-colors group"
-                  >
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-2">
-                        {getStatusBadge(r.status_code)}
-                        <span className="font-mono font-medium text-text-primary truncate max-w-[140px]">
-                          {r.request_id}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-text-muted font-mono mt-0.5">
-                        {r.is_stream ? 'Stream (SSE)' : 'Unary HTTP'}
-                      </div>
-                    </td>
-
-                    <td className="py-3 px-4">
-                      <div className="font-semibold text-text-primary">{r.requested_model || r.model_id || '-'}</div>
-                      <div className="text-[11px] text-text-muted font-mono">{r.provider_name || r.provider_id || '-'}</div>
-                    </td>
-
-                    <td className="py-3 px-4">
-                      <div className="font-mono text-text-primary">
-                        {r.total_tokens != null ? r.total_tokens.toLocaleString() : '-'} tokens
-                      </div>
-                      <div className="text-[11px] text-text-muted font-mono">
-                        ${parseFloat(r.cost_usd || '0').toFixed(6)}
-                      </div>
-                    </td>
-
-                    <td className="py-3 px-4">
-                      <div className="font-mono text-text-primary">{r.duration_ms} ms</div>
-                      <div className="text-[11px] text-text-muted font-mono">
-                        {r.ttft_ms ? `TTFT: ${r.ttft_ms} ms` : '-'}
-                      </div>
-                    </td>
-
-                    <td className="py-3 px-4">
-                      <div className="text-text-primary">{new Date(r.created_at).toLocaleTimeString()}</div>
-                      <div className="text-[11px] text-text-muted font-mono">{r.client_ip || '-'}</div>
-                    </td>
-
-                    <td className="py-3 px-4 text-right">
-                      <span className="inline-flex items-center gap-1 text-accent opacity-0 group-hover:opacity-100 transition-opacity font-medium">
-                        Detail <ChevronRight className="w-3.5 h-3.5" />
-                      </span>
-                    </td>
+        {/* Requests List: Card List on Mobile, Table on Desktop */}
+        {isLoading ? (
+          <div className="p-4 sm:p-0">
+            {/* Mobile skeleton */}
+            <div className="sm:hidden space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="p-3.5 bg-bg-surface-2/40 border border-border/40 rounded-lg animate-pulse space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div className="h-5 bg-bg-surface-2 rounded w-28" />
+                    <div className="h-4 bg-bg-surface-2 rounded w-16" />
+                  </div>
+                  <div className="h-4 bg-bg-surface-2 rounded w-40" />
+                  <div className="h-3 bg-bg-surface-2 rounded w-24" />
+                </div>
+              ))}
+            </div>
+            {/* Desktop table skeleton */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border text-text-muted uppercase tracking-wider text-[11px] bg-bg-surface-2/40">
+                    <th className="py-3 px-4 font-semibold">Status & Request ID</th>
+                    <th className="py-3 px-4 font-semibold">Model & Provider</th>
+                    <th className="py-3 px-4 font-semibold">Token & Cost</th>
+                    <th className="py-3 px-4 font-semibold">Durasi & TTFT</th>
+                    <th className="py-3 px-4 font-semibold">Waktu & Klien</th>
+                    <th className="py-3 px-4 text-right">Aksi</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {[...Array(6)].map((_, i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="py-3 px-4"><div className="h-4 bg-bg-surface-2 rounded w-28" /></td>
+                      <td className="py-3 px-4"><div className="h-4 bg-bg-surface-2 rounded w-36" /></td>
+                      <td className="py-3 px-4"><div className="h-4 bg-bg-surface-2 rounded w-20" /></td>
+                      <td className="py-3 px-4"><div className="h-4 bg-bg-surface-2 rounded w-16" /></td>
+                      <td className="py-3 px-4"><div className="h-4 bg-bg-surface-2 rounded w-24" /></td>
+                      <td className="py-3 px-4 text-right"><div className="h-4 bg-bg-surface-2 rounded w-12 ml-auto" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : requests.length === 0 ? (
+          <div className="py-12 px-4 text-center space-y-3">
+            <Activity className="w-8 h-8 mx-auto text-text-muted/40" />
+            <div className="text-sm font-semibold text-white">
+              Tidak ada catatan permintaan
+            </div>
+            <p className="text-xs text-text-muted max-w-sm mx-auto">
+              Belum ada permintaan inferensi yang cocok dengan kriteria filter atau kata kunci pencarian.
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Mobile Card List (sm:hidden) */}
+            <div className="sm:hidden divide-y divide-border/60">
+              {requests.map((r) => (
+                <div
+                  key={r.id || r.request_id}
+                  onClick={() => handleInspect(r)}
+                  className="p-3.5 hover:bg-bg-surface-2/60 active:bg-bg-surface-2 cursor-pointer transition-colors space-y-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {getStatusBadge(r.status_code)}
+                      <span className="font-mono text-xs font-semibold text-white truncate max-w-[130px]">
+                        {r.requested_model || r.model_id || 'unknown'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-text-muted font-mono whitespace-nowrap">
+                      {new Date(r.created_at).toLocaleTimeString()}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] font-mono text-text-secondary">
+                    <span className="text-text-muted truncate max-w-[140px]">
+                      {r.provider_name || r.provider_id || '-'}
+                      {r.is_stream && <span className="ml-1 text-[9px] px-1 rounded bg-[#252A36] text-primary">SSE</span>}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-semibold">{r.duration_ms}ms</span>
+                      <span className="text-text-muted">·</span>
+                      <span className="text-emerald-400 font-semibold">
+                        {r.total_tokens != null ? `${r.total_tokens} tok` : '-'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[10px] text-text-muted font-mono pt-1 border-t border-[#1C2029]">
+                    <span className="truncate max-w-[180px]">ID: {r.request_id}</span>
+                    <span className="text-accent flex items-center gap-0.5 font-medium">
+                      Detail <ChevronRight className="w-3 h-3" />
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table (hidden sm:block) */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border text-text-muted uppercase tracking-wider text-[11px] bg-bg-surface-2/40">
+                    <th className="py-3 px-4 font-semibold">Status & Request ID</th>
+                    <th className="py-3 px-4 font-semibold">Model & Provider</th>
+                    <th className="py-3 px-4 font-semibold">Token & Cost</th>
+                    <th className="py-3 px-4 font-semibold">Durasi & TTFT</th>
+                    <th className="py-3 px-4 font-semibold">Waktu & Klien</th>
+                    <th className="py-3 px-4 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {requests.map((r) => (
+                    <tr
+                      key={r.id || r.request_id}
+                      onClick={() => handleInspect(r)}
+                      className="hover:bg-bg-surface-2/60 cursor-pointer transition-colors group"
+                    >
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          {getStatusBadge(r.status_code)}
+                          <span className="font-mono font-medium text-text-primary truncate max-w-[140px]">
+                            {r.request_id}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-text-muted font-mono mt-0.5">
+                          {r.is_stream ? 'Stream (SSE)' : 'Unary HTTP'}
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <div className="font-semibold text-text-primary">{r.requested_model || r.model_id || '-'}</div>
+                        <div className="text-[11px] text-text-muted font-mono">{r.provider_name || r.provider_id || '-'}</div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <div className="font-mono text-text-primary">
+                          {r.total_tokens != null ? r.total_tokens.toLocaleString() : '-'} tokens
+                        </div>
+                        <div className="text-[11px] text-text-muted font-mono">
+                          ${parseFloat(r.cost_usd || '0').toFixed(6)}
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <div className="font-mono text-text-primary">{r.duration_ms} ms</div>
+                        <div className="text-[11px] text-text-muted font-mono">
+                          {r.ttft_ms ? `TTFT: ${r.ttft_ms} ms` : '-'}
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <div className="text-text-primary">{new Date(r.created_at).toLocaleTimeString()}</div>
+                        <div className="text-[11px] text-text-muted font-mono">{r.client_ip || '-'}</div>
+                      </td>
+
+                      <td className="py-3 px-4 text-right">
+                        <span className="inline-flex items-center gap-1 text-accent opacity-0 group-hover:opacity-100 transition-opacity font-medium">
+                          Detail <ChevronRight className="w-3.5 h-3.5" />
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
         {nextCursor && (
           <div className="p-4 border-t border-border flex justify-center">

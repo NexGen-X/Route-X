@@ -56,6 +56,7 @@ menyajikan API gateway, dashboard admin, dan aset statis dari proses yang sama.
 | 12 — Dashboard | ✅ Diremediasi | React 18 + TS + Vite + Tailwind CSS + Recharts + TanStack Query; 5 grup sidebar, 20 halaman interaktif, dark theme tersemat di biner tunggal. Seluruh error muatan pertama dan integrasi API diremediasi, font Inter & JetBrains Mono disematkan lokal mematuhi CSP `font-src 'self' data:`. |
 | 13 — Dokumentasi API | ✅ Diremediasi (Cakupan Inti) | `docs/openapi.yaml` menyajikan 21 operasi endpoint inferensi publik `/v1/*` dan endpoint administratif inti; skema autentikasi diperbaiki (kepatuhan SessionCookie & CSRFToken AND, BearerAuth murni pada `/v1`); antarmuka Scalar JS dan font disematkan lokal mematuhi CSP `script-src 'self'`. |
 | 14 — Pengerasan & verifikasi | ✅ Diremediasi | 32 paket Go lolos `go test -race ./...`; uji beban riil inferensi `/v1/chat/completions` menghasilkan **214,8 req/detik** (10,63 ms rata-rata, 0% error) dengan artefak nyata di `docs/artifacts/load_test_results.txt`; perkakas e2e direlokasi ke `scripts/e2e/` dengan pembersihan otomatis. |
+| 15 — Caching Singleflight & Refactor Frontend | ✅ Selesai | Singleflight deduplication (`internal/responsecache`) untuk mitigasi cache stampede LLM; Middleware `httpx.MetricsRecorder` (anti-kardinalitas); Migrasi TanStack Query v5 & utilitas `cn()` di frontend; Seluruh artefak arsitektur didokumentasikan di `docs/CODEMAPS/` dan `docs/adr/`. |
 
 
 ## Tech stack
@@ -1196,4 +1197,17 @@ Seksi ini merangkum seluruh keputusan arsitektural dan teknis yang diambil selam
 
 8. **Stabilitas Kompilasi & Pelestarian `.gitkeep`:**
    Konfigurasi Vite (`web/vite.config.ts`) dikonfigurasi dengan `emptyOutDir: false` dan resep Makefile `fe` diperkuat dengan `touch dist/.gitkeep`. Langkah ini memastikan bahwa berkas penanda `web/dist/.gitkeep` tidak hilang saat build, sehingga kompilasi standar `go build` pada repositori bersih tetap dapat dilakukan tanpa mengalami kegagalan direktif `//go:embed`.
+
+9. **Singleflight Deduplication & Mitigasi Cache Stampede:**
+   Implementasi `internal/responsecache/responsecache.go` dengan `golang.org/x/sync/singleflight` mengeliminasi lonjakan panggilan paralel (*thundering herd*) ke penyedia upstream saat cache miss. Goroutine konkuren ditahan secara transien di Go runtime dan disajikan serentak saat respons pertama masuk ke Redis (ADR 0002).
+
+10. **Metrik Terstruktur & Scraper Prometheus Aman:**
+    Penambahan middleware `httpx.MetricsRecorder` memetakan rute berdasarkan pattern Chi untuk menghindari ledakan kardinalitas metrik operasional. Proteksi endpoint `/metrics` ditingkatkan dengan `RequireSessionOrBearer` yang mendukung token scraper serta akses loopback terpercaya.
+
+11. **Arsitektur State Frontend TanStack Query & Modular Styling `cn()`:**
+    Pola data-fetching pada antarmuka web SPA dimigrasikan dari `useEffect`/`useState` manual ke TanStack Query v5 (`useQuery`, `useQueryClient`, `invalidateQueries` di `APIKeys.tsx` dan `Providers.tsx` sesuai ADR 0001). Penggabungan kelas utilitas Tailwind distandarisasi lewat `cn()` (`clsx` + `tailwind-merge`) pada komponen atomik (`Button`, `Card`, `Badge`).
+
+12. **Peta Arsitektur Komprehensif (Codemaps):**
+    Seluruh struktur arsitektur repositori didokumentasikan dan disinkronkan secara mendalam pada direktori `docs/CODEMAPS/` (`INDEX.md`, `frontend.md`, `backend.md`, `database.md`, `integrations.md`, `workers.md`), menjamin kejelasan alur data, titik masuk, dan dependensi lintas domain.
+
 

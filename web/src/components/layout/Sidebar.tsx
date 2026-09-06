@@ -4,7 +4,6 @@ import {
   Activity,
   Terminal,
   Server,
-  Cpu,
   Network,
   GitFork,
   Coins,
@@ -60,7 +59,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'UPSTREAMS & ROUTING',
       items: [
         { name: 'Providers', path: '/upstreams/providers', icon: Server },
-        { name: 'Models & Pricing', path: '/upstreams/models', icon: Cpu },
         { name: 'Routing & Failover', path: '/gateway/routing', icon: GitFork },
         { name: 'CLI Integrations', path: '/cli-integrations', icon: Code2 },
         { name: 'Egress Pools', path: '/upstreams/egress', icon: Network },
@@ -173,9 +171,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 onClick={logout}
                 title="Keluar (Logout)"
-                className="p-1.5 text-text-muted hover:text-status-error hover:bg-status-error/10 rounded-inner transition-colors"
+                aria-label="Keluar dari akun"
+                className="p-1.5 text-text-muted hover:text-status-error hover:bg-status-error/10 rounded-inner transition-colors cursor-pointer"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
           )}
@@ -183,10 +182,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center justify-between">
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
-              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors ml-auto"
+              className="hidden lg:flex items-center justify-center w-9 h-9 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors ml-auto cursor-pointer"
               title={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
+              aria-label={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
             >
-              {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+              {isCollapsed ? <ChevronRight className="w-4 h-4" aria-hidden="true" /> : <ChevronLeft className="w-4 h-4" aria-hidden="true" />}
             </button>
           </div>
         </div>

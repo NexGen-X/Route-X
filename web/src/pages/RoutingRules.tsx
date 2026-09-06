@@ -5,10 +5,13 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { Select } from '../components/common/Select';
 import { GitFork, Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers } from 'lucide-react';
 import { RoutingPipelineVisualizer } from '../components/routing/RoutingPipelineVisualizer';
+import { useToast } from '../context/ToastContext';
 
 export const RoutingRules: React.FC = () => {
+  const { toast, confirmModal } = useToast();
   const [rules, setRules] = useState<RoutingRule[]>([]);
   const [breakers, setBreakers] = useState<CircuitBreakerStatus[]>([]);
   const [models, setModels] = useState<Model[]>([]);
@@ -83,28 +86,38 @@ export const RoutingRules: React.FC = () => {
   const handleResetBreaker = async (providerId: string, model: string) => {
     try {
       await api.breakers.reset(providerId, model);
+      toast.success('Circuit breaker berhasil direset');
       loadBreakers();
     } catch (err) {
-      alert('Gagal mereset circuit breaker: ' + err);
+      toast.error('Gagal mereset circuit breaker: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
   const handleToggle = async (r: RoutingRule) => {
     try {
       await api.routing.toggle(r.id, !r.enabled);
+      toast.success(`Aturan ${!r.enabled ? 'diaktifkan' : 'dinonaktifkan'}`);
       loadRules();
     } catch (err) {
-      alert('Gagal toggle aturan: ' + err);
+      toast.error('Gagal toggle aturan: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Hapus aturan perutean ini?')) return;
+    const confirmed = await confirmModal({
+      title: 'Hapus Aturan Routing',
+      message: 'Apakah Anda yakin ingin menghapus aturan perutean ini? Jalur fallback akan disesuaikan secara dinamis.',
+      danger: true,
+      confirmText: 'Ya, Hapus Aturan',
+    });
+    if (!confirmed) return;
+
     try {
       await api.routing.delete(id);
+      toast.success('Aturan perutean berhasil dihapus');
       loadRules();
     } catch (err) {
-      alert('Gagal menghapus: ' + err);
+      toast.error('Gagal menghapus: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -167,9 +180,10 @@ export const RoutingRules: React.FC = () => {
         open_duration_ms: 30000,
         half_open_probes: 2,
       });
+      toast.success('Aturan perutean cerdas berhasil diterapkan');
       loadRules();
     } catch (err: any) {
-      alert('Gagal membuat aturan: ' + (err.message || err));
+      toast.error('Gagal membuat aturan: ' + (err.message || err));
     }
   };
 
@@ -415,71 +429,61 @@ export const RoutingRules: React.FC = () => {
 
             {mode === 'model_only' && (
               <>
-                <div>
-                  <label className="block font-semibold text-text-secondary uppercase mb-1">Target Model</label>
-                  <select
-                    value={targetModelId}
-                    onChange={(e) => setTargetModelId(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
-                  >
-                    <option value="">-- Pilih Model --</option>
-                    {models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.display_name} ({m.model_id})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-text-secondary uppercase mb-1">Target Provider</label>
-                  <select
-                    value={targetProviderId}
-                    onChange={(e) => setTargetProviderId(e.target.value)}
-                    className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
-                  >
-                    <option value="">-- Bawaan (Semua Provider Model) --</option>
-                    {providers.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.display_name || p.name} ({p.kind})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Select
+                  label="Target Model"
+                  required
+                  value={targetModelId}
+                  onChange={(val) => setTargetModelId(val)}
+                  placeholder="-- Pilih Model --"
+                  options={models.map((m) => ({
+                    value: m.id,
+                    label: `${m.display_name} (${m.model_id})`,
+                    description: m.family ? `Keluarga: ${m.family}` : undefined,
+                  }))}
+                />
+                <Select
+                  label="Target Provider"
+                  value={targetProviderId}
+                  onChange={(val) => setTargetProviderId(val)}
+                  placeholder="-- Bawaan (Semua Provider Model) --"
+                  options={[
+                    { value: '', label: '-- Bawaan (Semua Provider Model) --' },
+                    ...providers.map((p) => ({
+                      value: p.id,
+                      label: `${p.display_name || p.name} (${p.kind})`,
+                    })),
+                  ]}
+                />
               </>
             )}
 
             {mode === 'routing' && (
               <>
-                <div>
-                  <label className="block font-semibold text-text-secondary uppercase mb-1">Target Model</label>
-                  <select
-                    value={targetModelId}
-                    onChange={(e) => setTargetModelId(e.target.value)}
-                    className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
-                  >
-                    <option value="">-- Semua Model --</option>
-                    {models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.display_name} ({m.model_id})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-text-secondary uppercase mb-1">Strategi Routing</label>
-                  <select
-                    value={newRule.strategy}
-                    onChange={(e) => setNewRule({ ...newRule, strategy: e.target.value })}
-                    className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
-                  >
-                    <option value="priority">Priority (Urutan Tertinggi)</option>
-                    <option value="lowest_cost">Lowest Cost (Biaya Termurah)</option>
-                    <option value="lowest_latency">Lowest Latency (Latensi Terendah)</option>
-                    <option value="weighted">Weighted (Bobot Proporsional)</option>
-                    <option value="round_robin">Round Robin (Beban Berimbang)</option>
-                  </select>
-                </div>
+                <Select
+                  label="Target Model"
+                  value={targetModelId}
+                  onChange={(val) => setTargetModelId(val)}
+                  placeholder="-- Semua Model --"
+                  options={[
+                    { value: '', label: '-- Semua Model --' },
+                    ...models.map((m) => ({
+                      value: m.id,
+                      label: `${m.display_name} (${m.model_id})`,
+                    })),
+                  ]}
+                />
+                <Select
+                  label="Strategi Routing"
+                  value={newRule.strategy}
+                  onChange={(val) => setNewRule({ ...newRule, strategy: val })}
+                  options={[
+                    { value: 'priority', label: 'Priority (Urutan Tertinggi)', description: 'Mengarahkan ke upstream prioritas tertinggi' },
+                    { value: 'lowest_cost', label: 'Lowest Cost (Biaya Termurah)', description: 'Mengarahkan ke provider dengan tarif token terendah' },
+                    { value: 'lowest_latency', label: 'Lowest Latency (Latensi Terendah)', description: 'Mengarahkan ke provider dengan respon tergesit' },
+                    { value: 'weighted', label: 'Weighted (Bobot Proporsional)', description: 'Distribusi beban berbasis rasio bobot upstream' },
+                    { value: 'round_robin', label: 'Round Robin (Beban Berimbang)', description: 'Distribusi bergilir seimbang antar semua upstream' },
+                  ]}
+                />
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block font-semibold text-text-secondary uppercase mb-1">Maksimal Percobaan</label>

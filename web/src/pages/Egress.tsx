@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { Select } from '../components/common/Select';
 import {
   Network,
   Plus,
@@ -17,8 +18,10 @@ import {
   Activity,
   Zap,
 } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
 
 export const Egress: React.FC = () => {
+  const { toast, confirmModal } = useToast();
   const [pools, setPools] = useState<EgressPool[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -70,9 +73,10 @@ export const Egress: React.FC = () => {
       await api.egress.create(newPool);
       setIsCreateOpen(false);
       setNewPool({ name: '', kind: 'socks5', proxy_url: '', weight: 100, region: 'auto' });
+      toast.success('Egress proxy pool baru berhasil ditambahkan.', 'Egress Dibuat');
       loadPools();
-    } catch (err) {
-      alert('Gagal membuat egress pool: ' + err);
+    } catch (err: any) {
+      toast.error('Gagal membuat egress pool: ' + (err.message || err));
     }
   };
 
@@ -106,19 +110,29 @@ export const Egress: React.FC = () => {
 
       await api.egress.update(editingPool.id, payload);
       setEditingPool(null);
+      toast.success('Egress proxy pool berhasil diperbarui.', 'Perubahan Disimpan');
       loadPools();
-    } catch (err) {
-      alert('Gagal memperbarui egress pool: ' + err);
+    } catch (err: any) {
+      toast.error('Gagal memperbarui egress pool: ' + (err.message || err));
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Hapus egress pool "${name}"? Upstream provider terkait akan beralih ke koneksi langsung.`)) return;
+    const ok = await confirmModal({
+      title: 'Hapus Egress Pool?',
+      message: `Hapus egress pool "${name}"? Upstream provider terkait akan beralih ke koneksi langsung secara otomatis.`,
+      confirmText: 'Ya, Hapus',
+      cancelText: 'Batal',
+      danger: true,
+    });
+    if (!ok) return;
+
     try {
       await api.egress.delete(id);
+      toast.success(`Egress pool "${name}" berhasil dihapus.`, 'Egress Dihapus');
       loadPools();
-    } catch (err) {
-      alert('Gagal menghapus egress pool: ' + err);
+    } catch (err: any) {
+      toast.error('Gagal menghapus egress pool: ' + (err.message || err));
     }
   };
 
@@ -128,17 +142,11 @@ export const Egress: React.FC = () => {
     try {
       const res = await api.egress.test(id);
       setProbeFeedback({ poolId: id, result: res });
-      // Refresh status pool
+      toast.success(`Uji koneksi egress sukses: ${res.latency_ms} ms (Exit IP: ${res.exit_ip || 'n/a'})`, 'Egress Sehat');
       loadPools();
     } catch (err: any) {
-      setProbeFeedback({
-        poolId: id,
-        result: {
-          status: 'unhealthy',
-          message: 'Uji koneksi gagal dieksekusi: ' + (err.message || err),
-          checked_at: new Date().toISOString(),
-        },
-      });
+      setProbeFeedback({ poolId: id, result: { status: 'unhealthy', latency_ms: 0, checked_at: new Date().toISOString(), message: err.message || String(err) } });
+      toast.error('Uji koneksi egress gagal: ' + (err.message || err));
     } finally {
       setTestingId(null);
     }
@@ -308,25 +316,25 @@ export const Egress: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Tombol Aksi */}
-                <div className="mt-5 pt-3 border-t border-border flex items-center justify-between">
+                <div className="mt-5 pt-3 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => handleTestProbe(p.id)}
                     isLoading={isTesting}
                     icon={<Play className="w-3.5 h-3.5 text-emerald-400" />}
-                    className="text-xs text-white"
+                    className="w-full sm:w-auto justify-center text-xs text-white"
                   >
                     Uji Ping
                   </Button>
 
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => handleOpenEdit(p)}
                       icon={<Edit2 className="w-3.5 h-3.5" />}
+                      className="w-full sm:w-auto justify-center text-xs"
                     >
                       Edit
                     </Button>
@@ -335,6 +343,7 @@ export const Egress: React.FC = () => {
                       size="sm"
                       onClick={() => handleDelete(p.id, p.name)}
                       icon={<Trash2 className="w-3.5 h-3.5" />}
+                      className="w-full sm:w-auto justify-center text-xs"
                     >
                       Hapus
                     </Button>
@@ -354,49 +363,45 @@ export const Egress: React.FC = () => {
         subtitle="URL proxy akan dienkripsi secara aman dengan AES-256-GCM"
       >
         <form onSubmit={handleCreate} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Preset / Sumber Proxy</label>
-            <select
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === 'custom') return;
-                if (val === 'xray_socks') {
-                  setNewPool({
-                    ...newPool,
-                    name: '⚡ Xray SOCKS5 Bridge (Local)',
-                    kind: 'socks5',
-                    proxy_url: 'socks5://xray:10808',
-                    region: 'local',
-                  });
-                } else if (val === 'xray_http') {
-                  setNewPool({
-                    ...newPool,
-                    name: '⚡ Xray HTTP Bridge (Local)',
-                    kind: 'http',
-                    proxy_url: 'http://xray:10809',
-                    region: 'local',
-                  });
-                } else if (val === 'xray_tunnel') {
-                  setNewPool({
-                    ...newPool,
-                    name: '⚡ Xray Stealth Tunnel (Multiplexed)',
-                    kind: 'socks5',
-                    proxy_url: 'socks5://xray:10808',
-                    region: 'auto',
-                  });
-                }
-              }}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-accent/40 rounded-nav text-white text-xs font-medium focus:outline-none focus:border-accent"
-            >
-              <option value="custom">Kustom / Manual (Masukkan Proxy Luar)</option>
-              <option value="xray_socks">⚡ Xray SOCKS5 Internal Bridge (socks5://xray:10808)</option>
-              <option value="xray_http">⚡ Xray HTTP Internal Bridge (http://xray:10809)</option>
-              <option value="xray_tunnel">⚡ Xray Stealth Tunnel (Auto Multiplexed)</option>
-            </select>
-            <span className="text-[11px] text-text-muted block mt-1">
-              Pilih preset untuk mengisi otomatis URL dan konfigurasi Xray tanpa perlu mengetik manual.
-            </span>
-          </div>
+          <Select
+            label="Preset / Sumber Proxy"
+            value=""
+            placeholder="Pilih Preset atau Kustom..."
+            onChange={(val) => {
+              if (val === 'custom') return;
+              if (val === 'xray_socks') {
+                setNewPool({
+                  ...newPool,
+                  name: '⚡ Xray SOCKS5 Bridge (Local)',
+                  kind: 'socks5',
+                  proxy_url: 'socks5://xray:10808',
+                  region: 'local',
+                });
+              } else if (val === 'xray_http') {
+                setNewPool({
+                  ...newPool,
+                  name: '⚡ Xray HTTP Bridge (Local)',
+                  kind: 'http',
+                  proxy_url: 'http://xray:10809',
+                  region: 'local',
+                });
+              } else if (val === 'xray_tunnel') {
+                setNewPool({
+                  ...newPool,
+                  name: '⚡ Xray Stealth Tunnel (Multiplexed)',
+                  kind: 'socks5',
+                  proxy_url: 'socks5://xray:10808',
+                  region: 'auto',
+                });
+              }
+            }}
+            options={[
+              { value: 'custom', label: 'Kustom / Manual (Masukkan Proxy Luar)', description: 'Konfigurasi IP/domain proxy eksternal' },
+              { value: 'xray_socks', label: '⚡ Xray SOCKS5 Internal Bridge', description: 'socks5://xray:10808' },
+              { value: 'xray_http', label: '⚡ Xray HTTP Internal Bridge', description: 'http://xray:10809' },
+              { value: 'xray_tunnel', label: '⚡ Xray Stealth Tunnel', description: 'Auto Multiplexed Stealth Routing' },
+            ]}
+          />
           <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Pool</label>
             <input
@@ -408,18 +413,16 @@ export const Egress: React.FC = () => {
               className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
             />
           </div>
-          <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Protokol Proxy</label>
-            <select
-              value={newPool.kind}
-              onChange={(e) => setNewPool({ ...newPool, kind: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
-            >
-              <option value="socks5">SOCKS5 Proxy (Termasuk Xray / Sing-box)</option>
-              <option value="http">HTTP Proxy</option>
-              <option value="https">HTTPS Proxy</option>
-            </select>
-          </div>
+          <Select
+            label="Protokol Proxy"
+            value={newPool.kind}
+            onChange={(val) => setNewPool({ ...newPool, kind: val })}
+            options={[
+              { value: 'socks5', label: 'SOCKS5 Proxy (Termasuk Xray / Sing-box)', description: 'Protokol raw socket tcp/udp dengan stealth transport' },
+              { value: 'http', label: 'HTTP Proxy', description: 'Standar http proxy forwarder' },
+              { value: 'https', label: 'HTTPS Proxy', description: 'Http proxy terenkripsi TLS' },
+            ]}
+          />
           <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">Proxy URL Lengkap</label>
             <input
@@ -471,37 +474,36 @@ export const Egress: React.FC = () => {
         subtitle="Perbarui konfigurasi proxy keluar atau lakukan rotasi kredensial"
       >
         <form onSubmit={handleUpdate} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Preset / Sumber Proxy</label>
-            <select
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === 'custom') return;
-                if (val === 'xray_socks') {
-                  setEditForm({
-                    ...editForm,
-                    name: '⚡ Xray SOCKS5 Bridge (Local)',
-                    kind: 'socks5',
-                    proxy_url: 'socks5://xray:10808',
-                    region: 'local',
-                  });
-                } else if (val === 'xray_http') {
-                  setEditForm({
-                    ...editForm,
-                    name: '⚡ Xray HTTP Bridge (Local)',
-                    kind: 'http',
-                    proxy_url: 'http://xray:10809',
-                    region: 'local',
-                  });
-                }
-              }}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-accent/40 rounded-nav text-white text-xs font-medium focus:outline-none focus:border-accent"
-            >
-              <option value="custom">Pertahankan / Masukkan URL Manual</option>
-              <option value="xray_socks">⚡ Xray SOCKS5 Internal Bridge (socks5://xray:10808)</option>
-              <option value="xray_http">⚡ Xray HTTP Internal Bridge (http://xray:10809)</option>
-            </select>
-          </div>
+          <Select
+            label="Preset / Sumber Proxy"
+            value=""
+            placeholder="Pilih Preset Baru..."
+            onChange={(val) => {
+              if (val === 'custom') return;
+              if (val === 'xray_socks') {
+                setEditForm({
+                  ...editForm,
+                  name: '⚡ Xray SOCKS5 Bridge (Local)',
+                  kind: 'socks5',
+                  proxy_url: 'socks5://xray:10808',
+                  region: 'local',
+                });
+              } else if (val === 'xray_http') {
+                setEditForm({
+                  ...editForm,
+                  name: '⚡ Xray HTTP Bridge (Local)',
+                  kind: 'http',
+                  proxy_url: 'http://xray:10809',
+                  region: 'local',
+                });
+              }
+            }}
+            options={[
+              { value: 'custom', label: 'Pertahankan / Masukkan URL Manual', description: 'Gunakan URL proxy kustom saat ini' },
+              { value: 'xray_socks', label: '⚡ Xray SOCKS5 Internal Bridge', description: 'socks5://xray:10808' },
+              { value: 'xray_http', label: '⚡ Xray HTTP Internal Bridge', description: 'http://xray:10809' },
+            ]}
+          />
           <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Pool</label>
             <input
@@ -512,18 +514,16 @@ export const Egress: React.FC = () => {
               className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
             />
           </div>
-          <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Protokol Proxy</label>
-            <select
-              value={editForm.kind}
-              onChange={(e) => setEditForm({ ...editForm, kind: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
-            >
-              <option value="socks5">SOCKS5 Proxy</option>
-              <option value="http">HTTP Proxy</option>
-              <option value="https">HTTPS Proxy</option>
-            </select>
-          </div>
+          <Select
+            label="Protokol Proxy"
+            value={editForm.kind}
+            onChange={(val) => setEditForm({ ...editForm, kind: val })}
+            options={[
+              { value: 'socks5', label: 'SOCKS5 Proxy', description: 'Protokol raw socket tcp/udp dengan stealth transport' },
+              { value: 'http', label: 'HTTP Proxy', description: 'Standar http proxy forwarder' },
+              { value: 'https', label: 'HTTPS Proxy', description: 'Http proxy terenkripsi TLS' },
+            ]}
+          />
           <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">
               Ganti Proxy URL (Rotasi Sandi)

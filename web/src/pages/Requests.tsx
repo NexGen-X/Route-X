@@ -227,7 +227,10 @@ export const Requests: React.FC = () => {
               {requests.map((r) => (
                 <div
                   key={r.id || r.request_id}
-                  onClick={() => handleInspect(r)}
+                  role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInspect(r) }}
+                      onClick={() => handleInspect(r)}
                   className="p-3.5 hover:bg-bg-surface-2/60 active:bg-bg-surface-2 cursor-pointer transition-colors space-y-2"
                 >
                   <div className="flex items-center justify-between">
@@ -283,6 +286,9 @@ export const Requests: React.FC = () => {
                   {requests.map((r) => (
                     <tr
                       key={r.id || r.request_id}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInspect(r) }}
                       onClick={() => handleInspect(r)}
                       className="hover:bg-bg-surface-2/60 cursor-pointer transition-colors group"
                     >

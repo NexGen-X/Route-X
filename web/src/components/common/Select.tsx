@@ -162,6 +162,7 @@ export const Select: React.FC<SelectProps> = ({
           }
         }}
         aria-haspopup="listbox"
+        aria-controls={isOpen ? `${selectId}-listbox` : undefined}
         aria-expanded={isOpen}
         className={`w-full flex items-center justify-between gap-2 px-3 py-2 bg-bg-surface-2 border rounded-nav text-xs transition-all duration-150 text-left focus:outline-none focus:ring-1 focus:ring-accent ${
           error
@@ -198,6 +199,7 @@ export const Select: React.FC<SelectProps> = ({
             <div className="p-2 border-b border-border/60 bg-bg-surface-2/40 sticky top-0 z-10 flex items-center gap-1.5">
               <Search className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
               <input
+                aria-activedescendant={isOpen && highlightedIndex >= 0 ? `${selectId}-opt-${highlightedIndex}` : undefined}
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
@@ -222,6 +224,7 @@ export const Select: React.FC<SelectProps> = ({
 
           {/* Opsi Listbox */}
           <div
+            id={`${selectId}-listbox`}
             ref={listRef}
             role="listbox"
             tabIndex={-1}
@@ -239,6 +242,7 @@ export const Select: React.FC<SelectProps> = ({
                 return (
                   <div
                     key={opt.value || `empty-${index}`}
+                    id={`${selectId}-opt-${index}`}
                     role="option"
                     aria-selected={isSelected}
                     onClick={() => handleSelect(opt.value, opt.disabled)}

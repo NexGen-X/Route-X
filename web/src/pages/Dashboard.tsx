@@ -202,7 +202,10 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             <Button
               variant="primary"
               size="sm"
-              onClick={() => onNavigate('/requests')}
+              role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/requests') }}
+                      onClick={() => onNavigate('/requests')}
               icon={<ArrowUpRight className="w-3.5 h-3.5 text-black" />}
             >
               Request Log
@@ -713,7 +716,10 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => onNavigate('/requests')}
+                role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/requests') }}
+                      onClick={() => onNavigate('/requests')}
                 className="text-xs text-primary hover:text-primary-hover p-0 h-auto"
               >
                 Semua &rarr;
@@ -741,6 +747,9 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                   return (
                     <div
                       key={req.id || req.request_id}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/requests') }}
                       onClick={() => onNavigate('/requests')}
                       className="p-2.5 rounded-lg bg-[#181A20] border border-[#232732] hover:border-primary/40 hover:bg-[#1D2028] transition-all cursor-pointer group"
                     >
@@ -788,7 +797,10 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
 
           <div className="mt-4 pt-3 border-t border-[#1C2029]">
             <button
-              onClick={() => onNavigate('/requests')}
+              role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/requests') }}
+                      onClick={() => onNavigate('/requests')}
               className="w-full py-1.5 text-center text-xs text-text-secondary hover:text-white font-mono rounded bg-[#16181F] border border-[#262B37] hover:border-[#383E4F] transition-colors"
             >
               Inspeksi Seluruh Jejak Audit Request &rarr;

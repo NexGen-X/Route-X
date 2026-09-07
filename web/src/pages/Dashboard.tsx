@@ -812,14 +812,14 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
       {/* ==================================================================== */}
       {/* 5. UPSTREAM PROVIDER HEALTH & STATUS MATRIX                          */}
       {/* ==================================================================== */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
+      <div className="space-y-4">
+        <div className="flex flex-row items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-              <Server className="w-4 h-4 text-emerald-400" />
-              Status Kesehatan Upstream Providers
+              <Server className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              <span className="truncate">Status Kesehatan Upstream Providers</span>
             </h3>
-            <p className="text-xs text-text-muted mt-0.5">
+            <p className="text-xs text-text-muted mt-1 leading-relaxed">
               Ketersediaan koneksi upstream, status circuit breaker, dan respons latensi terkini.
             </p>
           </div>
@@ -827,7 +827,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             variant="ghost"
             size="sm"
             onClick={() => onNavigate('/upstreams/providers')}
-            className="text-xs text-primary hover:underline"
+            className="text-xs text-primary hover:underline whitespace-nowrap flex-shrink-0 mt-0.5"
           >
             Kelola Provider &rarr;
           </Button>

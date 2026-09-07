@@ -70,7 +70,10 @@ export function setCsrfToken(token: string) {
 
 // Ambil CSRF token dari cookie routex_csrf atau fallback cache / sessionStorage
 export function getCsrfToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)(?:__Host-)?routex_csrf=([^;]+)/);
+  const hostMatch = document.cookie.match(/(?:^|;\s*)__Host-routex_csrf=([^;]+)/);
+  if (hostMatch) return decodeURIComponent(hostMatch[1]);
+  
+  const match = document.cookie.match(/(?:^|;\s*)routex_csrf=([^;]+)/);
   if (match) return decodeURIComponent(match[1]);
   if (cachedCsrfToken) return cachedCsrfToken;
   try {

@@ -57,10 +57,10 @@ export const Drawer: React.FC<DrawerProps> = ({
         onClick={onClose}
       />
 
-      {/* Slide-over panel: Di layar ponsel (lebar < 640px) gunakan pl-0 dan w-full agar drawer mengisi layar penuh tanpa strip hitam canggung di sebelah kiri, sedangkan di desktop gunakan pl-6 dan batas maxW */}
-      <div className="fixed inset-y-0 right-0 flex max-w-full pl-0 sm:pl-6 pointer-events-none w-full sm:w-auto">
+      {/* Slide-over panel: On mobile, leaves a small left gap. On desktop, uses maxW constraints */}
+      <div className="fixed inset-y-0 right-0 flex max-w-full pl-6 pointer-events-none w-full sm:w-auto">
         <div
-          className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border-l border-border shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300 ease-out`}
+          className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border-l border-border shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300 ease-out rounded-l-2xl sm:rounded-none`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Drawer Header */}

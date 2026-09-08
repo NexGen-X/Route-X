@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
+	"github.com/NexGen-X/Route-X/internal/security"
 )
 
 // SettingsStore adalah antarmuka minimum untuk membaca dan menyimpan preferensi setelan CLI.
@@ -26,25 +28,34 @@ type SettingsStore interface {
 // Manager mengelola pemindaian perkakas CLI dan penerapan konfigurasi multi-mode.
 type Manager struct {
 	settings SettingsStore
+	cipher   *security.Cipher
 	logger   *slog.Logger
 	mu       sync.RWMutex
 }
 
 // NewManager membuat instance baru Manager.
-func NewManager(settings SettingsStore, logger *slog.Logger) *Manager {
+func NewManager(settings SettingsStore, cipher *security.Cipher, logger *slog.Logger) *Manager {
 	return &Manager{
 		settings: settings,
+		cipher:   cipher,
 		logger:   logger,
 	}
 }
 
 // StoredConfig merepresentasikan format JSON yang disimpan di tabel settings.
+//
+// APIKeyEncrypted memuat ciphertext AES-256-GCM (bukan plaintext) dengan AAD
+// terikat ID tool (security.CLIToolAAD). Field api_key versi lama tetap
+// dipertahankan untuk migrasi bertahap: nilai legacy hanya dipakai saat
+// ciphertext absen, dan ditulis ulang dalam bentuk terenkripsi pada kesempatan
+// pertama — ia tidak pernah kembali ke respons API.
 type StoredConfig struct {
-	Mode       string    `json:"mode"`
-	Target     string    `json:"target"`
-	APIKey     string    `json:"api_key,omitempty"`
-	GatewayURL string    `json:"gateway_url,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	Mode            string    `json:"mode"`
+	Target          string    `json:"target"`
+	APIKey          string    `json:"api_key,omitempty"` // legacy plaintext; hanya dibaca saat migrasi
+	APIKeyEncrypted string    `json:"api_key_enc,omitempty"`
+	GatewayURL      string    `json:"gateway_url,omitempty"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // Scan memeriksa keberadaan perkakas CLI di sistem dan memuat konfigurasi aktifnya.
@@ -89,7 +100,7 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 			}
 		}
 
-		// 3. Baca preferensi tersimpan di database jika ada
+		// 3. Baca preferensi non-rahasia yang tersimpan di database.
 		settingKey := fmt.Sprintf("cli:config:%s", tool.ID)
 		if m.settings != nil {
 			if setting, err := m.settings.Get(ctx, settingKey); err == nil && len(setting.Value) > 0 {
@@ -102,12 +113,14 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 						status.ActiveTarget = stored.Target
 					}
 					status.UpdatedAt = stored.UpdatedAt
+					m.migrateLegacyAPIKey(ctx, tool.ID, setting, stored)
 				}
 			}
 		}
 
-		// 4. Susun Environment Variables dan Export Snippet
-		status.EnvVars = m.buildEnvVars(tool, status.ActiveMode, status.ActiveTarget, defaultGatewayURL)
+		// 4. Susun Environment Variables dan Export Snippet tanpa API key.
+		envVars := m.buildEnvVars(tool, status.ActiveMode, status.ActiveTarget, defaultGatewayURL)
+		status.EnvVars = envVars
 		status.ExportSnippet = m.buildSnippet(status.EnvVars)
 
 		results = append(results, status)
@@ -134,6 +147,9 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	if p.Target == "" {
 		p.Target = toolDef.DefaultTarget
 	}
+	if strings.ContainsAny(p.Target, "\x00\r\n") {
+		return nil, fmt.Errorf("target model memuat karakter terlarang")
+	}
 
 	gwURL := p.GatewayURL
 	if gwURL == "" {
@@ -142,13 +158,23 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 			gwURL = "http://localhost:8080/v1"
 		}
 	}
+	parsedURL, err := url.Parse(gwURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" || parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" || strings.ContainsAny(gwURL, "\x00\r\n") {
+		return nil, fmt.Errorf("gateway URL tidak sah atau memuat komponen terlarang")
+	}
 
 	stored := StoredConfig{
 		Mode:       p.Mode,
 		Target:     p.Target,
-		APIKey:     p.APIKey,
 		GatewayURL: gwURL,
 		UpdatedAt:  time.Now().UTC(),
+	}
+	if p.APIKey != "" && m.cipher != nil {
+		encrypted, encErr := m.cipher.Encrypt([]byte(p.APIKey), security.CLIToolAAD(p.ToolID))
+		if encErr != nil {
+			return nil, fmt.Errorf("mengenkripsi API key CLI: %w", encErr)
+		}
+		stored.APIKeyEncrypted = encrypted
 	}
 
 	rawJSON, err := json.Marshal(stored)
@@ -169,17 +195,19 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 		}
 	}
 
-	// 2. Tulis berkas shell script lingkungan terpadu ~/.routex/cli-env.sh
+	// 2. Tulis berkas shell script lingkungan terpadu ~/.routex/cli-env.sh.
+	// API key tidak ditulis ke disk; operator memasukkannya ke lingkungan proses
+	// CLI melalui secret manager atau shell aktif.
 	homeDir, _ := os.UserHomeDir()
-	envVars := m.buildEnvVars(toolDef, p.Mode, p.Target, gwURL)
-	if p.APIKey != "" && toolDef.EnvVarAPIKey != "" {
-		envVars[toolDef.EnvVarAPIKey] = p.APIKey
-	}
+	fullEnvVars := m.buildEnvVars(toolDef, p.Mode, p.Target, gwURL)
 
-	_ = m.syncGlobalEnvScript(homeDir, toolDef, envVars)
+	_ = m.syncGlobalEnvScript(homeDir, toolDef, fullEnvVars)
 
-	// 3. Tulis file konfigurasi lokal spesifik jika ada direktorinya
-	_ = m.applyToolSpecificConfig(homeDir, toolDef, p.Mode, p.Target, gwURL, p.APIKey)
+	// 3. Tulis file konfigurasi lokal spesifik jika ada direktorinya.
+	// Catatan: apiKey sengaja TIDAK diteruskan — file konfigurasi lokal
+	// (claude/aider/fabric) tidak memakai API key, dan menuliskannya di sana
+	// hanya menambah titik bocor (DATA-001).
+	_ = m.applyToolSpecificConfig(homeDir, toolDef, p.Mode, p.Target, gwURL, "")
 
 	execPath := m.findBinary(toolDef.BinaryNames, homeDir)
 	status := &ToolStatus{
@@ -193,12 +221,39 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 		SupportedModes: []string{ModeModelOnly, ModeRouting, ModeCombo},
 		ActiveMode:     p.Mode,
 		ActiveTarget:   p.Target,
-		EnvVars:        envVars,
-		ExportSnippet:  m.buildSnippet(envVars),
+		EnvVars:        fullEnvVars,
+		ExportSnippet:  m.buildSnippet(fullEnvVars),
 		UpdatedAt:      stored.UpdatedAt,
 	}
 
 	return status, nil
+}
+
+// migrateLegacyAPIKey mengganti field api_key plaintext dari versi lama dengan
+// ciphertext pada pembacaan pertama. Nilainya tidak pernah diteruskan ke respons.
+func (m *Manager) migrateLegacyAPIKey(ctx context.Context, toolID string, setting identity.Setting, stored StoredConfig) {
+	if stored.APIKey == "" || stored.APIKeyEncrypted != "" || m.cipher == nil || m.settings == nil {
+		return
+	}
+	encrypted, err := m.cipher.Encrypt([]byte(stored.APIKey), security.CLIToolAAD(toolID))
+	if err != nil {
+		m.logger.WarnContext(ctx, "gagal mengenkripsi API key CLI legacy", "tool", toolID, "error", err)
+		return
+	}
+	stored.APIKey = ""
+	stored.APIKeyEncrypted = encrypted
+	raw, err := json.Marshal(stored)
+	if err != nil {
+		return
+	}
+	if _, err := m.settings.Put(ctx, identity.SettingWrite{
+		Key:         setting.Key,
+		Value:       raw,
+		Description: setting.Description,
+		UpdatedBy:   setting.UpdatedBy,
+	}); err != nil {
+		m.logger.WarnContext(ctx, "gagal memigrasikan API key CLI legacy", "tool", toolID, "error", err)
+	}
 }
 
 // findToolDef mencari definisi tool berdasarkan ID.
@@ -285,19 +340,27 @@ func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[str
 		vars[tool.EnvVarModel] = target
 	}
 
-	// Atur API key default jika belum diset khusus
-	if tool.EnvVarAPIKey != "" {
-		vars[tool.EnvVarAPIKey] = "rx_live_personal_gateway"
-	}
-
 	return vars
+}
+
+// shellQuote mengutip nilai environment untuk shell POSIX tanpa membuka ruang
+// ekspansi command, variabel, atau pemutusan perintah.
+func shellQuote(value string) (string, error) {
+	if strings.ContainsAny(value, "\x00\r\n") {
+		return "", fmt.Errorf("nilai environment memuat karakter terlarang")
+	}
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'", nil
 }
 
 // buildSnippet menyusun teks export shell untuk terminal.
 func (m *Manager) buildSnippet(vars map[string]string) string {
 	var sb strings.Builder
 	for k, v := range vars {
-		sb.WriteString(fmt.Sprintf("export %s=\"%s\"\n", k, v))
+		quoted, err := shellQuote(v)
+		if err != nil {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("export %s=%s\n", k, quoted))
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }
@@ -332,7 +395,11 @@ func (m *Manager) syncGlobalEnvScript(homeDir string, tool ToolDef, vars map[str
 	var block strings.Builder
 	block.WriteString(markerStart + "\n")
 	for k, v := range vars {
-		block.WriteString(fmt.Sprintf("export %s=\"%s\"\n", k, v))
+		quoted, err := shellQuote(v)
+		if err != nil {
+			return err
+		}
+		block.WriteString(fmt.Sprintf("export %s=%s\n", k, quoted))
 	}
 	block.WriteString(markerEnd)
 
@@ -345,7 +412,9 @@ func (m *Manager) syncGlobalEnvScript(homeDir string, tool ToolDef, vars map[str
 		newContent = existing + "\n" + block.String() + "\n"
 	}
 
-	return os.WriteFile(envFile, []byte(newContent), 0644)
+	// Hapus assignment API key legacy dari file host, lalu batasi izin file.
+	newContent = m.removeAPIKeysFromScript(newContent)
+	return os.WriteFile(envFile, []byte(newContent), 0600)
 }
 
 // applyToolSpecificConfig menulis berkas konfigurasi lokal jika aplikabel.
@@ -403,5 +472,66 @@ func (m *Manager) GetExportScript(homeDir string) (string, error) {
 		}
 		return "", err
 	}
-	return string(data), nil
+	// Redaksi tetap dipertahankan untuk membersihkan file legacy yang mungkin
+	// dibuat versi lama sebelum isinya dikirim melalui API.
+	return m.redactAPIKeysInScript(string(data)), nil
+}
+
+func (m *Manager) removeAPIKeysFromScript(content string) string {
+	keyVars := map[string]bool{}
+	for _, t := range SupportedTools() {
+		if t.EnvVarAPIKey != "" {
+			keyVars[t.EnvVarAPIKey] = true
+		}
+	}
+	lines := strings.Split(content, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		rest := strings.TrimPrefix(trimmed, "export ")
+		eq := strings.Index(rest, "=")
+		if eq > 0 && keyVars[strings.TrimSpace(rest[:eq])] {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// redactAPIKeysInScript mengganti nilai variabel API key yang dikenali dalam
+// skrip export dengan tampilan tersamar.
+func (m *Manager) redactAPIKeysInScript(content string) string {
+	keyVars := map[string]bool{}
+	for _, t := range SupportedTools() {
+		if t.EnvVarAPIKey != "" {
+			keyVars[t.EnvVarAPIKey] = true
+		}
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "export ") {
+			continue
+		}
+		rest := strings.TrimPrefix(trimmed, "export ")
+		eq := strings.Index(rest, "=")
+		if eq <= 0 {
+			continue
+		}
+		varName := strings.TrimSpace(rest[:eq])
+		if !keyVars[varName] {
+			continue
+		}
+		val := strings.TrimSpace(rest[eq+1:])
+		val = strings.Trim(val, "\"")
+		if val == "" {
+			continue
+		}
+		prefixPart := ""
+		if idx := strings.Index(line, "export "); idx >= 0 {
+			prefixPart = line[:idx]
+		}
+		lines[i] = fmt.Sprintf("%sexport %s=\"%s\"", prefixPart, varName, security.MaskAPIKey(val))
+	}
+	return strings.Join(lines, "\n")
 }

@@ -3,8 +3,10 @@ package rotation
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -113,10 +115,11 @@ func NewRotator(cfg Config) (*Rotator, error) {
 	}, nil
 }
 
-// Execute menjalankan proses rotasi kunci enkripsi pada ketiga tabel:
+// Execute menjalankan proses rotasi kunci enkripsi pada seluruh penyimpanan:
 // 1. provider_credentials
 // 2. webhooks
 // 3. egress_pool
+// 4. settings cli:config:* dan system:xray:config
 //
 // Aturan Arsitektur & Keamanan:
 //   - Wajib SATU transaksi tunggal yang melingkupi KETIGA tabel. security.Cipher hanya
@@ -136,7 +139,7 @@ func (r *Rotator) Execute(ctx context.Context) (*Result, error) {
 		DryRun:   r.dryRun,
 		OldKeyID: r.oldCipher.KeyID(),
 		NewKeyID: r.newCipher.KeyID(),
-		Tables:   make([]TableResult, 0, 3),
+		Tables:   make([]TableResult, 0, 4),
 	}
 
 	// Buka SATU transaksi basis data tunggal yang melingkupi KETIGA tabel.
@@ -180,6 +183,13 @@ func (r *Rotator) Execute(ctx context.Context) (*Result, error) {
 		res.TotalRotated += tRes.Rotated
 	}
 
+	settingsRes, err := r.rotateSettingsInTx(ctx, tx)
+	if err != nil {
+		return nil, fmt.Errorf("rotasi settings: %w", err)
+	}
+	res.Tables = append(res.Tables, settingsRes)
+	res.TotalRotated += settingsRes.Rotated
+
 	if r.dryRun {
 		// Pada mode dry run, jangan pernah melakukan commit. Transaksi dibatalkan secara bersih.
 		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
@@ -207,6 +217,88 @@ type tableSpec struct {
 type rowRecord struct {
 	id         string
 	ciphertext string
+}
+
+func (r *Rotator) rotateSettingsInTx(ctx context.Context, tx pgx.Tx) (TableResult, error) {
+	result := TableResult{TableName: "settings.encrypted"}
+	rows, err := tx.Query(ctx, `
+		SELECT key, value
+		FROM settings
+		WHERE key LIKE 'cli:config:%' OR key = 'system:xray:config'
+		ORDER BY key ASC
+		FOR UPDATE`)
+	if err != nil {
+		return result, fmt.Errorf("membaca settings terenkripsi: %w", err)
+	}
+	defer rows.Close()
+
+	type settingRecord struct {
+		key   string
+		value []byte
+	}
+	var records []settingRecord
+	for rows.Next() {
+		var rec settingRecord
+		if err := rows.Scan(&rec.key, &rec.value); err != nil {
+			return result, fmt.Errorf("memindai setting terenkripsi: %w", err)
+		}
+		records = append(records, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return result, fmt.Errorf("iterasi settings terenkripsi: %w", err)
+	}
+
+	for _, rec := range records {
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(rec.value, &obj); err != nil {
+			return result, fmt.Errorf("setting %s bukan JSON sah: %w", rec.key, err)
+		}
+
+		field, aad := "", ""
+		switch {
+		case strings.HasPrefix(rec.key, "cli:config:"):
+			toolID := strings.TrimPrefix(rec.key, "cli:config:")
+			if toolID == "" {
+				return result, fmt.Errorf("setting CLI tanpa ID tool")
+			}
+			field, aad = "api_key_enc", security.CLIToolAAD(toolID)
+		case rec.key == "system:xray:config":
+			field, aad = "ciphertext", security.XrayStateAAD()
+		}
+
+		var ciphertext string
+		if raw := obj[field]; len(raw) == 0 || json.Unmarshal(raw, &ciphertext) != nil || ciphertext == "" {
+			continue
+		}
+		if !r.oldCipher.CanDecrypt(ciphertext) {
+			if r.newCipher.CanDecrypt(ciphertext) {
+				continue
+			}
+			return result, fmt.Errorf("setting %s memakai ciphertext tidak dikenal", rec.key)
+		}
+
+		result.Scanned++
+		rotated, err := security.Reencrypt(r.oldCipher, r.newCipher, ciphertext, aad)
+		if err != nil {
+			return result, fmt.Errorf("mengenkripsi ulang setting %s: %w", rec.key, err)
+		}
+		obj[field], _ = json.Marshal(rotated)
+		newValue, err := json.Marshal(obj)
+		if err != nil {
+			return result, fmt.Errorf("menyandikan ulang setting %s: %w", rec.key, err)
+		}
+		if !r.dryRun {
+			tag, err := tx.Exec(ctx, `UPDATE settings SET value = $1, updated_at = now() WHERE key = $2`, newValue, rec.key)
+			if err != nil {
+				return result, fmt.Errorf("memperbarui setting %s: %w", rec.key, err)
+			}
+			if tag.RowsAffected() != 1 {
+				return result, fmt.Errorf("konkurensi terdeteksi pada setting %s", rec.key)
+			}
+		}
+		result.Rotated++
+	}
+	return result, nil
 }
 
 func (r *Rotator) rotateTableInTx(ctx context.Context, tx pgx.Tx, spec tableSpec) (TableResult, error) {

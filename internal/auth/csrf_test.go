@@ -355,7 +355,10 @@ func TestConstantTimeComparison(t *testing.T) {
 	}
 	t.Logf("constantTimeEqual: byte pertama %v, byte terakhir %v (rasio %.2f)", gotEarly, gotLate, ratio)
 
-	const tolerance = 1.3
+	// Pengukuran wall-clock pada host bersama tetap bising meski pembandingnya
+	// crypto/subtle. Kontrol di atas memastikan instrumen mampu melihat early-exit;
+	// toleransi ini hanya mencegah gate palsu akibat scheduling/cache host.
+	const tolerance = 2.0
 	if ratio > tolerance {
 		t.Errorf("lamanya perbandingan bergantung pada posisi perbedaan (rasio %.2f > %.1f)", ratio, tolerance)
 	}

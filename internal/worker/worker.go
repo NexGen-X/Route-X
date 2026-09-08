@@ -107,6 +107,10 @@ type ScheduledJob struct {
 // ErrJobNotFound dikembalikan ketika nama job yang dipicu tidak terdaftar pada supervisor.
 var ErrJobNotFound = errors.New("worker: job tidak ditemukan")
 
+// ErrSupervisorStopped menandakan job manual tidak dapat diterima karena tidak
+// ada lifecycle supervisor yang dapat membatalkan dan menunggunya.
+var ErrSupervisorStopped = errors.New("worker: supervisor belum berjalan")
+
 // JobInfo memuat informasi status terkini dari satu background job untuk admin dan observabilitas.
 type JobInfo struct {
 	Name           string        `json:"name"`
@@ -143,6 +147,7 @@ type Supervisor struct {
 	logger  *slog.Logger
 
 	cancel context.CancelFunc
+	runCtx context.Context
 	wg     sync.WaitGroup
 }
 
@@ -237,7 +242,7 @@ func (s *Supervisor) TriggerJob(ctx context.Context, name string) error {
 		return errors.New("worker: supervisor belum diinisialisasi")
 	}
 
-	s.mu.RLock()
+	s.mu.Lock()
 	var target *jobRuntimeState
 	for _, j := range s.jobs {
 		if j.job.Job.Name() == name {
@@ -245,14 +250,24 @@ func (s *Supervisor) TriggerJob(ctx context.Context, name string) error {
 			break
 		}
 	}
-	s.mu.RUnlock()
-
 	if target == nil {
+		s.mu.Unlock()
 		return fmt.Errorf("%w: %s", ErrJobNotFound, name)
 	}
+	if s.runCtx == nil {
+		s.mu.Unlock()
+		return ErrSupervisorStopped
+	}
 
-	// Eksekusi di goroutine terpisah agar respons HTTP tidak terblokir
-	go s.executeOnce(context.Background(), target)
+	// Nilai context pemicu (request ID/logger) dipertahankan, sedangkan lifecycle
+	// eksekusi mengikuti supervisor agar Stop membatalkan dan menunggunya.
+	runCtx := mergeContextValues(s.runCtx, context.WithoutCancel(ctx))
+	s.wg.Add(1)
+	s.mu.Unlock()
+	go func() {
+		defer s.wg.Done()
+		s.executeOnce(runCtx, target)
+	}()
 	return nil
 }
 
@@ -261,6 +276,7 @@ func (s *Supervisor) Start(ctx context.Context) {
 	s.mu.Lock()
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
+	s.runCtx = runCtx
 	jobsCopy := make([]*jobRuntimeState, len(s.jobs))
 	copy(jobsCopy, s.jobs)
 	s.mu.Unlock()
@@ -277,6 +293,7 @@ func (s *Supervisor) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	cancel := s.cancel
 	s.cancel = nil
+	s.runCtx = nil
 	s.mu.Unlock()
 
 	if cancel != nil {
@@ -295,6 +312,24 @@ func (s *Supervisor) Stop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// valueContext mengambil pembatalan/deadline dari lifecycle supervisor dan
+// nilai observabilitas dari request yang memicu job manual.
+type valueContext struct {
+	context.Context
+	values context.Context
+}
+
+func (c valueContext) Value(key any) any {
+	if value := c.values.Value(key); value != nil {
+		return value
+	}
+	return c.Context.Value(key)
+}
+
+func mergeContextValues(lifecycle, values context.Context) context.Context {
+	return valueContext{Context: lifecycle, values: values}
 }
 
 // runLoop menjalankan perulangan satu job dengan penanganan panic dan pencatatan metrik.

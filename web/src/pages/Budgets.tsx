@@ -8,6 +8,7 @@ import { Modal } from '../components/common/Modal';
 import { Select } from '../components/common/Select';
 import { Coins, Plus, RotateCcw } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { formatUSD, percentageOfDecimal } from '../utils/money';
 
 export const Budgets: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -119,9 +120,7 @@ export const Budgets: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {budgets.map((b) => {
-          const spent = parseFloat(b.spent_usd || '0');
-          const max = parseFloat(b.max_spend_usd || '1');
-          const pct = Math.min(100, Math.round((spent / max) * 100));
+          const pct = percentageOfDecimal(b.spent_usd || '0', b.max_spend_usd || '0');
           const isDanger = pct >= b.alert_threshold;
 
           return (
@@ -146,7 +145,7 @@ export const Budgets: React.FC = () => {
                   <div className="flex justify-between text-xs mb-1.5">
                     <span className="text-text-muted">Terpakai</span>
                     <span className="font-mono text-white font-semibold">
-                      ${spent.toFixed(4)} / ${max.toFixed(2)}
+                      {formatUSD(b.spent_usd, 4)} / {formatUSD(b.max_spend_usd, 2)}
                     </span>
                   </div>
                   <div className="w-full h-2 bg-bg-surface-2 rounded-full overflow-hidden">

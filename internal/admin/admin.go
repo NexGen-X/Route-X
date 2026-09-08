@@ -171,9 +171,14 @@ func (h *Handlers) writeAuditTx(ctx context.Context, q repo.Querier, r *http.Req
 		}
 	}
 
-	ip := r.RemoteAddr
-	if host, _, ok := strings.Cut(ip, ":"); ok && host != "" {
-		ip = host
+	ip := ""
+	if resolved, ok := httpx.ClientIPFrom(ctx); ok {
+		ip = resolved.String()
+	} else {
+		ip = r.RemoteAddr
+		if host, _, ok := strings.Cut(ip, ":"); ok && host != "" {
+			ip = host
+		}
 	}
 
 	var metaMap map[string]any

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,6 +46,52 @@ type StoredDomainConfig struct {
 	Message     string    `json:"message"`
 }
 
+// storedXrayState adalah envelope terenkripsi untuk material autentikasi Xray.
+// Plaintext legacy hanya dibaca untuk migrasi; penulisan baru selalu memakai cipher.
+type storedXrayState struct {
+	Ciphertext string `json:"ciphertext"`
+}
+
+func (h *Handlers) decodeXrayState(raw []byte) (xray.State, error) {
+	var envelope storedXrayState
+	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.Ciphertext != "" {
+		if h.cipher == nil {
+			return xray.State{}, fmt.Errorf("cipher Xray tidak tersedia")
+		}
+		plain, err := h.cipher.Decrypt(envelope.Ciphertext, security.XrayStateAAD())
+		if err != nil {
+			return xray.State{}, fmt.Errorf("membuka state Xray terenkripsi: %w", err)
+		}
+		var state xray.State
+		if err := json.Unmarshal(plain, &state); err != nil {
+			return xray.State{}, fmt.Errorf("membaca state Xray terenkripsi: %w", err)
+		}
+		return state, nil
+	}
+
+	// Kompatibilitas migrasi: format lama adalah JSON plaintext langsung.
+	var legacy xray.State
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return xray.State{}, fmt.Errorf("membaca state Xray legacy: %w", err)
+	}
+	return legacy, nil
+}
+
+func (h *Handlers) encodeXrayState(state xray.State) ([]byte, error) {
+	if h.cipher == nil {
+		return nil, fmt.Errorf("cipher Xray tidak tersedia")
+	}
+	plain, err := json.Marshal(state)
+	if err != nil {
+		return nil, fmt.Errorf("menyandikan state Xray: %w", err)
+	}
+	ciphertext, err := h.cipher.Encrypt(plain, security.XrayStateAAD())
+	if err != nil {
+		return nil, fmt.Errorf("mengenkripsi state Xray: %w", err)
+	}
+	return json.Marshal(storedXrayState{Ciphertext: ciphertext})
+}
+
 // detectServerIP mendeteksi IP publik server atau fallback ke interface lokal non-loopback.
 func detectServerIP() string {
 	serverIPMu.Lock()
@@ -54,8 +101,21 @@ func detectServerIP() string {
 		return serverIPCache
 	}
 
-	// 1. Coba deteksi via ipify dengan batas waktu ketat 2 detik
-	client := &http.Client{Timeout: 2 * time.Second}
+	// 1. Coba deteksi via ipify dengan batas waktu ketat 2 detik.
+	// Transport memakai GuardedDialContext agar alamat hasil resolusi diperiksa
+	// terhadap kebijakan SSRF, dan pengalihan ditolak: respons ipify tidak lain
+	// adalah teks IP polos tanpa redirect.
+	dialer := &net.Dialer{Timeout: 2 * time.Second}
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+		Transport: &http.Transport{
+			DialContext:     security.GuardedDialContext(security.DefaultSSRFPolicy(), dialer),
+			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	resp, err := client.Get("https://api.ipify.org")
 	if err == nil && resp.StatusCode == http.StatusOK {
 		defer resp.Body.Close()
@@ -401,15 +461,14 @@ func (h *Handlers) resolveGatewayURL(r *http.Request) string {
 }
 
 // syncXrayConfig menyelaraskan konfigurasi Xray-core saat nama domain kustom disimpan.
-// Fungsi ini memastikan kredensial tersimpan di database, menulis berkas config.json,
+// Fungsi ini memastikan kredensial tersimpan di database, menulis berkas runtime,
 // serta mendaftarkan pool egress bawaan untuk routing lalu lintas.
 func (h *Handlers) syncXrayConfig(ctx context.Context, domain string, actorID string) (xray.State, xray.Links) {
 	state := xray.DefaultState(domain)
 
 	if h.settingsRepo != nil {
 		if s, err := h.settingsRepo.Get(ctx, SettingKeyXrayConfig); err == nil && len(s.Value) > 0 {
-			var existing xray.State
-			if err := json.Unmarshal(s.Value, &existing); err == nil && existing.UUID != "" {
+			if existing, decodeErr := h.decodeXrayState(s.Value); decodeErr == nil && existing.UUID != "" {
 				state = existing
 				state.Domain = domain
 				state.UpdatedAt = time.Now().UTC()
@@ -417,18 +476,21 @@ func (h *Handlers) syncXrayConfig(ctx context.Context, domain string, actorID st
 		}
 		state.EnsureDefaults(domain)
 
-		stateBytes, _ := json.Marshal(state)
-		_, _ = h.settingsRepo.Put(ctx, identity.SettingWrite{
-			Key:         SettingKeyXrayConfig,
-			Value:       stateBytes,
-			Description: "Konfigurasi runtime Xray-core dan stealth proxy tunnel",
-			UpdatedBy:   actorID,
-		})
+		if stateBytes, encodeErr := h.encodeXrayState(state); encodeErr == nil {
+			_, _ = h.settingsRepo.Put(ctx, identity.SettingWrite{
+				Key:         SettingKeyXrayConfig,
+				Value:       stateBytes,
+				Description: "Konfigurasi runtime Xray-core terenkripsi",
+				UpdatedBy:   actorID,
+			})
+		} else {
+			h.logger.ErrorContext(ctx, "gagal mengenkripsi state Xray", "error", encodeErr)
+		}
 	}
 
 	cfgBytes, err := xray.GenerateConfig(state)
 	if err == nil {
-		_, _ = xray.SyncToFileCandidates(cfgBytes, "/etc/xray/config.json", "./deploy/xray/config.json")
+		_, _ = xray.SyncToFileCandidates(cfgBytes, "/var/lib/route-x/xray/config.json", "./deploy/xray/config.runtime.json")
 	}
 
 	if h.egressRepo != nil {
@@ -470,8 +532,7 @@ func (h *Handlers) getXrayLinks(ctx context.Context, domain string) (xray.State,
 	state := xray.DefaultState(domain)
 	if h.settingsRepo != nil {
 		if s, err := h.settingsRepo.Get(ctx, SettingKeyXrayConfig); err == nil && len(s.Value) > 0 {
-			var existing xray.State
-			if err := json.Unmarshal(s.Value, &existing); err == nil && existing.UUID != "" {
+			if existing, decodeErr := h.decodeXrayState(s.Value); decodeErr == nil && existing.UUID != "" {
 				state = existing
 				state.Domain = domain
 			}

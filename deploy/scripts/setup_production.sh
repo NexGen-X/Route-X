@@ -50,13 +50,23 @@ else
   echo "      Berkas /etc/route-x/route-x.env sudah tersedia."
 fi
 
-# 4. Pasang biner biner ke /usr/local/bin
+# 4. Pastikan CA PostgreSQL tersedia untuk verify-full
+CA_TARGET=/etc/route-x/postgres-ca.crt
+if [ ! -f "$CA_TARGET" ]; then
+  echo "Error: CA PostgreSQL belum tersedia di $CA_TARGET."
+  echo "Salin CA dari provider database dengan izin 0644 sebelum memasang layanan."
+  exit 1
+fi
+chmod 0644 "$CA_TARGET"
+chown root:root "$CA_TARGET"
+
+# 5. Pasang biner ke /usr/local/bin
 echo "[4/5] Memasang biner ke /usr/local/bin/ai-gateway..."
 cp "$BIN_SOURCE" /usr/local/bin/ai-gateway
 chmod 755 /usr/local/bin/ai-gateway
 chown root:root /usr/local/bin/ai-gateway
 
-# 5. Pasang dan aktifkan unit systemd
+# 6. Pasang dan aktifkan unit systemd
 echo "[5/5] Mengonfigurasi unit systemd route-x.service..."
 cp deploy/systemd/route-x.service /etc/systemd/system/route-x.service
 systemctl daemon-reload

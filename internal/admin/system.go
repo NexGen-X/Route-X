@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -31,7 +32,9 @@ func (h *Handlers) systemRoutes(r chi.Router) {
 
 	// Domain & Automatic HTTPS Management
 	r.Route("/domain", func(dr chi.Router) {
-		dr.With(auth.RequirePermission(seed.PermSettingsRead)).Get("/", h.getDomainStatus)
+		// Respons domain memuat tautan provisioning Xray yang setara kredensial.
+		// Karena itu baca domain memerlukan settings:write, bukan akses Viewer.
+		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Get("/", h.getDomainStatus)
 		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Post("/", h.updateDomainConfig)
 		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Delete("/", h.deleteDomainConfig)
 	})
@@ -95,6 +98,10 @@ func (h *Handlers) getSetting(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) putSetting(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := chi.URLParam(r, "key")
+	if strings.HasPrefix(key, "cli:config:") || key == SettingKeyXrayConfig {
+		httpx.BadRequest(w, r, "reserved_setting", "Setelan rahasia wajib diubah melalui endpoint khusus")
+		return
+	}
 
 	var req struct {
 		Value       json.RawMessage `json:"value"`
@@ -339,10 +346,14 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "invalid_json", "Body permintaan tidak valid")
 		return
 	}
+	if req.Enabled {
+		httpx.BadRequest(w, r, "cache_policy_unsafe", "Response cache dinonaktifkan sampai fingerprint tenant, routing, dan policy diterapkan")
+		return
+	}
 	ttl := time.Duration(req.TTLSeconds) * time.Second
-	h.responseCache.SetSettings(req.Enabled, ttl)
+	h.responseCache.SetSettings(false, ttl)
 	_ = h.respond(w, r, http.StatusOK, CacheSettingsResponseDTO{
-		Enabled:    req.Enabled,
+		Enabled:    false,
 		TTLSeconds: req.TTLSeconds,
 		Message:    "Pengaturan response cache berhasil diperbarui",
 	})

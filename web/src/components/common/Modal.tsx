@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useId } from 'react';
 import FocusTrap from 'focus-trap-react';
 import { X } from 'lucide-react';
 
@@ -9,6 +9,7 @@ interface ModalProps {
   subtitle?: string;
   children: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
+  ariaDescribedBy?: string;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -18,7 +19,10 @@ export const Modal: React.FC<ModalProps> = ({
   subtitle,
   children,
   maxWidth = 'md',
+  ariaDescribedBy,
 }) => {
+  const generatedTitleId = useId();
+  const titleId = `modal-title-${generatedTitleId.replace(/:/g, '')}`;
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -49,7 +53,8 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby={titleId}
+        aria-describedby={ariaDescribedBy}
         onClick={onClose}
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
       >
@@ -59,7 +64,7 @@ export const Modal: React.FC<ModalProps> = ({
         >
           <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-bg-surface-2/40">
             <div>
-              <h2 id="modal-title" className="text-base font-semibold text-text-primary">{title}</h2>
+              <h2 id={titleId} className="text-base font-semibold text-text-primary">{title}</h2>
               {subtitle && <p className="text-xs text-text-secondary mt-0.5">{subtitle}</p>}
             </div>
             <button

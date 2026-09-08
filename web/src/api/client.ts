@@ -57,30 +57,19 @@ let cachedCsrfToken = '';
 export function setCsrfToken(token: string) {
   if (!token) {
     cachedCsrfToken = '';
-    try {
-      sessionStorage.removeItem('routex_csrf');
-    } catch {}
     return;
   }
   cachedCsrfToken = token;
-  try {
-    sessionStorage.setItem('routex_csrf', token);
-  } catch {}
 }
 
-// Ambil CSRF token dari cookie routex_csrf atau fallback cache / sessionStorage
+// Ambil CSRF token dari cookie double-submit atau cache memori sesi halaman.
 export function getCsrfToken(): string {
   const hostMatch = document.cookie.match(/(?:^|;\s*)__Host-routex_csrf=([^;]+)/);
   if (hostMatch) return decodeURIComponent(hostMatch[1]);
   
   const match = document.cookie.match(/(?:^|;\s*)routex_csrf=([^;]+)/);
   if (match) return decodeURIComponent(match[1]);
-  if (cachedCsrfToken) return cachedCsrfToken;
-  try {
-    return sessionStorage.getItem('routex_csrf') || '';
-  } catch {
-    return '';
-  }
+  return cachedCsrfToken;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {

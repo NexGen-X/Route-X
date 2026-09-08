@@ -323,6 +323,7 @@ func TestIntegrationWebhooksSiklusHidupDanPengiriman(t *testing.T) {
 		Cipher:     cipher,
 		MaxRetries: 3,
 		TimeoutMS:  5000,
+		SSRFPolicy: security.SSRFPolicy{AllowHTTP: true, AllowPrivate: true},
 	})
 	if err != nil {
 		t.Fatalf("Create webhook gagal: %v", err)

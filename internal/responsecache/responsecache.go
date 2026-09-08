@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"golang.org/x/sync/singleflight"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -91,40 +90,33 @@ func (e *Engine) TTL() time.Duration {
 }
 
 // ComputeKey menghitung signature SHA-256 unik dari permintaan chat completion.
+//
+// Kunci WAJIB memuat seluruh field yang mengubah respons upstream: tanpa itu,
+// dua request berbeda (beda TopP, Stop, ToolChoice, Seed, dst.) mendapat kunci
+// sama dan klien menerima respons milik request lain (BE-004).
 func (e *Engine) ComputeKey(req *providers.ChatRequest) string {
 	if req == nil {
 		return ""
 	}
 
-	h := sha256.New()
-	_, _ = h.Write([]byte(req.Model))
-	_, _ = h.Write([]byte{0})
-	if req.Temperature != nil {
-		_, _ = h.Write([]byte(strconv.FormatFloat(*req.Temperature, 'f', 4, 64)))
-	}
-	_, _ = h.Write([]byte{0})
-
-	if req.MaxTokens != nil {
-		_, _ = h.Write([]byte(strconv.Itoa(*req.MaxTokens)))
-	}
-	_, _ = h.Write([]byte{0})
-	_, _ = h.Write([]byte(strconv.FormatBool(req.Stream)))
-	_, _ = h.Write([]byte{0})
-
+	// encoding/json mempertahankan urutan field struct dan mengurutkan kunci map.
+	// Meng-hash representasi request penuh juga menghindari delimiter ambigu serta
+	// pembulatan float yang sebelumnya dapat menyatukan request berbeda.
+	contents := make([]string, len(req.Messages))
 	for i := range req.Messages {
-		m := &req.Messages[i]
-		_, _ = h.Write([]byte(m.Role))
-		_, _ = h.Write([]byte{0})
-		_, _ = h.Write([]byte(m.Text()))
-		_, _ = h.Write([]byte{0})
+		// providers.Message.Content sengaja bertag json:"-" karena adapter
+		// menangani bentuk wire sendiri, jadi nilainya harus ditambahkan eksplisit.
+		contents[i] = req.Messages[i].Content
 	}
-
-	if len(req.Tools) > 0 {
-		toolsBytes, _ := json.Marshal(req.Tools)
-		_, _ = h.Write(toolsBytes)
+	canonical, err := json.Marshal(struct {
+		Request         *providers.ChatRequest `json:"request"`
+		MessageContents []string               `json:"message_contents"`
+	}{Request: req, MessageContents: contents})
+	if err != nil {
+		return ""
 	}
-
-	return hex.EncodeToString(h.Sum(nil))
+	sum := sha256.Sum256(canonical)
+	return hex.EncodeToString(sum[:])
 }
 
 // Get mencari respons yang pernah disimpan berdasarkan kunci.
@@ -254,6 +246,11 @@ func (e *Engine) recordStat(ctx context.Context, metric string) {
 	_ = e.redis.Client().Incr(ctx, key).Err()
 }
 
+// GetOrFetch membaca dari cache, lalu menjalankan fetchFn lewat singleflight
+// bila miss. JALUR MATI TERDOKUMENTASI (BE-004): jalur produksi memakai pola
+// ComputeKey/Get/Set langsung di gateway/http.go; fungsi ini dipertahankan
+// sebagai API siap pakai dan belum disambungkan ke mana pun — penyambungannya
+// WAJIB menyertakan filter header sebelum entry apa pun disimpan.
 func (e *Engine) GetOrFetch(ctx context.Context, key string, fetchFn func() (*Entry, error)) (*Entry, bool, error) {
 	if !e.IsEnabled() || key == "" {
 		entry, err := fetchFn()

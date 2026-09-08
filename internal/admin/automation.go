@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -11,6 +12,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
 
@@ -108,14 +110,33 @@ func (h *Handlers) createWebhook(w http.ResponseWriter, r *http.Request) {
 		MaxRetries: maxRetries,
 		TimeoutMS:  timeoutMS,
 		CreatedBy:  actorID,
+		SSRFPolicy: h.ssrfPolicy(),
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "webhook")
 		return
 	}
 
-	h.writeAudit(ctx, r, "create", "webhook", wh.ID, map[string]any{"name": wh.Name, "url": wh.URL})
+	h.writeAudit(ctx, r, "create", "webhook", wh.ID, map[string]any{"name": wh.Name, "url": sanitizeAuditURL(wh.URL)})
 	_ = h.respond(w, r, http.StatusCreated, toWebhookDTO(wh))
+}
+
+func sanitizeAuditURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "[URL TIDAK SAH]"
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+func (h *Handlers) ssrfPolicy() security.SSRFPolicy {
+	if h.factory != nil {
+		return h.factory.SSRFPolicy()
+	}
+	return security.DefaultSSRFPolicy()
 }
 
 func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
@@ -142,6 +163,7 @@ func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
 		Enabled:    req.Enabled,
 		MaxRetries: req.MaxRetries,
 		TimeoutMS:  req.TimeoutMS,
+		SSRFPolicy: h.ssrfPolicy(),
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "webhook")

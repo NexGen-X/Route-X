@@ -137,6 +137,7 @@ type CreateWebhookParams struct {
 	MaxRetries int
 	TimeoutMS  int
 	CreatedBy  string
+	SSRFPolicy security.SSRFPolicy
 }
 
 // Create menyimpan webhook baru ke database dengan secret terenkripsi AES-256-GCM.
@@ -150,6 +151,9 @@ func (r *Repo) Create(ctx context.Context, p CreateWebhookParams) (*Webhook, err
 	}
 	if strings.TrimSpace(p.URL) == "" {
 		return nil, fmt.Errorf("%s: URL webhook tidak boleh kosong", op)
+	}
+	if err := security.ValidateBaseURL(p.URL, p.SSRFPolicy); err != nil {
+		return nil, fmt.Errorf("%s: URL webhook ditolak kebijakan keamanan: %w", op, err)
 	}
 	if len(p.Events) == 0 {
 		return nil, fmt.Errorf("%s: minimal satu event harus dilanggani", op)
@@ -511,6 +515,7 @@ type UpdateWebhookParams struct {
 	Enabled    *bool
 	MaxRetries *int
 	TimeoutMS  *int
+	SSRFPolicy security.SSRFPolicy
 }
 
 // Update memperbarui konfigurasi webhook.
@@ -527,6 +532,9 @@ func (r *Repo) Update(ctx context.Context, id string, p UpdateWebhookParams) (*W
 		setClauses = append(setClauses, fmt.Sprintf("name = $%d", len(args)))
 	}
 	if p.URL != nil {
+		if err := security.ValidateBaseURL(*p.URL, p.SSRFPolicy); err != nil {
+			return nil, fmt.Errorf("%s: URL webhook ditolak kebijakan keamanan: %w", op, err)
+		}
 		args = append(args, *p.URL)
 		setClauses = append(setClauses, fmt.Sprintf("url = $%d", len(args)))
 	}

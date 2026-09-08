@@ -243,6 +243,12 @@ func TestKeyIDStableAndDistinct(t *testing.T) {
 	}
 }
 
+func TestXrayStateAAD(t *testing.T) {
+	if got := XrayStateAAD(); got != "setting:system:xray:config" {
+		t.Fatalf("XrayStateAAD() = %q", got)
+	}
+}
+
 func TestCanDecrypt(t *testing.T) {
 	a, b := newTestCipher(t), newTestCipher(t)
 	aad := CredentialAAD("record")

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { formatUSD } from '../utils/money';
 import { api } from '../api/client';
 import type { RequestLog, RequestEvent, RequestPayload } from '../types';
 import { Card } from '../components/common/Card';
@@ -314,7 +315,7 @@ export const Requests: React.FC = () => {
                           {r.total_tokens != null ? r.total_tokens.toLocaleString() : '-'} tokens
                         </div>
                         <div className="text-[11px] text-text-muted font-mono">
-                          ${parseFloat(r.cost_usd || '0').toFixed(6)}
+                          {formatUSD(r.cost_usd, 6)}
                         </div>
                       </td>
 
@@ -386,7 +387,7 @@ export const Requests: React.FC = () => {
               <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
                 <span className="text-[10px] text-text-muted uppercase">Biaya USD</span>
                 <div className="mt-1 font-mono font-bold text-accent">
-                  ${parseFloat(selectedReq.cost_usd || '0').toFixed(6)}
+                  {formatUSD(selectedReq.cost_usd, 6)}
                 </div>
               </div>
             </div>

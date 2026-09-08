@@ -274,6 +274,44 @@ func TestSupervisorIsolasiPanicDanError(t *testing.T) {
 	}
 }
 
+func TestTriggerJobMengikutiLifecycleSupervisor(t *testing.T) {
+	type contextKey string
+	const requestIDKey contextKey = "request_id"
+
+	started := make(chan string, 1)
+	stopped := make(chan struct{})
+	sup := NewSupervisor(nil, slog.New(slog.DiscardHandler))
+	sup.Register(JobFunc{
+		JobName: "manual",
+		Fn: func(ctx context.Context) error {
+			started <- ctx.Value(requestIDKey).(string)
+			<-ctx.Done()
+			close(stopped)
+			return ctx.Err()
+		},
+	}, time.Hour, time.Hour)
+	sup.Start(context.Background())
+
+	triggerCtx := context.WithValue(context.Background(), requestIDKey, "req-123")
+	if err := sup.TriggerJob(triggerCtx, "manual"); err != nil {
+		t.Fatalf("TriggerJob gagal: %v", err)
+	}
+	if got := <-started; got != "req-123" {
+		t.Fatalf("request ID = %q, ingin req-123", got)
+	}
+	if err := sup.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop gagal: %v", err)
+	}
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("job manual tidak dibatalkan saat supervisor berhenti")
+	}
+	if err := sup.TriggerJob(triggerCtx, "manual"); !errors.Is(err, ErrSupervisorStopped) {
+		t.Fatalf("TriggerJob setelah Stop = %v, ingin ErrSupervisorStopped", err)
+	}
+}
+
 // --- Tiruan untuk Health Checker ---
 
 type dummyProvider struct {

@@ -276,6 +276,14 @@ func (r *Repo) AppendEvents(ctx context.Context, requestPK string, createdAt tim
 //
 // createdAt harus sama dengan milik baris requests-nya, agar payload mendarat di
 // partisi yang sama dan bisa dihapus bersama saat retensi berakhir.
+// SavePayload menyimpan payload request mentah.
+//
+// JALUR MATI TERDOKUMENTASI (DATA-004): fungsi ini tidak memiliki pemanggil
+// produksi — `GET /requests/{id}/payload` selalu 404 dan retention tetap
+// menghapus request_payloads. Keputusan: dipertahankan untuk pemakaian masa
+// depan, tetapi penyambungannya WAJIB lewat filter header tersentralisasi
+// (buang Authorization/cookie) sebelum apa pun ditulis. Bila disambung tanpa
+// filter itu, header sensitif masuk DB apa adanya.
 func (r *Repo) SavePayload(ctx context.Context, requestPK string, createdAt time.Time, p Payload) error {
 	_, err := r.q.Exec(ctx, `
 		insert into request_payloads (

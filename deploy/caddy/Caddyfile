@@ -3,7 +3,7 @@
 # ==============================================================================
 
 {
-    admin 0.0.0.0:2019
+    admin localhost:2019
     on_demand_tls {
         ask http://gateway:8080/api/internal/tls-check
     }
@@ -93,13 +93,5 @@ https:// {
 }
 
 http:// {
-    @isDomain header_regexp host Host ^([a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(:\d+)?$
-    redir @isDomain https://{host}{uri} permanent
-
-    reverse_proxy gateway:8080 {
-        flush_interval -1
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-Proto http
-    }
+	redir https://{host}{uri} permanent
 }

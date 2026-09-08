@@ -6,6 +6,7 @@ package admin
 import (
 	"encoding/json"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
@@ -1599,6 +1600,25 @@ func toSettingDTO(s identity.Setting) SettingDTO {
 	val := s.Value
 	if len(val) == 0 {
 		val = json.RawMessage("null")
+	} else if strings.HasPrefix(s.Key, "cli:config:") {
+		// DATA-001: konfigurasi integrasi CLI dapat memuat material API key.
+		// Ciphertext terenkripsi boleh lolos; field plaintext legacy (api_key,
+		// dipakai hanya saat migrasi oleh cliconfig) tidak pernah kembali ke
+		// klien mana pun, termasuk peran Viewer lewat GET /system/settings.
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(val, &obj); err == nil {
+			delete(obj, "api_key")
+		}
+		if len(obj) == 0 {
+			val = json.RawMessage("{}")
+		} else {
+			val, _ = json.Marshal(obj)
+		}
+	} else if s.Key == SettingKeyXrayConfig {
+		// SEC-002: state ini memuat material autentikasi tunnel. Bahkan
+		// ciphertext tidak berguna bagi klien settings:read dan tidak boleh
+		// membuka detail format penyimpanan internal.
+		val = json.RawMessage(`{"redacted":true}`)
 	}
 	return SettingDTO{
 		Key:         s.Key,

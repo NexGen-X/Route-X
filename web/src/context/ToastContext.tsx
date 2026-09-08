@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useId } from 'react';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, Trash2, HelpCircle } from 'lucide-react';
+import { Modal } from '../components/common/Modal';
 
 export type ToastType = 'success' | 'error' | 'warn' | 'info';
 
@@ -39,6 +40,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     options: ConfirmOptions;
     resolve: (val: boolean) => void;
   } | null>(null);
+  const confirmDescriptionId = useId();
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -159,13 +161,15 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         })}
       </div>
 
-      {/* Custom In-App Confirmation Modal */}
-      {confirmState && confirmState.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div
-            className="w-full max-w-md bg-[#121212] border border-[#262626] rounded-2xl shadow-2xl p-6 flex flex-col animate-scaleUp relative overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
+      {confirmState && (
+        <Modal
+          isOpen={confirmState.isOpen}
+          onClose={() => handleConfirmClose(false)}
+          title={confirmState.options.title}
+          maxWidth="md"
+          ariaDescribedBy={confirmDescriptionId}
+        >
+          <div>
             <div className="flex items-start gap-4 mb-4">
               <div
                 className={`p-3 rounded-xl flex-shrink-0 ${
@@ -181,10 +185,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="text-base font-bold text-white tracking-tight">
-                  {confirmState.options.title}
-                </h3>
-                <p className="text-xs text-[#8E8E93] mt-1.5 leading-relaxed">
+                <p id={confirmDescriptionId} className="text-xs text-[#8E8E93] mt-1.5 leading-relaxed">
                   {confirmState.options.message}
                 </p>
               </div>
@@ -211,7 +212,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </ToastContext.Provider>
   );

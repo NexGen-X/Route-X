@@ -790,23 +790,25 @@ func GenerateShareLinks(s State) Links {
 // setengah jadi oleh proses Xray.
 func WriteConfigFile(targetPath string, data []byte) error {
 	dir := filepath.Dir(targetPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("gagal membuat direktori konfigurasi Xray %s: %w", dir, err)
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		return fmt.Errorf("gagal membatasi izin direktori konfigurasi Xray %s: %w", dir, err)
 	}
 
 	tmpFile := targetPath + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	if err := os.WriteFile(tmpFile, data, 0600); err != nil {
 		return fmt.Errorf("gagal menulis berkas sementara Xray %s: %w", tmpFile, err)
 	}
-
-	_ = os.Chmod(tmpFile, 0666)
 
 	if err := os.Rename(tmpFile, targetPath); err != nil {
 		_ = os.Remove(tmpFile)
 		return fmt.Errorf("gagal memindahkan konfigurasi Xray ke %s: %w", targetPath, err)
 	}
-
-	_ = os.Chmod(targetPath, 0666)
+	if err := os.Chmod(targetPath, 0600); err != nil {
+		return fmt.Errorf("gagal membatasi izin konfigurasi Xray %s: %w", targetPath, err)
+	}
 	return nil
 }
 

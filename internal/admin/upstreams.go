@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -608,10 +609,9 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	trimmedBase := strings.TrimRight(p.BaseURL, "/")
 
 	if lowerKind == "google" || strings.Contains(trimmedBase, "googleapis.com") {
+		// API key hanya dikirim lewat header x-goog-api-key (di bawah), tidak
+		// ditempelkan ke query URL: URL masuk log aplikasi dan pesan error admin.
 		discoveryURL = "https://generativelanguage.googleapis.com/v1beta/models"
-		if apiKey != "" {
-			discoveryURL += "?key=" + url.QueryEscape(apiKey)
-		}
 	} else if lowerKind == "ollama" || strings.Contains(lowerName, "ollama") {
 		discoveryURL = trimmedBase + "/api/tags"
 	} else if strings.HasSuffix(trimmedBase, "/v1") {
@@ -641,21 +641,21 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	var rawIDs []string
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		h.logger.WarnContext(ctx, "panggilan discovery model gagal, mencoba katalog fallback terkurasi", "url", discoveryURL, "error", err)
+		h.logger.WarnContext(ctx, "panggilan discovery model gagal, mencoba katalog fallback terkurasi", "error", webhooks.SanitizeErrorMessage(err.Error()))
 		rawIDs = getCuratedProviderModels(lowerKind, lowerName)
 		if len(rawIDs) == 0 {
-			httpx.BadRequest(w, r, "upstream_unreachable", fmt.Sprintf("Gagal menghubungi upstream (%s): %v", discoveryURL, err))
+			httpx.BadRequest(w, r, "upstream_unreachable", "Gagal menghubungi endpoint discovery provider")
 			return
 		}
 	} else {
 		defer resp.Body.Close()
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			bodySnippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-			h.logger.WarnContext(ctx, "upstream mengembalikan status non-2xx saat discovery model, mencoba fallback", "status", resp.StatusCode, "snippet", string(bodySnippet))
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
+			h.logger.WarnContext(ctx, "upstream mengembalikan status non-2xx saat discovery model, mencoba fallback", "status", resp.StatusCode)
 			rawIDs = getCuratedProviderModels(lowerKind, lowerName)
 			if len(rawIDs) == 0 {
-				httpx.BadRequest(w, r, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d: %s", resp.StatusCode, string(bodySnippet)))
+				httpx.BadRequest(w, r, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d", resp.StatusCode))
 				return
 			}
 		} else {
@@ -1594,9 +1594,18 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Dial ke proksi (dan fallback langsung bila proxy tidak menghidangkan koneksi)
+	// diperiksa terhadap kebijakan SSRF — dulu transport ini tanpa DialContext
+	// berpenjaga sehingga probe tidak tervalidasi (BE-002).
+	ssrfPolicy := security.DefaultSSRFPolicy()
+	if h.factory != nil {
+		ssrfPolicy = h.factory.SSRFPolicy()
+	}
+	dialer := &net.Dialer{Timeout: 7 * time.Second}
 	transport := &http.Transport{
 		Proxy:             http.ProxyURL(parsedProxy),
-		TLSClientConfig:   &tls.Config{InsecureSkipVerify: false},
+		DialContext:       security.GuardedDialContext(ssrfPolicy, dialer),
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: false, MinVersion: tls.VersionTLS12},
 		DisableKeepAlives: true,
 	}
 	client := &http.Client{

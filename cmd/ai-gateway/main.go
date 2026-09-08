@@ -524,7 +524,7 @@ func buildGatewaySurface(
 
 	// --- REST API Admin Handlers (Fase 11) ---
 	settingsRepo := identity.NewSettings(db.Pool)
-	cliMgr := cliconfig.NewManager(settingsRepo, logger)
+	cliMgr := cliconfig.NewManager(settingsRepo, cipher, logger)
 
 	adminHandlers := admin.NewHandlers(admin.Config{
 		Pool:           db.Pool,

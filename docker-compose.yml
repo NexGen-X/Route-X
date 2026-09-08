@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: routex-gateway
     restart: unless-stopped
+    stop_grace_period: 35s
     ports:
       - "${PORT:-8080}:8080"
     environment:
@@ -23,6 +24,7 @@ services:
       - SHUTDOWN_GRACE=${SHUTDOWN_GRACE:-25s}
     volumes:
       - ./deploy/xray:/etc/xray
+      - xray_runtime:/var/lib/route-x/xray
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,6 +76,7 @@ services:
       - "8388:8388/udp"
     volumes:
       - ./deploy/xray:/etc/xray
+      - xray_runtime:/etc/xray/runtime:ro
     entrypoint: ["/bin/sh", "/etc/xray/entrypoint.sh"]
     networks:
       - routex_internal
@@ -106,6 +109,8 @@ volumes:
     name: routex_caddy_data
   caddy_config:
     name: routex_caddy_config
+  xray_runtime:
+    name: routex_xray_runtime
 
 networks:
   routex_internal:

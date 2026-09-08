@@ -194,4 +194,19 @@ func TestSyncToFileCandidates(t *testing.T) {
 	if string(got) != string(content) {
 		t.Errorf("isi berkas berbeda: dapat %s, ingin %s", string(got), string(content))
 	}
+
+	fileInfo, err := os.Stat(p1)
+	if err != nil {
+		t.Fatalf("membaca metadata berkas: %v", err)
+	}
+	if gotMode := fileInfo.Mode().Perm(); gotMode != 0600 {
+		t.Errorf("izin berkas = %04o, diharapkan 0600", gotMode)
+	}
+	dirInfo, err := os.Stat(filepath.Dir(p1))
+	if err != nil {
+		t.Fatalf("membaca metadata direktori: %v", err)
+	}
+	if gotMode := dirInfo.Mode().Perm(); gotMode != 0700 {
+		t.Errorf("izin direktori = %04o, diharapkan 0700", gotMode)
+	}
 }

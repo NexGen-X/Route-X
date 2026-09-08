@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { formatUSD } from '../utils/money';
 import { api } from '../api/client';
 import type { ObservabilitySummary, TimeSeriesPoint, Provider, SystemOverview, RequestLog } from '../types';
 import { Badge } from '../components/common/Badge';
@@ -44,6 +45,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
   const [metricType, setMetricType] = useState<'requests' | 'latency' | 'tokens'>('requests');
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async (showToast = false) => {
     if (showToast) setIsRefreshing(true);
@@ -51,11 +53,11 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
 
     try {
       const [sumRes, serRes, provRes, overRes, reqRes] = await Promise.all([
-        api.observability.summary(timeWindow).catch(() => null),
-        api.observability.series(metricType, timeWindow).catch(() => ({ points: [] })),
-        api.providers.list().catch(() => ({ items: [] })),
-        api.system.overview().catch(() => null),
-        api.requests.list({ limit: 6 }).catch(() => ({ items: [] })),
+        api.observability.summary(timeWindow),
+        api.observability.series(metricType, timeWindow),
+        api.providers.list(),
+        api.system.overview(),
+        api.requests.list({ limit: 6 }),
       ]);
 
       if (sumRes) setSummary(sumRes);
@@ -63,12 +65,14 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
       setProviders(provRes.items || []);
       if (overRes) setOverview(overRes);
       setRecentRequests(reqRes.items || []);
+      setLoadError(null);
 
       if (showToast) {
         toast.success('Metrik telemetri dashboard berhasil disegarkan');
       }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
       if (showToast) {
         toast.error('Gagal menyegarkan data: ' + (err instanceof Error ? err.message : String(err)));
       }
@@ -103,12 +107,6 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
       clearInterval(fastInterval);
     };
   }, [timeWindow, metricType]);
-
-  const formatUSD = (valStr?: string) => {
-    if (!valStr) return '$0.00';
-    const num = parseFloat(valStr);
-    return isNaN(num) ? '$0.00' : `$${num.toFixed(4)}`;
-  };
 
   const formatBytes = (bytes?: number) => {
     if (!bytes || bytes === 0) return '0 B';
@@ -159,10 +157,9 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
         <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 shadow-sm">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                GATEWAY OPERATIONAL
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border shadow-sm ${loadError ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+                {loadError ? 'STATUS GATEWAY TIDAK TERSEDIA' : 'GATEWAY OPERATIONAL'}
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono bg-[#1C1F26] border border-[#2B303C] text-text-secondary">
                 <Radio className="w-3 h-3 text-primary animate-pulse" />

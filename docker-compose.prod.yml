@@ -4,9 +4,19 @@ services:
     # Seluruh lalu lintas eksternal wajib melalui reverse proxy Caddy (port 80 & 443) demi penegakan TLS dan HSTS.
     ports: !reset []
     environment:
-      - APP_ENV=production
-      - DB_SSLMODE=require
-      - PUBLIC_URL=${PUBLIC_URL:?PUBLIC_URL wajib disetel untuk produksi}
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL PostgreSQL TLS eksternal wajib disetel untuk produksi}
+      PUBLIC_URL: ${PUBLIC_URL:?PUBLIC_URL wajib disetel untuk produksi}
+    volumes:
+      - ${POSTGRES_CA_FILE:?POSTGRES_CA_FILE wajib disetel untuk produksi}:/etc/route-x/postgres-ca.crt:ro
+    depends_on: !override
+      redis:
+        condition: service_healthy
+
+  # PostgreSQL terbundel hanya untuk development. Produksi memakai instance
+  # eksternal dengan TLS dan sertifikat yang dikelola operator.
+  postgres:
+    profiles: ["development"]
 
   caddy:
     image: caddy:2-alpine
@@ -20,7 +30,10 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
+      xray:
+        condition: service_started
     networks:
       - routex_internal
 

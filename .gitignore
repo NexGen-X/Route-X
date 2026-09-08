@@ -31,9 +31,15 @@ coverage.*
 
 # Scratch lokal
 /_artifacts/
+/scratch/
+/web/playwright-report/
+/web/test-results/
 
 # Prompt kerja untuk agen (bukan bagian produk)
 /faseprompt.md
 /remediasi-prompt.md
 /batch2-prompt.md
 /agy.md
+
+# SEC-002: kredensial Xray runtime tidak boleh ditrack; pakai template config.json lalu timpa via file runtime
+/deploy/xray/config.runtime.json

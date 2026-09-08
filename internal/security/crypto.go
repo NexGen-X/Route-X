@@ -204,3 +204,16 @@ func CredentialAAD(credentialID string) string {
 func WebhookAAD(webhookID string) string {
 	return "webhook:" + webhookID
 }
+
+// CLIToolAAD membentuk AAD standar untuk API key perkakas CLI yang disimpan di
+// tabel settings. Kunci AAD diikat ke ID tool agar ciphertext satu tool tidak
+// dapat dipindahkan ke tool lain (ciphertext splicing).
+func CLIToolAAD(toolID string) string {
+	return "cli_tool:" + toolID
+}
+
+// XrayStateAAD membentuk AAD tetap untuk state kredensial Xray yang disimpan
+// sebagai satu record settings. Ciphertext tidak boleh dipindah ke jenis setting lain.
+func XrayStateAAD() string {
+	return "setting:system:xray:config"
+}

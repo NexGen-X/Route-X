@@ -128,6 +128,11 @@ Hasil 2026-09-09: 24/24 lolos 13,4 detik. Rincian:
 2 setup auth (login admin + viewer tepat 1 kali tiap peran),
 4 aksi-tulis (buat API key UI, alokasikan budget UI, rule+limit API,
 Viewer 403), 3 alur inti, 14 semua-halaman + 1 fallback rute.
+Hasil 2026-09-09 (3 browser): 86 lolos 4,5 menit = 2 setup auth
++ 28 x 3 browser (4 aksi-tulis + 3 alur inti + 15 menyeluruh -
+14 halaman + 1 fallback rute - + 6 sisa-kritis providers/egress/
+users/filter/RL/kuota, termasuk tunggu TTL filter 7 dtk dan
+pricing 35 dtk).
 
 ## 8b. Jalan Playwright sisa-kritis (6 area tulis + 2 negatif)
 

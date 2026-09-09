@@ -1,8 +1,14 @@
 # Runbook uji beban + e2e Route-X (staging lokal)
 
-Hasil terakhir: 2026-09-09. k6 20 VU 5 menit: 17.880 request, 0 gagal,
+Hasil smoke 2026-09-09: 20 VU 5 menit, 17.880 request, 0 gagal,
 p95 6,16 ms (ambang 800 ms). Playwright 3 alur: lolos 3,1 detik.
-Rute: gateway -> echo OpenAI-compatible lokal (scripts/load/echo-upstream.py).
+Hasil BERAT 2026-09-09: 200 VU 8 menit (ramp 2 + tahan 5 + turun 1),
+441.894 request pada 920/detik, 1 gagal yang expected (abort SSE),
+p95 13,22 ms (ambang 2000 ms), 43.874 abort tanpa kebocoran.
+Chaos yang disuntik tengah jalan: echo2 fail 60 dtk (failover 200),
+Redis mati 30 dtk (chat 200 fail-open, login 401 benar, readyz down),
+echo2 slow 2-4 dtk (prompt unik 3 dtk, cache menutupi prompt lama).
+Rute: gateway -> 2 echo OpenAI-compatible lokal.
 
 ## 1. Siapkan database staging
 
@@ -79,9 +85,27 @@ butuhkan jatah longgar:
 
   k6 run -e BASE_URL=http://127.0.0.1:18080 -e API_KEY=<key> scripts/load/k6-smoke.js
 
-Skenario: 20 VU 5 menit campuran healthz + chat non-stream + chat SSE
-(separuh SSE pakai timeout 2 detik untuk mensimulasikan abort klien).
-Ambang: p95 < 800 ms, error < 1%.
+Skenario smoke: 20 VU 5 menit campuran healthz + chat non-stream +
+chat SSE (separuh SSE pakai timeout 2 detik untuk mensimulasikan
+abort klien). Ambang: p95 < 800 ms, error < 1%.
+
+## 7b. Jalan k6 BERAT + chaos (skrip k6-berat.js, echo-chaos.py)
+
+  python3 scripts/load/echo-chaos.py 19092   # provider kedua, mode flag
+  k6 run -e BASE_URL=... -e API_KEY=... scripts/load/k6-berat.js
+
+Skenario: ramp 0->200 VU 2 mnt, tahan 200 VU 5 mnt, turun 1 mnt.
+Ambang: p95 < 2000 ms, error < 5%. Key beban butuh RPM 60000.
+Daftarkan echo-chaos sebagai provider kedua prioritas 10 agar
+failover teruji. Suntik chaos tengah jalan lewat flag file:
+
+  echo fail > /tmp/echo-chaos     # 50% jawab 500, 60 detik
+  echo slow > /tmp/echo-chaos     # latency 2-4 detik, 60 detik
+  rm -f /tmp/echo-chaos           # pulih
+  service redis-server stop/start # uji fail-open 30 detik
+
+Ekspektasi saat chaos: failover tetap 200, Redis mati chat 200
++ login 401 + readyz redis down, prompt unik menembus cache.
 
 ## 8. Jalan Playwright (butuh user Viewer khusus e2e)
 

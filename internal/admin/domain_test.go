@@ -42,8 +42,17 @@ func TestDomainRegex(t *testing.T) {
 func TestCaddyTLSCheck_Localhost(t *testing.T) {
 	h := &Handlers{}
 
+	loopback := func(target string) *http.Request {
+		// httptest default RemoteAddr 192.0.2.1 (bukan loopback); guard
+		// CaddyTLSCheck hanya melayani peer loopback, jadi test memakai
+		// RemoteAddr loopback seperti Caddy same-host yang asli.
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.RemoteAddr = "127.0.0.1:1234"
+		return req
+	}
+
 	// Localhost harus selalu diizinkan
-	req := httptest.NewRequest(http.MethodGet, "/api/internal/tls-check?domain=localhost", nil)
+	req := loopback("/api/internal/tls-check?domain=localhost")
 	rr := httptest.NewRecorder()
 	h.CaddyTLSCheck(rr, req)
 
@@ -52,7 +61,7 @@ func TestCaddyTLSCheck_Localhost(t *testing.T) {
 	}
 
 	// 127.0.0.1 harus selalu diizinkan
-	req = httptest.NewRequest(http.MethodGet, "/api/internal/tls-check?domain=127.0.0.1", nil)
+	req = loopback("/api/internal/tls-check?domain=127.0.0.1")
 	rr = httptest.NewRecorder()
 	h.CaddyTLSCheck(rr, req)
 
@@ -61,7 +70,7 @@ func TestCaddyTLSCheck_Localhost(t *testing.T) {
 	}
 
 	// Domain kosong harus 400
-	req = httptest.NewRequest(http.MethodGet, "/api/internal/tls-check", nil)
+	req = loopback("/api/internal/tls-check")
 	rr = httptest.NewRecorder()
 	h.CaddyTLSCheck(rr, req)
 
@@ -70,12 +79,26 @@ func TestCaddyTLSCheck_Localhost(t *testing.T) {
 	}
 
 	// Domain yang tidak terdaftar harus 403
-	req = httptest.NewRequest(http.MethodGet, "/api/internal/tls-check?domain=random.unauthorized.com", nil)
+	req = loopback("/api/internal/tls-check?domain=random.unauthorized.com")
 	rr = httptest.NewRecorder()
 	h.CaddyTLSCheck(rr, req)
 
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("status domain liar = %d, diharapkan %d", rr.Code, http.StatusForbidden)
+	}
+}
+
+func TestCaddyTLSCheck_NonLoopbackDitolak(t *testing.T) {
+	// Peer non-loopback DITOLAK sebelum membaca parameter: endpoint ini bukan
+	// oracle enumerasi domain untuk jaringan luar.
+	h := &Handlers{}
+	req := httptest.NewRequest(http.MethodGet, "/api/internal/tls-check?domain=localhost", nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	rr := httptest.NewRecorder()
+	h.CaddyTLSCheck(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("status non-loopback = %d, diharapkan %d", rr.Code, http.StatusForbidden)
 	}
 }
 

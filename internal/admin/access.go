@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -247,6 +249,14 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// nilaiAtau mengambil isi pointer atau nilai bawaan bila nil.
+func nilaiAtau[T any](p *T, bawaan T) T {
+	if p == nil {
+		return bawaan
+	}
+	return *p
+}
+
 func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -281,7 +291,11 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 		req.RateLimitTPM = req.TPMLimit
 	}
 
-	var ips []netip.Prefix
+	// ips dimulai dari slice KOSONG non-nil: body [] berarti "buka dari mana
+	// saja", dan repo membacanya dari kenon-nilan (nil = biarkan, kosong
+	// non-nil = buka). var ips []netip.Prefix di sini akan mengubah [] menjadi
+	// nil dan niat membuka diam-diam menjadi "tidak berubah".
+	ips := []netip.Prefix{}
 	if req.IPAllowlist != nil {
 		for _, s := range req.IPAllowlist {
 			s = strings.TrimSpace(s)
@@ -299,6 +313,14 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// expires_at "": niat membuka (tanpa kedaluwarsa) BELUM didukung kontrak —
+	// repo sudah punya keys.Clear, tetapi pointer *string tidak bisa membedakan
+	// "tidak disebut" (nil) dari "kosongkan" (""). Daripada diam-diam
+	// mengabaikan ("biarkan"), tolak dengan pesan yang menunjuk jalan keluar.
+	if req.ExpiresAt != nil && *req.ExpiresAt == "" {
+		httpx.BadRequest(w, r, "expires_clear_unsupported", "pengosongan expires_at belum didukung lewat endpoint ini; hubungi operator database")
+		return
+	}
 	var exp *time.Time
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
@@ -306,9 +328,35 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 			httpx.BadRequest(w, r, "invalid_expires_at", fmt.Sprintf("format expires_at tidak sah (harus RFC3339): %v", err))
 			return
 		}
+		if t.Before(time.Now()) {
+			httpx.BadRequest(w, r, "expires_in_past", "expires_at tidak boleh di masa lalu")
+			return
+		}
 		exp = &t
 	}
 
+	// Batas <= 0 DITOLAK di sini dengan 400: DB menolaknya lewat constraint
+	// (hasilnya 500 yang membingungkan), dan tidak satu pun batas <= 0 yang
+	// bermakna. Tanpa-batas dinyatakan dengan NULL, dan kontrak pembuka NULL
+	// belum ada — lihat catatan di atas ExpiresAt.
+	for _, batas := range []struct {
+		nama  string
+		ada   bool
+		nilai int64
+	}{
+		{"rate_limit_rps", req.RateLimitRPS != nil, int64(nilaiAtau(req.RateLimitRPS, 0))},
+		{"rate_limit_rpm", req.RateLimitRPM != nil, int64(nilaiAtau(req.RateLimitRPM, 0))},
+		{"rate_limit_tpm", req.RateLimitTPM != nil, int64(nilaiAtau(req.RateLimitTPM, 0))},
+		{"daily_request_limit", req.DailyRequestLimit != nil, nilaiAtau(req.DailyRequestLimit, 0)},
+		{"monthly_request_limit", req.MonthlyRequestLimit != nil, nilaiAtau(req.MonthlyRequestLimit, 0)},
+		{"daily_token_limit", req.DailyTokenLimit != nil, nilaiAtau(req.DailyTokenLimit, 0)},
+		{"monthly_token_limit", req.MonthlyTokenLimit != nil, nilaiAtau(req.MonthlyTokenLimit, 0)},
+	} {
+		if batas.ada && batas.nilai <= 0 {
+			httpx.BadRequest(w, r, "invalid_limit", "batas "+batas.nama+" harus bilangan positif")
+			return
+		}
+	}
 	var params keys.UpdateParams
 	params.Name = req.Name
 	params.IPAllowlist = ips
@@ -471,7 +519,13 @@ func (h *Handlers) listUsers(w http.ResponseWriter, r *http.Request) {
 
 	usersDTO := make([]UserDTO, 0, len(userPage.Users))
 	for _, u := range userPage.Users {
-		roles, _ := h.rolesRepo.OfUser(ctx, u.ID)
+		// Error di sini berarti 500: menampilkan peran kosong seolah pengguna
+		// tak punya hak membuat operator salah menyimpulkan kewenangan.
+		roles, err := h.rolesRepo.OfUser(ctx, u.ID)
+		if err != nil {
+			mapRepoError(w, r, err, "peran pengguna")
+			return
+		}
 		roleNames := make([]string, 0, len(roles))
 		for _, r := range roles {
 			roleNames = append(roleNames, r.Name)
@@ -495,8 +549,18 @@ func (h *Handlers) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userRoles, _ := h.rolesRepo.OfUser(ctx, id)
-	perms, _ := h.rolesRepo.EffectivePermissions(ctx, id)
+	// Sama seperti listUsers: error berarti 500, bukan peran/izin kosong yang
+	// menyesatkan operator tentang kewenangan pengguna.
+	userRoles, err := h.rolesRepo.OfUser(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "peran pengguna")
+		return
+	}
+	perms, err := h.rolesRepo.EffectivePermissions(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "izin pengguna")
+		return
+	}
 
 	roleNames := make([]string, 0, len(userRoles))
 	roleDTOs := make([]RoleDTO, 0, len(userRoles))
@@ -536,6 +600,16 @@ func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
 		actorID = p.User.ID
 	}
 
+	// Sama seperti grantUserRole: tidak boleh mencetak peran di atas pelaku
+	// lewat pembuatan pengguna. Dicek SEBELUM InTx supaya tidak ada user
+	// yatim bila salah satu peran ditolak.
+	for _, roleID := range req.RoleIDs {
+		if msg, ditolak := h.peranDiAtasPelaku(ctx, actorID, roleID); ditolak {
+			httpx.BadRequest(w, r, "rank_forbidden", msg)
+			return
+		}
+	}
+
 	var createdUser identity.User
 	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txUsers := identity.NewUsers(q)
@@ -566,7 +640,11 @@ func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "user", createdUser.ID, map[string]any{"email": createdUser.Email})
-	userRoles, _ := h.rolesRepo.OfUser(ctx, createdUser.ID)
+	userRoles, err := h.rolesRepo.OfUser(ctx, createdUser.ID)
+	if err != nil {
+		mapRepoError(w, r, err, "peran pengguna")
+		return
+	}
 	roleNames := make([]string, 0, len(userRoles))
 	for _, role := range userRoles {
 		roleNames = append(roleNames, role.Name)
@@ -598,6 +676,20 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Status != "" {
+		// Menonaktifkan/mengunci pemegang TERAKHIR Super Admin DITOLAK: sama
+		// saja dengan menghapusnya — manajemen identitas terkunci — tetapi
+		// lewat jalur yang tidak dijaga Revoke maupun deleteUser.
+		// Hanya status non-aktif yang dijaga; mengaktifkan kembali selalu boleh.
+		if identity.UserStatus(req.Status) != identity.UserStatusActive {
+			if super, err := h.rolesRepo.GetByName(ctx, seed.RoleSuperAdmin); err == nil {
+				if memegang, err := h.memegangPeran(ctx, id, super.ID); err == nil && memegang {
+					if n, err := h.rolesRepo.CountHolders(ctx, super.ID); err == nil && n <= 1 {
+						httpx.BadRequest(w, r, "last_superadmin_forbidden", "pengguna ini pemegang terakhir peran Super Admin; beri peran itu ke admin lain dulu sebelum menonaktifkannya")
+						return
+					}
+				}
+			}
+		}
 		_, err := h.usersRepo.SetStatus(ctx, id, identity.UserStatus(req.Status))
 		if err != nil {
 			mapRepoError(w, r, err, "status pengguna")
@@ -605,9 +697,30 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	u, _ := h.usersRepo.GetByID(ctx, id)
+	// Mengubah status akun SENDIRI menjadi non-aktif DITOLAK: salah klik atau
+	// sesi curian langsung mengunci admin keluar tanpa jejak khusus — sama
+	// bahayanya dengan self-delete yang sudah ditolak deleteUser.
+	if req.Status != "" && identity.UserStatus(req.Status) != identity.UserStatusActive {
+		if p, ok := auth.PrincipalFrom(ctx); ok && p != nil && p.User.ID == id {
+			httpx.BadRequest(w, r, "self_disable_forbidden", "akun sendiri tidak bisa dinonaktifkan; minta admin lain yang melakukannya")
+			return
+		}
+	}
+
+	// Gagal baca-ulang setelah update berarti 500, BUKAN 200 dengan user
+	// kosong: menjawab zero-value membuat operator mengira pengguna terhapus
+	// datanya, dan peran/izin kosong disangka "tak punya hak".
+	u, err := h.usersRepo.GetByID(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "pengguna")
+		return
+	}
 	h.writeAudit(ctx, r, "update", "user", id, nil)
-	userRoles, _ := h.rolesRepo.OfUser(ctx, id)
+	userRoles, err := h.rolesRepo.OfUser(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "peran pengguna")
+		return
+	}
 	roleNames := make([]string, 0, len(userRoles))
 	for _, role := range userRoles {
 		roleNames = append(roleNames, role.Name)
@@ -619,6 +732,25 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
+	// Menghapus akun sendiri DITOLAK: lewat sesi curian ini berarti lockout
+	// seketika, dan lewat klik yang salah berarti kehilangan akses admin tanpa
+	// ada yang bisa mengembalikannya kecuali akses DB langsung.
+	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil && p.User.ID == id {
+		httpx.BadRequest(w, r, "self_delete_forbidden", "akun sendiri tidak bisa dihapus; minta admin lain yang menghapusnya")
+		return
+	}
+	// Menghapus satu-satunya pemegang Super Admin DITOLAK: tanpa ini,
+	// deleteUser menjadi jalan memutar pencabutan terakhir yang sudah dijaga
+	// Revoke — hapus usernya langsung, perannya ikut hilang via cascade.
+	if super, err := h.rolesRepo.GetByName(ctx, seed.RoleSuperAdmin); err == nil {
+		if memegang, err := h.memegangPeran(ctx, id, super.ID); err == nil && memegang {
+			if n, err := h.rolesRepo.CountHolders(ctx, super.ID); err == nil && n <= 1 {
+				httpx.BadRequest(w, r, "last_superadmin_forbidden", "pengguna ini pemegang terakhir peran Super Admin; beri peran itu ke admin lain dulu")
+				return
+			}
+		}
+	}
+
 	if err := h.usersRepo.Delete(ctx, id); err != nil {
 		mapRepoError(w, r, err, "pengguna")
 		return
@@ -626,6 +758,45 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 
 	h.writeAudit(ctx, r, "delete", "user", id, nil)
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
+}
+
+// memegangPeran melaporkan apakah pengguna memegang satu peran. Error berarti
+// "tidak diketahui" — pemanggil memperlakukannya sebagai bukan pemegang supaya
+// permintaan tidak gagal karena pemeriksaan tambahan, sementara penegakan
+// sesungguhnya tetap di lapisan repo.
+func (h *Handlers) memegangPeran(ctx context.Context, userID, roleID string) (bool, error) {
+	peran, err := h.rolesRepo.OfUser(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	for _, p := range peran {
+		if p.ID == roleID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// peranDiAtasPelaku melaporkan apakah peran target LEBIH berkuasa (rank lebih
+// kecil) dari peran terkuat pelaku. Rank kecil = berkuasa (Super Admin = 0).
+// Kegagalan membaca rank di kedua sisi berarti tolak — aman secara default:
+// pemberian peran tidak boleh lolos karena pemeriksaannya yang rusak.
+func (h *Handlers) peranDiAtasPelaku(ctx context.Context, actorID, roleID string) (string, bool) {
+	target, err := h.rolesRepo.Get(ctx, roleID)
+	if err != nil {
+		return "peran target tidak ditemukan", true
+	}
+	if actorID == "" {
+		return "identitas pemberi tidak diketahui", true
+	}
+	pelaku, err := h.rolesRepo.TopRank(ctx, actorID)
+	if err != nil {
+		return "peringkat pemberi tidak bisa dipastikan", true
+	}
+	if target.Role.Rank < pelaku {
+		return "peran ini lebih berkuasa dari peran Anda; mintalah kepada pemegang peran yang setara atau lebih tinggi", true
+	}
+	return "", false
 }
 
 func (h *Handlers) grantUserRole(w http.ResponseWriter, r *http.Request) {
@@ -645,11 +816,19 @@ func (h *Handlers) grantUserRole(w http.ResponseWriter, r *http.Request) {
 		actorID = p.User.ID
 	}
 
+	// Pelaku tidak boleh memberi peran yang LEBIH berkuasa dari dirinya sendiri:
+	// tanpa ini, siapa pun yang memegang roles:write (mis. peran kustom yang
+	// diberi izin itu) bisa mencetak Super Admin untuk dirinya sendiri.
+	// TopRank gagal (mis. pelaku tanpa peran) berarti tolak — aman secara default.
+	if msg, ditolak := h.peranDiAtasPelaku(ctx, actorID, req.RoleID); ditolak {
+		httpx.BadRequest(w, r, "rank_forbidden", msg)
+		return
+	}
+
 	if err := h.rolesRepo.Grant(ctx, id, req.RoleID, actorID); err != nil {
 		mapRepoError(w, r, err, "pemberian peran")
 		return
 	}
-
 	h.writeAudit(ctx, r, "grant_role", "user", id, map[string]any{"role_id": req.RoleID})
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "granted"})
 }
@@ -660,6 +839,13 @@ func (h *Handlers) revokeUserRole(w http.ResponseWriter, r *http.Request) {
 	roleID := chi.URLParam(r, "role_id")
 
 	if err := h.rolesRepo.Revoke(ctx, id, roleID); err != nil {
+		// Penolakan pemegang-terakhir punya pesannya sendiri: pesan generik
+		// mapRepoError ("sudah ada atau melanggar keunikan") menyesatkan di
+		// sini karena tidak ada yang "sudah ada".
+		if errors.Is(err, repo.ErrConflict) {
+			httpx.BadRequest(w, r, "last_holder_forbidden", "peran ini hanya dimiliki satu pengguna; beri peran itu ke pengguna lain dulu sebelum mencabutnya")
+			return
+		}
 		mapRepoError(w, r, err, "pencabutan peran")
 		return
 	}
@@ -685,10 +871,20 @@ func (h *Handlers) forceResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cabut seluruh sesi aktif
-	_, _ = h.sessionsRepo.RevokeAllOfUser(ctx, id)
+	// Pencabutan sesi adalah bagian INVARIANSI reset paksa: password sudah
+	// diganti tetapi sesi bajakan tetap hidup bila ini gagal diam-diam.
+	// Kegagalannya dilaporkan eksplisit (500 + jumlah sesi yang BERHASIL
+	// dicabut) supaya operator tahu sesi mana yang masih hidup.
+	revoked, err := h.sessionsRepo.RevokeAllOfUser(ctx, id)
+	if err != nil {
+		h.logger.ErrorContext(ctx, "reset password berhasil tetapi pencabutan sesi gagal",
+			"sesi_tercabut", revoked, "user_id", id, "error", err)
+		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.ErrTypeAPI,
+			"revoke_failed", "password sudah diganti tetapi pencabutan sesi gagal; cabut manual lewat revoke-sessions")
+		return
+	}
 
-	h.writeAudit(ctx, r, "force_reset_password", "user", id, nil)
+	h.writeAudit(ctx, r, "force_reset_password", "user", id, map[string]any{"sesi_tercabut": revoked})
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "password_reset"})
 }
 
@@ -788,7 +984,28 @@ func (h *Handlers) deleteRole(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	if err := h.rolesRepo.Delete(ctx, id); err != nil {
+	// Peran sistem tidak bisa dihapus lewat API: tolak eksplisit dengan 400
+	// yang jelas, bukan mengandalkan penolakan repo di bawah.
+	if detail, err := h.rolesRepo.Get(ctx, id); err == nil && detail.Role.IsSystem {
+		httpx.BadRequest(w, r, "system_role_forbidden", "peran sistem tidak boleh dihapus")
+		return
+	}
+
+	// Peran kustom dihapus BERSAMA pemegangnya dalam satu transaksi: Revoke
+	// menolak pencabutan pemegang TERAKHIR (guard anti-lockout), dan baris
+	// user_roles memakai ON DELETE RESTRICT — tanpa pelepasan ini, peran
+	// kustom yang pernah dipakai satu orang pun tidak bisa dihapus lewat API
+	// (revoke -> 409, delete -> FK error). Guard Revoke tetap berlaku untuk
+	// peran yang TETAP ADA; yang dihapus di sini kehilangan maknanya sehingga
+	// penolakan pemegang-terakhir tidak lagi relevan.
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRoles := identity.NewRoles(q)
+		if _, err := q.Exec(ctx, `delete from user_roles where role_id = $1`, id); err != nil {
+			return err
+		}
+		return txRoles.Delete(ctx, id)
+	})
+	if err != nil {
 		mapRepoError(w, r, err, "peran")
 		return
 	}

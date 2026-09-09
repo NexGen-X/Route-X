@@ -54,6 +54,9 @@ func (b *Budget) Blocks() bool { return b.Enabled && b.ActionOnExceed == ActionB
 
 // ShouldAlertThreshold melaporkan apakah ambang peringatan sudah terlewati dan belum diberitahukan.
 // Hanya berlaku sebelum batas limit terlampaui (b.SpentUSD < b.LimitUSD) dan AlertThresholdPct > 0.
+// Ambang nol berarti peringatan ambang MATI (ShouldAlertThreshold selalu false).
+// CreateBudget menerjemahkan 0 menjadi 80 sebagai default operator; baca dan tulis
+// sengaja asimetris: API tidak bisa menyimpan 0 eksplisit lewat Create.
 func (b *Budget) ShouldAlertThreshold() bool {
 	if !b.Enabled || b.AlertedAt != nil || b.LimitUSD <= 0 || b.AlertThresholdPct <= 0 {
 		return false
@@ -61,9 +64,24 @@ func (b *Budget) ShouldAlertThreshold() bool {
 	if b.Exceeded() {
 		return false
 	}
-	// Perbandingan dilakukan dengan bilangan bulat: spent * 100 >= limit * pct. Membagi
-	// lebih dulu akan memaksa floating point pada nilai uang, tepat yang dihindari tipe USD.
-	return int64(b.SpentUSD)*100 >= int64(b.LimitUSD)*int64(b.AlertThresholdPct)
+	// Perbandingan dilakukan tanpa floating point, tetapi spent * 100 bisa
+	// meluap int64 pada spent ~9.2e16 unit (92 juta USD — mustahil hari ini,
+	// tetapi aritmetika uang tidak boleh punya batas runyam). Bentuk yang
+	// setara dan kebal luap: spent/100 >= limit*pct/100/100 tidak presisi,
+	// jadi gunakan cross-multiply yang menjaga presisi: bandingkan
+	// spent*100 >= limit*pct dengan deteksi luap — bila meluap, spent sudah
+	// pasti di atas ambang (karena MaxInt64/100 ~ 9.2e16, pct maks 100).
+	spent, limit, pct := int64(b.SpentUSD), int64(b.LimitUSD), int64(b.AlertThresholdPct)
+	if spent > (1<<63-1)/100 {
+		return true
+	}
+	if limit > (1<<63-1)/pct {
+		// limit*pct meluap: limit sudah astronomis, spent di bawah meluap
+		// berarti tidak mungkin melampaui ambang yang juga meluap — tetap
+		// hitung dengan pembagian aman.
+		return spent >= limit/100*pct
+	}
+	return spent*100 >= limit*pct
 }
 
 // ShouldAlertExceeded melaporkan apakah batas anggaran sudah terlampaui dan belum diberitahukan.
@@ -260,6 +278,12 @@ func (r *Repo) AddSpend(ctx context.Context, targets []Target, amount upstream.U
 	const op = "menambah pemakaian anggaran"
 	if amount == 0 {
 		return 0, nil
+	}
+	// Jumlah negatif DITOLAK: lolos ke UPDATE berarti spent_usd BERKURANG —
+	// pemakaian anggaran yang bisa dikurangi lewat pemanggilan repo.
+	// Satu-satunya jalan mengurangi yang sah adalah reset periode oleh worker.
+	if amount < 0 {
+		return 0, fmt.Errorf("%s: %w: jumlah negatif %s tidak diizinkan", op, repo.ErrConstraint, amount.String())
 	}
 
 	scopes, ids := scopeArrays(targets)

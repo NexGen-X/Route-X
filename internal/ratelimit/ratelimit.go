@@ -83,6 +83,11 @@ type Engine struct {
 	global batas
 	// pernahTerbaca menandai apakah salinan yang ada berasal dari pembacaan yang berhasil.
 	pernahTerbaca bool
+	// pemuatan menyatukan pemuatan ulang yang bersamaan menjadi satu query,
+	// seperti di internal/billing dan internal/router: tanpa ini, salinan yang
+	// kedaluwarsa di bawah beban menghasilkan satu query ActiveRateLimits per
+	// permintaan dalam jendela pemuatan.
+	pemuatan sync.Mutex
 }
 
 // batas adalah batas gabungan satu entitas, dalam bentuk yang dipakai mesin penegakan.
@@ -236,6 +241,16 @@ func (e *Engine) muat(ctx context.Context) {
 
 	e.mu.RLock()
 	segar := !e.dimuat.IsZero() && e.now().Sub(e.dimuat) < e.ttl
+	e.mu.RUnlock()
+	if segar {
+		return
+	}
+
+	e.pemuatan.Lock()
+	defer e.pemuatan.Unlock()
+
+	e.mu.RLock()
+	segar = !e.dimuat.IsZero() && e.now().Sub(e.dimuat) < e.ttl
 	e.mu.RUnlock()
 	if segar {
 		return

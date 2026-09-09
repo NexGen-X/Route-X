@@ -852,3 +852,24 @@ func TestDecisionFromPrefersEarliestReset(t *testing.T) {
 		t.Errorf("keputusan = %+v, mau lolos dengan sisa 0", d)
 	}
 }
+
+// TestAllowFailsClosedWhenRedisDown memastikan RATE_LIMIT_FAIL_CLOSED=true
+// membalik keputusan saat Redis mati: request DITOLAK 429 dengan Degraded,
+// bukan diloloskan. Pemadaman Redis tidak boleh mematikan semua pembatasan
+// tanpa ada yang tahu.
+func TestAllowFailsClosedWhenRedisDown(t *testing.T) {
+	env := newLimiterEnv(t, WithFailClosed(true))
+	env.mr.Close()
+
+	d := env.limiter.Allow(context.Background(), testKeyID, Limits{RPS: 1}, testIP)
+	if d.Allowed {
+		t.Fatal("request diloloskan padahal Redis mati dalam mode fail-closed")
+	}
+	if !d.Degraded {
+		t.Error("keputusan tidak ditandai Degraded")
+	}
+	if got := counterValue(t, env.metrics.Registry(), "routex_rate_limit_failopen_total",
+		map[string]string{"op": "enforce"}); got != 1 {
+		t.Errorf("metrik gagal-tertutup = %v, mau 1", got)
+	}
+}

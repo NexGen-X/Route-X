@@ -35,7 +35,44 @@ var (
 	serverIPCache     string
 	serverIPCacheTime time.Time
 	serverIPMu        sync.Mutex
+	// tlsCheckLimiter membatasi panggilan CaddyTLSCheck: Caddy memanggilnya
+	// sekali per TLS handshake domain baru, jadi 60/menit longgar untuk
+	// operasional normal tetapi menahan scraper lokal yang lepas kendali.
+	// Ember lokal (bukan Redis): endpoint ini justru dipakai sebelum
+	// infrastruktur lain terbukti sehat.
+	tlsCheckLimiter = newDetikEmber(60, time.Minute)
 )
+
+// detikEmber adalah pembatas laju jendela-tetap per proses: sederhana karena
+// hanya dipakai satu endpoint internal. Mutex melindungi hitungan; jendela
+// dihitung dari jam dinding, bukan timer, supaya tidak ada goroutine yang
+// berjalan selamanya.
+type detikEmber struct {
+	mu         sync.Mutex
+	batas      int
+	jendela    time.Duration
+	terpakai   int
+	awalJendel time.Time
+}
+
+func newDetikEmber(batas int, jendela time.Duration) *detikEmber {
+	return &detikEmber{batas: batas, jendela: jendela}
+}
+
+func (e *detikEmber) izinkan() bool {
+	now := time.Now()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if now.Sub(e.awalJendel) >= e.jendela {
+		e.awalJendel = now
+		e.terpakai = 0
+	}
+	if e.terpakai >= e.batas {
+		return false
+	}
+	e.terpakai++
+	return true
+}
 
 // StoredDomainConfig menyimpan format konfigurasi domain di database.
 type StoredDomainConfig struct {
@@ -411,7 +448,27 @@ func (h *Handlers) deleteDomainConfig(w http.ResponseWriter, r *http.Request) {
 
 // CaddyTLSCheck adalah endpoint internal tanpa autentikasi yang digunakan Caddy On-Demand TLS
 // untuk memverifikasi apakah suatu domain berhak diterbitkan sertifikat SSL-nya.
+//
+// Tanpa autentikasi karena Caddy memanggilnya sebagai HTTP biasa, jadi
+// pertahanannya berlapis di sini, bukan di sesi:
+//
+//  1. Hanya peer loopback yang dilayani — Caddy berjalan di host yang sama.
+//     Permintaan dari jaringan luar DITOLAK sebelum membaca parameter apa pun,
+//     supaya endpoint ini tidak menjadi oracle enumerasi domain publik.
+//  2. Rate-limit per menit per peer (ember lokal, tanpa Redis) supaya scraper
+//     lokal yang lepas kendali tidak membanjiri database.
+//  3. Jawaban selalu 200-untuk-diizinkan / 403-untuk-ditolak TANPA membedakan
+//     "domain tidak dikenal" dari "domain dikenal tapi tidak cocok": keduanya
+//     403 yang sama, supaya responsnya tidak bisa dipakai menebak konfigurasi.
 func (h *Handlers) CaddyTLSCheck(w http.ResponseWriter, r *http.Request) {
+	if ip, ok := httpx.PeerIPFrom(r); !ok || !ip.IsLoopback() {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if !tlsCheckLimiter.izinkan() {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return
+	}
 	domain := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("domain")))
 	if domain == "" {
 		http.Error(w, "missing domain parameter", http.StatusBadRequest)

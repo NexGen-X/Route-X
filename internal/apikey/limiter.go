@@ -400,6 +400,13 @@ type Limiter struct {
 	// failOpen mencatat berapa kali batas tidak bisa diperiksa karena Redis.
 	failOpen *prometheus.CounterVec
 
+	// failClosed mengubah perilaku saat Redis tidak bisa dihubungi: true = tolak
+	// 429 dengan Degraded, false (default) = loloskan + catat. Fail-open menjaga
+	// login tetap bisa saat Redis mati, tapi berarti pemadaman Redis mematikan
+	// semua pembatasan; instalasi yang menganggap pembatasan sebagai kontrol
+	// keamanan menyalakannya lewat RATE_LIMIT_FAIL_CLOSED=true.
+	failClosed bool
+
 	keyDefaults Limits
 	ipLimits    Limits
 
@@ -460,6 +467,13 @@ type ScopeResolver func(ctx context.Context, p *Principal, ip netip.Addr) []Scop
 // WithScopeResolver memasang penyusun cakupan pembatasan.
 func WithScopeResolver(f ScopeResolver) LimiterOption {
 	return func(lim *Limiter) { lim.resolver = f }
+}
+
+// WithFailClosed menyalakan mode gagal-tertutup: saat Redis tidak bisa
+// dihubungi, request DITOLAK 429 (dengan Degraded true) alih-alih diloloskan.
+// Dipasang dari RATE_LIMIT_FAIL_CLOSED di main.
+func WithFailClosed(aktif bool) LimiterOption {
+	return func(lim *Limiter) { lim.failClosed = aktif }
 }
 
 // TokenScopes menyusun cakupan batas token dari kolom di baris api_keys saja.
@@ -837,8 +851,20 @@ func (l *Limiter) run(ctx context.Context, mode int, cost int64, windows []windo
 
 // failOpenDecision meloloskan request saat batas tidak bisa diperiksa, sambil mencatatnya
 // di log dan metrik. Lihat penjelasan gagal-terbuka di dokumentasi Limiter.
+//
+// Bila failClosed aktif (RATE_LIMIT_FAIL_CLOSED=true), keputusannya dibalik:
+// request DITOLAK dengan Degraded true. Penolakan memakai pesan yang menjelaskan
+// sebabnya supaya klien bisa membedakannya dari kuota yang benar-benar habis —
+// retry dengan backoff adalah respons yang benar, bukan menghubungi operator.
 func (l *Limiter) failOpenDecision(ctx context.Context, op string, err error) Decision {
 	l.failOpen.WithLabelValues(op).Inc()
+	if l != nil && l.failClosed {
+		l.log(ctx).LogAttrs(ctx, slog.LevelError,
+			"batas laju tidak bisa diperiksa, request ditolak (fail-closed)",
+			slog.String("op", op),
+			slog.String("error", err.Error()))
+		return Decision{Allowed: false, Degraded: true, Scope: "infrastruktur", Limit: "redis-tidak-tersedia"}
+	}
 	l.log(ctx).LogAttrs(ctx, slog.LevelWarn,
 		"batas laju tidak bisa diperiksa, request diloloskan",
 		slog.String("op", op),

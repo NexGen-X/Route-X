@@ -78,6 +78,11 @@ type Enforcer struct {
 	global []*policy.Budget
 	// perCakupan diindeks per [scope][scope_id].
 	perCakupan map[string]map[string][]*policy.Budget
+	// pemuatan menyatukan pemuatan ulang yang bersamaan menjadi satu query:
+	// tanpa ini, salinan yang kedaluwarsa di bawah beban menghasilkan satu
+	// query ActiveBudgets per permintaan yang datang dalam jendela pemuatan —
+	// persis saat database paling tidak butuh tambahan beban.
+	pemuatan sync.Mutex
 }
 
 // Option adalah penyetel opsional penegak anggaran.
@@ -306,6 +311,19 @@ func (e *Enforcer) muat(ctx context.Context) {
 
 	e.mu.RLock()
 	segar := !e.dimuat.IsZero() && e.now().Sub(e.dimuat) < e.ttl
+	e.mu.RUnlock()
+	if segar {
+		return
+	}
+
+	// Hanya satu goroutine memuat ulang; yang lain menunggu lalu memakai
+	// hasilnya, dengan pemeriksaan ulang karena pemuat pertama mungkin sudah
+	// menyegarkan salinan selagi yang lain antre.
+	e.pemuatan.Lock()
+	defer e.pemuatan.Unlock()
+
+	e.mu.RLock()
+	segar = !e.dimuat.IsZero() && e.now().Sub(e.dimuat) < e.ttl
 	e.mu.RUnlock()
 	if segar {
 		return

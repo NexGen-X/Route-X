@@ -116,6 +116,9 @@ type Engine struct {
 	// dilaporkan menandai aturan bermasalah yang sudah dikeluhkan, supaya keluhannya tidak
 	// diulang setiap kali salinan dimuat ulang — yaitu setiap lima detik, selamanya.
 	dilaporkan map[string]struct{}
+	// pemuatan menyatukan pemuatan ulang yang bersamaan menjadi satu query,
+	// seperti di internal/billing dan internal/router.
+	pemuatan sync.Mutex
 }
 
 // Option menyetel Engine saat konstruksi.
@@ -392,6 +395,16 @@ func (e *Engine) muat(ctx context.Context) {
 
 	e.mu.RLock()
 	segar := !e.dimuat.IsZero() && e.now().Sub(e.dimuat) < e.ttl
+	e.mu.RUnlock()
+	if segar {
+		return
+	}
+
+	e.pemuatan.Lock()
+	defer e.pemuatan.Unlock()
+
+	e.mu.RLock()
+	segar = !e.dimuat.IsZero() && e.now().Sub(e.dimuat) < e.ttl
 	e.mu.RUnlock()
 	if segar {
 		return

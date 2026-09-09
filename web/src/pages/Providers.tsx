@@ -40,6 +40,8 @@ import {
   type KnownProviderPreset,
 } from '../components/providers/ProviderIcons';
 import { useToast } from '../context/ToastContext';
+import { QueryError } from '../components/common/QueryError';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface ModelTestResult {
   ok: boolean;
@@ -55,7 +57,7 @@ export const Providers: React.FC = () => {
   const queryClient = useQueryClient();
 
   // Data Utama (TanStack Query)
-  const { data: provsData = [] } = useQuery({
+  const { data: provsData = [], isLoading: isProvidersLoading, isError: isProvidersError, error: providersError, refetch: refetchProviders } = useQuery({
     queryKey: ['providers'],
     queryFn: async () => {
       const res = await api.providers.list();
@@ -64,10 +66,10 @@ export const Providers: React.FC = () => {
   });
   const providers: Provider[] = provsData;
 
-  const { data: poolsData = [] } = useQuery({
+  const { data: poolsData = [], isError: isPoolsError, error: poolsError } = useQuery({
     queryKey: ['egressPools'],
     queryFn: async () => {
-      const res = await api.egress.list().catch(() => ({ items: [] as EgressPool[] }));
+      const res = await api.egress.list();
       return res.items || [];
     },
   });
@@ -78,6 +80,7 @@ export const Providers: React.FC = () => {
   // Data Child untuk Selected Provider
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [models, setModels] = useState<ProviderModel[]>([]);
+  const [providerDetailsError, setProviderDetailsError] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState('');
 
   // Status Aksi & Pengujian
@@ -190,15 +193,18 @@ export const Providers: React.FC = () => {
   // Load Detail Child untuk Provider Terpilih (Credentials & Models)
   // ---------------------------------------------------------------------------
   const loadProviderDetails = async (providerId: string) => {
+    setProviderDetailsError(null);
     try {
       const [credsRes, modsRes] = await Promise.all([
-        api.credentials.list(providerId).catch(() => ({ items: [] as Credential[] })),
-        api.providers.models(providerId).catch(() => ({ items: [] as ProviderModel[] })),
+        api.credentials.list(providerId),
+        api.providers.models(providerId),
       ]);
       setCredentials(credsRes.items || []);
       setModels(modsRes.items || []);
-    } catch {
-      // Abaikan error background child
+    } catch (err) {
+      setCredentials([]);
+      setModels([]);
+      setProviderDetailsError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -528,8 +534,8 @@ export const Providers: React.FC = () => {
         try {
           const syncRes = await api.providers.syncModels(created.id);
           pulledCount = syncRes.count;
-        } catch {
-          // Abaikan jika penarikan awal gagal
+        } catch (err) {
+          toast.warn('Provider dibuat, tetapi sinkronisasi model awal gagal: ' + (err instanceof Error ? err.message : String(err)));
         }
       }
 
@@ -588,6 +594,16 @@ export const Providers: React.FC = () => {
     const term = modelSearch.toLowerCase();
     return models.filter((m) => m.upstream_model_name.toLowerCase().includes(term));
   }, [models, modelSearch]);
+
+  const copyWithFeedback = async (text: string, successMessage: string, onSuccess?: () => void) => {
+    try {
+      await copyTextToClipboard(text);
+      onSuccess?.();
+      toast.success(successMessage);
+    } catch (err) {
+      toast.error('Gagal menyalin ke clipboard: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
 
   const healthyCount = useMemo(
     () => providers.filter((p) => p.last_health_status === 'healthy').length,
@@ -722,7 +738,16 @@ export const Providers: React.FC = () => {
       {/* ------------------------------------------------------------------- */}
       {/* 3. DAFTAR KARTU PROVIDER (RINGKAS & BERSIH)                         */}
       {/* ------------------------------------------------------------------- */}
-      {providers.length > 0 ? (
+      {isProvidersError ? (
+        <QueryError
+          message={providersError instanceof Error ? providersError.message : 'Daftar provider tidak tersedia.'}
+          onRetry={() => void refetchProviders()}
+        />
+      ) : isProvidersLoading ? (
+        <Card className="p-10 text-center text-xs text-text-muted">
+          <span role="status" aria-live="polite">Memuat daftar provider...</span>
+        </Card>
+      ) : providers.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {providers.map((p) => {
             const isHealthy = p.last_health_status === 'healthy';
@@ -819,10 +844,7 @@ export const Providers: React.FC = () => {
                     <span className="truncate pr-2">{p.base_url}</span>
                     <button
                       type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(p.base_url);
-                        toast.success('Base URL disalin ke clipboard');
-                      }}
+                      onClick={() => void copyWithFeedback(p.base_url, 'Base URL disalin ke clipboard')}
                       title="Salin Base URL"
                       className="text-text-muted hover:text-white flex-shrink-0"
                     >
@@ -933,10 +955,7 @@ export const Providers: React.FC = () => {
               </span>
               <button
                 type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(selectedProvider.base_url);
-                  toast.success('Base URL disalin');
-                }}
+                onClick={() => void copyWithFeedback(selectedProvider.base_url, 'Base URL disalin')}
                 className="text-text-muted hover:text-white"
                 title="Salin Base URL"
               >
@@ -977,6 +996,17 @@ export const Providers: React.FC = () => {
       >
         {selectedProvider && (
           <div className="space-y-4 sm:space-y-6">
+            {providerDetailsError && (
+              <QueryError
+                message={providerDetailsError}
+                onRetry={() => void loadProviderDetails(selectedProvider.id)}
+              />
+            )}
+            {isPoolsError && (
+              <div role="alert" className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg p-3">
+                Daftar egress gagal dimuat: {poolsError instanceof Error ? poolsError.message : 'galat tidak diketahui'}
+              </div>
+            )}
             {/* Navigasi Tab di Dalam Drawer */}
             <div className="grid grid-cols-3 gap-1 p-1 bg-bg-surface-2/80 rounded-xl border border-border">
               <button
@@ -1130,12 +1160,14 @@ export const Providers: React.FC = () => {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                navigator.clipboard.writeText(model.upstream_model_name);
-                                setCopiedModelId(model.id);
-                                toast.success(`Model ID "${model.upstream_model_name}" disalin`);
-                                setTimeout(() => setCopiedModelId(null), 2000);
-                              }}
+                              onClick={() => void copyWithFeedback(
+                                model.upstream_model_name,
+                                `Model ID "${model.upstream_model_name}" disalin`,
+                                () => {
+                                  setCopiedModelId(model.id);
+                                  setTimeout(() => setCopiedModelId(null), 2000);
+                                }
+                              )}
                               className="w-full justify-center sm:w-auto text-xs"
                               icon={
                                 copiedModelId === model.id ? (
@@ -1377,12 +1409,14 @@ export const Providers: React.FC = () => {
                             <span>{cred.masked_hint || 'sk-****'}</span>
                             <button
                               type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(cred.masked_hint || '');
-                                setCopiedTokenId(cred.id);
-                                toast.success('Masked key disalin');
-                                setTimeout(() => setCopiedTokenId(null), 2000);
-                              }}
+                              onClick={() => void copyWithFeedback(
+                                cred.masked_hint || '',
+                                'Masked key disalin',
+                                () => {
+                                  setCopiedTokenId(cred.id);
+                                  setTimeout(() => setCopiedTokenId(null), 2000);
+                                }
+                              )}
                               className="text-text-muted hover:text-white"
                               title="Salin Masked Key"
                             >

@@ -20,6 +20,8 @@ import { Modal } from '../components/common/Modal';
 import { Select } from '../components/common/Select';
 import type { CLITool, CLIDetectedResponse, Model, RoutingRule } from '../types';
 import { useToast } from '../context/ToastContext';
+import { copyTextToClipboard } from '../utils/clipboard';
+import { QueryError } from '../components/common/QueryError';
 
 export const CLIIntegrations: React.FC = () => {
   const { toast } = useToast();
@@ -28,6 +30,7 @@ export const CLIIntegrations: React.FC = () => {
   const [rules, setRules] = useState<RoutingRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [onlyInstalled, setOnlyInstalled] = useState(false);
@@ -71,8 +74,8 @@ export const CLIIntegrations: React.FC = () => {
       setRefreshing(true);
       const [cliRes, modelsRes, rulesRes] = await Promise.all([
         api.cli.detected(),
-        api.models.list().catch(() => ({ items: [] })),
-        api.routing.list().catch(() => ({ items: [] })),
+        api.models.list(),
+        api.routing.list(),
       ]);
 
       setData(cliRes);
@@ -92,8 +95,9 @@ export const CLIIntegrations: React.FC = () => {
         };
       });
       setToolConfigs(initialConfigs);
+      setLoadError(null);
     } catch (err) {
-      console.error('Gagal memuat data integrasi CLI:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -180,10 +184,15 @@ export const CLIIntegrations: React.FC = () => {
     }
   };
 
-  const handleCopy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
+  const handleCopy = async (text: string, key: string) => {
+    try {
+      await copyTextToClipboard(text);
+      setCopiedKey(key);
+      toast.success('Teks disalin ke clipboard.');
+      setTimeout(() => setCopiedKey(null), 2000);
+    } catch (err) {
+      toast.error('Gagal menyalin: ' + (err instanceof Error ? err.message : String(err)));
+    }
   };
 
   const handleOpenExportModal = async () => {
@@ -222,6 +231,10 @@ export const CLIIntegrations: React.FC = () => {
         <p className="text-sm font-mono">Memindai perkakas AI CLI di sistem host...</p>
       </div>
     );
+  }
+
+  if (loadError && !data) {
+    return <QueryError message={loadError} onRetry={() => void loadData()} />;
   }
 
   return (

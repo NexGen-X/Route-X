@@ -46,6 +46,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
 
   const loadData = async (showToast = false) => {
     if (showToast) setIsRefreshing(true);
@@ -86,15 +87,14 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
   const refreshOverview = async () => {
     try {
       const [overRes, reqRes] = await Promise.all([
-        api.system.overview().catch(() => null),
-        api.requests.list({ limit: 6 }).catch(() => ({ items: [] })),
+        api.system.overview(),
+        api.requests.list({ limit: 6 }),
       ]);
-      if (overRes) setOverview(overRes);
-      if (reqRes.items && reqRes.items.length > 0) {
-        setRecentRequests(reqRes.items);
-      }
+      setOverview(overRes);
+      setRecentRequests(reqRes.items || []);
+      setPollError(null);
     } catch (err) {
-      // Background poll silently
+      setPollError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -147,6 +147,12 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
 
   return (
     <div className="space-y-6 pb-12 animate-fade-in">
+      {pollError && (
+        <div role="status" aria-live="polite" className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg p-3">
+          Pembaruan live gagal: {pollError}. Data terakhir tetap ditampilkan.
+        </div>
+      )}
+
       {/* ==================================================================== */}
       {/* 1. HERO OPERATIONAL STATUS & ACTION BAR                             */}
       {/* ==================================================================== */}
@@ -157,7 +163,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
         <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border shadow-sm ${loadError ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
+              <span role="status" aria-live="polite" className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border shadow-sm ${loadError ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400'}`} />
                 {loadError ? 'STATUS GATEWAY TIDAK TERSEDIA' : 'GATEWAY OPERATIONAL'}
               </span>

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
+import { copyTextToClipboard } from '../../utils/clipboard';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -190,11 +191,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       subtitle: 'Salin endpoint /v1 untuk di-paste ke SDK atau konfigurasi tool',
       category: 'Aksi Cepat',
       icon: Copy,
-      action: () => {
+      action: async () => {
         const gwURL = `${window.location.protocol}//${window.location.host}/v1`;
-        navigator.clipboard.writeText(gwURL);
-        toast.success(`Base URL API berhasil disalin ke clipboard: ${gwURL}`);
-        onClose();
+        try {
+          await copyTextToClipboard(gwURL);
+          toast.success(`Base URL API berhasil disalin ke clipboard: ${gwURL}`);
+          onClose();
+        } catch (err) {
+          toast.error('Gagal menyalin Base URL: ' + (err instanceof Error ? err.message : String(err)));
+        }
       },
     },
     {

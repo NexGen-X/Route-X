@@ -1,13 +1,23 @@
 const DECIMAL_RE = /^(-?)(\d+)(?:\.(\d+))?$/;
+const MAX_FRACTION_DIGITS = 20;
 
-export function formatUSD(value?: string, fractionDigits = 4): string {
-  const match = (value || '0').trim().match(DECIMAL_RE);
-  if (!match) return '$0.' + '0'.repeat(fractionDigits);
+export function formatUSD(value?: string | number | null, fractionDigits = 4): string {
+  const digits = Number.isInteger(fractionDigits)
+    ? Math.min(MAX_FRACTION_DIGITS, Math.max(0, fractionDigits))
+    : 4;
+  const normalized = typeof value === 'number'
+    ? (Number.isFinite(value) ? String(value) : '')
+    : String(value ?? '0').trim();
+  const match = normalized.match(DECIMAL_RE);
+  if (!match) return digits === 0 ? '$0' : '$0.' + '0'.repeat(digits);
 
   const [, sign, rawWhole, rawFraction = ''] = match;
   const whole = rawWhole.replace(/^0+(?=\d)/, '');
-  const fraction = (rawFraction + '0'.repeat(fractionDigits)).slice(0, fractionDigits);
-  return `$${sign}${whole}.${fraction}`;
+  const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  if (digits === 0) return `$${sign}${groupedWhole}`;
+
+  const fraction = (rawFraction + '0'.repeat(digits)).slice(0, digits);
+  return `$${sign}${groupedWhole}.${fraction}`;
 }
 
 export function percentageOfDecimal(spent: string, limit: string): number {

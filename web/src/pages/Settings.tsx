@@ -21,6 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 export const Settings: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -150,14 +151,19 @@ export const Settings: React.FC = () => {
     }
   };
 
-  const handleCopyLink = (key: string, text?: string) => {
+  const handleCopyLink = async (key: string, text?: string) => {
     if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopiedLinkKey(key);
-    setTimeout(() => setCopiedLinkKey(null), 2500);
+    try {
+      await copyTextToClipboard(text);
+      setCopiedLinkKey(key);
+      toast.success('Tautan disalin ke clipboard.');
+      setTimeout(() => setCopiedLinkKey(null), 2500);
+    } catch (err) {
+      toast.error('Gagal menyalin tautan: ' + (err instanceof Error ? err.message : String(err)));
+    }
   };
 
-  const serverIP = domainConfig?.server_ip || '54.179.116.100';
+  const serverIP = domainConfig?.server_ip || null;
 
   return (
     <div className="space-y-8">
@@ -190,6 +196,8 @@ export const Settings: React.FC = () => {
         {/* Feedback Alert */}
         {domainFeedback && (
           <div
+            role={domainFeedback.type === 'error' ? 'alert' : 'status'}
+            aria-live="polite"
             className={`mt-4 p-3.5 rounded-lg text-xs flex items-start gap-2.5 border ${
               domainFeedback.type === 'success'
                 ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
@@ -226,7 +234,7 @@ export const Settings: React.FC = () => {
             </div>
             <div className="bg-bg-surface-1 p-2.5 rounded-lg border border-border">
               <span className="text-text-muted block text-[10px] uppercase font-bold">Nilai Target (IP Publik Server)</span>
-              <span className="font-mono text-accent font-semibold">{serverIP}</span>
+              <span className="font-mono text-accent font-semibold">{serverIP || 'Belum tersedia'}</span>
             </div>
           </div>
         </div>
@@ -235,9 +243,11 @@ export const Settings: React.FC = () => {
         <form onSubmit={handleSaveDomain} className="mt-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2 space-y-1.5">
-              <label className="text-xs font-semibold text-white">Nama Domain FQDN</label>
+              <label htmlFor="custom-domain" className="text-xs font-semibold text-white">Nama Domain FQDN</label>
               <div className="relative">
                 <input
+                  id="custom-domain"
+                  name="domain"
                   type="text"
                   placeholder="ai.domainanda.com"
                   value={inputDomain}
@@ -316,7 +326,7 @@ export const Settings: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                        {domainConfig.xray_protocols?.length || 12} Protokol Siap Pakai
+                        {domainConfig.xray_protocols?.length ?? 0} Protokol Siap Pakai
                       </span>
                     </div>
                   </div>
@@ -348,152 +358,7 @@ export const Settings: React.FC = () => {
 
                   {/* Daftar Kartu Protokol */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {(domainConfig.xray_protocols || [
-                      {
-                        id: 'vless-grpc',
-                        name: 'VLESS over gRPC',
-                        protocol: 'vless',
-                        transport: 'grpc',
-                        security: 'tls',
-                        port: 443,
-                        path_or_sni: 'routex-grpc',
-                        share_link: domainConfig.xray_vless_grpc || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Latensi ultra-rendah dengan multiplexing HTTP/2 gRPC resmi.',
-                      },
-                      {
-                        id: 'vless-ws',
-                        name: 'VLESS over WebSocket',
-                        protocol: 'vless',
-                        transport: 'ws',
-                        security: 'tls',
-                        port: 443,
-                        path_or_sni: '/routex-xray-ws',
-                        share_link: domainConfig.xray_vless_ws || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Kompatibilitas universal untuk melewati firewall dan CDN reverse proxy.',
-                      },
-                      {
-                        id: 'vless-xhttp',
-                        name: 'VLESS over SplitHTTP (XHTTP)',
-                        protocol: 'vless',
-                        transport: 'splithttp',
-                        security: 'tls',
-                        port: 443,
-                        path_or_sni: '/routex-xhttp',
-                        share_link: domainConfig.xray_vless_xhttp || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Transport tercanggih anti pemutusan sambungan CDN buffer.',
-                      },
-                      {
-                        id: 'vless-reality',
-                        name: 'VLESS Reality (XTLS-Vision)',
-                        protocol: 'vless',
-                        transport: 'tcp',
-                        security: 'reality',
-                        port: 8443,
-                        path_or_sni: 'www.apple.com',
-                        share_link: domainConfig.xray_vless_reality || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Teknologi kamuflase TLS tanpa domain dengan meminjam sertifikat Apple.',
-                      },
-                      {
-                        id: 'trojan-grpc',
-                        name: 'Trojan over gRPC',
-                        protocol: 'trojan',
-                        transport: 'grpc',
-                        security: 'tls',
-                        port: 443,
-                        path_or_sni: 'routex-trojan-grpc',
-                        share_link: domainConfig.xray_trojan_grpc || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Autentikasi sandi murni dengan transport multiplexing gRPC.',
-                      },
-                      {
-                        id: 'trojan-ws',
-                        name: 'Trojan over WebSocket',
-                        protocol: 'trojan',
-                        transport: 'ws',
-                        security: 'tls',
-                        port: 443,
-                        path_or_sni: '/routex-trojan-ws',
-                        share_link: domainConfig.xray_trojan_ws || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Penyamaran HTTPS WebSocket di balik terminasi TLS Caddy.',
-                      },
-                      {
-                        id: 'vmess-grpc',
-                        name: 'VMess over gRPC',
-                        protocol: 'vmess',
-                        transport: 'grpc',
-                        security: 'tls',
-                        port: 443,
-                        path_or_sni: 'routex-vmess-grpc',
-                        share_link: domainConfig.xray_vmess_grpc || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Format VMess Base64 terenkripsi dengan transport gRPC.',
-                      },
-                      {
-                        id: 'vmess-ws',
-                        name: 'VMess over WebSocket',
-                        protocol: 'vmess',
-                        transport: 'ws',
-                        security: 'tls',
-                        port: 443,
-                        path_or_sni: '/routex-vmess-ws',
-                        share_link: domainConfig.xray_vmess_ws || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Format tautan VMess Base64 terstandarisasi untuk semua v2ray client.',
-                      },
-                      {
-                        id: 'ss-ws',
-                        name: 'Shadowsocks WebSocket',
-                        protocol: 'shadowsocks',
-                        transport: 'ws',
-                        security: 'tls',
-                        port: 443,
-                        path_or_sni: '/routex-ss-ws',
-                        share_link: domainConfig.xray_shadowsocks_ws || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Shadowsocks AES-128-GCM dimultipleks dalam WebSocket Port 443.',
-                      },
-                      {
-                        id: 'ss-standalone',
-                        name: 'Shadowsocks 2022 Standalone',
-                        protocol: 'shadowsocks',
-                        transport: 'tcp',
-                        security: 'none',
-                        port: 8388,
-                        path_or_sni: '-',
-                        share_link: domainConfig.xray_shadowsocks || '',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Port langsung 8388 berkecepatan tinggi untuk router OpenWrt / IoT.',
-                      },
-                      {
-                        id: 'socks-internal',
-                        name: '⚡ Xray SOCKS5 Bridge',
-                        protocol: 'socks5',
-                        transport: 'tcp',
-                        security: 'none',
-                        port: 10808,
-                        path_or_sni: 'xray:10808',
-                        share_link: 'socks5://xray:10808',
-                        egress_url: 'socks5://xray:10808',
-                        description: 'Bridge internal Docker untuk routing proxy upstream AI di Egress Pool.',
-                      },
-                      {
-                        id: 'http-internal',
-                        name: '⚡ Xray HTTP Bridge',
-                        protocol: 'socks5',
-                        transport: 'tcp',
-                        security: 'none',
-                        port: 10809,
-                        path_or_sni: 'xray:10809',
-                        share_link: 'http://xray:10809',
-                        egress_url: 'http://xray:10809',
-                        description: 'Bridge HTTP CONNECT internal untuk aplikasi klien standar.',
-                      },
-                    ])
+                    {(domainConfig.xray_protocols || [])
                       .filter((p) => {
                         if (protocolFilter === 'all') return true;
                         if (protocolFilter === 'vless') return p.protocol === 'vless';

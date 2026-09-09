@@ -8,11 +8,13 @@ import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { KeyRound, Plus, RotateCw, Trash2, Copy, Check } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { QueryError } from '../components/common/QueryError';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 export const APIKeys: React.FC = () => {
   const { toast, confirmModal } = useToast();
   const queryClient = useQueryClient();
-  const { data: keysData, isLoading } = useQuery({
+  const { data: keysData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['apiKeys'],
     queryFn: () => api.apiKeys.list(),
   });
@@ -87,10 +89,15 @@ export const APIKeys: React.FC = () => {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyToClipboard = async (text: string) => {
+    try {
+      await copyTextToClipboard(text);
+      setCopied(true);
+      toast.success('Kunci API disalin ke clipboard.');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error('Gagal menyalin kunci API: ' + (err instanceof Error ? err.message : String(err)));
+    }
   };
 
   return (
@@ -112,7 +119,12 @@ export const APIKeys: React.FC = () => {
         </Button>
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <QueryError
+          message={error instanceof Error ? error.message : 'Daftar kunci API tidak tersedia.'}
+          onRetry={() => void refetch()}
+        />
+      ) : isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[...Array(3)].map((_, i) => (
             <Card key={i} className="p-5 animate-pulse space-y-4">
@@ -256,8 +268,10 @@ export const APIKeys: React.FC = () => {
       >
         <form onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Kunci</label>
+            <label htmlFor="api-key-name" className="block font-semibold text-text-secondary uppercase mb-1">Nama Kunci</label>
             <input
+              id="api-key-name"
+              name="name"
               type="text"
               required
               placeholder="Backend Production Key"
@@ -268,8 +282,10 @@ export const APIKeys: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Batas RPM</label>
+              <label htmlFor="api-key-rpm" className="block font-semibold text-text-secondary uppercase mb-1">Batas RPM</label>
               <input
+                id="api-key-rpm"
+                name="rpm_limit"
                 type="number"
                 value={newKey.rpm_limit}
                 onChange={(e) => setNewKey({ ...newKey, rpm_limit: parseInt(e.target.value) || 0 })}
@@ -277,8 +293,10 @@ export const APIKeys: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Batas TPM</label>
+              <label htmlFor="api-key-tpm" className="block font-semibold text-text-secondary uppercase mb-1">Batas TPM</label>
               <input
+                id="api-key-tpm"
+                name="tpm_limit"
                 type="number"
                 value={newKey.tpm_limit}
                 onChange={(e) => setNewKey({ ...newKey, tpm_limit: parseInt(e.target.value) || 0 })}

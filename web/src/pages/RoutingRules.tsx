@@ -9,6 +9,7 @@ import { Select } from '../components/common/Select';
 import { GitFork, Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers } from 'lucide-react';
 import { RoutingPipelineVisualizer } from '../components/routing/RoutingPipelineVisualizer';
 import { useToast } from '../context/ToastContext';
+import { QueryError } from '../components/common/QueryError';
 
 export const RoutingRules: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -18,6 +19,8 @@ export const RoutingRules: React.FC = () => {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isBreakersLoading, setIsBreakersLoading] = useState(false);
+  const [rulesError, setRulesError] = useState<string | null>(null);
+  const [breakersError, setBreakersError] = useState<string | null>(null);
 
   // 3-Mode Form States (Fitur 3)
   const [mode, setMode] = useState<'model_only' | 'routing' | 'combo_routing'>('model_only');
@@ -42,14 +45,15 @@ export const RoutingRules: React.FC = () => {
     try {
       const [resRules, resModels, resProv] = await Promise.all([
         api.routing.list(),
-        api.models.list().catch(() => ({ items: [] })),
-        api.providers.list().catch(() => ({ items: [] })),
+        api.models.list(),
+        api.providers.list(),
       ]);
       setRules(resRules.items || []);
       setModels(resModels.items || []);
       setProviders(resProv.items || []);
+      setRulesError(null);
     } catch (err) {
-      console.error(err);
+      setRulesError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -71,8 +75,9 @@ export const RoutingRules: React.FC = () => {
     try {
       const res = await api.breakers.list();
       setBreakers(res.items || []);
+      setBreakersError(null);
     } catch (err) {
-      console.error(err);
+      setBreakersError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsBreakersLoading(false);
     }
@@ -206,6 +211,8 @@ export const RoutingRules: React.FC = () => {
         </Button>
       </div>
 
+      {rulesError && <QueryError message={rulesError} onRetry={() => void loadRules()} />}
+
       {/* Visual Pipeline Canvas */}
       <RoutingPipelineVisualizer />
 
@@ -292,6 +299,8 @@ export const RoutingRules: React.FC = () => {
             <RefreshCw className="w-3.5 h-3.5" />
           </Button>
         </div>
+
+        {breakersError && <QueryError message={breakersError} onRetry={() => void loadBreakers()} />}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {breakers.length === 0 ? (

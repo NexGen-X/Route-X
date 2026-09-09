@@ -92,7 +92,12 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {children}
 
       {/* Toast Notification Container */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0">
+      <div
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-atomic="false"
+        className="fixed top-4 right-4 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0"
+      >
         {toasts.map((t) => {
           const typeConfigs = {
             success: {
@@ -129,6 +134,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return (
             <div
               key={t.id}
+              role={t.type === 'error' || t.type === 'warn' ? 'alert' : 'status'}
+              aria-atomic="true"
               className={`pointer-events-auto rounded-xl border ${config.border} ${config.bg} p-4 shadow-2xl backdrop-blur-md flex flex-col relative overflow-hidden transition-all transform translate-y-0 opacity-100`}
             >
               <div className="flex items-start gap-3">
@@ -142,6 +149,8 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   <p className="text-xs text-[#D4D4D8] leading-relaxed break-words">{t.message}</p>
                 </div>
                 <button
+                  type="button"
+                  aria-label="Tutup notifikasi"
                   onClick={() => removeToast(t.id)}
                   className="p-1 rounded-md text-[#737373] hover:text-white hover:bg-[#1F1F1F] transition-colors -mr-1 -mt-1"
                 >

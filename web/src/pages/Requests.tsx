@@ -16,8 +16,12 @@ import {
   Terminal,
   Activity,
 } from 'lucide-react';
+import { useToast } from '../context/ToastContext';
+import { copyTextToClipboard } from '../utils/clipboard';
+import { QueryError } from '../components/common/QueryError';
 
 export const Requests: React.FC = () => {
+  const { toast } = useToast();
   const [requests, setRequests] = useState<RequestLog[]>([]);
   const [nextCursor, setNextCursor] = useState<string | undefined>();
   const [activeTab, setActiveTab] = useState<'all' | 'success' | 'errors'>('all');
@@ -29,6 +33,8 @@ export const Requests: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isLiveFeed, setIsLiveFeed] = useState(false);
   const [isCurlCopied, setIsCurlCopied] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [inspectorError, setInspectorError] = useState<string | null>(null);
 
   const loadRequests = async (cursor?: string) => {
     setIsLoading(true);
@@ -46,8 +52,9 @@ export const Requests: React.FC = () => {
         setRequests(res.items || []);
       }
       setNextCursor(res.next_cursor);
+      setLoadError(null);
     } catch (err) {
-      console.error('Failed to load requests:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
@@ -65,28 +72,36 @@ export const Requests: React.FC = () => {
     return () => clearInterval(interval);
   }, [isLiveFeed, activeTab, search]);
 
-  const copyAsCurl = () => {
+  const copyAsCurl = async () => {
     if (!selectedReq) return;
     const gwURL = `${window.location.protocol}//${window.location.host}/v1/chat/completions`;
     const promptText = reqPayload?.prompt_text || 'Hello Route-X';
     const curlCmd = `curl -X POST "${gwURL}" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer rx_live_personal_gateway" \\\n  -d '{\n    "model": "${selectedReq.model_id}",\n    "messages": [{"role": "user", "content": ${JSON.stringify(promptText)}}]\n  }'`;
-    navigator.clipboard.writeText(curlCmd);
-    setIsCurlCopied(true);
-    setTimeout(() => setIsCurlCopied(false), 2000);
+    try {
+      await copyTextToClipboard(curlCmd);
+      setIsCurlCopied(true);
+      toast.success('Perintah cURL disalin ke clipboard.');
+      setTimeout(() => setIsCurlCopied(false), 2000);
+    } catch (err) {
+      toast.error('Gagal menyalin perintah cURL: ' + (err instanceof Error ? err.message : String(err)));
+    }
   };
 
   const handleInspect = async (req: RequestLog) => {
     setSelectedReq(req);
     setIsInspectorOpen(true);
+    setInspectorError(null);
     try {
       const [eventsRes, payloadRes] = await Promise.all([
-        api.requests.events(req.request_id).catch(() => ({ events: [] })),
-        api.requests.payload(req.request_id).catch(() => null),
+        api.requests.events(req.request_id),
+        api.requests.payload(req.request_id),
       ]);
       setReqEvents(eventsRes.events || []);
       setReqPayload(payloadRes);
     } catch (err) {
-      console.error(err);
+      setReqEvents([]);
+      setReqPayload(null);
+      setInspectorError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -130,6 +145,8 @@ export const Requests: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {loadError && <QueryError message={loadError} onRetry={() => void loadRequests()} />}
 
       <Card>
         {/* Filter Chips & Search Bar */}
@@ -368,6 +385,9 @@ export const Requests: React.FC = () => {
           maxWidth="2xl"
         >
           <div className="space-y-6">
+            {inspectorError && (
+              <QueryError message={inspectorError} onRetry={() => void handleInspect(selectedReq)} />
+            )}
             {/* Quick Metrics Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">

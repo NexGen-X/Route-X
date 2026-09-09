@@ -19,11 +19,13 @@ import {
   Zap,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { QueryError } from '../components/common/QueryError';
 
 export const Egress: React.FC = () => {
   const { toast, confirmModal } = useToast();
   const [pools, setPools] = useState<EgressPool[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingPool, setEditingPool] = useState<EgressPool | null>(null);
 
@@ -56,8 +58,9 @@ export const Egress: React.FC = () => {
     try {
       const res = await api.egress.list();
       setPools(res.items || []);
+      setLoadError(null);
     } catch (err) {
-      console.error('Gagal memuat egress pool:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
@@ -183,9 +186,13 @@ export const Egress: React.FC = () => {
         </div>
       </div>
 
+      {loadError && <QueryError message={loadError} onRetry={() => void loadPools()} />}
+
       {/* Notifikasi Hasil Test Probe */}
       {probeFeedback && (
         <div
+          role={probeFeedback.result.status === 'healthy' ? 'status' : 'alert'}
+          aria-live="polite"
           className={`p-4 rounded-xl text-xs border flex items-start gap-3 transition-all ${
             probeFeedback.result.status === 'healthy'
               ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'

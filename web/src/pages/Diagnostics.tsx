@@ -6,6 +6,7 @@ import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { RefreshCw, Clock, Play, Zap, Trash2, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { QueryError } from '../components/common/QueryError';
 
 export const Diagnostics: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -17,23 +18,23 @@ export const Diagnostics: React.FC = () => {
   const [updatingCache, setUpdatingCache] = useState(false);
   const [ttlMinutes, setTtlMinutes] = useState<number>(60);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
       const [resDiag, resJobs, resCache] = await Promise.all([
         api.system.diagnostics(),
-        api.system.jobs().catch(() => ({ items: [] })),
-        api.system.cacheStats().catch(() => null),
+        api.system.jobs(),
+        api.system.cacheStats(),
       ]);
       setDiag(resDiag);
       setJobs(resJobs.items || []);
-      if (resCache) {
-        setCache(resCache);
-        setTtlMinutes(Math.max(1, Math.floor(resCache.ttl_seconds / 60)));
-      }
+      setCache(resCache);
+      setTtlMinutes(Math.max(1, Math.floor(resCache.ttl_seconds / 60)));
+      setLoadError(null);
     } catch (err) {
-      console.error(err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
@@ -130,6 +131,8 @@ export const Diagnostics: React.FC = () => {
         </Button>
       </div>
 
+      {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
+
       {/* Response Cache Card (Fitur 1) */}
       <div className="bg-surface-light/40 border border-border/80 rounded-xl p-5 shadow-lg backdrop-blur-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
@@ -207,6 +210,8 @@ export const Diagnostics: React.FC = () => {
               <span className="text-[11px] text-text-muted block">Durasi Simpan (TTL)</span>
               <div className="flex items-center gap-1.5 mt-1">
                 <input
+                  id="cache-ttl-minutes"
+                  aria-label="Durasi simpan cache dalam menit"
                   type="number"
                   min="1"
                   max="10080"

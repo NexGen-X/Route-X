@@ -254,6 +254,14 @@ func setupTestEnv(t *testing.T) *testEnv {
 	sup.Register(worker.JobFunc{JobName: "health_checker", Fn: func(ctx context.Context) error { return nil }}, 30*time.Second, 0)
 	sup.Register(worker.JobFunc{JobName: "usage_rollup", Fn: func(ctx context.Context) error { return nil }}, 5*time.Minute, 0)
 	sup.Register(worker.JobFunc{JobName: "retention_cleaner", Fn: func(ctx context.Context) error { return nil }}, 1*time.Hour, 0)
+	sup.Start(context.Background())
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := sup.Stop(stopCtx); err != nil {
+			t.Errorf("hentikan supervisor: %v", err)
+		}
+	})
 
 	handlers := NewHandlers(Config{
 		Pool:           pool,

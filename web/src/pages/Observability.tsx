@@ -13,6 +13,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { RefreshCw, Database } from 'lucide-react';
+import { QueryError } from '../components/common/QueryError';
 
 export const Observability: React.FC = () => {
   const [windowTime, setWindowTime] = useState('24h');
@@ -22,20 +23,30 @@ export const Observability: React.FC = () => {
   const [breakdownBy, setBreakdownBy] = useState<'provider' | 'model' | 'api_key'>('provider');
   const [diag, setDiag] = useState<Diagnostics | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [sRes, bRes, dRes] = await Promise.all([
+      const [sRes, bRes] = await Promise.all([
         api.observability.series(metric, windowTime),
         api.observability.breakdown(breakdownBy, windowTime),
-        api.system.diagnostics().catch(() => null),
       ]);
       setSeries(sRes.points || []);
       setBreakdowns(bRes.items || []);
-      if (dRes) setDiag(dRes);
+      setLoadError(null);
+
+      try {
+        const dRes = await api.system.diagnostics();
+        setDiag(dRes);
+        setDiagnosticsError(null);
+      } catch (err) {
+        setDiag(null);
+        setDiagnosticsError(err instanceof Error ? err.message : String(err));
+      }
     } catch (err) {
-      console.error('Failed to load observability data:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
@@ -73,6 +84,8 @@ export const Observability: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 
       {/* Metric Selector & Main Time Series Chart */}
       <Card
@@ -189,6 +202,9 @@ export const Observability: React.FC = () => {
 
         {/* Live Pool & Diagnostics */}
         <Card title="Live Server & Connection Pool" subtitle="Statistik koneksi pgxpool dan runtime Go">
+          {diagnosticsError ? (
+            <QueryError message={diagnosticsError} onRetry={() => void loadData()} />
+          ) : (
           <div className="space-y-4">
             <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border">
               <div className="flex items-center justify-between text-xs mb-1">
@@ -225,6 +241,7 @@ export const Observability: React.FC = () => {
               </div>
             </div>
           </div>
+          )}
         </Card>
       </div>
     </div>

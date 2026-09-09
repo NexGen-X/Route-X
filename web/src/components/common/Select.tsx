@@ -44,6 +44,19 @@ export const Select: React.FC<SelectProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Timer fokus input pencarian; disimpan agar bisa dibatalkan bila menu
+  // ditutup atau komponen unmount sebelum 50ms berlalu.
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Batalkan timer fokus yang tersisa saat unmount.
+  useEffect(() => {
+    return () => {
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+        focusTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Aktifkan pencarian jika eksplisit atau jumlah opsi > 5
   const isSearchable = searchable ?? options.length > 5;
@@ -83,9 +96,14 @@ export const Select: React.FC<SelectProps> = ({
   // Fokuskan input pencarian saat menu terbuka
   useEffect(() => {
     if (isOpen && isSearchable && searchInputRef.current) {
-      setTimeout(() => {
+      if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+      focusTimerRef.current = setTimeout(() => {
+        focusTimerRef.current = null;
         searchInputRef.current?.focus();
       }, 50);
+    } else if (!isOpen && focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+      focusTimerRef.current = null;
     }
     if (isOpen) {
       const idx = filteredOptions.findIndex((opt) => opt.value === value);

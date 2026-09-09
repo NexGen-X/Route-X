@@ -293,7 +293,7 @@ export const Models: React.FC = () => {
                 setSelectedMappingId(val);
                 loadPricingForMapping(val);
               }}
-              options={mappings.map((mp) => ({
+              options={mappings.filter((mp) => mp.id).map((mp) => ({
                 value: mp.id,
                 label: `${mp.provider_id} → ${mp.upstream_model_name}`,
                 description: `ID Mapping: ${mp.id.slice(0, 8)}`,
@@ -350,7 +350,7 @@ export const Models: React.FC = () => {
                 </span>
                 <div className="max-h-32 overflow-y-auto space-y-1 rounded border border-border p-2 bg-bg-base">
                   {pricingHistory.map((h, i) => (
-                    <div key={h.effective_from} className="flex justify-between text-[11px] font-mono text-text-secondary">
+                    <div key={`${h.effective_from}-${i}`} className="flex justify-between text-[11px] font-mono text-text-secondary">
                       <span>In: ${h.input_per_1m_usd} | Out: ${h.output_per_1m_usd}</span>
                       <span className="text-text-muted">{new Date(h.effective_from).toLocaleDateString()}</span>
                     </div>

@@ -22,6 +22,8 @@ const APIKeys = React.lazy(() => import('./pages/APIKeys').then((m) => ({ defaul
 const Settings = React.lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const Diagnostics = React.lazy(() => import('./pages/Diagnostics').then((m) => ({ default: m.Diagnostics })));
 const CLIIntegrations = React.lazy(() => import('./pages/CLIIntegrations').then((m) => ({ default: m.CLIIntegrations })));
+// Halaman katalog model kanonis (dipakai rute /models dan /upstreams/models)
+const Models = React.lazy(() => import('./pages/Models').then((m) => ({ default: m.Models })));
 
 const Shell: React.FC = () => {
   const { principal, user, isLoading } = useAuth();
@@ -107,9 +109,9 @@ const Shell: React.FC = () => {
       case '/upstreams/models':
       case '/models':
         return {
-          title: 'Upstream Providers',
-          subtitle: 'Koneksi provider AI, pemeriksaan kesehatan, kredensial, dan katalog model',
-          content: <Providers />,
+          title: 'Katalog Model',
+          subtitle: 'Katalog model kanonis, pemetaan upstream, dan harga per model',
+          content: <Models />,
         };
       case '/upstreams/egress':
       case '/egress':

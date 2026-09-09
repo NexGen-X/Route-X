@@ -131,7 +131,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
   const formatTimeAgo = (dateStr: string) => {
     const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
     if (diff < 5) return 'baru saja';
-    if (diff < 60) return `${diff}d lalu`;
+    if (diff < 60) return `${diff} detik lalu`;
     const m = Math.floor(diff / 60);
     if (m < 60) return `${m}m lalu`;
     const h = Math.floor(m / 60);
@@ -205,10 +205,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             <Button
               variant="primary"
               size="sm"
-              role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/requests') }}
-                      onClick={() => onNavigate('/requests')}
+              onClick={() => onNavigate('/requests')}
               icon={<ArrowUpRight className="w-3.5 h-3.5 text-black" />}
             >
               Request Log
@@ -719,10 +716,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
               <Button
                 variant="ghost"
                 size="sm"
-                role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/requests') }}
-                      onClick={() => onNavigate('/requests')}
+                onClick={() => onNavigate('/requests')}
                 className="text-xs text-primary hover:text-primary-hover p-0 h-auto"
               >
                 Semua &rarr;
@@ -752,7 +746,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                       key={req.id || req.request_id}
                       role="button"
                       tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/requests') }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('/requests'); } }}
                       onClick={() => onNavigate('/requests')}
                       className="p-2.5 rounded-lg bg-[#181A20] border border-[#232732] hover:border-primary/40 hover:bg-[#1D2028] transition-all cursor-pointer group"
                     >
@@ -800,10 +794,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
 
           <div className="mt-4 pt-3 border-t border-[#1C2029]">
             <button
-              role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onNavigate('/requests') }}
-                      onClick={() => onNavigate('/requests')}
+              onClick={() => onNavigate('/requests')}
               className="w-full py-1.5 text-center text-xs text-text-secondary hover:text-white font-mono rounded bg-[#16181F] border border-[#262B37] hover:border-[#383E4F] transition-colors"
             >
               Inspeksi Seluruh Jejak Audit Request &rarr;

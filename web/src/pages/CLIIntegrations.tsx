@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Terminal,
   CheckCircle2,
@@ -42,6 +42,16 @@ export const CLIIntegrations: React.FC = () => {
   const [applyingTool, setApplyingTool] = useState<string | null>(null);
   const [applySuccess, setApplySuccess] = useState<Record<string, string>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  // Timer indikator salin/sukses; dibatalkan saat unmount agar tidak ada setState basi.
+  const feedbackTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Batalkan timer umpan balik yang tersisa saat unmount.
+  useEffect(() => {
+    return () => {
+      feedbackTimersRef.current.forEach((t) => clearTimeout(t));
+      feedbackTimersRef.current = [];
+    };
+  }, []);
   const [pingStatus, setPingStatus] = useState<
     Record<string, { testing: boolean; latency?: number; ok?: boolean }>
   >({});
@@ -160,13 +170,13 @@ export const CLIIntegrations: React.FC = () => {
           ...prev,
           [toolId]: 'Konfigurasi berhasil diterapkan!',
         }));
-        setTimeout(() => {
+        feedbackTimersRef.current.push(setTimeout(() => {
           setApplySuccess((prev) => {
             const next = { ...prev };
             delete next[toolId];
             return next;
           });
-        }, 4000);
+        }, 4000));
 
         // Perbarui data lokal
         setData((prev) => {
@@ -189,7 +199,7 @@ export const CLIIntegrations: React.FC = () => {
       await copyTextToClipboard(text);
       setCopiedKey(key);
       toast.success('Teks disalin ke clipboard.');
-      setTimeout(() => setCopiedKey(null), 2000);
+      feedbackTimersRef.current.push(setTimeout(() => setCopiedKey(null), 2000));
     } catch (err) {
       toast.error('Gagal menyalin: ' + (err instanceof Error ? err.message : String(err)));
     }

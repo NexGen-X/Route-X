@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 // import type { APIKey } from '../types';
@@ -27,6 +27,17 @@ export const APIKeys: React.FC = () => {
   });
   const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Timer indikator salin; dibatalkan saat unmount agar tidak ada setState basi.
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
 
 
 
@@ -94,7 +105,11 @@ export const APIKeys: React.FC = () => {
       await copyTextToClipboard(text);
       setCopied(true);
       toast.success('Kunci API disalin ke clipboard.');
-      setTimeout(() => setCopied(false), 2000);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        copyTimerRef.current = null;
+        setCopied(false);
+      }, 2000);
     } catch (err) {
       toast.error('Gagal menyalin kunci API: ' + (err instanceof Error ? err.message : String(err)));
     }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Provider, Credential, EgressPool, ProviderModel } from '../types';
@@ -76,6 +76,8 @@ export const Providers: React.FC = () => {
   const egressPools: EgressPool[] = poolsData;
 
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
+  // Penjaga race: abaikan respons basi bila user sudah pindah ke provider lain.
+  const providerDetailsReqRef = useRef(0);
 
   // Data Child untuk Selected Provider
   const [credentials, setCredentials] = useState<Credential[]>([]);
@@ -90,6 +92,16 @@ export const Providers: React.FC = () => {
   const [copiedModelId, setCopiedModelId] = useState<string | null>(null);
   const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
   const [modelTestResults, setModelTestResults] = useState<Record<string, ModelTestResult>>({});
+  // Timer indikator salin; disimpan agar bisa dibatalkan saat unmount.
+  const copyTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  // Batalkan timer salin yang tersisa saat unmount.
+  useEffect(() => {
+    return () => {
+      copyTimersRef.current.forEach((t) => clearTimeout(t));
+      copyTimersRef.current = [];
+    };
+  }, []);
 
   // Drawer Konfigurasi & Tab Aktif
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -193,15 +205,18 @@ export const Providers: React.FC = () => {
   // Load Detail Child untuk Provider Terpilih (Credentials & Models)
   // ---------------------------------------------------------------------------
   const loadProviderDetails = async (providerId: string) => {
+    const reqId = ++providerDetailsReqRef.current;
     setProviderDetailsError(null);
     try {
       const [credsRes, modsRes] = await Promise.all([
         api.credentials.list(providerId),
         api.providers.models(providerId),
       ]);
+      if (providerDetailsReqRef.current !== reqId) return;
       setCredentials(credsRes.items || []);
       setModels(modsRes.items || []);
     } catch (err) {
+      if (providerDetailsReqRef.current !== reqId) return;
       setCredentials([]);
       setModels([]);
       setProviderDetailsError(err instanceof Error ? err.message : String(err));
@@ -1165,7 +1180,7 @@ export const Providers: React.FC = () => {
                                 `Model ID "${model.upstream_model_name}" disalin`,
                                 () => {
                                   setCopiedModelId(model.id);
-                                  setTimeout(() => setCopiedModelId(null), 2000);
+                                  copyTimersRef.current.push(setTimeout(() => setCopiedModelId(null), 2000));
                                 }
                               )}
                               className="w-full justify-center sm:w-auto text-xs"
@@ -1414,7 +1429,7 @@ export const Providers: React.FC = () => {
                                 'Masked key disalin',
                                 () => {
                                   setCopiedTokenId(cred.id);
-                                  setTimeout(() => setCopiedTokenId(null), 2000);
+                                  copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000));
                                 }
                               )}
                               className="text-text-muted hover:text-white"

@@ -49,14 +49,34 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Timer fokus input; disimpan agar bisa dibatalkan bila palet ditutup
+  // atau komponen unmount sebelum 50ms berlalu.
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setQuery('');
       setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
+      if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+      focusTimerRef.current = setTimeout(() => {
+        focusTimerRef.current = null;
+        inputRef.current?.focus();
+      }, 50);
+    } else if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+      focusTimerRef.current = null;
     }
   }, [isOpen]);
+
+  // Batalkan timer fokus yang tersisa saat unmount.
+  useEffect(() => {
+    return () => {
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+        focusTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Daftar aksi dan navigasi terdaftar
   const items: PaletteItem[] = [

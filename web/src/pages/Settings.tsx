@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { DomainConfig } from '../types';
 import { Card } from '../components/common/Card';
@@ -31,6 +31,18 @@ export const Settings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
+  // Timer indikator salin; dibatalkan saat unmount agar tidak ada setState basi.
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Batalkan timer salin yang tersisa saat unmount.
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
   // Domain & HTTPS state
   const [domainConfig, setDomainConfig] = useState<DomainConfig | null>(null);
   const [inputDomain, setInputDomain] = useState('');
@@ -157,7 +169,11 @@ export const Settings: React.FC = () => {
       await copyTextToClipboard(text);
       setCopiedLinkKey(key);
       toast.success('Tautan disalin ke clipboard.');
-      setTimeout(() => setCopiedLinkKey(null), 2500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        copyTimerRef.current = null;
+        setCopiedLinkKey(null);
+      }, 2500);
     } catch (err) {
       toast.error('Gagal menyalin tautan: ' + (err instanceof Error ? err.message : String(err)));
     }

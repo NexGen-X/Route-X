@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
@@ -12,6 +12,18 @@ export const ChangePassword: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Timer redirect sukses; disimpan agar bisa dibatalkan bila user pergi duluan,
+  // supaya tidak ada navigasi paksa setelah unmount.
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +47,9 @@ export const ChangePassword: React.FC = () => {
       });
       setSuccess(true);
       await refresh();
-      setTimeout(() => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+      redirectTimerRef.current = setTimeout(() => {
+        redirectTimerRef.current = null;
         window.location.hash = '#/';
       }, 1500);
     } catch (err: any) {

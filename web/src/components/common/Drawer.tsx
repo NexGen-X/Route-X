@@ -1,5 +1,24 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useId } from 'react';
+import FocusTrap from 'focus-trap-react';
 import { X } from 'lucide-react';
+
+// Kunci body bersama lintas Modal/Drawer agar lapisan bertumpuk tidak saling melepas kunci.
+function __acquireBodyLock(): void {
+  const g = window as any;
+  g.__routexBodyLockCount = (g.__routexBodyLockCount || 0) + 1;
+  if (g.__routexBodyLockCount === 1) {
+    g.__routexBodyLockPrevOverflow = document.body.style.overflow;
+  }
+  document.body.style.overflow = 'hidden';
+}
+
+function __releaseBodyLock(): void {
+  const g = window as any;
+  g.__routexBodyLockCount = Math.max(0, (g.__routexBodyLockCount || 1) - 1);
+  if (g.__routexBodyLockCount === 0) {
+    document.body.style.overflow = g.__routexBodyLockPrevOverflow ?? '';
+  }
+}
 
 interface DrawerProps {
   isOpen: boolean;
@@ -20,16 +39,23 @@ export const Drawer: React.FC<DrawerProps> = ({
   children,
   maxWidth = '2xl',
 }) => {
+  // ID unik untuk heading agar aria-labelledby selalu menunjuk target yang benar.
+  const generatedTitleId = useId();
+  const titleId = `drawer-title-${generatedTitleId.replace(/:/g, '')}`;
+  // Kunci body bersama lintas Modal/Drawer; restore nilai overflow asli.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
+      __acquireBodyLock();
       window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        __releaseBodyLock();
+      };
     }
     return () => {
-      document.body.style.overflow = 'unset';
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
@@ -45,10 +71,11 @@ export const Drawer: React.FC<DrawerProps> = ({
   }[maxWidth];
 
   return (
+    <FocusTrap active={isOpen} focusTrapOptions={{ clickOutsideDeactivates: true }}>
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="drawer-title"
+      aria-labelledby={titleId}
       className="fixed inset-0 z-50 overflow-hidden"
     >
       {/* Backdrop */}
@@ -67,9 +94,9 @@ export const Drawer: React.FC<DrawerProps> = ({
           <div className="flex items-start justify-between px-4 py-3.5 sm:px-6 sm:py-5 border-b border-border bg-bg-surface-2/60">
             <div className="space-y-1.5 flex-1 min-w-0 pr-3 sm:pr-4">
               <div className="flex items-center gap-3">
-                <div id="drawer-title" className="text-sm sm:text-base font-bold text-white tracking-tight truncate">
+                <h2 id={titleId} className="text-sm sm:text-base font-bold text-white tracking-tight truncate">
                   {title}
-                </div>
+                </h2>
               </div>
               {subtitle && (
                 <div className="text-xs text-text-secondary leading-relaxed">
@@ -96,5 +123,6 @@ export const Drawer: React.FC<DrawerProps> = ({
         </div>
       </div>
     </div>
+    </FocusTrap>
   );
 };

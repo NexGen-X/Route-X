@@ -8,7 +8,7 @@ export const Login: React.FC = () => {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [keepSignedIn, setKeepSignedIn] = useState(true);
+  const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -18,7 +18,7 @@ export const Login: React.FC = () => {
     setIsLoading(true);
 
     try {
-      await login(email, password, keepSignedIn);
+      await login(email.trim(), password, keepSignedIn);
       window.location.hash = '#/';
     } catch (err: any) {
       if (err instanceof ApiError) {
@@ -45,7 +45,7 @@ export const Login: React.FC = () => {
         </div>
 
         {error && (
-          <div role="alert" aria-live="assertive" className="mb-5 p-3.5 rounded-inner bg-status-error/10 border border-status-error/20 flex items-start gap-2.5 text-status-error text-xs">
+          <div id="login-error" role="alert" aria-live="assertive" className="mb-5 p-3.5 rounded-inner bg-status-error/10 border border-status-error/20 flex items-start gap-2.5 text-status-error text-xs">
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
@@ -60,10 +60,12 @@ export const Login: React.FC = () => {
               id="login-email"
               name="email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               autoFocus
+              aria-describedby={error ? 'login-error' : undefined}
               placeholder="admin@routex.internal"
               className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
             />
@@ -77,9 +79,11 @@ export const Login: React.FC = () => {
               id="login-password"
               name="password"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              aria-describedby={error ? 'login-error' : undefined}
               placeholder="••••••••••••"
               className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
             />

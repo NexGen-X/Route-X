@@ -2,6 +2,24 @@ import React, { useEffect, useId } from 'react';
 import FocusTrap from 'focus-trap-react';
 import { X } from 'lucide-react';
 
+// Kunci body bersama lintas Modal/Drawer agar lapisan bertumpuk tidak saling melepas kunci.
+function __acquireBodyLock(): void {
+  const g = window as any;
+  g.__routexBodyLockCount = (g.__routexBodyLockCount || 0) + 1;
+  if (g.__routexBodyLockCount === 1) {
+    g.__routexBodyLockPrevOverflow = document.body.style.overflow;
+  }
+  document.body.style.overflow = 'hidden';
+}
+
+function __releaseBodyLock(): void {
+  const g = window as any;
+  g.__routexBodyLockCount = Math.max(0, (g.__routexBodyLockCount || 1) - 1);
+  if (g.__routexBodyLockCount === 0) {
+    document.body.style.overflow = g.__routexBodyLockPrevOverflow ?? '';
+  }
+}
+
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -23,16 +41,20 @@ export const Modal: React.FC<ModalProps> = ({
 }) => {
   const generatedTitleId = useId();
   const titleId = `modal-title-${generatedTitleId.replace(/:/g, '')}`;
+  // Kunci body bersama lintas Modal/Drawer; restore nilai overflow asli.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     if (isOpen) {
-      document.body.style.overflow = 'hidden';
+      __acquireBodyLock();
       window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        __releaseBodyLock();
+      };
     }
     return () => {
-      document.body.style.overflow = 'unset';
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);

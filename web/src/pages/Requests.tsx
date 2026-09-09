@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { formatUSD } from '../utils/money';
 import { api } from '../api/client';
 import type { RequestLog, RequestEvent, RequestPayload } from '../types';
@@ -35,6 +35,33 @@ export const Requests: React.FC = () => {
   const [isCurlCopied, setIsCurlCopied] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [inspectorError, setInspectorError] = useState<string | null>(null);
+  // Penjaga race inspector: abaikan respons basi bila user sudah klik request lain.
+  const inspectorReqRef = useRef(0);
+  // Timer indikator salin cURL; disimpan agar bisa dibatalkan saat unmount.
+  const curlTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (curlTimerRef.current) {
+        clearTimeout(curlTimerRef.current);
+        curlTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Debounce pencarian: mengetik tidak langsung menembak API, tunggu 400ms diam.
+  // Efek saat mount dilewati karena pemuatan awal sudah ditangani efek activeTab.
+  const searchFirstRef = useRef(true);
+  useEffect(() => {
+    if (searchFirstRef.current) {
+      searchFirstRef.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      void loadRequests();
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const loadRequests = async (cursor?: string) => {
     setIsLoading(true);
@@ -81,13 +108,18 @@ export const Requests: React.FC = () => {
       await copyTextToClipboard(curlCmd);
       setIsCurlCopied(true);
       toast.success('Perintah cURL disalin ke clipboard.');
-      setTimeout(() => setIsCurlCopied(false), 2000);
+      if (curlTimerRef.current) clearTimeout(curlTimerRef.current);
+      curlTimerRef.current = setTimeout(() => {
+        curlTimerRef.current = null;
+        setIsCurlCopied(false);
+      }, 2000);
     } catch (err) {
       toast.error('Gagal menyalin perintah cURL: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
   const handleInspect = async (req: RequestLog) => {
+    const reqId = ++inspectorReqRef.current;
     setSelectedReq(req);
     setIsInspectorOpen(true);
     setInspectorError(null);
@@ -96,9 +128,11 @@ export const Requests: React.FC = () => {
         api.requests.events(req.request_id),
         api.requests.payload(req.request_id),
       ]);
+      if (inspectorReqRef.current !== reqId) return;
       setReqEvents(eventsRes.events || []);
       setReqPayload(payloadRes);
     } catch (err) {
+      if (inspectorReqRef.current !== reqId) return;
       setReqEvents([]);
       setReqPayload(null);
       setInspectorError(err instanceof Error ? err.message : String(err));
@@ -247,7 +281,7 @@ export const Requests: React.FC = () => {
                   key={r.id || r.request_id}
                   role="button"
                       tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInspect(r) }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleInspect(r); } }}
                       onClick={() => handleInspect(r)}
                   className="p-3.5 hover:bg-bg-surface-2/60 active:bg-bg-surface-2 cursor-pointer transition-colors space-y-2"
                 >
@@ -306,7 +340,7 @@ export const Requests: React.FC = () => {
                       key={r.id || r.request_id}
                       role="button"
                       tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInspect(r) }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleInspect(r); } }}
                       onClick={() => handleInspect(r)}
                       className="hover:bg-bg-surface-2/60 cursor-pointer transition-colors group"
                     >

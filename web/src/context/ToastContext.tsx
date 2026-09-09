@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useId } from 'react';
+import React, { createContext, useContext, useState, useCallback, useId, useRef, useEffect } from 'react';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, Trash2, HelpCircle } from 'lucide-react';
 import { Modal } from '../components/common/Modal';
 
@@ -35,6 +35,9 @@ const ToastContext = createContext<ToastContextType | null>(null);
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  // Timer auto-hapus per toast; disimpan agar bisa dibatalkan saat toast dihapus
+  // manual atau provider unmount, supaya tidak ada setState basi.
+  const toastTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [confirmState, setConfirmState] = useState<{
     isOpen: boolean;
     options: ConfirmOptions;
@@ -43,6 +46,11 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const confirmDescriptionId = useId();
 
   const removeToast = useCallback((id: string) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
@@ -53,13 +61,24 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setToasts((prev) => [...prev, newToast]);
 
       if (duration > 0) {
-        setTimeout(() => {
+        const timer = setTimeout(() => {
+          toastTimersRef.current.delete(id);
           removeToast(id);
         }, duration);
+        toastTimersRef.current.set(id, timer);
       }
     },
     [removeToast]
   );
+
+  // Batalkan semua timer yang tersisa saat provider unmount.
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
 
   const toast = {
     success: (message: string, title?: string) => showToast('success', message, title),

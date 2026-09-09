@@ -74,16 +74,14 @@ penyerang bisa menghabiskan jatah seluruh pengguna.
   journalctl -u routex -n 50
   Backup: pg_dump routex_prod -Fc -f /var/backups/routex-TANGGAL.dump
 
-## 7. Observability (Prometheus lokal)
+## 7. Observability (Prometheus lokal, DIMATIKAN 2026-09-09)
 
-  Prometheus :9090 (paket debian), scrape 127.0.0.1:8080/metrics 30 detik
-  dengan bearer token dari /etc/prometheus/routex_token.txt (isi =
-  METRICS_TOKEN produksi, chmod 600, owner prometheus).
-  Config /etc/prometheus/prometheus.yml + rules
-  /etc/prometheus/rules/routex.yml (4 alert: RoutexDown 2 mnt,
-  RoutexP95Tinggi >2 dtk 5 mnt, RoutexErrorBanyak >10/mnt 5 mnt,
-  RoutexProviderMati 5 mnt). Verifikasi 2026-09-09: up routex=1,
-  justworker=1, 4 rules aktif.
+  Prometheus dinonaktifkan (systemctl disable --now) karena pemakaian
+  pribadi tidak butuh alerting. Grafik dashboard TIDAK terpengaruh:
+  ia membaca API internal + DB, bukan Prometheus.
+  Nyalakan lagi bila perlu tren: systemctl enable --now prometheus.
+  Config utuh di /etc/prometheus/prometheus.yml + rules/routex.yml
+  (4 alert), token di /etc/prometheus/routex_token.txt.
 
 ## 8. Backup otomatis
 

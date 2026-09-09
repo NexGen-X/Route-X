@@ -70,6 +70,30 @@ penyerang bisa menghabiskan jatah seluruh pengguna.
 
 ## 6. Operasional harian
 
-  systemctl status routex caddy
+  systemctl status routex caddy prometheus
   journalctl -u routex -n 50
   Backup: pg_dump routex_prod -Fc -f /var/backups/routex-TANGGAL.dump
+
+## 7. Observability (Prometheus lokal)
+
+  Prometheus :9090 (paket debian), scrape 127.0.0.1:8080/metrics 30 detik
+  dengan bearer token dari /etc/prometheus/routex_token.txt (isi =
+  METRICS_TOKEN produksi, chmod 600, owner prometheus).
+  Config /etc/prometheus/prometheus.yml + rules
+  /etc/prometheus/rules/routex.yml (4 alert: RoutexDown 2 mnt,
+  RoutexP95Tinggi >2 dtk 5 mnt, RoutexErrorBanyak >10/mnt 5 mnt,
+  RoutexProviderMati 5 mnt). Verifikasi 2026-09-09: up routex=1,
+  justworker=1, 4 rules aktif.
+
+## 8. Backup otomatis
+
+  Cron /etc/cron.d/routex-backup: tiap 02:00 jalan sebagai root,
+  /usr/local/bin/routex-backup.sh dump via su postgres ke
+  /var/backups/routex/routex-TANGGAL.dump, retensi 14 hari.
+  Verifikasi 2026-09-09: dump 255 KB, restore ke DB uji users=1,
+  provider_models=3, schema_migrations=9.
+
+  PENTING: password role postgres dibagi semua DB. Jangan ALTER USER
+  routex untuk keperluan test/lokal tanpa mengembalikannya ke nilai
+  di /etc/routex/routex.env — worker langsung 28P01 dan backup cron
+  ikut gagal auth.

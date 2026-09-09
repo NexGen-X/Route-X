@@ -98,8 +98,13 @@ func (w *WebhookWorker) Run(ctx context.Context) error {
 		}
 
 		if err := w.dispatcher.Dispatch(ctx, d); err != nil {
+			// Dispatch TIDAK pernah gagal diam-diam: setiap kegagalan sudah
+			// ditulis ke webhook_deliveries (status + next_attempt_at) oleh
+			// Dispatcher.RecordFailure sebelum error ini kembali. Yang tersisa
+			// di sini hanyalah visibilitas log + metrik worker generik.
 			w.logger.WarnContext(ctx, "gagal mengirim webhook delivery",
-				"delivery_id", d.ID, "webhook_id", d.WebhookID, "event", d.Event, "error", err)
+				"delivery_id", d.ID, "webhook_id", d.WebhookID, "event", d.Event,
+				"attempt", d.AttemptCount+1, "error", err)
 		}
 	}
 

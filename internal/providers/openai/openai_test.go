@@ -704,21 +704,22 @@ func TestErrorWithSuccessStatusAndUnknownCodeBecomesServerError(t *testing.T) {
 	}
 }
 
-// Base URL yang tidak bisa dijadikan permintaan HTTP adalah salah konfigurasi, bukan
-// kegagalan provider — dan pesannya tidak boleh memuat URL-nya, yang bisa berisi kredensial
+// Base URL yang tidak bisa dijadikan permintaan HTTP ditolak sejak New —
+// dan pesannya tidak boleh memuat URL-nya, yang bisa berisi kredensial
 // di query string.
 func TestUnusableBaseURLReportedWithoutLeakingIt(t *testing.T) {
-	p := testProvider(t, "http://x.test/awalan\x7f", nil)
-
-	_, err := p.Models(context.Background())
-	e := providers.AsError(err)
-	if e == nil {
-		t.Fatalf("error bukan *providers.Error: %v", err)
+	_, err := New(Config{
+		Name:       "uji",
+		Kind:       providers.KindOpenAI,
+		BaseURL:    "http://x.test/awalan\x7f",
+		Credential: security.Secret(testKey),
+		Timeout:    3 * time.Second,
+		SSRFPolicy: security.SSRFPolicy{AllowHTTP: true, AllowedPrivateAddrs: loopbackSaja()},
+	})
+	if err == nil {
+		t.Fatal("New() menerima base URL yang tidak bisa diurai tanpa error")
 	}
-	if e.Kind != providers.ErrKindInvalidRequest {
-		t.Errorf("Kind = %s, mau %s", e.Kind, providers.ErrKindInvalidRequest)
-	}
-	if strings.Contains(e.Message, "x.test") {
-		t.Errorf("pesan memuat base URL: %q", e.Message)
+	if strings.Contains(err.Error(), "x.test") {
+		t.Errorf("pesan memuat base URL: %q", err.Error())
 	}
 }

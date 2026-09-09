@@ -205,10 +205,10 @@ func firstNonEmpty(values ...string) string {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
+	if r := []rune(s); len(r) > n {
+		return string(r[:n]) + "…"
 	}
-	return s[:n] + "…"
+	return s
 }
 
 // ParseRetryAfter membaca header Retry-After, yang bisa berupa jumlah detik atau

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,9 +62,23 @@ func (p *Provider) ChatCompletionStream(ctx context.Context, req *providers.Chat
 	if err != nil {
 		return nil, err
 	}
-	resp, err := p.do(ctx, p.streamClient, http.MethodPost, p.endpoint("/v1/messages"), body, "text/event-stream")
+	// Context diturunkan supaya Close punya cara membatalkannya. Tanpa ini,
+	// satu-satunya pegangan untuk melepas koneksi adalah menutup body.
+	streamCtx, cancel := context.WithCancel(ctx)
+	resp, err := p.do(streamCtx, p.streamClient, http.MethodPost, p.endpoint("/v1/messages"), body, "text/event-stream")
 	if err != nil {
+		cancel()
 		return nil, err
+	}
+	// Sebagian upstream mengabaikan "stream":true dan menjawab satu objek JSON. Kalau
+	// dibiarkan lewat, pembaca SSE tidak menemukan satu pun baris data dan pemanggil
+	// menerima aliran kosong tanpa penjelasan. Belum ada byte yang terkirim ke klien
+	// di titik ini, jadi kegagalannya masih boleh diulang maupun dialihkan.
+	if ct := strings.ToLower(resp.Header.Get("Content-Type")); strings.Contains(ct, "application/json") {
+		resp.Body.Close()
+		cancel()
+		return nil, providers.Newf(providers.ErrKindServer, p.name,
+			"upstream menjawab JSON biasa, bukan aliran SSE")
 	}
 	return &stream{
 		provider: p,
@@ -71,6 +86,7 @@ func (p *Provider) ChatCompletionStream(ctx context.Context, req *providers.Chat
 		reader:   providers.NewSSEReader(resp.Body),
 		created:  time.Now().Unix(),
 		model:    req.Model,
+		cancel:   cancel,
 	}, nil
 }
 
@@ -79,6 +95,9 @@ type stream struct {
 	provider *Provider
 	resp     *http.Response
 	reader   *providers.SSEReader
+	// cancel membatalkan context turunan aliran; dipanggil dari Close setelah
+	// body ditutup sebagai jaring pengaman transport yang masih menulis.
+	cancel context.CancelFunc
 
 	closeOnce sync.Once
 	closeErr  error
@@ -126,6 +145,11 @@ func (s *stream) GoString() string { return s.String() }
 func (s *stream) LogValue() slog.Value { return slog.StringValue(s.String()) }
 
 // Recv mengembalikan peristiwa berikutnya, atau io.EOF saat aliran selesai normal.
+//
+// Recv TIDAK aman untuk panggilan konkuren: hanya satu goroutine yang boleh
+// memanggilnya dalam satu waktu. Satu-satunya pemanggil produksi (gateway streaming)
+// memakai loop tunggal, dan Close memakai sync.Once sehingga aman dipanggil dari
+// defer kapan pun.
 func (s *stream) Recv() (*providers.StreamEvent, error) {
 	if s.done {
 		return nil, io.EOF
@@ -405,6 +429,12 @@ func (s *stream) Close() error {
 	s.closeOnce.Do(func() {
 		if s.resp != nil && s.resp.Body != nil {
 			s.closeErr = s.resp.Body.Close()
+		}
+		// Body ditutup lebih dulu: itu yang menghentikan pembacaan yang menggantung
+		// dan melepas koneksi. Context dibatalkan sesudahnya sebagai jaring
+		// pengaman bila transport masih menahan koneksi.
+		if s.cancel != nil {
+			s.cancel()
 		}
 	})
 	return s.closeErr

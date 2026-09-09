@@ -57,6 +57,11 @@ const (
 
 	// redactedMark menggantikan kredensial yang terlanjur dipantulkan upstream.
 	redactedMark = "[REDACTED]"
+
+	// healthCheckTimeout adalah batas satu health check. Sengaja jauh lebih
+	// pendek dari timeout request: probe berjalan terjadwal untuk SETIAP
+	// provider, dan satu upstream yang menggantung akan menahan slot probe.
+	healthCheckTimeout = 10 * time.Second
 )
 
 // Config mengatur satu instance provider Google.
@@ -90,6 +95,8 @@ type Provider struct {
 	client *http.Client
 	// streamClient tidak memasang http.Client.Timeout; batas itu mencakup pembacaan body.
 	streamClient *http.Client
+	// healthTimeout membatasi satu health check; nol berarti healthCheckTimeout.
+	healthTimeout time.Duration
 }
 
 var _ providers.Provider = (*Provider)(nil)
@@ -140,14 +147,24 @@ func New(cfg Config) (*Provider, error) {
 	}
 
 	return &Provider{
-		name:         name,
-		kind:         kind,
-		baseURL:      strings.TrimRight(base, "/"),
-		credential:   cfg.Credential,
-		headers:      headers,
-		client:       client,
-		streamClient: streamClient,
+		name:          name,
+		kind:          kind,
+		baseURL:       strings.TrimRight(base, "/"),
+		credential:    cfg.Credential,
+		headers:       headers,
+		client:        client,
+		streamClient:  streamClient,
+		healthTimeout: healthTimeoutFor(cfg.Timeout),
 	}, nil
+}
+
+// healthTimeoutFor menurunkan batas health check: bawaan healthCheckTimeout,
+// dipersempit bila Timeout konfigurasi lebih kecil dan positif.
+func healthTimeoutFor(configTimeout time.Duration) time.Duration {
+	if configTimeout > 0 && configTimeout < healthCheckTimeout {
+		return configTimeout
+	}
+	return healthCheckTimeout
 }
 
 // Kind mengembalikan jenis provider.
@@ -291,9 +308,13 @@ func (p *Provider) do(ctx context.Context, client *http.Client, method, endpoint
 }
 
 func (p *Provider) readAll(resp *http.Response) ([]byte, error) {
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, providers.FromTransport(p.name, err)
+	}
+	if len(raw) > maxResponseBytes {
+		return nil, providers.Newf(providers.ErrKindServer, p.name,
+			"respons upstream melebihi batas %d byte", maxResponseBytes)
 	}
 	return raw, nil
 }
@@ -498,6 +519,13 @@ func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 // Daftar model tidak menagih token dan tidak menyentuh kuota model, tetapi tetap melewati
 // jalur yang sama pentingnya: DNS, TLS, proxy egress, dan autentikasi key.
 func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
+	timeout := p.healthTimeout
+	if timeout <= 0 {
+		timeout = healthCheckTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	start := time.Now()
 	resp, err := p.do(ctx, p.client, http.MethodGet, p.endpoint("/"+APIVersion+"/models")+"?pageSize=1", nil, "application/json")
 	latency := time.Since(start)

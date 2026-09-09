@@ -82,8 +82,12 @@ func NewDispatcher(
 	}
 
 	if client == nil {
+		// Client.Timeout SENGAJA dibiarkan nol (tidak diset): batas waktu per-webhook
+		// timeout_ms (maksimal 120 detik) sudah ditegakkan lewat context WithTimeout
+		// pada setiap request (reqCtx). Mengisi Client.Timeout akan memotong paksa
+		// seluruh pengiriman pada DefaultDeliveryTimeout (10 detik) termasuk redirect
+		// dan baca body, sehingga webhook dengan timeout_ms besar tidak pernah berlaku.
 		client = &http.Client{
-			Timeout:       DefaultDeliveryTimeout,
 			Transport:     defaultTr,
 			CheckRedirect: checkRedirect,
 		}

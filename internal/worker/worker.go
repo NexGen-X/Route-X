@@ -274,6 +274,14 @@ func (s *Supervisor) TriggerJob(ctx context.Context, name string) error {
 // Start menjalankan seluruh worker yang terdaftar dalam goroutine terpisah.
 func (s *Supervisor) Start(ctx context.Context) {
 	s.mu.Lock()
+	// Start yang kedua DITOLAK diam-diam: tanpa guard ini, pemanggilan ganda
+	// menimpa cancel/runCtx dan melahirkan loop ganda — dua rollup, dua
+	// retensi, dua pengirim webhook — plus goroutine loop lama yang bocor
+	// karena cancel-nya sudah tertimpa dan tidak bisa dibatalkan lagi.
+	if s.cancel != nil {
+		s.mu.Unlock()
+		return
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
 	s.runCtx = runCtx

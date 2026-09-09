@@ -219,6 +219,9 @@ func (p *Provider) chatPayload(req *providers.ChatRequest, streaming bool) ([]by
 	if req == nil || len(req.Messages) == 0 {
 		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "permintaan chat tanpa pesan")
 	}
+	if strings.TrimSpace(req.Model) == "" {
+		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "nama model wajib diisi")
+	}
 
 	body := map[string]any{
 		"model":    req.Model,

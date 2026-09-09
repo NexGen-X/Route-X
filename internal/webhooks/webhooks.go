@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/security"
@@ -124,6 +125,20 @@ type Repo struct {
 // NewRepo membuat instance baru Repo webhook.
 func NewRepo(q repo.Querier) *Repo {
 	return &Repo{q: q}
+}
+
+// dalamTransaksi menjalankan fn di dalam satu transaksi bila memungkinkan.
+//
+// Repo hanya memegang repo.Querier, yang di produksi berupa *pgxpool.Pool (lihat
+// pemakaian NewRepo(db.Pool)). Bila q memang pool, transaksi lewat repo.InTx
+// supaya kedua UPDATE commit/rollback atomik. Bila q sudah berupa transaksi
+// (mis. pemanggil memegang pgx.Tx), transaksi bersarang tidak didukung pgx
+// sehingga fn dijalankan langsung di atas q yang sama.
+func (r *Repo) dalamTransaksi(ctx context.Context, fn func(repo.Querier) error) error {
+	if pool, ok := r.q.(*pgxpool.Pool); ok && pool != nil {
+		return repo.InTx(ctx, pool, fn)
+	}
+	return fn(r.q)
 }
 
 // CreateWebhookParams memuat parameter pembuatan webhook baru.
@@ -373,41 +388,47 @@ func (r *Repo) RecoverStuck(ctx context.Context, stuckDuration time.Duration) (i
 }
 
 // RecordSuccess menandai pengiriman berhasil (HTTP 2xx) dan mereset kegagalan berurutan webhook.
+//
+// Kedua UPDATE dibungkus satu transaksi (lihat dalamTransaksi): delivery dan
+// induk webhook harus berubah bersama, kalau tidak delivery bisa 'delivered'
+// sementara penghitung induk tidak pernah direset. Di dalam transaksi induk
+// ditulis dulu supaya bila commit gagal, baris yang paling terlihat operator
+// tidak tertinggal dalam keadaan setengah jadi.
 func (r *Repo) RecordSuccess(ctx context.Context, deliveryID int64, webhookID string, statusCode int) error {
 	const op = "mencatat keberhasilan pengiriman webhook"
 
-	// 1. Perbarui riwayat delivery. Sesuai constraint webhook_deliveries_delivered_consistent,
-	// delivered_at wajib diisi bila status='delivered'. locked_at wajib null bila status != 'delivering'.
-	_, err := r.q.Exec(ctx, `
-		update webhook_deliveries
-		set status = 'delivered',
-		    locked_at = null,
-		    locked_by = null,
-		    delivered_at = now(),
-		    response_status_code = $2,
-		    error_message = null
-		where id = $1`,
-		deliveryID, statusCode,
-	)
-	if err != nil {
-		return repo.Err(op, err)
-	}
+	return r.dalamTransaksi(ctx, func(q repo.Querier) error {
+		// 1. Perbarui tabel induk webhook dulu: reset consecutive_failures ke nol.
+		if _, err := q.Exec(ctx, `
+			update webhooks
+			set last_delivery_at = now(),
+			    last_delivery_status = 'delivered',
+			    consecutive_failures = 0,
+			    updated_at = now()
+			where id = $1::uuid`,
+			webhookID,
+		); err != nil {
+			return repo.Err(op, err)
+		}
 
-	// 2. Perbarui tabel induk webhook: reset consecutive_failures ke nol.
-	_, err = r.q.Exec(ctx, `
-		update webhooks
-		set last_delivery_at = now(),
-		    last_delivery_status = 'delivered',
-		    consecutive_failures = 0,
-		    updated_at = now()
-		where id = $1::uuid`,
-		webhookID,
-	)
-	if err != nil {
-		return repo.Err(op, err)
-	}
+		// 2. Perbarui riwayat delivery. Sesuai constraint webhook_deliveries_delivered_consistent,
+		// delivered_at wajib diisi bila status='delivered'. locked_at wajib null bila status != 'delivering'.
+		if _, err := q.Exec(ctx, `
+			update webhook_deliveries
+			set status = 'delivered',
+			    locked_at = null,
+			    locked_by = null,
+			    delivered_at = now(),
+			    response_status_code = $2,
+			    error_message = null
+			where id = $1`,
+			deliveryID, statusCode,
+		); err != nil {
+			return repo.Err(op, err)
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // RecordFailure menandai pengiriman gagal, menjadwalkan percobaan berikutnya atau membiarkannya abandoned.

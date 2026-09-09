@@ -113,6 +113,12 @@ func New(cfg Config) (*Provider, error) {
 	if strings.TrimSpace(cfg.BaseURL) == "" {
 		return nil, errors.New("base URL provider wajib diisi")
 	}
+	// Base URL divalidasi di sini meski pemanggil seharusnya sudah melakukannya:
+	// konfigurasi provider bisa datang dari baris perintah, berkas, maupun basis
+	// data, dan satu jalur yang lupa memvalidasi cukup untuk membuka SSRF.
+	if err := security.ValidateBaseURL(cfg.BaseURL, cfg.SSRFPolicy); err != nil {
+		return nil, fmt.Errorf("base URL provider openai tidak sah: %w", err)
+	}
 	// Kredensial wajib hanya untuk KindOpenAI. api.openai.com selalu menuntutnya,
 	// sedangkan server berdialek OpenAI yang dijalankan sendiri (Ollama, vLLM, LM Studio)
 	// umumnya berjalan tanpa autentikasi — memaksakan kredensial di sana hanya membuat

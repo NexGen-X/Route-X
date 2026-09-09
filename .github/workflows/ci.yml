@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: routex
+          POSTGRES_PASSWORD: routex
+          POSTGRES_DB: routex_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U routex"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27.1"
+          cache: true
+      - name: Format
+        run: test -z "$(gofmt -l .)"
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        env:
+          TEST_DATABASE_URL: postgres://routex:routex@127.0.0.1:5432/routex_test?sslmode=disable
+        run: go test ./... -count=1
+      - name: Secret lint
+        env:
+          TEST_DATABASE_URL: postgres://routex:routex@127.0.0.1:5432/routex_test?sslmode=disable
+        run: go test ./internal/security/ -run TestSecretLeakLint -count=1
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx tsc -b
+      - run: npm run build

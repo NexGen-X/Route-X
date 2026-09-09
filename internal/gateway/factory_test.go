@@ -731,3 +731,34 @@ func TestFactoryProviderForHealthCheckBerbagiCacheDenganKandidat(t *testing.T) {
 		t.Error("ProviderFor dengan provider nil seharusnya gagal")
 	}
 }
+
+// TestFactoryBYOKSelaluKebijakanKetat memastikan provider BYOK tidak mewarisi
+// pelonggaran SSRF operator: pabrikUji memakai kebijakan yang mengecualikan
+// loopback (untuk Ollama lokal operator), tetapi kandidat BYOK ke loopback
+// harus tetap DITOLAK karena BYOK selalu memakai DefaultSSRFPolicy.
+func TestFactoryBYOKSelaluKebijakanKetat(t *testing.T) {
+	srv := serverUji(t)
+	f := pabrikUji(t, kredensialUji(), nil)
+
+	// Non-BYOK ke loopback: lolos, karena operator mengecualikannya.
+	biasa := kandidatUji(providers.KindOpenAI, srv.URL)
+	if _, err := f.Provider(context.Background(), biasa); err != nil {
+		t.Fatalf("provider operator ke loopback ditolak, padahal dikecualikan: %v", err)
+	}
+
+	// BYOK ke loopback yang sama: DITOLAK.
+	byok := kandidatUji(providers.KindOpenAI, srv.URL)
+	byok.IsBYOK = true
+	if _, err := f.Provider(context.Background(), byok); err == nil {
+		t.Error("provider BYOK ke loopback diterima; harus ditolak dengan kebijakan ketat")
+	}
+
+	// BYOK tidak boleh memakai egress pool operator.
+	pool := "8f1f0b6e-0000-4000-8000-00000000e099"
+	byokEgress := kandidatUji(providers.KindOpenAI, "https://api.example.com/v1")
+	byokEgress.IsBYOK = true
+	byokEgress.EgressPoolID = &pool
+	if _, err := f.Provider(context.Background(), byokEgress); err == nil {
+		t.Error("provider BYOK beregress pool diterima; harus ditolak")
+	}
+}

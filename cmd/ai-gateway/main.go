@@ -240,8 +240,16 @@ func buildRouter(
 	// --- Metrik ---
 	// Endpoint ini dilindungi di balik sesi admin atau token scraper / koneksi loopback untuk mencegah
 	// kebocoran informasi operasional ke publik, namun tetap mengizinkan scraping metrik Prometheus.
-	metricsToken := os.Getenv("METRICS_TOKEN")
-	allowLoopback := !cfg.AppEnv.IsProduction() || os.Getenv("METRICS_ALLOW_LOOPBACK") != "false"
+	//
+	// Pemeriksaan loopback memakai PEER koneksi langsung (lihat PeerIPFrom), bukan
+	// IP hasil resolusi proxy: proxy same-host yang tidak terdaftar di
+	// TRUSTED_PROXIES tidak lagi membuat trafik luar tampak sebagai loopback.
+	// Di produksi METRICS_TOKEN wajib (lihat config.validate) dan loopback
+	// default MATI: scraping lokal memakai Bearer token yang sama seperti
+	// Prometheus jarak jauh. Setel METRICS_ALLOW_LOOPBACK=true secara eksplisit
+	// bila scraper memang hanya menjangkau via loopback tanpa token.
+	metricsToken := cfg.MetricsToken.Reveal()
+	allowLoopback := cfg.MetricsAllowLoopback
 	if authSvc != nil {
 		r.With(authSvc.RequireSessionOrBearer(metricsToken, allowLoopback)).Handle("/metrics", metrics.Handler())
 	} else {
@@ -395,6 +403,10 @@ func buildGatewaySurface(
 		apikey.WithScopeResolver(func(ctx context.Context, p *apikey.Principal, ip netip.Addr) []apikey.ScopeLimits {
 			return rates.Requests(ctx, gateway.TargetsFor(p, "", ip), p.RequestLimits())
 		}),
+		// RATE_LIMIT_FAIL_CLOSED=true berarti pemadaman Redis menolak 429
+		// alih-alih meloloskan tanpa batas. Default tetap fail-open supaya
+		// login tidak mati saat Redis mati.
+		apikey.WithFailClosed(cfg.RateLimitFailClosed),
 	)
 	if err := limiter.Warm(ctx); err != nil {
 		logger.Warn("pemanasan skrip pembatas laju gagal", "error", err)

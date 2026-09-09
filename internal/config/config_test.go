@@ -142,7 +142,8 @@ func TestProductionHardening(t *testing.T) {
 		e := valid()
 		e["APP_ENV"] = "production"
 		e["PUBLIC_URL"] = "https://gateway.example.com"
-		e["DATABASE_URL"] = "postgres://routex:pw@db.internal:5432/routex?sslmode=require"
+		e["DATABASE_URL"] = "postgres://routex:***@db.internal:5432/routex?sslmode=require"
+		e["METRICS_TOKEN"] = "0123456789abcdef0123456789abcdef"
 		return e
 	}
 
@@ -167,6 +168,7 @@ func TestProductionHardening(t *testing.T) {
 			e["DATABASE_URL"] = "postgres://routex:pw@db/routex?sslmode=disable"
 		}, "sslmode=disable"},
 		{"password admin lemah", func(e map[string]string) { e["INITIAL_ADMIN_PASSWORD"] = "pendek123" }, "minimal 16 karakter"},
+		{"METRICS_TOKEN wajib di produksi", func(e map[string]string) { delete(e, "METRICS_TOKEN") }, "METRICS_TOKEN wajib"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -232,5 +234,50 @@ func TestTrustedProxiesDefaultsToEmpty(t *testing.T) {
 	}
 	if len(cfg.TrustedProxies) != 0 {
 		t.Errorf("TrustedProxies default = %v, mau kosong", cfg.TrustedProxies)
+	}
+}
+
+func TestMetricsDefaultsPerEnv(t *testing.T) {
+	// Non-produksi: loopback default MENYALA, token boleh kosong.
+	cfg, err := loadEnv(t, valid())
+	if err != nil {
+		t.Fatalf("development ditolak: %v", err)
+	}
+	if !cfg.MetricsAllowLoopback {
+		t.Error("development: MetricsAllowLoopback harus default true")
+	}
+
+	// Produksi: loopback default MATI dan token wajib.
+	env := valid()
+	env["APP_ENV"] = "production"
+	env["PUBLIC_URL"] = "https://gateway.example.com"
+	env["DATABASE_URL"] = "postgres://routex:***@db.internal:5432/routex?sslmode=require"
+	env["METRICS_TOKEN"] = "0123456789abcdef0123456789abcdef"
+	cfg, err = loadEnv(t, env)
+	if err != nil {
+		t.Fatalf("produksi valid ditolak: %v", err)
+	}
+	if cfg.MetricsAllowLoopback {
+		t.Error("produksi: MetricsAllowLoopback harus default false")
+	}
+	if got := cfg.MetricsToken.Reveal(); got != "0123456789abcdef0123456789abcdef" {
+		t.Error("produksi: MetricsToken tidak terbaca dari env")
+	}
+	if cfg.RateLimitFailClosed {
+		t.Error("RateLimitFailClosed harus default false")
+	}
+
+	// Operator bisa menyalakan loopback eksplisit di produksi dan fail-closed.
+	env["METRICS_ALLOW_LOOPBACK"] = "true"
+	env["RATE_LIMIT_FAIL_CLOSED"] = "true"
+	cfg, err = loadEnv(t, env)
+	if err != nil {
+		t.Fatalf("produksi dengan override ditolak: %v", err)
+	}
+	if !cfg.MetricsAllowLoopback {
+		t.Error("METRICS_ALLOW_LOOPBACK=true tidak terbaca")
+	}
+	if !cfg.RateLimitFailClosed {
+		t.Error("RATE_LIMIT_FAIL_CLOSED=true tidak terbaca")
 	}
 }

@@ -222,6 +222,13 @@ type ProviderTarget struct {
 	BaseURL      string
 	TimeoutMS    int
 	EgressPoolID *string
+	// IsBYOK menandai provider milik pengguna (Bring Your Own Key). BYOK selalu
+	// memakai kebijakan SSRF paling ketat (DefaultSSRFPolicy) tanpa memedulikan
+	// pelonggaran operator: base URL-nya diketik pengguna, bukan operator, jadi
+	// pengecualian privat milik operator tidak boleh berlaku untuknya. Tanpa ini
+	// satu kebijakan bersama berarti operator yang membuka loopback untuk Ollama
+	// lokalnya otomatis memberi SEMUA pengguna BYOK jalan ke alamat internal.
+	IsBYOK bool
 }
 
 // ProviderFor mengembalikan adapter siap pakai langsung dari baris tabel providers,
@@ -240,6 +247,7 @@ func (f *Factory) ProviderFor(ctx context.Context, p *upstream.Provider) (provid
 		BaseURL:      p.BaseURL,
 		TimeoutMS:    p.TimeoutMS,
 		EgressPoolID: p.EgressPoolID,
+		IsBYOK:       p.IsBYOK,
 	})
 }
 
@@ -294,6 +302,7 @@ func (f *Factory) Provider(ctx context.Context, c *upstream.RouteCandidate) (pro
 		BaseURL:      c.BaseURL,
 		TimeoutMS:    c.TimeoutMS,
 		EgressPoolID: c.EgressPoolID,
+		IsBYOK:       c.IsBYOK,
 	})
 }
 
@@ -407,6 +416,7 @@ func kunciAdapterTarget(t ProviderTarget, cred *upstream.ActiveCredential, proxy
 	bagian(t.Kind)
 	bagian(t.BaseURL)
 	bagian(strconv.Itoa(t.TimeoutMS))
+	bagian(strconv.FormatBool(t.IsBYOK))
 	if cred != nil {
 		bagian(cred.ID)
 		bagian(cred.Secret.Reveal())
@@ -436,6 +446,22 @@ func (f *Factory) buatTarget(
 	}
 	timeout := time.Duration(t.TimeoutMS) * time.Millisecond
 
+	// Kebijakan SSRF dihitung SEKALI untuk semua kind: BYOK selalu memakai
+	// kebijakan paling ketat (DefaultSSRFPolicy) karena base URL-nya diketik
+	// pengguna — pelonggaran operator (mis. loopback untuk Ollama lokal) tidak
+	// boleh berlaku untuknya. Berlaku untuk openai/anthropic/google.
+	kebijakan := f.policy
+	if t.IsBYOK {
+		kebijakan = security.DefaultSSRFPolicy()
+		// Egress pool milik operator: BYOK tidak boleh meminjam jalur keluar
+		// operator — selain menyalahgunakan infrastruktur, pemeriksaan tujuan
+		// sebenarnya menjadi tidak berarti bila dial-nya lewat proxy yang
+		// justru melewati penjagaan lapis kedua.
+		if t.EgressPoolID != nil {
+			return nil, fmt.Errorf("provider BYOK %q tidak boleh memakai egress pool operator", t.Name)
+		}
+	}
+
 	switch t.Kind {
 	case providers.KindOpenAI, providers.KindOpenAICompatible, providers.KindCustom:
 		// Base URL divalidasi DI SINI karena openai.New sengaja tidak melakukannya — kontrak
@@ -449,7 +475,11 @@ func (f *Factory) buatTarget(
 		// bukan tujuan akhir. Untuk kandidat berproxy, pemeriksaan di sini adalah satu-satunya
 		// yang melihat tujuan sebenarnya. Karena itu juga egress pool hanya boleh diisi
 		// operator, bukan pengguna.
-		if err := security.ValidateBaseURL(t.BaseURL, f.policy); err != nil {
+		//
+		// BYOK selalu memakai kebijakan paling ketat: base URL-nya diketik pengguna,
+		// jadi pelonggaran operator (mis. loopback untuk Ollama lokal) tidak boleh
+		// berlaku untuknya.
+		if err := security.ValidateBaseURL(t.BaseURL, kebijakan); err != nil {
 			return nil, fmt.Errorf("base URL provider %q tidak sah: %w", t.Name, err)
 		}
 		return openai.New(openai.Config{
@@ -458,7 +488,7 @@ func (f *Factory) buatTarget(
 			BaseURL:    t.BaseURL,
 			Credential: rahasia,
 			Timeout:    timeout,
-			SSRFPolicy: f.policy,
+			SSRFPolicy: kebijakan,
 			ProxyURL:   proxy,
 		})
 
@@ -473,7 +503,7 @@ func (f *Factory) buatTarget(
 			BaseURL:    t.BaseURL,
 			Credential: rahasia,
 			Timeout:    timeout,
-			SSRFPolicy: f.policy,
+			SSRFPolicy: kebijakan,
 			ProxyURL:   proxy,
 		})
 
@@ -484,7 +514,7 @@ func (f *Factory) buatTarget(
 			BaseURL:    t.BaseURL,
 			Credential: rahasia,
 			Timeout:    timeout,
-			SSRFPolicy: f.policy,
+			SSRFPolicy: kebijakan,
 			ProxyURL:   proxy,
 		})
 

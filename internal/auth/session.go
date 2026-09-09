@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -684,7 +685,10 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, current, ne
 	// Password yang tidak berubah ditolak sebelum apa pun disentuh. Meloloskannya akan
 	// mencabut seluruh sesi lain tanpa mengubah kredensial apa pun — kerugian tanpa
 	// manfaat, dan biasanya memang salah kirim dari form.
-	if current.Reveal() == next.Reveal() {
+	// Perbandingannya constant-time (subtle): == berhenti di byte pertama yang
+	// berbeda sehingga waktu respons membocorkan seberapa jauh kecocokannya.
+	curr, nxt := current.Reveal(), next.Reveal()
+	if len(curr) == len(nxt) && subtle.ConstantTimeCompare([]byte(curr), []byte(nxt)) == 1 {
 		return 0, fmt.Errorf("%s: %w", op, ErrPasswordUnchanged)
 	}
 	// Kekuatan password diperiksa di sini walaupun identity.Users.ChangePassword juga

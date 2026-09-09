@@ -12,6 +12,11 @@ import (
 // MetricsRecorder adalah middleware untuk mencatat request HTTP ke Prometheus.
 // Membaca path rute asli dari Chi (mis. /api/users/{id}) untuk mencegah ledakan kardinalitas.
 func MetricsRecorder(m *observability.Metrics) func(http.Handler) http.Handler {
+	// m nil berarti metrik dimatikan (mis. test ringan): teruskan saja tanpa
+	// mencatat, JANGAN panic nil-dereference pada setiap request.
+	if m == nil {
+		return func(next http.Handler) http.Handler { return next }
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			m.HTTPInFlight.Inc()

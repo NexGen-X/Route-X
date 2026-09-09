@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -96,16 +97,23 @@ func (s *Service) RequireSessionOrBearer(validToken string, allowLoopback bool) 
 				authHeader := r.Header.Get("Authorization")
 				if strings.HasPrefix(authHeader, "Bearer ") {
 					bearer := strings.TrimPrefix(authHeader, "Bearer ")
-					if bearer == validToken {
+					// Perbandingan constant-time: == berhenti di byte pertama
+					// yang berbeda dan menjadi oracle timing untuk menebak
+					// token scraper.
+					if len(bearer) == len(validToken) &&
+						subtle.ConstantTimeCompare([]byte(bearer), []byte(validToken)) == 1 {
 						next.ServeHTTP(w, r)
 						return
 					}
 				}
 			}
 
-			// 2. Periksa apakah request berasal dari loopback lokal jika diizinkan
+			// 2. Periksa apakah koneksi langsung berasal dari loopback lokal
+			// jika diizinkan. PeerIPFrom dipakai — BUKAN ClientIPFrom: IP hasil
+			// resolusi proxy tampak sebagai loopback untuk seluruh trafik luar
+			// bila reverse proxy jalan di host yang sama tanpa TRUSTED_PROXIES.
 			if allowLoopback {
-				if ip, ok := httpx.ClientIPFrom(ctx); ok && ip.IsLoopback() {
+				if ip, ok := httpx.PeerIPFrom(r); ok && ip.IsLoopback() {
 					next.ServeHTTP(w, r)
 					return
 				}

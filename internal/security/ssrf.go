@@ -70,6 +70,12 @@ var blockedPrefixes = []netip.Prefix{
 	// 64:ff9b::/96 memetakan seluruh IPv4 ke IPv6 (NAT64) dan bisa dipakai menjangkau
 	// alamat privat lewat alamat yang tampak publik.
 	netip.MustParsePrefix("64:ff9b::/96"),
+	// 6to4 (2002::/16) menanam alamat IPv4 utuh di bit 16-48: 2002:7f00:1:: adalah
+	// 127.0.0.1 yang ditulis ulang, dan tidak tersentuh satu pun prefix IPv4 di
+	// atas maupun jaring pengaman IsLoopback (keluarga alamatnya IPv6).
+	netip.MustParsePrefix("2002::/16"),
+	// TEREDO (2001::/32) menanam IPv4 terbalik dengan cara yang sama.
+	netip.MustParsePrefix("2001::/32"),
 }
 
 // SSRFPolicy mengatur alamat mana yang boleh dihubungi.
@@ -173,6 +179,30 @@ func unmap4In6(addr netip.Addr) netip.Addr {
 	return addr
 }
 
+// tampakNumerik melaporkan apakah host terlihat seperti alamat IP yang ditulis
+// dalam bentuk non-kanonis: seluruhnya digit-titik ("2130706433", "0177.0.0.1"),
+// atau memuat penanda heksadesimal ("0x7f.0.0.1"). Hostname huruf biasa
+// ("ollama", "model.internal") tidak tersentuh: aturannya hanya menolak yang
+// tidak memuat SATU PUN huruf non-heksadesimal atau tanda hubung — karena nama
+// seperti itu tidak pernah menjadi nama DNS yang dimaksudkan operator, tetapi
+// persis yang diterjemahkan resolver menjadi alamat IP.
+func tampakNumerik(host string) bool {
+	if host == "" {
+		return false
+	}
+	if strings.Contains(host, "0x") || strings.Contains(host, "0X") {
+		return true
+	}
+	hanyaAngkaTitik := true
+	for _, r := range host {
+		if (r < '0' || r > '9') && r != '.' && r != ':' {
+			hanyaAngkaTitik = false
+			break
+		}
+	}
+	return hanyaAngkaTitik
+}
+
 // ValidateBaseURL memeriksa base URL provider sebelum disimpan.
 //
 // Ini lapisan pertama: menolak yang jelas salah lebih awal, dengan pesan yang bisa
@@ -210,6 +240,10 @@ func ValidateBaseURL(raw string, policy SSRFPolicy) error {
 	if host == "" {
 		return fmt.Errorf("%w: host kosong", ErrInvalidBaseURL)
 	}
+	// Titik di ujung ("127.0.0.1.") adalah nama yang sama bagi resolver, tetapi
+	// bukan string yang dikenali ParseAddr — tanpa normalisasi ini, loopback
+	// bisa ditulis dengan titik dan lolos sebagai "nama biasa".
+	host = strings.TrimSuffix(host, ".")
 
 	// Bila host sudah berupa alamat IP, bisa langsung diperiksa — termasuk terhadap
 	// AllowedPrivateAddrs, karena CheckAddr yang menghormatinya. Bila berupa nama, tidak
@@ -217,6 +251,15 @@ func ValidateBaseURL(raw string, policy SSRFPolicy) error {
 	// hasil resolusi saat menghubungi, dan pemeriksaan yang sesungguhnya ada di Dialer.
 	if addr, err := netip.ParseAddr(host); err == nil {
 		return CheckAddr(addr, policy)
+	}
+	// Bentuk NUMERIK yang bukan IP kanonis ("2130706433", "0x7f.0.0.1",
+	// "0177.0.0.1") DITOLAK di sini: resolver sistem (getaddrinfo) menerjemahkannya
+	// menjadi 127.0.0.1 sehingga lapisan dial masih menahannya TANPA proxy,
+	// tetapi DENGAN egress proxy yang didial hanya proxy-nya — lapisan dial tidak
+	// pernah melihat tujuan sebenarnya dan pemeriksaan di sini satu-satunya yang
+	// berlaku. Nama host huruf biasa tidak tersentuh aturan ini.
+	if tampakNumerik(host) {
+		return fmt.Errorf("%w: %q bukan alamat IP yang sah", ErrBlockedAddress, host)
 	}
 
 	// Nama yang terang-terangan menunjuk ke dalam ditolak lebih awal supaya operator

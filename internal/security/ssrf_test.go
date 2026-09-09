@@ -53,6 +53,12 @@ func TestValidateBaseURLRejects(t *testing.T) {
 		{"unique local IPv6", "https://[fc00::1]/v1", ErrBlockedAddress},
 		{"link-local IPv6", "https://[fe80::1]/v1", ErrBlockedAddress},
 		{"multicast", "https://239.1.1.1/v1", ErrBlockedAddress},
+		{"loopback trailing dot", "https://127.0.0.1./v1", ErrBlockedAddress},
+		{"desimal non-kanonis 2130706433", "https://2130706433/v1", ErrBlockedAddress},
+		{"hex non-kanonis 0x7f.0.0.1", "https://0x7f.0.0.1/v1", ErrBlockedAddress},
+		{"oktal non-kanonis 0177.0.0.1", "https://0177.0.0.1/v1", ErrBlockedAddress},
+		{"6to4 2002:7f00:1:: (loopback tertanam)", "https://[2002:7f00:1::]/v1", ErrBlockedAddress},
+		{"TEREDO 2001:0:7f00:1::", "https://[2001:0:7f00:1::]/v1", ErrBlockedAddress},
 	}
 
 	for _, tc := range tests {

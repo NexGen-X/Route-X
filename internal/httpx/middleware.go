@@ -625,6 +625,22 @@ func ClientIPFrom(ctx context.Context) (netip.Addr, bool) {
 	return ip, ok && ip.IsValid()
 }
 
+// PeerIPFrom mengembalikan alamat peer koneksi TCP langsung, tanpa memedulikan
+// header proxy apa pun.
+//
+// Berbeda dari ClientIPFrom: hasil resolusi proxy SENGAJA tidak dipakai di sini.
+// Pemeriksaan loopback untuk membuka akses (mis. /metrics tanpa token) hanya sah
+// terhadap peer langsung — memakai IP hasil resolusi berarti proxy same-host
+// yang tidak terdaftar di TRUSTED_PROXIES membuat seluruh trafik luar tampak
+// berasal dari 127.0.0.1 dan membuka endpoint itu ke publik.
+func PeerIPFrom(r *http.Request) (netip.Addr, bool) {
+	if r == nil {
+		return netip.Addr{}, false
+	}
+	ip := parseIP(r.RemoteAddr)
+	return ip, ip.IsValid()
+}
+
 // ParseTrustedProxies mengubah daftar teks berisi CIDR ("10.0.0.0/8") atau IP
 // tunggal ("192.0.2.10") menjadi prefix untuk RealIP. Entri kosong dilewati.
 func ParseTrustedProxies(values []string) ([]netip.Prefix, error) {

@@ -69,6 +69,20 @@ type Config struct {
 	EncryptionKey []byte
 	APIKeyPepper  []byte
 
+	// MetricsToken adalah Bearer token untuk scraper Prometheus di /metrics.
+	// Wajib diisi saat produksi (fail-fast di validate); di non-produksi boleh
+	// kosong dan loopback tetap diizinkan untuk pengembangan lokal.
+	MetricsToken security.Secret
+	// MetricsAllowLoopback mengizinkan akses /metrics tanpa token dari koneksi
+	// loopback. Default MATI di produksi, MENYALA di non-produksi.
+	MetricsAllowLoopback bool
+	// RateLimitFailClosed mengubah perilaku pembatas laju saat Redis tidak bisa
+	// dihubungi: true = tolak 429 (fail-closed), false = loloskan + catat
+	// (fail-open, default). Fail-open menjaga login tetap bisa saat Redis mati,
+	// tapi berarti pemadaman Redis mematikan semua pembatasan — untuk instalasi
+	// yang menganggap pembatasan sebagai kontrol keamanan, nyalakan ini.
+	RateLimitFailClosed bool
+
 	InitialAdminEmail    string
 	InitialAdminPassword security.Secret
 
@@ -158,6 +172,11 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 		EncryptionKey: r.requiredKeyBytes("ENCRYPTION_KEY", encryptionKeyLen),
 		APIKeyPepper:  r.requiredKeyBytesMin("API_KEY_PEPPER", minAPIKeyPepperLen),
 
+		// Token metrik dibaca lewat Secret agar tidak bocor ke log; validasi
+		// panjang minimum khusus produksi ada di validate.
+		MetricsToken:        security.Secret(r.str("METRICS_TOKEN", "")),
+		RateLimitFailClosed: r.boolean("RATE_LIMIT_FAIL_CLOSED", false),
+
 		InitialAdminEmail:    r.str("INITIAL_ADMIN_EMAIL", ""),
 		InitialAdminPassword: security.Secret(r.str("INITIAL_ADMIN_PASSWORD", "")),
 
@@ -175,6 +194,16 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 
 		HealthCheckInterval: r.duration("HEALTH_CHECK_INTERVAL", 60*time.Second),
 		UsageRollupInterval: r.duration("USAGE_ROLLUP_INTERVAL", 5*time.Minute),
+	}
+
+	// Loopback metrik default MENYALA di non-produksi (pengembangan lokal/CI tanpa
+	// token scraper) dan MATI di produksi. Dihitung di sini karena butuh AppEnv
+	// yang baru diketahui setelah literal di atas; nilai eksplisit operator
+	// selalu menang atas default ini.
+	if _, ok := r.lookup("METRICS_ALLOW_LOOPBACK"); !ok {
+		cfg.MetricsAllowLoopback = !cfg.AppEnv.IsProduction()
+	} else {
+		cfg.MetricsAllowLoopback = r.boolean("METRICS_ALLOW_LOOPBACK", false)
 	}
 
 	cfg.validate(r)
@@ -212,6 +241,13 @@ func (c *Config) validate(r *reader) {
 	}
 	if pw := c.InitialAdminPassword; !pw.IsZero() && pw.Len() < 16 {
 		r.fail("INITIAL_ADMIN_PASSWORD minimal 16 karakter saat APP_ENV=production")
+	}
+	// /metrics memuat laju request, latensi, dan kardinalitas operasional: tanpa
+	// token, satu-satunya pertahanan adalah sesi admin atau loopback. Operator
+	// produksi mudah lupa menyetelnya, jadi kegagalan ini dibuat eksplisit saat
+	// boot — bukan ditemukan dari log akses setelah bocor.
+	if len(strings.TrimSpace(c.MetricsToken.Reveal())) < 32 {
+		r.fail("METRICS_TOKEN wajib diisi (minimal 32 karakter acak) saat APP_ENV=production")
 	}
 }
 

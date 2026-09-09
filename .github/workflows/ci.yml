@@ -13,7 +13,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: routex
-          POSTGRES_PASSWORD: routex
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: routex_test
         ports:
           - 5432:5432

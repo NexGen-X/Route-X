@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 const sensitive = "sk_live_super_secret_value_9a21"
@@ -104,5 +105,24 @@ func TestMaskHidesMostOfValue(t *testing.T) {
 	body := strings.TrimPrefix(key, "sk_live_")
 	if strings.Contains(masked, body[:len(body)-4]) {
 		t.Fatalf("Mask menyisakan badan key: %s", masked)
+	}
+}
+
+// Regresi e2e sisa-kritis: Mask dengan input non-ASCII tidak boleh
+// menghasilkan string UTF-8 tidak valid (json.Marshal gagal -> 500).
+func TestMaskUTF8TidakPecahRune(t *testing.T) {
+	for _, tc := range []struct{ value, prefix string }{
+		{"sk-abcdef", "sk-"},
+		{"sk-abcdef", "sk-"},
+		{"kredensial-singkat", ""},
+	} {
+		got := Mask(tc.value, tc.prefix, 4)
+		if !utf8.ValidString(got) {
+			t.Fatalf("Mask(%q) tidak valid UTF-8: %q", tc.value, got)
+		}
+		buf, err := json.Marshal(got)
+		if err != nil || !json.Valid(buf) {
+			t.Fatalf("Mask(%q) gagal marshal JSON: %v", tc.value, err)
+		}
 	}
 }

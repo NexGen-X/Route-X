@@ -67,9 +67,13 @@ func Mask(value, prefix string, tailLen int) string {
 	if tailLen < 0 {
 		tailLen = 0
 	}
-	// Butuh minimal tailLen karakter tersembunyi agar penyamaran bermakna.
-	if len(body) < tailLen*2 {
-		return prefix + strings.Repeat("*", max(len(body), 4))
+	// Hitung per rune, bukan per byte: memotong string UTF-8 di tengah
+	// rune multi-byte menghasilkan string tidak valid sehingga json.Marshal
+	// gagal dan handler menjawab internal_error (ditemukan via e2e saat
+	// kredensial berisi karakter non-ASCII).
+	runes := []rune(body)
+	if len(runes) < tailLen*2 {
+		return prefix + strings.Repeat("*", max(len(runes), 4))
 	}
-	return prefix + "****" + body[len(body)-tailLen:]
+	return prefix + "****" + string(runes[len(runes)-tailLen:])
 }

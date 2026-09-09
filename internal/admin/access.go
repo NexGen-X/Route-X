@@ -799,6 +799,19 @@ func (h *Handlers) peranDiAtasPelaku(ctx context.Context, actorID, roleID string
 	return "", false
 }
 
+// superAdminID mengembalikan ID peran "Super Admin", atau "" bila tidak
+// ditemukan. Kegagalan di sini berarti guard pemegang-terakhir Revoke
+// dilewati (fail-open): revokeUserRole tetap menolak hapus-diri lewat
+// lapisan lain, dan kegagalan baca peran adalah keadaan sementara yang
+// tidak boleh mengunci pencabutan peran biasa.
+func (h *Handlers) superAdminID(ctx context.Context) string {
+	super, err := h.rolesRepo.GetByName(ctx, seed.RoleSuperAdmin)
+	if err != nil {
+		return ""
+	}
+	return super.ID
+}
+
 func (h *Handlers) grantUserRole(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -838,12 +851,12 @@ func (h *Handlers) revokeUserRole(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	roleID := chi.URLParam(r, "role_id")
 
-	if err := h.rolesRepo.Revoke(ctx, id, roleID); err != nil {
+	if err := h.rolesRepo.Revoke(ctx, id, roleID, h.superAdminID(ctx)); err != nil {
 		// Penolakan pemegang-terakhir punya pesannya sendiri: pesan generik
 		// mapRepoError ("sudah ada atau melanggar keunikan") menyesatkan di
 		// sini karena tidak ada yang "sudah ada".
 		if errors.Is(err, repo.ErrConflict) {
-			httpx.BadRequest(w, r, "last_holder_forbidden", "peran ini hanya dimiliki satu pengguna; beri peran itu ke pengguna lain dulu sebelum mencabutnya")
+			httpx.BadRequest(w, r, "last_holder_forbidden", "pengguna ini pemegang terakhir peran Super Admin; beri peran itu ke pengguna lain dulu sebelum mencabutnya")
 			return
 		}
 		mapRepoError(w, r, err, "pencabutan peran")

@@ -385,25 +385,37 @@ func (r *Roles) Grant(ctx context.Context, userID, roleID, grantedBy string) err
 // Revoke mencabut satu peran dari pengguna. Peran yang memang tidak dimiliki
 // menghasilkan repo.ErrNotFound.
 //
-// Mencabut pemegang TERAKHIR satu peran DITOLAK dengan repo.ErrConflict:
+// Mencabut pemegang TERAKHIR peran Super Admin DITOLAK dengan repo.ErrConflict:
 // tanpa ini, pencabutan "Super Admin" terakhir — entah oleh admin yang salah
 // klik atau lewat sesi curian — mengunci seluruh manajemen identitas tanpa
-// satu pun permintaan yang terlihat gagal.
+// satu pun permintaan yang terlihat gagal. Peran BIASA boleh dikosongkan:
+// itu keadaan sah (mis. peran baru yang belum dipakai, atau peran yang
+// penghuninya dipindah sebelum peran itu dihapus).
+//
+// superAdminID adalah ID peran "Super Admin". String kosong berarti "tidak
+// diketahui": guard dilewati (fail-open) supaya pemakaian lama dan skrip
+// yang tidak mengenal konsep itu tidak terkunci. Pemanggil HTTP wajib
+// mengisinya; lihat revokeUserRole.
 //
 // Penolakannya atomik dalam SATU statement (klausa EXISTS di dalam DELETE),
 // bukan hitung-dulu-hapus-kemudian: dua pencabutan bersamaan tidak bisa
 // sama-sama melihat "masih ada satu lagi" lalu dua-duanya menghapus, karena
 // baris kedua baru terhapus bila baris lain masih ada SAAT statement-nya jalan.
-func (r *Roles) Revoke(ctx context.Context, userID, roleID string) error {
+func (r *Roles) Revoke(ctx context.Context, userID, roleID, superAdminID string) error {
 	const op = "mencabut peran"
 	if !validUUID(userID) || !validUUID(roleID) {
 		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 
-	tag, err := r.q.Exec(ctx,
-		`delete from user_roles where user_id = $1 and role_id = $2
-		 and exists (select 1 from user_roles where role_id = $2 and user_id <> $1)`,
-		userID, roleID)
+	// Guard pemegang-terakhir hanya untuk Super Admin. Klausa EXISTS di
+	// bawah hanya ditambahkan bila roleID adalah Super Admin yang dikenal.
+	jagaTerakhir := superAdminID != "" && roleID == superAdminID
+	query := `delete from user_roles where user_id = $1 and role_id = $2`
+	if jagaTerakhir {
+		query += `
+		 and exists (select 1 from user_roles where role_id = $2 and user_id <> $1)`
+	}
+	tag, err := r.q.Exec(ctx, query, userID, roleID)
 	if err != nil {
 		return repo.Err(op, err)
 	}
@@ -411,17 +423,18 @@ func (r *Roles) Revoke(ctx context.Context, userID, roleID string) error {
 		return nil
 	}
 	// Nol baris berarti salah satu dari dua hal: tidak memegang peran itu
-	// (404), atau satu-satunya pemegang (409). Dibedakan dengan satu query —
-	// balapan di sini tidak berbahaya karena hanya menentukan PESAN error,
-	// sementara penegakan sesungguhnya sudah terjadi di statement atomik.
+	// (404), atau satu-satunya pemegang Super Admin (409). Dibedakan dengan
+	// satu query — balapan di sini tidak berbahaya karena hanya menentukan
+	// PESAN error, sementara penegakan sesungguhnya sudah terjadi di
+	// statement atomik.
 	var memegang bool
 	if err := r.q.QueryRow(ctx,
 		`select exists (select 1 from user_roles where user_id = $1 and role_id = $2)`,
 		userID, roleID).Scan(&memegang); err != nil {
 		return repo.Err(op, err)
 	}
-	if memegang {
-		return fmt.Errorf("%s: peran ini hanya dimiliki satu pengguna, pencabutan terakhir ditolak: %w",
+	if memegang && jagaTerakhir {
+		return fmt.Errorf("%s: peran Super Admin hanya dimiliki satu pengguna, pencabutan terakhir ditolak: %w",
 			op, repo.ErrConflict)
 	}
 	return fmt.Errorf("%s: %w", op, repo.ErrNotFound)

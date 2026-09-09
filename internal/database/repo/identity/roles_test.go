@@ -320,10 +320,13 @@ func TestRolesGrantRevokeIntegration(t *testing.T) {
 	})
 
 	t.Run("Revoke", func(t *testing.T) {
-		if err := roles.Revoke(ctx, target.ID, admin.ID); err != nil {
+		// Peran biasa boleh dikosongkan: guard pemegang-terakhir hanya
+		// berlaku untuk Super Admin (lihat subtest di bawah), jadi
+		// pencabutan pemegang terakhir peran Admin sah di sini.
+		if err := roles.Revoke(ctx, target.ID, admin.ID, ""); err != nil {
 			t.Fatalf("Revoke: %v", err)
 		}
-		if err := roles.Revoke(ctx, target.ID, admin.ID); !errors.Is(err, repo.ErrNotFound) {
+		if err := roles.Revoke(ctx, target.ID, admin.ID, ""); !errors.Is(err, repo.ErrNotFound) {
 			t.Errorf("Revoke kedua = %v, ingin ErrNotFound", err)
 		}
 		got, err := roles.OfUser(ctx, target.ID)
@@ -332,6 +335,30 @@ func TestRolesGrantRevokeIntegration(t *testing.T) {
 		}
 		if len(got) != 1 || got[0].ID != viewer.ID {
 			t.Errorf("peran setelah pencabutan = %v, ingin hanya Viewer", got)
+		}
+	})
+
+	t.Run("pemegang terakhir Super Admin tidak bisa dicabut", func(t *testing.T) {
+		super := makeRole(ctx, t, roles, "Super Admin", 0, permProvidersRead)
+		pegang := makeUser(ctx, t, users, "super@routex.test")
+		cadangan := makeUser(ctx, t, users, "cadangan@routex.test")
+		if err := roles.Grant(ctx, pegang.ID, super.ID, ""); err != nil {
+			t.Fatalf("Grant Super Admin: %v", err)
+		}
+		// Satu-satunya pemegang: ditolak dengan ErrConflict.
+		if err := roles.Revoke(ctx, pegang.ID, super.ID, super.ID); !errors.Is(err, repo.ErrConflict) {
+			t.Errorf("Revoke pemegang terakhir Super Admin = %v, ingin ErrConflict", err)
+		}
+		// Setelah ada pemegang kedua, pencabutan pertama sah.
+		if err := roles.Grant(ctx, cadangan.ID, super.ID, ""); err != nil {
+			t.Fatalf("Grant cadangan: %v", err)
+		}
+		if err := roles.Revoke(ctx, pegang.ID, super.ID, super.ID); err != nil {
+			t.Errorf("Revoke dengan cadangan ada = %v, ingin nil", err)
+		}
+		// Sekarang cadangan satu-satunya pemegang: ditolak lagi.
+		if err := roles.Revoke(ctx, cadangan.ID, super.ID, super.ID); !errors.Is(err, repo.ErrConflict) {
+			t.Errorf("Revoke pemegang terakhir kedua = %v, ingin ErrConflict", err)
 		}
 	})
 
@@ -431,7 +458,7 @@ func TestRolesEffectivePermissionsIntegration(t *testing.T) {
 	})
 
 	t.Run("mencabut peran mencabut izinnya", func(t *testing.T) {
-		if err := roles.Revoke(ctx, user.ID, admin.ID); err != nil {
+		if err := roles.Revoke(ctx, user.ID, admin.ID, ""); err != nil {
 			t.Fatalf("Revoke: %v", err)
 		}
 		got, err := roles.EffectivePermissions(ctx, user.ID)

@@ -677,7 +677,7 @@ func TestErrorTranslationIntegration(t *testing.T) {
 		{
 			name: "peran yang tidak dimiliki",
 			want: repo.ErrNotFound,
-			run:  func() error { return roles.Revoke(ctx, user.ID, missing) },
+			run:  func() error { return roles.Revoke(ctx, user.ID, missing, "") },
 		},
 		{
 			name:       "email kosong",

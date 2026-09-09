@@ -807,20 +807,22 @@ func (h *Handlers) addProviderModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cari atau buat model kanonik terlebih dahulu
+	// Cari atau buat model kanonik terlebih dahulu. Kemampuan bawaan memakai
+	// nilai yang dikenali constraint models_capabilities_known (migrasi 0004):
+	// "chat"/"streaming" BUKAN kemampuan sah dan membuat Create selalu gagal.
 	m, err := h.modelRepo.GetByModelID(ctx, name)
 	if errors.Is(err, repo.ErrNotFound) {
 		m, err = h.modelRepo.Create(ctx, upstream.CreateModelParams{
 			ModelID:      name,
 			DisplayName:  name,
-			Capabilities: []string{"chat", "streaming"},
+			Capabilities: []string{upstream.CapText},
 		})
 		if err != nil {
-			m, _ = h.modelRepo.GetByModelID(ctx, name)
+			mapRepoError(w, r, err, "model")
+			return
 		}
-	}
-	if m == nil {
-		httpx.InternalError(w, r)
+	} else if err != nil {
+		mapRepoError(w, r, err, "model")
 		return
 	}
 

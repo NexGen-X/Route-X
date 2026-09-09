@@ -944,6 +944,52 @@ func TestBatch4ValidationsAndConsistency(t *testing.T) {
 	})
 }
 
+// TestAddProviderModelBuatModelBaru memastikan POST /providers/{id}/models
+// dengan nama model yang belum ada di katalog membuat model kanonik lalu
+// mengembalikan 201, bukan 500.
+//
+// Regresi bug produksi 2026-09-09: handler mengirim Capabilities
+// {"chat","streaming"} yang ditolak constraint models_capabilities_known
+// (migrasi 0004, nilai sah: text/vision/reasoning/tools/embeddings),
+// lalu menelan error Create dan membalas InternalError samar.
+func TestAddProviderModelBuatModelBaru(t *testing.T) {
+	env := setupTestEnv(t)
+	client := env.newClient(t)
+
+	client.login("superadmin@routex.internal", testPassword)
+
+	resProv, bodyProv := client.do(http.MethodPost, "/api/admin/upstreams/providers", map[string]any{
+		"name":     "prov-model-baru",
+		"kind":     "anthropic",
+		"base_url": "https://contoh.test/v1",
+	}, true)
+	if resProv.StatusCode != http.StatusCreated {
+		t.Fatalf("buat provider status = %d, body: %s", resProv.StatusCode, string(bodyProv))
+	}
+	var prov struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(bodyProv, &prov)
+
+	resMap, bodyMap := client.do(http.MethodPost, "/api/admin/upstreams/providers/"+prov.ID+"/models", map[string]any{
+		"name": "model-kanonik-baru-uji",
+	}, true)
+	if resMap.StatusCode != http.StatusCreated {
+		t.Fatalf("attach model baru status = %d, mau 201, body: %s", resMap.StatusCode, string(bodyMap))
+	}
+
+	// Model yang sama ditempel kedua kali harus 400 already_attached, bukan 500.
+	resDup, bodyDup := client.do(http.MethodPost, "/api/admin/upstreams/providers/"+prov.ID+"/models", map[string]any{
+		"name": "model-kanonik-baru-uji",
+	}, true)
+	if resDup.StatusCode != http.StatusBadRequest {
+		t.Fatalf("attach duplikat status = %d, mau 400, body: %s", resDup.StatusCode, string(bodyDup))
+	}
+	if !strings.Contains(string(bodyDup), "already_attached") {
+		t.Errorf("respons duplikat tidak memuat already_attached: %s", string(bodyDup))
+	}
+}
+
 // TestBYOKIsolationAndNestedCredentialSecurity menguji kepatuhan isolasi BYOK (5.1)
 // dan pencegahan manipulasi kredensial pada sumber daya bersarang /providers/{id}/credentials/{cred_id}.
 func TestBYOKIsolationAndNestedCredentialSecurity(t *testing.T) {

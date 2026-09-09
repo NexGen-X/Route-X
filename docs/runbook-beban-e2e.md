@@ -1,10 +1,13 @@
 # Runbook uji beban + e2e Route-X (staging lokal)
 
 Hasil smoke 2026-09-09: 20 VU 5 menit, 17.880 request, 0 gagal,
-p95 6,16 ms (ambang 800 ms). Playwright 3 alur: lolos 3,1 detik.
+p95 6,16 ms (ambang 800 ms).
 Hasil BERAT 2026-09-09: 200 VU 8 menit (ramp 2 + tahan 5 + turun 1),
 441.894 request pada 920/detik, 1 gagal yang expected (abort SSE),
 p95 13,22 ms (ambang 2000 ms), 43.874 abort tanpa kebocoran.
+Playwright menyeluruh 2026-09-09: 24/24 lolos 13,4 detik
+(2 setup auth + 4 aksi-tulis admin + 3 alur inti + 15 semua-halaman),
+pola storage-state: login tepat 2 kali, hemat limiter 20/IP/15 mnt.
 Chaos yang disuntik tengah jalan: echo2 fail 60 dtk (failover 200),
 Redis mati 30 dtk (chat 200 fail-open, login 401 benar, readyz down),
 echo2 slow 2-4 dtk (prompt unik 3 dtk, cache menutupi prompt lama).
@@ -107,16 +110,33 @@ failover teruji. Suntik chaos tengah jalan lewat flag file:
 Ekspektasi saat chaos: failover tetap 200, Redis mati chat 200
 + login 401 + readyz redis down, prompt unik menembus cache.
 
-## 8. Jalan Playwright (butuh user Viewer khusus e2e)
+## 8. Jalan Playwright menyeluruh (butuh admin + Viewer khusus e2e)
 
   POST /api/admin/access/users
-    {"email":"e2e-tester@local","name":"E2E Tester",
+    {"email":"admin-e2e@local",...}            # peran Super Admin (seed awal)
+    {"email":"e2e-viewer@local","name":"E2E Viewer",
      "password":"<kuat>","must_change_password":false}
   POST /api/admin/access/users/<id>/roles {"role_id":"<id-peran-Viewer>"}
 
   cd web
-  BASE_URL=http://127.0.0.1:18080 E2E_EMAIL=e2e-tester@local \
-    E2E_PASSWORD=<password> npx playwright test e2e/alur-inti.spec.ts
+  BASE_URL=http://127.0.0.1:18080 \
+    E2E_ADMIN_EMAIL=admin-e2e@local E2E_ADMIN_PASSWORD=<password-admin> \
+    E2E_EMAIL=e2e-viewer@local E2E_PASSWORD=<password-viewer> \
+    npx playwright test --workers=1
+
+Hasil 2026-09-09: 24/24 lolos 13,4 detik. Rincian:
+2 setup auth (login admin + viewer tepat 1 kali tiap peran),
+4 aksi-tulis (buat API key UI, alokasikan budget UI, rule+limit API,
+Viewer 403), 3 alur inti, 14 semua-halaman + 1 fallback rute.
+
+Wajib --workers=1 dan pola storage-state (auth.setup.ts): 24 test
+x login = 429 dari limiter login (20/IP/15 mnt). File sesi
+e2e/.auth-*.json sudah di .gitignore, dibuat ulang tiap run.
+
+Pelajarannya: page.request/fixture request TIDAK mengirim Origin
+maupun token CSRF otomatis, padahal mutasi menuntut keduanya.
+Ambil csrf_token dari GET /api/auth/me lalu kirim sebagai header
+Origin + X-CSRF-Token di tiap POST/PUT/DELETE.
 
 Jangan jalankan Playwright bersamaan dengan k6 bila mengukur latency:
 tiga browser ikut memakai server yang sama dan mencemari angka p95.

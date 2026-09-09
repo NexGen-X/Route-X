@@ -8,11 +8,19 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 60 * 1000,
   retries: 1,
+  // Sesi tersimpan hasil auth.setup: spec UI tidak login lagi per test,
+  // supaya limiter login (20/IP/15 mnt) tidak menjegal suite.
+  // File .auth-*.json diabaikan git (lihat .gitignore).
   use: {
     baseURL: process.env.BASE_URL || 'http://127.0.0.1:18080',
     trace: 'on-first-retry',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
+    },
   ],
 });

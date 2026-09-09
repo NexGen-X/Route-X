@@ -129,6 +129,34 @@ Hasil 2026-09-09: 24/24 lolos 13,4 detik. Rincian:
 4 aksi-tulis (buat API key UI, alokasikan budget UI, rule+limit API,
 Viewer 403), 3 alur inti, 14 semua-halaman + 1 fallback rute.
 
+## 8b. Jalan Playwright sisa-kritis (6 area tulis + 2 negatif)
+
+Butuh provider echo-sisa (echo-upstream.py :19091, prioritas 1) dan
+echo-konten (:19093) terdaftar dengan kredensial, keduanya map gpt-5.
+Buat admin khusus, lalu:
+
+  cd web
+  BASE_URL=http://127.0.0.1:18080 \
+    E2E_ADMIN_EMAIL=admin-sisa@local E2E_ADMIN_PASSWORD=<GANTI_PASSWORD_ADMIN> \
+    E2E_EMAIL=viewer-sisa@local E2E_PASSWORD=<GANTI_PASSWORD_VIEWER> \
+    npx playwright test sisa-kritis --no-deps --workers=1
+
+Hasil 2026-09-09: 6/6 lolos, full suite 30/30 1,4 menit. Rincian:
+providers (buat, kredensial, attach, test-model, hapus bersih), egress
+(pool mati probe unhealthy 200 + hapus), users (buat, grant Viewer,
+login, update, hapus), filter respons (blokir 4xx lalu lolos 200
+setelah hapus), negatif rate-limit (key 2 RPM, request ke-3 429),
+negatif kuota (harga 1000 USD/1M + budget 0,01, blokir 402).
+
+Pola: SATU APIRequestContext + login 1x di beforeAll (hemat limiter),
+nama e2e-sisa-*, prioritas provider 99, cleanup di finally. Wajib
+--no-deps bila hanya sisa-kritis (setup UI butuh server web dev).
+Tiga TTL memengaruhi timing: filter 5 dtk, budget 5 dtk, harga 30 dtk
+(lihat contentfilter.go, billing.go, pricing.go) — test menunggu
+7/7/35 dtk di titik yang tepat. Struktur create key:
+{key: {id,...}, masked, raw_key} — id dan raw_key di ROOT hanya
+untuk baca, bukan tulis.
+
 Wajib --workers=1 dan pola storage-state (auth.setup.ts): 24 test
 x login = 429 dari limiter login (20/IP/15 mnt). File sesi
 e2e/.auth-*.json sudah di .gitignore, dibuat ulang tiap run.

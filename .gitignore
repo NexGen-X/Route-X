@@ -1,0 +1,15 @@
+# Build output dashboard (dibangun ulang via `cd web && npm run build`)
+web/dist/*
+!web/dist/.gitkeep
+
+# Dependensi dan artefak lokal web
+web/node_modules/
+web/test-results/
+web/playwright-report/
+web/tsconfig.tsbuildinfo
+web/coverage/
+
+# Konfigurasi lokal — tidak pernah masuk repo
+.env
+*.env
+*.local

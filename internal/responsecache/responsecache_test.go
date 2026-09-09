@@ -175,3 +175,36 @@ func TestEngineSettings(t *testing.T) {
 		t.Fatal("Get tanpa redis tidak boleh hit")
 	}
 }
+
+// TestComputeScopedKeyIsolasiPemilik memastikan dua penyewa berbeda tidak
+// berbagi satu entri cache: respons milik tenant A tidak boleh disajikan ke
+// tenant B (regresi bug lintas-tenant).
+func TestComputeScopedKeyIsolasiPemilik(t *testing.T) {
+	e := NewEngine(nil, nil)
+	req := func() *providers.ChatRequest {
+		return &providers.ChatRequest{
+			Model:    "gpt-4o",
+			Messages: []providers.Message{{Role: "user", Content: "halo"}},
+		}
+	}
+
+	basis := e.ComputeScopedKey(req(), Scope{ModelID: "m-1", OwnerUserID: "u-a", KeyID: "k-1"})
+
+	// Pemilik berbeda -> kunci berbeda.
+	if got := e.ComputeScopedKey(req(), Scope{ModelID: "m-1", OwnerUserID: "u-b", KeyID: "k-1"}); got == basis {
+		t.Error("owner berbeda berbagi kunci cache: respons lintas-tenant bocor")
+	}
+	// Key berbeda -> kunci berbeda.
+	if got := e.ComputeScopedKey(req(), Scope{ModelID: "m-1", OwnerUserID: "u-a", KeyID: "k-2"}); got == basis {
+		t.Error("key berbeda berbagi kunci cache")
+	}
+	// Model kanonik berbeda -> kunci berbeda.
+	if got := e.ComputeScopedKey(req(), Scope{ModelID: "m-2", OwnerUserID: "u-a", KeyID: "k-1"}); got == basis {
+		t.Error("model berbeda berbagi kunci cache")
+	}
+	// Scope kosong kompatibel mundur dengan ComputeKey lama: entri yang sudah
+	// ada tetap bisa dibaca setelah deploy.
+	if got := e.ComputeScopedKey(req(), Scope{}); got != e.ComputeKey(req()) {
+		t.Error("scope kosong harus menghasilkan kunci yang sama dengan ComputeKey lama")
+	}
+}

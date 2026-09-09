@@ -25,11 +25,18 @@ const DefaultTTL = 1 * time.Hour
 
 // Entry adalah satu respons inferensi yang disimpan di Redis.
 type Entry struct {
-	Model        string          `json:"model"`
+	Model string `json:"model"`
+	// ProviderID adalah providers.id yang melayani, dipakai menegakkan
+	// penyaring jawaban berlingkup provider pada jalur HIT.
+	ProviderID   string          `json:"provider_id,omitempty"`
 	Raw          json.RawMessage `json:"raw"`
 	Usage        providers.Usage `json:"usage"`
 	StreamChunks []string        `json:"stream_chunks,omitempty"`
-	CachedAt     time.Time       `json:"cached_at"`
+	// Teks adalah teks jawaban yang sudah diekstrak saat menyimpan, supaya
+	// jalur HIT non-streaming tetap bisa menjalankan penyaring jawaban tanpa
+	// mengurai ulang Raw. Kosong pada entri lama maupun entri streaming.
+	Teks     string    `json:"teks,omitempty"`
+	CachedAt time.Time `json:"cached_at"`
 }
 
 // Stats merangkum metrik performa response cache.
@@ -94,7 +101,41 @@ func (e *Engine) TTL() time.Duration {
 // Kunci WAJIB memuat seluruh field yang mengubah respons upstream: tanpa itu,
 // dua request berbeda (beda TopP, Stop, ToolChoice, Seed, dst.) mendapat kunci
 // sama dan klien menerima respons milik request lain (BE-004).
+//
+// Kunci WAJIB memuat konteks pemilik lewat Scope: model kanonik (models.id),
+// pemilik API key, dan key ID. Tanpa itu dua penyewa berbagi satu entri —
+// tenant B menerima respons milik tenant A, kuota token tenant B tidak termakan,
+// dan biaya tetap dicatat penuh padahal tidak ada panggilan upstream. Kunci
+// TIDAK memakai nama model mentah dari klien (alias bisa berbeda antar
+// penyewa untuk model yang sama), melainkan ID kanonik dari parameter.
 func (e *Engine) ComputeKey(req *providers.ChatRequest) string {
+	return e.ComputeScopedKey(req, Scope{})
+}
+
+// Scope adalah konteks pemilik yang ikut membentuk kunci cache.
+//
+// Ketiganya string polos, bukan tipe internal, supaya paket ini tidak bergantung
+// pada paket apikey maupun upstream: arah ketergantungannya adalah gateway yang
+// memakai paket ini, bukan sebaliknya.
+type Scope struct {
+	// ModelID adalah models.id kanonik hasil resolusi alias, bukan nama mentah
+	// dari klien. Dua alias berbeda ke model yang sama tetap berbagi entri —
+	// justru itu yang benar, karena respons upstream-nya identik.
+	ModelID string
+	// OwnerUserID adalah pemilik API key peminta (string kosong = tanpa pemilik).
+	OwnerUserID string
+	// KeyID adalah UUID baris api_keys peminta. Ikut dimasukkan supaya key yang
+	// dibatasi model/provider-nya tidak memakan entri milik key yang longgar,
+	// dan sebaliknya.
+	KeyID string
+}
+
+// ComputeScopedKey menghitung kunci cache dengan konteks pemilik.
+//
+// Kompatibel mundur dengan entri lama: Scope kosong menghasilkan kunci yang
+// sama persis dengan ComputeKey lama, sehingga deploy tidak serta-merta
+// membuang seluruh isi cache yang ada.
+func (e *Engine) ComputeScopedKey(req *providers.ChatRequest, scope Scope) string {
 	if req == nil {
 		return ""
 	}
@@ -111,7 +152,11 @@ func (e *Engine) ComputeKey(req *providers.ChatRequest) string {
 	canonical, err := json.Marshal(struct {
 		Request         *providers.ChatRequest `json:"request"`
 		MessageContents []string               `json:"message_contents"`
-	}{Request: req, MessageContents: contents})
+		ModelID         string                 `json:"model_id,omitempty"`
+		OwnerUserID     string                 `json:"owner_user_id,omitempty"`
+		KeyID           string                 `json:"key_id,omitempty"`
+	}{Request: req, MessageContents: contents,
+		ModelID: scope.ModelID, OwnerUserID: scope.OwnerUserID, KeyID: scope.KeyID})
 	if err != nil {
 		return ""
 	}

@@ -502,7 +502,15 @@ func (r *Recorder) tulis(ev Event) {
 // ke log lewat laporTanpaHarga, karena biaya nol yang berarti "belum diisi" terlihat sama
 // dengan gratis di setiap laporan.
 func (r *Recorder) biaya(ctx context.Context, ev Event) upstream.USD {
-	if r.prices == nil || ev.ProviderModelID == "" || ev.TotalTokens <= 0 {
+	if r.prices == nil || ev.ProviderModelID == "" {
+		return 0
+	}
+	// TotalTokens TIDAK boleh jadi gerbang: adapter yang tidak menjumlahkan
+	// (atau streaming yang abort) mengisi rincian Input/Output sementara
+	// TotalTokens kosong — menggerbangi dari Total membuat biaya 0 permanen
+	// padahal tokennya tercatat di baris requests. Gerbangnya adalah jumlah
+	// rincian yang sama dengan yang ditagih Cost di bawah.
+	if ev.tokenUsage().Total() <= 0 {
 		return 0
 	}
 	harga, ok := r.prices.Price(ctx, ev.ProviderModelID)

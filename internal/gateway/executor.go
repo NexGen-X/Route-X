@@ -107,7 +107,12 @@ func PlanFromRule(rule *router.Rule, model string, cands []*upstream.RouteCandid
 		if rule.MaxAttempts > 0 {
 			p.MaxAttempts = rule.MaxAttempts
 		}
-		p.BackoffBase = rule.BackoffBase
+		// BackoffBase 0 berarti kolom NULL/nol, bukan permintaan "tanpa jeda":
+		// menimpa apa adanya mematikan backoff dan membuat retry menghantam
+		// upstream yang baru 429/5xx seketika. Hanya timpa bila > 0.
+		if rule.BackoffBase > 0 {
+			p.BackoffBase = rule.BackoffBase
+		}
 	}
 	return p
 }

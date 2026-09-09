@@ -323,6 +323,28 @@ func (j *jejak) pasangPercobaan(att []Attempt, menang *upstream.RouteCandidate) 
 	}
 }
 
+// tambahPercobaan menambahkan jejak percobaan susulan (fallback tier2) tanpa
+// menghapus jejak tier1.
+//
+// Menimpa di sini berarti timeline request_events hanya berisi tier2 sementara
+// log catatRute mencatat tier1 — dua sumber yang tidak bisa dipertemukan saat
+// operator menyelidiki kegagalan. Kandidat pemenang diperbarui bila ada, dan
+// waktu hulu diakumulasi dengan aturan yang sama seperti pasangPercobaan.
+func (j *jejak) tambahPercobaan(att []Attempt, menang *upstream.RouteCandidate) {
+	if j == nil {
+		return
+	}
+	j.attempts = append(j.attempts, att...)
+	if menang != nil {
+		j.menang = menang
+	}
+	for _, a := range att {
+		if a.SkipReason == "" {
+			j.hulu += a.Duration
+		}
+	}
+}
+
 // tambahHulu menambah waktu yang dihabiskan menunggu upstream di luar percobaan.
 //
 // Diperlukan untuk streaming: durasi percobaan hanya mencakup PEMBUKAAN aliran, sementara

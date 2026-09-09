@@ -624,36 +624,134 @@ func ekstrakTier2Model(rule *router.Rule) string {
 	return strings.TrimSpace(sub[:end])
 }
 
-func (h *Handlers) cobaTier2Sekali(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) *Outcome[*providers.ChatResponse] {
+// siapkanTier2 menyiapkan fallback combo routing: resolusi model, kewenangan
+// key, kebijakan, dan kandidat tersaring.
+//
+// Empat kemungkinan kembali: (model, kandidat, target, nil) siap dijalankan;
+// (nil, nil, nil, penolakan) bila tier2 DITOLAK kebijakan — pemanggil menulis
+// penolakan itu sebagai jawaban, karena tier1 sudah gagal dan tidak ada jawaban
+// lain yang jujur; (nil, nil, nil, nil) bila tier2 TIDAK BISA disiapkan
+// (resolusi gagal, model mati, sama dengan tier1, tanpa kandidat) — pemanggil
+// lalu tetap memakai kegagalan tier1.
+func (h *Handlers) siapkanTier2(ctx context.Context, tier2ModelName string, pr *persiapan, stream bool) (*upstream.Model, []*upstream.RouteCandidate, []policy.Target, *Rejection) {
 	t2Model, err := h.models.Resolve(ctx, tier2ModelName)
 	if err != nil {
 		h.logger.WarnContext(ctx, "resolusi tier2 combo model gagal", "tier2", tier2ModelName, "error", err)
-		return nil
+		return nil, nil, nil, nil
 	}
-
+	if !t2Model.Enabled {
+		h.logger.WarnContext(ctx, "tier2 combo model dimatikan, fallback dilewati", "tier2", tier2ModelName)
+		return nil, nil, nil, nil
+	}
+	if pr.model != nil && t2Model.ID == pr.model.ID {
+		// Tier2 sama dengan tier1: mencobanya lagi hanya mengulang kegagalan
+		// yang sama di bawah pemutus arus yang sama.
+		h.logger.WarnContext(ctx, "tier2 combo model sama dengan tier1, fallback dilewati", "tier2", tier2ModelName)
+		return nil, nil, nil, nil
+	}
+	p := pr.principal
+	if h.restrict != nil && p.ID() != "" {
+		boleh, err := h.restrict.AllowsModel(ctx, p.ID(), t2Model.ID)
+		if err != nil {
+			// Gagal-tertutup seperti izinModel: kewenangan yang tidak bisa
+			// dibaca berarti tier2 batal, bukan lolos.
+			h.logger.ErrorContext(ctx, "pemeriksaan pembatasan model tier2 gagal",
+				"api_key", p.Masked(), "model", t2Model.ModelID, "error", err)
+			return nil, nil, nil, nil
+		}
+		if !boleh {
+			return nil, nil, nil, &Rejection{
+				Status: http.StatusForbidden, Type: httpx.ErrTypePermission, Code: "model_not_allowed",
+				Message: "API key ini tidak diizinkan memakai model " + kutip(t2Model.ModelID),
+			}
+		}
+	}
+	clientIP, _ := httpx.ClientIPFrom(ctx)
+	targets := TargetsFor(p, t2Model.ID, clientIP)
+	// Kebijakan yang menuntut model — sama seperti jalur tier1 di kebijakan():
+	// tanpa ini model tier2 bisa dipakai walau key dibatasi, budget habis,
+	// atau kuota tokennya sudah lewat.
+	if rj := h.guard.SaringPermintaan(ctx, contentfilter.Subject{ModelID: t2Model.ID}); rj != nil {
+		return nil, nil, nil, rj
+	}
+	if rj := h.guard.PeriksaBatasModel(ctx, t2Model.ID); rj != nil {
+		return nil, nil, nil, rj
+	}
+	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
+		return nil, nil, nil, rj
+	}
+	if rj := h.guard.GerbangToken(ctx, p, targets); rj != nil {
+		return nil, nil, nil, rj
+	}
 	var ownerUserID string
-	if pr.principal != nil {
-		ownerUserID = pr.principal.OwnerUserID()
+	if p != nil {
+		ownerUserID = p.OwnerUserID()
 	}
-
 	cands, err := h.candidates.RouteCandidates(ctx, upstream.RouteQuery{
 		ModelID:     t2Model.ID,
 		OwnerUserID: ownerUserID,
 	})
 	if err != nil || len(cands) == 0 {
 		h.logger.WarnContext(ctx, "tidak ada kandidat untuk tier2 combo model", "tier2", tier2ModelName, "error", err)
-		return nil
+		return nil, nil, nil, nil
+	}
+	saring, ok := h.saringKandidatTier2(ctx, cands, p, stream)
+	if !ok || len(saring) == 0 {
+		h.logger.WarnContext(ctx, "tidak ada kandidat tier2 yang lolos penyaringan provider", "tier2", tier2ModelName)
+		return nil, nil, nil, nil
+	}
+	return t2Model, saring, targets, nil
+}
+
+// saringKandidatTier2 menerapkan penyaringan provider yang sama seperti jalur
+// tier1 di kandidat(): larangan provider dari penyaring konten dan pembatasan
+// provider pada API key — tanpa akses writer. Gagal-tertutup: error pemeriksaan
+// membatalkan tier2 (ok false), bukan meloloskannya.
+func (h *Handlers) saringKandidatTier2(ctx context.Context, cands []*upstream.RouteCandidate, p *apikey.Principal, stream bool) ([]*upstream.RouteCandidate, bool) {
+	periksaKey := h.restrict != nil && p.ID() != ""
+	diingat := make(map[string]bool, len(cands))
+	out := make([]*upstream.RouteCandidate, 0, len(cands))
+	for _, c := range cands {
+		if stream && !c.SupportsStreaming {
+			continue
+		}
+		boleh, ada := diingat[c.ProviderID]
+		if !ada {
+			boleh = !h.guard.ProviderDilarang(ctx, c.ProviderID)
+			if boleh && periksaKey {
+				var err error
+				boleh, err = h.restrict.AllowsProvider(ctx, p.ID(), c.ProviderID)
+				if err != nil {
+					h.logger.ErrorContext(ctx, "pemeriksaan pembatasan provider tier2 gagal",
+						"api_key", p.Masked(), "error", err)
+					return nil, false
+				}
+			}
+			diingat[c.ProviderID] = boleh
+		}
+		if boleh {
+			out = append(out, c)
+		}
+	}
+	return out, true
+}
+
+func (h *Handlers) cobaTier2Sekali(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) (*Outcome[*providers.ChatResponse], *Rejection) {
+	t2Model, cands, targets, rj := h.siapkanTier2(ctx, tier2ModelName, pr, false)
+	if rj != nil {
+		return nil, rj
+	}
+	if t2Model == nil {
+		return nil, nil
 	}
 
 	t2Req := *pr.req
 	t2Req.Model = t2Model.ModelID
 
-	t2Plan := Plan{
-		Candidates:  cands,
-		Model:       t2Model.ModelID,
-		MaxAttempts: 2,
-		BackoffBase: 250 * time.Millisecond,
-	}
+	// Kesabaran mengikuti aturan yang sama seperti tier1 (PlanFromRule),
+	// bukan angka hardcode: operator yang menaikkan MaxAttempts tidak
+	// mengharapkan tier2 diam-diam memakai angka lain.
+	t2Plan := PlanFromRule(pr.decision.Rule, t2Model.ModelID, cands)
 
 	h.logger.InfoContext(ctx, "menjalankan fallback combo routing tier 2", "tier1", pr.model.ModelID, "tier2", t2Model.ModelID)
 	out := Execute(ctx, h.exec, t2Plan,
@@ -668,45 +766,37 @@ func (h *Handlers) cobaTier2Sekali(ctx context.Context, tier2ModelName string, p
 			return p.ChatCompletion(c, untukKandidat(&t2Req, cand))
 		})
 
-	j.pasangPercobaan(out.Attempts, out.Candidate)
+	// Jejak tier1 DIPERTAHANKAN: tier2 ditambahkan, bukan menimpa. Menimpa di
+	// sini berarti timeline request_events hanya berisi tier2 sementara log
+	// catatRute mencatat tier1 — dua sumber yang tidak bisa dipertemukan.
+	j.tambahPercobaan(out.Attempts, out.Candidate)
 	if out.Err == nil {
+		// Target kebijakan mengikuti model yang benar-benar melayani, supaya
+		// pemakaian anggaran dan kuota token naik pada cakupan yang tepat.
 		pr.model = t2Model
+		pr.targets = targets
 		j.pasangModel(t2Model)
-		return out
+		j.pasangKebijakan(pr.principal, targets)
+		return out, nil
 	}
-	return nil
+	// Gagal: outcome dikembalikan — bukan nil — supaya pemanggil mencatat dan
+	// menjawab sebab tier2 yang sebenarnya, bukan menelannya.
+	return out, nil
 }
 
-func (h *Handlers) cobaTier2Mengalir(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) *Outcome[providers.Stream] {
-	t2Model, err := h.models.Resolve(ctx, tier2ModelName)
-	if err != nil {
-		h.logger.WarnContext(ctx, "resolusi tier2 combo model gagal", "tier2", tier2ModelName, "error", err)
-		return nil
+func (h *Handlers) cobaTier2Mengalir(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) (*Outcome[providers.Stream], *Rejection) {
+	t2Model, cands, targets, rj := h.siapkanTier2(ctx, tier2ModelName, pr, true)
+	if rj != nil {
+		return nil, rj
 	}
-
-	var ownerUserID string
-	if pr.principal != nil {
-		ownerUserID = pr.principal.OwnerUserID()
-	}
-
-	cands, err := h.candidates.RouteCandidates(ctx, upstream.RouteQuery{
-		ModelID:     t2Model.ID,
-		OwnerUserID: ownerUserID,
-	})
-	if err != nil || len(cands) == 0 {
-		h.logger.WarnContext(ctx, "tidak ada kandidat untuk tier2 combo model", "tier2", tier2ModelName, "error", err)
-		return nil
+	if t2Model == nil {
+		return nil, nil
 	}
 
 	t2Req := *pr.req
 	t2Req.Model = t2Model.ModelID
 
-	t2Plan := Plan{
-		Candidates:  cands,
-		Model:       t2Model.ModelID,
-		MaxAttempts: 2,
-		BackoffBase: 250 * time.Millisecond,
-	}
+	t2Plan := PlanFromRule(pr.decision.Rule, t2Model.ModelID, cands)
 
 	h.logger.InfoContext(ctx, "menjalankan fallback streaming combo routing tier 2", "tier1", pr.model.ModelID, "tier2", t2Model.ModelID)
 	out := ExecuteStream(ctx, h.exec, t2Plan,
@@ -721,21 +811,73 @@ func (h *Handlers) cobaTier2Mengalir(ctx context.Context, tier2ModelName string,
 			return p.ChatCompletionStream(c, untukKandidat(&t2Req, cand))
 		})
 
-	j.pasangPercobaan(out.Attempts, out.Candidate)
+	j.tambahPercobaan(out.Attempts, out.Candidate)
 	if out.Err == nil {
 		pr.model = t2Model
+		pr.targets = targets
 		j.pasangModel(t2Model)
-		return out
+		j.pasangKebijakan(pr.principal, targets)
+		return out, nil
 	}
-	return nil
+	return out, nil
+}
+
+// cakupanCache menyusun konteks pemilik untuk kunci response cache.
+//
+// Tanpa ini dua penyewa berbagi satu entri: tenant B menerima respons milik
+// tenant A, kuotanya tidak termakan, dan biayanya tercatat nol padahal
+// informasinya bocor. ModelID-nya ID kanonik (models.id), bukan nama mentah
+// dari klien, supaya dua alias ke model yang sama tetap berbagi entri secara
+// sah — respons upstream-nya identik.
+func cakupanCache(pr *persiapan) responsecache.Scope {
+	var s responsecache.Scope
+	if pr == nil {
+		return s
+	}
+	if pr.model != nil {
+		s.ModelID = pr.model.ID
+	}
+	if pr.principal != nil {
+		s.OwnerUserID = pr.principal.OwnerUserID()
+		s.KeyID = pr.principal.ID()
+	}
+	return s
 }
 
 // chatSekali melayani completion non-streaming.
 func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
 	var cacheKey string
 	if h.respCache != nil && h.respCache.IsEnabled() {
-		cacheKey = h.respCache.ComputeKey(pr.req)
+		cacheKey = h.respCache.ComputeScopedKey(pr.req, cakupanCache(pr))
 		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.Raw) > 0 {
+			// HIT tetap memakan kuota token: tanpa ini prompt yang di-cache bisa
+			// diulang tanpa batas melewati token limit. Biayanya tetap nol —
+			// tidak ada panggilan upstream — karena pencatat menghitung biaya
+			// dari kandidat pemenang, dan jalur ini tidak punya pemenang.
+			//
+			// Entri lama bisa menyimpan TotalTokens 0; tanpa lantai ini CatatToken
+			// langsung return dan HIT lama menjadi gratis tanpa batas. Lantainya
+			// ditaksir dari prompt peminta, konsisten dengan EstimateTokens yang
+			// dipakai persiapan untuk routing.
+			tokenHIT := int64(entry.Usage.TotalTokens)
+			if tokenHIT <= 0 {
+				tokenHIT = int64(EstimateTokens(pr.req).InputTokens)
+				if tokenHIT < 1 {
+					tokenHIT = 1
+				}
+			}
+			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, tokenHIT)
+			// Kebijakan jawaban yang berlaku saat menyimpan bisa berubah sejak
+			// itu; yang ditegakkan adalah kebijakan SAAT INI. Teks diambil dari
+			// entri supaya tidak perlu mengurai ulang Raw; entri lama yang belum
+			// punya teks melewatkan pemeriksaan ini.
+			if entry.Teks != "" {
+				if rj := h.guard.SaringJawaban(r.Context(), entry.Teks,
+					pr.model.ID, entry.ProviderID); rj != nil {
+					rj.Tulis(w, r)
+					return
+				}
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("X-RouteX-Cache", "HIT")
@@ -764,7 +906,18 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis fallback ke Tier 2 model
 	if out.Err != nil {
 		if tier2 := ekstrakTier2Model(pr.decision.Rule); tier2 != "" {
-			if t2Out := h.cobaTier2Sekali(r.Context(), tier2, pr, j); t2Out != nil {
+			t2Out, rj := h.cobaTier2Sekali(r.Context(), tier2, pr, j)
+			switch {
+			case rj != nil:
+				// Tier2 DITOLAK kebijakan: tidak ada jawaban lain yang jujur
+				// selain penolakan ini — tier1 sudah gagal.
+				rj.Tulis(w, r)
+				return
+			case t2Out != nil:
+				// Tier2 berjalan (sukses atau gagal dengan sebabnya sendiri):
+				// jejak tier1 tetap ada lewat tambahPercobaan, dan kegagalan
+				// tier2 TIDAK ditelan — pemanggil di bawah menjawabnya.
+				h.catatRute(r, pr, t2Out.Attempts, t2Out.Candidate)
 				out = t2Out
 			}
 		}
@@ -807,11 +960,16 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 		w.WriteHeader(http.StatusOK)
 
 		if cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() {
+			// ProviderID dan teks ikut disimpan supaya jalur HIT bisa
+			// menegakkan penyaring jawaban berlingkup provider dengan
+			// kebijakan SAAT HIT, bukan saat menyimpan.
 			_ = h.respCache.Set(r.Context(), cacheKey, &responsecache.Entry{
-				Model:    out.Candidate.UpstreamModelName,
-				Raw:      out.Value.Raw,
-				Usage:    out.Value.Usage,
-				CachedAt: time.Now(),
+				Model:      out.Candidate.UpstreamModelName,
+				ProviderID: out.Candidate.ProviderID,
+				Raw:        out.Value.Raw,
+				Usage:      out.Value.Usage,
+				Teks:       teksJawaban(out.Value),
+				CachedAt:   time.Now(),
 			})
 		}
 
@@ -911,8 +1069,21 @@ var (
 func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
 	var cacheKey string
 	if h.respCache != nil && h.respCache.IsEnabled() {
-		cacheKey = h.respCache.ComputeKey(pr.req)
+		cacheKey = h.respCache.ComputeScopedKey(pr.req, cakupanCache(pr))
 		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.StreamChunks) > 0 {
+			// Seperti jalur non-streaming: HIT tetap memakan kuota token,
+			// dengan lantai taksiran yang sama untuk entri lama bertoken nol.
+			// Penyaring jawaban TIDAK dijalankan di sini — jawaban streaming
+			// memang tidak disaring (lihat Guard.SaringJawaban), dan memeriksa
+			// ulang potongan yang sudah terkirim tidak mungkin.
+			tokenHIT := int64(entry.Usage.TotalTokens)
+			if tokenHIT <= 0 {
+				tokenHIT = int64(EstimateTokens(pr.req).InputTokens)
+				if tokenHIT < 1 {
+					tokenHIT = 1
+				}
+			}
+			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, tokenHIT)
 			if err := httpx.PrepareSSE(w, r); err != nil {
 				h.logger.ErrorContext(r.Context(), "penyiapan SSE gagal", "error", err)
 				httpx.InternalError(w, r)
@@ -951,7 +1122,20 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis fallback ke Tier 2 model
 	if out.Err != nil {
 		if tier2 := ekstrakTier2Model(pr.decision.Rule); tier2 != "" {
-			if t2Out := h.cobaTier2Mengalir(r.Context(), tier2, pr, j); t2Out != nil {
+			t2Out, rj := h.cobaTier2Mengalir(r.Context(), tier2, pr, j)
+			switch {
+			case rj != nil:
+				// Sebelum SSE: penolakan kebijakan masih bisa dijawab sebagai
+				// status HTTP. Ini satu-satunya jalan keluar tier2 yang
+				// menulis respons sendiri.
+				rj.Tulis(w, r)
+				return
+			case t2Out != nil:
+				// Tier2 berjalan (sukses atau gagal dengan sebabnya sendiri).
+				// Pemanggilan ini HANYA sah karena SSE belum disiapkan:
+				// cobaTier2Mengalir membuka aliran tetapi belum menulis satu
+				// byte pun ke klien, jadi status HTTP masih bebas.
+				h.catatRute(r, pr, t2Out.Attempts, t2Out.Candidate)
 				out = t2Out
 			}
 		}
@@ -992,6 +1176,19 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 	// yang sudah dihasilkan sampai titik itu tetap ditagihkan provider. Melewatkannya berarti
 	// klien yang selalu memutus aliran lebih awal tidak pernah memakan kuota tokennya.
 	defer func() {
+		// Chunk usage final belum tentu tiba saat aliran diputus: tanpa ini
+		// CatatToken menerima TotalTokens 0 dan langsung return, sehingga
+		// token yang sudah terkirim tidak memakan kuota sama sekali. Lantainya
+		// ditaksir dari byte yang benar-benar terkirim (rasio yang sama dengan
+		// EstimateTokens), supaya abort rutin tidak menjadi pemakaian gratis.
+		if usage.TotalTokens <= 0 && terkirim > 0 {
+			lantai := int(terkirim / bytePerToken)
+			if lantai < 1 {
+				lantai = 1
+			}
+			usage.OutputTokens = lantai
+			usage.TotalTokens = usage.InputTokens + lantai
+		}
 		h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(usage.TotalTokens))
 		// Token juga diserahkan ke pencatat lewat defer yang sama, dan alasannya sama:
 		// aliran bisa berakhir karena klien menutup koneksi atau upstream terputus di

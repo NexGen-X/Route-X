@@ -120,8 +120,8 @@ Ekspektasi saat chaos: failover tetap 200, Redis mati chat 200
 
   cd web
   BASE_URL=http://127.0.0.1:18080 \
-    E2E_ADMIN_EMAIL=admin-e2e@local E2E_ADMIN_PASSWORD=<password-admin> \
-    E2E_EMAIL=e2e-viewer@local E2E_PASSWORD=<password-viewer> \
+    E2E_ADMIN_EMAIL=admin-e2e@local E2E_ADMIN_PASSWORD=<GANTI_PASSWORD_ADMIN> \
+    E2E_EMAIL=e2e-viewer@local E2E_PASSWORD=<GANTI_PASSWORD_VIEWER> \
     npx playwright test --workers=1
 
 Hasil 2026-09-09: 24/24 lolos 13,4 detik. Rincian:

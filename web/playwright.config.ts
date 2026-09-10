@@ -32,5 +32,15 @@ export default defineConfig({
       use: { ...devices['Desktop Safari'] },
       dependencies: ['setup'],
     },
+    {
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 7'] },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'mobile-safari',
+      use: { ...devices['iPhone 14'] },
+      dependencies: ['setup'],
+    },
   ],
 });

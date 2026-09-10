@@ -128,7 +128,19 @@ Hasil 2026-09-09: 24/24 lolos 13,4 detik. Rincian:
 2 setup auth (login admin + viewer tepat 1 kali tiap peran),
 4 aksi-tulis (buat API key UI, alokasikan budget UI, rule+limit API,
 Viewer 403), 3 alur inti, 14 semua-halaman + 1 fallback rute.
-Hasil 2026-09-10: 33/33 lolos 1,5 menit chromium --workers=1.
+Hasil 2026-09-10 (5 browser, termasuk mobile): 200 lolos 10,3 menit
+--workers=1 full suite (2 setup + 17 menyeluruh + 1 fallback + 5 aksi-tulis
++ 3 alur-inti + 6 sisa-kritis + 12 mobile-responsif + 1 drawer, per browser
+dengan skip jujur). Per-project: chromium 45 lolos, mobile-chrome (Pixel 7)
+45 lolos + drawer buka-tutup ok, mobile-safari (iPhone 14) 46/46 lolos,
+webkit 45 lolos + 1 skip drawer, firefox 44 lolos + 1 flaky retry ok
+(CLI mobile, timing render) + 1 skip drawer. Test drawer di desktop skip
+jujur: tombol hamburger lg:hidden hanya ada di viewport kecil. 12 test
+mobile cek scroll horizontal <=1px per halaman + drawer via backdrop
+(z-50 menutupi hamburger z-30 saat terbuka, pola resmi Sidebar.tsx).
+Staging wajib UPSTREAM_ALLOW_HTTP=true + UPSTREAM_ALLOWED_PRIVATE_ADDRS
+=127.0.0.1/32 + provider echo-sisa prio1 + echo-konten prio10 + mapping
+gpt-5, kalau tidak 4 test sisa-kritis gagal setup (bukan bug kode).
 Tambahan sejak runbook ini: 3 halaman baru di menyeluruh
 (Katalog Model, Pengguna Admin, Peran & Izin) + 1 test tulis UI
 (buat peran kustom + user baru + grant + hapus bersih).

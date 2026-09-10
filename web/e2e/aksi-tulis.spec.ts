@@ -111,6 +111,89 @@ test.describe('tulis admin via UI', () => {
       }
     }
   });
+
+  test('buat peran kustom UI + beri ke user baru UI, lalu hapus bersih', async ({
+    page,
+    }) => {
+    await page.goto('/');
+    await expect(
+    page.getByRole('heading', { name: 'Route-X Mission Control' }),
+    ).toBeVisible({ timeout: 20000 });
+    const H = await headerMutasi(page);
+    const cap = Date.now();
+    const namaPeran = 'e2e-peran-' + cap;
+    const emailUser = `e2e-user-ui-${cap}@local`;
+    let peranId = '';
+    let userId = '';
+    try {
+    await page.goto('/#/access/roles');
+    await expect(
+      page.getByRole('heading', { name: 'Peran & Izin', level: 1 }),
+    ).toBeVisible({ timeout: 20000 });
+    await page.getByRole('button', { name: 'Buat Peran' }).first().click();
+    await page.getByPlaceholder('Operator').fill(namaPeran);
+    await page.getByRole('button', { name: 'Buat Peran', exact: true }).last().click();
+    await expect(page.getByText(namaPeran).first()).toBeVisible({
+      timeout: 20000,
+    });
+    const daftarPeran = await page.request.get('/api/admin/access/roles');
+    const badanPeran = await daftarPeran.json();
+    peranId = ((badanPeran.items ?? []) as any[]).find(
+      (r) => r.name === namaPeran,
+    )?.id;
+    expect(peranId).toBeTruthy();
+
+    await page.goto('/#/access/users');
+    await expect(
+      page.getByRole('heading', { name: 'Pengguna Admin', level: 1 }),
+    ).toBeVisible({ timeout: 20000 });
+    await page.getByRole('button', { name: 'Tambah Pengguna' }).first().click();
+    await page.locator('input[type="email"]').fill(emailUser);
+    await page.locator('input[type="text"]').first().fill('E2E User UI');
+    await page.locator('input[type="password"]').fill('KuatUi2026!Xx9#');
+    await page.getByRole('button', { name: 'Simpan Pengguna' }).click();
+    await expect(page.getByText(emailUser).first()).toBeVisible({
+      timeout: 20000,
+    });
+    const daftarUser = await page.request.get('/api/admin/access/users');
+    const badanUser = await daftarUser.json();
+    userId = ((badanUser.items ?? []) as any[]).find(
+      (u) => u.email === emailUser,
+    )?.id;
+    expect(userId).toBeTruthy();
+
+    const grant = await page.request.post(
+      `/api/admin/access/users/${userId}/roles`,
+      { headers: H, data: { role_id: peranId } },
+    );
+    expect(grant.ok()).toBeTruthy();
+    const baca = await page.request.get(
+      `/api/admin/access/users/${userId}`,
+    );
+    expect(await baca.text()).toContain(namaPeran);
+    } finally {
+    if (userId && peranId) {
+      await page.request.delete(
+        `/api/admin/access/users/${userId}/roles/${peranId}`,
+        { headers: H },
+      );
+    }
+    if (userId) {
+      await page.request.delete(`/api/admin/access/users/${userId}`, {
+        headers: H,
+      });
+    }
+    if (peranId) {
+      await page.request.delete(`/api/admin/access/roles/${peranId}`, {
+        headers: H,
+      });
+    }
+    }
+    const sesudahUser = await page.request.get('/api/admin/access/users');
+    expect(await sesudahUser.text()).not.toContain(emailUser);
+    const sesudahPeran = await page.request.get('/api/admin/access/roles');
+    expect(await sesudahPeran.text()).not.toContain(namaPeran);
+  });
 });
 
 test('routing rule + rate limit via API: buat, baca, hapus', async ({

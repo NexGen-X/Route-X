@@ -128,6 +128,13 @@ Hasil 2026-09-09: 24/24 lolos 13,4 detik. Rincian:
 2 setup auth (login admin + viewer tepat 1 kali tiap peran),
 4 aksi-tulis (buat API key UI, alokasikan budget UI, rule+limit API,
 Viewer 403), 3 alur inti, 14 semua-halaman + 1 fallback rute.
+Hasil 2026-09-10: 33/33 lolos 1,5 menit chromium --workers=1.
+Tambahan sejak runbook ini: 3 halaman baru di menyeluruh
+(Katalog Model, Pengguna Admin, Peran & Izin) + 1 test tulis UI
+(buat peran kustom + user baru + grant + hapus bersih).
+Rincian 33: 2 setup + 17 menyeluruh (14 lama + 3 baru) + 1 fallback
++ 5 aksi-tulis (4 lama + 1 users/roles) + 3 alur inti
++ 5 sisa-kritis (providers/egress/users/filter/RL/kuota, 1 skip jadwal).
 Hasil 2026-09-09 (3 browser): 86 lolos 4,5 menit = 2 setup auth
 + 28 x 3 browser (4 aksi-tulis + 3 alur inti + 15 menyeluruh -
 14 halaman + 1 fallback rute - + 6 sisa-kritis providers/egress/

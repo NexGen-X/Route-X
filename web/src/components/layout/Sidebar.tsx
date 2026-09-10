@@ -14,6 +14,9 @@ import {
   ChevronRight,
   LogOut,
   Code2,
+  Cpu,
+  Users,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -59,6 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'UPSTREAMS & ROUTING',
       items: [
         { name: 'Providers', path: '/upstreams/providers', icon: Server },
+        { name: 'Models & Pricing', path: '/upstreams/models', icon: Cpu },
         { name: 'Routing & Failover', path: '/gateway/routing', icon: GitFork },
         { name: 'CLI Integrations', path: '/cli-integrations', icon: Code2 },
         { name: 'Egress Pools', path: '/upstreams/egress', icon: Network },
@@ -68,6 +72,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'ACCESS & COST',
       items: [
         { name: 'API Keys', path: '/access/api-keys', icon: KeyRound },
+        { name: 'Users', path: '/access/users', icon: Users },
+        { name: 'Roles', path: '/access/roles', icon: ShieldCheck },
         { name: 'Budgets & Limits', path: '/gateway/budgets', icon: Coins },
       ],
     },

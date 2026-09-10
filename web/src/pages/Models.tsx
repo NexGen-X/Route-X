@@ -54,7 +54,9 @@ export const Models: React.FC = () => {
     try {
       await api.models.create({
         ...newModel,
-        capabilities: ['chat', 'streaming'],
+        // CHECK models_capabilities_known hanya mengizinkan: text, vision,
+        // reasoning, tools, embeddings. Nilai 'chat'/'streaming' memicu 500.
+        capabilities: ['text'],
       });
       setIsCreateOpen(false);
       toast.success('Model kanonik baru berhasil didaftarkan');

@@ -261,8 +261,25 @@ export interface Role {
   name: string;
   description: string;
   is_system: boolean;
+  rank: number;
   permissions: string[];
   created_at: string;
+}
+
+export interface RoleDetail {
+  id: string;
+  name: string;
+  description: string;
+  is_system: boolean;
+  rank: number;
+  created_at: string;
+  permissions: { id: string; key: string; description?: string }[];
+}
+
+export interface UserDetail {
+  user: User;
+  roles: Role[];
+  permissions: string[];
 }
 
 export interface Session {

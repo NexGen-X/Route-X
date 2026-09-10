@@ -687,7 +687,11 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                   />
                   <Area
                     type="monotone"
-                    dataKey={metricType}
+                    dataKey={
+                      metricType === 'latency'
+                        ? 'p95_latency_ms'
+                        : metricType
+                    }
                     stroke="#BEF264"
                     fillOpacity={1}
                     fill="url(#chartGradient)"

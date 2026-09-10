@@ -9,6 +9,7 @@ import { Drawer } from '../components/common/Drawer';
 import {
   Server,
   Plus,
+  Power,
   RefreshCw,
   Trash2,
   CheckCircle2,
@@ -1102,16 +1103,17 @@ export const Providers: React.FC = () => {
                       className="w-full pl-8 pr-3 py-1.5 text-xs bg-bg-surface-2 border border-border rounded-lg text-white font-mono placeholder:text-text-muted outline-none focus:border-accent"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center gap-2">
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => handleSyncModels(selectedProvider)}
                       isLoading={syncingId === selectedProvider.id}
                       icon={<DownloadCloud className="w-3.5 h-3.5" />}
-                      className="w-full justify-center"
+                      title="Tarik daftar model dari upstream"
+                      className="flex-1 justify-center"
                     >
-                      Tarik Model
+                      Tarik
                     </Button>
                     <Button
                       variant="primary"
@@ -1121,9 +1123,10 @@ export const Providers: React.FC = () => {
                         setIsAddModelModalOpen(true);
                       }}
                       icon={<Plus className="w-3.5 h-3.5" />}
-                      className="w-full justify-center"
+                      title="Tambah model manual"
+                      className="flex-1 justify-center"
                     >
-                      Tambah Model
+                      Tambah
                     </Button>
                   </div>
                 </div>
@@ -1170,11 +1173,10 @@ export const Providers: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* Baris 2: Tombol Aksi per Model */}
-                          <div className="pt-2 border-t border-border/40 grid grid-cols-3 sm:flex sm:justify-end gap-1.5 sm:gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
+                          {/* Baris 2: Aksi per Model (ikon ringkas + tooltip) */}
+                          <div className="pt-2 border-t border-border/40 flex items-center justify-end gap-1">
+                            <button
+                              type="button"
                               onClick={() => void copyWithFeedback(
                                 model.upstream_model_name,
                                 `Model ID "${model.upstream_model_name}" disalin`,
@@ -1183,38 +1185,41 @@ export const Providers: React.FC = () => {
                                   copyTimersRef.current.push(setTimeout(() => setCopiedModelId(null), 2000));
                                 }
                               )}
-                              className="w-full justify-center sm:w-auto text-xs"
-                              icon={
-                                copiedModelId === model.id ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5" />
-                                )
-                              }
+                              title={copiedModelId === model.id ? 'Tersalin!' : 'Salin ID model'}
+                              aria-label={copiedModelId === model.id ? 'Tersalin' : 'Salin ID model'}
+                              className="p-2 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer"
                             >
-                              {copiedModelId === model.id ? 'Tersalin' : 'Salin'}
-                            </Button>
+                              {copiedModelId === model.id ? (
+                                <Check className="w-4 h-4 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-4 h-4" />
+                              )}
+                            </button>
 
-                            <Button
-                              variant="secondary"
-                              size="sm"
+                            <button
+                              type="button"
                               onClick={() => handleTestModel(model)}
-                              isLoading={isTesting}
-                              className="w-full justify-center sm:w-auto text-xs"
-                              icon={<FlaskConical className="w-3.5 h-3.5 text-accent" />}
+                              disabled={isTesting}
+                              title="Uji koneksi model ke upstream"
+                              aria-label="Uji model"
+                              className="p-2 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer disabled:opacity-50"
                             >
-                              Uji Model
-                            </Button>
+                              {isTesting ? (
+                                <RefreshCw className="w-4 h-4 animate-spin text-accent" />
+                              ) : (
+                                <FlaskConical className="w-4 h-4 text-accent" />
+                              )}
+                            </button>
 
-                            <Button
-                              variant="danger"
-                              size="sm"
+                            <button
+                              type="button"
                               onClick={() => handleDeleteModel(model)}
-                              className="w-full justify-center sm:w-auto text-xs"
-                              icon={<Trash2 className="w-3.5 h-3.5" />}
+                              title="Hapus model dari provider"
+                              aria-label="Hapus model"
+                              className="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                             >
-                              Hapus
-                            </Button>
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
 
                           {/* Banner Diagnostik Hasil Uji Model */}
@@ -1292,10 +1297,10 @@ export const Providers: React.FC = () => {
                   <div>
                     <h4 className="text-sm font-bold text-white flex items-center gap-2">
                       <KeyRound className="w-4 h-4 text-accent" />
-                      <span>Kredensial API Key</span>
+                      <span>Kredensial</span>
                     </h4>
-                    <p className="text-xs text-text-muted">
-                      Token otentikasi disimpan dengan enkripsi amplop AES-256-GCM
+                    <p className="text-xs text-text-muted" title="Token otentikasi disimpan dengan enkripsi amplop AES-256-GCM">
+                      Terenkripsi AES-256-GCM
                     </p>
                   </div>
                   {!isAddingKeyInline && (
@@ -1304,8 +1309,9 @@ export const Providers: React.FC = () => {
                       size="sm"
                       onClick={() => setIsAddingKeyInline(true)}
                       icon={<Plus className="w-3.5 h-3.5" />}
+                      title="Tambah API key baru ke provider ini"
                     >
-                      Tambah Key
+                      Tambah
                     </Button>
                   )}
                 </div>
@@ -1316,11 +1322,12 @@ export const Providers: React.FC = () => {
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                         <Plus className="w-3.5 h-3.5 text-accent" />
-                        Tambah API Key Baru
+                        Key Baru
                       </span>
                       <button
                         type="button"
                         onClick={() => setIsAddingKeyInline(false)}
+                        title="Tutup form tanpa menyimpan"
                         className="text-xs text-text-muted hover:text-white"
                       >
                         Batal
@@ -1330,7 +1337,7 @@ export const Providers: React.FC = () => {
                     <form onSubmit={handleCreateKey} className="space-y-3 text-xs">
                       <div>
                         <label className="block font-semibold text-text-secondary uppercase mb-1">
-                          Label Kredensial *
+                          Label *
                         </label>
                         <input
                           type="text"
@@ -1345,7 +1352,7 @@ export const Providers: React.FC = () => {
 
                       <div>
                         <label className="block font-semibold text-text-secondary uppercase mb-1">
-                          Secret API Key / Token Rahasia *
+                          Secret / Token *
                         </label>
                         <div className="relative">
                           <input
@@ -1365,9 +1372,9 @@ export const Providers: React.FC = () => {
                             {showNewKeySecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                           </button>
                         </div>
-                        <p className="text-[11px] text-text-muted mt-1.5 flex items-center gap-1.5">
-                          <Shield className="w-3.5 h-3.5 text-accent" />
-                          Token langsung dienkripsi sebelum disimpan ke basis data PostgreSQL.
+                        <p className="text-[11px] text-text-muted mt-1.5 flex items-center gap-1.5" title="Token langsung dienkripsi sebelum disimpan ke basis data PostgreSQL.">
+                          <Shield className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                          Dienkripsi sebelum disimpan
                         </p>
                       </div>
 
@@ -1381,8 +1388,9 @@ export const Providers: React.FC = () => {
                           size="sm"
                           isLoading={isSavingKey}
                           icon={<Check className="w-3.5 h-3.5" />}
+                          title="Simpan dan enkripsi key ke database"
                         >
-                          Simpan & Enkripsi Key
+                          Simpan
                         </Button>
                       </div>
                     </form>
@@ -1445,24 +1453,25 @@ export const Providers: React.FC = () => {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t border-border/40 sm:border-0 flex-shrink-0">
-                          <Button
-                            variant="secondary"
-                            size="sm"
+                        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 w-full sm:w-auto pt-2 sm:pt-0 border-t border-border/40 sm:border-0 flex-shrink-0 justify-end">
+                          <button
+                            type="button"
                             onClick={() => handleToggleKey(cred)}
-                            className="w-full justify-center sm:w-auto text-xs"
+                            title={cred.enabled ? 'Nonaktifkan kredensial' : 'Aktifkan kredensial'}
+                            aria-label={cred.enabled ? 'Nonaktifkan kredensial' : 'Aktifkan kredensial'}
+                            className="p-2 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer"
                           >
-                            {cred.enabled ? 'Nonaktifkan' : 'Aktifkan'}
-                          </Button>
-                          <Button
-                            variant="danger"
-                            size="sm"
+                            {cred.enabled ? <Power className="w-4 h-4 text-amber-400" /> : <Check className="w-4 h-4 text-emerald-400" />}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleDeleteKey(cred)}
-                            icon={<Trash2 className="w-3.5 h-3.5" />}
-                            className="w-full justify-center sm:w-auto text-xs"
+                            title="Hapus kredensial"
+                            aria-label="Hapus kredensial"
+                            className="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                           >
-                            Hapus
-                          </Button>
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -1494,7 +1503,7 @@ export const Providers: React.FC = () => {
                   <div>
                     <label className="block font-semibold text-text-secondary uppercase mb-1 flex items-center gap-1.5">
                       <Tag className="w-3.5 h-3.5 text-accent" />
-                      <span>Nama Tampilan Provider</span>
+                      <span title="Nama tampilan provider di dashboard">Nama Tampilan</span>
                     </label>
                     <input
                       type="text"
@@ -1508,7 +1517,7 @@ export const Providers: React.FC = () => {
                   <div>
                     <label className="block font-semibold text-text-secondary uppercase mb-1 flex items-center gap-1.5">
                       <Globe className="w-3.5 h-3.5 text-accent" />
-                      <span>Base URL Upstream</span>
+                      <span title="Alamat endpoint HTTP upstream, contoh https://api.openai.com/v1">Base URL</span>
                     </label>
                     <input
                       type="text"
@@ -1523,7 +1532,7 @@ export const Providers: React.FC = () => {
                     <div>
                       <label className="block font-semibold text-text-secondary uppercase mb-1 flex items-center gap-1.5">
                         <ArrowUpDown className="w-3.5 h-3.5 text-accent" />
-                        <span>Prioritas Routing</span>
+                        <span title="Angka kecil menang routing. Contoh: 1 utama, 99 cadangan">Prioritas</span>
                       </label>
                       <input
                         type="number"
@@ -1537,7 +1546,7 @@ export const Providers: React.FC = () => {
                     <div>
                       <label className="block font-semibold text-text-secondary uppercase mb-1 flex items-center gap-1.5">
                         <Scale className="w-3.5 h-3.5 text-accent" />
-                        <span>Bobot (Weight)</span>
+                        <span title="Bobot load balancing antar provider">Bobot</span>
                       </label>
                       <input
                         type="number"
@@ -1558,8 +1567,8 @@ export const Providers: React.FC = () => {
                       onChange={(e) => setConfigForm({ ...configForm, enabled: e.target.checked })}
                       className="rounded bg-bg-surface-2 border-border"
                     />
-                    <label htmlFor="drawerEnableToggle" className="font-semibold text-white cursor-pointer">
-                      Provider Aktif (Menerima Permintaan Inferensi)
+                    <label htmlFor="drawerEnableToggle" className="font-semibold text-white cursor-pointer" title="Bila mati, provider dilewati routing">
+                      Aktif
                     </label>
                   </div>
 
@@ -1570,9 +1579,10 @@ export const Providers: React.FC = () => {
                       size="sm"
                       isLoading={isSavingConfig}
                       icon={<Check className="w-3.5 h-3.5" />}
+                      title="Simpan nama, URL, prioritas, bobot, dan status aktif"
                       className="w-full sm:w-auto justify-center"
                     >
-                      Simpan Parameter
+                      Simpan
                     </Button>
                   </div>
                 </form>
@@ -1582,9 +1592,9 @@ export const Providers: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
                       <Globe className="w-3.5 h-3.5 text-accent" />
-                      <span>Rute Koneksi Proxy (Egress)</span>
+                      <span title="Jalur koneksi keluar dari server ke upstream">Egress</span>
                     </h4>
-                    <span className="text-[11px] text-text-muted">Pilih jalur keluar ke upstream</span>
+                    <span className="text-[11px] text-text-muted" title="Pilih jalur keluar ke upstream">Jalur keluar</span>
                   </div>
 
                   <div className="space-y-2 text-xs">
@@ -1600,10 +1610,10 @@ export const Providers: React.FC = () => {
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
                           <Globe className="w-4 h-4 text-accent" />
-                          <span className="font-bold text-white">Direct Outbound (Tanpa Proxy)</span>
+                          <span className="font-bold text-white" title="Koneksi langsung dari IP server Route-X tanpa perantara proxy">Direct</span>
                         </div>
                         <p className="text-[11px] text-text-muted">
-                          Koneksi langsung dari IP server Route-X tanpa perantara proxy.
+                          Langsung tanpa proxy.
                         </p>
                       </div>
                       {!selectedProvider.egress_pool_id && (
@@ -1637,10 +1647,10 @@ export const Providers: React.FC = () => {
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
                           <Zap className="w-4 h-4 text-accent" />
-                          <span className="font-bold text-white">Xray SOCKS5 Bridge (Container Internal)</span>
+                          <span className="font-bold text-white" title="Jalur stealth proxy internal di jaringan Docker">Xray SOCKS5</span>
                         </div>
                         <p className="text-[11px] text-text-muted font-mono">
-                          socks5://xray:10808 — Jalur stealth proxy internal di jaringan Docker.
+                          socks5://xray:10808
                         </p>
                       </div>
                       {egressPools.some(
@@ -1702,10 +1712,10 @@ export const Providers: React.FC = () => {
                     <div className="space-y-0.5">
                       <span className="text-red-400 font-bold block text-xs flex items-center gap-1.5">
                         <AlertTriangle className="w-4 h-4 text-red-400" />
-                        <span>Hapus Provider Permanen</span>
+                        <span title="Menghapus provider ini beserta seluruh kredensial API key dan pemetaan model upstream secara permanen">Hapus Provider</span>
                       </span>
                       <span className="text-[11px] text-text-muted block">
-                        Menghapus provider ini beserta seluruh kredensial API key dan pemetaan model upstream secara permanen.
+                        Permanen: ikut menghapus key dan model.
                       </span>
                     </div>
                     <Button
@@ -1714,9 +1724,10 @@ export const Providers: React.FC = () => {
                       size="sm"
                       onClick={() => handleDeleteProvider(selectedProvider)}
                       icon={<Trash2 className="w-3.5 h-3.5" />}
+                      title="Hapus provider beserta key dan model secara permanen"
                       className="w-full sm:w-auto justify-center flex-shrink-0"
                     >
-                      Hapus Provider
+                      Hapus
                     </Button>
                   </div>
                 </div>
@@ -1743,8 +1754,8 @@ export const Providers: React.FC = () => {
         <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">
-                Identifier Teknis *
+              <label className="block font-semibold text-text-secondary uppercase mb-1" title="ID teknis unik tanpa spasi, contoh nama-provider-unik">
+                ID *
               </label>
               <input
                 type="text"
@@ -1757,7 +1768,7 @@ export const Providers: React.FC = () => {
             </div>
             <div>
               <label className="block font-semibold text-text-secondary uppercase mb-1">
-                Nama Tampilan *
+                Nama *
               </label>
               <input
                 type="text"
@@ -1772,7 +1783,7 @@ export const Providers: React.FC = () => {
 
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-1">
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Protokol / Kind</label>
+              <label className="block font-semibold text-text-secondary uppercase mb-1" title="Format protokol upstream">Kind</label>
               <select
                 value={newProv.kind}
                 onChange={(e) => setNewProv({ ...newProv, kind: e.target.value })}
@@ -1786,8 +1797,8 @@ export const Providers: React.FC = () => {
               </select>
             </div>
             <div className="col-span-2">
-              <label className="block font-semibold text-text-secondary uppercase mb-1">
-                Base URL Upstream *
+              <label className="block font-semibold text-text-secondary uppercase mb-1" title="Alamat endpoint HTTP upstream">
+                Base URL *
               </label>
               <input
                 type="text"
@@ -1800,8 +1811,8 @@ export const Providers: React.FC = () => {
           </div>
 
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">
-              API Key / Token Rahasia (Opsional)
+            <label className="block font-semibold text-text-secondary uppercase mb-1" title="Boleh kosong, bisa ditambah belakangan dari tab Kredensial">
+              API Key (opsional)
             </label>
             <div className="relative">
               <input
@@ -1819,15 +1830,15 @@ export const Providers: React.FC = () => {
                 {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-[11px] text-text-muted mt-1.5 flex items-center gap-1.5">
-              <Shield className="w-3.5 h-3.5 text-accent" />
-              Token langsung dienkripsi sebelum disimpan ke basis data PostgreSQL.
+            <p className="text-[11px] text-text-muted mt-1.5 flex items-center gap-1.5" title="Token langsung dienkripsi sebelum disimpan ke basis data PostgreSQL.">
+              <Shield className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+              Dienkripsi sebelum disimpan
             </p>
           </div>
 
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">
-              Jalur Proxy Keluar (Egress Routing)
+            <label className="block font-semibold text-text-secondary uppercase mb-1" title="Jalur koneksi keluar dari server ke upstream">
+              Egress
             </label>
             <select
               value={selectedEgressPoolId}
@@ -1852,8 +1863,8 @@ export const Providers: React.FC = () => {
                 onChange={(e) => setSyncAfterSave(e.target.checked)}
                 className="rounded bg-bg-surface-2 border-border"
               />
-              <label htmlFor="syncModelsToggle" className="font-semibold text-white cursor-pointer">
-                Tarik daftar model upstream otomatis setelah berhasil didaftarkan
+              <label htmlFor="syncModelsToggle" className="font-semibold text-white cursor-pointer" title="Menarik daftar model dari upstream setelah provider tersimpan">
+                Tarik model otomatis
               </label>
             </div>
           )}
@@ -1869,8 +1880,8 @@ export const Providers: React.FC = () => {
             <Button type="button" variant="secondary" onClick={() => setIsCreateModalOpen(false)}>
               Batal
             </Button>
-            <Button type="submit" variant="primary" isLoading={isSaving} icon={<Check className="w-4 h-4" />}>
-              Daftarkan Provider
+            <Button type="submit" variant="primary" isLoading={isSaving} icon={<Check className="w-4 h-4" />} title="Simpan provider baru ke database">
+              Daftarkan
             </Button>
           </div>
         </form>
@@ -1887,8 +1898,8 @@ export const Providers: React.FC = () => {
       >
         <form onSubmit={handleAddModelManual} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">
-              Nama / ID Model Upstream *
+            <label className="block font-semibold text-text-secondary uppercase mb-1" title="String ID model persis sesuai dokumentasi provider Anda">
+              ID Model *
             </label>
             <input
               type="text"
@@ -1899,8 +1910,8 @@ export const Providers: React.FC = () => {
               onChange={(e) => setNewModelName(e.target.value)}
               className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
             />
-            <p className="text-[11px] text-text-muted mt-1">
-              Masukkan string ID model persis sesuai dokumentasi provider Anda.
+            <p className="text-[11px] text-text-muted mt-1" title="Masukkan string ID model persis sesuai dokumentasi provider Anda.">
+              Sesuai dokumentasi provider.
             </p>
           </div>
 

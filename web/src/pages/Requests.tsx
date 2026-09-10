@@ -461,9 +461,11 @@ export const Requests: React.FC = () => {
                 size="sm"
                 variant={isCurlCopied ? 'primary' : 'secondary'}
                 onClick={copyAsCurl}
+                title={isCurlCopied ? 'Tersalin!' : 'Salin sebagai perintah cURL'}
+                aria-label={isCurlCopied ? 'Tersalin' : 'Salin sebagai cURL'}
                 icon={isCurlCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               >
-                {isCurlCopied ? 'Tersalin ke Clipboard!' : 'Salin sebagai cURL'}
+                {isCurlCopied ? 'Tersalin!' : 'cURL'}
               </Button>
             </div>
 

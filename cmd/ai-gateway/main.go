@@ -565,6 +565,9 @@ func buildGatewaySurface(
 		Cipher:         cipher,
 		ResponseCache:  respCache,
 		CLIManager:     cliMgr,
+		Version:        version,
+		Commit:         commit,
+		BuiltAt:        builtAt,
 	})
 
 	closeAll := func(c context.Context) error {

@@ -575,6 +575,12 @@ func TestAdminSystemEndpoints(t *testing.T) {
 	if _, ok := diagResp["uptime_seconds"]; !ok {
 		t.Errorf("uptime_seconds tidak ditemukan di respons diagnostics")
 	}
+	// Identitas biner harus diteruskan dari ldflags main ke diagnostics.
+	for _, kunci := range []string{"version", "commit", "built_at"} {
+		if _, ok := diagResp[kunci]; !ok {
+			t.Errorf("%s tidak ditemukan di respons diagnostics", kunci)
+		}
+	}
 
 	// 2. Jobs
 	resJobs, bodyJobs := client.do(http.MethodGet, "/api/admin/system/jobs", nil, false)

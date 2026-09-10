@@ -67,6 +67,10 @@ type Handlers struct {
 	cipher         *security.Cipher
 	responseCache  *responsecache.Engine
 	cliManager     *cliconfig.Manager
+	// Identitas biner untuk diagnostics: diisi dari ldflags main.
+	version string
+	commit  string
+	builtAt string
 }
 
 // Config membawa seluruh dependensi yang dibutuhkan oleh Admin Handlers.
@@ -97,6 +101,10 @@ type Config struct {
 	Cipher         *security.Cipher
 	ResponseCache  *responsecache.Engine
 	CLIManager     *cliconfig.Manager
+	// Identitas biner untuk diagnostics: diisi dari ldflags main.
+	Version string
+	Commit  string
+	BuiltAt string
 }
 
 // NewHandlers menginisialisasi controller REST API admin.
@@ -141,6 +149,9 @@ func NewHandlers(cfg Config) *Handlers {
 		cipher:         cfg.Cipher,
 		responseCache:  cfg.ResponseCache,
 		cliManager:     cfg.CLIManager,
+		version:        cfg.Version,
+		commit:         cfg.Commit,
+		builtAt:        cfg.BuiltAt,
 	}
 }
 

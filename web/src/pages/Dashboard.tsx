@@ -570,7 +570,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
           </div>
           <div className="mt-2 sm:mt-3">
             <div className="text-xl sm:text-2xl font-bold text-white font-mono tracking-tight truncate">
-              {formatUSD(summary?.total_cost_usd)}
+              {formatUSD(summary?.total_cost_usd, 8)}
             </div>
             <div className="text-[10px] sm:text-xs text-text-muted mt-1 sm:mt-1.5 font-mono truncate">
               Presisi 8 desimal USD

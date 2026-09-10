@@ -264,6 +264,7 @@ export const CLIIntegrations: React.FC = () => {
             </h3>
             <p className="text-xs text-text-muted">
               Perkakas terpasang otomatis terdeteksi via binary path dan siap diarahkan ke gateway.
+              {data?.total_detected === 0 && ' Nol di server produksi wajar bila tidak ada CLI AI terpasang di host.'}
             </p>
           </div>
           <div className="mt-4 pt-4 border-t border-[#262626] flex items-center justify-between">

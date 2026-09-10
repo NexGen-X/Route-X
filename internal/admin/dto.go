@@ -881,6 +881,9 @@ type DiagnosticsMemoryDTO struct {
 
 // DiagnosticsDTO menyajikan profil diagnostik komprehensif server Route-X.
 type DiagnosticsDTO struct {
+	Version       string               `json:"version,omitempty"`
+	Commit        string               `json:"commit,omitempty"`
+	BuiltAt       string               `json:"built_at,omitempty"`
 	UptimeSeconds int64                `json:"uptime_seconds"`
 	GoVersion     string               `json:"go_version"`
 	NumGoroutine  int                  `json:"num_goroutine"`

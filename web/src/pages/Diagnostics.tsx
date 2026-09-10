@@ -23,15 +23,21 @@ export const Diagnostics: React.FC = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [resDiag, resJobs, resCache] = await Promise.all([
+      // Muat bertahap: cache boleh gagal (engine tidak terpasang di
+      // produksi) tanpa menenggelamkan diag + jobs yang sudah lolos 200.
+      const [resDiag, resJobs] = await Promise.all([
         api.system.diagnostics(),
         api.system.jobs(),
-        api.system.cacheStats(),
       ]);
       setDiag(resDiag);
       setJobs(resJobs.items || []);
-      setCache(resCache);
-      setTtlMinutes(Math.max(1, Math.floor(resCache.ttl_seconds / 60)));
+      try {
+        const resCache = await api.system.cacheStats();
+        setCache(resCache);
+        setTtlMinutes(Math.max(1, Math.floor(resCache.ttl_seconds / 60)));
+      } catch (errCache) {
+        setCache(null);
+      }
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));
@@ -111,7 +117,7 @@ export const Diagnostics: React.FC = () => {
     const h = Math.floor((sec % 86400) / 3600);
     const m = Math.floor((sec % 3600) / 60);
     const s = sec % 60;
-    return `${d}h ${h}j ${m}m ${s}d`;
+    return `${d} hari ${h} jam ${m} mnt ${s} dtk`;
   };
 
   const totalReq = (cache?.hits || 0) + (cache?.misses || 0);

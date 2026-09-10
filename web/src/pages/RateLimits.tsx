@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Gauge, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -66,22 +67,21 @@ export const RateLimits: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Rate Limits</h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Pembatasan laju permintaan terdistribusi via Redis (RPM, TPM, RPS) per IP, API key, atau global.
-          </p>
-        </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => setIsCreateOpen(true)}
-          icon={<Plus className="w-4 h-4" />}
-        >
-          Tambah Rate Limit
-        </Button>
-      </div>
+      <PageHeader
+        title="Rate Limits"
+        description="Pembatasan laju permintaan terdistribusi via Redis (RPM, TPM, RPS) per IP, API key, atau global."
+        actions={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsCreateOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
+            className="w-full sm:w-auto justify-center"
+          >
+            Tambah Rate Limit
+          </Button>
+        }
+      />
 
       {limits.length === 0 ? (
         <Card className="py-12 px-6 text-center">

@@ -115,7 +115,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         aria-live="polite"
         aria-relevant="additions"
         aria-atomic="false"
-        className="fixed top-4 right-4 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0"
+        className="fixed top-4 left-1/2 -translate-x-1/2 sm:left-auto sm:translate-x-0 sm:right-4 z-50 flex flex-col gap-2.5 w-[calc(100%-2rem)] max-w-sm pointer-events-none"
       >
         {toasts.map((t) => {
           const typeConfigs = {

@@ -138,6 +138,17 @@ webkit 45 lolos + 1 skip drawer, firefox 44 lolos + 1 flaky retry ok
 jujur: tombol hamburger lg:hidden hanya ada di viewport kecil. 12 test
 mobile cek scroll horizontal <=1px per halaman + drawer via backdrop
 (z-50 menutupi hamburger z-30 saat terbuka, pola resmi Sidebar.tsx).
+Hasil 2026-09-10 sore (minimalis UI: PageHeader responsif 8 halaman,
+Card header stack vertikal mobile, toast tengah di mobile, selector
+Observability grid 2x2): chromium+mobile-chrome+mobile-safari 127 passed
+7,6 mnt --workers=1, 4 gagal awal lalu hijau semua saat rerun parsial:
+1 Observabilitas mobile-safari tombol Latency P95 terpotong @408px (akar:
+Card action flex-shrink-0 tanpa wrap; fix grid-cols-2 + Card stack),
+2 CLI mobile (akar: viewer seed tanpa grant peran Viewer sehingga
+/api/admin/cli/detected 403; fix grant sesuai runbook baris grant),
+1 filter mobile flaky TTL (lolos rerun). Pelajaran: seed viewer WAJIB
+grant peran Viewer, dan binary staging harus direbuild setelah tiap
+perubahan web karena dist di-embed (dist lama = fix tak terbaca test).
 Staging wajib UPSTREAM_ALLOW_HTTP=true + UPSTREAM_ALLOWED_PRIVATE_ADDRS
 =127.0.0.1/32 + provider echo-sisa prio1 + echo-konten prio10 + mapping
 gpt-5, kalau tidak 4 test sisa-kritis gagal setup (bukan bug kode).

@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Cpu, Plus, DollarSign } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -133,22 +134,21 @@ export const Models: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Model Registry & Pricing</h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Katalog model kanonik, pemetaan alias, dan struktur harga per 1 juta token dengan presisi skala 8 desimal.
-          </p>
-        </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => setIsCreateOpen(true)}
-          icon={<Plus className="w-4 h-4" />}
-        >
-          Daftarkan Model
-        </Button>
-      </div>
+      <PageHeader
+        title="Model Registry & Pricing"
+        description="Katalog model kanonik, pemetaan alias, dan struktur harga per 1 juta token dengan presisi skala 8 desimal."
+        actions={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsCreateOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
+            className="w-full sm:w-auto justify-center"
+          >
+            Daftarkan Model
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {models.map((m) => (

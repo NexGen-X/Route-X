@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { RefreshCw, Clock, Play, Zap, Trash2, CheckCircle2 } from 'lucide-react';
+import { PageHeader } from '../components/common/PageHeader';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 
@@ -125,17 +126,15 @@ export const Diagnostics: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">System Diagnostics</h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Status runtime Go, alokasi memori heap/stack, garbage collector, dan koneksi pgxpool.
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" onClick={loadData} isLoading={isLoading}>
-          <RefreshCw className="w-3.5 h-3.5" />
-        </Button>
-      </div>
+      <PageHeader
+        title="System Diagnostics"
+        description="Status runtime Go, alokasi memori heap/stack, garbage collector, dan koneksi pgxpool."
+        actions={
+          <Button variant="secondary" size="sm" onClick={loadData} isLoading={isLoading} title="Muat ulang data diagnostik">
+            <RefreshCw className="w-3.5 h-3.5" />
+          </Button>
+        }
+      />
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 

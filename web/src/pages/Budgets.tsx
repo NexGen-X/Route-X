@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Coins, Plus, RotateCcw } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -78,22 +79,21 @@ export const Budgets: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Budgets & Cost Control</h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Alokasi batas pengeluaran moneter USD skala 8 desimal dengan peringatan ambang batas dan pemblokiran otomatis.
-          </p>
-        </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => setIsCreateOpen(true)}
-          icon={<Plus className="w-4 h-4" />}
-        >
-          Alokasikan Anggaran
-        </Button>
-      </div>
+      <PageHeader
+        title="Budgets & Cost Control"
+        description="Alokasi batas pengeluaran moneter USD skala 8 desimal dengan peringatan ambang batas dan pemblokiran otomatis."
+        actions={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsCreateOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
+            className="w-full sm:w-auto justify-center"
+          >
+            Alokasikan Anggaran
+          </Button>
+        }
+      />
 
       {budgets.length === 0 ? (
         <Card className="py-12 px-6 text-center">

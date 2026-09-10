@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { PageHeader } from '../components/common/PageHeader';
 import { ShieldCheck, Plus, Trash2, Save } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
@@ -106,20 +107,15 @@ export const RolesPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <ShieldCheck className="w-6 h-6 text-accent" /> Peran & Izin
-          </h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Peran kustom, matriks izin, dan rank kewenangan. Rank kecil berarti berkuasa. Peran sistem
-            tidak bisa dihapus.
-          </p>
-        </div>
-        <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)} icon={<Plus className="w-4 h-4" />}>
-          Buat Peran
-        </Button>
-      </div>
+      <PageHeader
+        title={<span className="flex items-center gap-2"><ShieldCheck className="w-6 h-6 text-accent" /> Peran & Izin</span>}
+        description="Peran kustom, matriks izin, dan rank kewenangan. Rank kecil berarti berkuasa. Peran sistem tidak bisa dihapus."
+        actions={
+          <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)} icon={<Plus className="w-4 h-4" />} className="w-full sm:w-auto justify-center">
+            Buat Peran
+          </Button>
+        }
+      />
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadAll()} />}
 

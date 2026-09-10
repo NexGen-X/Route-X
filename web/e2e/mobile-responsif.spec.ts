@@ -45,6 +45,22 @@ test.describe('mobile: drawer + tanpa overflow', () => {
         `overflow horizontal ${lebarBocor}px di ${h.hash}`,
       ).toBeLessThanOrEqual(1);
       await expect(page.getByText(/terjadi kesalahan|something went wrong/i)).toHaveCount(0);
+      // Tombol aksi header tidak boleh terpotong viewport (kanan tombol
+      // harus di dalam lebar layar): regresi pola header lama yang tanpa wrap.
+      const tombolBocor = await page.evaluate(() => {
+        const bocor: string[] = [];
+        const btns = [...document.querySelectorAll('button')].filter((b) =>
+          b.offsetParent !== null,
+        );
+        for (const b of btns) {
+          const r = b.getBoundingClientRect();
+          if (r.right > window.innerWidth + 1) {
+            bocor.push(`${b.textContent?.trim().slice(0, 30)}@${Math.round(r.right)}`);
+          }
+        }
+        return bocor;
+      });
+      expect(tombolBocor, `tombol terpotong di ${h.hash}: ${tombolBocor.join(', ')}`).toEqual([]);
     });
   }
 

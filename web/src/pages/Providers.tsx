@@ -896,8 +896,9 @@ export const Providers: React.FC = () => {
                     size="sm"
                     onClick={() => handleOpenDrawer(p, 'models')}
                     icon={<Sliders className="w-3.5 h-3.5" />}
+                    title="Buka konfigurasi, model, kredensial, dan setelan provider"
                   >
-                    Buka Konfigurasi & Model
+                    Kelola
                   </Button>
                 </div>
               </div>

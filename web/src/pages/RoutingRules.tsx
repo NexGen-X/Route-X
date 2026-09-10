@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { GitFork, Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers } from 'lucide-react';
 import { RoutingPipelineVisualizer } from '../components/routing/RoutingPipelineVisualizer';
@@ -194,22 +195,21 @@ export const RoutingRules: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Routing Rules Engine</h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Strategi pemilihan upstream (Priority, Lowest Cost, Lowest Latency, Weighted, Round-Robin) dan failover otomatis.
-          </p>
-        </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => setIsCreateOpen(true)}
-          icon={<Plus className="w-4 h-4" />}
-        >
-          Tambah Aturan
-        </Button>
-      </div>
+      <PageHeader
+        title="Routing Rules Engine"
+        description="Strategi pemilihan upstream (Priority, Lowest Cost, Lowest Latency, Weighted, Round-Robin) dan failover otomatis."
+        actions={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsCreateOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
+            className="w-full sm:w-auto justify-center"
+          >
+            Tambah Aturan
+          </Button>
+        }
+      />
 
       {rulesError && <QueryError message={rulesError} onRetry={() => void loadRules()} />}
 

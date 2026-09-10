@@ -92,7 +92,7 @@ export const Observability: React.FC = () => {
         title="Deret Waktu Telemetri"
         subtitle={`Visualisasi metrik ${metric} pada rentang ${windowTime}`}
         action={
-          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border">
+          <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full">
             {[
               { key: 'requests', label: 'Requests' },
               { key: 'tokens', label: 'Tokens' },
@@ -102,7 +102,7 @@ export const Observability: React.FC = () => {
               <button
                 key={m.key}
                 onClick={() => setMetric(m.key)}
-                className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium ${
+                className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium whitespace-nowrap text-center ${
                   metric === m.key
                     ? 'bg-bg-surface text-accent font-semibold shadow-sm'
                     : 'text-text-muted hover:text-text-primary'
@@ -161,12 +161,12 @@ export const Observability: React.FC = () => {
           title="Komposisi Lalu Lintas"
           subtitle="Distribusi volume permintaan dan pemakaian token"
           action={
-            <div className="flex items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border">
+            <div className="flex items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full">
               {(['provider', 'model', 'api_key'] as const).map((b) => (
                 <button
                   key={b}
                   onClick={() => setBreakdownBy(b)}
-                  className={`px-2 py-0.5 text-xs rounded-inner uppercase font-mono ${
+                  className={`px-2 py-0.5 text-xs rounded-inner uppercase font-mono whitespace-nowrap text-center ${
                     breakdownBy === b ? 'bg-accent text-black font-bold' : 'text-text-muted hover:text-white'
                   }`}
                 >

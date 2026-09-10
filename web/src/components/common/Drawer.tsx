@@ -84,14 +84,14 @@ export const Drawer: React.FC<DrawerProps> = ({
         onClick={onClose}
       />
 
-      {/* Slide-over panel: On mobile, leaves a small left gap. On desktop, uses maxW constraints */}
-      <div className="fixed inset-y-0 right-0 flex max-w-full pl-6 pointer-events-none w-full sm:w-auto">
+      {/* Slide-over panel: Di mobile sisakan celah kiri kecil (pl-3) agar hemat ruang; desktop pl-6. */}
+      <div className="fixed inset-y-0 right-0 flex max-w-full pl-3 sm:pl-6 pointer-events-none w-full sm:w-auto">
         <div
           className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border-l border-border shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300 ease-out rounded-l-2xl sm:rounded-none`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Drawer Header */}
-          <div className="flex items-start justify-between px-4 py-3.5 sm:px-6 sm:py-5 border-b border-border bg-bg-surface-2/60">
+          <div className="flex items-start justify-between px-3 py-3 sm:px-6 sm:py-5 border-b border-border bg-bg-surface-2/60">
             <div className="space-y-1.5 flex-1 min-w-0 pr-3 sm:pr-4">
               <div className="flex items-center gap-3">
                 <h2 id={titleId} className="text-sm sm:text-base font-bold text-white tracking-tight truncate">
@@ -117,7 +117,7 @@ export const Drawer: React.FC<DrawerProps> = ({
           </div>
 
           {/* Drawer Body */}
-          <div className="p-3.5 sm:p-6 overflow-y-auto flex-1 space-y-4 sm:space-y-6 scrollbar-thin">
+          <div className="p-3 sm:p-6 overflow-y-auto flex-1 space-y-3 sm:space-y-6 scrollbar-thin">
             {children}
           </div>
         </div>

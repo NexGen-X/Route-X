@@ -773,7 +773,7 @@ export const Providers: React.FC = () => {
             return (
               <div
                 key={p.id}
-                className={`p-5 rounded-2xl border transition-all flex flex-col justify-between group shadow-sm ${
+                className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col justify-between group shadow-sm ${
                   isCustom
                     ? 'bg-[#15121e] border-purple-900/40 hover:border-purple-500/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]'
                     : 'bg-[#131316] border-border hover:border-accent/40 hover:shadow-[0_0_20px_rgba(202,240,69,0.1)]'
@@ -792,7 +792,7 @@ export const Providers: React.FC = () => {
                             ? 'Klik icon custom provider ini untuk membuka drawer konfigurasi & kelola'
                             : 'Klik icon provider untuk membuka drawer konfigurasi'
                         }
-                        className={`relative w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-md ${
+                        className={`relative w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-md ${
                           isCustom
                             ? 'bg-purple-950/50 border-2 border-purple-500/40 text-purple-300 hover:scale-110 hover:border-purple-300 hover:ring-2 hover:ring-purple-400/40'
                             : 'bg-bg-surface-2 border border-border text-accent hover:scale-110 hover:border-accent hover:ring-2 hover:ring-accent/40'
@@ -801,7 +801,7 @@ export const Providers: React.FC = () => {
                         <ProviderBrandIcon
                           providerIdOrKind={p.kind}
                           name={p.name}
-                          className="w-6 h-6"
+                          className="w-5 h-5 sm:w-6 sm:h-6"
                           isCustom={isCustom}
                         />
                         <span
@@ -879,7 +879,7 @@ export const Providers: React.FC = () => {
                 </div>
 
                 {/* Bagian Bawah: Tombol Buka Drawer & Probe Latensi */}
-                <div className="mt-5 pt-3.5 border-t border-border/60 flex items-center justify-between gap-2">
+                <div className="mt-4 pt-3 sm:mt-5 sm:pt-3.5 border-t border-border/60 flex items-center justify-between gap-2">
                   <Button
                     variant="secondary"
                     size="sm"
@@ -926,13 +926,13 @@ export const Providers: React.FC = () => {
         onClose={() => setIsDrawerOpen(false)}
         maxWidth="2xl"
         title={
-          <div className="flex items-center gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Icon Provider di Drawer Header: Klik untuk trigger probe */}
             <button
               type="button"
               onClick={() => selectedProvider && handleProbe(selectedProvider)}
               title="Klik icon untuk memeriksa status kesehatan provider"
-              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-md ${
+              className={`w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-sm sm:shadow-md ${
                 isManualProvider
                   ? 'bg-purple-950/50 border border-purple-500/50 text-purple-300 hover:scale-105 hover:border-purple-300'
                   : 'bg-bg-surface border border-border text-accent hover:scale-105 hover:border-accent'
@@ -967,7 +967,7 @@ export const Providers: React.FC = () => {
         subtitle={
           selectedProvider && (
             <div className="flex items-center gap-2 flex-wrap mt-0.5">
-              <span className="font-mono text-[11px] sm:text-xs text-text-secondary truncate max-w-[200px] sm:max-w-sm">
+              <span className="font-mono text-[11px] sm:text-xs text-text-secondary truncate max-w-[150px] sm:max-w-sm">
                 {selectedProvider.base_url}
               </span>
               <button
@@ -983,7 +983,7 @@ export const Providers: React.FC = () => {
         }
         headerExtra={
           selectedProvider && (
-            <div className="flex items-center gap-2 pt-1 flex-wrap">
+            <div className="flex items-center gap-1.5 sm:gap-2 pt-0.5 sm:pt-1 flex-wrap">
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${
                   selectedProvider.last_health_status === 'healthy'
@@ -1029,7 +1029,7 @@ export const Providers: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setDrawerTab('models')}
-                className={`flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'models'
                     ? 'bg-accent text-black font-bold shadow'
                     : 'text-text-secondary hover:text-white hover:bg-bg-surface/50'
@@ -1052,7 +1052,7 @@ export const Providers: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setDrawerTab('credentials')}
-                className={`flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'credentials'
                     ? 'bg-accent text-black font-bold shadow'
                     : 'text-text-secondary hover:text-white hover:bg-bg-surface/50'
@@ -1075,7 +1075,7 @@ export const Providers: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setDrawerTab('settings')}
-                className={`flex items-center justify-center gap-1 sm:gap-1.5 py-2 px-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'settings'
                     ? 'bg-accent text-black font-bold shadow'
                     : 'text-text-secondary hover:text-white hover:bg-bg-surface/50'
@@ -1146,7 +1146,7 @@ export const Providers: React.FC = () => {
                       return (
                         <div
                           key={model.id}
-                          className="p-3 sm:p-3.5 rounded-xl border border-border bg-bg-surface-2/40 hover:border-border/80 transition-all space-y-2.5"
+                          className="p-2.5 sm:p-3.5 rounded-xl border border-border bg-bg-surface-2/40 hover:border-border/80 transition-all space-y-2 sm:space-y-2.5"
                         >
                           {/* Baris 1: Nama & Badges */}
                           <div className="space-y-1">

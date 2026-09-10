@@ -602,68 +602,62 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
       {/* ==================================================================== */}
       {/* 4. TRAFFIC CHART & RECENT REQUESTS FEED (SIDE-BY-SIDE ON DESKTOP)     */}
       {/* ==================================================================== */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Chart Column (2 cols) */}
-        <div className="lg:col-span-2 bg-[#121316] border border-[#20242D] rounded-xl p-5 shadow-lg flex flex-col justify-between">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-primary" />
-                <h3 className="text-sm font-semibold text-white tracking-tight">Volume & Dinamika Lalu Lintas</h3>
-              </div>
-              <p className="text-xs text-text-muted mt-0.5">
-                Fluktuasi inferensi request gateway secara berkelanjutan.
-              </p>
+        <div className="lg:col-span-2 bg-[#121316] border border-[#20242D] rounded-xl p-4 sm:p-5 shadow-lg flex flex-col justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 mb-3 sm:mb-4">
+            <div
+              className="flex items-center gap-2"
+              title="Fluktuasi inferensi request gateway secara berkelanjutan"
+            >
+              <BarChart3 className="w-4 h-4 text-primary flex-shrink-0" />
+              <h3 className="text-sm font-semibold text-white tracking-tight truncate">Volume & Dinamika Lalu Lintas</h3>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div
+              role="group"
+              aria-label="Pilih jenis metrik dan rentang waktu grafik"
+              className="flex items-center bg-[#191C24] p-0.5 sm:p-1 rounded-lg border border-[#282D39] text-[11px] sm:text-xs font-mono"
+            >
               {/* Metric switcher */}
-              <div
-                role="group"
-                aria-label="Pilih jenis metrik grafik"
-                className="flex bg-[#191C24] p-1 rounded-lg border border-[#282D39] text-xs font-mono"
-              >
-                {(['requests', 'tokens', 'latency'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMetricType(m)}
-                    className={`px-3 py-1.5 min-h-[30px] rounded-md capitalize transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
-                      metricType === m
-                        ? 'bg-primary text-black font-bold shadow'
-                        : 'text-text-muted hover:text-white'
-                    }`}
-                  >
-                    {m === 'requests' ? 'Req' : m === 'tokens' ? 'Token' : 'Latensi'}
-                  </button>
-                ))}
-              </div>
-
+              {(['requests', 'tokens', 'latency'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMetricType(m)}
+                  aria-pressed={metricType === m}
+                  title={m === 'requests' ? 'Jumlah request' : m === 'tokens' ? 'Jumlah token' : 'Latensi'}
+                  className={`px-2 sm:px-3 py-1 sm:py-1.5 min-h-[28px] sm:min-h-[30px] rounded-md capitalize transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
+                    metricType === m
+                      ? 'bg-primary text-black font-bold shadow'
+                      : 'text-text-muted hover:text-white'
+                  }`}
+                >
+                  {m === 'requests' ? 'Req' : m === 'tokens' ? 'Token' : 'Latensi'}
+                </button>
+              ))}
+              <span aria-hidden="true" className="w-px self-stretch my-1 mx-0.5 sm:mx-1 bg-[#282D39]" />
               {/* Window switcher */}
-              <div
-                role="group"
-                aria-label="Pilih rentang waktu metrik"
-                className="flex bg-[#191C24] p-1 rounded-lg border border-[#282D39] text-xs font-mono"
-              >
-                {(['1h', '6h', '24h', '7d'] as const).map((w) => (
-                  <button
-                    key={w}
-                    type="button"
-                    onClick={() => setTimeWindow(w)}
-                    className={`px-2.5 py-1.5 min-h-[30px] rounded-md transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
-                      timeWindow === w
-                        ? 'bg-[#2A2F3D] text-white font-semibold'
-                        : 'text-text-muted hover:text-white'
-                    }`}
-                  >
-                    {w}
-                  </button>
-                ))}
-              </div>
+              {(['1h', '6h', '24h', '7d'] as const).map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setTimeWindow(w)}
+                  aria-pressed={timeWindow === w}
+                  title={`Rentang ${w}`}
+                  className={`px-2 sm:px-2.5 py-1 sm:py-1.5 min-h-[28px] sm:min-h-[30px] rounded-md transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
+                    timeWindow === w
+                      ? 'bg-[#2A2F3D] text-white font-semibold'
+                      : 'text-text-muted hover:text-white'
+                  }`}
+                >
+                  {w}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="h-64 w-full pt-2">
+          <div className="h-56 sm:h-64 w-full pt-1 sm:pt-2">
             {series.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center text-xs text-text-muted space-y-2">
                 <Activity className="w-6 h-6 text-[#2A2F3D]" />
@@ -806,28 +800,27 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
       {/* ==================================================================== */}
       {/* 5. UPSTREAM PROVIDER HEALTH & STATUS MATRIX                          */}
       {/* ==================================================================== */}
-      <div className="space-y-4">
-        <div className="flex flex-row items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-              <Server className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span className="truncate">Status Kesehatan Upstream Providers</span>
-            </h3>
-            <p className="text-xs text-text-muted mt-1 leading-relaxed">
-              Ketersediaan koneksi upstream, status circuit breaker, dan respons latensi terkini.
-            </p>
+      <div className="space-y-3 sm:space-y-4">
+        <div className="flex flex-row items-center justify-between gap-3">
+          <div
+            className="flex items-center gap-2 min-w-0"
+            title="Ketersediaan koneksi upstream, status circuit breaker, dan respons latensi terkini"
+          >
+            <Server className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            <h3 className="text-sm font-semibold text-white tracking-tight truncate">Status Kesehatan Upstream Providers</h3>
           </div>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => onNavigate('/upstreams/providers')}
-            className="text-xs text-primary hover:underline whitespace-nowrap flex-shrink-0 mt-0.5"
+            title="Buka halaman kelola provider"
+            className="text-xs text-primary hover:underline whitespace-nowrap flex-shrink-0 p-0 h-auto"
           >
-            Kelola Provider &rarr;
+            Kelola &rarr;
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           {providers.length === 0 ? (
             <div className="col-span-full py-8 text-center text-xs text-text-muted bg-[#121316] border border-[#20242D] rounded-xl">
               Belum ada provider upstream yang terdaftar.{' '}
@@ -845,29 +838,28 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
               return (
                 <div
                   key={p.id}
-                  className="bg-[#121316] border border-[#20242D] rounded-xl p-4.5 hover:border-primary/40 transition-all flex flex-col justify-between shadow-sm group"
+                  title={p.base_url || p.name}
+                  className="bg-[#121316] border border-[#20242D] rounded-xl p-3.5 sm:p-4.5 hover:border-primary/40 transition-all flex flex-col justify-between shadow-sm group"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-[#191C24] border border-[#2A2E3B] flex items-center justify-center text-primary group-hover:scale-105 transition-transform">
-                        <ProviderBrandIcon providerIdOrKind={p.kind} name={p.name} className="w-5 h-5" />
+                  <div className="flex items-center justify-between gap-2.5 sm:gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-[#191C24] border border-[#2A2E3B] flex items-center justify-center text-primary flex-shrink-0 group-hover:scale-105 transition-transform">
+                        <ProviderBrandIcon providerIdOrKind={p.kind} name={p.name} className="w-4 h-4 sm:w-5 sm:h-5" />
                       </div>
-                      <div>
-                        <h4 className="text-sm font-semibold text-white group-hover:text-primary transition-colors">
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-semibold text-white group-hover:text-primary transition-colors truncate">
                           {p.display_name || p.name}
                         </h4>
-                        <p className="text-[11px] text-text-muted font-mono capitalize">{p.kind}</p>
+                        <p className="text-[11px] text-text-muted font-mono capitalize truncate">
+                          {p.kind}
+                          {p.last_latency_ms ? ` · ${p.last_latency_ms} ms` : ''}
+                        </p>
                       </div>
                     </div>
-                    <Badge variant={isHealthy ? 'success' : isDegraded ? 'warn' : 'error'}>
-                      {p.last_health_status || (p.enabled ? 'unknown' : 'disabled')}
-                    </Badge>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-[#1C2029] flex items-center justify-between text-xs">
-                    <span className="text-text-muted">Latensi Terakhir</span>
-                    <span className="font-mono text-white font-semibold">
-                      {p.last_latency_ms ? `${p.last_latency_ms} ms` : '-'}
+                    <span title={`Status: ${p.last_health_status || (p.enabled ? 'unknown' : 'disabled')}`} className="flex-shrink-0">
+                      <Badge variant={isHealthy ? 'success' : isDegraded ? 'warn' : 'error'}>
+                        {p.last_health_status || (p.enabled ? 'unknown' : 'disabled')}
+                      </Badge>
                     </span>
                   </div>
                 </div>

@@ -263,6 +263,9 @@ func (h *Handlers) getDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 
 	diag := DiagnosticsDTO{
+		Version:       h.version,
+		Commit:        h.commit,
+		BuiltAt:       h.builtAt,
 		UptimeSeconds: int64(time.Since(appStartTime).Seconds()),
 		GoVersion:     runtime.Version(),
 		NumGoroutine:  runtime.NumGoroutine(),

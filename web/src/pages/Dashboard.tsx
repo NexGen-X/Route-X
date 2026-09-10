@@ -309,17 +309,17 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             {/* Breakdown rows */}
             <div className="mt-4 pt-3 border-t border-[#1C2029] space-y-1.5 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-text-muted">Container RAM</span>
+                <span className="text-text-muted">RAM Kontainer</span>
                 <span className="font-mono text-text-secondary">
                   {overview ? formatBytes(overview.container_ram_bytes) : '-'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-text-muted">Go Heap</span>
+                <span className="text-text-muted">Heap Go</span>
                 <span className="font-mono text-text-secondary">{overview ? formatBytes(overview.go_heap_bytes) : '-'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-text-muted">GC Cycles</span>
+                <span className="text-text-muted">Siklus GC</span>
                 <span className="font-mono text-emerald-400 font-semibold">{overview?.num_gc ?? 0}</span>
               </div>
             </div>

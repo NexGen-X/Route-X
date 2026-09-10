@@ -175,14 +175,14 @@ export const Diagnostics: React.FC = () => {
               className="text-red-400 hover:text-red-300 border-red-900/40 hover:bg-red-950/20"
             >
               <Trash2 className="w-3.5 h-3.5 mr-1" />
-              Flush Cache
+              Kosongkan Cache
             </Button>
           </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
           <div className="bg-surface/60 rounded-lg p-3 border border-border/40">
-            <span className="text-[11px] text-text-muted block">Cache Hit Ratio</span>
+            <span className="text-[11px] text-text-muted block">Rasio Hit Cache</span>
             <span className="text-xl font-bold font-mono text-emerald-400 mt-1 block">
               {hitRatio}%
             </span>
@@ -192,7 +192,7 @@ export const Diagnostics: React.FC = () => {
           </div>
 
           <div className="bg-surface/60 rounded-lg p-3 border border-border/40">
-            <span className="text-[11px] text-text-muted block">Cache Hits (Hemat Biaya)</span>
+            <span className="text-[11px] text-text-muted block">Hit Cache (Hemat Biaya)</span>
             <span className="text-xl font-bold font-mono text-white mt-1 block">
               {cache?.hits || 0}
             </span>
@@ -237,7 +237,9 @@ export const Diagnostics: React.FC = () => {
               </div>
             </div>
             <span className="text-[10px] text-text-muted mt-1 block">
-              Sekitar {(ttlMinutes / 60).toFixed(1)} jam masa berlaku
+              {ttlMinutes >= 60
+                ? `Sekitar ${(ttlMinutes / 60).toFixed(1)} jam masa berlaku`
+                : `Sekitar ${ttlMinutes} menit masa berlaku`}
             </span>
           </div>
         </div>
@@ -270,25 +272,25 @@ export const Diagnostics: React.FC = () => {
         <Card title="Penggunaan Memori" subtitle="Statistik memori Go runtime">
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1 border-b border-border/40">
-              <span className="text-text-muted">Memory Allocated</span>
+              <span className="text-text-muted">Memori Terpakai</span>
               <span className="font-mono font-bold text-white">
                 {diag?.memory?.alloc_bytes ? (diag.memory.alloc_bytes / 1024 / 1024).toFixed(1) : (diag?.memory_allocated_mb ?? '-')} MB
               </span>
             </div>
             <div className="flex justify-between py-1 border-b border-border/40">
-              <span className="text-text-muted">Total Allocations</span>
+              <span className="text-text-muted">Total Alokasi</span>
               <span className="font-mono text-text-secondary">
                 {diag?.memory?.total_alloc_bytes ? (diag.memory.total_alloc_bytes / 1024 / 1024).toFixed(1) : (diag?.memory_total_alloc_mb ?? '-')} MB
               </span>
             </div>
             <div className="flex justify-between py-1 border-b border-border/40">
-              <span className="text-text-muted">System Reserved</span>
+              <span className="text-text-muted">Memori Sistem</span>
               <span className="font-mono text-text-secondary">
                 {diag?.memory?.sys_bytes ? (diag.memory.sys_bytes / 1024 / 1024).toFixed(1) : (diag?.memory_sys_mb ?? '-')} MB
               </span>
             </div>
             <div className="flex justify-between py-1">
-              <span className="text-text-muted">GC Cycles</span>
+              <span className="text-text-muted">Siklus GC</span>
               <span className="font-mono text-accent">{diag?.memory?.num_gc ?? diag?.num_gc ?? 0} kali</span>
             </div>
           </div>

@@ -105,8 +105,9 @@ export const Settings: React.FC = () => {
 
   const handleSaveDomain = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputDomain.trim()) {
-      setDomainFeedback({ type: 'error', message: 'Silakan masukkan nama domain yang valid.' });
+    const domain = inputDomain.trim().toLowerCase();
+    if (!domain || !/^(?!-)(?!.*--)([a-z0-9-]{1,63}\.)+[a-z]{2,}$/.test(domain)) {
+      setDomainFeedback({ type: 'error', message: 'Nama domain tidak valid (contoh: id-tech.cloud).' });
       return;
     }
 
@@ -114,7 +115,7 @@ export const Settings: React.FC = () => {
     setDomainFeedback(null);
     try {
       const res = await api.system.domain.update({
-        domain: inputDomain.trim(),
+        domain,
         mode: inputMode,
       });
       setDomainConfig(res);
@@ -401,18 +402,18 @@ export const Settings: React.FC = () => {
                                     : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                                 }`}
                               >
-                                {p.security === 'none' ? `Port ${p.port}` : `${p.security.toUpperCase()} ${p.port}`}
+                                {p.security === 'none' ? `Port ${p.port ?? '?'}` : `${(p.security || '?').toUpperCase()} ${p.port ?? '?'}`}
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5 mt-1">
                               <span className="text-[10px] text-accent font-mono bg-accent/10 px-1.5 py-0.2 rounded">
-                                {p.transport.toUpperCase()}
+                                {(p.transport || '?').toUpperCase()}
                               </span>
-                              <span className="text-[10px] text-text-muted font-mono truncate max-w-[140px]">
-                                {p.path_or_sni}
+                              <span className="text-[10px] text-text-muted font-mono truncate max-w-[140px]" title={p.path_or_sni || ''}>
+                                {p.path_or_sni || '-'}
                               </span>
                             </div>
-                            <p className="text-[11px] text-text-secondary mt-1.5 line-clamp-2">{p.description}</p>
+                            <p className="text-[11px] text-text-secondary mt-1.5 line-clamp-2">{p.description || ''}</p>
                           </div>
 
                           <div className="pt-2 border-t border-border/50">

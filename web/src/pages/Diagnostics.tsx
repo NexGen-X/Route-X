@@ -35,7 +35,8 @@ export const Diagnostics: React.FC = () => {
       try {
         const resCache = await api.system.cacheStats();
         setCache(resCache);
-        setTtlMinutes(Math.max(1, Math.floor(resCache.ttl_seconds / 60)));
+        const ttl = Number(resCache.ttl_seconds);
+        setTtlMinutes(Number.isFinite(ttl) ? Math.min(10080, Math.max(1, Math.floor(ttl / 60))) : 60);
       } catch (errCache) {
         setCache(null);
       }
@@ -101,10 +102,11 @@ export const Diagnostics: React.FC = () => {
 
   const handleSaveTTL = async () => {
     if (!cache) return;
+    const ttl = Math.min(10080, Math.max(1, Math.floor(Number(ttlMinutes) || 60)));
     setUpdatingCache(true);
     try {
-      await api.system.updateCacheSettings(cache.enabled, Math.max(1, ttlMinutes) * 60);
-      toast.success(`TTL Response cache berhasil diperbarui ke ${ttlMinutes} menit.`, 'TTL Tersimpan');
+      await api.system.updateCacheSettings(cache.enabled, ttl * 60);
+      toast.success(`TTL Response cache berhasil diperbarui ke ${ttl} menit.`, 'TTL Tersimpan');
       loadData();
     } catch (err: any) {
       toast.error('Gagal menyimpan TTL: ' + (err.message || err));

@@ -52,9 +52,25 @@ export const Models: React.FC = () => {
 
   const handleCreateModel = async (e: React.FormEvent) => {
     e.preventDefault();
+    const modelId = newModel.model_id.trim();
+    const displayName = newModel.display_name.trim();
+    if (!modelId) {
+      toast.error('ID model wajib diisi.');
+      return;
+    }
+    if (models.some((m) => m.model_id.toLowerCase() === modelId.toLowerCase())) {
+      toast.error(`Model "${modelId}" sudah terdaftar.`);
+      return;
+    }
+    if (newModel.context_window <= 0 || newModel.max_output_tokens <= 0) {
+      toast.error('Context window dan max output tokens wajib lebih dari 0.');
+      return;
+    }
     try {
       await api.models.create({
         ...newModel,
+        model_id: modelId,
+        display_name: displayName || modelId,
         // CHECK models_capabilities_known hanya mengizinkan: text, vision,
         // reasoning, tools, embeddings. Nilai 'chat'/'streaming' memicu 500.
         capabilities: ['text'],
@@ -116,6 +132,15 @@ export const Models: React.FC = () => {
   const handleSavePrice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedMappingId) return;
+    const validUSD = (v: string) => v.trim() !== '' && Number.isFinite(Number(v)) && Number(v) >= 0;
+    if (!validUSD(pricingForm.input_per_1m_usd) || !validUSD(pricingForm.output_per_1m_usd)) {
+      toast.error('Harga input/output wajib angka >= 0 (contoh: 2.50).');
+      return;
+    }
+    if (pricingForm.cached_input_per_1m_usd.trim() !== '' && !validUSD(pricingForm.cached_input_per_1m_usd)) {
+      toast.error('Harga cached input wajib angka >= 0 atau dikosongkan.');
+      return;
+    }
     setIsSavingPrice(true);
     try {
       await api.models.setPrice(selectedMappingId, {
@@ -176,11 +201,11 @@ export const Models: React.FC = () => {
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/40">
                   <span className="text-text-muted">Context Window</span>
-                  <span className="font-mono text-white">{(m.context_window ?? 0).toLocaleString()} tokens</span>
+                  <span className="font-mono text-white">{m.context_window != null ? `${m.context_window.toLocaleString()} tokens` : '-'}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/40">
                   <span className="text-text-muted">Max Output</span>
-                  <span className="font-mono text-white">{(m.max_output_tokens ?? 0).toLocaleString()} tokens</span>
+                  <span className="font-mono text-white">{m.max_output_tokens != null ? `${m.max_output_tokens.toLocaleString()} tokens` : '-'}</span>
                 </div>
               </div>
             </div>
@@ -297,8 +322,8 @@ export const Models: React.FC = () => {
               }}
               options={mappings.filter((mp) => mp.id).map((mp) => ({
                 value: mp.id,
-                label: `${mp.provider_id} → ${mp.upstream_model_name}`,
-                description: `ID Mapping: ${mp.id.slice(0, 8)}`,
+                label: `${mp.provider_id || '?'} → ${mp.upstream_model_name || '?'}`,
+                description: `ID Mapping: ${(mp.id || '').slice(0, 8)}`,
               }))}
             />
 
@@ -354,7 +379,7 @@ export const Models: React.FC = () => {
                   {pricingHistory.map((h, i) => (
                     <div key={`${h.effective_from}-${i}`} className="flex justify-between text-[11px] font-mono text-text-secondary">
                       <span>In: ${h.input_per_1m_usd} | Out: ${h.output_per_1m_usd}</span>
-                      <span className="text-text-muted">{new Date(h.effective_from).toLocaleDateString()}</span>
+                      <span className="text-text-muted">{h.effective_from ? new Date(h.effective_from).toLocaleDateString() : '-'}</span>
                     </div>
                   ))}
                 </div>

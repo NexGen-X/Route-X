@@ -13,7 +13,9 @@ import { test, expect, request as pwRequest } from '@playwright/test';
 // tidak menang routing, key khusus limit kecil, cleanup di finally agar
 // staging steril walau test gagal tengah jalan.
 //
-// Prasyarat env: BASE_URL, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD.
+// Prasyarat env: BASE_URL + file e2e/.auth-admin.json dari proyek setup
+// (auth.setup login tepat 1x; spec ini nol login tambahan agar tidak
+// menjebol limiter 20/IP/15 mnt).
 
 const ASAL = process.env.BASE_URL || 'http://127.0.0.1:18080';
 
@@ -21,15 +23,11 @@ let ctx: any;
 let H: Record<string, string>;
 
 test.beforeAll(async () => {
-  const email = process.env.E2E_ADMIN_EMAIL || '';
-  const password = process.env.E2E_ADMIN_PASSWORD || '';
-  test.skip(!email || !password, 'E2E_ADMIN_EMAIL/PASSWORD belum diset');
-  ctx = await pwRequest.newContext({ baseURL: ASAL });
-  const login = await ctx.post('/api/auth/login', {
-    data: { email, password },
-  });
-  expect(login.ok()).toBeTruthy();
+  // Nol login tambahan: pakai sesi admin dari auth.setup agar tidak
+  // menjebol limiter login 20/IP/15 mnt pada proyek ketiga + retry.
+  ctx = await pwRequest.newContext({ baseURL: ASAL, storageState: 'e2e/.auth-admin.json' });
   const me = await ctx.get('/api/auth/me');
+  expect(me.ok()).toBeTruthy();
   const tokenCSRF = (await me.json()).csrf_token as string;
   H = { Origin: ASAL, 'X-CSRF-Token': tokenCSRF };
 });

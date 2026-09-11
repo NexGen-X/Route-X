@@ -60,12 +60,14 @@ export const RoutingRules: React.FC = () => {
 
   const getRuleMode = (r: RoutingRule): { mode: string; label: string; badgeVariant: 'info' | 'lime' | 'warn'; detail: string } => {
     const desc = r.description || '';
-    if (desc.includes('[combo:tier2=') || desc.toLowerCase().includes('combo')) {
+    // Hanya tag struktur [combo:tier2=...] / [model_only] yang menentukan mode —
+    // kata bebas di deskripsi custom tidak boleh mengubah badge.
+    if (desc.includes('[combo:tier2=')) {
       const match = desc.match(/\[combo:tier2=([^\]]+)\]/);
       const tier2 = match ? match[1] : 'Flagship';
       return { mode: 'combo_routing', label: 'COMBO ROUTING', badgeVariant: 'lime', detail: `Tier 2 Fallback: ${tier2}` };
     }
-    if (r.max_attempts === 1 || desc.includes('[model_only]') || desc.toLowerCase().includes('model only')) {
+    if (r.max_attempts === 1 || desc.includes('[model_only]')) {
       return { mode: 'model_only', label: 'MODEL ONLY', badgeVariant: 'info', detail: 'Direct 1:1 Passthrough' };
     }
     return { mode: 'routing', label: 'ROUTING', badgeVariant: 'warn', detail: `${r.max_attempts} percobaan failover` };
@@ -139,6 +141,10 @@ export const RoutingRules: React.FC = () => {
       };
 
       if (mode === 'model_only') {
+        if (!targetModelId) {
+          toast.error('Pilih model target dulu — tanpa model, aturan menjadi catch-all semua model.');
+          return;
+        }
         const selModel = models.find((m) => m.id === targetModelId);
         const selProv = providers.find((p) => p.id === targetProviderId);
         const modelName = selModel?.model_id || targetModelId;
@@ -147,19 +153,33 @@ export const RoutingRules: React.FC = () => {
           name: newRule.name || `direct-${modelName.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
           strategy: 'priority',
           max_attempts: 1,
-          match_model_id: targetModelId || undefined,
+          match_model_id: targetModelId,
           provider_ids: targetProviderId ? [targetProviderId] : undefined,
           description: `[model_only] Direct 1:1 passthrough ke model ${modelName}${selProv ? ` via ${selProv.name}` : ''}`,
         };
       } else if (mode === 'combo_routing') {
-        const tier1M = models.find((m) => m.model_id === tier1ModelName || m.display_name === tier1ModelName);
+        const t1 = tier1ModelName.trim();
+        const t2 = tier2ModelName.trim();
+        if (!t1 || !t2) {
+          toast.error('Isi nama model Tier 1 dan Tier 2 dulu.');
+          return;
+        }
+        if (t1.toLowerCase() === t2.toLowerCase()) {
+          toast.error('Tier 1 dan Tier 2 tidak boleh sama — self-fallback membuat loop.');
+          return;
+        }
+        const tier1M = models.find((m) => m.model_id === t1 || m.display_name === t1);
+        if (!tier1M) {
+          toast.error(`Model Tier 1 "${t1}" tidak dikenal di registry — pilih nama yang terdaftar agar aturan tidak menjadi catch-all.`);
+          return;
+        }
         payload = {
           ...payload,
-          name: newRule.name || `combo-${tier1ModelName.replace(/[^a-zA-Z0-9_-]/g, '-')}-to-${tier2ModelName.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+          name: newRule.name || `combo-${t1.replace(/[^a-zA-Z0-9_-]/g, '-')}-to-${t2.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
           strategy: 'priority',
           max_attempts: 2,
-          match_model_id: tier1M?.id || undefined,
-          description: `[combo:tier2=${tier2ModelName}] Smart Tiered Cascade: Tier 1 (${tier1ModelName}) -> Tier 2 (${tier2ModelName})`,
+          match_model_id: tier1M.id,
+          description: `[combo:tier2=${t2}] Smart Tiered Cascade: Tier 1 (${t1}) -> Tier 2 (${t2})`,
         };
       } else {
         payload = {

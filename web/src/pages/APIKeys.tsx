@@ -44,9 +44,17 @@ export const APIKeys: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newKey.name.trim()) {
+      toast.error('Nama kunci wajib diisi.');
+      return;
+    }
+    if (newKey.rpm_limit < 0 || newKey.tpm_limit < 0) {
+      toast.error('Batas RPM/TPM tidak boleh negatif (0 = tanpa batas).');
+      return;
+    }
     try {
       const res = await api.apiKeys.create({
-        name: newKey.name,
+        name: newKey.name.trim(),
         rate_limit_rpm: newKey.rpm_limit || undefined,
         rate_limit_tpm: newKey.tpm_limit || undefined,
         scopes: ['inference'],
@@ -297,24 +305,26 @@ export const APIKeys: React.FC = () => {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="api-key-rpm" className="block font-semibold text-text-secondary uppercase mb-1">Batas RPM</label>
+              <label htmlFor="api-key-rpm" className="block font-semibold text-text-secondary uppercase mb-1">Batas RPM (0 = tanpa batas)</label>
               <input
                 id="api-key-rpm"
                 name="rpm_limit"
                 type="number"
+                min={0}
                 value={newKey.rpm_limit}
-                onChange={(e) => setNewKey({ ...newKey, rpm_limit: parseInt(e.target.value) || 0 })}
+                onChange={(e) => setNewKey({ ...newKey, rpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
                 className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
               />
             </div>
             <div>
-              <label htmlFor="api-key-tpm" className="block font-semibold text-text-secondary uppercase mb-1">Batas TPM</label>
+              <label htmlFor="api-key-tpm" className="block font-semibold text-text-secondary uppercase mb-1">Batas TPM (0 = tanpa batas)</label>
               <input
                 id="api-key-tpm"
                 name="tpm_limit"
                 type="number"
+                min={0}
                 value={newKey.tpm_limit}
-                onChange={(e) => setNewKey({ ...newKey, tpm_limit: parseInt(e.target.value) || 0 })}
+                onChange={(e) => setNewKey({ ...newKey, tpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
                 className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
               />
             </div>

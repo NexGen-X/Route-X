@@ -63,8 +63,12 @@ export const Requests: React.FC = () => {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const loadRequests = async (cursor?: string) => {
-    setIsLoading(true);
+  // Penjaga race daftar: abaikan respons basi bila user sudah ganti tab/cari.
+  const listReqRef = useRef(0);
+
+  const loadRequests = async (cursor?: string, silent = false) => {
+    const reqId = ++listReqRef.current;
+    if (!silent) setIsLoading(true);
     try {
       const params: Record<string, any> = { limit: 25 };
       if (cursor) params.cursor = cursor;
@@ -73,6 +77,7 @@ export const Requests: React.FC = () => {
       if (search) params.search = search;
 
       const res = await api.requests.list(params);
+      if (listReqRef.current !== reqId) return;
       if (cursor) {
         setRequests((prev) => [...prev, ...(res.items || [])]);
       } else {
@@ -81,9 +86,10 @@ export const Requests: React.FC = () => {
       setNextCursor(res.next_cursor);
       setLoadError(null);
     } catch (err) {
+      if (listReqRef.current !== reqId) return;
       setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
-      setIsLoading(false);
+      if (listReqRef.current === reqId && !silent) setIsLoading(false);
     }
   };
 
@@ -94,7 +100,7 @@ export const Requests: React.FC = () => {
   useEffect(() => {
     if (!isLiveFeed) return;
     const interval = setInterval(() => {
-      loadRequests();
+      void loadRequests(undefined, true);
     }, 4000);
     return () => clearInterval(interval);
   }, [isLiveFeed, activeTab, search]);
@@ -103,7 +109,7 @@ export const Requests: React.FC = () => {
     if (!selectedReq) return;
     const gwURL = `${window.location.protocol}//${window.location.host}/v1/chat/completions`;
     const promptText = reqPayload?.prompt_text || 'Hello Route-X';
-    const curlCmd = `curl -X POST "${gwURL}" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer rx_live_personal_gateway" \\\n  -d '{\n    "model": "${selectedReq.model_id}",\n    "messages": [{"role": "user", "content": ${JSON.stringify(promptText)}}]\n  }'`;
+    const curlCmd = `curl -X POST "${gwURL}" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer rx_live_personal_gateway" \\\n  -d '{\n    "model": ${JSON.stringify(selectedReq.model_id)},\n    "messages": [{"role": "user", "content": ${JSON.stringify(promptText)}}]\n  }'`;
     try {
       await copyTextToClipboard(curlCmd);
       setIsCurlCopied(true);
@@ -121,6 +127,9 @@ export const Requests: React.FC = () => {
   const handleInspect = async (req: RequestLog) => {
     const reqId = ++inspectorReqRef.current;
     setSelectedReq(req);
+    // Bersihkan state lama agar modal tidak menampilkan payload request sebelumnya.
+    setReqEvents([]);
+    setReqPayload(null);
     setIsInspectorOpen(true);
     setInspectorError(null);
     try {
@@ -142,7 +151,8 @@ export const Requests: React.FC = () => {
   const getStatusBadge = (code: number) => {
     if (code >= 200 && code < 300) return <Badge variant="success">{code} OK</Badge>;
     if (code >= 400 && code < 500) return <Badge variant="warn">{code} WARN</Badge>;
-    return <Badge variant="error">{code} ERR</Badge>;
+    if (code >= 500) return <Badge variant="error">{code} ERR</Badge>;
+    return <Badge variant="neutral">{code}</Badge>;
   };
 
   return (
@@ -185,7 +195,7 @@ export const Requests: React.FC = () => {
       <Card>
         {/* Filter Chips & Search Bar */}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-border">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {[
               { id: 'all', label: 'All Requests' },
               { id: 'success', label: 'Success (2xx)' },
@@ -477,9 +487,7 @@ export const Requests: React.FC = () => {
               </div>
               <div className="w-full h-3 bg-bg-base rounded-full overflow-hidden flex border border-border/50">
                 {reqEvents.length > 0 ? (
-                  reqEvents.map((ev, idx) => {
-                    const total = selectedReq.duration_ms || 1;
-                    const pct = Math.min(100, Math.max(8, Math.round((ev.latency_ms / total) * 100)));
+                  (() => {
                     const colors = [
                       'bg-accent',
                       'bg-cyan-500',
@@ -487,15 +495,19 @@ export const Requests: React.FC = () => {
                       'bg-amber-500',
                       'bg-emerald-500',
                     ];
-                    return (
-                      <div
-                        key={idx}
-                        style={{ width: `${pct}%` }}
-                        title={`${ev.provider_id || ev.event_type}: ${ev.latency_ms}ms (${pct}%)`}
-                        className={`${colors[idx % colors.length]} hover:opacity-80 transition-all border-r border-black/30 first:rounded-l-full last:rounded-r-full`}
-                      />
-                    );
-                  })
+                    const totalEv = reqEvents.reduce((s, ev) => s + (ev.latency_ms || 0), 0) || 1;
+                    return reqEvents.map((ev, idx) => {
+                      const pct = Math.min(100, Math.max(4, Math.round(((ev.latency_ms || 0) / totalEv) * 100)));
+                      return (
+                        <div
+                          key={idx}
+                          style={{ width: `${pct}%` }}
+                          title={`${ev.provider_id || ev.event_type}: ${ev.latency_ms}ms (${pct}%)`}
+                          className={`${colors[idx % colors.length]} hover:opacity-80 transition-all border-r border-black/30 first:rounded-l-full last:rounded-r-full`}
+                        />
+                      );
+                    });
+                  })()
                 ) : (
                   <div
                     style={{ width: '100%' }}
@@ -508,7 +520,7 @@ export const Requests: React.FC = () => {
                 {reqEvents.length > 0 ? (
                   reqEvents.map((ev, idx) => (
                     <span key={idx} className="flex items-center gap-1 font-mono">
-                      <span className={`w-2 h-2 rounded-full ${['bg-accent', 'bg-cyan-500', 'bg-purple-500', 'bg-amber-500'][idx % 4]}`} />
+                      <span className={`w-2 h-2 rounded-full ${['bg-accent', 'bg-cyan-500', 'bg-purple-500', 'bg-amber-500', 'bg-emerald-500'][idx % 5]}`} />
                       {ev.provider_id || ev.event_type}: {ev.latency_ms}ms
                     </span>
                   ))

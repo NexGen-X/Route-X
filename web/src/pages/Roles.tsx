@@ -89,7 +89,7 @@ export const RolesPage: React.FC = () => {
   const handleDelete = async (r: Role) => {
     const ok = await confirmModal({
       title: 'Hapus Peran?',
-      message: `Hapus peran kustom "${r.name}" beserta seluruh pemegangnya? Peran sistem tidak bisa dihapus.`,
+      message: `Hapus peran kustom "${r.name}"? SEMUA pengguna pemegang peran ini akan langsung kehilangan izinnya. Peran sistem tidak bisa dihapus.`,
       confirmText: 'Ya, Hapus',
       danger: true,
     });
@@ -158,7 +158,10 @@ export const RolesPage: React.FC = () => {
           </div>
           <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">Rank</label>
-            <input type="number" value={newRole.rank} onChange={(e) => setNewRole({ ...newRole, rank: parseInt(e.target.value) || 100 })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono" />
+            <input type="number" min={0} value={newRole.rank} onChange={(e) => {
+              const v = parseInt(e.target.value, 10);
+              setNewRole({ ...newRole, rank: Number.isNaN(v) ? 100 : v });
+            }} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono" />
           </div>
           <div className="pt-3 flex justify-end gap-2 border-t border-border">
             <Button type="button" variant="secondary" onClick={() => setIsCreateOpen(false)}>Batal</Button>

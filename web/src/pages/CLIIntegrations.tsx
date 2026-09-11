@@ -60,7 +60,9 @@ export const CLIIntegrations: React.FC = () => {
     setPingStatus((prev) => ({ ...prev, [toolId]: { testing: true } }));
     const start = performance.now();
     try {
-      const res = await fetch('/healthz');
+      // gateway_url adalah basis /v1 gateway; healthz menandai ujung hidupnya.
+      const base = (data?.gateway_url || '').replace(/\/v1\/?$/, '');
+      const res = await fetch(`${base}/healthz`);
       const latency = Math.round(performance.now() - start);
       setPingStatus((prev) => ({
         ...prev,
@@ -98,9 +100,16 @@ export const CLIIntegrations: React.FC = () => {
         { mode: 'model_only' | 'routing' | 'combo'; target: string; apiKey: string }
       > = {};
       cliRes.tools.forEach((t: CLITool) => {
+        const mode = t.active_mode || 'model_only';
+        const fallback =
+          mode === 'routing'
+            ? rulesRes.items[0]?.name || 'general-chat'
+            : mode === 'combo'
+            ? 'combo:coding-tier1-tier2'
+            : modelsRes.items[0]?.model_id ?? 'claude-3-7-sonnet';
         initialConfigs[t.id] = {
-          mode: t.active_mode || 'model_only',
-          target: t.active_target || (modelsRes.items[0]?.model_id ?? 'claude-3-7-sonnet'),
+          mode,
+          target: t.active_target || fallback,
           apiKey: '',
         };
       });
@@ -195,6 +204,10 @@ export const CLIIntegrations: React.FC = () => {
   };
 
   const handleCopy = async (text: string, key: string) => {
+    if (!text) {
+      toast.error('Tidak ada teks untuk disalin.');
+      return;
+    }
     try {
       await copyTextToClipboard(text);
       setCopiedKey(key);
@@ -221,13 +234,14 @@ export const CLIIntegrations: React.FC = () => {
   const categories = ['all', 'Coding Agent', 'Terminal Assistant', 'Local LLM', 'Git Automation', 'Workflow & Prompts', 'DevOps & SRE'];
 
   const filteredTools = (data?.tools || []).filter((tool) => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch =
-      tool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tool.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      tool.description.toLowerCase().includes(searchQuery.toLowerCase());
+      (tool.name || '').toLowerCase().includes(q) ||
+      (tool.id || '').toLowerCase().includes(q) ||
+      (tool.description || '').toLowerCase().includes(q);
 
     const matchesCategory =
-      selectedCategory === 'all' || tool.category.toLowerCase() === selectedCategory.toLowerCase();
+      selectedCategory === 'all' || (tool.category || '').toLowerCase() === selectedCategory.toLowerCase();
 
     const matchesInstalled = !onlyInstalled || tool.installed;
 

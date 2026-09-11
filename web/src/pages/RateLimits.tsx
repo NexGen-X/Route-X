@@ -9,10 +9,12 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Gauge, Plus, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { QueryError } from '../components/common/QueryError';
 
 export const RateLimits: React.FC = () => {
   const { toast, confirmModal } = useToast();
   const [limits, setLimits] = useState<RateLimit[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newLimit, setNewLimit] = useState({
     scope: 'api_key',
@@ -26,8 +28,9 @@ export const RateLimits: React.FC = () => {
     try {
       const res = await api.rateLimits.list();
       setLimits(res.items || []);
+      setLoadError(null);
     } catch (err) {
-      console.error(err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -37,8 +40,20 @@ export const RateLimits: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    const num = (v: number) => (Number.isFinite(v) ? v : 0);
+    const rpm = num(newLimit.requests_per_minute);
+    const tpm = num(newLimit.tokens_per_minute);
+    const rps = num(newLimit.requests_per_second);
+    if (rpm < 0 || tpm < 0 || rps < 0) {
+      toast.error('RPM/TPM/RPS tidak boleh negatif.');
+      return;
+    }
+    if (rpm === 0 && tpm === 0 && rps === 0) {
+      toast.error('Isi minimal satu batas (RPM/TPM/RPS) lebih dari 0.');
+      return;
+    }
     try {
-      await api.rateLimits.create(newLimit);
+      await api.rateLimits.create({ ...newLimit, requests_per_minute: rpm, tokens_per_minute: tpm, requests_per_second: rps });
       setIsCreateOpen(false);
       toast.success('Aturan batas laju berhasil dibuat');
       loadLimits();
@@ -83,7 +98,9 @@ export const RateLimits: React.FC = () => {
         }
       />
 
-      {limits.length === 0 ? (
+      {loadError && <QueryError message={loadError} onRetry={() => void loadLimits()} />}
+
+      {limits.length === 0 && !loadError ? (
         <Card className="py-12 px-6 text-center">
           <div className="max-w-md mx-auto space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto shadow-inner">
@@ -198,11 +215,12 @@ export const RateLimits: React.FC = () => {
               />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block font-semibold text-text-secondary uppercase mb-1">Req / Menit (RPM)</label>
               <input
                 type="number"
+                min={0}
                 value={newLimit.requests_per_minute}
                 onChange={(e) => setNewLimit({ ...newLimit, requests_per_minute: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
@@ -212,6 +230,7 @@ export const RateLimits: React.FC = () => {
               <label className="block font-semibold text-text-secondary uppercase mb-1">Token / Menit (TPM)</label>
               <input
                 type="number"
+                min={0}
                 value={newLimit.tokens_per_minute}
                 onChange={(e) => setNewLimit({ ...newLimit, tokens_per_minute: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
@@ -221,6 +240,7 @@ export const RateLimits: React.FC = () => {
               <label className="block font-semibold text-text-secondary uppercase mb-1">Req / Detik (RPS)</label>
               <input
                 type="number"
+                min={0}
                 value={newLimit.requests_per_second}
                 onChange={(e) => setNewLimit({ ...newLimit, requests_per_second: parseInt(e.target.value) || 0 })}
                 className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"

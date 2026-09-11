@@ -9,11 +9,13 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Coins, Plus, RotateCcw } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { QueryError } from '../components/common/QueryError';
 import { formatUSD, percentageOfDecimal } from '../utils/money';
 
 export const Budgets: React.FC = () => {
   const { toast, confirmModal } = useToast();
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newBudget, setNewBudget] = useState({
     name: '',
@@ -29,8 +31,9 @@ export const Budgets: React.FC = () => {
     try {
       const res = await api.budgets.list();
       setBudgets(res.items || []);
+      setLoadError(null);
     } catch (err) {
-      console.error(err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -59,9 +62,18 @@ export const Budgets: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    const limit = Number(newBudget.max_spend_usd);
+    if (!Number.isFinite(limit) || limit <= 0) {
+      toast.error('Batas maksimal wajib angka lebih dari 0 USD.');
+      return;
+    }
+    if (!Number.isInteger(newBudget.alert_threshold) || newBudget.alert_threshold < 1 || newBudget.alert_threshold > 100) {
+      toast.error('Ambang peringatan wajib 1-100 persen.');
+      return;
+    }
     try {
       await api.budgets.create({
-        name: newBudget.name,
+        name: newBudget.name.trim(),
         scope: newBudget.scope,
         scope_id: newBudget.scope === 'global' ? undefined : (newBudget.scope_id.trim() || undefined),
         period: newBudget.period,
@@ -95,7 +107,9 @@ export const Budgets: React.FC = () => {
         }
       />
 
-      {budgets.length === 0 ? (
+      {loadError && <QueryError message={loadError} onRetry={() => void loadBudgets()} />}
+
+      {budgets.length === 0 && !loadError ? (
         <Card className="py-12 px-6 text-center">
           <div className="max-w-md mx-auto space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto shadow-inner">
@@ -121,7 +135,8 @@ export const Budgets: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {budgets.map((b) => {
           const pct = percentageOfDecimal(b.spent_usd || '0', b.max_spend_usd || '0');
-          const isDanger = pct >= b.alert_threshold;
+          const threshold = b.alert_threshold ?? b.alert_threshold_pct ?? 80;
+          const isDanger = pct >= threshold;
 
           return (
             <Card key={b.id} className="p-5 flex flex-col justify-between">
@@ -161,7 +176,7 @@ export const Budgets: React.FC = () => {
                 <div className="mt-4 space-y-1 text-xs text-text-muted">
                   <div className="flex justify-between py-1 border-b border-border/40">
                     <span>Ambang Peringatan</span>
-                    <span className="font-mono text-text-primary">{b.alert_threshold}%</span>
+                    <span className="font-mono text-text-primary">{threshold}%</span>
                   </div>
                   <div className="flex justify-between py-1">
                     <span>Aksi Pelanggaran</span>
@@ -243,16 +258,34 @@ export const Budgets: React.FC = () => {
             </div>
           )}
 
-          <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Batas Maksimal (USD)</label>
-            <input
-              type="number"
-              step="0.01"
-              required
-              value={newBudget.max_spend_usd}
-              onChange={(e) => setNewBudget({ ...newBudget, max_spend_usd: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block font-semibold text-text-secondary uppercase mb-1">Batas Maksimal (USD)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                required
+                value={newBudget.max_spend_usd}
+                onChange={(e) => setNewBudget({ ...newBudget, max_spend_usd: e.target.value })}
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="block font-semibold text-text-secondary uppercase mb-1">Ambang Peringatan (%)</label>
+              <input
+                type="number"
+                min={1}
+                max={100}
+                required
+                value={newBudget.alert_threshold}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  setNewBudget({ ...newBudget, alert_threshold: Number.isNaN(v) ? 80 : v });
+                }}
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+              />
+            </div>
           </div>
           <Button type="submit" variant="primary" size="md" className="w-full mt-2">
             Simpan Anggaran

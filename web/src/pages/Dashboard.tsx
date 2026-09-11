@@ -129,7 +129,9 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
   };
 
   const formatTimeAgo = (dateStr: string) => {
-    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+    const t = new Date(dateStr).getTime();
+    if (Number.isNaN(t)) return 'waktu tak dikenal';
+    const diff = Math.floor((Date.now() - t) / 1000);
     if (diff < 5) return 'baru saja';
     if (diff < 60) return `${diff} detik lalu`;
     const m = Math.floor(diff / 60);
@@ -843,7 +845,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                 <div
                   key={p.id}
                   title={p.base_url || p.name}
-                  className="bg-[#121316] border border-[#20242D] rounded-xl p-3.5 sm:p-4.5 hover:border-primary/40 transition-all flex flex-col justify-between shadow-sm group"
+                  className="bg-[#121316] border border-[#20242D] rounded-xl p-3.5 sm:p-4 hover:border-primary/40 transition-all flex flex-col justify-between shadow-sm group"
                 >
                   <div className="flex items-center justify-between gap-2.5 sm:gap-3">
                     <div className="flex items-center gap-2.5 min-w-0">

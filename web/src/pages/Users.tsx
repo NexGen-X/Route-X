@@ -138,6 +138,10 @@ export const UsersPage: React.FC = () => {
       toast.error('Isi password sementara dulu.');
       return;
     }
+    if (resetPw.temp.trim().length < 8) {
+      toast.error('Password sementara minimal 8 karakter.');
+      return;
+    }
     const ok = await confirmModal({
       title: 'Reset Password Paksa?',
       message: `Password ${u.email} diganti dan seluruh sesinya dicabut.`,

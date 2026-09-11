@@ -31,9 +31,6 @@ import {
   FlaskConical,
   Zap,
   AlertTriangle,
-  ArrowUpDown,
-  Scale,
-  Tag,
 } from 'lucide-react';
 import {
   KNOWN_PROVIDERS,
@@ -1091,51 +1088,52 @@ export const Providers: React.FC = () => {
 
             {/* TAB 1: MODEL UPSTREAM & DIAGNOSTIK */}
             {drawerTab === 'models' && (
-              <div className="space-y-4">
-                {/* Toolbar Aksi Model */}
-                <div className="space-y-2.5">
-                  <div className="relative w-full">
-                    <Search className="w-3.5 h-3.5 text-text-muted absolute left-3 top-2.5" />
+              <div className="space-y-2.5 sm:space-y-3">
+                {/* Toolbar Aksi Model: cari sebaris tombol ikon */}
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="w-3.5 h-3.5 text-text-muted absolute left-2.5 top-2" />
                     <input
                       type="text"
-                      placeholder="Cari model upstream..."
+                      placeholder="Cari model..."
+                      aria-label="Cari model upstream"
                       value={modelSearch}
                       onChange={(e) => setModelSearch(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 text-xs bg-bg-surface-2 border border-border rounded-lg text-white font-mono placeholder:text-text-muted outline-none focus:border-accent"
+                      className="w-full pl-8 pr-2 py-1.5 text-xs bg-bg-surface-2 border border-border rounded-lg text-white font-mono placeholder:text-text-muted outline-none focus:border-accent"
                     />
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleSyncModels(selectedProvider)}
-                      isLoading={syncingId === selectedProvider.id}
-                      icon={<DownloadCloud className="w-3.5 h-3.5" />}
-                      title="Tarik daftar model dari upstream"
-                      className="flex-1 justify-center"
-                    >
-                      Tarik
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => {
-                        setNewModelName('');
-                        setIsAddModelModalOpen(true);
-                      }}
-                      icon={<Plus className="w-3.5 h-3.5" />}
-                      title="Tambah model manual"
-                      className="flex-1 justify-center"
-                    >
-                      Tambah
-                    </Button>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSyncModels(selectedProvider)}
+                    disabled={syncingId === selectedProvider.id}
+                    title="Tarik daftar model dari upstream"
+                    aria-label="Tarik daftar model dari upstream"
+                    className="p-1.5 sm:p-2 rounded-lg bg-bg-surface-2 text-text-primary border border-border hover:bg-border/60 hover:text-white transition-colors cursor-pointer disabled:opacity-50 flex-shrink-0"
+                  >
+                    {syncingId === selectedProvider.id ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <DownloadCloud className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewModelName('');
+                      setIsAddModelModalOpen(true);
+                    }}
+                    title="Tambah model manual"
+                    aria-label="Tambah model manual"
+                    className="p-1.5 sm:p-2 rounded-lg bg-accent text-black hover:bg-accent-hover transition-colors cursor-pointer flex-shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
                 </div>
 
                 {/* Daftar Model Terhubung */}
                 {filteredModels.length > 0 ? (
                   <div className="space-y-2.5">
-                    {filteredModels.map((model, idx) => {
+                    {filteredModels.map((model) => {
                       const { brand, context } = getModelBadges(
                         model.upstream_model_name,
                         selectedProvider.kind
@@ -1146,36 +1144,20 @@ export const Providers: React.FC = () => {
                       return (
                         <div
                           key={model.id}
-                          className="p-2.5 sm:p-3.5 rounded-xl border border-border bg-bg-surface-2/40 hover:border-border/80 transition-all space-y-2 sm:space-y-2.5"
+                          className="px-2.5 py-2 sm:p-3 rounded-xl border border-border bg-bg-surface-2/40 hover:border-border/80 transition-all space-y-1.5"
                         >
-                          {/* Baris 1: Nama & Badges */}
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-xs font-mono text-text-muted font-bold flex-shrink-0">
-                                {idx + 1}.
-                              </span>
-                              <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
-                              <span
-                                className="font-mono text-xs sm:text-sm font-bold text-white truncate min-w-0 flex-1"
-                                title={model.upstream_model_name}
-                              >
-                                {model.upstream_model_name}
-                              </span>
-                            </div>
-
-                            {/* Badges Baris 2 */}
-                            <div className="flex items-center gap-1.5 flex-wrap pl-5">
-                              <span className="px-1.5 py-0.2 text-[10px] rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-mono">
-                                {brand}
-                              </span>
-                              <span className="px-1.5 py-0.2 text-[10px] rounded bg-bg-base text-text-muted font-mono">
-                                Context: {context}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Baris 2: Aksi per Model (ikon ringkas + tooltip) */}
-                          <div className="pt-2 border-t border-border/40 flex items-center justify-end gap-1">
+                          {/* Baris 1: status + nama + aksi ikon */}
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" title="Model aktif" />
+                            <span
+                              className="font-mono text-xs sm:text-sm font-bold text-white truncate min-w-0 flex-1"
+                              title={`${model.upstream_model_name} — ${brand} · Context: ${context}`}
+                            >
+                              {model.upstream_model_name}
+                            </span>
+                            <span className="hidden md:inline px-1.5 py-0.2 text-[10px] rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-mono flex-shrink-0">
+                              {brand}
+                            </span>
                             <button
                               type="button"
                               onClick={() => void copyWithFeedback(
@@ -1188,12 +1170,12 @@ export const Providers: React.FC = () => {
                               )}
                               title={copiedModelId === model.id ? 'Tersalin!' : 'Salin ID model'}
                               aria-label={copiedModelId === model.id ? 'Tersalin' : 'Salin ID model'}
-                              className="p-2 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer"
+                              className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer flex-shrink-0"
                             >
                               {copiedModelId === model.id ? (
-                                <Check className="w-4 h-4 text-emerald-400" />
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
                               ) : (
-                                <Copy className="w-4 h-4" />
+                                <Copy className="w-3.5 h-3.5" />
                               )}
                             </button>
 
@@ -1203,12 +1185,12 @@ export const Providers: React.FC = () => {
                               disabled={isTesting}
                               title="Uji koneksi model ke upstream"
                               aria-label="Uji model"
-                              className="p-2 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer disabled:opacity-50"
+                              className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer disabled:opacity-50 flex-shrink-0"
                             >
                               {isTesting ? (
-                                <RefreshCw className="w-4 h-4 animate-spin text-accent" />
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent" />
                               ) : (
-                                <FlaskConical className="w-4 h-4 text-accent" />
+                                <FlaskConical className="w-3.5 h-3.5 text-accent" />
                               )}
                             </button>
 
@@ -1217,40 +1199,36 @@ export const Providers: React.FC = () => {
                               onClick={() => handleDeleteModel(model)}
                               title="Hapus model dari provider"
                               aria-label="Hapus model"
-                              className="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer flex-shrink-0"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
 
                           {/* Banner Diagnostik Hasil Uji Model */}
                           {testResult && (
                             <div
-                              className={`p-2.5 rounded-lg border text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 animate-in fade-in duration-150 ${
+                              className={`px-2 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 animate-in fade-in duration-150 ${
                                 testResult.ok
                                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                                   : 'bg-red-500/10 border-red-500/30 text-red-300'
                               }`}
+                              title={testResult.ok
+                                ? testResult.message || 'Model merespons payload inferensi dengan normal.'
+                                : testResult.error || 'Terjadi kesalahan koneksi atau autentikasi ke upstream.'}
                             >
-                              <div className="flex items-start gap-2 min-w-0">
+                              <span className="flex items-center gap-1.5 min-w-0 font-bold truncate">
                                 {testResult.ok ? (
-                                  <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
                                 ) : (
-                                  <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                                  <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
                                 )}
-                                <div className="min-w-0">
-                                  <span className="font-bold block sm:inline">
-                                    {testResult.ok ? 'Pengujian Sukses (200 OK)' : 'Pengujian Gagal'}
-                                    {testResult.latency_ms > 0 && ` — Latensi ${testResult.latency_ms} ms`}
-                                  </span>
-                                  <p className="text-[11px] opacity-90 mt-0.5 font-mono break-all">
-                                    {testResult.ok
-                                      ? testResult.message || 'Model merespons payload inferensi dengan normal.'
-                                      : testResult.error || 'Terjadi kesalahan koneksi atau autentikasi ke upstream.'}
-                                  </p>
-                                </div>
-                              </div>
-                              <span className="text-[10px] opacity-70 font-mono flex-shrink-0 self-end sm:self-auto">
+                                <span className="truncate">
+                                  {testResult.ok ? 'Uji ok' : 'Uji gagal'}
+                                  {testResult.latency_ms > 0 && ` · ${testResult.latency_ms} ms`}
+                                </span>
+                              </span>
+                              <span className="opacity-70 font-mono flex-shrink-0 text-[10px]">
                                 {testResult.timestamp}
                               </span>
                             </div>
@@ -1293,106 +1271,101 @@ export const Providers: React.FC = () => {
 
             {/* TAB 2: KREDENSIAL API KEY */}
             {drawerTab === 'credentials' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-border/60">
-                  <div>
-                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                      <KeyRound className="w-4 h-4 text-accent" />
-                      <span>Kredensial</span>
-                    </h4>
-                    <p className="text-xs text-text-muted" title="Token otentikasi disimpan dengan enkripsi amplop AES-256-GCM">
-                      Terenkripsi AES-256-GCM
-                    </p>
-                  </div>
+              <div className="space-y-2.5 sm:space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="text-xs font-bold text-white flex items-center gap-1.5 min-w-0"
+                    title="Token otentikasi disimpan dengan enkripsi amplop AES-256-GCM"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                    <span className="truncate">Kredensial · AES-256-GCM</span>
+                  </span>
                   {!isAddingKeyInline && (
-                    <Button
-                      variant="primary"
-                      size="sm"
+                    <button
+                      type="button"
                       onClick={() => setIsAddingKeyInline(true)}
-                      icon={<Plus className="w-3.5 h-3.5" />}
                       title="Tambah API key baru ke provider ini"
+                      aria-label="Tambah API key baru"
+                      className="p-1.5 rounded-lg bg-accent text-black hover:bg-accent-hover transition-colors cursor-pointer flex-shrink-0"
                     >
-                      Tambah
-                    </Button>
+                      <Plus className="w-4 h-4" />
+                    </button>
                   )}
                 </div>
 
                 {/* Form Tambah Key Inline */}
                 {isAddingKeyInline && (
-                  <div className="p-4 rounded-xl border border-accent/40 bg-accent/5 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                        <Plus className="w-3.5 h-3.5 text-accent" />
+                  <div className="p-3 rounded-xl border border-accent/40 bg-accent/5 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-white uppercase tracking-wider">
                         Key Baru
                       </span>
                       <button
                         type="button"
                         onClick={() => setIsAddingKeyInline(false)}
                         title="Tutup form tanpa menyimpan"
-                        className="text-xs text-text-muted hover:text-white"
+                        className="text-[11px] text-text-muted hover:text-white"
                       >
                         Batal
                       </button>
                     </div>
 
-                    <form onSubmit={handleCreateKey} className="space-y-3 text-xs">
-                      <div>
-                        <label className="block font-semibold text-text-secondary uppercase mb-1">
-                          Label *
-                        </label>
+                    <form onSubmit={handleCreateKey} className="space-y-2.5 text-xs">
+                      <input
+                        type="text"
+                        name="label"
+                        required
+                        placeholder="Label — mis. Primary API Key"
+                        aria-label="Label key"
+                        value={newKeyForm.label}
+                        onChange={(e) => setNewKeyForm({ ...newKeyForm, label: e.target.value })}
+                        className="w-full px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
+                      />
+
+                      <div className="relative">
                         <input
-                          type="text"
-                          name="label"
+                          type={showNewKeySecret ? 'text' : 'password'}
+                          name="api_key"
                           required
-                          placeholder="Primary API Key"
-                          value={newKeyForm.label}
-                          onChange={(e) => setNewKeyForm({ ...newKeyForm, label: e.target.value })}
-                          className="w-full px-3 py-2 bg-bg-surface border border-border rounded-lg text-white font-mono"
+                          placeholder="Secret / Token — mis. sk-ant-... / sk-or-v1-..."
+                          aria-label="Secret atau token"
+                          title="Token langsung dienkripsi sebelum disimpan ke basis data"
+                          value={newKeyForm.api_key}
+                          onChange={(e) => setNewKeyForm({ ...newKeyForm, api_key: e.target.value })}
+                          className="w-full px-2.5 py-1.5 pr-9 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
                         />
-                      </div>
-
-                      <div>
-                        <label className="block font-semibold text-text-secondary uppercase mb-1">
-                          Secret / Token *
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showNewKeySecret ? 'text' : 'password'}
-                            name="api_key"
-                            required
-                            placeholder="sk-ant-api03-... atau sk-or-v1-..."
-                            value={newKeyForm.api_key}
-                            onChange={(e) => setNewKeyForm({ ...newKeyForm, api_key: e.target.value })}
-                            className="w-full px-3 py-2 pr-10 bg-bg-surface border border-border rounded-lg text-white font-mono"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowNewKeySecret(!showNewKeySecret)}
-                            className="absolute right-2.5 top-2.5 text-text-muted hover:text-white"
-                          >
-                            {showNewKeySecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-text-muted mt-1.5 flex items-center gap-1.5" title="Token langsung dienkripsi sebelum disimpan ke basis data PostgreSQL.">
-                          <Shield className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                          Dienkripsi sebelum disimpan
-                        </p>
-                      </div>
-
-                      <div className="pt-2 flex justify-end gap-2 border-t border-border/60">
-                        <Button type="button" variant="secondary" size="sm" onClick={() => setIsAddingKeyInline(false)}>
-                          Batal
-                        </Button>
-                        <Button
-                          type="submit"
-                          variant="primary"
-                          size="sm"
-                          isLoading={isSavingKey}
-                          icon={<Check className="w-3.5 h-3.5" />}
-                          title="Simpan dan enkripsi key ke database"
+                        <button
+                          type="button"
+                          onClick={() => setShowNewKeySecret(!showNewKeySecret)}
+                          title={showNewKeySecret ? 'Sembunyikan secret' : 'Tampilkan secret'}
+                          aria-label={showNewKeySecret ? 'Sembunyikan secret' : 'Tampilkan secret'}
+                          className="absolute right-2 top-2 text-text-muted hover:text-white"
                         >
+                          {showNewKeySecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+
+                      <div className="flex justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingKeyInline(false)}
+                          className="px-2.5 py-1.5 text-xs rounded-lg bg-bg-surface-2 text-text-primary border border-border hover:text-white transition-colors"
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSavingKey}
+                          title="Simpan dan enkripsi key ke database"
+                          className="px-2.5 py-1.5 text-xs rounded-lg bg-accent text-black font-bold hover:bg-accent-hover transition-colors disabled:opacity-50 flex items-center gap-1"
+                        >
+                          {isSavingKey ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
                           Simpan
-                        </Button>
+                        </button>
                       </div>
                     </form>
                   </div>
@@ -1401,77 +1374,63 @@ export const Providers: React.FC = () => {
                 {/* List Key Terdaftar */}
                 {credentials.length > 0 ? (
                   <div className="space-y-2">
-                    {credentials.map((cred, idx) => (
+                    {credentials.map((cred) => (
                       <div
                         key={cred.id}
-                        className="p-3 sm:p-3.5 rounded-xl border border-border bg-bg-surface-2/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3"
+                        title={`${cred.label} · ${cred.masked_hint || 'sk-****'} · Dibuat: ${new Date(cred.created_at).toLocaleDateString()}`}
+                        className="px-2.5 py-2 rounded-xl border border-border bg-bg-surface-2/40 flex items-center justify-between gap-2"
                       >
-                        <div className="space-y-1 w-full sm:w-auto min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-white text-xs">{cred.label}</span>
-                            {idx === 0 && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-accent/20 text-accent border border-accent/30">
-                                Primary
-                              </span>
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                              cred.enabled ? 'bg-emerald-400' : 'bg-zinc-400'
+                            }`}
+                            title={cred.enabled ? 'Kredensial aktif' : 'Kredensial nonaktif'}
+                          />
+                          <span className="font-bold text-white text-xs truncate">{cred.label}</span>
+                          <span className="text-[11px] text-text-muted font-mono truncate hidden sm:inline">
+                            {cred.masked_hint || 'sk-****'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void copyWithFeedback(
+                              cred.masked_hint || '',
+                              'Masked key disalin',
+                              () => {
+                                setCopiedTokenId(cred.id);
+                                copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000));
+                              }
                             )}
-                            <span
-                              className={`px-1.5 py-0.2 rounded text-[10px] font-mono flex items-center gap-1 ${
-                                cred.enabled
-                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                  : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
-                              }`}
-                            >
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                  cred.enabled ? 'bg-emerald-400' : 'bg-zinc-400'
-                                }`}
-                              />
-                              <span>{cred.enabled ? 'Aktif' : 'Nonaktif'}</span>
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2 text-xs text-text-muted font-mono flex-wrap">
-                            <span>{cred.masked_hint || 'sk-****'}</span>
-                            <button
-                              type="button"
-                              onClick={() => void copyWithFeedback(
-                                cred.masked_hint || '',
-                                'Masked key disalin',
-                                () => {
-                                  setCopiedTokenId(cred.id);
-                                  copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000));
-                                }
-                              )}
-                              className="text-text-muted hover:text-white"
-                              title="Salin Masked Key"
-                            >
-                              {copiedTokenId === cred.id ? (
-                                <Check className="w-3 h-3 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3 h-3" />
-                              )}
-                            </button>
-                            <span className="text-[11px] opacity-60">• Dibuat: {new Date(cred.created_at).toLocaleDateString()}</span>
-                          </div>
+                            className="text-text-muted hover:text-white flex-shrink-0"
+                            title="Salin Masked Key"
+                            aria-label="Salin masked key"
+                          >
+                            {copiedTokenId === cred.id ? (
+                              <Check className="w-3 h-3 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                          </button>
                         </div>
 
-                        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 w-full sm:w-auto pt-2 sm:pt-0 border-t border-border/40 sm:border-0 flex-shrink-0 justify-end">
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
                           <button
                             type="button"
                             onClick={() => handleToggleKey(cred)}
                             title={cred.enabled ? 'Nonaktifkan kredensial' : 'Aktifkan kredensial'}
                             aria-label={cred.enabled ? 'Nonaktifkan kredensial' : 'Aktifkan kredensial'}
-                            className="p-2 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer"
+                            className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer"
                           >
-                            {cred.enabled ? <Power className="w-4 h-4 text-amber-400" /> : <Check className="w-4 h-4 text-emerald-400" />}
+                            {cred.enabled ? <Power className="w-3.5 h-3.5 text-amber-400" /> : <Check className="w-3.5 h-3.5 text-emerald-400" />}
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteKey(cred)}
                             title="Hapus kredensial"
                             aria-label="Hapus kredensial"
-                            className="p-2 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
@@ -1498,127 +1457,113 @@ export const Providers: React.FC = () => {
 
             {/* TAB 3: PENGATURAN TEKNIS & JALUR PROXY */}
             {drawerTab === 'settings' && (
-              <div className="space-y-6">
+              <div className="space-y-4 sm:space-y-5">
                 {/* Form Pengaturan Parameter Teknis */}
-                <form onSubmit={handleSaveConfig} className="space-y-4 text-xs">
-                  <div>
-                    <label className="block font-semibold text-text-secondary uppercase mb-1 flex items-center gap-1.5">
-                      <Tag className="w-3.5 h-3.5 text-accent" />
-                      <span title="Nama tampilan provider di dashboard">Nama Tampilan</span>
-                    </label>
+                <form onSubmit={handleSaveConfig} className="space-y-2.5 sm:space-y-3 text-xs">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nama tampilan provider"
+                    aria-label="Nama tampilan provider"
+                    title="Nama tampilan provider di dashboard"
+                    value={configForm.display_name}
+                    onChange={(e) => setConfigForm({ ...configForm, display_name: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-bg-surface-2 border border-border rounded-lg text-white text-xs placeholder:text-text-muted outline-none focus:border-accent"
+                  />
+
+                  <input
+                    type="text"
+                    required
+                    placeholder="Base URL — mis. https://api.openai.com/v1"
+                    aria-label="Base URL upstream"
+                    title="Alamat endpoint HTTP upstream"
+                    value={configForm.base_url}
+                    onChange={(e) => setConfigForm({ ...configForm, base_url: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-bg-surface-2 border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
+                  />
+
+                  <div className="grid grid-cols-2 gap-2">
                     <input
-                      type="text"
-                      required
-                      value={configForm.display_name}
-                      onChange={(e) => setConfigForm({ ...configForm, display_name: e.target.value })}
-                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-lg text-white"
+                      type="number"
+                      min="1"
+                      max="1000"
+                      placeholder="Prioritas"
+                      aria-label="Prioritas routing (kecil menang)"
+                      title="Angka kecil menang routing. Contoh: 1 utama, 99 cadangan"
+                      value={configForm.priority}
+                      onChange={(e) => setConfigForm({ ...configForm, priority: parseInt(e.target.value) || 100 })}
+                      className="w-full px-2.5 py-1.5 bg-bg-surface-2 border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      max="1000"
+                      placeholder="Bobot"
+                      aria-label="Bobot load balancing"
+                      title="Bobot load balancing antar provider"
+                      value={configForm.weight}
+                      onChange={(e) => setConfigForm({ ...configForm, weight: parseInt(e.target.value) || 100 })}
+                      className="w-full px-2.5 py-1.5 bg-bg-surface-2 border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
                     />
                   </div>
 
-                  <div>
-                    <label className="block font-semibold text-text-secondary uppercase mb-1 flex items-center gap-1.5">
-                      <Globe className="w-3.5 h-3.5 text-accent" />
-                      <span title="Alamat endpoint HTTP upstream, contoh https://api.openai.com/v1">Base URL</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={configForm.base_url}
-                      onChange={(e) => setConfigForm({ ...configForm, base_url: e.target.value })}
-                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-lg text-white font-mono"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-semibold text-text-secondary uppercase mb-1 flex items-center gap-1.5">
-                        <ArrowUpDown className="w-3.5 h-3.5 text-accent" />
-                        <span title="Angka kecil menang routing. Contoh: 1 utama, 99 cadangan">Prioritas</span>
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="1000"
-                        value={configForm.priority}
-                        onChange={(e) => setConfigForm({ ...configForm, priority: parseInt(e.target.value) || 100 })}
-                        className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-lg text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-text-secondary uppercase mb-1 flex items-center gap-1.5">
-                        <Scale className="w-3.5 h-3.5 text-accent" />
-                        <span title="Bobot load balancing antar provider">Bobot</span>
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="1000"
-                        value={configForm.weight}
-                        onChange={(e) => setConfigForm({ ...configForm, weight: parseInt(e.target.value) || 100 })}
-                        className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-lg text-white font-mono"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
+                  <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
                       id="drawerEnableToggle"
                       checked={configForm.enabled}
                       onChange={(e) => setConfigForm({ ...configForm, enabled: e.target.checked })}
-                      className="rounded bg-bg-surface-2 border-border"
+                      className="rounded bg-bg-surface-2 border-border w-3.5 h-3.5 accent-lime-400"
                     />
-                    <label htmlFor="drawerEnableToggle" className="font-semibold text-white cursor-pointer" title="Bila mati, provider dilewati routing">
+                    <label htmlFor="drawerEnableToggle" className="font-semibold text-white cursor-pointer text-xs" title="Bila mati, provider dilewati routing">
                       Aktif
                     </label>
                   </div>
 
-                  <div className="pt-2 flex justify-end">
-                    <Button
+                  <div className="flex justify-end">
+                    <button
                       type="submit"
-                      variant="primary"
-                      size="sm"
-                      isLoading={isSavingConfig}
-                      icon={<Check className="w-3.5 h-3.5" />}
+                      disabled={isSavingConfig}
                       title="Simpan nama, URL, prioritas, bobot, dan status aktif"
-                      className="w-full sm:w-auto justify-center"
+                      className="px-3 py-1.5 text-xs rounded-lg bg-accent text-black font-bold hover:bg-accent-hover transition-colors disabled:opacity-50 flex items-center gap-1"
                     >
+                      {isSavingConfig ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}
                       Simpan
-                    </Button>
+                    </button>
                   </div>
                 </form>
 
                 {/* Pemilihan Jalur Proxy Egress */}
-                <div className="space-y-3 pt-4 border-t border-border">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                      <Globe className="w-3.5 h-3.5 text-accent" />
-                      <span title="Jalur koneksi keluar dari server ke upstream">Egress</span>
-                    </h4>
-                    <span className="text-[11px] text-text-muted" title="Pilih jalur keluar ke upstream">Jalur keluar</span>
-                  </div>
+                <div className="space-y-2 pt-3 border-t border-border">
+                  <span
+                    className="text-[11px] font-bold text-white uppercase tracking-wider"
+                    title="Jalur koneksi keluar dari server ke upstream — pilih jalur keluar"
+                  >
+                    Egress · Jalur keluar
+                  </span>
 
-                  <div className="space-y-2 text-xs">
+                  <div className="space-y-1.5 text-xs">
                     {/* Direct Outbound */}
                     <div
                       onClick={() => handleSelectProxyPreset(null, 'Direct Outbound')}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-start justify-between ${
+                      title="Koneksi langsung dari IP server Route-X tanpa perantara proxy"
+                      className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between gap-2 ${
                         !selectedProvider.egress_pool_id
                           ? 'border-accent bg-accent/10 shadow-sm'
                           : 'border-border bg-bg-surface-2/40 hover:border-border/80'
                       }`}
                     >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <Globe className="w-4 h-4 text-accent" />
-                          <span className="font-bold text-white" title="Koneksi langsung dari IP server Route-X tanpa perantara proxy">Direct</span>
-                        </div>
-                        <p className="text-[11px] text-text-muted">
-                          Langsung tanpa proxy.
-                        </p>
-                      </div>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <Globe className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                        <span className="font-bold text-white truncate">Direct</span>
+                        <span className="text-[11px] text-text-muted truncate hidden sm:inline">Langsung tanpa proxy</span>
+                      </span>
                       {!selectedProvider.egress_pool_id && (
-                        <span className="px-2 py-0.5 text-[10px] rounded bg-accent text-black font-bold">
+                        <span className="px-1.5 py-0.2 text-[10px] rounded bg-accent text-black font-bold flex-shrink-0">
                           Aktif
                         </span>
                       )}
@@ -1635,7 +1580,8 @@ export const Providers: React.FC = () => {
                         if (xray) handleSelectProxyPreset(xray.id, xray.name);
                         else toast.info('Pool Xray SOCKS5 tidak ditemukan di daftar egress.');
                       }}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-start justify-between ${
+                      title="Jalur stealth proxy internal di jaringan Docker — socks5://xray:10808"
+                      className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between gap-2 ${
                         egressPools.some(
                           (p) =>
                             p.id === selectedProvider.egress_pool_id &&
@@ -1645,21 +1591,17 @@ export const Providers: React.FC = () => {
                           : 'border-border bg-bg-surface-2/40 hover:border-border/80'
                       }`}
                     >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <Zap className="w-4 h-4 text-accent" />
-                          <span className="font-bold text-white" title="Jalur stealth proxy internal di jaringan Docker">Xray SOCKS5</span>
-                        </div>
-                        <p className="text-[11px] text-text-muted font-mono">
-                          socks5://xray:10808
-                        </p>
-                      </div>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <Zap className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                        <span className="font-bold text-white truncate">Xray SOCKS5</span>
+                        <span className="text-[11px] text-text-muted font-mono truncate hidden sm:inline">socks5://xray:10808</span>
+                      </span>
                       {egressPools.some(
                         (p) =>
                           p.id === selectedProvider.egress_pool_id &&
                           p.name.toLowerCase().includes('socks')
                       ) && (
-                        <span className="px-2 py-0.5 text-[10px] rounded bg-accent text-black font-bold">
+                        <span className="px-1.5 py-0.2 text-[10px] rounded bg-accent text-black font-bold flex-shrink-0">
                           Aktif
                         </span>
                       )}
@@ -1678,26 +1620,20 @@ export const Providers: React.FC = () => {
                           <div
                             key={pool.id}
                             onClick={() => handleSelectProxyPreset(pool.id, pool.name)}
-                            className={`p-3 rounded-xl border cursor-pointer transition-all flex items-start justify-between ${
+                            title={`${pool.name} · ${pool.kind} · Region: ${pool.region || 'Default'}`}
+                            className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between gap-2 ${
                               isSelected
                                 ? 'border-accent bg-accent/10 shadow-sm'
                                 : 'border-border bg-bg-surface-2/40 hover:border-border/80'
                             }`}
                           >
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-2">
-                                <Globe className="w-4 h-4 text-accent" />
-                                <span className="font-bold text-white">{pool.name}</span>
-                                <span className="text-[10px] font-mono uppercase px-1 rounded bg-bg-base border border-border">
-                                  {pool.kind}
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-text-muted font-mono">
-                                Region: {pool.region || 'Default'}
-                              </p>
-                            </div>
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              <Globe className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                              <span className="font-bold text-white truncate">{pool.name}</span>
+                              <span className="text-[11px] text-text-muted font-mono truncate hidden sm:inline">{pool.kind} · {pool.region || 'Default'}</span>
+                            </span>
                             {isSelected && (
-                              <span className="px-2 py-0.5 text-[10px] rounded bg-accent text-black font-bold">
+                              <span className="px-1.5 py-0.2 text-[10px] rounded bg-accent text-black font-bold flex-shrink-0">
                                 Aktif
                               </span>
                             )}
@@ -1708,28 +1644,24 @@ export const Providers: React.FC = () => {
                 </div>
 
                 {/* Danger Zone: Hapus Provider (Khusus Provider Custom / Manual) */}
-                <div className="mt-8 pt-4 border-t border-border space-y-2">
-                  <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div className="space-y-0.5">
-                      <span className="text-red-400 font-bold block text-xs flex items-center gap-1.5">
-                        <AlertTriangle className="w-4 h-4 text-red-400" />
-                        <span title="Menghapus provider ini beserta seluruh kredensial API key dan pemetaan model upstream secara permanen">Hapus Provider</span>
-                      </span>
-                      <span className="text-[11px] text-text-muted block">
-                        Permanen: ikut menghapus key dan model.
-                      </span>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="danger"
-                      size="sm"
-                      onClick={() => handleDeleteProvider(selectedProvider)}
-                      icon={<Trash2 className="w-3.5 h-3.5" />}
-                      title="Hapus provider beserta key dan model secara permanen"
-                      className="w-full sm:w-auto justify-center flex-shrink-0"
+                <div className="pt-3 border-t border-border">
+                  <div className="px-2.5 py-2 rounded-lg border border-red-500/30 bg-red-500/10 flex items-center justify-between gap-2">
+                    <span
+                      className="text-[11px] text-red-400 font-bold flex items-center gap-1.5 min-w-0"
+                      title="Menghapus provider ini beserta seluruh kredensial API key dan pemetaan model upstream secara permanen"
                     >
-                      Hapus
-                    </Button>
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                      <span className="truncate">Hapus · permanen, ikut key + model</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteProvider(selectedProvider)}
+                      title="Hapus provider beserta key dan model secara permanen"
+                      aria-label="Hapus provider"
+                      className="p-1.5 rounded-md bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25 transition-colors cursor-pointer flex-shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               </div>

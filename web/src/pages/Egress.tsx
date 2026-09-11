@@ -215,7 +215,7 @@ export const Egress: React.FC = () => {
             </div>
             <p>{probeFeedback.result.message}</p>
             {probeFeedback.result.exit_ip && (
-              <div className="flex items-center gap-3 pt-1 text-[11px] text-text-secondary font-mono">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-[11px] text-text-secondary font-mono">
                 <span>Exit IP: <strong className="text-white">{probeFeedback.result.exit_ip}</strong></span>
                 {probeFeedback.result.country && (
                   <span>Wilayah: <strong className="text-accent">{probeFeedback.result.country}</strong></span>
@@ -259,7 +259,7 @@ export const Egress: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {pools.map((p) => {
             const isTesting = testingId === p.id;
-            const isXrayLocal = p.name.includes('Xray');
+            const isXrayLocal = (p.name || '').includes('Xray');
 
             return (
               <Card key={p.id} className="p-5 flex flex-col justify-between border-border hover:border-accent/30 transition-all">
@@ -278,7 +278,7 @@ export const Egress: React.FC = () => {
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
-                          {p.name}
+                          {p.name || 'tanpa nama'}
                         </h4>
                         <span className="text-[11px] text-text-muted font-mono uppercase">
                           {(p.kind || 'PROXY')} • {p.region || 'global'}

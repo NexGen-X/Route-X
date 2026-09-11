@@ -84,15 +84,17 @@ export const Drawer: React.FC<DrawerProps> = ({
         onClick={onClose}
       />
 
-      {/* Slide-over panel: Di mobile sisakan celah kiri kecil (pl-3) agar hemat ruang; desktop pl-6. */}
-      <div className="fixed inset-y-0 right-0 flex max-w-full pl-3 sm:pl-6 pointer-events-none w-full sm:w-auto">
+      {/* Sheet dinamis: mobile bottom-sheet rata bawah, desktop dialog tengah.
+          Tinggi mengikuti konten (h-auto) dengan batas max agar daftar
+          panjang scroll di dalam body, bukan satu panel full-screen. */}
+      <div className="fixed inset-0 flex items-end justify-center sm:items-center sm:p-6 pointer-events-none">
         <div
-          className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border-l border-border shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300 ease-out rounded-l-2xl sm:rounded-none`}
+          className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border border-border shadow-2xl flex flex-col h-auto max-h-[92dvh] sm:max-h-[85vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-t-2xl sm:rounded-2xl overflow-hidden pb-[env(safe-area-inset-bottom)] sm:pb-0`}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Drawer Header */}
-          <div className="flex items-start justify-between px-3 py-3 sm:px-6 sm:py-5 border-b border-border bg-bg-surface-2/60">
-            <div className="space-y-1.5 flex-1 min-w-0 pr-3 sm:pr-4">
+          {/* Drawer Header: stabil, tidak ikut scroll */}
+          <div className="flex items-start justify-between px-3 py-3 sm:px-6 sm:py-5 border-b border-border bg-bg-surface-2/60 flex-shrink-0">
+            <div className="space-y-1 flex-1 min-w-0 pr-3 sm:pr-4">
               <div className="flex items-center gap-3">
                 <h2 id={titleId} className="text-sm sm:text-base font-bold text-white tracking-tight truncate">
                   {title}
@@ -103,7 +105,7 @@ export const Drawer: React.FC<DrawerProps> = ({
                   {subtitle}
                 </div>
               )}
-              {headerExtra && <div className="pt-1">{headerExtra}</div>}
+              {headerExtra && <div className="pt-0.5">{headerExtra}</div>}
             </div>
 
             <button
@@ -116,8 +118,9 @@ export const Drawer: React.FC<DrawerProps> = ({
             </button>
           </div>
 
-          {/* Drawer Body */}
-          <div className="p-3 sm:p-6 overflow-y-auto flex-1 space-y-3 sm:space-y-6 scrollbar-thin">
+          {/* Drawer Body: satu-satunya area scroll; min-h-0 agar menyusut
+              saat panel mencapai max-height, bukan meregang saat konten pendek */}
+          <div className="p-3 sm:p-6 overflow-y-auto overscroll-contain min-h-0 flex-1 space-y-3 sm:space-y-6 scrollbar-thin">
             {children}
           </div>
         </div>

@@ -923,13 +923,13 @@ export const Providers: React.FC = () => {
         onClose={() => setIsDrawerOpen(false)}
         maxWidth="2xl"
         title={
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 min-w-0">
             {/* Icon Provider di Drawer Header: Klik untuk trigger probe */}
             <button
               type="button"
               onClick={() => selectedProvider && handleProbe(selectedProvider)}
               title="Klik icon untuk memeriksa status kesehatan provider"
-              className={`w-9 h-9 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-sm sm:shadow-md ${
+              className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-sm ${
                 isManualProvider
                   ? 'bg-purple-950/50 border border-purple-500/50 text-purple-300 hover:scale-105 hover:border-purple-300'
                   : 'bg-bg-surface border border-border text-accent hover:scale-105 hover:border-accent'
@@ -939,23 +939,23 @@ export const Providers: React.FC = () => {
                 <ProviderBrandIcon
                   providerIdOrKind={selectedProvider.kind}
                   name={selectedProvider.name}
-                  className="w-5 h-5 sm:w-6 sm:h-6"
+                  className="w-5 h-5"
                   isCustom={isManualProvider}
                 />
               )}
             </button>
             <div className="truncate min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                <span className="truncate font-bold text-white text-sm sm:text-base">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate font-bold text-white text-sm">
                   {selectedProvider?.display_name || selectedProvider?.name}
                 </span>
                 {isManualProvider && (
-                  <span className="px-1.5 py-0.2 text-[9px] sm:text-[10px] font-mono rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 flex-shrink-0">
+                  <span className="px-1.5 py-0.2 text-[9px] font-mono rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 flex-shrink-0">
                     Custom Provider
                   </span>
                 )}
               </div>
-              <span className="text-[11px] sm:text-xs font-mono text-text-muted block truncate font-normal">
+              <span className="text-[11px] font-mono text-text-muted block truncate font-normal">
                 {selectedProvider?.kind}
               </span>
             </div>
@@ -963,24 +963,24 @@ export const Providers: React.FC = () => {
         }
         subtitle={
           selectedProvider && (
-            <div className="flex items-center gap-2 flex-wrap mt-0.5">
-              <span className="font-mono text-[11px] sm:text-xs text-text-secondary truncate max-w-[150px] sm:max-w-sm">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-mono text-[11px] text-text-secondary truncate flex-1 min-w-0">
                 {selectedProvider.base_url}
               </span>
               <button
                 type="button"
                 onClick={() => void copyWithFeedback(selectedProvider.base_url, 'Base URL disalin')}
-                className="text-text-muted hover:text-white"
+                className="text-text-muted hover:text-white flex-shrink-0"
                 title="Salin Base URL"
               >
-                <Copy className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                <Copy className="w-3 h-3" />
               </button>
             </div>
           )
         }
         headerExtra={
           selectedProvider && (
-            <div className="flex items-center gap-1.5 sm:gap-2 pt-0.5 sm:pt-1 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${
                   selectedProvider.last_health_status === 'healthy'
@@ -1001,7 +1001,7 @@ export const Providers: React.FC = () => {
                     : 'UNHEALTHY'}
                 </span>
               </span>
-              <span className="text-[10px] sm:text-[11px] text-text-muted font-mono">
+              <span className="text-[10px] text-text-muted font-mono">
                 {models.length} Model • {credentials.length} Key
               </span>
             </div>
@@ -1130,9 +1130,10 @@ export const Providers: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Daftar Model Terhubung */}
+                {/* Daftar Model Terhubung: jadi scroll-area internal sendiri saat
+                    panjang agar panel capped max-height tidak ikut tumbuh */}
                 {filteredModels.length > 0 ? (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2.5 min-h-0 max-h-[45dvh] sm:max-h-[40vh] overflow-y-auto overscroll-contain pr-0.5 scrollbar-thin">
                     {filteredModels.map((model) => {
                       const { brand, context } = getModelBadges(
                         model.upstream_model_name,
@@ -1238,7 +1239,7 @@ export const Providers: React.FC = () => {
                     })}
                   </div>
                 ) : (
-                  <div className="p-8 rounded-xl border border-dashed border-border text-center space-y-2">
+                  <div className="p-5 rounded-xl border border-dashed border-border text-center space-y-2">
                     <Bot className="w-8 h-8 text-text-muted mx-auto" />
                     <p className="text-xs text-text-secondary">
                       {modelSearch ? 'Tidak ada model yang cocok dengan kata kunci.' : 'Belum ada model upstream yang terhubung.'}
@@ -1437,7 +1438,7 @@ export const Providers: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <div className="p-8 rounded-xl border border-dashed border-border text-center space-y-2">
+                  <div className="p-5 rounded-xl border border-dashed border-border text-center space-y-2">
                     <KeyRound className="w-8 h-8 text-text-muted mx-auto" />
                     <p className="text-xs text-text-secondary">
                       Belum ada kredensial API key untuk provider ini.

@@ -84,12 +84,13 @@ export const Drawer: React.FC<DrawerProps> = ({
         onClick={onClose}
       />
 
-      {/* Sheet dinamis: mobile bottom-sheet rata bawah, desktop dialog tengah.
-          Tinggi mengikuti konten (h-auto) dengan batas max agar daftar
-          panjang scroll di dalam body, bukan satu panel full-screen. */}
-      <div className="fixed inset-0 flex items-end justify-center sm:items-center sm:p-6 pointer-events-none">
+      {/* Sheet dinamis: mobile bottom-sheet mengambang (ada jeda dari tepi
+          viewport + safe-area), desktop dialog tengah. Tinggi mengikuti
+          konten (h-auto) dengan batas max agar daftar panjang scroll di
+          dalam body, bukan satu panel full-screen. */}
+      <div className="fixed inset-0 flex items-end justify-center sm:items-center px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-6 pointer-events-none">
         <div
-          className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border border-border shadow-2xl flex flex-col h-auto max-h-[92dvh] sm:max-h-[85vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-t-2xl sm:rounded-2xl overflow-hidden pb-[env(safe-area-inset-bottom)] sm:pb-0`}
+          className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border border-border shadow-2xl flex flex-col h-auto max-h-[92dvh] sm:max-h-[85vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-2xl overflow-hidden`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Drawer Header: stabil, tidak ikut scroll */}
@@ -118,9 +119,11 @@ export const Drawer: React.FC<DrawerProps> = ({
             </button>
           </div>
 
-          {/* Drawer Body: satu-satunya area scroll; min-h-0 agar menyusut
-              saat panel mencapai max-height, bukan meregang saat konten pendek */}
-          <div className="p-3 sm:p-6 overflow-y-auto overscroll-contain min-h-0 flex-1 space-y-3 sm:space-y-6 scrollbar-thin">
+          {/* Drawer Body: satu-satunya area scroll; pb-4 (16px) agar item
+              terakhir tidak menempel ke tepi bawah panel. Desktop tetap p-6
+              seragam (sm:p-6 menimpa pb-4). min-h-0 + flex-1: menyusut saat
+              panel mencapai max-height, tidak meregang saat konten pendek. */}
+          <div className="p-3 pb-4 sm:p-6 overflow-y-auto overscroll-contain min-h-0 flex-1 space-y-3 sm:space-y-6 scrollbar-thin">
             {children}
           </div>
         </div>

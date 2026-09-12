@@ -150,6 +150,14 @@ type createRoutingRuleReq struct {
 	Weights           map[string]int `json:"weights"`
 }
 
+func cleanUUID(s *string) *string {
+	if s == nil || strings.TrimSpace(*s) == "" {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*s)
+	return &trimmed
+}
+
 func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req createRoutingRuleReq
@@ -180,8 +188,8 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 			Name:              req.Name,
 			Description:       desc,
 			Priority:          prio,
-			MatchModelID:      req.MatchModelID,
-			MatchAPIKeyID:     req.MatchAPIKeyID,
+			MatchModelID:      cleanUUID(req.MatchModelID),
+			MatchAPIKeyID:     cleanUUID(req.MatchAPIKeyID),
 			MatchCapabilities: req.MatchCapabilities,
 			Strategy:          req.Strategy,
 			MaxAttempts:       req.MaxAttempts,
@@ -244,10 +252,20 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		p.Strategy = &req.Strategy
 	}
 	if req.MatchModelID != nil {
-		p.MatchModelID = upstream.Set(*req.MatchModelID)
+		if strings.TrimSpace(*req.MatchModelID) == "" {
+			p.MatchModelID = upstream.Clear[string]()
+		} else {
+			trimmed := strings.TrimSpace(*req.MatchModelID)
+			p.MatchModelID = upstream.Set(trimmed)
+		}
 	}
 	if req.MatchAPIKeyID != nil {
-		p.MatchAPIKeyID = upstream.Set(*req.MatchAPIKeyID)
+		if strings.TrimSpace(*req.MatchAPIKeyID) == "" {
+			p.MatchAPIKeyID = upstream.Clear[string]()
+		} else {
+			trimmed := strings.TrimSpace(*req.MatchAPIKeyID)
+			p.MatchAPIKeyID = upstream.Set(trimmed)
+		}
 	}
 	p.MatchCapabilities = req.MatchCapabilities
 	p.MaxAttempts = req.MaxAttempts

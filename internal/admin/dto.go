@@ -364,22 +364,31 @@ type CredentialMetaDTO struct {
 
 func (CredentialMetaDTO) adalahDTO() {}
 
+// ModelProviderSummaryDTO merangkum informasi provider upstream yang menyediakan sebuah model.
+type ModelProviderSummaryDTO struct {
+	ProviderID        string `json:"provider_id"`
+	ProviderName      string `json:"provider_name"`
+	DisplayName       string `json:"display_name"`
+	UpstreamModelName string `json:"upstream_model_name"`
+}
+
 // ModelDTO adalah entri katalog model kanonik di registry.
 type ModelDTO struct {
-	ID              string          `json:"id"`
-	ModelID         string          `json:"model_id"`
-	DisplayName     string          `json:"display_name"`
-	Family          *string         `json:"family"`
-	ContextWindow   *int            `json:"context_window"`
-	MaxOutputTokens *int            `json:"max_output_tokens"`
-	Capabilities    []string        `json:"capabilities"`
-	Enabled         bool            `json:"enabled"`
-	RoutingPriority int             `json:"routing_priority"`
-	RoutingStrategy *string         `json:"routing_strategy"`
-	DeprecatedAt    *time.Time      `json:"deprecated_at"`
-	Metadata        json.RawMessage `json:"metadata"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	ID              string                    `json:"id"`
+	ModelID         string                    `json:"model_id"`
+	DisplayName     string                    `json:"display_name"`
+	Family          *string                   `json:"family"`
+	ContextWindow   *int                      `json:"context_window"`
+	MaxOutputTokens *int                      `json:"max_output_tokens"`
+	Capabilities    []string                  `json:"capabilities"`
+	Enabled         bool                      `json:"enabled"`
+	RoutingPriority int                       `json:"routing_priority"`
+	RoutingStrategy *string                   `json:"routing_strategy"`
+	DeprecatedAt    *time.Time                `json:"deprecated_at"`
+	Metadata        json.RawMessage           `json:"metadata"`
+	CreatedAt       time.Time                 `json:"created_at"`
+	UpdatedAt       time.Time                 `json:"updated_at"`
+	Providers       []ModelProviderSummaryDTO `json:"providers"`
 }
 
 func (ModelDTO) adalahDTO() {}
@@ -1220,6 +1229,7 @@ func toModelDTO(m *upstream.Model) ModelDTO {
 		Metadata:        meta,
 		CreatedAt:       m.CreatedAt,
 		UpdatedAt:       m.UpdatedAt,
+		Providers:       make([]ModelProviderSummaryDTO, 0),
 	}
 }
 

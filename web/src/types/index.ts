@@ -63,6 +63,13 @@ export interface Credential {
   updated_at: string;
 }
 
+export interface ModelProviderSummary {
+  provider_id: string;
+  provider_name: string;
+  display_name: string;
+  upstream_model_name: string;
+}
+
 export interface Model {
   id: string;
   model_id: string;
@@ -76,6 +83,7 @@ export interface Model {
   routing_strategy?: string;
   created_at: string;
   updated_at: string;
+  providers?: ModelProviderSummary[];
 }
 
 export interface ModelAlias {

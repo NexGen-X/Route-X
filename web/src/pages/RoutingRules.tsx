@@ -312,6 +312,29 @@ export const RoutingRules: React.FC = () => {
                     <span className="text-text-muted">Jeda Backoff</span>
                     <span className="font-mono text-white">{r.backoff_ms} ms</span>
                   </div>
+                  <div className="pt-2">
+                    <div className="text-[10px] uppercase font-bold text-text-muted mb-1.5 flex items-center justify-between">
+                      <span>Provider Terpilih ({r.providers?.length || 0})</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {r.providers && r.providers.length > 0 ? (
+                        r.providers.map((rp) => {
+                          const p = providers.find((prov) => prov.id === rp.provider_id);
+                          const pName = p ? (p.display_name || p.name) : rp.provider_id.slice(0, 8);
+                          return (
+                            <span
+                              key={rp.provider_id}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-300 border border-purple-500/20"
+                            >
+                              {pName}{rp.weight ? ` (w:${rp.weight})` : ''}
+                            </span>
+                          );
+                        })
+                      ) : (
+                        <span className="text-[10px] text-text-muted italic">Semua provider (Bawaan)</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -503,13 +526,19 @@ export const RoutingRules: React.FC = () => {
                   label="Target Model"
                   required
                   value={targetModelId}
-                  onChange={(val) => setTargetModelId(val)}
+                  onChange={(val) => {
+                    setTargetModelId(val);
+                    setTargetProviderId('');
+                  }}
                   placeholder="-- Pilih Model --"
-                  options={models.map((m) => ({
-                    value: m.id,
-                    label: `${m.display_name} (${m.model_id})`,
-                    description: m.family ? `Keluarga: ${m.family}` : undefined,
-                  }))}
+                  options={models.map((m) => {
+                    const provNames = m.providers?.map((p) => p.display_name || p.provider_name).join(', ');
+                    return {
+                      value: m.id,
+                      label: `${m.display_name} (${m.model_id})`,
+                      description: provNames ? `Tersedia di: ${provNames}` : (m.family ? `Keluarga: ${m.family}` : undefined),
+                    };
+                  })}
                 />
                 <Select
                   label="Target Provider"
@@ -518,10 +547,15 @@ export const RoutingRules: React.FC = () => {
                   placeholder="-- Bawaan (Semua Provider Model) --"
                   options={[
                     { value: '', label: '-- Bawaan (Semua Provider Model) --' },
-                    ...providers.map((p) => ({
-                      value: p.id,
-                      label: `${p.display_name || p.name} (${p.kind})`,
-                    })),
+                    ...providers.map((p) => {
+                      const selModel = models.find((m) => m.id === targetModelId);
+                      const matched = selModel?.providers?.find((mp) => mp.provider_id === p.id);
+                      return {
+                        value: p.id,
+                        label: `${p.display_name || p.name} (${p.kind})${matched ? ' ✓ Menyediakan Model' : ''}`,
+                        description: matched ? `Model upstream: ${matched.upstream_model_name}` : undefined,
+                      };
+                    }),
                   ]}
                 />
               </>
@@ -536,10 +570,14 @@ export const RoutingRules: React.FC = () => {
                   placeholder="-- Semua Model --"
                   options={[
                     { value: '', label: '-- Semua Model --' },
-                    ...models.map((m) => ({
-                      value: m.id,
-                      label: `${m.display_name} (${m.model_id})`,
-                    })),
+                    ...models.map((m) => {
+                      const provNames = m.providers?.map((p) => p.display_name || p.provider_name).join(', ');
+                      return {
+                        value: m.id,
+                        label: `${m.display_name} (${m.model_id})`,
+                        description: provNames ? `Tersedia di: ${provNames}` : (m.family ? `Keluarga: ${m.family}` : undefined),
+                      };
+                    }),
                   ]}
                 />
                 <Select
@@ -651,35 +689,57 @@ export const RoutingRules: React.FC = () => {
         isOpen={isProvidersDrawerOpen}
         onClose={() => setIsProvidersDrawerOpen(false)}
         title="Edit Providers & Weights"
-        subtitle="Pilih provider yang akan digunakan dalam aturan routing ini dan atur bobot (untuk mode weighted)."
+        subtitle={
+          selectedRule?.match_model_id
+            ? `Aturan ini terhubung ke model: ${models.find(m => m.id === selectedRule.match_model_id || m.model_id === selectedRule.match_model_id)?.display_name || selectedRule.match_model_id}`
+            : "Pilih provider yang akan digunakan dalam aturan routing ini dan atur bobot (untuk mode weighted)."
+        }
       >
         <form onSubmit={handleSaveProviders} className="space-y-4 text-xs">
           <div className="space-y-3">
-            {providers.map(p => (
-              <div key={p.id} className="p-3 bg-bg-surface-2 border border-border rounded-lg flex flex-col gap-2">
-                <label className="flex items-center gap-2 font-semibold text-white cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={ruleProviders.includes(p.id)}
-                    onChange={() => toggleProvider(p.id)}
-                    className="rounded border-border bg-surface-dark text-accent focus:ring-accent"
-                  />
-                  {p.display_name || p.name}
-                </label>
-                {ruleProviders.includes(p.id) && (
-                  <div className="pl-6 flex items-center gap-2">
-                    <label className="text-text-secondary">Bobot (Weight):</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={ruleWeights[p.id] || 1}
-                      onChange={(e) => updateWeight(p.id, parseInt(e.target.value) || 1)}
-                      className="w-24 px-2 py-1 bg-surface-dark border border-border rounded-nav text-white"
-                    />
+            {providers.map(p => {
+              const targetM = models.find(m => m.id === selectedRule?.match_model_id || m.model_id === selectedRule?.match_model_id);
+              const matchedUpstream = targetM?.providers?.find(mp => mp.provider_id === p.id);
+              return (
+                <div key={p.id} className="p-3 bg-bg-surface-2 border border-border rounded-lg flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-2 font-semibold text-white cursor-pointer min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={ruleProviders.includes(p.id)}
+                        onChange={() => toggleProvider(p.id)}
+                        className="rounded border-border bg-surface-dark text-accent focus:ring-accent flex-shrink-0"
+                      />
+                      <span className="truncate">{p.display_name || p.name}</span>
+                      <span className="text-[10px] text-text-muted font-mono">({p.kind})</span>
+                    </label>
+                    {targetM ? (
+                      matchedUpstream ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">
+                          ✓ {matchedUpstream.upstream_model_name}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 flex-shrink-0">
+                          Model tidak terdaftar
+                        </span>
+                      )
+                    ) : null}
                   </div>
-                )}
-              </div>
-            ))}
+                  {ruleProviders.includes(p.id) && (
+                    <div className="pl-6 flex items-center gap-2 mt-1">
+                      <label className="text-text-secondary">Bobot (Weight):</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={ruleWeights[p.id] || 1}
+                        onChange={(e) => updateWeight(p.id, parseInt(e.target.value) || 1)}
+                        className="w-24 px-2 py-1 bg-surface-dark border border-border rounded-nav text-white"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <Button type="submit" variant="primary" size="md" className="w-full mt-3">
             Simpan Providers

@@ -228,6 +228,30 @@ export const Models: React.FC = () => {
                   <span className="font-mono text-white">{m.max_output_tokens != null ? `${m.max_output_tokens.toLocaleString()} tokens` : '-'}</span>
                 </div>
               </div>
+              <div className="mt-4 pt-3 border-t border-border/40">
+                <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-2 flex items-center justify-between">
+                  <span>Penyedia Upstream ({m.providers?.length || 0})</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {m.providers && m.providers.length > 0 ? (
+                    m.providers.map((p) => (
+                      <span
+                        key={p.provider_id}
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/25 text-purple-300 text-[11px] font-medium"
+                        title={`Upstream model name: ${p.upstream_model_name}`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                        <span className="font-semibold text-white">{p.display_name || p.provider_name}</span>
+                        {p.upstream_model_name !== m.model_id && (
+                          <span className="text-[10px] text-text-muted font-mono">({p.upstream_model_name})</span>
+                        )}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[11px] text-text-muted italic">Belum terhubung ke provider</span>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="mt-5 pt-3 border-t border-border flex items-center justify-between">
@@ -340,11 +364,15 @@ export const Models: React.FC = () => {
                 setSelectedMappingId(val);
                 loadPricingForMapping(val);
               }}
-              options={mappings.filter((mp) => mp.id).map((mp) => ({
-                value: mp.id,
-                label: `${mp.provider_id || '?'} → ${mp.upstream_model_name || '?'}`,
-                description: `ID Mapping: ${(mp.id || '').slice(0, 8)}`,
-              }))}
+              options={mappings.filter((mp) => mp.id).map((mp) => {
+                const prov = selectedModel?.providers?.find((p) => p.provider_id === mp.provider_id);
+                const provName = prov ? (prov.display_name || prov.provider_name) : (mp.provider_id || '').slice(0, 8);
+                return {
+                  value: mp.id,
+                  label: `${provName} → ${mp.upstream_model_name || '?'}`,
+                  description: `Provider: ${provName} | ID Mapping: ${(mp.id || '').slice(0, 8)}`,
+                };
+              })}
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

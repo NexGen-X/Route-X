@@ -1115,9 +1115,43 @@ func (h *Handlers) listModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	modelIDs := make([]string, len(items))
+	for i, m := range items {
+		modelIDs[i] = m.ID
+	}
+
+	provMap := make(map[string][]ModelProviderSummaryDTO)
+	if h.pool != nil && len(modelIDs) > 0 {
+		rows, qErr := h.pool.Query(ctx, `
+			SELECT pm.model_id::text, p.id::text, p.name, p.display_name, pm.upstream_model_name
+			FROM provider_models pm
+			JOIN providers p ON pm.provider_id = p.id
+			WHERE pm.model_id = ANY($1) AND pm.enabled = true
+			ORDER BY p.name ASC
+		`, modelIDs)
+		if qErr == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var mid, pid, pname, pdisp, upstreamName string
+				if err := rows.Scan(&mid, &pid, &pname, &pdisp, &upstreamName); err == nil {
+					provMap[mid] = append(provMap[mid], ModelProviderSummaryDTO{
+						ProviderID:        pid,
+						ProviderName:      pname,
+						DisplayName:       pdisp,
+						UpstreamModelName: upstreamName,
+					})
+				}
+			}
+		}
+	}
+
 	models := make([]ModelDTO, 0, len(items))
 	for _, m := range items {
-		models = append(models, toModelDTO(m))
+		dto := toModelDTO(m)
+		if provs, ok := provMap[m.ID]; ok {
+			dto.Providers = provs
+		}
+		models = append(models, dto)
 	}
 
 	_ = h.respond(w, r, http.StatusOK, ListEnvelope[ModelDTO]{
@@ -1149,8 +1183,33 @@ func (h *Handlers) getModel(w http.ResponseWriter, r *http.Request) {
 		mappingsDTO = append(mappingsDTO, toModelMappingDTO(pm))
 	}
 
+	modelDTO := toModelDTO(m)
+	if h.pool != nil {
+		rows, qErr := h.pool.Query(ctx, `
+			SELECT pm.model_id::text, p.id::text, p.name, p.display_name, pm.upstream_model_name
+			FROM provider_models pm
+			JOIN providers p ON pm.provider_id = p.id
+			WHERE pm.model_id = $1 AND pm.enabled = true
+			ORDER BY p.name ASC
+		`, m.ID)
+		if qErr == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var mid, pid, pname, pdisp, upstreamName string
+				if err := rows.Scan(&mid, &pid, &pname, &pdisp, &upstreamName); err == nil {
+					modelDTO.Providers = append(modelDTO.Providers, ModelProviderSummaryDTO{
+						ProviderID:        pid,
+						ProviderName:      pname,
+						DisplayName:       pdisp,
+						UpstreamModelName: upstreamName,
+					})
+				}
+			}
+		}
+	}
+
 	_ = h.respond(w, r, http.StatusOK, ModelDetailResponse{
-		Model:    toModelDTO(m),
+		Model:    modelDTO,
 		Aliases:  aliasesDTO,
 		Mappings: mappingsDTO,
 	})

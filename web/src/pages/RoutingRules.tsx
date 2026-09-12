@@ -511,71 +511,80 @@ export const RoutingRules: React.FC = () => {
             <label className="block font-semibold text-text-secondary uppercase mb-1.5">
               Pilih Mode Routing
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-1.5 bg-surface-dark border border-border rounded-xl">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-1.5 bg-bg-surface-2 border border-border rounded-xl">
               <button
                 type="button"
                 onClick={() => setMode('model_only')}
                 className={`py-2.5 px-3 text-center rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
                   mode === 'model_only'
-                    ? 'bg-accent text-white shadow-md shadow-accent/20 border border-accent/40'
-                    : 'text-text-muted hover:text-white hover:bg-bg-surface-2'
+                    ? 'bg-sky-500/15 border border-sky-400/60 text-sky-300 shadow-sm shadow-sky-500/10'
+                    : 'text-text-muted hover:text-white hover:bg-bg-surface-1 border border-transparent'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <Zap className="w-4 h-4" />
+                  <Zap className={`w-4 h-4 ${mode === 'model_only' ? 'text-sky-400' : 'text-text-muted'}`} />
                   <span className="font-bold">1. Model Only</span>
                 </div>
-                <span className="text-[10px] font-normal opacity-80">Direct 1:1 Passthrough</span>
+                <span className={`text-[10px] font-normal ${mode === 'model_only' ? 'text-sky-400/80' : 'opacity-70'}`}>Direct 1:1 Passthrough</span>
               </button>
               <button
                 type="button"
                 onClick={() => setMode('routing')}
                 className={`py-2.5 px-3 text-center rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
                   mode === 'routing'
-                    ? 'bg-accent text-white shadow-md shadow-accent/20 border border-accent/40'
-                    : 'text-text-muted hover:text-white hover:bg-bg-surface-2'
+                    ? 'bg-purple-500/15 border border-purple-400/60 text-purple-300 shadow-sm shadow-purple-500/10'
+                    : 'text-text-muted hover:text-white hover:bg-bg-surface-1 border border-transparent'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <Shuffle className="w-4 h-4" />
+                  <Shuffle className={`w-4 h-4 ${mode === 'routing' ? 'text-purple-400' : 'text-text-muted'}`} />
                   <span className="font-bold">2. Routing</span>
                 </div>
-                <span className="text-[10px] font-normal opacity-80">Multi-Provider Failover</span>
+                <span className={`text-[10px] font-normal ${mode === 'routing' ? 'text-purple-400/80' : 'opacity-70'}`}>Multi-Provider Failover</span>
               </button>
               <button
                 type="button"
                 onClick={() => setMode('combo_routing')}
                 className={`py-2.5 px-3 text-center rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
                   mode === 'combo_routing'
-                    ? 'bg-accent text-white shadow-md shadow-accent/20 border border-accent/40'
-                    : 'text-text-muted hover:text-white hover:bg-bg-surface-2'
+                    ? 'bg-accent/15 border border-accent/60 text-accent shadow-sm shadow-accent/10'
+                    : 'text-text-muted hover:text-white hover:bg-bg-surface-1 border border-transparent'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <Layers className="w-4 h-4" />
+                  <Layers className={`w-4 h-4 ${mode === 'combo_routing' ? 'text-accent' : 'text-text-muted'}`} />
                   <span className="font-bold">3. Combo Routing</span>
                 </div>
-                <span className="text-[10px] font-normal opacity-80">Tier 1 &rarr; Tier 2 Cascade</span>
+                <span className={`text-[10px] font-normal ${mode === 'combo_routing' ? 'text-accent/80' : 'opacity-70'}`}>Tier 1 &rarr; Tier 2 Cascade</span>
               </button>
             </div>
           </div>
 
           <form onSubmit={handleCreate} className="space-y-4">
             {mode === 'model_only' && (
-              <div className="p-3.5 bg-accent/10 border border-accent/20 rounded-xl text-accent text-[11px] leading-relaxed">
-                ⚡ <strong>Mode Model Only:</strong> Passthrough langsung 1-to-1 ke model dan provider tertentu tanpa overhead failover. Latensi paling instan (&lt; 2ms saat cache hit).
+              <div className="p-3.5 bg-sky-500/10 border border-sky-500/25 rounded-xl text-sky-300 text-[11px] leading-relaxed flex items-start gap-2.5">
+                <Zap className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Mode Model Only:</strong> Passthrough langsung 1-to-1 ke model dan provider tertentu tanpa overhead failover. Latensi paling instan (&lt; 2ms saat cache hit).
+                </div>
               </div>
             )}
 
             {mode === 'routing' && (
-              <div className="p-3.5 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-300 text-[11px] leading-relaxed">
-                🔀 <strong>Mode Multi-Provider Routing:</strong> Mendistribusikan lalu lintas atau failover antar beberapa provider upstream (Priority, Lowest Latency, Lowest Cost, Weighted, Round Robin).
+              <div className="p-3.5 bg-purple-500/10 border border-purple-500/25 rounded-xl text-purple-300 text-[11px] leading-relaxed flex items-start gap-2.5">
+                <Shuffle className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Mode Multi-Provider Routing:</strong> Mendistribusikan lalu lintas atau failover antar beberapa provider upstream (Priority, Lowest Latency, Lowest Cost, Weighted, Round Robin).
+                </div>
               </div>
             )}
 
             {mode === 'combo_routing' && (
-              <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-300 text-[11px] leading-relaxed">
-                🔗 <strong>Mode Combo Routing:</strong> Rantai bertingkat cerdas. Permintaan pertama dialokasikan ke <strong>Tier 1 (Lokal/Hemat)</strong>. Bila kuota habis (429) atau upstream error, otomatis dialihkan ke <strong>Tier 2 (Flagship Fallback)</strong>!
+              <div className="p-3.5 bg-accent/10 border border-accent/25 rounded-xl text-accent text-[11px] leading-relaxed flex items-start gap-2.5">
+                <Layers className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+                <div>
+                  <strong>Mode Combo Routing:</strong> Rantai bertingkat cerdas. Permintaan pertama dialokasikan ke <strong>Tier 1 (Lokal/Hemat)</strong>. Bila kuota habis (429) atau upstream error, otomatis dialihkan ke <strong>Tier 2 (Flagship Fallback)</strong>!
+                </div>
               </div>
             )}
 
@@ -595,7 +604,7 @@ export const RoutingRules: React.FC = () => {
                   }
                   value={newRule.name}
                   onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
-                  className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white placeholder:text-text-muted/60 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                 />
                 <span className="text-[10px] text-text-muted mt-0.5 block">
                   Kosongkan untuk nama otomatis berdasarkan mode &amp; model.
@@ -610,7 +619,7 @@ export const RoutingRules: React.FC = () => {
                   placeholder="Catatan tujuan atau spesifikasi aturan..."
                   value={newRule.description}
                   onChange={(e) => setNewRule({ ...newRule, description: e.target.value })}
-                  className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white placeholder:text-text-muted/60 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                 />
               </div>
             </div>
@@ -701,7 +710,7 @@ export const RoutingRules: React.FC = () => {
                       max="10"
                       value={newRule.max_attempts}
                       onChange={(e) => setNewRule({ ...newRule, max_attempts: parseInt(e.target.value) || 3 })}
-                      className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                     />
                   </div>
                   <div>
@@ -711,7 +720,7 @@ export const RoutingRules: React.FC = () => {
                       min="0"
                       value={newRule.backoff_ms}
                       onChange={(e) => setNewRule({ ...newRule, backoff_ms: parseInt(e.target.value) || 200 })}
-                      className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                     />
                   </div>
                 </div>
@@ -758,8 +767,8 @@ export const RoutingRules: React.FC = () => {
                           key={p.id}
                           className={`p-2.5 rounded-lg border transition-all ${
                             isChecked
-                              ? 'bg-accent/10 border-accent/40'
-                              : 'bg-bg-surface-1 border-border/80 hover:border-border'
+                              ? 'bg-purple-500/10 border-purple-400/40 shadow-sm shadow-purple-500/5'
+                              : 'bg-bg-surface-1 border-border/70 hover:border-border'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
@@ -768,7 +777,7 @@ export const RoutingRules: React.FC = () => {
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => toggleCreateProvider(p.id)}
-                                className="rounded border-border bg-surface-dark text-accent focus:ring-accent flex-shrink-0"
+                                className="rounded border-border bg-bg-surface-2 text-purple-400 focus:ring-purple-400 flex-shrink-0 cursor-pointer"
                               />
                               <span className="truncate">{p.display_name || p.name}</span>
                               <span className="text-[10px] text-text-muted font-mono">({p.kind})</span>
@@ -780,8 +789,8 @@ export const RoutingRules: React.FC = () => {
                                   ✓ {matchedUpstream.upstream_model_name}
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
-                                  Tidak Menyediakan
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-bg-surface-2 text-text-muted border border-border/60 shrink-0">
+                                  Model tidak tersedia
                                 </span>
                               )
                             ) : null}
@@ -795,7 +804,7 @@ export const RoutingRules: React.FC = () => {
                                 min="1"
                                 value={createRuleWeights[p.id] || 1}
                                 onChange={(e) => updateCreateWeight(p.id, parseInt(e.target.value) || 1)}
-                                className="w-20 px-2 py-0.5 bg-surface-dark border border-border rounded text-white text-xs"
+                                className="w-20 px-2 py-0.5 bg-bg-surface-2 border border-border rounded text-white text-xs font-mono focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
                               />
                             </div>
                           )}
@@ -873,7 +882,7 @@ export const RoutingRules: React.FC = () => {
                   type="number"
                   value={newRule.priority}
                   onChange={(e) => setNewRule({ ...newRule, priority: parseInt(e.target.value) || 100 })}
-                  className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                 />
                 <span className="text-[10px] text-text-muted mt-0.5 block">
                   Angka lebih kecil dievaluasi lebih awal (bawaan: 100).
@@ -889,7 +898,7 @@ export const RoutingRules: React.FC = () => {
                   onChange={(e) =>
                     setNewRule({ ...newRule, failure_threshold: parseInt(e.target.value) || 5 })
                   }
-                  className="w-full px-3 py-2 bg-surface-dark border border-border rounded-nav text-white"
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                 />
                 <span className="text-[10px] text-text-muted mt-0.5 block">
                   Jumlah kegagalan berturut sebelum isolasi otomatis.
@@ -927,7 +936,7 @@ export const RoutingRules: React.FC = () => {
                         type="checkbox"
                         checked={ruleProviders.includes(p.id)}
                         onChange={() => toggleProvider(p.id)}
-                        className="rounded border-border bg-surface-dark text-accent focus:ring-accent flex-shrink-0"
+                        className="rounded border-border bg-bg-surface-2 text-accent focus:ring-accent flex-shrink-0 cursor-pointer"
                       />
                       <span className="truncate">{p.display_name || p.name}</span>
                       <span className="text-[10px] text-text-muted font-mono">({p.kind})</span>
@@ -938,8 +947,8 @@ export const RoutingRules: React.FC = () => {
                           ✓ {matchedUpstream.upstream_model_name}
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 flex-shrink-0">
-                          Model tidak terdaftar
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-bg-surface-1 text-text-muted border border-border/60 flex-shrink-0">
+                          Model tidak tersedia
                         </span>
                       )
                     ) : null}
@@ -952,7 +961,7 @@ export const RoutingRules: React.FC = () => {
                         min="1"
                         value={ruleWeights[p.id] || 1}
                         onChange={(e) => updateWeight(p.id, parseInt(e.target.value) || 1)}
-                        className="w-24 px-2 py-1 bg-surface-dark border border-border rounded-nav text-white"
+                        className="w-24 px-2 py-1 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                       />
                     </div>
                   )}

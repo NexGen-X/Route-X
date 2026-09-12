@@ -7,7 +7,7 @@ import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
-import { GitFork, Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers } from 'lucide-react';
+import { Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers, Edit2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 
@@ -24,10 +24,32 @@ export const RoutingRules: React.FC = () => {
   const [ruleProviders, setRuleProviders] = useState<string[]>([]);
   const [ruleWeights, setRuleWeights] = useState<Record<string, number>>({});
 
+  // Edit Drawer States
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<RoutingRule | null>(null);
+  const [editMode, setEditMode] = useState<'model_only' | 'routing' | 'combo_routing'>('model_only');
+  const [editTargetModelId, setEditTargetModelId] = useState('');
+  const [editTargetProviderId, setEditTargetProviderId] = useState('');
+  const [editTier1ModelId, setEditTier1ModelId] = useState('');
+  const [editTier2ModelId, setEditTier2ModelId] = useState('');
+  const [editRuleProviders, setEditRuleProviders] = useState<string[]>([]);
+  const [editRuleWeights, setEditRuleWeights] = useState<Record<string, number>>({});
+  const [editRuleForm, setEditRuleForm] = useState({
+    name: '',
+    description: '',
+    priority: 100,
+    strategy: 'priority',
+    max_attempts: 3,
+    backoff_ms: 200,
+    failure_threshold: 5,
+    open_duration_ms: 30000,
+    half_open_probes: 2,
+  });
+
   const [rulesError, setRulesError] = useState<string | null>(null);
   const [breakersError, setBreakersError] = useState<string | null>(null);
 
-  // 3-Mode Form States
+  // 3-Mode Form States (Create)
   const [mode, setMode] = useState<'model_only' | 'routing' | 'combo_routing'>('model_only');
   const [targetModelId, setTargetModelId] = useState('');
   const [targetProviderId, setTargetProviderId] = useState('');
@@ -209,9 +231,9 @@ export const RoutingRules: React.FC = () => {
           max_attempts: 1,
           match_model_id: targetModelId,
           provider_ids: targetProviderId ? [targetProviderId] : undefined,
-          description:
-            newRule.description ||
-            `[model_only] Direct 1:1 passthrough ke model ${modelName}${selProv ? ` via ${selProv.name}` : ''}`,
+          description: newRule.description?.trim()
+            ? `[model_only] ${newRule.description.trim()}`
+            : `[model_only] Direct 1:1 passthrough ke model ${modelName}${selProv ? ` via ${selProv.name}` : ''}`,
         };
       } else if (mode === 'combo_routing') {
         if (!tier1ModelId || !tier2ModelId) {
@@ -236,9 +258,9 @@ export const RoutingRules: React.FC = () => {
           strategy: 'priority',
           max_attempts: 2,
           match_model_id: selT1.id,
-          description:
-            newRule.description ||
-            `[combo:tier2=${selT2.model_id}] Smart Tiered Cascade: Tier 1 (${selT1.display_name}) -> Tier 2 (${selT2.display_name})`,
+          description: newRule.description?.trim()
+            ? `[combo:tier2=${selT2.model_id}] ${newRule.description.trim()}`
+            : `[combo:tier2=${selT2.model_id}] Smart Tiered Cascade: Tier 1 (${selT1.display_name}) -> Tier 2 (${selT2.display_name})`,
         };
       } else {
         const selModel = targetModelId ? models.find((m) => m.id === targetModelId) : null;
@@ -254,9 +276,9 @@ export const RoutingRules: React.FC = () => {
           match_model_id: targetModelId || undefined,
           provider_ids: createRuleProviders.length > 0 ? createRuleProviders : undefined,
           weights: Object.keys(createRuleWeights).length > 0 ? createRuleWeights : undefined,
-          description:
-            newRule.description ||
-            `[routing] Failover multi-provider (${newRule.strategy}) untuk ${selModel?.display_name || 'semua model'}`,
+          description: newRule.description?.trim()
+            ? `[routing] ${newRule.description.trim()}`
+            : `[routing] Failover multi-provider (${newRule.strategy}) untuk ${selModel?.display_name || 'semua model'}`,
         };
       }
 
@@ -282,10 +304,194 @@ export const RoutingRules: React.FC = () => {
     }
   };
 
+  const handleOpenEdit = (r: RoutingRule) => {
+    const detected = getRuleMode(r);
+    const mMode = detected.mode as 'model_only' | 'routing' | 'combo_routing';
+    setEditingRule(r);
+    setEditMode(mMode);
+
+    let cleanDesc = r.description || '';
+    cleanDesc = cleanDesc
+      .replace(/^\[combo:tier2=[^\]]+\]\s*/, '')
+      .replace(/^\[model_only\]\s*/, '')
+      .replace(/^\[routing\]\s*/, '');
+
+    setEditRuleForm({
+      name: r.name || '',
+      description: cleanDesc,
+      priority: r.priority ?? 100,
+      strategy: r.strategy || 'priority',
+      max_attempts: r.max_attempts ?? 3,
+      backoff_ms: r.backoff_ms ?? 200,
+      failure_threshold: r.failure_threshold ?? 5,
+      open_duration_ms: r.open_duration_ms ?? 30000,
+      half_open_probes: r.half_open_probes ?? 2,
+    });
+
+    const pIds = r.providers ? r.providers.map((p: any) => p.provider_id) : [];
+    const pWeights: Record<string, number> = {};
+    if (r.providers) {
+      r.providers.forEach((p: any) => {
+        if (p.weight) pWeights[p.provider_id] = p.weight;
+      });
+    }
+    setEditRuleProviders(pIds);
+    setEditRuleWeights(pWeights);
+
+    setEditTargetModelId(r.match_model_id || '');
+    setEditTargetProviderId(pIds.length === 1 ? pIds[0] : '');
+
+    if (mMode === 'combo_routing') {
+      setEditTier1ModelId(r.match_model_id || '');
+      const match = (r.description || '').match(/\[combo:tier2=([^\]]+)\]/);
+      if (match) {
+        const tier2Key = match[1];
+        const found = models.find((m) => m.model_id === tier2Key || m.id === tier2Key);
+        setEditTier2ModelId(found ? found.id : tier2Key);
+      } else {
+        setEditTier2ModelId('');
+      }
+    } else {
+      setEditTier1ModelId(r.match_model_id || '');
+      setEditTier2ModelId('');
+    }
+
+    setIsEditOpen(true);
+  };
+
+  const toggleEditProvider = (pid: string) => {
+    setEditRuleProviders((prev) =>
+      prev.includes(pid) ? prev.filter((p) => p !== pid) : [...prev, pid]
+    );
+  };
+
+  const updateEditWeight = (pid: string, w: number) => {
+    setEditRuleWeights((prev) => ({ ...prev, [pid]: w }));
+  };
+
+  const handleSelectMatchingEditProviders = () => {
+    if (!editTargetModelId) {
+      setEditRuleProviders(providers.map((p) => p.id));
+      return;
+    }
+    const selModel = models.find((m) => m.id === editTargetModelId);
+    const matchingIds = providers
+      .filter((p) => selModel?.providers?.some((mp) => mp.provider_id === p.id))
+      .map((p) => p.id);
+    setEditRuleProviders(matchingIds.length > 0 ? matchingIds : providers.map((p) => p.id));
+  };
+
+  const handleClearEditProviders = () => {
+    setEditRuleProviders([]);
+  };
+
+  const handleEditSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingRule) return;
+
+    try {
+      let payload: any = {
+        priority: editRuleForm.priority,
+        failure_threshold: editRuleForm.failure_threshold,
+        open_duration_ms: editRuleForm.open_duration_ms,
+        half_open_probes: editRuleForm.half_open_probes,
+        backoff_ms: editRuleForm.backoff_ms,
+      };
+
+      const customDesc = editRuleForm.description?.trim();
+
+      if (editMode === 'model_only') {
+        if (!editTargetModelId) {
+          toast.error('Pilih model target dulu — tanpa model, aturan menjadi catch-all semua model.');
+          return;
+        }
+        const selModel = models.find((m) => m.id === editTargetModelId);
+        const selProv = providers.find((p) => p.id === editTargetProviderId);
+        const modelName = selModel?.model_id || editTargetModelId;
+        payload = {
+          ...payload,
+          name: editRuleForm.name || `direct-${modelName.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+          strategy: 'priority',
+          max_attempts: 1,
+          match_model_id: editTargetModelId,
+          provider_ids: editTargetProviderId ? [editTargetProviderId] : [],
+          weights: {},
+          description: customDesc
+            ? `[model_only] ${customDesc}`
+            : `[model_only] Direct 1:1 passthrough ke model ${modelName}${selProv ? ` via ${selProv.name}` : ''}`,
+        };
+      } else if (editMode === 'combo_routing') {
+        if (!editTier1ModelId || !editTier2ModelId) {
+          toast.error('Pilih model Tier 1 dan Tier 2 terlebih dahulu.');
+          return;
+        }
+        if (editTier1ModelId === editTier2ModelId) {
+          toast.error('Tier 1 dan Tier 2 tidak boleh sama — self-fallback membuat loop.');
+          return;
+        }
+        const selT1 = models.find((m) => m.id === editTier1ModelId);
+        const selT2 = models.find((m) => m.id === editTier2ModelId);
+        if (!selT1 || !selT2) {
+          toast.error('Model Tier 1 atau Tier 2 tidak valid di registry.');
+          return;
+        }
+        payload = {
+          ...payload,
+          name:
+            editRuleForm.name ||
+            `combo-${selT1.model_id.replace(/[^a-zA-Z0-9_-]/g, '-')}-to-${selT2.model_id.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+          strategy: 'priority',
+          max_attempts: 2,
+          match_model_id: selT1.id,
+          provider_ids: [],
+          weights: {},
+          description: customDesc
+            ? `[combo:tier2=${selT2.model_id}] ${customDesc}`
+            : `[combo:tier2=${selT2.model_id}] Smart Tiered Cascade: Tier 1 (${selT1.display_name}) -> Tier 2 (${selT2.display_name})`,
+        };
+      } else {
+        const selModel = editTargetModelId ? models.find((m) => m.id === editTargetModelId) : null;
+        payload = {
+          ...payload,
+          name:
+            editRuleForm.name ||
+            (selModel
+              ? `failover-${selModel.model_id.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+              : `routing-global-${editRuleForm.strategy}`),
+          strategy: editRuleForm.strategy,
+          max_attempts: editRuleForm.max_attempts,
+          match_model_id: editTargetModelId ? editTargetModelId : '',
+          provider_ids: editRuleProviders,
+          weights: editRuleWeights,
+          description: customDesc
+            ? `[routing] ${customDesc}`
+            : `[routing] Failover multi-provider (${editRuleForm.strategy}) untuk ${selModel?.display_name || 'semua model'}`,
+        };
+      }
+
+      await api.routing.update(editingRule.id, payload);
+      setIsEditOpen(false);
+      setEditingRule(null);
+      toast.success(`Aturan perutean "${payload.name || editingRule.name}" berhasil diperbarui`);
+      loadRules();
+    } catch (err: any) {
+      toast.error('Gagal memperbarui aturan: ' + (err.message || err));
+    }
+  };
+
   const handleOpenProviders = (r: any) => {
     setSelectedRule(r);
-    setRuleProviders(r.provider_ids || []);
-    setRuleWeights(r.weights || {});
+    const pIds = r.providers ? r.providers.map((p: any) => p.provider_id) : (r.provider_ids || []);
+    const pWeights: Record<string, number> = {};
+    if (r.providers) {
+      r.providers.forEach((p: any) => {
+        if (p.weight) pWeights[p.provider_id] = p.weight;
+      });
+    } else if (r.weights) {
+      Object.assign(pWeights, r.weights);
+    }
+    setRuleProviders(pIds);
+    setRuleWeights(pWeights);
     setIsProvidersDrawerOpen(true);
   };
 
@@ -332,13 +538,32 @@ export const RoutingRules: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {rules.map((r) => {
           const ruleMode = getRuleMode(r);
+          const matchedModel = r.match_model_id
+            ? models.find((m) => m.id === r.match_model_id || m.model_id === r.match_model_id)
+            : null;
+          const cleanCustomDesc = r.description
+            ? r.description.replace(/^\[(combo:tier2=[^\]]+|model_only|routing)\]\s*/, '')
+            : '';
+
           return (
             <Card key={r.id} className="p-5 flex flex-col justify-between">
               <div>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-accent/10 border border-accent/20 text-accent flex items-center justify-center">
-                      <GitFork className="w-5 h-5" />
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center ${
+                      ruleMode.mode === 'model_only'
+                        ? 'bg-sky-500/10 border border-sky-500/20 text-sky-400'
+                        : ruleMode.mode === 'combo_routing'
+                        ? 'bg-accent/10 border border-accent/20 text-accent'
+                        : 'bg-purple-500/10 border border-purple-500/20 text-purple-400'
+                    }`}>
+                      {ruleMode.mode === 'model_only' ? (
+                        <Zap className="w-5 h-5" />
+                      ) : ruleMode.mode === 'combo_routing' ? (
+                        <Layers className="w-5 h-5" />
+                      ) : (
+                        <Shuffle className="w-5 h-5" />
+                      )}
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-white">{r.name}</h4>
@@ -355,9 +580,21 @@ export const RoutingRules: React.FC = () => {
                   </Badge>
                 </div>
 
+                {cleanCustomDesc && (
+                  <p className="mt-3 text-xs text-text-secondary leading-relaxed bg-bg-surface-2/50 p-2 rounded border border-border/40">
+                    {cleanCustomDesc}
+                  </p>
+                )}
+
                 <div className="mt-4 space-y-2 text-xs">
                   <div className="p-2 rounded bg-surface/70 border border-border/50 font-mono text-[11px] text-accent">
                     {ruleMode.detail}
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-border/40">
+                    <span className="text-text-muted">Target Model</span>
+                    <span className="font-mono text-white truncate max-w-[180px]" title={matchedModel?.display_name || r.match_model_id || 'Semua Model'}>
+                      {matchedModel ? `${matchedModel.display_name} (${matchedModel.model_id})` : r.match_model_id || 'Semua Model (Catch-All)'}
+                    </span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-border/40">
                     <span className="text-text-muted">Strategi</span>
@@ -397,33 +634,46 @@ export const RoutingRules: React.FC = () => {
                 </div>
               </div>
 
-            <div className="mt-5 pt-3 border-t border-border flex items-center gap-2 flex-wrap justify-between">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => handleOpenProviders(r)}
-              >
-                Edit Providers
-              </Button>
-              <Button
-                variant={r.enabled ? 'danger' : 'secondary'}
-                size="sm"
-                onClick={() => handleToggle(r)}
-              >
-                {r.enabled ? 'Nonaktifkan' : 'Aktifkan'}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleDelete(r.id)}
-                icon={<Trash2 className="w-3.5 h-3.5" />}
-              >
-                Hapus
-              </Button>
-            </div>
-          </Card>
-        );
-      })}
+              <div className="mt-5 pt-3 border-t border-border flex items-center gap-2 flex-wrap justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleOpenEdit(r)}
+                    icon={<Edit2 className="w-3.5 h-3.5" />}
+                  >
+                    Edit Aturan
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleOpenProviders(r)}
+                    title="Ubah pemetaan provider & bobot secara cepat"
+                  >
+                    Providers
+                  </Button>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant={r.enabled ? 'danger' : 'secondary'}
+                    size="sm"
+                    onClick={() => handleToggle(r)}
+                  >
+                    {r.enabled ? 'Nonaktifkan' : 'Aktifkan'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(r.id)}
+                    icon={<Trash2 className="w-3.5 h-3.5" />}
+                  >
+                    Hapus
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Integrated Circuit Breakers Section */}
@@ -908,6 +1158,422 @@ export const RoutingRules: React.FC = () => {
 
             <Button type="submit" variant="primary" size="md" className="w-full mt-4">
               Simpan Aturan Routing ({mode === 'model_only' ? 'Model Only' : mode === 'combo_routing' ? 'Combo Routing' : 'Multi-Provider'})
+            </Button>
+          </form>
+        </div>
+      </Drawer>
+    
+      {/* Drawer Edit Routing Rule */}
+      <Drawer
+        isOpen={isEditOpen}
+        onClose={() => {
+          setIsEditOpen(false);
+          setEditingRule(null);
+        }}
+        title={`Edit Aturan: ${editingRule?.name || ''}`}
+        subtitle="Perbarui jalur eksekusi, strategi failover, provider pendukung, atau parameter sirkuit."
+        maxWidth="3xl"
+      >
+        <div className="space-y-5 text-xs">
+          {/* 3-Mode Selector Tabs */}
+          <div>
+            <label className="block font-semibold text-text-secondary uppercase mb-1.5">
+              Pilih Mode Routing
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-1.5 bg-bg-surface-2 border border-border rounded-xl">
+              <button
+                type="button"
+                onClick={() => setEditMode('model_only')}
+                className={`py-2.5 px-3 text-center rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
+                  editMode === 'model_only'
+                    ? 'bg-sky-500/15 border border-sky-400/60 text-sky-300 shadow-sm shadow-sky-500/10'
+                    : 'text-text-muted hover:text-white hover:bg-bg-surface-1 border border-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Zap className={`w-4 h-4 ${editMode === 'model_only' ? 'text-sky-400' : 'text-text-muted'}`} />
+                  <span className="font-bold">1. Model Only</span>
+                </div>
+                <span className={`text-[10px] font-normal ${editMode === 'model_only' ? 'text-sky-400/80' : 'opacity-70'}`}>Direct 1:1 Passthrough</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditMode('routing')}
+                className={`py-2.5 px-3 text-center rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
+                  editMode === 'routing'
+                    ? 'bg-purple-500/15 border border-purple-400/60 text-purple-300 shadow-sm shadow-purple-500/10'
+                    : 'text-text-muted hover:text-white hover:bg-bg-surface-1 border border-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Shuffle className={`w-4 h-4 ${editMode === 'routing' ? 'text-purple-400' : 'text-text-muted'}`} />
+                  <span className="font-bold">2. Routing</span>
+                </div>
+                <span className={`text-[10px] font-normal ${editMode === 'routing' ? 'text-purple-400/80' : 'opacity-70'}`}>Multi-Provider Failover</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditMode('combo_routing')}
+                className={`py-2.5 px-3 text-center rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
+                  editMode === 'combo_routing'
+                    ? 'bg-accent/15 border border-accent/60 text-accent shadow-sm shadow-accent/10'
+                    : 'text-text-muted hover:text-white hover:bg-bg-surface-1 border border-transparent'
+                }`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Layers className={`w-4 h-4 ${editMode === 'combo_routing' ? 'text-accent' : 'text-text-muted'}`} />
+                  <span className="font-bold">3. Combo Routing</span>
+                </div>
+                <span className={`text-[10px] font-normal ${editMode === 'combo_routing' ? 'text-accent/80' : 'opacity-70'}`}>Tier 1 &rarr; Tier 2 Cascade</span>
+              </button>
+            </div>
+          </div>
+
+          <form onSubmit={handleEditSave} className="space-y-4">
+            {editMode === 'model_only' && (
+              <div className="p-3.5 bg-sky-500/10 border border-sky-500/25 rounded-xl text-sky-300 text-[11px] leading-relaxed flex items-start gap-2.5">
+                <Zap className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Mode Model Only:</strong> Passthrough langsung 1-to-1 ke model dan provider tertentu tanpa overhead failover. Latensi paling instan (&lt; 2ms saat cache hit).
+                </div>
+              </div>
+            )}
+
+            {editMode === 'routing' && (
+              <div className="p-3.5 bg-purple-500/10 border border-purple-500/25 rounded-xl text-purple-300 text-[11px] leading-relaxed flex items-start gap-2.5">
+                <Shuffle className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Mode Multi-Provider Routing:</strong> Mendistribusikan lalu lintas atau failover antar beberapa provider upstream (Priority, Lowest Latency, Lowest Cost, Weighted, Round Robin).
+                </div>
+              </div>
+            )}
+
+            {editMode === 'combo_routing' && (
+              <div className="p-3.5 bg-accent/10 border border-accent/25 rounded-xl text-accent text-[11px] leading-relaxed flex items-start gap-2.5">
+                <Layers className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+                <div>
+                  <strong>Mode Combo Routing:</strong> Rantai bertingkat cerdas. Permintaan pertama dialokasikan ke <strong>Tier 1 (Lokal/Hemat)</strong>. Bila kuota habis (429) atau upstream error, otomatis dialihkan ke <strong>Tier 2 (Flagship Fallback)</strong>!
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block font-semibold text-text-secondary uppercase mb-1">
+                  Nama Aturan
+                </label>
+                <input
+                  type="text"
+                  placeholder={
+                    editMode === 'model_only'
+                      ? 'direct-gpt4o'
+                      : editMode === 'combo_routing'
+                      ? 'combo-local-to-flagship'
+                      : 'failover-deepseek'
+                  }
+                  value={editRuleForm.name}
+                  onChange={(e) => setEditRuleForm({ ...editRuleForm, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white placeholder:text-text-muted/60 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-text-secondary uppercase mb-1">
+                  Deskripsi (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Catatan tujuan atau spesifikasi aturan..."
+                  value={editRuleForm.description}
+                  onChange={(e) => setEditRuleForm({ ...editRuleForm, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white placeholder:text-text-muted/60 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Mode 1: Model Only Form Fields */}
+            {editMode === 'model_only' && (
+              <div className="space-y-3 pt-1 border-t border-border/40">
+                <Select
+                  label="Target Model"
+                  required
+                  value={editTargetModelId}
+                  onChange={(val) => {
+                    setEditTargetModelId(val);
+                    setEditTargetProviderId('');
+                  }}
+                  placeholder="-- Pilih Model Target --"
+                  options={models.map((m) => {
+                    const provNames = m.providers?.map((p) => p.display_name || p.provider_name).join(', ');
+                    return {
+                      value: m.id,
+                      label: `${m.display_name} (${m.model_id})`,
+                      description: provNames ? `Tersedia di: ${provNames}` : (m.family ? `Keluarga: ${m.family}` : undefined),
+                    };
+                  })}
+                />
+                <Select
+                  label="Target Provider (Opsional)"
+                  value={editTargetProviderId}
+                  onChange={(val) => setEditTargetProviderId(val)}
+                  placeholder="-- Bawaan (Semua Provider Penyedia Model) --"
+                  options={[
+                    { value: '', label: '-- Bawaan (Semua Provider Penyedia Model) --' },
+                    ...providers.map((p) => {
+                      const selModel = models.find((m) => m.id === editTargetModelId);
+                      const matched = selModel?.providers?.find((mp) => mp.provider_id === p.id);
+                      return {
+                        value: p.id,
+                        label: `${p.display_name || p.name} (${p.kind})${matched ? ' ✓ Menyediakan Model' : ''}`,
+                        description: matched ? `Model upstream: ${matched.upstream_model_name}` : undefined,
+                      };
+                    }),
+                  ]}
+                />
+              </div>
+            )}
+
+            {/* Mode 2: Routing Form Fields */}
+            {editMode === 'routing' && (
+              <div className="space-y-4 pt-1 border-t border-border/40">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Select
+                    label="Target Model"
+                    value={editTargetModelId}
+                    onChange={(val) => setEditTargetModelId(val)}
+                    placeholder="-- Semua Model (Catch-All) --"
+                    options={[
+                      { value: '', label: '-- Semua Model (Catch-All) --' },
+                      ...models.map((m) => {
+                        const provNames = m.providers?.map((p) => p.display_name || p.provider_name).join(', ');
+                        return {
+                          value: m.id,
+                          label: `${m.display_name} (${m.model_id})`,
+                          description: provNames ? `Tersedia di: ${provNames}` : (m.family ? `Keluarga: ${m.family}` : undefined),
+                        };
+                      }),
+                    ]}
+                  />
+                  <Select
+                    label="Strategi Routing"
+                    value={editRuleForm.strategy}
+                    onChange={(val) => setEditRuleForm({ ...editRuleForm, strategy: val })}
+                    options={[
+                      { value: 'priority', label: 'Priority (Urutan Tertinggi)', description: 'Mengarahkan ke upstream prioritas tertinggi' },
+                      { value: 'lowest_cost', label: 'Lowest Cost (Biaya Termurah)', description: 'Mengarahkan ke provider dengan tarif token terendah' },
+                      { value: 'lowest_latency', label: 'Lowest Latency (Latensi Terendah)', description: 'Mengarahkan ke provider dengan respon tergesit' },
+                      { value: 'weighted', label: 'Weighted (Bobot Proporsional)', description: 'Distribusi beban berbasis rasio bobot upstream' },
+                      { value: 'round_robin', label: 'Round Robin (Beban Berimbang)', description: 'Distribusi bergilir seimbang antar semua upstream' },
+                    ]}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-text-secondary uppercase mb-1">Maksimal Percobaan</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={editRuleForm.max_attempts}
+                      onChange={(e) => setEditRuleForm({ ...editRuleForm, max_attempts: parseInt(e.target.value) || 3 })}
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-text-secondary uppercase mb-1">Jeda Backoff (ms)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editRuleForm.backoff_ms}
+                      onChange={(e) => setEditRuleForm({ ...editRuleForm, backoff_ms: parseInt(e.target.value) || 200 })}
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* Provider Selection & Weights directly in Edit */}
+                <div className="p-3 bg-bg-surface-2 border border-border rounded-xl space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
+                    <div>
+                      <h4 className="font-semibold text-white">Pilih Upstream Providers &amp; Bobot</h4>
+                      <p className="text-[11px] text-text-muted mt-0.5">
+                        Centang provider untuk membatasi failover. Kosongkan jika ingin berlaku ke semua provider pendukung.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleSelectMatchingEditProviders}
+                      >
+                        {editTargetModelId ? 'Pilih Yang Mendukung' : 'Pilih Semua'}
+                      </Button>
+                      {editRuleProviders.length > 0 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleClearEditProviders}
+                        >
+                          Bersihkan
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {providers.map((p) => {
+                      const targetM = models.find((m) => m.id === editTargetModelId);
+                      const matchedUpstream = targetM?.providers?.find((mp) => mp.provider_id === p.id);
+                      const isChecked = editRuleProviders.includes(p.id);
+
+                      return (
+                        <div
+                          key={p.id}
+                          className={`p-2.5 rounded-lg border transition-all ${
+                            isChecked
+                              ? 'bg-purple-500/10 border-purple-400/40 shadow-sm shadow-purple-500/5'
+                              : 'bg-bg-surface-1 border-border/70 hover:border-border'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="flex items-center gap-2 font-semibold text-white cursor-pointer min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleEditProvider(p.id)}
+                                className="rounded border-border bg-bg-surface-2 text-purple-400 focus:ring-purple-400 flex-shrink-0 cursor-pointer"
+                              />
+                              <span className="truncate">{p.display_name || p.name}</span>
+                              <span className="text-[10px] text-text-muted font-mono">({p.kind})</span>
+                            </label>
+
+                            {targetM ? (
+                              matchedUpstream ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+                                  ✓ {matchedUpstream.upstream_model_name}
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-bg-surface-2 text-text-muted border border-border/60 shrink-0">
+                                  Model tidak tersedia
+                                </span>
+                              )
+                            ) : null}
+                          </div>
+
+                          {isChecked && (
+                            <div className="pl-6 flex items-center gap-2 mt-2 pt-2 border-t border-border/40">
+                              <label className="text-[11px] text-text-secondary">Bobot (Weight):</label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={editRuleWeights[p.id] || 1}
+                                onChange={(e) => updateEditWeight(p.id, parseInt(e.target.value) || 1)}
+                                className="w-20 px-2 py-0.5 bg-bg-surface-2 border border-border rounded text-white text-xs font-mono focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Mode 3: Combo Routing Form Fields */}
+            {editMode === 'combo_routing' && (
+              <div className="space-y-4 pt-1 border-t border-border/40">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Select
+                      label="Tier 1 Model (Lokal / Hemat)"
+                      required
+                      value={editTier1ModelId}
+                      onChange={(val) => {
+                        setEditTier1ModelId(val);
+                        if (val === editTier2ModelId) {
+                          setEditTier2ModelId('');
+                        }
+                      }}
+                      placeholder="-- Pilih Model Tier 1 (Utama) --"
+                      options={models.map((m) => {
+                        const provNames = m.providers?.map((p) => p.display_name || p.provider_name).join(', ');
+                        return {
+                          value: m.id,
+                          label: `${m.display_name} (${m.model_id})`,
+                          description: provNames ? `Tersedia di: ${provNames}` : undefined,
+                        };
+                      })}
+                    />
+                    <span className="text-[10px] text-text-muted mt-1 block">
+                      Diprioritaskan pertama kali untuk efisiensi latensi dan biaya token.
+                    </span>
+                  </div>
+
+                  <div>
+                    <Select
+                      label="Tier 2 Model (Flagship Fallback)"
+                      required
+                      value={editTier2ModelId}
+                      onChange={(val) => setEditTier2ModelId(val)}
+                      placeholder="-- Pilih Model Tier 2 (Cadangan) --"
+                      options={models
+                        .filter((m) => m.id !== editTier1ModelId)
+                        .map((m) => {
+                          const provNames = m.providers?.map((p) => p.display_name || p.provider_name).join(', ');
+                          return {
+                            value: m.id,
+                            label: `${m.display_name} (${m.model_id})`,
+                            description: provNames ? `Tersedia di: ${provNames}` : undefined,
+                          };
+                        })}
+                    />
+                    <span className="text-[10px] text-text-muted mt-1 block">
+                      Cadangan otomatis tanpa interupsi jika Tier 1 mengalami down / 429.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Circuit Breaker & Evaluation Priority */}
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/40">
+              <div>
+                <label className="block font-semibold text-text-secondary uppercase mb-1">
+                  Prioritas Evaluasi
+                </label>
+                <input
+                  type="number"
+                  value={editRuleForm.priority}
+                  onChange={(e) => setEditRuleForm({ ...editRuleForm, priority: parseInt(e.target.value) || 100 })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                />
+                <span className="text-[10px] text-text-muted mt-0.5 block">
+                  Angka lebih kecil dievaluasi lebih awal (bawaan: 100).
+                </span>
+              </div>
+              <div>
+                <label className="block font-semibold text-text-secondary uppercase mb-1">
+                  Ambang Circuit Breaker
+                </label>
+                <input
+                  type="number"
+                  value={editRuleForm.failure_threshold}
+                  onChange={(e) =>
+                    setEditRuleForm({ ...editRuleForm, failure_threshold: parseInt(e.target.value) || 5 })
+                  }
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                />
+                <span className="text-[10px] text-text-muted mt-0.5 block">
+                  Jumlah kegagalan berturut sebelum isolasi otomatis.
+                </span>
+              </div>
+            </div>
+
+            <Button type="submit" variant="primary" size="md" className="w-full mt-4">
+              Simpan Perubahan Aturan ({editMode === 'model_only' ? 'Model Only' : editMode === 'combo_routing' ? 'Combo Routing' : 'Multi-Provider'})
             </Button>
           </form>
         </div>

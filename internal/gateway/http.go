@@ -21,6 +21,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -273,6 +274,39 @@ func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request, j *jejak)
 
 	keputusan := h.engine.Route(r.Context(), rreq, cands)
 	j.pasangKeputusan(keputusan, req.Stream)
+
+	// Opsi C (Smart Context Bypass):
+	// Jika kandidat Tier 1 kosong ATAU ukuran prompt melebihi seluruh kandidat Tier 1,
+	// dan aturan memiliki pipeline combo fallback: periksa apakah ada tier lanjutan yang sanggup melayani!
+	kandidatTier1Kekecilan := len(keputusan.Candidates) > 0 &&
+		rreq.Tokens.InputTokens > 0 &&
+		semuaKandidatKekecilan(keputusan.Candidates, rreq.Tokens.InputTokens)
+
+	if len(keputusan.Candidates) == 0 || kandidatTier1Kekecilan {
+		if pipeline := ekstrakComboPipeline(keputusan.Rule); len(pipeline) > 0 {
+			tempPr := &persiapan{req: req, model: model, principal: p}
+			for _, tier := range pipeline {
+				tModel, tCands, tTargets, rj := h.siapkanTierFallback(r.Context(), tier.Model, tier.ProviderIDs, tempPr, req.Stream)
+				if rj == nil && tModel != nil && len(tCands) > 0 {
+					if rreq.Tokens.InputTokens > 0 && semuaKandidatKekecilan(tCands, rreq.Tokens.InputTokens) {
+						continue // Tier ini juga kekecilan, coba tier berikutnya
+					}
+					h.logger.InfoContext(r.Context(), "melewati Tier 1 combo karena context window tidak mencukupi, langsung ke fallback tier",
+						"tier", tier.Tier, "tier1_model", model.ModelID, "fallback_model", tModel.ModelID, "tokens", rreq.Tokens.InputTokens)
+					reqCopy := *req
+					reqCopy.Model = tModel.ModelID
+					j.pasangModel(tModel)
+					j.pasangKebijakan(p, tTargets)
+					return &persiapan{
+						req: &reqCopy, model: tModel, decision: keputusan,
+						principal: p, targets: tTargets,
+						plan: PlanFromRule(keputusan.Rule, tModel.ModelID, tCands),
+					}, true
+				}
+			}
+		}
+	}
+
 	if len(keputusan.Candidates) == 0 {
 		h.tolakTanpaKandidat(w, r, rreq, model, cands)
 		return nil, false
@@ -605,7 +639,65 @@ func (h *Handlers) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	h.chatSekali(w, r, pr, j)
 }
 
-// ekstrakTier2Model membaca target fallback model dari aturan combo routing.
+// ComboTier mendefinisikan satu langkah dalam cascade combo routing pipeline.
+type ComboTier struct {
+	Tier        int      `json:"tier"`
+	Model       string   `json:"model"`
+	ProviderIDs []string `json:"providers,omitempty"`
+}
+
+// ekstrakComboPipeline membaca tahapan cascade dari aturan combo routing.
+// Format baru: [combo:pipeline=[{"tier":2,"model":"...","providers":["..."]},...]]
+// Format lama (tetap didukung): [combo:tier2=<model_name>]
+func ekstrakComboPipeline(rule *router.Rule) []ComboTier {
+	if rule == nil || rule.Description == "" {
+		return nil
+	}
+	const prefix = "[combo:pipeline="
+	idx := strings.Index(rule.Description, prefix)
+	if idx != -1 {
+		sub := rule.Description[idx+len(prefix):]
+		if strings.HasPrefix(sub, "[") {
+			var tiers []ComboTier
+			dec := json.NewDecoder(strings.NewReader(sub))
+			if err := dec.Decode(&tiers); err == nil && len(tiers) > 0 {
+				return tiers
+			}
+		}
+	}
+
+	// Dukungan mundur format lama: [combo:tier2=<model_name>]
+	if t2 := ekstrakTier2Model(rule); t2 != "" {
+		return []ComboTier{
+			{
+				Tier:  2,
+				Model: t2,
+			},
+		}
+	}
+	return nil
+}
+
+// ekstrakComboAlias membaca virtual model alias dari aturan combo routing bila ada.
+// Format dalam description: [combo:alias=<virtual_alias>]
+func ekstrakComboAlias(rule *router.Rule) string {
+	if rule == nil || rule.Description == "" {
+		return ""
+	}
+	const prefix = "[combo:alias="
+	idx := strings.Index(rule.Description, prefix)
+	if idx == -1 {
+		return ""
+	}
+	sub := rule.Description[idx+len(prefix):]
+	end := strings.IndexByte(sub, ']')
+	if end == -1 {
+		return ""
+	}
+	return strings.TrimSpace(sub[:end])
+}
+
+// ekstrakTier2Model membaca target fallback model dari aturan combo routing format lama.
 // Format dalam description: [combo:tier2=<model_name>]
 func ekstrakTier2Model(rule *router.Rule) string {
 	if rule == nil || rule.Description == "" {
@@ -624,57 +716,57 @@ func ekstrakTier2Model(rule *router.Rule) string {
 	return strings.TrimSpace(sub[:end])
 }
 
-// siapkanTier2 menyiapkan fallback combo routing: resolusi model, kewenangan
-// key, kebijakan, dan kandidat tersaring.
-//
-// Empat kemungkinan kembali: (model, kandidat, target, nil) siap dijalankan;
-// (nil, nil, nil, penolakan) bila tier2 DITOLAK kebijakan — pemanggil menulis
-// penolakan itu sebagai jawaban, karena tier1 sudah gagal dan tidak ada jawaban
-// lain yang jujur; (nil, nil, nil, nil) bila tier2 TIDAK BISA disiapkan
-// (resolusi gagal, model mati, sama dengan tier1, tanpa kandidat) — pemanggil
-// lalu tetap memakai kegagalan tier1.
-func (h *Handlers) siapkanTier2(ctx context.Context, tier2ModelName string, pr *persiapan, stream bool) (*upstream.Model, []*upstream.RouteCandidate, []policy.Target, *Rejection) {
-	t2Model, err := h.models.Resolve(ctx, tier2ModelName)
+// semuaKandidatKekecilan melaporkan apakah seluruh kandidat memiliki context window
+// yang diketahui dan lebih kecil dari inputTokens permintaan.
+func semuaKandidatKekecilan(cands []*upstream.RouteCandidate, inputTokens int) bool {
+	if len(cands) == 0 || inputTokens <= 0 {
+		return false
+	}
+	for _, c := range cands {
+		if c.MaxContextWindow == nil || *c.MaxContextWindow <= 0 || *c.MaxContextWindow >= inputTokens {
+			return false
+		}
+	}
+	return true
+}
+
+// siapkanTierFallback menyiapkan fallback combo routing untuk tier tertentu: resolusi model,
+// kewenangan key, penyaringan provider khusus tier (jika ada), kebijakan, dan kandidat tersaring.
+func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string, allowedProviderIDs []string, pr *persiapan, stream bool) (*upstream.Model, []*upstream.RouteCandidate, []policy.Target, *Rejection) {
+	tModel, err := h.models.Resolve(ctx, tierModelName)
 	if err != nil {
-		h.logger.WarnContext(ctx, "resolusi tier2 combo model gagal", "tier2", tier2ModelName, "error", err)
+		h.logger.WarnContext(ctx, "resolusi combo fallback model gagal", "target_model", tierModelName, "error", err)
 		return nil, nil, nil, nil
 	}
-	if !t2Model.Enabled {
-		h.logger.WarnContext(ctx, "tier2 combo model dimatikan, fallback dilewati", "tier2", tier2ModelName)
+	if !tModel.Enabled {
+		h.logger.WarnContext(ctx, "combo fallback model dimatikan, fallback dilewati", "target_model", tierModelName)
 		return nil, nil, nil, nil
 	}
-	if pr.model != nil && t2Model.ID == pr.model.ID {
-		// Tier2 sama dengan tier1: mencobanya lagi hanya mengulang kegagalan
-		// yang sama di bawah pemutus arus yang sama.
-		h.logger.WarnContext(ctx, "tier2 combo model sama dengan tier1, fallback dilewati", "tier2", tier2ModelName)
+	if pr.model != nil && tModel.ID == pr.model.ID {
+		h.logger.WarnContext(ctx, "combo fallback model sama dengan model saat ini, fallback dilewati", "target_model", tierModelName)
 		return nil, nil, nil, nil
 	}
 	p := pr.principal
 	if h.restrict != nil && p.ID() != "" {
-		boleh, err := h.restrict.AllowsModel(ctx, p.ID(), t2Model.ID)
+		boleh, err := h.restrict.AllowsModel(ctx, p.ID(), tModel.ID)
 		if err != nil {
-			// Gagal-tertutup seperti izinModel: kewenangan yang tidak bisa
-			// dibaca berarti tier2 batal, bukan lolos.
-			h.logger.ErrorContext(ctx, "pemeriksaan pembatasan model tier2 gagal",
-				"api_key", p.Masked(), "model", t2Model.ModelID, "error", err)
+			h.logger.ErrorContext(ctx, "pemeriksaan pembatasan model fallback gagal",
+				"api_key", p.Masked(), "model", tModel.ModelID, "error", err)
 			return nil, nil, nil, nil
 		}
 		if !boleh {
 			return nil, nil, nil, &Rejection{
 				Status: http.StatusForbidden, Type: httpx.ErrTypePermission, Code: "model_not_allowed",
-				Message: "API key ini tidak diizinkan memakai model " + kutip(t2Model.ModelID),
+				Message: "API key ini tidak diizinkan memakai model " + kutip(tModel.ModelID),
 			}
 		}
 	}
 	clientIP, _ := httpx.ClientIPFrom(ctx)
-	targets := TargetsFor(p, t2Model.ID, clientIP)
-	// Kebijakan yang menuntut model — sama seperti jalur tier1 di kebijakan():
-	// tanpa ini model tier2 bisa dipakai walau key dibatasi, budget habis,
-	// atau kuota tokennya sudah lewat.
-	if rj := h.guard.SaringPermintaan(ctx, contentfilter.Subject{ModelID: t2Model.ID}); rj != nil {
+	targets := TargetsFor(p, tModel.ID, clientIP)
+	if rj := h.guard.SaringPermintaan(ctx, contentfilter.Subject{ModelID: tModel.ID}); rj != nil {
 		return nil, nil, nil, rj
 	}
-	if rj := h.guard.PeriksaBatasModel(ctx, t2Model.ID); rj != nil {
+	if rj := h.guard.PeriksaBatasModel(ctx, tModel.ID); rj != nil {
 		return nil, nil, nil, rj
 	}
 	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
@@ -688,19 +780,40 @@ func (h *Handlers) siapkanTier2(ctx context.Context, tier2ModelName string, pr *
 		ownerUserID = p.OwnerUserID()
 	}
 	cands, err := h.candidates.RouteCandidates(ctx, upstream.RouteQuery{
-		ModelID:     t2Model.ID,
+		ModelID:     tModel.ID,
 		OwnerUserID: ownerUserID,
 	})
 	if err != nil || len(cands) == 0 {
-		h.logger.WarnContext(ctx, "tidak ada kandidat untuk tier2 combo model", "tier2", tier2ModelName, "error", err)
+		h.logger.WarnContext(ctx, "tidak ada kandidat untuk combo fallback model", "target_model", tierModelName, "error", err)
 		return nil, nil, nil, nil
 	}
+
+	// Filter kandidat berdasarkan allowedProviderIDs jika ditentukan untuk tier ini
+	if len(allowedProviderIDs) > 0 {
+		filtered := make([]*upstream.RouteCandidate, 0, len(cands))
+		for _, c := range cands {
+			if slices.Contains(allowedProviderIDs, c.ProviderID) {
+				filtered = append(filtered, c)
+			}
+		}
+		cands = filtered
+		if len(cands) == 0 {
+			h.logger.WarnContext(ctx, "tidak ada kandidat lolos filter provider tier", "target_model", tierModelName, "allowed_providers", allowedProviderIDs)
+			return nil, nil, nil, nil
+		}
+	}
+
 	saring, ok := h.saringKandidatTier2(ctx, cands, p, stream)
 	if !ok || len(saring) == 0 {
-		h.logger.WarnContext(ctx, "tidak ada kandidat tier2 yang lolos penyaringan provider", "tier2", tier2ModelName)
+		h.logger.WarnContext(ctx, "tidak ada kandidat fallback yang lolos penyaringan provider", "target_model", tierModelName)
 		return nil, nil, nil, nil
 	}
-	return t2Model, saring, targets, nil
+	return tModel, saring, targets, nil
+}
+
+// siapkanTier2 membungkus siapkanTierFallback demi kompatibilitas kode lama.
+func (h *Handlers) siapkanTier2(ctx context.Context, tier2ModelName string, pr *persiapan, stream bool) (*upstream.Model, []*upstream.RouteCandidate, []policy.Target, *Rejection) {
+	return h.siapkanTierFallback(ctx, tier2ModelName, nil, pr, stream)
 }
 
 // saringKandidatTier2 menerapkan penyaringan provider yang sama seperti jalur
@@ -736,25 +849,23 @@ func (h *Handlers) saringKandidatTier2(ctx context.Context, cands []*upstream.Ro
 	return out, true
 }
 
-func (h *Handlers) cobaTier2Sekali(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) (*Outcome[*providers.ChatResponse], *Rejection) {
-	t2Model, cands, targets, rj := h.siapkanTier2(ctx, tier2ModelName, pr, false)
+// cobaTierFallbackSekali mencoba eksekusi satu tier fallback non-streaming.
+func (h *Handlers) cobaTierFallbackSekali(ctx context.Context, tier ComboTier, pr *persiapan, j *jejak) (*Outcome[*providers.ChatResponse], *Rejection) {
+	tModel, cands, targets, rj := h.siapkanTierFallback(ctx, tier.Model, tier.ProviderIDs, pr, false)
 	if rj != nil {
 		return nil, rj
 	}
-	if t2Model == nil {
+	if tModel == nil {
 		return nil, nil
 	}
 
-	t2Req := *pr.req
-	t2Req.Model = t2Model.ModelID
+	tReq := *pr.req
+	tReq.Model = tModel.ModelID
 
-	// Kesabaran mengikuti aturan yang sama seperti tier1 (PlanFromRule),
-	// bukan angka hardcode: operator yang menaikkan MaxAttempts tidak
-	// mengharapkan tier2 diam-diam memakai angka lain.
-	t2Plan := PlanFromRule(pr.decision.Rule, t2Model.ModelID, cands)
+	tPlan := PlanFromRule(pr.decision.Rule, tModel.ModelID, cands)
 
-	h.logger.InfoContext(ctx, "menjalankan fallback combo routing tier 2", "tier1", pr.model.ModelID, "tier2", t2Model.ModelID)
-	out := Execute(ctx, h.exec, t2Plan,
+	h.logger.InfoContext(ctx, "menjalankan fallback combo routing tier", "tier", tier.Tier, "tier_model", tModel.ModelID)
+	out := Execute(ctx, h.exec, tPlan,
 		func(c context.Context, cand *upstream.RouteCandidate) (*providers.ChatResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(c, cand.ProviderID, cand.ProviderName); perr != nil {
 				return nil, perr
@@ -763,43 +874,41 @@ func (h *Handlers) cobaTier2Sekali(ctx context.Context, tier2ModelName string, p
 			if err != nil {
 				return nil, err
 			}
-			return p.ChatCompletion(c, untukKandidat(&t2Req, cand))
+			return p.ChatCompletion(c, untukKandidat(&tReq, cand))
 		})
 
-	// Jejak tier1 DIPERTAHANKAN: tier2 ditambahkan, bukan menimpa. Menimpa di
-	// sini berarti timeline request_events hanya berisi tier2 sementara log
-	// catatRute mencatat tier1 — dua sumber yang tidak bisa dipertemukan.
 	j.tambahPercobaan(out.Attempts, out.Candidate)
 	if out.Err == nil {
-		// Target kebijakan mengikuti model yang benar-benar melayani, supaya
-		// pemakaian anggaran dan kuota token naik pada cakupan yang tepat.
-		pr.model = t2Model
+		pr.model = tModel
 		pr.targets = targets
-		j.pasangModel(t2Model)
+		j.pasangModel(tModel)
 		j.pasangKebijakan(pr.principal, targets)
 		return out, nil
 	}
-	// Gagal: outcome dikembalikan — bukan nil — supaya pemanggil mencatat dan
-	// menjawab sebab tier2 yang sebenarnya, bukan menelannya.
 	return out, nil
 }
 
-func (h *Handlers) cobaTier2Mengalir(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) (*Outcome[providers.Stream], *Rejection) {
-	t2Model, cands, targets, rj := h.siapkanTier2(ctx, tier2ModelName, pr, true)
+func (h *Handlers) cobaTier2Sekali(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) (*Outcome[*providers.ChatResponse], *Rejection) {
+	return h.cobaTierFallbackSekali(ctx, ComboTier{Tier: 2, Model: tier2ModelName}, pr, j)
+}
+
+// cobaTierFallbackMengalir mencoba eksekusi satu tier fallback streaming.
+func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier, pr *persiapan, j *jejak) (*Outcome[providers.Stream], *Rejection) {
+	tModel, cands, targets, rj := h.siapkanTierFallback(ctx, tier.Model, tier.ProviderIDs, pr, true)
 	if rj != nil {
 		return nil, rj
 	}
-	if t2Model == nil {
+	if tModel == nil {
 		return nil, nil
 	}
 
-	t2Req := *pr.req
-	t2Req.Model = t2Model.ModelID
+	tReq := *pr.req
+	tReq.Model = tModel.ModelID
 
-	t2Plan := PlanFromRule(pr.decision.Rule, t2Model.ModelID, cands)
+	tPlan := PlanFromRule(pr.decision.Rule, tModel.ModelID, cands)
 
-	h.logger.InfoContext(ctx, "menjalankan fallback streaming combo routing tier 2", "tier1", pr.model.ModelID, "tier2", t2Model.ModelID)
-	out := ExecuteStream(ctx, h.exec, t2Plan,
+	h.logger.InfoContext(ctx, "menjalankan fallback streaming combo routing tier", "tier", tier.Tier, "tier_model", tModel.ModelID)
+	out := ExecuteStream(ctx, h.exec, tPlan,
 		func(c context.Context, cand *upstream.RouteCandidate) (providers.Stream, error) {
 			if perr := h.guard.PeriksaBatasProvider(c, cand.ProviderID, cand.ProviderName); perr != nil {
 				return nil, perr
@@ -808,18 +917,22 @@ func (h *Handlers) cobaTier2Mengalir(ctx context.Context, tier2ModelName string,
 			if err != nil {
 				return nil, err
 			}
-			return p.ChatCompletionStream(c, untukKandidat(&t2Req, cand))
+			return p.ChatCompletionStream(c, untukKandidat(&tReq, cand))
 		})
 
 	j.tambahPercobaan(out.Attempts, out.Candidate)
 	if out.Err == nil {
-		pr.model = t2Model
+		pr.model = tModel
 		pr.targets = targets
-		j.pasangModel(t2Model)
+		j.pasangModel(tModel)
 		j.pasangKebijakan(pr.principal, targets)
 		return out, nil
 	}
 	return out, nil
+}
+
+func (h *Handlers) cobaTier2Mengalir(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) (*Outcome[providers.Stream], *Rejection) {
+	return h.cobaTierFallbackMengalir(ctx, ComboTier{Tier: 2, Model: tier2ModelName}, pr, j)
 }
 
 // cakupanCache menyusun konteks pemilik untuk kunci response cache.
@@ -903,22 +1016,29 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 	h.catatRute(r, pr, out.Attempts, out.Candidate)
 	j.pasangPercobaan(out.Attempts, out.Candidate)
 
-	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis fallback ke Tier 2 model
+	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis cascade fallback ke tier-tier berikutnya
 	if out.Err != nil {
-		if tier2 := ekstrakTier2Model(pr.decision.Rule); tier2 != "" {
-			t2Out, rj := h.cobaTier2Sekali(r.Context(), tier2, pr, j)
-			switch {
-			case rj != nil:
-				// Tier2 DITOLAK kebijakan: tidak ada jawaban lain yang jujur
-				// selain penolakan ini — tier1 sudah gagal.
-				rj.Tulis(w, r)
-				return
-			case t2Out != nil:
-				// Tier2 berjalan (sukses atau gagal dengan sebabnya sendiri):
-				// jejak tier1 tetap ada lewat tambahPercobaan, dan kegagalan
-				// tier2 TIDAK ditelan — pemanggil di bawah menjawabnya.
-				h.catatRute(r, pr, t2Out.Attempts, t2Out.Candidate)
-				out = t2Out
+		if pipeline := ekstrakComboPipeline(pr.decision.Rule); len(pipeline) > 0 {
+			for _, tier := range pipeline {
+				tOut, rj := h.cobaTierFallbackSekali(r.Context(), tier, pr, j)
+				switch {
+				case rj != nil:
+					// Tier fallback DITOLAK kebijakan: tidak ada jawaban lain yang jujur
+					// selain penolakan ini — tier sebelumnya sudah gagal.
+					rj.Tulis(w, r)
+					return
+				case tOut != nil:
+					// Tier fallback berjalan (sukses atau gagal dengan sebabnya sendiri):
+					// jejak percobaan tetap diakumulasikan, dan kegagalan dicatat.
+					h.catatRute(r, pr, tOut.Attempts, tOut.Candidate)
+					out = tOut
+					if out.Err == nil {
+						break // Berhasil!
+					}
+				}
+				if out.Err == nil {
+					break
+				}
 			}
 		}
 	}
@@ -1119,24 +1239,26 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 	h.catatRute(r, pr, out.Attempts, out.Candidate)
 	j.pasangPercobaan(out.Attempts, out.Candidate)
 
-	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis fallback ke Tier 2 model
+	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis cascade fallback ke tier-tier berikutnya
 	if out.Err != nil {
-		if tier2 := ekstrakTier2Model(pr.decision.Rule); tier2 != "" {
-			t2Out, rj := h.cobaTier2Mengalir(r.Context(), tier2, pr, j)
-			switch {
-			case rj != nil:
-				// Sebelum SSE: penolakan kebijakan masih bisa dijawab sebagai
-				// status HTTP. Ini satu-satunya jalan keluar tier2 yang
-				// menulis respons sendiri.
-				rj.Tulis(w, r)
-				return
-			case t2Out != nil:
-				// Tier2 berjalan (sukses atau gagal dengan sebabnya sendiri).
-				// Pemanggilan ini HANYA sah karena SSE belum disiapkan:
-				// cobaTier2Mengalir membuka aliran tetapi belum menulis satu
-				// byte pun ke klien, jadi status HTTP masih bebas.
-				h.catatRute(r, pr, t2Out.Attempts, t2Out.Candidate)
-				out = t2Out
+		if pipeline := ekstrakComboPipeline(pr.decision.Rule); len(pipeline) > 0 {
+			for _, tier := range pipeline {
+				tOut, rj := h.cobaTierFallbackMengalir(r.Context(), tier, pr, j)
+				switch {
+				case rj != nil:
+					// Sebelum SSE: penolakan kebijakan masih bisa dijawab sebagai status HTTP.
+					rj.Tulis(w, r)
+					return
+				case tOut != nil:
+					h.catatRute(r, pr, tOut.Attempts, tOut.Candidate)
+					out = tOut
+					if out.Err == nil {
+						break // Berhasil!
+					}
+				}
+				if out.Err == nil {
+					break
+				}
 			}
 		}
 	}

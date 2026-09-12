@@ -19,6 +19,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/providers"
+	"github.com/NexGen-X/Route-X/internal/router"
 )
 
 // --- Tiruan dependensi -------------------------------------------------------
@@ -965,3 +966,361 @@ func TestRoutesBekerjaSaatDipasangDiBawahPrefiks(t *testing.T) {
 		})
 	}
 }
+
+// --- Test Combo Pipeline, Provider Filter, dan Smart Context Bypass ---------
+
+type petaModel struct {
+	models map[string]*upstream.Model
+}
+
+func (p *petaModel) Resolve(_ context.Context, requested string) (*upstream.Model, error) {
+	if m, ok := p.models[requested]; ok {
+		return m, nil
+	}
+	return nil, repo.ErrNotFound
+}
+
+type petaKandidat struct {
+	cands map[string][]*upstream.RouteCandidate
+}
+
+func (p *petaKandidat) RouteCandidates(_ context.Context, q upstream.RouteQuery) ([]*upstream.RouteCandidate, error) {
+	return p.cands[q.ModelID], nil
+}
+
+type sumberAturanTiruan struct {
+	rules []*upstream.RoutingRule
+}
+
+func (s *sumberAturanTiruan) ActiveRules(_ context.Context) ([]*upstream.RoutingRule, error) {
+	return s.rules, nil
+}
+
+func ptrString(s string) *string { return &s }
+func ptrInt(i int) *int          { return &i }
+
+func TestEkstrakComboPipeline(t *testing.T) {
+	// 1. Nil rule
+	if p := ekstrakComboPipeline(nil); p != nil {
+		t.Fatalf("ekstrakComboPipeline(nil) = %v; ingin nil", p)
+	}
+
+	// 2. Format lama [combo:tier2=...]
+	legacyRule := &router.Rule{
+		Description: "Fallback otomatis [combo:tier2=gpt-4o-mini]",
+	}
+	pLegacy := ekstrakComboPipeline(legacyRule)
+	if len(pLegacy) != 1 || pLegacy[0].Tier != 2 || pLegacy[0].Model != "gpt-4o-mini" {
+		t.Fatalf("pLegacy salah: %+v", pLegacy)
+	}
+
+	// 3. Format baru pipeline JSON
+	newRule := &router.Rule{
+		Description: `Pipeline gateway [combo:alias=super-gateway] [combo:pipeline=[{"tier":2,"model":"llama-3","providers":["prov-a","prov-b"]},{"tier":3,"model":"gemini-1.5"}]]`,
+	}
+	pNew := ekstrakComboPipeline(newRule)
+	if len(pNew) != 2 {
+		t.Fatalf("len(pNew) = %d; ingin 2: %+v", len(pNew), pNew)
+	}
+	if pNew[0].Tier != 2 || pNew[0].Model != "llama-3" || len(pNew[0].ProviderIDs) != 2 || pNew[0].ProviderIDs[0] != "prov-a" {
+		t.Errorf("pNew[0] salah: %+v", pNew[0])
+	}
+	if pNew[1].Tier != 3 || pNew[1].Model != "gemini-1.5" {
+		t.Errorf("pNew[1] salah: %+v", pNew[1])
+	}
+
+	// 4. Alias extraction
+	alias := ekstrakComboAlias(newRule)
+	if alias != "super-gateway" {
+		t.Errorf("ekstrakComboAlias = %q; ingin 'super-gateway'", alias)
+	}
+}
+
+func TestSemuaKandidatKekecilan(t *testing.T) {
+	// Kandidat tanpa batas context
+	c1 := &upstream.RouteCandidate{ProviderName: "p1"}
+	if semuaKandidatKekecilan([]*upstream.RouteCandidate{c1}, 5000) {
+		t.Errorf("kandidat tanpa batas konteks tidak boleh dianggap kekecilan")
+	}
+
+	// Kandidat dengan context cukup
+	c2 := &upstream.RouteCandidate{ProviderName: "p2", MaxContextWindow: ptrInt(10000)}
+	if semuaKandidatKekecilan([]*upstream.RouteCandidate{c2}, 5000) {
+		t.Errorf("kandidat dengan context 10000 tidak boleh kekecilan untuk 5000 token")
+	}
+
+	// Seluruh kandidat kekecilan
+	c3 := &upstream.RouteCandidate{ProviderName: "p3", MaxContextWindow: ptrInt(1000)}
+	c4 := &upstream.RouteCandidate{ProviderName: "p4", MaxContextWindow: ptrInt(2000)}
+	if !semuaKandidatKekecilan([]*upstream.RouteCandidate{c3, c4}, 3000) {
+		t.Errorf("kandidat dengan max 1000 & 2000 harus dilaporkan kekecilan untuk 3000 token")
+	}
+}
+
+func TestComboRoutingCascadeNTier(t *testing.T) {
+	m1 := &upstream.Model{ID: "m-t1", ModelID: "tier1-model", Enabled: true}
+	m2 := &upstream.Model{ID: "m-t2", ModelID: "tier2-model", Enabled: true}
+	m3 := &upstream.Model{ID: "m-t3", ModelID: "tier3-model", Enabled: true}
+
+	cand1 := kandidatRute("prov-t1", "upstream-t1")
+	cand2 := kandidatRute("prov-t2", "upstream-t2")
+	cand3 := kandidatRute("prov-t3", "upstream-t3")
+
+	models := &petaModel{models: map[string]*upstream.Model{
+		"tier1-model": m1,
+		"tier2-model": m2,
+		"tier3-model": m3,
+	}}
+	cands := &petaKandidat{cands: map[string][]*upstream.RouteCandidate{
+		"m-t1": {cand1},
+		"m-t2": {cand2},
+		"m-t3": {cand3},
+	}}
+
+	rule := &upstream.RoutingRule{
+		ID:           "r-combo-3tier",
+		Name:         "Aturan 3-Tier",
+		MatchModelID: ptrString("m-t1"),
+		Strategy:     "priority",
+		MaxAttempts:  1,
+		Enabled:      true,
+		Description:  ptrString(`[combo:pipeline=[{"tier":2,"model":"tier2-model"},{"tier":3,"model":"tier3-model"}]]`),
+	}
+	engine := router.NewEngine(&sumberAturanTiruan{rules: []*upstream.RoutingRule{rule}}, nil, loggerSenyap())
+
+	p1 := &providerTiruan{
+		nama: "prov-t1", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return nil, providers.Newf(providers.ErrKindServer, "prov-t1", "error 500 dari tier 1")
+		},
+	}
+	p2 := &providerTiruan{
+		nama: "prov-t2", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return nil, providers.Newf(providers.ErrKindQuota, "prov-t2", "rate limit 429 dari tier 2")
+		},
+	}
+	p3 := &providerTiruan{
+		nama: "prov-t3", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{
+				ID:  "chatcmpl-t3",
+				Raw: json.RawMessage(`{"id":"chatcmpl-t3","choices":[{"message":{"content":"jawaban sukses dari tier 3"}}]}`),
+			}, nil
+		},
+	}
+
+	factory := &pabrikTiruan{
+		perNama: map[string]providers.Provider{
+			"prov-t1": p1,
+			"prov-t2": p2,
+			"prov-t3": p3,
+		},
+	}
+
+	deps := HandlersDeps{
+		Models:     models,
+		Lister:     &pendaftarModel{},
+		Candidates: cands,
+		Factory:    factory,
+		Engine:     engine,
+		Executor:   NewExecutor(nil, loggerSenyap(), WithSleepFunc(func(context.Context, time.Duration) error { return nil })),
+		Logger:     loggerSenyap(),
+	}
+	h, err := NewHandlers(deps)
+	if err != nil {
+		t.Fatalf("NewHandlers: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(`{"model":"tier1-model","messages":[{"role":"user","content":"halo"}]}`))
+	h.Routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; ingin 200 (body: %s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "jawaban sukses dari tier 3") {
+		t.Errorf("respons tidak memuat jawaban dari tier 3: %s", w.Body.String())
+	}
+
+	urutan := factory.urutan()
+	if len(urutan) != 3 || urutan[0] != "prov-t1" || urutan[1] != "prov-t2" || urutan[2] != "prov-t3" {
+		t.Errorf("urutan eksekusi salah: %v; ingin [prov-t1 prov-t2 prov-t3]", urutan)
+	}
+}
+
+func TestComboRoutingProviderFilterPerTier(t *testing.T) {
+	m1 := &upstream.Model{ID: "m-t1", ModelID: "tier1-model", Enabled: true}
+	m2 := &upstream.Model{ID: "m-t2", ModelID: "tier2-model", Enabled: true}
+
+	cand1 := kandidatRute("prov-t1", "upstream-t1")
+	cand2Bad := kandidatRute("prov-t2-bad", "upstream-t2-bad")
+	cand2Good := kandidatRute("prov-t2-good", "upstream-t2-good")
+
+	models := &petaModel{models: map[string]*upstream.Model{
+		"tier1-model": m1,
+		"tier2-model": m2,
+	}}
+	cands := &petaKandidat{cands: map[string][]*upstream.RouteCandidate{
+		"m-t1": {cand1},
+		"m-t2": {cand2Bad, cand2Good},
+	}}
+
+	// Rule menyaring Tier 2 hanya boleh memanggil cand2Good (ProviderID "prov-prov-t2-good")
+	rule := &upstream.RoutingRule{
+		ID:           "r-combo-filter",
+		Name:         "Aturan Filter Provider",
+		MatchModelID: ptrString("m-t1"),
+		Strategy:     "priority",
+		Enabled:      true,
+		Description:  ptrString(`[combo:pipeline=[{"tier":2,"model":"tier2-model","providers":["prov-prov-t2-good"]}]]`),
+	}
+	engine := router.NewEngine(&sumberAturanTiruan{rules: []*upstream.RoutingRule{rule}}, nil, loggerSenyap())
+
+	p1 := &providerTiruan{
+		nama: "prov-t1", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return nil, providers.Newf(providers.ErrKindServer, "prov-t1", "error 500")
+		},
+	}
+	p2Bad := &providerTiruan{
+		nama: "prov-t2-bad", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			t.Fatal("prov-t2-bad tidak boleh dipanggil karena disaring oleh filter provider tier!")
+			return nil, nil
+		},
+	}
+	p2Good := &providerTiruan{
+		nama: "prov-t2-good", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{
+				ID:  "chatcmpl-t2-good",
+				Raw: json.RawMessage(`{"id":"chatcmpl-t2-good","choices":[{"message":{"content":"sukses prov good"}}]}`),
+			}, nil
+		},
+	}
+
+	factory := &pabrikTiruan{
+		perNama: map[string]providers.Provider{
+			"prov-t1":      p1,
+			"prov-t2-bad":  p2Bad,
+			"prov-t2-good": p2Good,
+		},
+	}
+
+	deps := HandlersDeps{
+		Models:     models,
+		Lister:     &pendaftarModel{},
+		Candidates: cands,
+		Factory:    factory,
+		Engine:     engine,
+		Executor:   NewExecutor(nil, loggerSenyap(), WithSleepFunc(func(context.Context, time.Duration) error { return nil })),
+		Logger:     loggerSenyap(),
+	}
+	h, err := NewHandlers(deps)
+	if err != nil {
+		t.Fatalf("NewHandlers: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(`{"model":"tier1-model","messages":[{"role":"user","content":"halo"}]}`))
+	h.Routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; ingin 200 (body: %s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "sukses prov good") {
+		t.Errorf("respons tidak memuat jawaban yang diharapkan: %s", w.Body.String())
+	}
+}
+
+func TestComboRoutingSmartContextBypass(t *testing.T) {
+	m1 := &upstream.Model{ID: "m-t1", ModelID: "tier1-small-ctx", Enabled: true}
+	m2 := &upstream.Model{ID: "m-t2", ModelID: "tier2-large-ctx", Enabled: true}
+
+	// Tier 1 hanya punya context window 100 token
+	cand1 := kandidatRute("prov-t1", "upstream-t1")
+	cand1.MaxContextWindow = ptrInt(100)
+
+	// Tier 2 punya context window 100000 token
+	cand2 := kandidatRute("prov-t2", "upstream-t2")
+	cand2.MaxContextWindow = ptrInt(100000)
+
+	models := &petaModel{models: map[string]*upstream.Model{
+		"tier1-small-ctx": m1,
+		"tier2-large-ctx": m2,
+	}}
+	cands := &petaKandidat{cands: map[string][]*upstream.RouteCandidate{
+		"m-t1": {cand1},
+		"m-t2": {cand2},
+	}}
+
+	rule := &upstream.RoutingRule{
+		ID:           "r-combo-bypass",
+		Name:         "Aturan Bypass Context",
+		MatchModelID: ptrString("m-t1"),
+		Strategy:     "priority",
+		Enabled:      true,
+		Description:  ptrString(`[combo:pipeline=[{"tier":2,"model":"tier2-large-ctx"}]]`),
+	}
+	engine := router.NewEngine(&sumberAturanTiruan{rules: []*upstream.RoutingRule{rule}}, nil, loggerSenyap())
+
+	p1 := &providerTiruan{
+		nama: "prov-t1", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			t.Fatal("prov-t1 tidak boleh dipanggil karena prompt melebihi context window-nya!")
+			return nil, nil
+		},
+	}
+	p2 := &providerTiruan{
+		nama: "prov-t2", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, req *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{
+				ID:  "chatcmpl-t2-bypass",
+				Raw: json.RawMessage(`{"id":"chatcmpl-t2-bypass","choices":[{"message":{"content":"sukses via context bypass tier 2"}}]}`),
+			}, nil
+		},
+	}
+
+	factory := &pabrikTiruan{
+		perNama: map[string]providers.Provider{
+			"prov-t1": p1,
+			"prov-t2": p2,
+		},
+	}
+
+	deps := HandlersDeps{
+		Models:     models,
+		Lister:     &pendaftarModel{},
+		Candidates: cands,
+		Factory:    factory,
+		Engine:     engine,
+		Executor:   NewExecutor(nil, loggerSenyap(), WithSleepFunc(func(context.Context, time.Duration) error { return nil })),
+		Logger:     loggerSenyap(),
+	}
+	h, err := NewHandlers(deps)
+	if err != nil {
+		t.Fatalf("NewHandlers: %v", err)
+	}
+
+	// Prompt panjang: ~100 kata (~130 token), melebihi batas 100 token milik Tier 1
+	longPrompt := strings.Repeat("kata kata kata kata ", 25)
+	body := `{"model":"tier1-small-ctx","messages":[{"role":"user","content":"` + longPrompt + `"}]}`
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(body))
+	h.Routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; ingin 200 via smart context bypass (body: %s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "sukses via context bypass tier 2") {
+		t.Errorf("respons tidak memuat jawaban tier 2: %s", w.Body.String())
+	}
+
+	urutan := factory.urutan()
+	if len(urutan) != 1 || urutan[0] != "prov-t2" {
+		t.Errorf("prov-t1 harus dilewati langsung; urutan: %v", urutan)
+	}
+}
+

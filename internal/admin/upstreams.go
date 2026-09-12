@@ -893,9 +893,10 @@ func (h *Handlers) testProviderModel(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	start := time.Now()
-	// Jalankan uji inferensi cepat 1 token untuk memastikan otentikasi & responsivitas model
+	maxT := 1
 	chatReq := &providers.ChatRequest{
-		Model: modelName,
+		Model:     modelName,
+		MaxTokens: &maxT,
 		Messages: []providers.Message{
 			{Role: providers.RoleUser, Content: "ping"},
 		},

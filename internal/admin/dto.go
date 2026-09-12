@@ -744,6 +744,7 @@ type DeliveryDTO struct {
 	ID                 int64      `json:"id"`
 	WebhookID          string     `json:"webhook_id"`
 	Event              string     `json:"event"`
+	Payload            json.RawMessage `json:"payload,omitempty"`
 	Status             string     `json:"status"`
 	AttemptCount       int        `json:"attempt_count"`
 	NextAttemptAt      time.Time  `json:"next_attempt_at"`
@@ -1587,6 +1588,7 @@ func toDeliveryDTO(d *webhooks.Delivery) DeliveryDTO {
 		ID:                 d.ID,
 		WebhookID:          d.WebhookID,
 		Event:              d.Event,
+		Payload:            d.Payload,
 		Status:             d.Status,
 		AttemptCount:       d.AttemptCount,
 		NextAttemptAt:      d.NextAttemptAt,

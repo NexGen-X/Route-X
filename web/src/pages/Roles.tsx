@@ -4,7 +4,7 @@ import type { Role } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
-import { Modal } from '../components/common/Modal';
+import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { ShieldCheck, Plus, Trash2, Save } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -146,7 +146,7 @@ export const RolesPage: React.FC = () => {
         ))}
       </div>
 
-      <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Buat Peran Kustom" subtitle="Rank 0 paling berkuasa. Pakai 100 ke atas untuk peran biasa.">
+      <Drawer isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Buat Peran Kustom" subtitle="Rank 0 paling berkuasa. Pakai 100 ke atas untuk peran biasa.">
         <form onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Peran</label>
@@ -168,9 +168,9 @@ export const RolesPage: React.FC = () => {
             <Button type="submit" variant="primary">Buat Peran</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
-      <Modal isOpen={editRoleId !== null} onClose={() => setEditRoleId(null)} title={`Izin: ${editRole?.name || ''}`} subtitle="Centang izin yang dipegang peran ini" maxWidth="lg">
+      <Drawer isOpen={editRoleId !== null} onClose={() => setEditRoleId(null)} title={`Izin: ${editRole?.name || ''}`} subtitle="Centang izin yang dipegang peran ini" maxWidth="lg">
         {editLoading ? (
           <p className="text-xs text-text-muted py-6 text-center">Memuat izin...</p>
         ) : (
@@ -193,7 +193,7 @@ export const RolesPage: React.FC = () => {
             </div>
           </div>
         )}
-      </Modal>
+      </Drawer>
     </div>
   );
 };

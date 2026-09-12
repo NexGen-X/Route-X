@@ -4,10 +4,10 @@ import type { Model, ProviderModel, Price } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
-import { Modal } from '../components/common/Modal';
+import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
-import { Cpu, Plus, DollarSign } from 'lucide-react';
+import { Cpu, Plus, DollarSign, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 
 export const Models: React.FC = () => {
@@ -80,6 +80,17 @@ export const Models: React.FC = () => {
       loadModels();
     } catch (err) {
       toast.error('Gagal membuat model: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const handleDeleteModel = async (id: string, name: string) => {
+    if (!window.confirm(`Hapus model kanonik "${name}"? Ini akan memutuskan semua provider yang tertaut ke model ini.`)) return;
+    try {
+      await api.models.delete(id);
+      toast.success(`Model "${name}" berhasil dihapus`);
+      loadModels();
+    } catch (err) {
+      toast.error('Gagal menghapus model: ' + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -189,9 +200,18 @@ export const Models: React.FC = () => {
                     <span className="text-[11px] text-accent font-mono">{m.model_id}</span>
                   </div>
                 </div>
-                <Badge variant={m.enabled ? 'success' : 'neutral'}>
-                  {m.enabled ? 'active' : 'disabled'}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant={m.enabled ? 'success' : 'neutral'}>
+                    {m.enabled ? 'active' : 'disabled'}
+                  </Badge>
+                  <button
+                    onClick={() => handleDeleteModel(m.id, m.display_name)}
+                    className="p-1 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-nav transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                    title="Hapus Model"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="mt-4 space-y-2 text-xs">
@@ -232,7 +252,7 @@ export const Models: React.FC = () => {
       </div>
 
       {/* Modal Create Model */}
-      <Modal
+      <Drawer
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Registrasi Model Kanonik"
@@ -295,10 +315,10 @@ export const Models: React.FC = () => {
             Simpan Model
           </Button>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Modal Pricing */}
-      <Modal
+      <Drawer
         isOpen={isPricingOpen}
         onClose={() => setIsPricingOpen(false)}
         title={`Konfigurasi Harga: ${selectedModel?.display_name || selectedModel?.model_id || 'Model'}`}
@@ -396,7 +416,7 @@ export const Models: React.FC = () => {
             </div>
           </form>
         )}
-      </Modal>
+      </Drawer>
     </div>
   );
 };

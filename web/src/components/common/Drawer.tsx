@@ -27,7 +27,7 @@ interface DrawerProps {
   subtitle?: React.ReactNode;
   headerExtra?: React.ReactNode;
   children: React.ReactNode;
-  maxWidth?: 'md' | 'lg' | 'xl' | '2xl' | '3xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
 }
 
 export const Drawer: React.FC<DrawerProps> = ({
@@ -63,11 +63,13 @@ export const Drawer: React.FC<DrawerProps> = ({
   if (!isOpen) return null;
 
   const maxW = {
+    sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-lg',
     xl: 'max-w-xl',
     '2xl': 'max-w-2xl',
     '3xl': 'max-w-3xl',
+    '4xl': 'max-w-4xl',
   }[maxWidth];
 
   return (

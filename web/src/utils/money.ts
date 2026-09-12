@@ -16,8 +16,9 @@ export function formatUSD(value?: string | number | null, fractionDigits = 4): s
   const groupedWhole = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   if (digits === 0) return `$${sign}${groupedWhole}`;
 
-  const fraction = (rawFraction + '0'.repeat(digits)).slice(0, digits);
-  return `$${sign}${groupedWhole}.${fraction}`;
+  let fraction = (rawFraction + '0'.repeat(digits)).slice(0, digits);
+  fraction = fraction.replace(/0+$/, '');
+  return fraction.length > 0 ? `${sign}${groupedWhole}.${fraction}` : `${sign}${groupedWhole}`;
 }
 
 export function percentageOfDecimal(spent: string, limit: string): number {

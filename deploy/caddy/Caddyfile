@@ -1,0 +1,8 @@
+id-tech.cloud {
+	reverse_proxy routex:8080 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Real-Ip {remote_host}
+	}
+	encode gzip
+}

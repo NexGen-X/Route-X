@@ -4,7 +4,7 @@ import type { EgressPool, EgressProbeResult } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
-import { Modal } from '../components/common/Modal';
+import { Drawer } from '../components/common/Drawer';
 import { Select } from '../components/common/Select';
 import {
   Network,
@@ -363,7 +363,7 @@ export const Egress: React.FC = () => {
       )}
 
       {/* Modal Tambah Egress Pool */}
-      <Modal
+      <Drawer
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Tambah Egress Proxy Pool"
@@ -471,10 +471,10 @@ export const Egress: React.FC = () => {
             Simpan Egress Pool
           </Button>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Modal Edit Egress Pool */}
-      <Modal
+      <Drawer
         isOpen={!!editingPool}
         onClose={() => setEditingPool(null)}
         title="Edit Egress Proxy Pool"
@@ -581,7 +581,7 @@ export const Egress: React.FC = () => {
             Simpan Perubahan
           </Button>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

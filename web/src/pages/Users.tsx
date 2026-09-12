@@ -4,7 +4,7 @@ import type { User, Role } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
-import { Modal } from '../components/common/Modal';
+import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Users, Plus, Trash2, KeyRound, LogOut, Pencil, UserCheck } from 'lucide-react';
@@ -203,9 +203,9 @@ export const UsersPage: React.FC = () => {
               </div>
               <div className="mt-3 flex flex-wrap gap-1">
                 {(u.roles || []).map((r) => (
-                  <span key={r} className="px-2 py-0.5 text-[10px] font-mono rounded bg-bg-surface-2 text-text-secondary">
+                  <Badge key={r} variant="neutral" className="text-[10px] font-mono px-2 py-0.5">
                     {r}
-                  </span>
+                  </Badge>
                 ))}
                 {(!u.roles || u.roles.length === 0) && (
                   <span className="text-[10px] text-text-muted">tanpa peran</span>
@@ -236,7 +236,7 @@ export const UsersPage: React.FC = () => {
         ))}
       </div>
 
-      <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Tambah Pengguna" subtitle="Akun baru wajib ganti password saat login pertama">
+      <Drawer isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Tambah Pengguna" subtitle="Akun baru wajib ganti password saat login pertama">
         <form onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
             <label className="block font-semibold text-text-secondary uppercase mb-1">Email</label>
@@ -261,9 +261,9 @@ export const UsersPage: React.FC = () => {
             <Button type="submit" variant="primary">Simpan Pengguna</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
-      <Modal isOpen={detailUserId !== null} onClose={() => { setDetailUserId(null); setDetail(null); }} title="Kelola Pengguna" subtitle="Peran, password, dan sesi" maxWidth="lg">
+      <Drawer isOpen={detailUserId !== null} onClose={() => { setDetailUserId(null); setDetail(null); }} title="Kelola Pengguna" subtitle="Peran, password, dan sesi" maxWidth="lg">
         {!detail ? (
           <p className="text-xs text-text-muted py-6 text-center">Memuat detail...</p>
         ) : (
@@ -343,7 +343,7 @@ export const UsersPage: React.FC = () => {
             </div>
           </div>
         )}
-      </Modal>
+      </Drawer>
     </div>
   );
 };

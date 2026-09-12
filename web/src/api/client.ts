@@ -349,6 +349,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ enabled }),
       }),
+    setProviders: (id: string, data: { provider_ids: string[]; weights: Record<string, number> }) =>
+      request<RoutingRule>(`/api/admin/gateway/routing-rules/${encodeURIComponent(id)}/providers`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
   },
 
   rateLimits: {
@@ -465,6 +470,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ enabled }),
       }),
+    setAllowed: (id: string, data: { model_ids: string[]; provider_ids: string[] }) =>
+      request<APIKey>(`/api/admin/access/api-keys/${encodeURIComponent(id)}/allowed`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
   },
 
   users: {
@@ -563,8 +573,10 @@ export const api = {
         `/api/admin/automation/webhooks/${encodeURIComponent(id)}/test`,
         { method: 'POST' }
       ),
-    deliveries: (webhookId: string) =>
+    getDeliveries: (webhookId: string) =>
       request<{ items: WebhookDelivery[] }>(`/api/admin/automation/webhooks/${encodeURIComponent(webhookId)}/deliveries`),
+    getDelivery: (deliveryId: string) =>
+      request<WebhookDelivery>(`/api/admin/automation/deliveries/${encodeURIComponent(deliveryId)}`),
   },
 
   // System

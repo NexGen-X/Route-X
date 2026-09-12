@@ -19,6 +19,7 @@ const RoutingRules = React.lazy(() => import('./pages/RoutingRules').then((m) =>
 const RateLimits = React.lazy(() => import('./pages/RateLimits').then((m) => ({ default: m.RateLimits })));
 const Budgets = React.lazy(() => import('./pages/Budgets').then((m) => ({ default: m.Budgets })));
 const APIKeys = React.lazy(() => import('./pages/APIKeys').then((m) => ({ default: m.APIKeys })));
+const Webhooks = React.lazy(() => import('./pages/Webhooks').then((m) => ({ default: m.Webhooks })));
 const Settings = React.lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const Diagnostics = React.lazy(() => import('./pages/Diagnostics').then((m) => ({ default: m.Diagnostics })));
 const CLIIntegrations = React.lazy(() => import('./pages/CLIIntegrations').then((m) => ({ default: m.CLIIntegrations })));
@@ -178,6 +179,12 @@ const Shell: React.FC = () => {
           title: 'Peran & Izin',
           subtitle: 'Peran kustom dan matriks izin RBAC',
           content: <RolesPage />,
+        };
+      case '/system/webhooks':
+        return {
+          title: 'Webhooks',
+          subtitle: 'Manage system event notifications',
+          content: <Webhooks />,
         };
       case '/system/settings':
       case '/settings':

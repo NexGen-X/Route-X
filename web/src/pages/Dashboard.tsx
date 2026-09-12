@@ -1,4 +1,40 @@
+
 import React, { useEffect, useState } from 'react';
+
+const MemoizedChart = React.memo(({ series, metricType }: any) => (
+  <ResponsiveContainer width="100%" height="100%">
+    <AreaChart data={series}>
+      <defs>
+        <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor="#BEF264" stopOpacity={0.3} />
+          <stop offset="95%" stopColor="#BEF264" stopOpacity={0.0} />
+        </linearGradient>
+      </defs>
+      <CartesianGrid strokeDasharray="3 3" stroke="#1C2029" vertical={false} />
+      <XAxis dataKey="timestamp" stroke="#525866" fontSize={11} tickLine={false} />
+      <YAxis stroke="#525866" fontSize={11} tickLine={false} />
+      <Tooltip
+        contentStyle={{
+          backgroundColor: '#16181F',
+          borderColor: '#2E3342',
+          borderRadius: '10px',
+          fontSize: '12px',
+          color: '#F5F5F5',
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+        }}
+      />
+      <Area
+        type="monotone"
+        dataKey={metricType === 'latency' ? 'p95_latency_ms' : metricType}
+        stroke="#BEF264"
+        fillOpacity={1}
+        fill="url(#chartGradient)"
+        strokeWidth={2}
+      />
+    </AreaChart>
+  </ResponsiveContainer>
+));
+
 import { formatUSD } from '../utils/money';
 import { api } from '../api/client';
 import type { ObservabilitySummary, TimeSeriesPoint, Provider, SystemOverview, RequestLog } from '../types';
@@ -666,41 +702,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                 <span>Belum ada sampel metrik untuk rentang waktu {timeWindow}</span>
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={series}>
-                  <defs>
-                    <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#BEF264" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#BEF264" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1C2029" vertical={false} />
-                  <XAxis dataKey="timestamp" stroke="#525866" fontSize={11} tickLine={false} />
-                  <YAxis stroke="#525866" fontSize={11} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#16181F',
-                      borderColor: '#2E3342',
-                      borderRadius: '10px',
-                      fontSize: '12px',
-                      color: '#F5F5F5',
-                      boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey={
-                      metricType === 'latency'
-                        ? 'p95_latency_ms'
-                        : metricType
-                    }
-                    stroke="#BEF264"
-                    fillOpacity={1}
-                    fill="url(#chartGradient)"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              <MemoizedChart series={series} metricType={metricType} />
             )}
           </div>
         </div>

@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { GitFork, Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers } from 'lucide-react';
@@ -20,6 +21,11 @@ export const RoutingRules: React.FC = () => {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isBreakersLoading, setIsBreakersLoading] = useState(false);
+  const [isProvidersDrawerOpen, setIsProvidersDrawerOpen] = useState(false);
+  const [selectedRule, setSelectedRule] = useState<any>(null);
+  const [ruleProviders, setRuleProviders] = useState<string[]>([]);
+  const [ruleWeights, setRuleWeights] = useState<Record<string, number>>({});
+
   const [rulesError, setRulesError] = useState<string | null>(null);
   const [breakersError, setBreakersError] = useState<string | null>(null);
 
@@ -213,6 +219,34 @@ export const RoutingRules: React.FC = () => {
     }
   };
 
+
+  const handleOpenProviders = (r: any) => {
+    setSelectedRule(r);
+    setRuleProviders(r.provider_ids || []);
+    setRuleWeights(r.weights || {});
+    setIsProvidersDrawerOpen(true);
+  };
+
+  const handleSaveProviders = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.routing.setProviders(selectedRule.id, { provider_ids: ruleProviders, weights: ruleWeights });
+      toast.success('Providers & weights berhasil diperbarui.');
+      setIsProvidersDrawerOpen(false);
+      loadRules();
+    } catch (err: any) {
+      toast.error('Gagal menyimpan providers: ' + (err.message || err));
+    }
+  };
+
+  const toggleProvider = (pid: string) => {
+    setRuleProviders(prev => prev.includes(pid) ? prev.filter(p => p !== pid) : [...prev, pid]);
+  };
+
+  const updateWeight = (pid: string, w: number) => {
+    setRuleWeights(prev => ({ ...prev, [pid]: w }));
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -281,7 +315,14 @@ export const RoutingRules: React.FC = () => {
                 </div>
               </div>
 
-            <div className="mt-5 pt-3 border-t border-border flex items-center justify-between">
+            <div className="mt-5 pt-3 border-t border-border flex items-center gap-2 flex-wrap justify-between">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleOpenProviders(r)}
+              >
+                Edit Providers
+              </Button>
               <Button
                 variant={r.enabled ? 'danger' : 'secondary'}
                 size="sm"
@@ -605,6 +646,46 @@ export const RoutingRules: React.FC = () => {
           </form>
         </div>
       </Modal>
-    </div>
+    
+      <Drawer
+        isOpen={isProvidersDrawerOpen}
+        onClose={() => setIsProvidersDrawerOpen(false)}
+        title="Edit Providers & Weights"
+        subtitle="Pilih provider yang akan digunakan dalam aturan routing ini dan atur bobot (untuk mode weighted)."
+      >
+        <form onSubmit={handleSaveProviders} className="space-y-4 text-xs">
+          <div className="space-y-3">
+            {providers.map(p => (
+              <div key={p.id} className="p-3 bg-bg-surface-2 border border-border rounded-lg flex flex-col gap-2">
+                <label className="flex items-center gap-2 font-semibold text-white cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ruleProviders.includes(p.id)}
+                    onChange={() => toggleProvider(p.id)}
+                    className="rounded border-border bg-surface-dark text-accent focus:ring-accent"
+                  />
+                  {p.display_name || p.name}
+                </label>
+                {ruleProviders.includes(p.id) && (
+                  <div className="pl-6 flex items-center gap-2">
+                    <label className="text-text-secondary">Bobot (Weight):</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={ruleWeights[p.id] || 1}
+                      onChange={(e) => updateWeight(p.id, parseInt(e.target.value) || 1)}
+                      className="w-24 px-2 py-1 bg-surface-dark border border-border rounded-nav text-white"
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <Button type="submit" variant="primary" size="md" className="w-full mt-3">
+            Simpan Providers
+          </Button>
+        </form>
+      </Drawer>
+</div>
   );
 };

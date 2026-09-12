@@ -1,0 +1,10 @@
+web/node_modules
+web/dist
+node_modules
+.git
+.env
+deploy/
+docker-compose.yml
+Dockerfile
+deploy.sh
+*.md

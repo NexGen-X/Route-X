@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: routex-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - routex-network
+
+  routex:
+    build: .
+    container_name: routex-core
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+      - PORT=8080
+      - PUBLIC_URL=https://id-tech.cloud
+      - DATABASE_URL=postgres://routex:routex123@db:5432/routex_prod?sslmode=prefer
+      - REDIS_URL=redis://redis:6379/0
+      - SESSION_SECRET=yykDETpHl+/Mz1hZp1tuslv0LVm4MarZlveJAfPp7N4=
+      - ENCRYPTION_KEY=kMWaAj6sucxpmmhwk6HrBlS/CKeuJNoqnEN86nmKDdc=
+      - API_KEY_PEPPER=uHppFuYwonauFvltqmWlY6mYfRZxGQlt8I055s/MXlg=
+      - INITIAL_ADMIN_EMAIL=admin@route-x.local
+      - INITIAL_ADMIN_PASSWORD=Admin123456RouteX2026!
+      - METRICS_TOKEN=metrics-token-route-x-secure-monitoring-api
+      - TRUSTED_PROXIES=0.0.0.0/0
+    volumes:
+      - ./deploy/xray:/opt/routex/deploy/xray
+    depends_on:
+      - db
+      - redis
+    networks:
+      - routex-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: routex-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=routex
+      - POSTGRES_PASSWORD=routex123
+      - POSTGRES_DB=routex_prod
+    volumes:
+      - routex_pgdata:/var/lib/postgresql/data
+    networks:
+      - routex-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: routex-redis
+    restart: unless-stopped
+    volumes:
+      - routex_redisdata:/data
+    networks:
+      - routex-network
+
+  xray:
+    image: teddysun/xray:latest
+    container_name: routex-xray
+    restart: unless-stopped
+    volumes:
+      - ./deploy/xray:/etc/xray
+    networks:
+      - routex-network
+
+volumes:
+  caddy_data:
+  caddy_config:
+  routex_pgdata:
+  routex_redisdata:
+
+networks:
+  routex-network:
+    driver: bridge

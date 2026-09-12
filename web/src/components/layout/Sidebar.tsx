@@ -17,6 +17,7 @@ import {
   Cpu,
   Users,
   ShieldCheck,
+  Webhook,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -80,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'SYSTEM',
       items: [
+        { name: 'Webhooks', path: '/system/webhooks', icon: Webhook },
         { name: 'Settings', path: '/system/settings', icon: Sliders },
         { name: 'Diagnostics', path: '/system/diagnostics', icon: HeartPulse },
       ],

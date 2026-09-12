@@ -28,6 +28,11 @@ export const APIKeys: React.FC = () => {
   });
   const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isAllowedOpen, setIsAllowedOpen] = useState(false);
+  const [selectedKey, setSelectedKey] = useState<any>(null);
+  const [allowedModels, setAllowedModels] = useState<string>('');
+  const [allowedProviders, setAllowedProviders] = useState<string>('');
+
   // Timer indikator salin; dibatalkan saat unmount agar tidak ada setState basi.
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -121,6 +126,28 @@ export const APIKeys: React.FC = () => {
       }, 2000);
     } catch (err) {
       toast.error('Gagal menyalin kunci API: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+
+  const handleOpenAllowed = (k: any) => {
+    setSelectedKey(k);
+    setAllowedModels((k.model_ids || []).join(', '));
+    setAllowedProviders((k.provider_ids || []).join(', '));
+    setIsAllowedOpen(true);
+  };
+
+  const handleSaveAllowed = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const m_ids = allowedModels.split(',').map(s => s.trim()).filter(Boolean);
+      const p_ids = allowedProviders.split(',').map(s => s.trim()).filter(Boolean);
+      await api.apiKeys.setAllowed(selectedKey.id, { model_ids: m_ids, provider_ids: p_ids });
+      toast.success('Allowed Models & Providers berhasil diperbarui.');
+      setIsAllowedOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
+    } catch (err: any) {
+      toast.error('Gagal menyimpan allowed list: ' + (err.message || err));
     }
   };
 
@@ -225,7 +252,14 @@ export const APIKeys: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-5 pt-3 border-t border-border flex items-center justify-between">
+            <div className="mt-5 pt-3 border-t border-border flex items-center gap-2 flex-wrap justify-between">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleOpenAllowed(k)}
+              >
+                Allowed Models/IPs
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
@@ -334,6 +368,41 @@ export const APIKeys: React.FC = () => {
           </Button>
         </form>
       </Modal>
+
+      {/* Modal Edit Allowed */}
+      <Modal
+        isOpen={isAllowedOpen}
+        onClose={() => setIsAllowedOpen(false)}
+        title="Edit Allowed Models & Providers"
+        subtitle="Batasi kunci ini hanya untuk model atau provider tertentu (pisahkan dengan koma)"
+      >
+        <form onSubmit={handleSaveAllowed} className="space-y-4 text-xs">
+          <div>
+            <label className="block font-semibold text-text-secondary uppercase mb-1">Allowed Models (ID)</label>
+            <input
+              type="text"
+              placeholder="gpt-4o, claude-3"
+              value={allowedModels}
+              onChange={(e) => setAllowedModels(e.target.value)}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+            />
+          </div>
+          <div>
+            <label className="block font-semibold text-text-secondary uppercase mb-1">Allowed Providers (ID)</label>
+            <input
+              type="text"
+              placeholder="openai, anthropic"
+              value={allowedProviders}
+              onChange={(e) => setAllowedProviders(e.target.value)}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+            />
+          </div>
+          <Button type="submit" variant="primary" size="md" className="w-full mt-2">
+            Simpan Perubahan
+          </Button>
+        </form>
+      </Modal>
     </div>
+
   );
 };

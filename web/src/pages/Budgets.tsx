@@ -4,7 +4,7 @@ import type { Budget } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
-import { Modal } from '../components/common/Modal';
+import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Coins, Plus, RotateCcw } from 'lucide-react';
@@ -201,7 +201,7 @@ export const Budgets: React.FC = () => {
         </div>
       )}
 
-      <Modal
+      <Drawer
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Alokasi Anggaran Moneter Baru"
@@ -291,7 +291,7 @@ export const Budgets: React.FC = () => {
             Simpan Anggaran
           </Button>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

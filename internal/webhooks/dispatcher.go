@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -173,7 +174,15 @@ func (d *Dispatcher) Dispatch(ctx context.Context, delivery *Delivery) error {
 			time.Now(), nil, "SSRF: "+sanitizedErr)
 	}
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, wh.URL, bytes.NewReader(delivery.Payload))
+	bodyPayload := delivery.Payload
+		if strings.Contains(wh.URL, "discord.com/api/webhooks") {
+			discordBody := map[string]string{"content": fmt.Sprintf("🔔 **Route-X Alert**\n```json\n%s\n```", string(delivery.Payload))}
+			bodyPayload, _ = json.Marshal(discordBody)
+		} else if strings.Contains(wh.URL, "api.telegram.org/bot") {
+			tgBody := map[string]string{"text": fmt.Sprintf("🔔 *Route-X Alert*\n```json\n%s\n```", string(delivery.Payload))}
+			bodyPayload, _ = json.Marshal(tgBody)
+		}
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, wh.URL, bytes.NewReader(bodyPayload))
 	if err != nil {
 		sanitizedErr := SanitizeErrorMessage(err.Error())
 		return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, delivery.AttemptCount+1, wh.MaxRetries,
@@ -373,7 +382,15 @@ func (d *Dispatcher) Ping(ctx context.Context, wh *Webhook) (int, time.Duration,
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, wh.URL, bytes.NewReader(payload))
+	bodyPayload := payload
+		if strings.Contains(wh.URL, "discord.com/api/webhooks") {
+			discordBody := map[string]string{"content": fmt.Sprintf("🔔 **Route-X Ping**\n```json\n%s\n```", string(payload))}
+			bodyPayload, _ = json.Marshal(discordBody)
+		} else if strings.Contains(wh.URL, "api.telegram.org/bot") {
+			tgBody := map[string]string{"text": fmt.Sprintf("🔔 *Route-X Ping*\n```json\n%s\n```", string(payload))}
+			bodyPayload, _ = json.Marshal(tgBody)
+		}
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, wh.URL, bytes.NewReader(bodyPayload))
 	if err != nil {
 		return 0, 0, fmt.Errorf("membuat request ping: %w", err)
 	}

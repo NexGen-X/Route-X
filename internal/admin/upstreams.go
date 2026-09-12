@@ -303,9 +303,13 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	if req.MaxConcurrent != nil {
 		params.MaxConcurrent = upstream.Set(*req.MaxConcurrent)
 	}
-	if req.EgressPoolID != nil {
-		params.EgressPoolID = upstream.Set(*req.EgressPoolID)
-	}
+		if req.EgressPoolID != nil {
+			if *req.EgressPoolID == "" {
+				params.EgressPoolID = upstream.Clear[string]()
+			} else {
+				params.EgressPoolID = upstream.Set(*req.EgressPoolID)
+			}
+		}
 	params.Metadata = req.Metadata
 
 	var p *upstream.Provider

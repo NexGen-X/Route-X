@@ -1,0 +1,22 @@
+[Unit]
+Description=Route-X AI Gateway (id-tech.cloud)
+After=network-online.target postgresql.service redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/routex
+EnvironmentFile=/etc/routex/routex.env
+ExecStart=/opt/routex/ai-gateway
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/tmp /var/lib/route-x
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -362,7 +362,7 @@ export const Providers: React.FC = () => {
         selectedProvider.id,
         modelMapping.upstream_model_name
       );
-      const isOk = res.status === 'healthy' || res.status === 'ok';
+      const isOk = res.status === 'healthy' || res.status === 'ok' || res.status === 'success';
 
       setModelTestResults((prev) => ({
         ...prev,
@@ -446,7 +446,7 @@ export const Providers: React.FC = () => {
     if (!selectedProvider) return;
     try {
       await api.providers.update(selectedProvider.id, {
-        egress_pool_id: poolId || undefined,
+        egress_pool_id: poolId === null ? "" : poolId,
       });
       toast.success(`Jalur proxy diubah ke: ${poolName}`);
       await loadData();

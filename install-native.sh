@@ -38,6 +38,9 @@ chmod 755 /var/lib/route-x
 chmod 755 /var/lib/route-x/xray
 chmod 644 /var/lib/route-x/xray/config.json
 
+# Pastikan hostname xray terpetakan ke localhost (kompatibel dengan konfigurasi socks5://xray:10808)
+grep -q "127.0.0.1 xray" /etc/hosts || echo "127.0.0.1 xray" >> /etc/hosts
+
 echo "🔨 2/4 Membangun Biner Core (Golang)..."
 CGO_ENABLED=0 GOOS=linux go build -o ai-gateway ./cmd/ai-gateway
 

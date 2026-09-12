@@ -9,7 +9,6 @@ import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { GitFork, Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers } from 'lucide-react';
-import { RoutingPipelineVisualizer } from '../components/routing/RoutingPipelineVisualizer';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 
@@ -266,9 +265,6 @@ export const RoutingRules: React.FC = () => {
       />
 
       {rulesError && <QueryError message={rulesError} onRetry={() => void loadRules()} />}
-
-      {/* Visual Pipeline Canvas */}
-      <RoutingPipelineVisualizer />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {rules.map((r) => {

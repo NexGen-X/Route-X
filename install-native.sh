@@ -61,6 +61,9 @@ fi
 
 echo "🔄 4/4 Menjalankan Migrasi Skema Database Asli..."
 if [ -f /etc/routex/routex.env ]; then
+    # Pastikan konfigurasi SSRF mengizinkan proxy lokal (127.0.0.1 / Xray)
+    grep -q "UPSTREAM_ALLOWED_PRIVATE_ADDRS" /etc/routex/routex.env || echo "UPSTREAM_ALLOWED_PRIVATE_ADDRS=127.0.0.1,::1,127.0.0.0/8" >> /etc/routex/routex.env
+
     set -a
     source /etc/routex/routex.env
     set +a

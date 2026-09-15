@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import type { DomainConfig } from '../types';
+import type { DomainConfig, BackupStatusResponse } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Select } from '../components/common/Select';
@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   Trash2,
   Info,
@@ -22,6 +23,10 @@ import {
   Check,
   Zap,
   Plus,
+  Database,
+  Download,
+  Upload,
+  FileText,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { copyTextToClipboard } from '../utils/clipboard';
@@ -59,6 +64,15 @@ export const Settings: React.FC = () => {
   const [isDomainSaving, setIsDomainSaving] = useState(false);
   const [domainFeedback, setDomainFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [protocolFilter, setProtocolFilter] = useState<string>('all');
+  // Backup & Disaster Recovery state
+  const [backupStatus, setBackupStatus] = useState<BackupStatusResponse | null>(null);
+  const [isBackupLoading, setIsBackupLoading] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'sql.gz' | 'sql'>('sql.gz');
+  const [selectedBackupFile, setSelectedBackupFile] = useState<File | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [backupFeedback, setBackupFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const formatSettingValue = (val: any): string => {
     if (val === null || val === undefined) return '';
@@ -110,9 +124,69 @@ export const Settings: React.FC = () => {
     }
   };
 
+  const loadBackupStatus = async () => {
+    setIsBackupLoading(true);
+    try {
+      const res = await api.system.backup.status();
+      setBackupStatus(res);
+    } catch (err) {
+      console.error('Gagal memuat status backup:', err);
+    } finally {
+      setIsBackupLoading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const name = file.name.toLowerCase();
+      if (!name.endsWith('.sql') && !name.endsWith('.sql.gz')) {
+        toast.error('Berkas cadangan harus berupa format .sql atau .sql.gz');
+        return;
+      }
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error('Ukuran berkas melebihi batas 50 MB.');
+        return;
+      }
+      setSelectedBackupFile(file);
+      setBackupFeedback(null);
+    }
+  };
+
+  const handleExecuteRestore = async () => {
+    if (!selectedBackupFile) return;
+    setIsRestoring(true);
+    setBackupFeedback(null);
+    try {
+      await api.system.backup.restore(selectedBackupFile);
+      toast.success('Basis data berhasil dipulihkan!');
+      setBackupFeedback({
+        type: 'success',
+        message: 'Pemulihan berhasil dilakukan. Seluruh konfigurasi dan tabel sistem telah disinkronkan kembali.',
+      });
+      setIsRestoreModalOpen(false);
+      setSelectedBackupFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      void loadBackupStatus();
+      void loadSettings();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error('Gagal memulihkan database: ' + msg);
+      setBackupFeedback({
+        type: 'error',
+        message: `Gagal memulihkan database: ${msg}`,
+      });
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   useEffect(() => {
     loadSettings();
     loadDomainConfig();
+    loadBackupStatus();
   }, []);
 
   const handleSave = async (key: string) => {
@@ -554,7 +628,236 @@ export const Settings: React.FC = () => {
         </form>
       </Card>
 
-      {/* 2. Runtime Parameters Section */}
+      {/* 2. Pencadangan & Pemulihan Database (SQL Backup & Disaster Recovery) */}
+      <Card className="p-6 border-accent/20 bg-bg-surface-2">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                Pencadangan & Pemulihan Database (SQL)
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
+                  PostgreSQL Native
+                </span>
+              </h2>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Ekspor dan pemulihan komprehensif seluruh skema basis data, model, provider, aturan routing, dan kunci API dalam format SQL standar (<code className="text-text-muted font-mono">.sql</code> / <code className="text-text-muted font-mono">.sql.gz</code>).
+              </p>
+            </div>
+          </div>
+          <Button variant="secondary" size="sm" onClick={loadBackupStatus} isLoading={isBackupLoading}>
+            <RefreshCw className={`w-3.5 h-3.5 ${isBackupLoading ? 'animate-spin' : ''}`} />
+            <span className="ml-1.5 hidden sm:inline">Segarkan Status</span>
+          </Button>
+        </div>
+
+        {/* Feedback Alert */}
+        {backupFeedback && (
+          <div
+            role={backupFeedback.type === 'error' ? 'alert' : 'status'}
+            aria-live="polite"
+            className={`mt-4 p-3.5 rounded-lg text-xs flex items-start gap-2.5 border ${
+              backupFeedback.type === 'success'
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                : 'bg-red-500/10 text-red-300 border-red-500/30'
+            }`}
+          >
+            {backupFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
+            )}
+            <div className="flex-1">{backupFeedback.message}</div>
+          </div>
+        )}
+
+        {/* Ringkasan Status Database */}
+        <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
+            <span className="text-text-muted block text-[11px] font-medium">Basis Data</span>
+            <span className="font-mono text-white text-sm font-semibold truncate block" title={backupStatus?.database_name || '-'}>
+              {backupStatus?.database_name || 'Memuat...'}
+            </span>
+            <span className="text-[10px] text-accent font-mono mt-0.5 block">
+              Ukuran: {backupStatus?.database_size || '-'}
+            </span>
+          </div>
+          <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
+            <span className="text-text-muted block text-[11px] font-medium">Total Tabel Sistem</span>
+            <span className="font-mono text-white text-sm font-semibold block">
+              {backupStatus ? `${backupStatus.total_tables} Tabel` : '-'}
+            </span>
+            <span className="text-[10px] text-text-muted font-mono mt-0.5 block">
+              DDL & DML terindeks
+            </span>
+          </div>
+          <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
+            <span className="text-text-muted block text-[11px] font-medium">Entitas Terkonfigurasi</span>
+            <span className="font-mono text-white text-xs font-semibold block mt-0.5">
+              {backupStatus ? `${backupStatus.models_count} Model · ${backupStatus.providers_count} Provider` : '-'}
+            </span>
+            <span className="text-[10px] text-text-muted font-mono mt-0.5 block">
+              {backupStatus ? `${backupStatus.routing_rules_count} Rules · ${backupStatus.api_keys_count} Keys` : '-'}
+            </span>
+          </div>
+          <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
+            <span className="text-text-muted block text-[11px] font-medium">Cadangan Server Terakhir</span>
+            <span className="font-mono text-emerald-400 text-xs font-semibold truncate block" title={backupStatus?.last_server_backup?.file_name || 'Belum ada'}>
+              {backupStatus?.last_server_backup ? backupStatus.last_server_backup.file_size : 'Belum ada'}
+            </span>
+            <span className="text-[10px] text-text-muted font-mono mt-0.5 truncate block">
+              {backupStatus?.last_server_backup
+                ? new Date(backupStatus.last_server_backup.created_at).toLocaleString('id-ID')
+                : 'Sistem siap di-backup'}
+            </span>
+          </div>
+        </div>
+
+        {/* Dua Kolom Aksi Ekspor vs Pemulihan */}
+        <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 pt-5 border-t border-border">
+          {/* Kolom Kiri: Ekspor Cadangan SQL */}
+          <div className="flex flex-col justify-between p-5 rounded-xl bg-bg-surface-2 border border-border/80">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-white font-semibold text-sm">
+                <Download className="w-4 h-4 text-accent" />
+                <span>Ekspor Snapshot Database (SQL)</span>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Mengekstrak seluruh data Route-X menggunakan utilitas native <code className="text-text-muted font-mono">pg_dump</code> dengan opsi <code className="text-text-muted font-mono">--clean --if-exists</code>. File cadangan dapat langsung diimpor ke Route-X atau server PostgreSQL lain.
+              </p>
+
+              <div className="pt-2">
+                <label className="block text-[11px] font-medium text-text-muted mb-2">Pilih Format Berkas:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('sql.gz')}
+                    className={`p-2.5 rounded-lg border text-left transition-all ${
+                      exportFormat === 'sql.gz'
+                        ? 'border-accent bg-accent/10 text-white'
+                        : 'border-border bg-bg-surface-2 text-text-muted hover:border-border/80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-accent">.sql.gz</span>
+                      <span className="text-[9px] bg-accent/20 text-accent font-semibold px-1.5 py-0.2 rounded">Rekomendasi</span>
+                    </div>
+                    <span className="text-[10px] text-text-secondary block mt-1">Kompresi Gzip ringkas, cepat diunduh.</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExportFormat('sql')}
+                    className={`p-2.5 rounded-lg border text-left transition-all ${
+                      exportFormat === 'sql'
+                        ? 'border-accent bg-accent/10 text-white'
+                        : 'border-border bg-bg-surface-2 text-text-muted hover:border-border/80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-white">.sql</span>
+                      <span className="text-[9px] bg-bg-surface-2 text-text-muted font-medium px-1.5 py-0.2 rounded">Plain</span>
+                    </div>
+                    <span className="text-[10px] text-text-secondary block mt-1">Teks SQL mentah yang dapat dibaca manusia.</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-5 mt-4 border-t border-border/60">
+              <a
+                href={api.system.backup.exportUrl(exportFormat)}
+                download
+                className="inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-accent hover:bg-accent/90 text-bg-base font-semibold text-xs rounded-nav transition-colors shadow-sm"
+              >
+                <Download className="w-4 h-4" />
+                <span>Unduh Cadangan SQL ({exportFormat === 'sql.gz' ? '.sql.gz' : '.sql'})</span>
+              </a>
+            </div>
+          </div>
+
+          {/* Kolom Kanan: Pemulihan Database (Restore) */}
+          <div className="flex flex-col justify-between p-5 rounded-xl bg-bg-surface-2 border border-border/80">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-white font-semibold text-sm">
+                <Upload className="w-4 h-4 text-amber-400" />
+                <span>Pemulihan Database (Restore SQL)</span>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Memulihkan skema dan data Route-X dari file cadangan SQL. Mendukung file <code className="text-text-muted font-mono">.sql</code> maupun terkompresi <code className="text-text-muted font-mono">.sql.gz</code> (Maksimum 50 MB).
+              </p>
+
+              {/* Area File Picker */}
+              <div className="pt-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  id="restore-file-input"
+                  accept=".sql,.sql.gz,application/x-gzip,application/gzip,application/sql,text/sql"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="restore-file-input"
+                  className={`flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+                    selectedBackupFile
+                      ? 'border-accent/60 bg-accent/5'
+                      : 'border-border hover:border-border/80 bg-bg-surface-2'
+                  }`}
+                >
+                  {selectedBackupFile ? (
+                    <div className="flex items-center gap-2.5 text-xs text-white">
+                      <FileText className="w-5 h-5 text-accent shrink-0" />
+                      <div className="text-left overflow-hidden">
+                        <span className="font-mono font-semibold block truncate max-w-[220px]">
+                          {selectedBackupFile.name}
+                        </span>
+                        <span className="text-[10px] text-text-muted font-mono">
+                          {(selectedBackupFile.size / 1024).toFixed(1)} KB (
+                          {(selectedBackupFile.size / (1024 * 1024)).toFixed(2)} MB)
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <Upload className="w-6 h-6 text-text-muted mx-auto mb-1.5" />
+                      <span className="text-xs text-white font-medium block">Pilih Berkas Cadangan</span>
+                      <span className="text-[10px] text-text-muted block mt-0.5">
+                        Klik untuk memilih berkas .sql atau .sql.gz
+                      </span>
+                    </div>
+                  )}
+                </label>
+              </div>
+
+              {/* Peringatan Bahaya */}
+              <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Perhatian:</strong> Pemulihan data akan menggantikan data konfigurasi saat ini. Disarankan melakukan ekspor cadangan terlebih dahulu sebelum melanjutkan.
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-5 mt-4 border-t border-border/60">
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                disabled={!selectedBackupFile || isRestoring}
+                onClick={() => setIsRestoreModalOpen(true)}
+                icon={<Upload className="w-4 h-4" />}
+                className="w-full justify-center"
+              >
+                {selectedBackupFile ? 'Mulai Pemulihan Database...' : 'Pilih Berkas Dahulu'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* 3. Runtime Parameters Section */}
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -795,6 +1098,71 @@ export const Settings: React.FC = () => {
             />
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Konfirmasi Pemulihan Database */}
+      <Modal
+        isOpen={isRestoreModalOpen}
+        onClose={() => {
+          if (!isRestoring) setIsRestoreModalOpen(false);
+        }}
+        title="Konfirmasi Pemulihan Database"
+        footer={
+          <div className="flex items-center justify-end gap-3 w-full">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isRestoring}
+              onClick={() => setIsRestoreModalOpen(false)}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              isLoading={isRestoring}
+              onClick={handleExecuteRestore}
+              icon={<Upload className="w-4 h-4" />}
+            >
+              {isRestoring ? 'Memulihkan Basis Data...' : 'Ya, Pulihkan Sekarang'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4 text-xs">
+          <div className="p-3.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <span className="font-bold block text-white text-sm">Tindakan Ini Berdampak Besar</span>
+              <p className="text-xs text-red-300/90 leading-relaxed">
+                Basis data Route-X akan dieksekusi ulang menggunakan skrip SQL yang diunggah. Seluruh konfigurasi, model, aturan, dan kunci API akan diselaraskan dengan isi berkas tersebut.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3 bg-bg-surface-2 rounded-lg border border-border space-y-1.5 font-mono">
+            <div className="flex justify-between text-text-secondary">
+              <span>Berkas Cadangan:</span>
+              <span className="text-white font-bold truncate max-w-[200px]" title={selectedBackupFile?.name}>
+                {selectedBackupFile?.name}
+              </span>
+            </div>
+            <div className="flex justify-between text-text-secondary">
+              <span>Ukuran Berkas:</span>
+              <span className="text-accent">
+                {selectedBackupFile ? `${(selectedBackupFile.size / 1024).toFixed(1)} KB` : '-'}
+              </span>
+            </div>
+            <div className="flex justify-between text-text-secondary">
+              <span>Target Database:</span>
+              <span className="text-white">{backupStatus?.database_name || 'routex_prod'}</span>
+            </div>
+          </div>
+
+          <p className="text-text-muted text-[11px]">
+            Setelah proses pemulihan selesai, sistem akan otomatis memperbarui tampilan dashboard dan parameter yang tersimpan.
+          </p>
+        </div>
       </Modal>
     </div>
   );

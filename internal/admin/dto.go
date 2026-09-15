@@ -861,6 +861,29 @@ type JobDTO struct {
 
 func (JobDTO) adalahDTO() {}
 
+// BackupStatusDTO adalah ringkasan statistik database dan status backup otomatis.
+type BackupStatusDTO struct {
+	DatabaseName      string            `json:"database_name"`
+	DatabaseSize      string            `json:"database_size"`
+	DatabaseBytes     int64             `json:"database_bytes"`
+	TotalTables       int               `json:"total_tables"`
+	ModelsCount       int               `json:"models_count"`
+	ProvidersCount    int               `json:"providers_count"`
+	RoutingRulesCount int               `json:"routing_rules_count"`
+	APIKeysCount      int               `json:"api_keys_count"`
+	LastServerBackup  *ServerBackupInfo `json:"last_server_backup,omitempty"`
+}
+
+func (BackupStatusDTO) adalahDTO() {}
+
+// ServerBackupInfo adalah informasi berkas cadangan terakhir di sistem lokal.
+type ServerBackupInfo struct {
+	FileName  string    `json:"file_name"`
+	FileSize  string    `json:"file_size"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+
 // AuditEntryDTO adalah catatan jejak audit aktivitas administratif.
 type AuditEntryDTO struct {
 	ID           int64           `json:"id"`

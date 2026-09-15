@@ -58,6 +58,13 @@ func (h *Handlers) systemRoutes(r chi.Router) {
 		cr.With(auth.RequirePermission(seed.PermSettingsWrite)).Post("/flush", h.flushCache)
 		cr.With(auth.RequirePermission(seed.PermSettingsWrite)).Post("/settings", h.updateCacheSettings)
 	})
+
+	// Database Backup & Disaster Recovery (Ekspor & Pemulihan SQL)
+	r.Route("/backup", func(br chi.Router) {
+		br.With(auth.RequirePermission(seed.PermSettingsRead)).Get("/status", h.getBackupStatus)
+		br.With(auth.RequirePermission(seed.PermSettingsWrite)).Get("/export", h.exportDatabaseSQL)
+		br.With(auth.RequirePermission(seed.PermSettingsWrite)).Post("/restore", h.restoreDatabaseSQL)
+	})
 }
 
 // -----------------------------------------------------------------------------

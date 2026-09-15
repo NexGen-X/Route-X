@@ -2,12 +2,14 @@ package admin
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
@@ -285,6 +287,9 @@ func setupTestEnv(t *testing.T) *testEnv {
 		Dispatcher:     dispatcher,
 		Supervisor:     sup,
 		Cipher:         cipher,
+		Version:        "0.1.0-test",
+		Commit:         "testcommit",
+		BuiltAt:        "2026-09-15T00:00:00Z",
 	})
 
 	return &testEnv{
@@ -626,6 +631,87 @@ func TestAdminSystemEndpoints(t *testing.T) {
 	}
 	if len(permsResp.Items) < 20 {
 		t.Errorf("jumlah izin katalog = %d, mau >= 20", len(permsResp.Items))
+	}
+}
+
+func TestAdminBackupEndpoints(t *testing.T) {
+	env := setupTestEnv(t)
+	client := env.newClient(t)
+	client.login("superadmin@routex.internal", testPassword)
+
+	// 1. Status Cadangan
+	resStatus, bodyStatus := client.do(http.MethodGet, "/api/admin/system/backup/status", nil, false)
+	if resStatus.StatusCode != http.StatusOK {
+		t.Fatalf("backup status = %d, expected 200. body: %s", resStatus.StatusCode, string(bodyStatus))
+	}
+	var statusResp struct {
+		DatabaseName string `json:"database_name"`
+		TotalTables  int    `json:"total_tables"`
+		DatabaseSize string `json:"database_size"`
+	}
+	if err := json.Unmarshal(bodyStatus, &statusResp); err != nil {
+		t.Fatalf("unmarshal backup status: %v", err)
+	}
+	if statusResp.DatabaseName == "" {
+		t.Errorf("database_name kosong")
+	}
+	if statusResp.TotalTables <= 0 {
+		t.Errorf("total_tables harus > 0, dapat: %d", statusResp.TotalTables)
+	}
+
+	// 2. Ekspor Cadangan Format .sql.gz
+	resGz, bodyGz := client.do(http.MethodGet, "/api/admin/system/backup/export?format=sql.gz", nil, false)
+	if resGz.StatusCode != http.StatusOK {
+		t.Fatalf("backup export gzip status = %d, body: %s", resGz.StatusCode, string(bodyGz))
+	}
+	if len(bodyGz) < 10 {
+		t.Fatalf("backup export gzip terlalu pendek: %d bytes", len(bodyGz))
+	}
+	if bodyGz[0] != 0x1f || bodyGz[1] != 0x8b {
+		t.Errorf("header gzip tidak valid: %x %x", bodyGz[0], bodyGz[1])
+	}
+	gzReader, err := gzip.NewReader(bytes.NewReader(bodyGz))
+	if err != nil {
+		t.Fatalf("gagal membaca stream gzip: %v", err)
+	}
+	decompBuf := new(bytes.Buffer)
+	if _, err := decompBuf.ReadFrom(gzReader); err != nil {
+		t.Fatalf("gagal mendekompresi backup gzip: %v", err)
+	}
+	if !strings.Contains(decompBuf.String(), "PostgreSQL database dump") {
+		t.Errorf("isi SQL gzip tidak mengandung header dump PostgreSQL: %q", decompBuf.String())
+	}
+
+	// 3. Ekspor Cadangan Format Plain .sql
+	resSql, bodySql := client.do(http.MethodGet, "/api/admin/system/backup/export?format=sql", nil, false)
+	if resSql.StatusCode != http.StatusOK {
+		t.Fatalf("backup export sql status = %d, body: %s", resSql.StatusCode, string(bodySql))
+	}
+	if !strings.Contains(string(bodySql), "PostgreSQL database dump") {
+		t.Errorf("ekspor SQL mentah tidak mengandung header dump: %q", string(bodySql))
+	}
+
+	// 4. Validasi Pemulihan Ekstensi File Tidak Sah
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	part, err := w.CreateFormFile("file", "malicious.exe")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	part.Write([]byte("echo exploit"))
+	w.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, client.server.URL+"/api/admin/system/backup/restore", &b)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Origin", client.server.URL)
+	req.Header.Set(auth.HeaderCSRFToken, client.csrf)
+	resp, err := client.http.Do(req)
+	if err != nil {
+		t.Fatalf("restore request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("ekstensi tidak sah harus ditolak 400, dapat: %d", resp.StatusCode)
 	}
 }
 

@@ -590,4 +590,21 @@ export interface DomainUpdateRequest {
   mode: 'letsencrypt' | 'cloudflare';
 }
 
+export interface BackupStatusResponse {
+  database_name: string;
+  database_size: string;
+  database_bytes: number;
+  total_tables: number;
+  models_count: number;
+  providers_count: number;
+  routing_rules_count: number;
+  api_keys_count: number;
+  last_server_backup?: {
+    file_name: string;
+    file_size: string;
+    created_at: string;
+  };
+}
+
+
 

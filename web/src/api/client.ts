@@ -40,6 +40,7 @@ import type {
   CLIExportScriptResponse,
   DomainConfig,
   DomainUpdateRequest,
+  BackupStatusResponse,
 } from '../types';
 
 export class ApiError extends Error {
@@ -630,6 +631,18 @@ export const api = {
         request<{ status: string }>('/api/admin/system/domain', {
           method: 'DELETE',
         }),
+    },
+    backup: {
+      status: () => request<BackupStatusResponse>('/api/admin/system/backup/status'),
+      exportUrl: (format: 'sql.gz' | 'sql' = 'sql.gz') => `/api/admin/system/backup/export?format=${format}`,
+      restore: async (file: File) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return request<{ status: string }>('/api/admin/system/backup/restore', {
+          method: 'POST',
+          body: formData,
+        });
+      },
     },
   },
 

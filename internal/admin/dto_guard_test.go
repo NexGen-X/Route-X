@@ -102,6 +102,21 @@ func TestDTOSerializationSecurity(t *testing.T) {
 			CheckedAt: now,
 			Message:   "ok",
 		},
+		admin.BackupStatusDTO{
+			DatabaseName:      "routex_prod",
+			DatabaseSize:      "14 MB",
+			DatabaseBytes:     14680064,
+			TotalTables:       50,
+			ModelsCount:       38,
+			ProvidersCount:    2,
+			RoutingRulesCount: 0,
+			APIKeysCount:      3,
+			LastServerBackup: &admin.ServerBackupInfo{
+				FileName:  "routex_prod_20260915_002220.sql.gz",
+				FileSize:  "156 KB",
+				CreatedAt: now,
+			},
+		},
 		admin.XrayProtocolDTO{
 			ID:          "vless-grpc",
 			Name:        "VLESS over gRPC",

@@ -69,6 +69,7 @@ func (h *Handlers) listDetectedCLIs(w http.ResponseWriter, r *http.Request) {
 			ActiveMode:     t.ActiveMode,
 			ActiveTarget:   t.ActiveTarget,
 			EnvVars:        t.EnvVars,
+			EnvVarAPIKey:   t.EnvVarAPIKey,
 			ExportSnippet:  t.ExportSnippet,
 			UpdatedAt:      updPtr,
 		}
@@ -153,6 +154,7 @@ func (h *Handlers) configureCLI(w http.ResponseWriter, r *http.Request) {
 			ActiveMode:     status.ActiveMode,
 			ActiveTarget:   status.ActiveTarget,
 			EnvVars:        status.EnvVars,
+			EnvVarAPIKey:   status.EnvVarAPIKey,
 			ExportSnippet:  status.ExportSnippet,
 			UpdatedAt:      updPtr,
 		},

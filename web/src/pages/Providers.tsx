@@ -657,7 +657,7 @@ export const Providers: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+              <h4 className="text-xs font-semibold text-white">
                 Katalog Preset Provider
               </h4>
               <p className="text-[11px] text-text-muted">
@@ -705,7 +705,7 @@ export const Providers: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
           <div className="space-y-0.5">
-            <span className="text-[11px] uppercase font-bold text-text-muted tracking-wider">Total Provider</span>
+            <span className="text-xs font-medium text-text-muted">Total Provider</span>
             <div className="text-xl font-bold text-white">{providers.length}</div>
           </div>
           <div className="w-8 h-8 rounded-lg bg-bg-surface-2 border border-border flex items-center justify-center text-accent">
@@ -715,7 +715,7 @@ export const Providers: React.FC = () => {
 
         <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
           <div className="space-y-0.5">
-            <span className="text-[11px] uppercase font-bold text-text-muted tracking-wider">Status Sehat</span>
+            <span className="text-xs font-medium text-text-muted">Status Sehat</span>
             <div className="text-xl font-bold text-emerald-400">
               {healthyCount} / {providers.length}
             </div>
@@ -727,7 +727,7 @@ export const Providers: React.FC = () => {
 
         <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
           <div className="space-y-0.5">
-            <span className="text-[11px] uppercase font-bold text-text-muted tracking-wider">Pool Egress</span>
+            <span className="text-xs font-medium text-text-muted">Pool Egress</span>
             <div className="text-xl font-bold text-white">{egressPools.length}</div>
           </div>
           <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
@@ -737,7 +737,7 @@ export const Providers: React.FC = () => {
 
         <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
           <div className="space-y-0.5">
-            <span className="text-[11px] uppercase font-bold text-text-muted tracking-wider">Enkripsi Kunci</span>
+            <span className="text-xs font-medium text-text-muted">Enkripsi Kunci</span>
             <div className="text-xs font-bold text-accent mt-1 flex items-center gap-1">
               <Shield className="w-3.5 h-3.5" />
               <span>AES-256-GCM</span>
@@ -861,7 +861,8 @@ export const Providers: React.FC = () => {
                       type="button"
                       onClick={() => void copyWithFeedback(p.base_url, 'Base URL disalin ke clipboard')}
                       title="Salin Base URL"
-                      className="text-text-muted hover:text-white flex-shrink-0"
+                      aria-label="Salin Base URL"
+                      className="p-2 -mr-1 rounded-md text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer"
                     >
                       <Copy className="w-3.5 h-3.5" />
                     </button>
@@ -924,6 +925,16 @@ export const Providers: React.FC = () => {
         isOpen={isDrawerOpen && !!selectedProvider}
         onClose={() => setIsDrawerOpen(false)}
         maxWidth="2xl"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs text-text-muted truncate max-w-[200px]">
+              {selectedProvider?.display_name || selectedProvider?.name}
+            </span>
+            <Button variant="ghost" onClick={() => setIsDrawerOpen(false)}>
+              Tutup
+            </Button>
+          </div>
+        }
         title={
           <div className="flex items-center gap-2 min-w-0">
             {/* Icon Provider di Drawer Header: Klik untuk trigger probe */}
@@ -972,8 +983,9 @@ export const Providers: React.FC = () => {
               <button
                 type="button"
                 onClick={() => void copyWithFeedback(selectedProvider.base_url, 'Base URL disalin')}
-                className="text-text-muted hover:text-white flex-shrink-0"
+                className="p-1 rounded text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 cursor-pointer"
                 title="Salin Base URL"
+                aria-label="Salin Base URL"
               >
                 <Copy className="w-3 h-3" />
               </button>
@@ -1024,7 +1036,7 @@ export const Providers: React.FC = () => {
               </div>
             )}
             {/* Navigasi Tab di Dalam Drawer */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 p-1 bg-bg-surface-2/80 rounded-xl border border-border">
+            <div className="grid grid-cols-3 gap-1 p-1 bg-bg-surface-2/80 rounded-xl border border-border">
               <button
                 type="button"
                 onClick={() => setDrawerTab('models')}
@@ -1356,7 +1368,7 @@ export const CredentialsTabChild: React.FC<any> = ({
       {isAddingKeyInline && (
         <div className="p-3 rounded-xl border border-accent/40 bg-accent/5 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] font-bold text-white uppercase tracking-wider">Key Baru</span>
+            <span className="text-xs font-semibold text-white">Key Baru</span>
             <button type="button" onClick={() => setIsAddingKeyInline(false)} className="text-[11px] text-text-muted hover:text-white">Batal</button>
           </div>
           <form onSubmit={handleCreateKey} className="space-y-2.5 text-xs">
@@ -1461,19 +1473,19 @@ export const SettingsTabChild: React.FC<any> = ({
         <form onSubmit={handleSaveConfig} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-[11px] font-bold text-text-secondary uppercase mb-1" title="Nama tampilan provider di antarmuka">Nama Tampilan</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Nama tampilan provider di antarmuka">Nama Tampilan</label>
               <input type="text" value={configForm.display_name} onChange={(e) => setConfigForm({ ...configForm, display_name: e.target.value })} className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-text-secondary uppercase mb-1" title="URL endpoint API upstream">Base URL Endpoint</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5" title="URL endpoint API upstream">Base URL Endpoint</label>
               <input type="text" value={configForm.base_url} onChange={(e) => setConfigForm({ ...configForm, base_url: e.target.value })} className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white font-mono outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-text-secondary uppercase mb-1" title="Semakin kecil angka, semakin tinggi prioritas pemilihan rute">Prioritas Routing</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Semakin kecil angka, semakin tinggi prioritas pemilihan rute">Prioritas Routing</label>
               <input type="number" value={configForm.priority} onChange={(e) => setConfigForm({ ...configForm, priority: parseInt(e.target.value) || 100 })} className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white font-mono outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="block text-[11px] font-bold text-text-secondary uppercase mb-1" title="Bobot load-balancing antar provider (semakin besar semakin sering dipanggil)">Bobot Load Balance</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Bobot load-balancing antar provider (semakin besar semakin sering dipanggil)">Bobot Load Balance</label>
               <input type="number" value={configForm.weight} onChange={(e) => setConfigForm({ ...configForm, weight: parseInt(e.target.value) || 100 })} className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white font-mono outline-none focus:border-accent" />
             </div>
           </div>
@@ -1484,7 +1496,7 @@ export const SettingsTabChild: React.FC<any> = ({
       )}
       
       <div>
-        <label className="block text-[11px] font-bold text-text-secondary uppercase mb-2">Jalur Egress Outbound</label>
+        <label className="block text-xs font-medium text-text-secondary mb-2">Jalur Egress Outbound</label>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           <div onClick={() => handleSelectProxyPreset(null, 'Direct Outbound (Tanpa Proxy)')} title="Koneksi langsung dari server tanpa menggunakan proxy" className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between gap-2 ${!selectedProvider?.egress_pool_id ? 'border-accent bg-accent/10 shadow-sm' : 'border-border bg-bg-surface-2/40 hover:border-border/80'}`}>
             <span className="flex items-center gap-1.5 min-w-0"><Globe className="w-3.5 h-3.5 text-accent flex-shrink-0" /><span className="font-bold text-white truncate">Direct (Tanpa Proxy)</span></span>
@@ -1626,23 +1638,40 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
       title={selectedPreset ? `Hubungkan ${selectedPreset.displayName}` : 'Tambah Provider AI Manual'}
       subtitle={selectedPreset ? selectedPreset.description : 'Daftarkan endpoint upstream LLM kustom (vLLM, Ollama, OpenRouter, atau server privat)'}
       maxWidth="xl"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Batal
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            form="create-provider-form"
+            isLoading={isSaving}
+            icon={<Check className="w-4 h-4" />}
+            title="Simpan provider baru ke database"
+          >
+            Daftarkan
+          </Button>
+        </>
+      }
     >
-      <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+      <form id="create-provider-form" onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1" title="ID teknis unik tanpa spasi, contoh nama-provider-unik">ID *</label>
-            <input type="text" required placeholder="nama-provider-unik" value={newProv.name} onChange={(e) => setNewProv({ ...newProv, name: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono" />
+            <label className="block text-xs font-medium text-text-secondary mb-1.5" title="ID teknis unik tanpa spasi, contoh nama-provider-unik">ID *</label>
+            <input type="text" required placeholder="nama-provider-unik" value={newProv.name} onChange={(e) => setNewProv({ ...newProv, name: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent" />
           </div>
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Nama *</label>
-            <input type="text" required placeholder="Nama Provider" value={newProv.display_name} onChange={(e) => setNewProv({ ...newProv, display_name: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white" />
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama *</label>
+            <input type="text" required placeholder="Nama Provider" value={newProv.display_name} onChange={(e) => setNewProv({ ...newProv, display_name: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent" />
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="col-span-1">
-            <label className="block font-semibold text-text-secondary uppercase mb-1" title="Format protokol upstream">Kind</label>
-            <select value={newProv.kind} onChange={(e) => setNewProv({ ...newProv, kind: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white">
+            <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Format protokol upstream">Kind</label>
+            <select value={newProv.kind} onChange={(e) => setNewProv({ ...newProv, kind: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent">
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
               <option value="google">Google Gemini</option>
@@ -1651,15 +1680,15 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
             </select>
           </div>
           <div className="col-span-2">
-            <label className="block font-semibold text-text-secondary uppercase mb-1" title="Alamat endpoint HTTP upstream">Base URL *</label>
-            <input type="text" required value={newProv.base_url} onChange={(e) => setNewProv({ ...newProv, base_url: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono" />
+            <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Alamat endpoint HTTP upstream">Base URL *</label>
+            <input type="text" required value={newProv.base_url} onChange={(e) => setNewProv({ ...newProv, base_url: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent" />
           </div>
         </div>
 
         <div>
-          <label className="block font-semibold text-text-secondary uppercase mb-1" title="Boleh kosong, bisa ditambah belakangan dari tab Kredensial">API Key (opsional)</label>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Boleh kosong, bisa ditambah belakangan dari tab Kredensial">API Key (opsional)</label>
           <div className="relative">
-            <input type={showApiKey ? 'text' : 'password'} placeholder={selectedPreset?.apiKeyPlaceholder || 'sk-... atau Bearer Token'} value={quickApiKey} onChange={(e) => setQuickApiKey(e.target.value)} className="w-full px-3 py-2 pr-10 bg-bg-surface-2 border border-border rounded-nav text-white font-mono" />
+            <input type={showApiKey ? 'text' : 'password'} placeholder={selectedPreset?.apiKeyPlaceholder || 'sk-... atau Bearer Token'} value={quickApiKey} onChange={(e) => setQuickApiKey(e.target.value)} className="w-full px-3 py-2 pr-10 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent" />
             <button type="button" onClick={() => setShowApiKey(!showApiKey)} className="absolute right-2.5 top-2.5 text-text-muted hover:text-white">
               {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -1670,8 +1699,8 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
         </div>
 
         <div>
-          <label className="block font-semibold text-text-secondary uppercase mb-1" title="Jalur koneksi keluar dari server ke upstream">Egress</label>
-          <select value={selectedEgressPoolId} onChange={(e) => setSelectedEgressPoolId(e.target.value)} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono">
+          <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Jalur koneksi keluar dari server ke upstream">Egress</label>
+          <select value={selectedEgressPoolId} onChange={(e) => setSelectedEgressPoolId(e.target.value)} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent">
             <option value="">Direct Outbound (Tanpa Proxy)</option>
             {egressPools.map((pool: any) => (
               <option key={pool.id} value={pool.id}>{pool.name} ({pool.kind})</option>
@@ -1682,7 +1711,7 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
         {quickApiKey.trim() && (
           <div className="flex items-center gap-2 pt-1">
             <input type="checkbox" id="syncModelsToggle" checked={syncAfterSave} onChange={(e) => setSyncAfterSave(e.target.checked)} className="rounded bg-bg-surface-2 border-border" />
-            <label htmlFor="syncModelsToggle" className="font-semibold text-white cursor-pointer" title="Menarik daftar model dari upstream setelah provider tersimpan">Tarik model otomatis</label>
+            <label htmlFor="syncModelsToggle" className="font-medium text-white cursor-pointer" title="Menarik daftar model dari upstream setelah provider tersimpan">Tarik model otomatis</label>
           </div>
         )}
 
@@ -1691,11 +1720,6 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
             <RefreshCw className="w-4 h-4 animate-spin" /><span>{savingStep}</span>
           </div>
         )}
-
-        <div className="pt-3 flex justify-end gap-2 border-t border-border">
-          <Button type="button" variant="secondary" onClick={onClose}>Batal</Button>
-          <Button type="submit" variant="primary" isLoading={isSaving} icon={<Check className="w-4 h-4" />} title="Simpan provider baru ke database">Daftarkan</Button>
-        </div>
       </form>
     </Modal>
   );
@@ -1735,17 +1759,28 @@ export const AddModelModalChild: React.FC<any> = ({ isOpen, onClose, selectedPro
       onClose={onClose}
       title={`Tambah Model Manual — ${selectedProvider?.display_name || selectedProvider?.name}`}
       subtitle="Daftarkan ID model khusus yang diterima oleh upstream Anda"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Batal
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            form="add-model-manual-form"
+            isLoading={isSavingModel}
+            icon={<Plus className="w-4 h-4" />}
+          >
+            Simpan Model
+          </Button>
+        </>
+      }
     >
-      <form onSubmit={handleAddModelManual} className="space-y-4 text-xs">
+      <form id="add-model-manual-form" onSubmit={handleAddModelManual} className="space-y-4 text-xs">
         <div>
-          <label className="block font-semibold text-text-secondary uppercase mb-1" title="String ID model persis sesuai dokumentasi provider Anda">ID Model *</label>
-          <input type="text" name="model_name" required placeholder="claude-3-7-sonnet, gpt-4o, atau deepseek/deepseek-chat" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono" />
+          <label className="block text-xs font-medium text-text-secondary mb-1.5" title="String ID model persis sesuai dokumentasi provider Anda">ID Model *</label>
+          <input type="text" name="model_name" required placeholder="claude-3-7-sonnet, gpt-4o, atau deepseek/deepseek-chat" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent" />
           <p className="text-[11px] text-text-muted mt-1" title="Masukkan string ID model persis sesuai dokumentasi provider Anda.">Sesuai dokumentasi provider.</p>
-        </div>
-
-        <div className="pt-3 flex justify-end gap-2 border-t border-border">
-          <Button type="button" variant="secondary" onClick={onClose}>Batal</Button>
-          <Button type="submit" variant="primary" isLoading={isSavingModel} icon={<Plus className="w-4 h-4" />}>Simpan Model</Button>
         </div>
       </form>
     </Modal>

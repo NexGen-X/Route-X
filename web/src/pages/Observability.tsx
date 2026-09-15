@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type { TimeSeriesPoint, BreakdownItem, Diagnostics } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -22,9 +23,54 @@ export const Observability: React.FC = () => {
   const [breakdowns, setBreakdowns] = useState<BreakdownItem[]>([]);
   const [breakdownBy, setBreakdownBy] = useState<'provider' | 'model' | 'api_key'>('provider');
   const [diag, setDiag] = useState<Diagnostics | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+
+  const formatXAxis = (tickItem: string) => {
+    try {
+      if (!tickItem) return '';
+      const d = new Date(tickItem);
+      if (isNaN(d.getTime())) return tickItem;
+      if (windowTime === '1h' || windowTime === '24h') {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+      }
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    } catch {
+      return tickItem;
+    }
+  };
+
+  const formatYAxis = (val: number) => {
+    if (metric === 'cost') return `$${val}`;
+    if (metric === 'latency') return `${val}ms`;
+    if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
+    if (val >= 1000) return `${(val / 1000).toFixed(0)}k`;
+    return String(val);
+  };
+
+  const formatTooltipValue = (value: any) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return value;
+    if (metric === 'cost') return [`$${num.toFixed(4)}`, 'Biaya USD'];
+    if (metric === 'latency') return [`${num.toFixed(1)} ms`, 'Latensi P95'];
+    if (metric === 'tokens') return [`${num.toLocaleString()}`, 'Total Token'];
+    return [`${num.toLocaleString()} reqs`, 'Permintaan'];
+  };
+
+  const formatTooltipLabel = (label: string) => {
+    try {
+      if (!label) return '';
+      const d = new Date(label);
+      if (isNaN(d.getTime())) return label;
+      return d.toLocaleString([], {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
+    } catch {
+      return label;
+    }
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -58,32 +104,32 @@ export const Observability: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Observabilitas & Telemetri</h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Analisis metrik terperinci, latensi persentil, dan distribusi lalu lintas model & provider.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {['1h', '24h', '7d', '30d'].map((w) => (
-            <button
-              key={w}
-              onClick={() => setWindowTime(w)}
-              className={`px-3 py-1 rounded-nav text-xs font-semibold transition-colors ${
-                windowTime === w
-                  ? 'bg-accent text-black font-bold'
-                  : 'bg-bg-surface text-text-secondary border border-border hover:text-white'
-              }`}
-            >
-              {w}
-            </button>
-          ))}
-          <Button variant="secondary" size="sm" onClick={loadData} isLoading={isLoading}>
-            <RefreshCw className="w-3.5 h-3.5" />
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Observabilitas & Telemetri"
+        description="Analisis metrik terperinci, latensi persentil, dan distribusi lalu lintas model & provider."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border">
+              {['1h', '24h', '7d', '30d'].map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setWindowTime(w)}
+                  className={`px-2.5 py-1 rounded-inner text-xs font-semibold transition-colors cursor-pointer ${
+                    windowTime === w
+                      ? 'bg-accent text-black font-bold shadow-sm'
+                      : 'text-text-secondary hover:text-white'
+                  }`}
+                >
+                  {w}
+                </button>
+              ))}
+            </div>
+            <Button variant="secondary" size="sm" onClick={loadData} isLoading={isLoading}>
+              <RefreshCw className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        }
+      />
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 
@@ -102,7 +148,7 @@ export const Observability: React.FC = () => {
               <button
                 key={m.key}
                 onClick={() => setMetric(m.key)}
-                className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium whitespace-nowrap text-center ${
+                className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium whitespace-nowrap text-center cursor-pointer ${
                   metric === m.key
                     ? 'bg-bg-surface text-accent font-semibold shadow-sm'
                     : 'text-text-muted hover:text-text-primary'
@@ -115,7 +161,14 @@ export const Observability: React.FC = () => {
         }
       >
         <div className="h-72 w-full pt-4">
-          {series.length === 0 ? (
+          {isLoading && series.length === 0 ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="animate-pulse flex flex-col items-center gap-2.5 text-text-muted text-xs">
+                <RefreshCw className="w-5 h-5 animate-spin text-accent" />
+                <span>Memuat data telemetri...</span>
+              </div>
+            </div>
+          ) : series.length === 0 ? (
             <div className="h-full flex items-center justify-center text-xs text-text-muted">
               Tidak ada data deret waktu untuk rentang yang dipilih.
             </div>
@@ -123,9 +176,22 @@ export const Observability: React.FC = () => {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={series}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" />
-                <XAxis dataKey="timestamp" stroke="#6B7280" fontSize={11} tickLine={false} />
-                <YAxis stroke="#6B7280" fontSize={11} tickLine={false} />
+                <XAxis
+                  dataKey="timestamp"
+                  stroke="#6B7280"
+                  fontSize={11}
+                  tickLine={false}
+                  tickFormatter={formatXAxis}
+                />
+                <YAxis
+                  stroke="#6B7280"
+                  fontSize={11}
+                  tickLine={false}
+                  tickFormatter={formatYAxis}
+                />
                 <Tooltip
+                  formatter={formatTooltipValue}
+                  labelFormatter={formatTooltipLabel}
                   contentStyle={{
                     backgroundColor: '#101010',
                     borderColor: '#1F1F1F',
@@ -177,7 +243,19 @@ export const Observability: React.FC = () => {
           }
         >
           <div className="space-y-3 mt-2">
-            {breakdowns.length === 0 ? (
+            {isLoading && breakdowns.length === 0 ? (
+              <div className="space-y-3 py-2 animate-pulse">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="space-y-1.5">
+                    <div className="flex justify-between">
+                      <div className="h-3.5 bg-bg-surface-2 rounded w-24" />
+                      <div className="h-3.5 bg-bg-surface-2 rounded w-16" />
+                    </div>
+                    <div className="w-full h-2 bg-bg-surface-2 rounded-full" />
+                  </div>
+                ))}
+              </div>
+            ) : breakdowns.length === 0 ? (
               <p className="text-xs text-text-muted py-6 text-center">Belum ada data breakdown untuk kategori ini.</p>
             ) : (
               breakdowns.map((item) => (
@@ -202,7 +280,17 @@ export const Observability: React.FC = () => {
 
         {/* Live Pool & Diagnostics */}
         <Card title="Live Server & Connection Pool" subtitle="Statistik koneksi pgxpool dan runtime Go">
-          {diagnosticsError ? (
+          {isLoading && !diag && !diagnosticsError ? (
+            <div className="space-y-4 animate-pulse">
+              <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border h-16" />
+              <div className="space-y-2 text-xs pt-1">
+                <div className="h-4 bg-bg-surface-2 rounded w-full" />
+                <div className="h-4 bg-bg-surface-2 rounded w-4/5" />
+                <div className="h-4 bg-bg-surface-2 rounded w-3/4" />
+                <div className="h-4 bg-bg-surface-2 rounded w-2/3" />
+              </div>
+            </div>
+          ) : diagnosticsError ? (
             <QueryError message={diagnosticsError} onRetry={() => void loadData()} />
           ) : (
           <div className="space-y-4">

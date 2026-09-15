@@ -512,6 +512,7 @@ export interface CLITool {
   active_mode: 'model_only' | 'routing' | 'combo';
   active_target: string;
   env_vars: Record<string, string>;
+  env_var_api_key?: string;
   export_snippet: string;
   updated_at?: string;
 }

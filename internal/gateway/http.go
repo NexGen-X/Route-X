@@ -428,6 +428,11 @@ func (h *Handlers) bacaBody(w http.ResponseWriter, r *http.Request) ([]byte, boo
 // nama model yang sebenarnya sudah benar.
 func (h *Handlers) selesaikanModel(w http.ResponseWriter, r *http.Request, diminta string) (*upstream.Model, bool) {
 	model, err := h.models.Resolve(r.Context(), diminta)
+	if errors.Is(err, repo.ErrNotFound) && h.engine != nil {
+		if targetModelID := h.engine.FindRuleTargetModelID(r.Context(), diminta); targetModelID != "" {
+			model, err = h.models.Resolve(r.Context(), targetModelID)
+		}
+	}
 	switch {
 	case errors.Is(err, repo.ErrNotFound):
 		httpx.WriteError(w, r, http.StatusNotFound, httpx.ErrTypeInvalidRequest, "model_not_found",
@@ -681,20 +686,10 @@ func ekstrakComboPipeline(rule *router.Rule) []ComboTier {
 // ekstrakComboAlias membaca virtual model alias dari aturan combo routing bila ada.
 // Format dalam description: [combo:alias=<virtual_alias>]
 func ekstrakComboAlias(rule *router.Rule) string {
-	if rule == nil || rule.Description == "" {
+	if rule == nil {
 		return ""
 	}
-	const prefix = "[combo:alias="
-	idx := strings.Index(rule.Description, prefix)
-	if idx == -1 {
-		return ""
-	}
-	sub := rule.Description[idx+len(prefix):]
-	end := strings.IndexByte(sub, ']')
-	if end == -1 {
-		return ""
-	}
-	return strings.TrimSpace(sub[:end])
+	return router.ExtractComboAlias(rule.Description)
 }
 
 // ekstrakTier2Model membaca target fallback model dari aturan combo routing format lama.

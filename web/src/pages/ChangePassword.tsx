@@ -2,13 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
-import { AlertCircle, KeyRound, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, KeyRound, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 
 export const ChangePassword: React.FC = () => {
   const { refresh, logout } = useAuth();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -65,7 +68,7 @@ export const ChangePassword: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg-base p-4">
-      <div className="w-full max-w-md bg-bg-surface border border-border rounded-card shadow-2xl p-8 flex flex-col">
+      <div className="w-full max-w-md bg-bg-surface border border-border rounded-card shadow-2xl p-6 sm:p-8 flex flex-col">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-full bg-status-warn/20 text-status-warn flex items-center justify-center">
             <KeyRound className="w-5 h-5" />
@@ -77,7 +80,7 @@ export const ChangePassword: React.FC = () => {
         </div>
 
         {error && (
-          <div className="mb-5 p-3.5 rounded-inner bg-status-error/10 border border-status-error/20 flex items-start gap-2.5 text-status-error text-xs">
+          <div role="alert" aria-live="assertive" className="mb-5 p-3.5 rounded-inner bg-status-error/10 border border-status-error/20 flex items-start gap-2.5 text-status-error text-xs">
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
@@ -92,42 +95,78 @@ export const ChangePassword: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            <label htmlFor="current-password" className="block text-xs font-medium text-text-secondary mb-1.5">
               Kata Sandi Saat Ini
             </label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-              className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary focus:outline-none focus:border-accent"
-            />
+            <div className="relative">
+              <input
+                id="current-password"
+                type={showCurrentPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 pr-10 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary focus:outline-none focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2 min-w-[36px] min-h-[36px] flex items-center justify-center transition-colors cursor-pointer rounded-nav"
+                aria-label={showCurrentPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+              >
+                {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            <label htmlFor="new-password" className="block text-xs font-medium text-text-secondary mb-1.5">
               Kata Sandi Baru (Minimal 12 Karakter)
             </label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-              className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary focus:outline-none focus:border-accent"
-            />
+            <div className="relative">
+              <input
+                id="new-password"
+                type={showNewPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 pr-10 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary focus:outline-none focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2 min-w-[36px] min-h-[36px] flex items-center justify-center transition-colors cursor-pointer rounded-nav"
+                aria-label={showNewPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+              >
+                {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            <label htmlFor="confirm-password" className="block text-xs font-medium text-text-secondary mb-1.5">
               Ulangi Kata Sandi Baru
             </label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary focus:outline-none focus:border-accent"
-            />
+            <div className="relative">
+              <input
+                id="confirm-password"
+                type={showConfirmPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 pr-10 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary focus:outline-none focus:border-accent"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2 min-w-[36px] min-h-[36px] flex items-center justify-center transition-colors cursor-pointer rounded-nav"
+                aria-label={showConfirmPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+              >
+                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="w-full mt-2">

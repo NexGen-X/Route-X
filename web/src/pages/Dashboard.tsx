@@ -551,7 +551,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
         {/* Metric 1 */}
         <div className="bg-[#121316] border border-[#20242D] rounded-xl p-3 sm:p-4.5 hover:border-primary/40 transition-all shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-wider truncate">
+            <span className="text-xs font-medium text-text-secondary truncate">
               Total Permintaan
             </span>
             <div className="p-1.5 sm:p-2 rounded-lg bg-primary/10 text-primary border border-primary/20 shrink-0">
@@ -577,7 +577,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
         {/* Metric 2 */}
         <div className="bg-[#121316] border border-[#20242D] rounded-xl p-3 sm:p-4.5 hover:border-emerald-500/40 transition-all shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-wider truncate">
+            <span className="text-xs font-medium text-text-secondary truncate">
               Total Token
             </span>
             <div className="p-1.5 sm:p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
@@ -599,7 +599,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
         {/* Metric 3 */}
         <div className="bg-[#121316] border border-[#20242D] rounded-xl p-3 sm:p-4.5 hover:border-amber-500/40 transition-all shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-wider truncate">
+            <span className="text-xs font-medium text-text-secondary truncate">
               Estimasi Biaya
             </span>
             <div className="p-1.5 sm:p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
@@ -619,7 +619,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
         {/* Metric 4 */}
         <div className="bg-[#121316] border border-[#20242D] rounded-xl p-3 sm:p-4.5 hover:border-purple-500/40 transition-all shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between gap-1">
-            <span className="text-[10px] sm:text-xs font-semibold text-text-secondary uppercase tracking-wider truncate">
+            <span className="text-xs font-medium text-text-secondary truncate">
               Latensi P95
             </span>
             <div className="p-1.5 sm:p-2 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 shrink-0">
@@ -655,7 +655,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             <div
               role="group"
               aria-label="Pilih jenis metrik dan rentang waktu grafik"
-              className="flex items-center bg-[#191C24] p-0.5 sm:p-1 rounded-lg border border-[#282D39] text-[11px] sm:text-xs font-mono"
+              className="flex items-center overflow-x-auto max-w-full bg-[#191C24] p-0.5 sm:p-1 rounded-lg border border-[#282D39] text-[11px] sm:text-xs font-mono scrollbar-none"
             >
               {/* Metric switcher */}
               {(['requests', 'tokens', 'latency'] as const).map((m) => (

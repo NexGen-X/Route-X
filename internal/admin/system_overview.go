@@ -20,6 +20,7 @@ type systemSampler struct {
 	lastNetSent  uint64
 	lastProcCPU  uint64
 	lastTotalCPU uint64
+	lastIdleCPU  uint64
 	recvRateMB   float64
 	sentRateMB   float64
 	procCPUPct   float64
@@ -31,7 +32,7 @@ var globalSampler = &systemSampler{
 }
 
 // sampleMetrics memperbarui laju jaringan dan utilisasi CPU berdasarkan delta waktu.
-func (s *systemSampler) sampleMetrics(recvBytes, sentBytes uint64, procTicks, totalTicks uint64) (float64, float64, float64, float64) {
+func (s *systemSampler) sampleMetrics(recvBytes, sentBytes uint64, procTicks, totalTicks, idleTicks uint64) (float64, float64, float64, float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -61,6 +62,18 @@ func (s *systemSampler) sampleMetrics(recvBytes, sentBytes uint64, procTicks, to
 				s.procCPUPct = 100.0
 			}
 		}
+
+		if s.lastIdleCPU > 0 && idleTicks >= s.lastIdleCPU && deltaTotal > 0 {
+			deltaIdle := float64(idleTicks - s.lastIdleCPU)
+			if deltaTotal > deltaIdle {
+				s.hostCPUPct = ((deltaTotal - deltaIdle) / deltaTotal) * 100.0
+			} else {
+				s.hostCPUPct = 0.0
+			}
+			if s.hostCPUPct > 100.0 {
+				s.hostCPUPct = 100.0
+			}
+		}
 	}
 
 	s.lastSample = now
@@ -68,6 +81,7 @@ func (s *systemSampler) sampleMetrics(recvBytes, sentBytes uint64, procTicks, to
 	s.lastNetSent = sentBytes
 	s.lastProcCPU = procTicks
 	s.lastTotalCPU = totalTicks
+	s.lastIdleCPU = idleTicks
 
 	return s.recvRateMB, s.sentRateMB, s.procCPUPct, s.hostCPUPct
 }
@@ -159,9 +173,9 @@ func readProcessRSS(sysBytes uint64) uint64 {
 	return sysBytes
 }
 
-// readCPUTicks membaca total ticks sistem dan ticks proses dari /proc/stat dan /proc/self/stat.
-func readCPUTicks() (uint64, uint64) {
-	var totalTicks uint64
+// readCPUTicks membaca ticks proses, total ticks sistem, dan idle ticks sistem dari /proc/stat dan /proc/self/stat.
+func readCPUTicks() (uint64, uint64, uint64) {
+	var totalTicks, idleTicks uint64
 	statFile, err := os.Open("/proc/stat")
 	if err == nil {
 		defer statFile.Close()
@@ -170,9 +184,13 @@ func readCPUTicks() (uint64, uint64) {
 			line := scanner.Text()
 			if strings.HasPrefix(line, "cpu ") {
 				fields := strings.Fields(line)
-				for _, f := range fields[1:] {
+				for i, f := range fields[1:] {
 					val, _ := strconv.ParseUint(f, 10, 64)
 					totalTicks += val
+					// fields[1]=user, fields[2]=nice, fields[3]=system, fields[4]=idle (i=3), fields[5]=iowait (i=4)
+					if i == 3 || i == 4 {
+						idleTicks += val
+					}
 				}
 				break
 			}
@@ -191,7 +209,7 @@ func readCPUTicks() (uint64, uint64) {
 		}
 	}
 
-	return procTicks, totalTicks
+	return procTicks, totalTicks, idleTicks
 }
 
 // getSystemOverview menyajikan ringkasan metrik runtime untuk kartu System Overview di Dashboard.
@@ -203,9 +221,9 @@ func (h *Handlers) getSystemOverview(w http.ResponseWriter, r *http.Request) {
 	hostTotalRAM, hostUsedRAM := readHostRAM()
 	procRSS := readProcessRSS(m.Sys)
 	netRecv, netSent := readNetworkIO()
-	procTicks, totalTicks := readCPUTicks()
+	procTicks, totalTicks, idleTicks := readCPUTicks()
 
-	recvRate, sentRate, procCPU, _ := globalSampler.sampleMetrics(netRecv, netSent, procTicks, totalTicks)
+	recvRate, sentRate, procCPU, hostCPU := globalSampler.sampleMetrics(netRecv, netSent, procTicks, totalTicks, idleTicks)
 
 	// Hitung rute egress aktif
 	totalEgress := 0
@@ -266,7 +284,7 @@ func (h *Handlers) getSystemOverview(w http.ResponseWriter, r *http.Request) {
 		EgressActiveMode:  activeMode,
 		ContainerCPUCap:   float64(runtime.NumCPU()),
 		ProxyCPUPct:       procCPU,
-		HostCPUPct:        procCPU * 1.1,
+		HostCPUPct:        hostCPU,
 		NumGoroutine:      runtime.NumGoroutine(),
 	}
 

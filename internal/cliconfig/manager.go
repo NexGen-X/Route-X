@@ -81,6 +81,7 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 			ActiveMode:     tool.DefaultMode,
 			ActiveTarget:   tool.DefaultTarget,
 			EnvVars:        make(map[string]string),
+			EnvVarAPIKey:   tool.EnvVarAPIKey,
 		}
 
 		// 1. Deteksi executable path
@@ -222,6 +223,7 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 		ActiveMode:     p.Mode,
 		ActiveTarget:   p.Target,
 		EnvVars:        fullEnvVars,
+		EnvVarAPIKey:   toolDef.EnvVarAPIKey,
 		ExportSnippet:  m.buildSnippet(fullEnvVars),
 		UpdatedAt:      stored.UpdatedAt,
 	}

@@ -27,6 +27,7 @@ interface DrawerProps {
   subtitle?: React.ReactNode;
   headerExtra?: React.ReactNode;
   children: React.ReactNode;
+  footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
 }
 
@@ -37,6 +38,7 @@ export const Drawer: React.FC<DrawerProps> = ({
   subtitle,
   headerExtra,
   children,
+  footer,
   maxWidth = '2xl',
 }) => {
   // ID unik untuk heading agar aria-labelledby selalu menunjuk target yang benar.
@@ -128,6 +130,13 @@ export const Drawer: React.FC<DrawerProps> = ({
           <div className="p-3 pb-4 sm:p-6 overflow-y-auto overscroll-contain min-h-0 flex-1 space-y-3 sm:space-y-6 scrollbar-thin">
             {children}
           </div>
+
+          {/* Drawer Footer: sticky di bagian bawah panel */}
+          {footer && (
+            <div className="px-3 py-3 sm:px-6 sm:py-4 border-t border-border bg-bg-surface-2/80 backdrop-blur-sm flex-shrink-0">
+              {footer}
+            </div>
+          )}
         </div>
       </div>
     </div>

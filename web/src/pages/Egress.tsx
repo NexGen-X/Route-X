@@ -6,6 +6,7 @@ import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { Select } from '../components/common/Select';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   Network,
   Plus,
@@ -17,6 +18,8 @@ import {
   RefreshCw,
   Activity,
   Zap,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
@@ -24,10 +27,12 @@ import { QueryError } from '../components/common/QueryError';
 export const Egress: React.FC = () => {
   const { toast, confirmModal } = useToast();
   const [pools, setPools] = useState<EgressPool[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingPool, setEditingPool] = useState<EgressPool | null>(null);
+  const [showCreateProxyUrl, setShowCreateProxyUrl] = useState(false);
+  const [showEditProxyUrl, setShowEditProxyUrl] = useState(false);
 
   const [newPool, setNewPool] = useState({
     name: '',
@@ -158,33 +163,37 @@ export const Egress: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header Halaman */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2.5">
             Egress Proxy Pools
             <span className="text-xs font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
               Stealth Routing
             </span>
-          </h2>
-          <p className="text-xs text-text-secondary mt-1 max-w-2xl">
+          </span>
+        }
+        description={
+          <span>
             Manajemen proxy keluar (Xray / SOCKS5 / HTTP / HTTPS) untuk merutekan panggilan upstream AI.
             Semua URL proxy dan kredensial disimpan terenkripsi secara aman dengan <strong>AES-256-GCM</strong>.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={loadPools} isLoading={isLoading}>
-            <RefreshCw className="w-3.5 h-3.5" />
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setIsCreateOpen(true)}
-            icon={<Plus className="w-4 h-4" />}
-          >
-            Tambah Pool
-          </Button>
-        </div>
-      </div>
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={loadPools} isLoading={isLoading}>
+              <RefreshCw className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              icon={<Plus className="w-4 h-4" />}
+            >
+              Tambah Pool
+            </Button>
+          </div>
+        }
+      />
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadPools()} />}
 
@@ -205,8 +214,10 @@ export const Egress: React.FC = () => {
             <AlertCircle className="w-5 h-5 shrink-0 text-red-400 mt-0.5" />
           )}
           <div className="flex-1 space-y-1">
-            <div className="font-bold text-white flex items-center gap-2">
-              {probeFeedback.result.status === 'healthy' ? 'Koneksi Proxy Sukses' : 'Koneksi Proxy Gagal'}
+            <div className="flex items-center justify-between">
+              <span className="font-bold uppercase tracking-wider">
+                {probeFeedback.result.status === 'healthy' ? 'Uji Koneksi Berhasil' : 'Uji Koneksi Gagal'}
+              </span>
               {probeFeedback.result.latency_ms !== undefined && (
                 <span className="font-mono text-[11px] bg-bg-surface-2 px-2 py-0.5 rounded border border-border text-emerald-400">
                   {probeFeedback.result.latency_ms} ms
@@ -236,7 +247,25 @@ export const Egress: React.FC = () => {
       )}
 
       {/* Grid Kartu Egress Pool */}
-      {pools.length === 0 && !isLoading ? (
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="p-5 space-y-4 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
+                <div className="space-y-1.5 flex-1">
+                  <div className="h-4 bg-bg-surface-2 rounded w-1/2" />
+                  <div className="h-3 bg-bg-surface-2 rounded w-1/3" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="h-3 bg-bg-surface-2 rounded w-3/4" />
+                <div className="h-3 bg-bg-surface-2 rounded w-1/2" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : pools.length === 0 ? (
         <Card className="p-12 text-center">
           <div className="w-12 h-12 rounded-full bg-accent/10 text-accent flex items-center justify-center mx-auto mb-4">
             <Network className="w-6 h-6" />
@@ -368,8 +397,18 @@ export const Egress: React.FC = () => {
         onClose={() => setIsCreateOpen(false)}
         title="Tambah Egress Proxy Pool"
         subtitle="URL proxy akan dienkripsi secara aman dengan AES-256-GCM"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="primary" type="submit" form="create-egress-form">
+              Simpan Egress Pool
+            </Button>
+          </>
+        }
       >
-        <form onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-egress-form" onSubmit={handleCreate} className="space-y-4 text-xs">
           <Select
             label="Preset / Sumber Proxy"
             value=""
@@ -410,14 +449,14 @@ export const Egress: React.FC = () => {
             ]}
           />
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Pool</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Pool *</label>
             <input
               type="text"
               required
               placeholder="residential-sg-1 atau xray-tunnel"
               value={newPool.name}
               onChange={(e) => setNewPool({ ...newPool, name: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
           <Select
@@ -431,45 +470,61 @@ export const Egress: React.FC = () => {
             ]}
           />
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Proxy URL Lengkap</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-text-secondary">Proxy URL Lengkap *</label>
+              <button
+                type="button"
+                onClick={() => setShowCreateProxyUrl(!showCreateProxyUrl)}
+                className="text-[11px] text-text-muted hover:text-white flex items-center gap-1 focus:outline-none cursor-pointer"
+              >
+                {showCreateProxyUrl ? (
+                  <>
+                    <EyeOff className="w-3 h-3" />
+                    <span>Sembunyikan</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-3 h-3" />
+                    <span>Tampilkan</span>
+                  </>
+                )}
+              </button>
+            </div>
             <input
-              type="text"
+              type={showCreateProxyUrl ? 'text' : 'password'}
               required
               placeholder="socks5://user:pass@host:1080 atau socks5://xray:10808"
               value={newPool.proxy_url}
               onChange={(e) => setNewPool({ ...newPool, proxy_url: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
             />
             <span className="text-[11px] text-text-muted block mt-1">
-              Untuk container Xray internal, gunakan: <code>socks5://xray:10808</code>
+              Untuk container Xray internal, gunakan: <code className="text-accent font-mono">socks5://xray:10808</code>
             </span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Bobot Alokasi</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Bobot Alokasi</label>
               <input
                 type="number"
                 min="1"
                 max="1000"
                 value={newPool.weight}
                 onChange={(e) => setNewPool({ ...newPool, weight: parseInt(e.target.value) || 100 })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
               />
             </div>
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Wilayah (Region)</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Wilayah (Region)</label>
               <input
                 type="text"
                 placeholder="auto / ap-southeast-1"
                 value={newPool.region}
                 onChange={(e) => setNewPool({ ...newPool, region: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
               />
             </div>
           </div>
-          <Button type="submit" variant="primary" size="md" className="w-full mt-2">
-            Simpan Egress Pool
-          </Button>
         </form>
       </Drawer>
 
@@ -479,8 +534,18 @@ export const Egress: React.FC = () => {
         onClose={() => setEditingPool(null)}
         title="Edit Egress Proxy Pool"
         subtitle="Perbarui konfigurasi proxy keluar atau lakukan rotasi kredensial"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditingPool(null)}>
+              Batal
+            </Button>
+            <Button variant="primary" type="submit" form="edit-egress-form">
+              Simpan Perubahan
+            </Button>
+          </>
+        }
       >
-        <form onSubmit={handleUpdate} className="space-y-4 text-xs">
+        <form id="edit-egress-form" onSubmit={handleUpdate} className="space-y-4 text-xs">
           <Select
             label="Preset / Sumber Proxy"
             value=""
@@ -512,13 +577,13 @@ export const Egress: React.FC = () => {
             ]}
           />
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Pool</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Pool *</label>
             <input
               type="text"
               required
               value={editForm.name}
               onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
           <Select
@@ -532,36 +597,55 @@ export const Egress: React.FC = () => {
             ]}
           />
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">
-              Ganti Proxy URL (Rotasi Sandi)
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-text-secondary">
+                Ganti Proxy URL (Rotasi Sandi)
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowEditProxyUrl(!showEditProxyUrl)}
+                className="text-[11px] text-text-muted hover:text-white flex items-center gap-1 focus:outline-none cursor-pointer"
+              >
+                {showEditProxyUrl ? (
+                  <>
+                    <EyeOff className="w-3 h-3" />
+                    <span>Sembunyikan</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-3 h-3" />
+                    <span>Tampilkan</span>
+                  </>
+                )}
+              </button>
+            </div>
             <input
-              type="text"
+              type={showEditProxyUrl ? 'text' : 'password'}
               placeholder="Kosongkan jika tidak ingin mengubah URL proxy saat ini"
               value={editForm.proxy_url}
               onChange={(e) => setEditForm({ ...editForm, proxy_url: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono placeholder:text-text-muted"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono placeholder:text-text-muted focus:outline-none focus:border-accent"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Bobot Alokasi</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Bobot Alokasi</label>
               <input
                 type="number"
                 min="1"
                 max="1000"
                 value={editForm.weight}
                 onChange={(e) => setEditForm({ ...editForm, weight: parseInt(e.target.value) || 100 })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
               />
             </div>
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Wilayah (Region)</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Wilayah (Region)</label>
               <input
                 type="text"
                 value={editForm.region}
                 onChange={(e) => setEditForm({ ...editForm, region: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
               />
             </div>
           </div>
@@ -573,13 +657,10 @@ export const Egress: React.FC = () => {
               onChange={(e) => setEditForm({ ...editForm, enabled: e.target.checked })}
               className="rounded border-border bg-bg-surface-2 text-accent focus:ring-accent"
             />
-            <label htmlFor="editPoolEnabled" className="text-white font-semibold cursor-pointer">
+            <label htmlFor="editPoolEnabled" className="text-white font-medium cursor-pointer">
               Aktifkan pool ini untuk menerima lalu lintas keluar
             </label>
           </div>
-          <Button type="submit" variant="primary" size="md" className="w-full mt-2">
-            Simpan Perubahan
-          </Button>
         </form>
       </Drawer>
     </div>

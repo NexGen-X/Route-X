@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
 import { ApiError } from '../api/client';
-import { ShieldCheck, AlertCircle, ArrowRight } from 'lucide-react';
+import { ShieldCheck, AlertCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [keepSignedIn, setKeepSignedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -33,7 +34,7 @@ export const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg-base p-4">
-      <div className="w-full max-w-md bg-bg-surface border border-border rounded-card shadow-2xl p-8 flex flex-col">
+      <div className="w-full max-w-md bg-bg-surface border border-border rounded-card shadow-2xl p-6 sm:p-8 flex flex-col">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center font-extrabold text-black text-lg shadow-md shadow-accent/20">
             RX
@@ -53,7 +54,7 @@ export const Login: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="login-email" className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            <label htmlFor="login-email" className="block text-xs font-medium text-text-secondary mb-1.5">
               Alamat Email
             </label>
             <input
@@ -64,7 +65,6 @@ export const Login: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              autoFocus
               aria-describedby={error ? 'login-error' : undefined}
               placeholder="admin@routex.internal"
               className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
@@ -72,21 +72,31 @@ export const Login: React.FC = () => {
           </div>
 
           <div>
-            <label htmlFor="login-password" className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+            <label htmlFor="login-password" className="block text-xs font-medium text-text-secondary mb-1.5">
               Kata Sandi
             </label>
-            <input
-              id="login-password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              aria-describedby={error ? 'login-error' : undefined}
-              placeholder="••••••••••••"
-              className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
-            />
+            <div className="relative">
+              <input
+                id="login-password"
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                aria-describedby={error ? 'login-error' : undefined}
+                placeholder="••••••••••••"
+                className="w-full px-3.5 py-2.5 pr-10 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2 min-w-[36px] min-h-[36px] flex items-center justify-center transition-colors cursor-pointer rounded-nav"
+                aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center justify-between text-xs py-1">

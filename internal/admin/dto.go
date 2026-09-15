@@ -1734,6 +1734,7 @@ type CLIToolDTO struct {
 	ActiveMode     string            `json:"active_mode"`
 	ActiveTarget   string            `json:"active_target"`
 	EnvVars        map[string]string `json:"env_vars"`
+	EnvVarAPIKey   string            `json:"env_var_api_key,omitempty"`
 	ExportSnippet  string            `json:"export_snippet"`
 	UpdatedAt      *time.Time        `json:"updated_at,omitempty"`
 }

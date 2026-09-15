@@ -1,7 +1,7 @@
 package cliconfig
 
 // SupportedTools mengembalikan daftar seluruh perkakas AI CLI yang didukung Route-X.
-// Registri ini mencakup 20 AI CLI tools terpopuler di kalangan pengembang.
+// Seluruh perkakas secara default mengarah ke model kanonik riil yang terdaftar di katalog sistem.
 func SupportedTools() []ToolDef {
 	return []ToolDef{
 		{
@@ -15,8 +15,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "OPENAI_API_BASE",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "ANTIGRAVITY_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "general-chat",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "claude",
@@ -30,7 +30,7 @@ func SupportedTools() []ToolDef {
 			EnvVarAPIKey:  "ANTHROPIC_API_KEY",
 			EnvVarModel:   "ANTHROPIC_MODEL",
 			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "claude-3-7-sonnet",
+			DefaultTarget: "claude-sonnet-5",
 		},
 		{
 			ID:            "opencode",
@@ -43,8 +43,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "OPENCODE_API_BASE",
 			EnvVarAPIKey:  "OPENCODE_API_KEY",
 			EnvVarModel:   "OPENCODE_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "coding-fast",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "aider",
@@ -57,8 +57,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "OPENAI_API_BASE",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "AIDER_MODEL",
-			DefaultMode:   ModeCombo,
-			DefaultTarget: "combo:coding-tier1-tier2",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "ollama",
@@ -72,7 +72,7 @@ func SupportedTools() []ToolDef {
 			EnvVarAPIKey:  "OLLAMA_API_KEY",
 			EnvVarModel:   "OLLAMA_MODEL",
 			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "llama3:8b",
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "sgpt",
@@ -85,8 +85,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "OPENAI_BASE_URL",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "DEFAULT_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "general-chat",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "fabric",
@@ -99,8 +99,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "OPENAI_BASE_URL",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "DEFAULT_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "general-chat",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "continue",
@@ -113,8 +113,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "CONTINUE_API_BASE",
 			EnvVarAPIKey:  "CONTINUE_API_KEY",
 			EnvVarModel:   "CONTINUE_MODEL",
-			DefaultMode:   ModeCombo,
-			DefaultTarget: "combo:coding-tier1-tier2",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "llm",
@@ -128,7 +128,7 @@ func SupportedTools() []ToolDef {
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "LLM_DEFAULT_MODEL",
 			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "gpt-4o",
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "goose",
@@ -141,8 +141,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "GOOSE_OPENAI_HOST",
 			EnvVarAPIKey:  "GOOSE_API_KEY",
 			EnvVarModel:   "GOOSE_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "general-chat",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "opencommit",
@@ -156,7 +156,7 @@ func SupportedTools() []ToolDef {
 			EnvVarAPIKey:  "OCO_OPENAI_API_KEY",
 			EnvVarModel:   "OCO_MODEL",
 			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "gpt-4o-mini",
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "mentat",
@@ -169,8 +169,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "OPENAI_API_BASE",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "MENTAT_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "coding-fast",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "plandex",
@@ -183,8 +183,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "PLANDEX_OPENAI_API_HOST",
 			EnvVarAPIKey:  "PLANDEX_OPENAI_API_KEY",
 			EnvVarModel:   "PLANDEX_MODEL",
-			DefaultMode:   ModeCombo,
-			DefaultTarget: "combo:coding-tier1-tier2",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "chatblade",
@@ -198,7 +198,7 @@ func SupportedTools() []ToolDef {
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "CHATBLADE_MODEL",
 			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "gpt-4o",
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "gpt-cli",
@@ -211,8 +211,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "OPENAI_API_BASE",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "GPT_CLI_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "general-chat",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "cursor-agent",
@@ -225,8 +225,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "CURSOR_API_BASE",
 			EnvVarAPIKey:  "CURSOR_API_KEY",
 			EnvVarModel:   "CURSOR_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "coding-fast",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "copilot",
@@ -240,7 +240,7 @@ func SupportedTools() []ToolDef {
 			EnvVarAPIKey:  "GITHUB_COPILOT_API_KEY",
 			EnvVarModel:   "COPILOT_MODEL",
 			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "gpt-4o",
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "cody",
@@ -253,8 +253,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "SRC_ENDPOINT",
 			EnvVarAPIKey:  "SRC_ACCESS_TOKEN",
 			EnvVarModel:   "CODY_DEFAULT_MODEL",
-			DefaultMode:   ModeCombo,
-			DefaultTarget: "combo:coding-tier1-tier2",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "claude-sonnet-5",
 		},
 		{
 			ID:            "k8sgpt",
@@ -267,8 +267,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "K8SGPT_OPENAI_BASE_URL",
 			EnvVarAPIKey:  "K8SGPT_OPENAI_API_KEY",
 			EnvVarModel:   "K8SGPT_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "general-chat",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 		{
 			ID:            "codecompanion",
@@ -281,8 +281,8 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "CODECOMPANION_API_BASE",
 			EnvVarAPIKey:  "CODECOMPANION_API_KEY",
 			EnvVarModel:   "CODECOMPANION_MODEL",
-			DefaultMode:   ModeRouting,
-			DefaultTarget: "coding-fast",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
 		},
 	}
 }

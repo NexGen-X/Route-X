@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { Budget } from '../types';
+import type { Budget, APIKey, Model } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
@@ -15,6 +15,9 @@ import { formatUSD, percentageOfDecimal } from '../utils/money';
 export const Budgets: React.FC = () => {
   const { toast, confirmModal } = useToast();
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [apiKeys, setApiKeys] = useState<APIKey[]>([]);
+  const [models, setModels] = useState<Model[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newBudget, setNewBudget] = useState({
@@ -28,18 +31,40 @@ export const Budgets: React.FC = () => {
   });
 
   const loadBudgets = async () => {
+    setIsLoading(true);
     try {
-      const res = await api.budgets.list();
-      setBudgets(res.items || []);
+      const [bRes, kRes, mRes] = await Promise.all([
+        api.budgets.list(),
+        api.apiKeys.list().catch(() => ({ items: [] as APIKey[] })),
+        api.models.list().catch(() => ({ items: [] as Model[] })),
+      ]);
+      setBudgets(bRes.items || []);
+      setApiKeys(kRes.items || []);
+      setModels(mRes.items || []);
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadBudgets();
+    void loadBudgets();
   }, []);
+
+  const getScopeDisplay = (scope: string, scopeId?: string) => {
+    if (!scopeId || scope === 'global') return { label: 'Global Gateway', isRaw: false };
+    if (scope === 'api_key') {
+      const key = apiKeys.find((k) => k.id === scopeId);
+      return { label: key ? key.name : `${scopeId.slice(0, 8)}...`, isRaw: !key };
+    }
+    if (scope === 'model') {
+      const m = models.find((mod) => mod.model_id === scopeId);
+      return { label: m ? (m.display_name || m.model_id) : scopeId, isRaw: false };
+    }
+    return { label: scopeId, isRaw: true };
+  };
 
   const handleReset = async (id: string) => {
     const ok = await confirmModal({
@@ -69,6 +94,10 @@ export const Budgets: React.FC = () => {
     }
     if (!Number.isInteger(newBudget.alert_threshold) || newBudget.alert_threshold < 1 || newBudget.alert_threshold > 100) {
       toast.error('Ambang peringatan wajib 1-100 persen.');
+      return;
+    }
+    if (newBudget.scope !== 'global' && !newBudget.scope_id.trim()) {
+      toast.error(`Pilih target ${newBudget.scope === 'api_key' ? 'Kunci API' : 'Model'}.`);
       return;
     }
     try {
@@ -109,7 +138,26 @@ export const Budgets: React.FC = () => {
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadBudgets()} />}
 
-      {budgets.length === 0 && !loadError ? (
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="p-5 space-y-4 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
+                <div className="space-y-1.5 flex-1">
+                  <div className="h-4 bg-bg-surface-2 rounded w-1/2" />
+                  <div className="h-3 bg-bg-surface-2 rounded w-1/3" />
+                </div>
+              </div>
+              <div className="h-2 bg-bg-surface-2 rounded-full" />
+              <div className="space-y-2">
+                <div className="h-3 bg-bg-surface-2 rounded w-3/4" />
+                <div className="h-3 bg-bg-surface-2 rounded w-1/2" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : budgets.length === 0 && !loadError ? (
         <Card className="py-12 px-6 text-center">
           <div className="max-w-md mx-auto space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto shadow-inner">
@@ -148,7 +196,11 @@ export const Budgets: React.FC = () => {
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-white">{b.name}</h4>
-                      <span className="text-[11px] text-text-muted font-mono">{b.scope} • {b.period}</span>
+                      <div className="flex items-center gap-1.5 text-[11px] text-text-muted font-mono mt-0.5">
+                        <span className="text-accent font-semibold">{getScopeDisplay(b.scope, b.scope_id).label}</span>
+                        <span>•</span>
+                        <span>{b.period}</span>
+                      </div>
                     </div>
                   </div>
                   <Badge variant={isDanger ? 'error' : 'success'}>
@@ -206,24 +258,34 @@ export const Budgets: React.FC = () => {
         onClose={() => setIsCreateOpen(false)}
         title="Alokasi Anggaran Moneter Baru"
         subtitle="Batas biaya inferensi dihitung dari pemakaian token upstream"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="primary" type="submit" form="create-budget-form">
+              Simpan Anggaran
+            </Button>
+          </>
+        }
       >
-        <form onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-budget-form" onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Nama Anggaran</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Anggaran *</label>
             <input
               type="text"
               required
               placeholder="Budget Bulanan Tim Internal"
               value={newBudget.name}
               onChange={(e) => setNewBudget({ ...newBudget, name: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select
               label="Cakupan (Scope)"
               value={newBudget.scope}
-              onChange={(val) => setNewBudget({ ...newBudget, scope: val })}
+              onChange={(val) => setNewBudget({ ...newBudget, scope: val, scope_id: '' })}
               options={[
                 { value: 'global', label: 'Global Gateway', description: 'Berlaku untuk total pemakaian seluruh gateway' },
                 { value: 'api_key', label: 'Per API Key', description: 'Membatasi pengeluaran kunci API tertentu' },
@@ -242,25 +304,69 @@ export const Budgets: React.FC = () => {
             />
           </div>
 
-          {newBudget.scope !== 'global' && (
+          {newBudget.scope === 'api_key' && (
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">
-                Target {newBudget.scope === 'api_key' ? 'ID Kunci API' : 'ID Model'}
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                Target Kunci API *
               </label>
-              <input
-                type="text"
-                required
-                placeholder={newBudget.scope === 'api_key' ? 'Masukkan UUID Kunci API...' : 'Masukkan Canonical Slug Model (contoh: gpt-4o)...'}
-                value={newBudget.scope_id}
-                onChange={(e) => setNewBudget({ ...newBudget, scope_id: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
-              />
+              {apiKeys.length > 0 ? (
+                <Select
+                  value={newBudget.scope_id}
+                  onChange={(val) => setNewBudget({ ...newBudget, scope_id: val })}
+                  options={[
+                    { value: '', label: '-- Pilih Kunci API --' },
+                    ...apiKeys.map((k) => ({
+                      value: k.id,
+                      label: `${k.name} (${k.masked_key || k.id.slice(0, 8)})`,
+                    })),
+                  ]}
+                />
+              ) : (
+                <input
+                  type="text"
+                  required
+                  placeholder="Masukkan UUID Kunci API..."
+                  value={newBudget.scope_id}
+                  onChange={(e) => setNewBudget({ ...newBudget, scope_id: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                />
+              )}
+            </div>
+          )}
+
+          {newBudget.scope === 'model' && (
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                Target Model *
+              </label>
+              {models.length > 0 ? (
+                <Select
+                  value={newBudget.scope_id}
+                  onChange={(val) => setNewBudget({ ...newBudget, scope_id: val })}
+                  options={[
+                    { value: '', label: '-- Pilih Model --' },
+                    ...models.map((m) => ({
+                      value: m.model_id,
+                      label: `${m.display_name || m.model_id} (${m.model_id})`,
+                    })),
+                  ]}
+                />
+              ) : (
+                <input
+                  type="text"
+                  required
+                  placeholder="Masukkan Slug Model (contoh: gpt-4o)..."
+                  value={newBudget.scope_id}
+                  onChange={(e) => setNewBudget({ ...newBudget, scope_id: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                />
+              )}
             </div>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Batas Maksimal (USD)</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Batas Maksimal (USD) *</label>
               <input
                 type="number"
                 step="0.01"
@@ -268,11 +374,11 @@ export const Budgets: React.FC = () => {
                 required
                 value={newBudget.max_spend_usd}
                 onChange={(e) => setNewBudget({ ...newBudget, max_spend_usd: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             </div>
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Ambang Peringatan (%)</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Ambang Peringatan (%) *</label>
               <input
                 type="number"
                 min={1}
@@ -283,13 +389,10 @@ export const Budgets: React.FC = () => {
                   const v = parseInt(e.target.value, 10);
                   setNewBudget({ ...newBudget, alert_threshold: Number.isNaN(v) ? 80 : v });
                 }}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             </div>
           </div>
-          <Button type="submit" variant="primary" size="md" className="w-full mt-2">
-            Simpan Anggaran
-          </Button>
         </form>
       </Drawer>
     </div>

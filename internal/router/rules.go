@@ -102,6 +102,21 @@ func RuleFromRow(row *upstream.RoutingRule) (*Rule, error) {
 	return r, nil
 }
 
+// ExtractComboAlias membaca virtual model alias dari deskripsi aturan combo routing bila ada.
+func ExtractComboAlias(description string) string {
+	const prefix = "[combo:alias="
+	idx := strings.Index(description, prefix)
+	if idx == -1 {
+		return ""
+	}
+	sub := description[idx+len(prefix):]
+	end := strings.IndexByte(sub, ']')
+	if end == -1 {
+		return ""
+	}
+	return strings.TrimSpace(sub[:end])
+}
+
 // Matches melaporkan apakah aturan ini berlaku untuk permintaan tersebut.
 //
 // Seluruh kondisi digabung dengan AND, dan kondisi yang kosong berarti tidak membatasi —
@@ -112,7 +127,9 @@ func (r *Rule) Matches(req Request) bool {
 	if r == nil {
 		return false
 	}
-	if r.MatchModelID != "" && r.MatchModelID != req.ModelID {
+	alias := ExtractComboAlias(r.Description)
+	explicitTargetMatch := req.ModelName != "" && (r.Name == req.ModelName || (alias != "" && alias == req.ModelName))
+	if !explicitTargetMatch && r.MatchModelID != "" && r.MatchModelID != req.ModelID {
 		return false
 	}
 	if r.MatchAPIKeyID != "" && r.MatchAPIKeyID != req.APIKeyID {
@@ -140,6 +157,16 @@ func (r *Rule) Matches(req Request) bool {
 // justru supaya urutan itu tetap menjadi tanggung jawab satu tempat: query di repository,
 // yang indeksnya memang dibuat untuk itu.
 func FirstMatch(rules []*Rule, req Request) *Rule {
+	// Bila permintaan meminta nama aturan atau alias combo secara spesifik,
+	// cari aturan yang cocok secara eksplisit terlebih dahulu.
+	if req.ModelName != "" {
+		for _, r := range rules {
+			alias := ExtractComboAlias(r.Description)
+			if (r.Name == req.ModelName || (alias != "" && alias == req.ModelName)) && r.Matches(req) {
+				return r
+			}
+		}
+	}
 	for _, r := range rules {
 		if r.Matches(req) {
 			return r

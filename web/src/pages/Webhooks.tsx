@@ -5,8 +5,9 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
+import { Modal } from '../components/common/Modal';
 import { PageHeader } from '../components/common/PageHeader';
-import { Webhook as WebhookIcon, Plus, Trash2, Activity, Zap, Play, ChevronRight, X } from 'lucide-react';
+import { Webhook as WebhookIcon, Plus, Trash2, Zap, Play, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 
@@ -17,6 +18,7 @@ export const Webhooks: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
   const [newWebhook, setNewWebhook] = useState({ name: '', url: '', events: [] as string[], secret: '', enabled: true });
   
   const [selectedWebhook, setSelectedWebhook] = useState<Webhook | null>(null);
@@ -146,38 +148,65 @@ export const Webhooks: React.FC = () => {
 
   if (error) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <QueryError message={error} onRetry={loadWebhooks} />
       </div>
     );
   }
 
   return (
-    <div className="p-8 pb-20 max-w-7xl mx-auto space-y-6 animate-in fade-in duration-300">
+    <div className="space-y-6">
       <PageHeader
         title="Webhooks"
-        
-        
+        description="Pengiriman event asinkron ke HTTP endpoint eksternal untuk integrasi monitoring, alerting Slack/Discord, dan audit."
         actions={
-          <Button variant="primary" onClick={() => setIsCreateOpen(true)} icon={<Plus className="w-4 h-4" />}>
+          <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)} icon={<Plus className="w-4 h-4" />}>
             Create Webhook
           </Button>
         }
       />
 
       {loading && webhooks.length === 0 ? (
-        <div className="flex items-center justify-center h-40">
-          <Activity className="w-6 h-6 animate-pulse text-text-muted" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[1, 2].map((i) => (
+            <Card key={i} className="p-5 space-y-4 animate-pulse">
+              <div className="space-y-2">
+                <div className="h-4 bg-bg-surface-2 rounded w-1/3" />
+                <div className="h-3 bg-bg-surface-2 rounded w-2/3" />
+              </div>
+              <div className="flex gap-2">
+                <div className="h-5 w-16 bg-bg-surface-2 rounded" />
+                <div className="h-5 w-20 bg-bg-surface-2 rounded" />
+              </div>
+            </Card>
+          ))}
         </div>
       ) : webhooks.length === 0 ? (
-        <div className="text-center py-12 bg-bg-surface border border-border rounded-lg text-text-muted">
-          <WebhookIcon className="w-12 h-12 mx-auto mb-3 opacity-20" />
-          <p>Belum ada webhook yang dikonfigurasi.</p>
-        </div>
+        <Card className="py-12 px-6 text-center">
+          <div className="max-w-md mx-auto space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-accent/10 border border-accent/20 text-accent flex items-center justify-center mx-auto shadow-inner">
+              <WebhookIcon className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Belum Ada Webhook Terkonfigurasi</h3>
+              <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                Kirim event real-time (failover provider, pelanggaran kuota, perubahan kredensial) ke endpoint HTTP/HTTPS eksternal secara otomatis.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              icon={<Plus className="w-4 h-4 text-black" />}
+            >
+              Buat Webhook Pertama
+            </Button>
+          </div>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {webhooks.map((wh) => (
-            <div key={wh.id} onClick={() => openWebhookDeliveries(wh)} className="cursor-pointer group"><Card className="flex flex-col relative hover:border-brand/30 transition-colors h-full">
+            <div key={wh.id} onClick={() => openWebhookDeliveries(wh)} className="cursor-pointer group"><Card className="flex flex-col relative hover:border-accent/30 transition-colors h-full">
               <div className="flex justify-between items-start mb-2">
                 <div>
                   <h3 className="font-semibold text-white flex items-center gap-2">
@@ -187,7 +216,7 @@ export const Webhooks: React.FC = () => {
                   <p className="text-[11px] text-text-muted font-mono mt-1 break-all">{wh.url}</p>
                 </div>
                 <div onClick={(e) => e.stopPropagation()}>
-                  <button type="button" onClick={() => handleToggle(wh)} className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer" title="Toggle Enabled">
+                  <button type="button" onClick={() => handleToggle(wh)} className="p-2 rounded-md text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center" title="Toggle Enabled">
                     <Zap className={`w-4 h-4 ${wh.enabled ? 'text-green-400' : ''}`} />
                   </button>
                 </div>
@@ -223,41 +252,107 @@ export const Webhooks: React.FC = () => {
       )}
 
       {/* Create Drawer */}
-      <Drawer isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Tambah Webhook" subtitle="Kirim notifikasi HTTP saat ada event">
-        <form onSubmit={handleCreate} className="space-y-4 text-xs">
+      <Drawer
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        title="Tambah Webhook"
+        subtitle="Kirim notifikasi HTTP saat ada event"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="primary" type="submit" form="create-webhook-form">
+              Simpan Webhook
+            </Button>
+          </>
+        }
+      >
+        <form id="create-webhook-form" onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Nama</label>
-            <input type="text" required value={newWebhook.name} onChange={(e) => setNewWebhook({ ...newWebhook, name: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white" placeholder="Contoh: Slack Alerts" />
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama *</label>
+            <input
+              type="text"
+              required
+              value={newWebhook.name}
+              onChange={(e) => setNewWebhook({ ...newWebhook, name: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+              placeholder="Contoh: Slack Alerts"
+            />
           </div>
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">URL Endpoint</label>
-            <input type="url" required value={newWebhook.url} onChange={(e) => setNewWebhook({ ...newWebhook, url: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono" placeholder="https://..." />
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">URL Endpoint *</label>
+            <input
+              type="url"
+              required
+              value={newWebhook.url}
+              onChange={(e) => setNewWebhook({ ...newWebhook, url: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+              placeholder="https://..."
+            />
           </div>
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Secret (Opsional)</label>
-            <input type="password" value={newWebhook.secret} onChange={(e) => setNewWebhook({ ...newWebhook, secret: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono" placeholder="Untuk validasi signature (X-Webhook-Signature)" />
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-text-secondary">Secret (Opsional)</label>
+              <button
+                type="button"
+                onClick={() => setShowSecret(!showSecret)}
+                className="text-[11px] text-text-muted hover:text-white flex items-center gap-1 focus:outline-none cursor-pointer"
+              >
+                {showSecret ? (
+                  <>
+                    <EyeOff className="w-3 h-3" />
+                    <span>Sembunyikan</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-3 h-3" />
+                    <span>Tampilkan</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <input
+              type={showSecret ? 'text' : 'password'}
+              value={newWebhook.secret}
+              onChange={(e) => setNewWebhook({ ...newWebhook, secret: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+              placeholder="Untuk validasi signature (X-Webhook-Signature)"
+            />
           </div>
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Event Subscriptions</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Event Subscriptions</label>
             <div className="space-y-2 mt-2">
               {availableEvents.map(ev => (
                 <label key={ev} className="flex items-center gap-2 cursor-pointer text-white">
-                  <input type="checkbox" checked={newWebhook.events.includes(ev)} onChange={() => toggleEvent(ev)} className="rounded bg-bg-surface-2 border-border" />
-                  {ev}
+                  <input
+                    type="checkbox"
+                    checked={newWebhook.events.includes(ev)}
+                    onChange={() => toggleEvent(ev)}
+                    className="rounded bg-bg-surface-2 border-border text-accent focus:ring-accent"
+                  />
+                  <span>{ev}</span>
                 </label>
               ))}
             </div>
-            <p className="mt-1 text-text-muted">Biarkan kosong untuk berlangganan semua event.</p>
-          </div>
-          <div className="pt-3 flex justify-end gap-2 border-t border-border">
-            <Button type="button" variant="secondary" onClick={() => setIsCreateOpen(false)}>Batal</Button>
-            <Button type="submit" variant="primary">Simpan Webhook</Button>
+            <p className="mt-1.5 text-text-muted">Biarkan kosong untuk berlangganan semua event.</p>
           </div>
         </form>
       </Drawer>
 
       {/* Deliveries Drawer */}
-      <Drawer isOpen={selectedWebhook !== null} onClose={() => setSelectedWebhook(null)} title="Webhook Deliveries" subtitle={selectedWebhook?.name || ''} maxWidth="lg">
+      <Drawer
+        isOpen={selectedWebhook !== null}
+        onClose={() => setSelectedWebhook(null)}
+        title="Webhook Deliveries"
+        subtitle={selectedWebhook?.name || ''}
+        maxWidth="lg"
+        footer={
+          <Button variant="ghost" onClick={() => setSelectedWebhook(null)}>
+            Tutup
+          </Button>
+        }
+      >
         {deliveriesLoading ? (
           <p className="text-xs text-text-muted py-6 text-center">Memuat riwayat pengiriman...</p>
         ) : (
@@ -267,7 +362,7 @@ export const Webhooks: React.FC = () => {
             ) : (
               <div className="space-y-2">
                 {deliveries.map(d => (
-                  <div key={d.id} className="flex items-center justify-between p-3 bg-bg-surface-2 border border-border rounded-nav cursor-pointer hover:border-brand/30 transition-colors" onClick={() => loadDeliveryDetails(d.id)}>
+                  <div key={d.id} className="flex items-center justify-between p-3 bg-bg-surface-2 border border-border rounded-nav cursor-pointer hover:border-accent/30 transition-colors" onClick={() => loadDeliveryDetails(d.id)}>
                     <div>
                       <div className="flex items-center gap-2">
                         <Badge variant={d.status === 'success' ? 'success' : d.status === 'failed' ? 'error' : 'warn'}>{d.status}</Badge>
@@ -286,57 +381,54 @@ export const Webhooks: React.FC = () => {
         )}
       </Drawer>
 
-      {/* Delivery Details Modal/Drawer overlay */}
-      {selectedDeliveryId !== null && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-bg-sidebar border border-border rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold text-white">Delivery Details</h2>
-                <p className="text-xs text-text-muted">ID: {selectedDeliveryId}</p>
+      {/* Delivery Details Modal */}
+      <Modal
+        isOpen={selectedDeliveryId !== null}
+        onClose={() => setSelectedDeliveryId(null)}
+        title="Delivery Details"
+        subtitle={`ID: ${selectedDeliveryId}`}
+        maxWidth="lg"
+        footer={
+          <Button variant="ghost" onClick={() => setSelectedDeliveryId(null)}>
+            Tutup
+          </Button>
+        }
+      >
+        <div className="space-y-4 text-xs">
+          {detailsLoading ? (
+            <p className="text-center text-text-muted py-4">Memuat detail...</p>
+          ) : deliveryDetails ? (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-bg-surface-2 p-3 rounded-nav border border-border">
+                  <span className="block text-xs font-medium text-text-secondary mb-1">Status</span>
+                  <Badge variant={deliveryDetails.status === 'success' ? 'success' : deliveryDetails.status === 'failed' ? 'error' : 'warn'}>{deliveryDetails.status}</Badge>
+                </div>
+                <div className="bg-bg-surface-2 p-3 rounded-nav border border-border">
+                  <span className="block text-xs font-medium text-text-secondary mb-1">Response Code</span>
+                  <span className="text-white font-mono">{deliveryDetails.response_status_code || 'N/A'}</span>
+                </div>
               </div>
-              <button onClick={() => setSelectedDeliveryId(null)} className="text-text-muted hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="p-5 overflow-y-auto space-y-4 text-xs">
-              {detailsLoading ? (
-                <p className="text-center text-text-muted py-4">Memuat detail...</p>
-              ) : deliveryDetails ? (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-bg-surface-2 p-3 rounded-nav border border-border">
-                      <span className="block text-text-secondary uppercase mb-1">Status</span>
-                      <Badge variant={deliveryDetails.status === 'success' ? 'success' : deliveryDetails.status === 'failed' ? 'error' : 'warn'}>{deliveryDetails.status}</Badge>
-                    </div>
-                    <div className="bg-bg-surface-2 p-3 rounded-nav border border-border">
-                      <span className="block text-text-secondary uppercase mb-1">Response Code</span>
-                      <span className="text-white font-mono">{deliveryDetails.response_status_code || 'N/A'}</span>
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <h3 className="font-semibold text-white mb-2">Request Payload</h3>
-                    <pre className="bg-bg-surface-2 border border-border p-3 rounded-nav overflow-x-auto text-[11px] text-blue-300 font-mono whitespace-pre-wrap break-all">
-                      {deliveryDetails.payload ? JSON.stringify(deliveryDetails.payload, null, 2) : 'No payload available'}
-                    </pre>
-                  </div>
-                  
-                  <div>
-                    <h3 className="font-semibold text-white mb-2">Response / Error</h3>
-                    <pre className="bg-bg-surface-2 border border-border p-3 rounded-nav overflow-x-auto text-[11px] text-red-300 font-mono whitespace-pre-wrap break-all">
-                      {deliveryDetails.error_message || 'Success'}
-                    </pre>
-                  </div>
-                </>
-              ) : (
-                <p className="text-center text-text-muted py-4">Gagal memuat detail</p>
-              )}
-            </div>
-          </div>
+              
+              <div>
+                <h3 className="font-semibold text-white mb-2">Request Payload</h3>
+                <pre className="bg-bg-surface-2 border border-border p-3 rounded-nav overflow-x-auto text-[11px] text-blue-300 font-mono whitespace-pre-wrap break-all">
+                  {deliveryDetails.payload ? JSON.stringify(deliveryDetails.payload, null, 2) : 'No payload available'}
+                </pre>
+              </div>
+              
+              <div>
+                <h3 className="font-semibold text-white mb-2">Response / Error</h3>
+                <pre className="bg-bg-surface-2 border border-border p-3 rounded-nav overflow-x-auto text-[11px] text-red-300 font-mono whitespace-pre-wrap break-all">
+                  {deliveryDetails.error_message || 'Success'}
+                </pre>
+              </div>
+            </>
+          ) : (
+            <p className="text-center text-text-muted py-4">Gagal memuat detail</p>
+          )}
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

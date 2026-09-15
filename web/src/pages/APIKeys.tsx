@@ -257,8 +257,9 @@ export const APIKeys: React.FC = () => {
                 variant="secondary"
                 size="sm"
                 onClick={() => handleOpenAllowed(k)}
+                className="w-full sm:w-auto"
               >
-                Allowed Models/IPs
+                Allowed Scope
               </Button>
               <Button
                 variant="secondary"
@@ -289,6 +290,16 @@ export const APIKeys: React.FC = () => {
           onClose={() => setCreatedRawKey(null)}
           title="Kunci API Berhasil Dibuat"
           subtitle="Simpan kunci ini sekarang. Kunci tidak akan pernah ditampilkan lagi!"
+          footer={
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setCreatedRawKey(null)}
+              className="w-full sm:w-auto"
+            >
+              Saya Sudah Menyimpan Kunci Ini
+            </Button>
+          }
         >
           <div className="space-y-4">
             <div className="p-3 bg-bg-surface-2 rounded-inner border border-accent/30 flex items-center justify-between">
@@ -304,14 +315,9 @@ export const APIKeys: React.FC = () => {
                 {copied ? <Check className="w-4 h-4 text-accent" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
               </button>
             </div>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setCreatedRawKey(null)}
-              className="w-full"
-            >
-              Saya Sudah Menyimpan Kunci Ini
-            </Button>
+            <p className="text-xs text-text-muted">
+              Pastikan Anda telah menyalin dan menyimpan token di atas di tempat yang aman (seperti environment variable).
+            </p>
           </div>
         </Modal>
       )}
@@ -322,10 +328,20 @@ export const APIKeys: React.FC = () => {
         onClose={() => setIsCreateOpen(false)}
         title="Buat Kunci API Klien Baru"
         subtitle="Hasilkan token otentikasi format sk_live_..."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="primary" type="submit" form="create-api-key-form">
+              Hasilkan Kunci API
+            </Button>
+          </>
+        }
       >
-        <form onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-api-key-form" onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
-            <label htmlFor="api-key-name" className="block font-semibold text-text-secondary uppercase mb-1">Nama Kunci</label>
+            <label htmlFor="api-key-name" className="block text-xs font-medium text-text-secondary mb-1.5">Nama Kunci *</label>
             <input
               id="api-key-name"
               name="name"
@@ -334,12 +350,12 @@ export const APIKeys: React.FC = () => {
               placeholder="Backend Production Key"
               value={newKey.name}
               onChange={(e) => setNewKey({ ...newKey, name: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label htmlFor="api-key-rpm" className="block font-semibold text-text-secondary uppercase mb-1">Batas RPM (0 = tanpa batas)</label>
+              <label htmlFor="api-key-rpm" className="block text-xs font-medium text-text-secondary mb-1.5">Batas RPM (0 = tanpa batas)</label>
               <input
                 id="api-key-rpm"
                 name="rpm_limit"
@@ -347,11 +363,11 @@ export const APIKeys: React.FC = () => {
                 min={0}
                 value={newKey.rpm_limit}
                 onChange={(e) => setNewKey({ ...newKey, rpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             </div>
             <div>
-              <label htmlFor="api-key-tpm" className="block font-semibold text-text-secondary uppercase mb-1">Batas TPM (0 = tanpa batas)</label>
+              <label htmlFor="api-key-tpm" className="block text-xs font-medium text-text-secondary mb-1.5">Batas TPM (0 = tanpa batas)</label>
               <input
                 id="api-key-tpm"
                 name="tpm_limit"
@@ -359,13 +375,10 @@ export const APIKeys: React.FC = () => {
                 min={0}
                 value={newKey.tpm_limit}
                 onChange={(e) => setNewKey({ ...newKey, tpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             </div>
           </div>
-          <Button type="submit" variant="primary" size="md" className="w-full mt-2">
-            Hasilkan Kunci API
-          </Button>
         </form>
       </Modal>
 
@@ -375,31 +388,38 @@ export const APIKeys: React.FC = () => {
         onClose={() => setIsAllowedOpen(false)}
         title="Edit Allowed Models & Providers"
         subtitle="Batasi kunci ini hanya untuk model atau provider tertentu (pisahkan dengan koma)"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setIsAllowedOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="primary" type="submit" form="edit-allowed-form">
+              Simpan Perubahan
+            </Button>
+          </>
+        }
       >
-        <form onSubmit={handleSaveAllowed} className="space-y-4 text-xs">
+        <form id="edit-allowed-form" onSubmit={handleSaveAllowed} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Allowed Models (ID)</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Allowed Models (ID)</label>
             <input
               type="text"
               placeholder="gpt-4o, claude-3"
               value={allowedModels}
               onChange={(e) => setAllowedModels(e.target.value)}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
           <div>
-            <label className="block font-semibold text-text-secondary uppercase mb-1">Allowed Providers (ID)</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Allowed Providers (ID)</label>
             <input
               type="text"
               placeholder="openai, anthropic"
               value={allowedProviders}
               onChange={(e) => setAllowedProviders(e.target.value)}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
-          <Button type="submit" variant="primary" size="md" className="w-full mt-2">
-            Simpan Perubahan
-          </Button>
         </form>
       </Modal>
     </div>

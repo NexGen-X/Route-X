@@ -13,7 +13,6 @@ import {
   Copy,
   Check,
   Radio,
-  Terminal,
   Activity,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -248,7 +247,7 @@ export const Requests: React.FC = () => {
             <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-border text-text-muted uppercase tracking-wider text-[11px] bg-bg-surface-2/40">
+                  <tr className="border-b border-border text-text-muted font-medium text-xs bg-bg-surface-2/40">
                     <th className="py-3 px-4 font-semibold">Status & Request ID</th>
                     <th className="py-3 px-4 font-semibold">Model & Provider</th>
                     <th className="py-3 px-4 font-semibold">Token & Cost</th>
@@ -335,7 +334,7 @@ export const Requests: React.FC = () => {
             <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-border text-text-muted uppercase tracking-wider text-[11px] bg-bg-surface-2/40">
+                  <tr className="border-b border-border text-text-muted font-medium text-xs bg-bg-surface-2/40">
                     <th className="py-3 px-4 font-semibold">Status & Request ID</th>
                     <th className="py-3 px-4 font-semibold">Model & Provider</th>
                     <th className="py-3 px-4 font-semibold">Token & Cost</th>
@@ -427,46 +426,8 @@ export const Requests: React.FC = () => {
           title="Detail Request & Timeline Event"
           subtitle={`ID: ${selectedReq.request_id}`}
           maxWidth="2xl"
-        >
-          <div className="space-y-6">
-            {inspectorError && (
-              <QueryError message={inspectorError} onRetry={() => void handleInspect(selectedReq)} />
-            )}
-            {/* Quick Metrics Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
-                <span className="text-[10px] text-text-muted uppercase">Status HTTP</span>
-                <div className="mt-1">{getStatusBadge(selectedReq.status_code)}</div>
-              </div>
-              <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
-                <span className="text-[10px] text-text-muted uppercase">Total Durasi</span>
-                <div className="mt-1 font-mono font-bold text-white">{selectedReq.duration_ms} ms</div>
-              </div>
-              <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
-                <span className="text-[10px] text-text-muted uppercase">Total Token</span>
-                <div className="mt-1 font-mono font-bold text-white">
-                  {selectedReq.total_tokens != null ? selectedReq.total_tokens.toLocaleString() : '-'}
-                </div>
-              </div>
-              <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
-                <span className="text-[10px] text-text-muted uppercase">Biaya USD</span>
-                <div className="mt-1 font-mono font-bold text-accent">
-                  {formatUSD(selectedReq.cost_usd, 6)}
-                </div>
-              </div>
-            </div>
-
-            {/* Reproduce via cURL */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-bg-surface-2/60 rounded-inner border border-border">
-              <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-accent/10 flex items-center justify-center text-accent">
-                  <Terminal className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <span className="text-xs font-semibold text-white block">Reproduksi Inferensi</span>
-                  <span className="text-[11px] text-text-muted">Klon request ini langsung sebagai perintah cURL terminal</span>
-                </div>
-              </div>
+          footer={
+            <div className="flex items-center justify-between w-full">
               <Button
                 size="sm"
                 variant={isCurlCopied ? 'primary' : 'secondary'}
@@ -475,8 +436,40 @@ export const Requests: React.FC = () => {
                 aria-label={isCurlCopied ? 'Tersalin' : 'Salin sebagai cURL'}
                 icon={isCurlCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               >
-                {isCurlCopied ? 'Tersalin!' : 'cURL'}
+                {isCurlCopied ? 'cURL Tersalin' : 'Salin cURL'}
               </Button>
+              <Button variant="ghost" onClick={() => setIsInspectorOpen(false)}>
+                Tutup
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-6">
+            {inspectorError && (
+              <QueryError message={inspectorError} onRetry={() => void handleInspect(selectedReq)} />
+            )}
+            {/* Quick Metrics Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
+                <span className="text-xs font-medium text-text-muted">Status HTTP</span>
+                <div className="mt-1">{getStatusBadge(selectedReq.status_code)}</div>
+              </div>
+              <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
+                <span className="text-xs font-medium text-text-muted">Total Durasi</span>
+                <div className="mt-1 font-mono font-bold text-white">{selectedReq.duration_ms} ms</div>
+              </div>
+              <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
+                <span className="text-xs font-medium text-text-muted">Total Token</span>
+                <div className="mt-1 font-mono font-bold text-white">
+                  {selectedReq.total_tokens != null ? selectedReq.total_tokens.toLocaleString() : '-'}
+                </div>
+              </div>
+              <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
+                <span className="text-xs font-medium text-text-muted">Biaya USD</span>
+                <div className="mt-1 font-mono font-bold text-accent">
+                  {formatUSD(selectedReq.cost_usd, 6)}
+                </div>
+              </div>
             </div>
 
             {/* Latency Waterfall Bar */}
@@ -543,7 +536,7 @@ export const Requests: React.FC = () => {
 
             {/* Event Timeline */}
             <div>
-              <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+              <h4 className="text-xs font-semibold text-text-secondary mb-3">
                 Timeline Peristiwa (Failover & Percobaan)
               </h4>
               <div className="space-y-2">
@@ -571,7 +564,7 @@ export const Requests: React.FC = () => {
 
             {/* Request Payload Viewer */}
             <div>
-              <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+              <h4 className="text-xs font-semibold text-text-secondary mb-2">
                 Muatan Permintaan & Respons
               </h4>
               {reqPayload ? (

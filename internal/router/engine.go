@@ -194,3 +194,23 @@ func (e *Engine) Invalidate() {
 	e.segarDi = time.Time{}
 	e.mu.Unlock()
 }
+
+// FindRuleTargetModelID mencari target ModelID dari aturan routing bila nama yang diminta
+// cocok dengan nama aturan aktif atau alias combo ([combo:alias=...]).
+func (e *Engine) FindRuleTargetModelID(ctx context.Context, requested string) string {
+	if e == nil || requested == "" {
+		return ""
+	}
+	rules, err := e.aturan(ctx)
+	if err != nil || len(rules) == 0 {
+		return ""
+	}
+	for _, r := range rules {
+		alias := ExtractComboAlias(r.Description)
+		if (r.Name == requested || (alias != "" && alias == requested)) && r.MatchModelID != "" {
+			return r.MatchModelID
+		}
+	}
+	return ""
+}
+

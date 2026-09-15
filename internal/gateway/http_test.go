@@ -1324,3 +1324,90 @@ func TestComboRoutingSmartContextBypass(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsResolusiNamaAturanDanComboAlias(t *testing.T) {
+	m1 := &upstream.Model{ID: "m-base", ModelID: "base-model", Enabled: true}
+	cand := kandidatRute("prov-base", "base-model-upstream")
+
+	models := &petaModel{models: map[string]*upstream.Model{
+		"m-base":     m1,
+		"base-model": m1,
+	}}
+	cands := &petaKandidat{cands: map[string][]*upstream.RouteCandidate{
+		"m-base": {cand},
+	}}
+
+	ruleName := "general-chat"
+	ruleCombo := "super-combo"
+
+	rule1 := &upstream.RoutingRule{
+		ID:           "r-rule-name",
+		Name:         ruleName,
+		MatchModelID: ptrString("m-base"),
+		Strategy:     "priority",
+		MaxAttempts:  1,
+		Enabled:      true,
+	}
+	rule2 := &upstream.RoutingRule{
+		ID:           "r-combo-alias",
+		Name:         "Aturan Combo",
+		MatchModelID: ptrString("m-base"),
+		Strategy:     "priority",
+		MaxAttempts:  1,
+		Enabled:      true,
+		Description:  ptrString("Aturan Cascade [combo:alias=" + ruleCombo + "]"),
+	}
+
+	engine := router.NewEngine(&sumberAturanTiruan{rules: []*upstream.RoutingRule{rule1, rule2}}, nil, loggerSenyap())
+
+	p := &providerTiruan{
+		nama: "prov-base", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{
+				ID:  "chatcmpl-resolusi",
+				Raw: json.RawMessage(`{"id":"chatcmpl-resolusi","choices":[{"message":{"content":"jawaban sukses"}}]}`),
+			}, nil
+		},
+	}
+
+	factory := &pabrikTiruan{perNama: map[string]providers.Provider{"prov-base": p}}
+	executor := NewExecutor(nil, loggerSenyap())
+	h, err := NewHandlers(HandlersDeps{
+		Models:     models,
+		Candidates: cands,
+		Factory:    factory,
+		Engine:     engine,
+		Executor:   executor,
+		Logger:     loggerSenyap(),
+	})
+	if err != nil {
+		t.Fatalf("NewHandlers: %v", err)
+	}
+
+	routes := h.Routes()
+
+	// 1. Permintaan menggunakan nama aturan "general-chat"
+	w1 := httptest.NewRecorder()
+	r1 := httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(`{"model":"general-chat","messages":[{"role":"user","content":"halo"}]}`))
+	routes.ServeHTTP(w1, r1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("permintaan dengan nama aturan gagal: status=%d, body=%s", w1.Code, w1.Body.String())
+	}
+
+	// 2. Permintaan menggunakan combo alias "super-combo"
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(`{"model":"super-combo","messages":[{"role":"user","content":"halo"}]}`))
+	routes.ServeHTTP(w2, r2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("permintaan dengan combo alias gagal: status=%d, body=%s", w2.Code, w2.Body.String())
+	}
+
+	// 3. Permintaan dengan nama tidak dikenal tetap 404 model_not_found
+	w3 := httptest.NewRecorder()
+	r3 := httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(`{"model":"sama-sekali-tidak-ada","messages":[{"role":"user","content":"halo"}]}`))
+	routes.ServeHTTP(w3, r3)
+	if w3.Code != http.StatusNotFound {
+		t.Fatalf("permintaan nama fiktif harus 404; didapat %d", w3.Code)
+	}
+}
+
+

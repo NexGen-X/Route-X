@@ -4,6 +4,8 @@ import type { DomainConfig } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Select } from '../components/common/Select';
+import { Badge } from '../components/common/Badge';
+import { Modal } from '../components/common/Modal';
 import {
   Sliders,
   Save,
@@ -19,17 +21,23 @@ import {
   Copy,
   Check,
   Zap,
+  Plus,
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { QueryError } from '../components/common/QueryError';
 
 export const Settings: React.FC = () => {
   const { toast, confirmModal } = useToast();
   // Runtime Settings state
-  const [settings, setSettings] = useState<{ key: string; value: string; description?: string }[]>([]);
+  const [settings, setSettings] = useState<{ key: string; value: any; description?: string }[]>([]);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [isCreateSettingOpen, setIsCreateSettingOpen] = useState(false);
+  const [newSetting, setNewSetting] = useState({ key: '', value: '', description: '' });
+  const [isCreatingSetting, setIsCreatingSetting] = useState(false);
   const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
   // Timer indikator salin; dibatalkan saat unmount agar tidak ada setState basi.
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -52,6 +60,22 @@ export const Settings: React.FC = () => {
   const [domainFeedback, setDomainFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [protocolFilter, setProtocolFilter] = useState<string>('all');
 
+  const formatSettingValue = (val: any): string => {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'object') {
+      try {
+        return JSON.stringify(val, null, 2);
+      } catch {
+        return String(val);
+      }
+    }
+    return String(val);
+  };
+
+  const isReservedSetting = (key: string): boolean => {
+    return key.startsWith('cli:config:') || key.startsWith('system:');
+  };
+
   const loadSettings = async () => {
     setIsLoading(true);
     try {
@@ -59,11 +83,12 @@ export const Settings: React.FC = () => {
       setSettings(res.items || []);
       const map: Record<string, string> = {};
       (res.items || []).forEach((s) => {
-        map[s.key] = s.value;
+        map[s.key] = formatSettingValue(s.value);
       });
       setEditValues(map);
+      setLoadError(null);
     } catch (err) {
-      console.error('Gagal memuat setelan runtime:', err);
+      setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
@@ -79,7 +104,7 @@ export const Settings: React.FC = () => {
         setInputMode(res.mode || 'letsencrypt');
       }
     } catch (err) {
-      console.error('Gagal memuat status domain:', err);
+      toast.error('Gagal memuat status domain: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsDomainLoading(false);
     }
@@ -91,15 +116,63 @@ export const Settings: React.FC = () => {
   }, []);
 
   const handleSave = async (key: string) => {
+    if (isReservedSetting(key)) {
+      toast.error('Parameter ini dicadangkan untuk subsistem internal dan tidak dapat diubah dari sini.');
+      return;
+    }
     setSavingKey(key);
     try {
-      await api.system.updateSetting(key, editValues[key] || '');
-      toast.success('Pengaturan berhasil diperbarui');
+      const original = settings.find((s) => s.key === key);
+      await api.system.updateSetting(key, editValues[key] || '', original?.description);
+      toast.success(`Parameter "${key}" berhasil diperbarui.`);
       loadSettings();
     } catch (err) {
       toast.error('Gagal menyimpan pengaturan: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSavingKey(null);
+    }
+  };
+
+  const handleDeleteSetting = async (key: string) => {
+    const ok = await confirmModal({
+      title: 'Hapus Parameter Runtime?',
+      message: `Hapus parameter "${key}" dari basis data? Pengaturan akan kembali ke nilai bawaan sistem.`,
+      confirmText: 'Ya, Hapus',
+      danger: true,
+    });
+    if (!ok) return;
+
+    try {
+      await api.system.deleteSetting(key);
+      toast.success(`Parameter "${key}" berhasil dihapus.`);
+      loadSettings();
+    } catch (err) {
+      toast.error('Gagal menghapus parameter: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const handleCreateSetting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const key = newSetting.key.trim();
+    if (!key) {
+      toast.error('Kunci parameter tidak boleh kosong.');
+      return;
+    }
+    if (isReservedSetting(key)) {
+      toast.error('Kunci awalan "cli:config:" dan "system:" dicadangkan untuk modul internal.');
+      return;
+    }
+    setIsCreatingSetting(true);
+    try {
+      await api.system.updateSetting(key, newSetting.value, newSetting.description.trim() || undefined);
+      toast.success(`Parameter "${key}" berhasil dibuat.`);
+      setIsCreateSettingOpen(false);
+      setNewSetting({ key: '', value: '', description: '' });
+      loadSettings();
+    } catch (err) {
+      toast.error('Gagal membuat parameter: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsCreatingSetting(false);
     }
   };
 
@@ -184,8 +257,11 @@ export const Settings: React.FC = () => {
 
   return (
     <div className="space-y-8">
+      {loadError && (
+        <QueryError message={loadError} onRetry={() => void loadSettings()} />
+      )}
       {/* 1. Pengaturan Domain & HTTPS Otomatis */}
-      <Card className="p-6 border-accent/20 bg-bg-surface-1">
+      <Card className="p-6 border-accent/20 bg-bg-surface-2">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center">
@@ -241,16 +317,16 @@ export const Settings: React.FC = () => {
             Petunjuk Konfigurasi DNS di Registrar / Cloudflare:
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div className="bg-bg-surface-1 p-2.5 rounded-lg border border-border">
-              <span className="text-text-muted block text-[10px] uppercase font-bold">Tipe Record</span>
+            <div className="bg-bg-surface-2 p-2.5 rounded-lg border border-border">
+              <span className="text-text-muted block text-xs font-medium">Tipe Record</span>
               <span className="font-mono text-white font-semibold">A Record</span>
             </div>
-            <div className="bg-bg-surface-1 p-2.5 rounded-lg border border-border">
-              <span className="text-text-muted block text-[10px] uppercase font-bold">Nama Host / Subdomain</span>
+            <div className="bg-bg-surface-2 p-2.5 rounded-lg border border-border">
+              <span className="text-text-muted block text-xs font-medium">Nama Host / Subdomain</span>
               <span className="font-mono text-white font-semibold">ai atau gateway (atau @)</span>
             </div>
-            <div className="bg-bg-surface-1 p-2.5 rounded-lg border border-border">
-              <span className="text-text-muted block text-[10px] uppercase font-bold">Nilai Target (IP Publik Server)</span>
+            <div className="bg-bg-surface-2 p-2.5 rounded-lg border border-border">
+              <span className="text-text-muted block text-xs font-medium">Nilai Target (IP Publik Server)</span>
               <span className="font-mono text-accent font-semibold">{serverIP || 'Belum tersedia'}</span>
             </div>
           </div>
@@ -311,20 +387,24 @@ export const Settings: React.FC = () => {
                 </span>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                <div className="flex items-center justify-between p-2 rounded bg-bg-surface-2">
-                  <span className="text-text-secondary">Web Panel:</span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded bg-bg-surface-2 gap-1 sm:gap-2 min-w-0">
+                  <span className="text-text-secondary shrink-0 text-[11px] sm:text-xs">Web Panel:</span>
                   <a
                     href={domainConfig.public_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-accent hover:underline font-mono inline-flex items-center gap-1 font-semibold"
+                    className="text-accent hover:underline font-mono inline-flex items-center gap-1 font-semibold truncate max-w-full"
+                    title={domainConfig.public_url}
                   >
-                    {domainConfig.public_url} <ExternalLink className="w-3 h-3" />
+                    <span className="truncate">{domainConfig.public_url}</span>
+                    <ExternalLink className="w-3 h-3 shrink-0" />
                   </a>
                 </div>
-                <div className="flex items-center justify-between p-2 rounded bg-bg-surface-2">
-                  <span className="text-text-secondary">Base URL Endpoint:</span>
-                  <span className="text-emerald-400 font-mono font-semibold">{domainConfig.base_url}</span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded bg-bg-surface-2 gap-1 sm:gap-2 min-w-0">
+                  <span className="text-text-secondary shrink-0 text-[11px] sm:text-xs">Base URL Endpoint:</span>
+                  <span className="text-emerald-400 font-mono font-semibold truncate max-w-full" title={domainConfig.base_url}>
+                    {domainConfig.base_url}
+                  </span>
                 </div>
               </div>
 
@@ -365,7 +445,7 @@ export const Settings: React.FC = () => {
                         className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
                           protocolFilter === tab.id
                             ? 'bg-accent text-white shadow-sm'
-                            : 'text-text-muted hover:text-white hover:bg-bg-surface-1'
+                            : 'text-text-muted hover:text-white hover:bg-bg-surface-2'
                         }`}
                       >
                         {tab.label}
@@ -420,7 +500,7 @@ export const Settings: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => handleCopyLink(p.id, p.share_link)}
-                              className="w-full py-1.5 px-2 rounded bg-bg-surface-1 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
+                              className="w-full py-1.5 px-2 rounded bg-bg-surface-2 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
                             >
                               {copiedLinkKey === p.id ? (
                                 <>
@@ -443,7 +523,7 @@ export const Settings: React.FC = () => {
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-between gap-3 pt-2">
             <div>
               {domainConfig?.domain && (
                 <Button
@@ -453,7 +533,7 @@ export const Settings: React.FC = () => {
                   onClick={handleDeleteDomain}
                   isLoading={isDomainSaving}
                   icon={<Trash2 className="w-3.5 h-3.5 text-red-400" />}
-                  className="text-red-400 hover:text-red-300"
+                  className="w-full sm:w-auto text-red-400 hover:text-red-300 justify-center"
                 >
                   Lepas Domain
                 </Button>
@@ -466,6 +546,7 @@ export const Settings: React.FC = () => {
               size="sm"
               isLoading={isDomainSaving}
               icon={<Lock className="w-3.5 h-3.5" />}
+              className="w-full sm:w-auto justify-center"
             >
               {domainConfig?.domain ? 'Perbarui & Verifikasi Domain' : 'Verifikasi & Aktifkan HTTPS'}
             </Button>
@@ -473,59 +554,248 @@ export const Settings: React.FC = () => {
         </form>
       </Card>
 
-      {/* 2. Runtime Parameters Table */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
+      {/* 2. Runtime Parameters Section */}
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-bold tracking-tight text-white">Runtime Parameters</h3>
+            <h3 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
+              <Sliders className="w-5 h-5 text-accent" />
+              Runtime Parameters
+            </h3>
             <p className="text-xs text-text-secondary mt-0.5">
-              Setelan parameter operasional tingkat rendah yang tersimpan di database.
+              Setelan parameter operasional dinamis yang tersimpan di basis data tanpa perlu restart biner.
             </p>
           </div>
-          <Button variant="secondary" size="sm" onClick={loadSettings} isLoading={isLoading}>
-            <RefreshCw className="w-3.5 h-3.5" />
-          </Button>
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <Button variant="secondary" size="sm" onClick={loadSettings} isLoading={isLoading}>
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline ml-1.5">Segarkan</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateSettingOpen(true)}
+              icon={<Plus className="w-4 h-4" />}
+            >
+              Tambah Parameter
+            </Button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {settings.map((s) => (
-            <Card key={s.key} className="p-5 flex flex-col justify-between">
+        {/* Custom Operasional Parameters */}
+        {settings.filter((s) => !isReservedSetting(s.key)).length === 0 ? (
+          <Card className="py-8 px-6 text-center border border-border/60">
+            <div className="max-w-md mx-auto space-y-3">
+              <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 text-accent flex items-center justify-center mx-auto">
+                <Sliders className="w-5 h-5" />
+              </div>
               <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-8 h-8 rounded-full bg-accent/10 text-accent flex items-center justify-center">
-                    <Sliders className="w-4 h-4" />
-                  </div>
+                <h4 className="text-sm font-bold text-white">Belum Ada Parameter Runtime Kustom</h4>
+                <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                  Gunakan parameter runtime untuk menyimpan nilai operasional dinamis (seperti flag fitur, batas jeda timeout, atau konfigurasi eksperimental).
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsCreateSettingOpen(true)}
+                icon={<Plus className="w-3.5 h-3.5" />}
+                className="text-xs mx-auto"
+              >
+                Buat Parameter Baru
+              </Button>
+            </div>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {settings
+              .filter((s) => !isReservedSetting(s.key))
+              .map((s) => (
+                <Card key={s.key} className="p-5 flex flex-col justify-between">
                   <div>
-                    <h4 className="text-sm font-bold text-white font-mono">{s.key}</h4>
-                    <span className="text-[11px] text-text-muted">{s.description || 'Pengaturan runtime'}</span>
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
+                          <Sliders className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-sm font-bold text-white font-mono truncate">{s.key}</h4>
+                          <span className="text-[11px] text-text-muted block truncate">{s.description || 'Parameter runtime kustom'}</span>
+                        </div>
+                      </div>
+                      <Badge variant="neutral">Kustom</Badge>
+                    </div>
+
+                    <div className="mt-3">
+                      <textarea
+                        rows={3}
+                        value={editValues[s.key] ?? ''}
+                        onChange={(e) => setEditValues({ ...editValues, [s.key]: e.target.value })}
+                        className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-xs text-white font-mono focus:outline-none focus:border-accent"
+                        placeholder="Nilai parameter (teks biasa atau JSON)..."
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="mt-4">
-                  <input
-                    type="text"
-                    value={editValues[s.key] ?? s.value}
-                    onChange={(e) => setEditValues({ ...editValues, [s.key]: e.target.value })}
-                    className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-xs text-white font-mono"
-                  />
-                </div>
-              </div>
+                  <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleDeleteSetting(s.key)}
+                      icon={<Trash2 className="w-3.5 h-3.5 text-red-400" />}
+                      className="text-red-400 hover:text-red-300"
+                    >
+                      Hapus
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => handleSave(s.key)}
+                      isLoading={savingKey === s.key}
+                      icon={<Save className="w-3.5 h-3.5" />}
+                    >
+                      Simpan Perubahan
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+          </div>
+        )}
 
-              <div className="mt-4 pt-3 border-t border-border flex justify-end">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => handleSave(s.key)}
-                  isLoading={savingKey === s.key}
-                  icon={<Save className="w-3.5 h-3.5" />}
-                >
-                  Simpan Perubahan
-                </Button>
+        {/* Managed Subsystem Settings (CLI & System) */}
+        {settings.filter((s) => isReservedSetting(s.key)).length > 0 && (
+          <div className="pt-6 border-t border-border/60 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-sky-400" />
+                  Setelan Terkelola Subsistem (Read-Only)
+                </h4>
+                <p className="text-[11px] text-text-secondary mt-0.5">
+                  Parameter ini dikelola otomatis oleh modul terkait (CLI Integrations & Domain). Perubahan dilakukan melalui menu khusus untuk menjamin integritas konfigurasi.
+                </p>
               </div>
-            </Card>
-          ))}
-        </div>
+              <Badge variant="info">
+                {settings.filter((s) => isReservedSetting(s.key)).length} Terkelola
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {settings
+                .filter((s) => isReservedSetting(s.key))
+                .map((s) => {
+                  const isCLI = s.key.startsWith('cli:config:');
+                  return (
+                    <Card key={s.key} className="p-4 rounded-xl bg-bg-surface-1 border border-border/60 flex flex-col justify-between space-y-3">
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <h5 className="text-xs font-bold text-white font-mono truncate">{s.key}</h5>
+                          <Badge variant={isCLI ? 'neutral' : 'info'}>
+                            {isCLI ? 'CLI Integrations' : 'Sistem'}
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-text-muted mb-2">{s.description || 'Konfigurasi subsistem internal'}</p>
+                        
+                        <pre className="p-2.5 rounded-lg bg-bg-base/80 border border-border/50 text-[10px] font-mono text-emerald-400/90 overflow-x-auto max-h-32 leading-relaxed">
+                          {editValues[s.key] || '(kosong)'}
+                        </pre>
+                      </div>
+
+                      <div className="pt-2 border-t border-border/40 flex items-center justify-end">
+                        {isCLI ? (
+                          <a href="#/cli">
+                            <Button variant="secondary" size="sm" icon={<ExternalLink className="w-3.5 h-3.5" />}>
+                              Buka CLI Integrations
+                            </Button>
+                          </a>
+                        ) : (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                          >
+                            Kelola di Atas
+                          </Button>
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Modal Tambah Parameter Runtime */}
+      <Modal
+        isOpen={isCreateSettingOpen}
+        onClose={() => setIsCreateSettingOpen(false)}
+        title="Tambah Parameter Runtime"
+        subtitle="Tambahkan variabel operasional baru ke basis data Route-X."
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setIsCreateSettingOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              type="submit"
+              form="create-setting-form"
+              isLoading={isCreatingSetting}
+              icon={<Save className="w-3.5 h-3.5" />}
+            >
+              Simpan Parameter
+            </Button>
+          </div>
+        }
+      >
+        <form id="create-setting-form" onSubmit={handleCreateSetting} className="space-y-4 text-xs">
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">
+              Kunci Parameter (Key) *
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="contoh: gateway:maintenance_mode atau timeout_ms"
+              value={newSetting.key}
+              onChange={(e) => setNewSetting({ ...newSetting, key: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+            />
+            <span className="text-[10px] text-text-muted mt-1 block">
+              Gunakan huruf kecil, angka, dan titik/titik dua sebagai pemisah namespace.
+            </span>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">
+              Deskripsi Singkat (Opsional)
+            </label>
+            <input
+              type="text"
+              placeholder="Keterangan fungsi atau tujuan parameter ini..."
+              value={newSetting.description}
+              onChange={(e) => setNewSetting({ ...newSetting, description: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">
+              Nilai Parameter (Value) *
+            </label>
+            <textarea
+              rows={4}
+              required
+              placeholder="Masukkan teks biasa, angka, boolean, atau format JSON..."
+              value={newSetting.value}
+              onChange={(e) => setNewSetting({ ...newSetting, value: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+            />
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

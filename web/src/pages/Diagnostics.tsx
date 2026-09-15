@@ -18,7 +18,7 @@ export const Diagnostics: React.FC = () => {
   const [flushingCache, setFlushingCache] = useState(false);
   const [updatingCache, setUpdatingCache] = useState(false);
   const [ttlMinutes, setTtlMinutes] = useState<number>(60);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -141,7 +141,7 @@ export const Diagnostics: React.FC = () => {
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 
       {/* Response Cache Card (Fitur 1) */}
-      <div className="bg-surface-light/40 border border-border/80 rounded-xl p-5 shadow-lg backdrop-blur-sm">
+      <div className="bg-bg-surface-2/40 border border-border/80 rounded-xl p-5 shadow-lg backdrop-blur-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-accent">
@@ -159,7 +159,7 @@ export const Diagnostics: React.FC = () => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
             <Button
               variant={cache?.enabled ? 'danger' : 'primary'}
               size="sm"
@@ -182,7 +182,7 @@ export const Diagnostics: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
-          <div className="bg-surface/60 rounded-lg p-3 border border-border/40">
+          <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
             <span className="text-[11px] text-text-muted block">Rasio Hit Cache</span>
             <span className="text-xl font-bold font-mono text-emerald-400 mt-1 block">
               {hitRatio}%
@@ -192,7 +192,7 @@ export const Diagnostics: React.FC = () => {
             </span>
           </div>
 
-          <div className="bg-surface/60 rounded-lg p-3 border border-border/40">
+          <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
             <span className="text-[11px] text-text-muted block">Hit Cache (Hemat Biaya)</span>
             <span className="text-xl font-bold font-mono text-white mt-1 block">
               {cache?.hits || 0}
@@ -202,7 +202,7 @@ export const Diagnostics: React.FC = () => {
             </span>
           </div>
 
-          <div className="bg-surface/60 rounded-lg p-3 border border-border/40">
+          <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
             <span className="text-[11px] text-text-muted block">Total Entri di Redis</span>
             <span className="text-xl font-bold font-mono text-accent mt-1 block">
               {cache?.total_entries || 0}
@@ -212,7 +212,7 @@ export const Diagnostics: React.FC = () => {
             </span>
           </div>
 
-          <div className="bg-surface/60 rounded-lg p-3 border border-border/40 flex flex-col justify-between">
+          <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40 flex flex-col justify-between">
             <div>
               <span className="text-[11px] text-text-muted block">Durasi Simpan (TTL)</span>
               <div className="flex items-center gap-1.5 mt-1">
@@ -224,14 +224,15 @@ export const Diagnostics: React.FC = () => {
                   max="10080"
                   value={ttlMinutes}
                   onChange={(e) => setTtlMinutes(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-16 bg-surface-dark border border-border/80 rounded px-1.5 py-0.5 text-xs text-white font-mono"
+                  className="w-16 bg-bg-base border border-border/80 rounded px-1.5 py-0.5 text-xs text-white font-mono focus:border-accent focus:outline-none"
                 />
                 <span className="text-xs text-text-secondary">menit</span>
                 <button
                   onClick={handleSaveTTL}
                   disabled={updatingCache}
-                  className="p-1 rounded bg-accent/20 hover:bg-accent/30 text-accent ml-auto text-xs"
+                  className="p-1.5 rounded bg-accent/20 hover:bg-accent/30 text-accent ml-auto text-xs min-w-[28px] min-h-[28px] flex items-center justify-center cursor-pointer"
                   title="Simpan TTL"
+                  aria-label="Simpan TTL"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
                 </button>
@@ -246,7 +247,21 @@ export const Diagnostics: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {isLoading && !diag ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="p-5 space-y-4 animate-pulse">
+              <div className="h-4 bg-bg-surface-2 rounded w-1/2" />
+              <div className="space-y-2 pt-2">
+                <div className="h-3 bg-bg-surface-2 rounded w-full" />
+                <div className="h-3 bg-bg-surface-2 rounded w-4/5" />
+                <div className="h-3 bg-bg-surface-2 rounded w-3/4" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card title="Runtime & Versi" subtitle="Identifikasi biner dan uptime proses">
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1 border-b border-border/40">
@@ -318,6 +333,7 @@ export const Diagnostics: React.FC = () => {
           </div>
         </Card>
       </div>
+      )}
 
       {/* Background Workers Section */}
       <div className="pt-6 border-t border-border/40">
@@ -334,8 +350,21 @@ export const Diagnostics: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {jobs.length === 0 ? (
-            <div className="col-span-3 p-6 text-center rounded-box bg-bg-surface-1 border border-border/40 text-xs text-text-muted">
+          {isLoading && jobs.length === 0 ? (
+            [1, 2, 3].map((i) => (
+              <Card key={i} className="p-4 space-y-3 animate-pulse">
+                <div className="flex justify-between">
+                  <div className="h-4 bg-bg-surface-2 rounded w-1/2" />
+                  <div className="h-5 bg-bg-surface-2 rounded w-12" />
+                </div>
+                <div className="space-y-1.5 pt-1">
+                  <div className="h-3 bg-bg-surface-2 rounded w-3/4" />
+                  <div className="h-3 bg-bg-surface-2 rounded w-1/2" />
+                </div>
+              </Card>
+            ))
+          ) : jobs.length === 0 ? (
+            <div className="col-span-3 p-6 text-center rounded-box bg-bg-surface-2 border border-border/40 text-xs text-text-muted">
               Tidak ada worker latar belakang yang terdaftar atau sedang berjalan.
             </div>
           ) : (

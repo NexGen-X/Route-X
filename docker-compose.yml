@@ -23,14 +23,14 @@ services:
       - APP_ENV=production
       - PORT=8080
       - PUBLIC_URL=https://id-tech.cloud
-      - DATABASE_URL=postgres://routex:routex123@db:5432/routex_prod?sslmode=prefer
+      - DATABASE_URL=postgres://routex:${POSTGRES_PASSWORD}@db:5432/routex_prod?sslmode=prefer
       - REDIS_URL=redis://redis:6379/0
-      - SESSION_SECRET=yykDETpHl+/Mz1hZp1tuslv0LVm4MarZlveJAfPp7N4=
-      - ENCRYPTION_KEY=kMWaAj6sucxpmmhwk6HrBlS/CKeuJNoqnEN86nmKDdc=
-      - API_KEY_PEPPER=uHppFuYwonauFvltqmWlY6mYfRZxGQlt8I055s/MXlg=
-      - INITIAL_ADMIN_EMAIL=admin@route-x.local
-      - INITIAL_ADMIN_PASSWORD=Admin123456RouteX2026!
-      - METRICS_TOKEN=metrics-token-route-x-secure-monitoring-api
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - API_KEY_PEPPER=${API_KEY_PEPPER}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@id-tech.cloud}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
+      - METRICS_TOKEN=${METRICS_TOKEN}
       - TRUSTED_PROXIES=0.0.0.0/0
     volumes:
       - ./deploy/xray:/opt/routex/deploy/xray
@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
     environment:
       - POSTGRES_USER=routex
-      - POSTGRES_PASSWORD=routex123
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=routex_prod
     volumes:
       - routex_pgdata:/var/lib/postgresql/data

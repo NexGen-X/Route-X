@@ -26,6 +26,7 @@ interface ModalProps {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
   ariaDescribedBy?: string;
 }
@@ -36,6 +37,7 @@ export const Modal: React.FC<ModalProps> = ({
   title,
   subtitle,
   children,
+  footer,
   maxWidth = 'md',
   ariaDescribedBy,
 }) => {
@@ -97,7 +99,12 @@ export const Modal: React.FC<ModalProps> = ({
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="p-5 overflow-y-auto flex-1">{children}</div>
+          <div className="p-5 overflow-y-auto flex-1 scrollbar-thin">{children}</div>
+          {footer && (
+            <div className="px-5 py-4 border-t border-border bg-bg-surface-2/60 flex-shrink-0">
+              {footer}
+            </div>
+          )}
         </div>
       </div>
     </FocusTrap>

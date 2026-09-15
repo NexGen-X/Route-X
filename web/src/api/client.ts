@@ -581,11 +581,27 @@ export const api = {
 
   // System
   system: {
-    settings: () => request<{ items: { key: string; value: string; description?: string }[] }>('/api/admin/system/settings'),
-    updateSetting: (key: string, value: string) =>
-      request<void>(`/api/admin/system/settings/${encodeURIComponent(key)}`, {
+    settings: () => request<{ items: { key: string; value: any; description?: string }[] }>('/api/admin/system/settings'),
+    updateSetting: (key: string, value: any, description?: string) => {
+      let rawVal = value;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+          try {
+            rawVal = JSON.parse(trimmed);
+          } catch {
+            rawVal = value;
+          }
+        }
+      }
+      return request<void>(`/api/admin/system/settings/${encodeURIComponent(key)}`, {
         method: 'PUT',
-        body: JSON.stringify({ value }),
+        body: JSON.stringify({ value: rawVal, description }),
+      });
+    },
+    deleteSetting: (key: string) =>
+      request<void>(`/api/admin/system/settings/${encodeURIComponent(key)}`, {
+        method: 'DELETE',
       }),
     jobs: () => request<{ items: BackgroundJob[] }>('/api/admin/system/jobs'),
     triggerJob: (name: string) =>

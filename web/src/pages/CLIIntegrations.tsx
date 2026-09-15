@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Terminal,
   CheckCircle2,
@@ -11,6 +11,11 @@ import {
   Search,
   Filter,
   Zap,
+  Key,
+  Eye,
+  EyeOff,
+  Laptop,
+  Server,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Card } from '../components/common/Card';
@@ -35,10 +40,21 @@ export const CLIIntegrations: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [onlyInstalled, setOnlyInstalled] = useState(false);
 
+  // Kunci API global pengguna untuk menghasilkan skrip terminal siap pakai
+  const [userApiKey, setUserApiKey] = useState<string>(() => {
+    try {
+      return localStorage.getItem('routex_cli_apikey') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [showGlobalKey, setShowGlobalKey] = useState(false);
+
   // Status form lokal per tool { [toolId]: { mode, target, apiKey } }
   const [toolConfigs, setToolConfigs] = useState<
     Record<string, { mode: 'model_only' | 'routing' | 'combo'; target: string; apiKey: string }>
   >({});
+  const [showKeyMap, setShowKeyMap] = useState<Record<string, boolean>>({});
   const [applyingTool, setApplyingTool] = useState<string | null>(null);
   const [applySuccess, setApplySuccess] = useState<Record<string, string>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -52,9 +68,38 @@ export const CLIIntegrations: React.FC = () => {
       feedbackTimersRef.current = [];
     };
   }, []);
+
   const [pingStatus, setPingStatus] = useState<
     Record<string, { testing: boolean; latency?: number; ok?: boolean }>
   >({});
+
+  // Cek apakah user membuka dashboard dari mesin lokal (localhost) atau remote cloud
+  const isLocalGateway = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const h = window.location.hostname.toLowerCase();
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1';
+  }, []);
+
+  // Temukan aturan combo dinamis dari database (aturan dengan tag [combo:...] pada deskripsinya)
+  const dynamicComboOptions = useMemo(() => {
+    const comboRules = rules.filter((r) => (r.description || '').includes('[combo:'));
+    if (comboRules.length === 0) {
+      return [];
+    }
+    return comboRules.map((r) => {
+      const m = (r.description || '').match(/\[combo:alias=([^\]]+)\]/);
+      const alias = m ? m[1].trim() : r.name;
+      const cleanDesc = (r.description || '')
+        .replace(/\[combo:[^\]]+\]/g, '')
+        .replace(/\[routing\]/g, '')
+        .trim();
+      return {
+        value: alias,
+        label: `${r.name} (${alias})`,
+        description: cleanDesc || 'Smart Tiered Cascade Rule',
+      };
+    });
+  }, [rules]);
 
   const handlePing = async (toolId: string) => {
     setPingStatus((prev) => ({ ...prev, [toolId]: { testing: true } }));
@@ -80,6 +125,7 @@ export const CLIIntegrations: React.FC = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportScriptContent, setExportScriptContent] = useState('');
   const [exportScriptLoading, setExportScriptLoading] = useState(false);
+  const [includeKeyInModal, setIncludeKeyInModal] = useState(true);
 
   const loadData = async () => {
     try {
@@ -103,10 +149,10 @@ export const CLIIntegrations: React.FC = () => {
         const mode = t.active_mode || 'model_only';
         const fallback =
           mode === 'routing'
-            ? rulesRes.items[0]?.name || 'general-chat'
+            ? rulesRes.items[0]?.name || ''
             : mode === 'combo'
-            ? 'combo:coding-tier1-tier2'
-            : modelsRes.items[0]?.model_id ?? 'claude-3-7-sonnet';
+            ? dynamicComboOptions[0]?.value || ''
+            : modelsRes.items[0]?.model_id || '';
         initialConfigs[t.id] = {
           mode,
           target: t.active_target || fallback,
@@ -133,11 +179,11 @@ export const CLIIntegrations: React.FC = () => {
       let newTarget = current?.target || '';
 
       if (mode === 'model_only') {
-        newTarget = models[0]?.model_id || 'claude-3-7-sonnet';
+        newTarget = models[0]?.model_id || '';
       } else if (mode === 'routing') {
-        newTarget = rules[0]?.name || 'general-chat';
+        newTarget = rules[0]?.name || '';
       } else if (mode === 'combo') {
-        newTarget = 'combo:coding-tier1-tier2';
+        newTarget = dynamicComboOptions[0]?.value || '';
       }
 
       return {
@@ -161,31 +207,50 @@ export const CLIIntegrations: React.FC = () => {
     }));
   };
 
+  const handleApiKeyChange = (toolId: string, apiKey: string) => {
+    setToolConfigs((prev) => ({
+      ...prev,
+      [toolId]: {
+        ...prev[toolId],
+        apiKey,
+      },
+    }));
+  };
+
+  const toggleShowKey = (toolId: string) => {
+    setShowKeyMap((prev) => ({ ...prev, [toolId]: !prev[toolId] }));
+  };
+
   const handleApply = async (toolId: string) => {
     const config = toolConfigs[toolId];
     if (!config) return;
 
     try {
       setApplyingTool(toolId);
+      const effectiveKey = config.apiKey || userApiKey || undefined;
       const res = await api.cli.configure({
         tool_id: toolId,
         mode: config.mode,
         target: config.target,
-        api_key: config.apiKey || undefined,
+        api_key: effectiveKey,
       });
 
       if (res.success) {
         setApplySuccess((prev) => ({
           ...prev,
-          [toolId]: 'Konfigurasi berhasil diterapkan!',
+          [toolId]: isLocalGateway
+            ? 'Konfigurasi berhasil diterapkan ke host lokal!'
+            : 'Preferensi berhasil disimpan di gateway!',
         }));
-        feedbackTimersRef.current.push(setTimeout(() => {
-          setApplySuccess((prev) => {
-            const next = { ...prev };
-            delete next[toolId];
-            return next;
-          });
-        }, 4000));
+        feedbackTimersRef.current.push(
+          setTimeout(() => {
+            setApplySuccess((prev) => {
+              const next = { ...prev };
+              delete next[toolId];
+              return next;
+            });
+          }, 4000)
+        );
 
         // Perbarui data lokal
         setData((prev) => {
@@ -203,6 +268,36 @@ export const CLIIntegrations: React.FC = () => {
     }
   };
 
+  // Susun snippet 3 variabel lengkap (Base URL, Target Model & Kunci API)
+  const getToolCompleteSnippet = (tool: CLITool) => {
+    const cfg = toolConfigs[tool.id];
+    const target = cfg?.target || tool.active_target || models[0]?.model_id || '';
+    const gwURL = data?.gateway_url || 'http://localhost:8080/v1';
+    const key = cfg?.apiKey || userApiKey || '<KUNCI_API_ROUTEX_ANDA>';
+
+    const lines: string[] = [];
+
+    // 1. Base URL
+    for (const [k, v] of Object.entries(tool.env_vars || {})) {
+      if (k.includes('BASE') || k.includes('HOST') || k.includes('ENDPOINT') || k.includes('PATH')) {
+        lines.push(`export ${k}='${v || gwURL}'`);
+      }
+    }
+
+    // 2. Target Model / Rule
+    for (const [k] of Object.entries(tool.env_vars || {})) {
+      if (k.includes('MODEL') || k.includes('DEFAULT')) {
+        lines.push(`export ${k}='${target}'`);
+      }
+    }
+
+    // 3. API Key
+    const keyVar = tool.env_var_api_key || 'OPENAI_API_KEY';
+    lines.push(`export ${keyVar}='${key}'`);
+
+    return lines.join('\n');
+  };
+
   const handleCopy = async (text: string, key: string) => {
     if (!text) {
       toast.error('Tidak ada teks untuk disalin.');
@@ -211,7 +306,7 @@ export const CLIIntegrations: React.FC = () => {
     try {
       await copyTextToClipboard(text);
       setCopiedKey(key);
-      toast.success('Teks disalin ke clipboard.');
+      toast.success('Variabel lingkungan disalin ke clipboard.');
       feedbackTimersRef.current.push(setTimeout(() => setCopiedKey(null), 2000));
     } catch (err) {
       toast.error('Gagal menyalin: ' + (err instanceof Error ? err.message : String(err)));
@@ -230,6 +325,21 @@ export const CLIIntegrations: React.FC = () => {
       setExportScriptLoading(false);
     }
   };
+
+  const modalRenderedScript = useMemo(() => {
+    if (!exportScriptContent) return '';
+    if (!includeKeyInModal) return exportScriptContent;
+
+    const keyToUse = userApiKey || '<KUNCI_API_ROUTEX_ANDA>';
+    const header = [
+      '# Kunci API Route-X untuk autentikasi CLI (Tambahan Klien)',
+      `export OPENAI_API_KEY='${keyToUse}'`,
+      `export ANTHROPIC_API_KEY='${keyToUse}'`,
+      '',
+    ].join('\n');
+
+    return header + exportScriptContent;
+  }, [exportScriptContent, includeKeyInModal, userApiKey]);
 
   const categories = ['all', 'Coding Agent', 'Terminal Assistant', 'Local LLM', 'Git Automation', 'Workflow & Prompts', 'DevOps & SRE'];
 
@@ -268,17 +378,25 @@ export const CLIIntegrations: React.FC = () => {
         <Card className="p-5 flex flex-col justify-between border-l-4 border-l-accent">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-mono uppercase tracking-wider text-text-muted">
-                Status Integrasi Host
+              <span className="text-xs font-medium text-text-muted flex items-center gap-1.5">
+                {isLocalGateway ? (
+                  <Laptop className="w-3.5 h-3.5 text-accent" />
+                ) : (
+                  <Server className="w-3.5 h-3.5 text-blue-400" />
+                )}
+                Lingkungan Gateway
               </span>
-              <Badge variant="lime">Aktif</Badge>
+              <Badge variant={isLocalGateway ? 'lime' : 'info'}>
+                {isLocalGateway ? 'Lokal (Host)' : 'Remote (Cloud)'}
+              </Badge>
             </div>
             <h3 className="text-xl font-bold text-white mb-1">
               {data?.total_detected} / {data?.total_available} CLI Terdeteksi
             </h3>
             <p className="text-xs text-text-muted">
-              Perkakas terpasang otomatis terdeteksi via binary path dan siap diarahkan ke gateway.
-              {data?.total_detected === 0 && ' Nol di server produksi wajar bila tidak ada CLI AI terpasang di host.'}
+              {isLocalGateway
+                ? 'Biner perkakas terdeteksi otomatis di sistem lokal ini. Klik "Terapkan ke CLI" untuk menyinkronkan langsung ke file konfigurasi.'
+                : 'Route-X berjalan di server remote. Gunakan tombol "Salin Snippet" pada masing-masing tool untuk mengekspor variabel ke terminal laptop Anda.'}
             </p>
           </div>
           <div className="mt-4 pt-4 border-t border-[#262626] flex items-center justify-between">
@@ -292,7 +410,7 @@ export const CLIIntegrations: React.FC = () => {
         <Card className="p-5 flex flex-col justify-between lg:col-span-2">
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-mono uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+              <span className="text-xs font-medium text-text-muted flex items-center gap-1.5">
                 <FileCode className="w-3.5 h-3.5 text-accent" />
                 Skrip Lingkungan Terpadu
               </span>
@@ -344,6 +462,67 @@ export const CLIIntegrations: React.FC = () => {
         </Card>
       </div>
 
+      {/* Global API Key Helper Toolbar */}
+      <div className="bg-[#161616] p-4 rounded-lg border border-[#262626] flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-accent/10 text-accent flex-shrink-0">
+            <Key className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-white flex items-center gap-2">
+              Kunci API Route-X untuk Terminal CLI
+              <Badge variant={userApiKey ? 'lime' : 'neutral'}>
+                {userApiKey ? 'Tersedia' : 'Opsional'}
+              </Badge>
+            </h4>
+            <p className="text-[11px] text-text-muted">
+              Masukkan API Key Anda di sini agar tombol salin otomatis menghasilkan export lengkap tanpa error 401. Kunci hanya tersimpan di peramban lokal Anda.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="relative flex-1 md:w-72">
+            <input
+              type={showGlobalKey ? 'text' : 'password'}
+              placeholder="sk_live_..."
+              value={userApiKey}
+              onChange={(e) => {
+                const val = e.target.value;
+                setUserApiKey(val);
+                try {
+                  localStorage.setItem('routex_cli_apikey', val);
+                } catch {}
+              }}
+              className="w-full bg-[#121212] border border-[#333] rounded-md px-3 py-1.5 text-xs text-white placeholder:text-text-muted focus:border-accent focus:outline-none font-mono pr-8"
+            />
+            <button
+              type="button"
+              onClick={() => setShowGlobalKey(!showGlobalKey)}
+              className="absolute right-2 top-2 text-text-muted hover:text-white"
+              title={showGlobalKey ? 'Sembunyikan' : 'Tampilkan'}
+            >
+              {showGlobalKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+          {userApiKey && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setUserApiKey('');
+                try {
+                  localStorage.removeItem('routex_cli_apikey');
+                } catch {}
+              }}
+              className="text-xs min-h-[36px] text-text-muted hover:text-red-400"
+              title="Kosongkan kunci tersimpan"
+            >
+              Reset
+            </Button>
+          )}
+        </div>
+      </div>
+
       {/* Filter & Search Bar */}
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-[#141414] p-3 rounded-lg border border-[#262626]">
         <div className="relative w-full sm:w-80">
@@ -392,11 +571,12 @@ export const CLIIntegrations: React.FC = () => {
         {filteredTools.map((tool) => {
           const cfg = toolConfigs[tool.id] || {
             mode: tool.active_mode || 'model_only',
-            target: tool.active_target || 'claude-3-7-sonnet',
+            target: tool.active_target || models[0]?.model_id || '',
             apiKey: '',
           };
           const isApplying = applyingTool === tool.id;
           const successMsg = applySuccess[tool.id];
+          const completeSnippet = getToolCompleteSnippet(tool);
 
           return (
             <Card
@@ -460,7 +640,7 @@ export const CLIIntegrations: React.FC = () => {
                 {/* Kolom Konfigurasi 3-Mode (Model Only, Routing, Combo Routing) */}
                 <div className="space-y-3 pt-3 border-t border-[#262626]">
                   <div>
-                    <label className="text-[11px] font-mono text-text-muted block mb-1.5 uppercase tracking-wider">
+                    <label className="text-xs font-medium text-text-secondary block mb-1.5">
                       Mode Konfigurasi:
                     </label>
                     <div className="grid grid-cols-3 gap-1 p-1 bg-[#121212] rounded-lg border border-[#262626]">
@@ -507,97 +687,124 @@ export const CLIIntegrations: React.FC = () => {
 
                   {/* Target Selector Dropdown Sesuai Mode */}
                   <div>
-                    <label className="text-[11px] font-mono text-text-muted block mb-1 uppercase tracking-wider">
+                    <label className="text-xs font-medium text-text-secondary block mb-1.5">
                       {cfg.mode === 'model_only' && 'Target Model:'}
                       {cfg.mode === 'routing' && 'Target Rule Routing:'}
                       {cfg.mode === 'combo' && 'Smart Combo Cascade:'}
                     </label>
 
                     {cfg.mode === 'model_only' && (
-                      <Select
-                        value={cfg.target}
-                        onChange={(val) => handleTargetChange(tool.id, val)}
-                        options={
-                          models.length > 0
-                            ? models.map((m) => ({
-                                value: m.model_id,
-                                label: `${m.display_name || m.model_id} (${m.family || 'universal'})`,
-                              }))
-                            : [
-                                { value: 'claude-3-7-sonnet', label: 'claude-3-7-sonnet' },
-                                { value: 'gpt-4o', label: 'gpt-4o' },
-                                { value: 'deepseek-chat', label: 'deepseek-chat' },
-                                { value: 'llama3:8b', label: 'llama3:8b' },
-                              ]
-                        }
-                      />
-                    )}
-
-                    {cfg.mode === 'routing' && (
-                      <Select
-                        value={cfg.target}
-                        onChange={(val) => handleTargetChange(tool.id, val)}
-                        options={
-                          rules.length > 0
-                            ? rules.map((r) => ({
-                                value: r.name,
-                                label: `${r.name} (${r.strategy})`,
-                              }))
-                            : [
-                                { value: 'general-chat', label: 'general-chat (priority)' },
-                                { value: 'coding-fast', label: 'coding-fast (lowest_latency)' },
-                                { value: 'cost-effective', label: 'cost-effective (lowest_cost)' },
-                              ]
-                        }
-                      />
-                    )}
-
-                    {cfg.mode === 'combo' && (
-                      <div className="space-y-2">
+                      models.length > 0 ? (
                         <Select
                           value={cfg.target}
                           onChange={(val) => handleTargetChange(tool.id, val)}
-                          options={[
-                            {
-                              value: 'combo:coding-tier1-tier2',
-                              label: 'Tier 1 (Qwen/DeepSeek) ➔ Tier 2 (Claude 3.7)',
-                              description: 'Cascade coding hemat dengan fallback flagship',
-                            },
-                            {
-                              value: 'combo:local-ollama-cloud-fallback',
-                              label: 'Tier 1 (Ollama Lokal) ➔ Tier 2 (GPT-4o Cloud)',
-                              description: 'Prioritas lokal offline gratis dengan fallback cloud',
-                            },
-                            {
-                              value: 'combo:fast-fallback',
-                              label: 'Tier 1 (Groq Kilat) ➔ Tier 2 (Anthropic Sonnet)',
-                              description: 'Inference super kilat dengan fallback intelligence',
-                            },
-                          ]}
+                          options={models.map((m) => ({
+                            value: m.model_id,
+                            label: `${m.display_name || m.model_id} (${m.family || 'universal'})`,
+                          }))}
                         />
+                      ) : (
+                        <div className="p-2.5 rounded-inner bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400">
+                          Belum ada model kanonik terdaftar di database. Silakan daftarkan model di menu{' '}
+                          <a href="#/models" className="underline font-semibold text-white">Models</a>.
+                        </div>
+                      )
+                    )}
 
-                        {/* Interactive Combo Routing Flow Diagram */}
-                        <div className="p-2 rounded-inner bg-[#121212] border border-border/60 text-[10px] font-mono space-y-1">
-                          <div className="text-text-muted flex items-center justify-between">
-                            <span>Alur Eksekusi Cascade:</span>
-                            <span className="text-accent font-semibold">Auto-Failover</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
-                            <span className="px-1.5 py-0.5 rounded bg-bg-surface-2 border border-border text-white whitespace-nowrap">
-                              {tool.name}
-                            </span>
-                            <span className="text-text-muted">➔</span>
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 whitespace-nowrap">
-                              Tier 1 (Cepat/Lokal)
-                            </span>
-                            <span className="text-text-muted">➔</span>
-                            <span className="px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 text-purple-400 whitespace-nowrap">
-                              Tier 2 (Flagship)
-                            </span>
+                    {cfg.mode === 'routing' && (
+                      rules.length > 0 ? (
+                        <Select
+                          value={cfg.target}
+                          onChange={(val) => handleTargetChange(tool.id, val)}
+                          options={rules.map((r) => ({
+                            value: r.name,
+                            label: `${r.name} (${r.strategy})`,
+                          }))}
+                        />
+                      ) : (
+                        <div className="p-2.5 rounded-inner bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400">
+                          Belum ada aturan routing terdaftar di database. Buat aturan di menu{' '}
+                          <a href="#/routing-rules" className="underline font-semibold text-white">Routing Rules</a>.
+                        </div>
+                      )
+                    )}
+
+                    {cfg.mode === 'combo' && (
+                      dynamicComboOptions.length > 0 ? (
+                        <div className="space-y-2">
+                          <Select
+                            value={cfg.target}
+                            onChange={(val) => handleTargetChange(tool.id, val)}
+                            options={dynamicComboOptions}
+                          />
+
+                          {/* Interactive Combo Routing Flow Diagram */}
+                          <div className="p-2 rounded-inner bg-[#121212] border border-border/60 text-[10px] font-mono space-y-1">
+                            <div className="text-text-muted flex items-center justify-between">
+                              <span>Alur Eksekusi Cascade:</span>
+                              <span className="text-accent font-semibold">Auto-Failover</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                              <span className="px-1.5 py-0.5 rounded bg-bg-surface-2 border border-border text-white whitespace-nowrap">
+                                {tool.name}
+                              </span>
+                              <span className="text-text-muted">➔</span>
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 whitespace-nowrap">
+                                Tier 1 (Cepat/Lokal)
+                              </span>
+                              <span className="text-text-muted">➔</span>
+                              <span className="px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 text-purple-400 whitespace-nowrap">
+                                Tier 2 (Flagship)
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="p-2.5 rounded-inner bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400">
+                          Belum ada aturan combo bertingkat. Buat aturan bertingkat di menu{' '}
+                          <a href="#/routing-rules" className="underline font-semibold text-white">Routing Rules</a>{' '}
+                          dengan tag deskripsi [combo:alias=nama].
+                        </div>
+                      )
                     )}
+                  </div>
+
+                  {/* Kunci API Khusus Tool (Opsional) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-medium text-text-muted flex items-center gap-1">
+                        <Key className="w-3 h-3 text-accent" />
+                        Kunci API Khusus Tool:
+                      </label>
+                      {cfg.apiKey ? (
+                        <span className="text-[10px] text-accent font-mono font-semibold">Kustom</span>
+                      ) : userApiKey ? (
+                        <span className="text-[10px] text-emerald-400 font-mono">Memakai Global</span>
+                      ) : (
+                        <span className="text-[10px] text-text-muted font-mono">Placeholder</span>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showKeyMap[tool.id] ? 'text' : 'password'}
+                        placeholder={
+                          userApiKey
+                            ? 'Memakai kunci global'
+                            : `Isi ${tool.env_var_api_key || 'API Key'}...`
+                        }
+                        value={cfg.apiKey}
+                        onChange={(e) => handleApiKeyChange(tool.id, e.target.value)}
+                        className="w-full bg-[#121212] border border-[#262626] rounded px-2.5 py-1 text-xs text-white placeholder:text-text-muted focus:border-accent focus:outline-none font-mono pr-8"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleShowKey(tool.id)}
+                        className="absolute right-2 top-1.5 text-text-muted hover:text-white"
+                        title={showKeyMap[tool.id] ? 'Sembunyikan' : 'Tampilkan'}
+                      >
+                        {showKeyMap[tool.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -615,9 +822,14 @@ export const CLIIntegrations: React.FC = () => {
                   <Button
                     variant="primary"
                     size="sm"
-                    className="flex-1 text-xs h-8 font-semibold"
+                    className="flex-1 text-xs min-h-[36px] font-semibold cursor-pointer"
                     disabled={isApplying}
                     onClick={() => handleApply(tool.id)}
+                    title={
+                      isLocalGateway
+                        ? 'Simpan dan terapkan langsung ke berkas konfigurasi lokal host'
+                        : 'Simpan preferensi konfigurasi perkakas ini di server gateway'
+                    }
                   >
                     {isApplying ? (
                       <>
@@ -633,8 +845,8 @@ export const CLIIntegrations: React.FC = () => {
                     type="button"
                     onClick={() => handlePing(tool.id)}
                     disabled={pingStatus[tool.id]?.testing}
-                    title="Uji latensi respon gateway dari browser langsung"
-                    className="h-8 px-2.5 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-xs text-text-secondary hover:text-white transition-all flex items-center gap-1 font-mono"
+                    title="Uji latensi respon gateway dari browser ke Route-X"
+                    className="min-h-[36px] px-2.5 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-xs text-text-secondary hover:text-white transition-all flex items-center gap-1 font-mono cursor-pointer"
                   >
                     {pingStatus[tool.id]?.testing ? (
                       <RefreshCw className="w-3 h-3 animate-spin text-accent" />
@@ -651,16 +863,22 @@ export const CLIIntegrations: React.FC = () => {
                   </button>
 
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
-                    className="h-8 px-2.5 text-xs text-text-muted hover:text-white"
-                    title="Salin variabel lingkungan untuk CLI ini"
-                    onClick={() => handleCopy(tool.export_snippet, `snippet-${tool.id}`)}
+                    className="min-h-[36px] px-2.5 text-xs gap-1 font-mono text-white cursor-pointer"
+                    title="Salin 3 variabel terminal lengkap (Base URL, Target Model & Kunci API)"
+                    onClick={() => handleCopy(completeSnippet, `snippet-${tool.id}`)}
                   >
                     {copiedKey === `snippet-${tool.id}` ? (
-                      <Check className="w-3.5 h-3.5 text-accent" />
+                      <>
+                        <Check className="w-3.5 h-3.5 text-accent" />
+                        <span className="hidden sm:inline">Tersalin</span>
+                      </>
                     ) : (
-                      <Copy className="w-3.5 h-3.5" />
+                      <>
+                        <Copy className="w-3.5 h-3.5 text-text-muted" />
+                        <span className="hidden sm:inline">Salin Snippet</span>
+                      </>
                     )}
                   </Button>
                 </div>
@@ -686,33 +904,55 @@ export const CLIIntegrations: React.FC = () => {
         onClose={() => setIsExportModalOpen(false)}
         title="Skrip Lingkungan Terpadu CLI Route-X"
         maxWidth="lg"
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <Button
+              variant="secondary"
+              onClick={() => handleCopy(modalRenderedScript, 'modal-full-script')}
+              icon={
+                copiedKey === 'modal-full-script' ? (
+                  <Check className="w-3.5 h-3.5 text-accent" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )
+              }
+            >
+              {copiedKey === 'modal-full-script' ? 'Tersalin' : 'Salin Skrip'}
+            </Button>
+            <Button variant="ghost" onClick={() => setIsExportModalOpen(false)}>
+              Tutup
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-4">
           <p className="text-xs text-text-secondary">
             Berkas ini tersimpan di <code>~/.routex/cli-env.sh</code> dan diperbarui secara otomatis setiap kali Anda menekan tombol "Terapkan ke CLI".
           </p>
 
+          {userApiKey && (
+            <div className="flex items-center justify-between bg-[#1A1A1A] px-3 py-2 rounded border border-[#262626] text-xs">
+              <span className="text-text-muted">Sertakan Kunci API Anda ke skrip ekspor:</span>
+              <label className="flex items-center gap-1.5 cursor-pointer text-white font-mono">
+                <input
+                  type="checkbox"
+                  checked={includeKeyInModal}
+                  onChange={(e) => setIncludeKeyInModal(e.target.checked)}
+                  className="rounded border-[#333] bg-[#121212] text-accent focus:ring-0"
+                />
+                Inject OPENAI_API_KEY & ANTHROPIC_API_KEY
+              </label>
+            </div>
+          )}
+
           <div className="relative">
             <pre className="bg-[#121212] p-4 rounded-lg border border-[#262626] text-xs font-mono text-white overflow-x-auto max-h-96">
-              {exportScriptLoading ? 'Memuat skrip...' : exportScriptContent}
+              {exportScriptLoading ? 'Memuat skrip...' : modalRenderedScript}
             </pre>
-            <Button
-              variant="secondary"
-              size="sm"
-              className="absolute top-3 right-3 text-xs gap-1.5 bg-[#1C1C1C] border-[#333]"
-              onClick={() => handleCopy(exportScriptContent, 'modal-full-script')}
-            >
-              {copiedKey === 'modal-full-script' ? (
-                <Check className="w-3.5 h-3.5 text-accent" />
-              ) : (
-                <Copy className="w-3.5 h-3.5 text-text-muted" />
-              )}
-              {copiedKey === 'modal-full-script' ? 'Tersalin' : 'Salin Skrip'}
-            </Button>
           </div>
 
           <div className="bg-[#1A1A1A] p-3 rounded border border-[#2B2B2B] text-xs text-text-muted">
-            <strong className="text-white block mb-1">💡 Tips Integrasi Otomatis Shell:</strong>
+            <strong className="text-white block mb-1">Tips Integrasi Otomatis Shell:</strong>
             Jalankan perintah berikut di terminal Anda untuk selalu mengaktifkan Route-X saat membuka shell baru:
             <code className="block mt-1 bg-[#121212] p-1.5 rounded font-mono text-accent">
               echo 'source ~/.routex/cli-env.sh' &gt;&gt; ~/.bashrc

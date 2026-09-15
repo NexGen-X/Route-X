@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { RateLimit } from '../types';
+import type { RateLimit, APIKey } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
@@ -14,29 +14,52 @@ import { QueryError } from '../components/common/QueryError';
 export const RateLimits: React.FC = () => {
   const { toast, confirmModal } = useToast();
   const [limits, setLimits] = useState<RateLimit[]>([]);
+  const [apiKeys, setApiKeys] = useState<APIKey[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newLimit, setNewLimit] = useState({
     scope: 'api_key',
-    scope_id: 'default',
+    scope_id: '',
     requests_per_minute: 60,
     tokens_per_minute: 100000,
     requests_per_second: 10,
   });
 
   const loadLimits = async () => {
+    setIsLoading(true);
     try {
-      const res = await api.rateLimits.list();
-      setLimits(res.items || []);
+      const [lRes, kRes] = await Promise.all([
+        api.rateLimits.list(),
+        api.apiKeys.list().catch(() => ({ items: [] as APIKey[] })),
+      ]);
+      setLimits(lRes.items || []);
+      setApiKeys(kRes.items || []);
       setLoadError(null);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadLimits();
+    void loadLimits();
   }, []);
+
+  const getScopeDisplay = (scope: string, scopeId?: string) => {
+    if (scope === 'global' || scopeId === 'global' || !scopeId) {
+      return { label: 'Global Gateway', isRaw: false };
+    }
+    if (scope === 'api_key') {
+      const key = apiKeys.find((k) => k.id === scopeId);
+      return { label: key ? key.name : `${scopeId.slice(0, 8)}...`, isRaw: !key };
+    }
+    if (scope === 'ip') {
+      return { label: `IP: ${scopeId}`, isRaw: false };
+    }
+    return { label: scopeId, isRaw: true };
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,8 +75,19 @@ export const RateLimits: React.FC = () => {
       toast.error('Isi minimal satu batas (RPM/TPM/RPS) lebih dari 0.');
       return;
     }
+    const finalScopeId = newLimit.scope === 'global' ? 'global' : newLimit.scope_id.trim();
+    if (!finalScopeId) {
+      toast.error('Pilih atau masukkan target scope.');
+      return;
+    }
     try {
-      await api.rateLimits.create({ ...newLimit, requests_per_minute: rpm, tokens_per_minute: tpm, requests_per_second: rps });
+      await api.rateLimits.create({
+        ...newLimit,
+        scope_id: finalScopeId,
+        requests_per_minute: rpm,
+        tokens_per_minute: tpm,
+        requests_per_second: rps,
+      });
       setIsCreateOpen(false);
       toast.success('Aturan batas laju berhasil dibuat');
       loadLimits();
@@ -100,7 +134,25 @@ export const RateLimits: React.FC = () => {
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadLimits()} />}
 
-      {limits.length === 0 && !loadError ? (
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="p-5 space-y-4 animate-pulse">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
+                <div className="space-y-1.5 flex-1">
+                  <div className="h-4 bg-bg-surface-2 rounded w-1/2" />
+                  <div className="h-3 bg-bg-surface-2 rounded w-1/3" />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="h-3 bg-bg-surface-2 rounded w-3/4" />
+                <div className="h-3 bg-bg-surface-2 rounded w-1/2" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : limits.length === 0 && !loadError ? (
         <Card className="py-12 px-6 text-center">
           <div className="max-w-md mx-auto space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto shadow-inner">
@@ -134,7 +186,9 @@ export const RateLimits: React.FC = () => {
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-white uppercase">{l.scope}</h4>
-                    <span className="text-[11px] text-text-muted font-mono">{l.scope_id || 'Semua'}</span>
+                    <span className="text-[11px] text-text-muted font-mono" title={l.scope_id}>
+                      {getScopeDisplay(l.scope, l.scope_id).label}
+                    </span>
                   </div>
                 </div>
                 <Badge variant={l.enabled ? 'success' : 'neutral'}>
@@ -190,66 +244,108 @@ export const RateLimits: React.FC = () => {
         onClose={() => setIsCreateOpen(false)}
         title="Konfigurasi Rate Limit Baru"
         subtitle="Terapkan pembatasan kuota laju pada tingkat Redis terdistribusi"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="primary" type="submit" form="create-rate-limit-form">
+              Simpan Rate Limit
+            </Button>
+          </>
+        }
       >
-        <form onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-rate-limit-form" onSubmit={handleCreate} className="space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select
               label="Cakupan (Scope)"
               value={newLimit.scope}
-              onChange={(val) => setNewLimit({ ...newLimit, scope: val })}
+              onChange={(val) => setNewLimit({ ...newLimit, scope: val, scope_id: val === 'global' ? 'global' : '' })}
               options={[
                 { value: 'api_key', label: 'Per Kunci API', description: 'Limit berbasis token API klien individual' },
                 { value: 'ip', label: 'Per Alamat IP Klien', description: 'Limit berbasis IP publik pemanggil' },
                 { value: 'global', label: 'Global Gateway', description: 'Limit total seluruh gateway' },
               ]}
             />
-            <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Scope ID / Target</label>
-              <input
-                type="text"
-                required
-                placeholder="ID atau IP (default: default)"
-                value={newLimit.scope_id}
-                onChange={(e) => setNewLimit({ ...newLimit, scope_id: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white"
-              />
-            </div>
+            {newLimit.scope === 'global' ? (
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">Scope ID / Target</label>
+                <div className="px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-text-muted font-mono">
+                  Seluruh Gateway (Global)
+                </div>
+              </div>
+            ) : newLimit.scope === 'api_key' ? (
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">Target Kunci API *</label>
+                {apiKeys.length > 0 ? (
+                  <Select
+                    value={newLimit.scope_id}
+                    onChange={(val) => setNewLimit({ ...newLimit, scope_id: val })}
+                    options={[
+                      { value: '', label: '-- Pilih Kunci API --' },
+                      ...apiKeys.map((k) => ({
+                        value: k.id,
+                        label: `${k.name} (${k.masked_key || k.id.slice(0, 8)})`,
+                      })),
+                    ]}
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    required
+                    placeholder="Masukkan UUID Kunci API..."
+                    value={newLimit.scope_id}
+                    onChange={(e) => setNewLimit({ ...newLimit, scope_id: e.target.value })}
+                    className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                  />
+                )}
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">Alamat IP Target *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: 192.168.1.1 atau 0.0.0.0/0"
+                  value={newLimit.scope_id}
+                  onChange={(e) => setNewLimit({ ...newLimit, scope_id: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                />
+              </div>
+            )}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Req / Menit (RPM)</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Req / Menit (RPM)</label>
               <input
                 type="number"
                 min={0}
                 value={newLimit.requests_per_minute}
                 onChange={(e) => setNewLimit({ ...newLimit, requests_per_minute: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             </div>
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Token / Menit (TPM)</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Token / Menit (TPM)</label>
               <input
                 type="number"
                 min={0}
                 value={newLimit.tokens_per_minute}
                 onChange={(e) => setNewLimit({ ...newLimit, tokens_per_minute: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             </div>
             <div>
-              <label className="block font-semibold text-text-secondary uppercase mb-1">Req / Detik (RPS)</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Req / Detik (RPS)</label>
               <input
                 type="number"
                 min={0}
                 value={newLimit.requests_per_second}
                 onChange={(e) => setNewLimit({ ...newLimit, requests_per_second: parseInt(e.target.value) || 0 })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             </div>
           </div>
-          <Button type="submit" variant="primary" size="md" className="w-full mt-2">
-            Simpan Rate Limit
-          </Button>
         </form>
       </Modal>
     </div>

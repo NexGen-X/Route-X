@@ -1,0 +1,87 @@
+# ==============================================================================
+# Route-X — Render Blueprint Specification (Infrastructure as Code)
+# Docs: https://render.com/docs/blueprint-spec
+# ==============================================================================
+# Blueprint ini mendeklarasikan arsitektur lengkap Route-X di Render:
+# 1. Web Service (Container Docker multi-stage: Frontend Vite + Go Gateway)
+# 2. Managed PostgreSQL Database (Auto-migrasi schema dan auto-seed permissions)
+# 3. Managed Redis (Rate limiting, response cache, distributed locks)
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Route-X Web Service (AI Gateway & Admin Console)
+  # ----------------------------------------------------------------------------
+  - type: web
+    name: route-x
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: singapore # Opsi: singapore, oregon, frankfurt, ohio
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      # Port otomatis disediakan oleh Render, default internal 10000
+      - key: PORT
+        value: 10000
+      # PUBLIC_URL wajib HTTPS di production (contoh: https://route-x.onrender.com)
+      - key: PUBLIC_URL
+        sync: false
+      # Sambungan otomatis ke Managed PostgreSQL Render
+      - key: DATABASE_URL
+        fromDatabase:
+          name: route-x-db
+          property: connectionString
+      - key: DB_MAX_CONNS
+        value: "20"
+      - key: DB_MIN_CONNS
+        value: "2"
+      # Sambungan otomatis ke Managed Redis Render
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: route-x-redis
+          property: connectionString
+      # Kunci Keamanan & Sesi (Gunakan scripts/ops/generate-render-env.sh untuk membuatnya)
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        sync: false # Wajib tepat 32-byte Base64 (openssl rand -base64 32)
+      - key: API_KEY_PEPPER
+        sync: false # Wajib minimal 32-byte Base64 (openssl rand -base64 32)
+      # Akun Inisial Super Admin (di-seed otomatis saat database masih kosong)
+      - key: INITIAL_ADMIN_EMAIL
+        sync: false # contoh: admin@id-tech.cloud
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false # minimal 12 karakter dengan variasi karakter
+      # Metrik Prometheus & Telemetri
+      - key: METRICS_TOKEN
+        generateValue: true
+      - key: METRICS_ALLOW_LOOPBACK
+        value: "false"
+      - key: RATE_LIMIT_FAIL_CLOSED
+        value: "false"
+
+  # ----------------------------------------------------------------------------
+  # 2. Managed Redis Service (Rate Limiter & Cache)
+  # ----------------------------------------------------------------------------
+  - type: redis
+    name: route-x-redis
+    plan: starter
+    region: singapore
+    ipAllowList: [] # Hanya dapat diakses secara privat oleh layanan internal Render
+    maxmemoryPolicy: noeviction
+
+# ------------------------------------------------------------------------------
+# 3. Managed PostgreSQL Database (Primary Storage)
+# ------------------------------------------------------------------------------
+databases:
+  - name: route-x-db
+    databaseName: routex_prod
+    user: routex
+    plan: starter
+    region: singapore
+    ipAllowList: [] # Hanya dapat diakses secara privat oleh layanan internal Render

@@ -18,5 +18,6 @@ FROM alpine:latest
 WORKDIR /opt/routex
 RUN apk --no-cache add ca-certificates tzdata
 COPY --from=backend-builder /app/ai-gateway .
+ENV PORT=8080
 EXPOSE 8080
 CMD ["./ai-gateway"]

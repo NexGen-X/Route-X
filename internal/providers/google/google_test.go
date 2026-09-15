@@ -242,6 +242,38 @@ func TestKredensialLewatHeaderBukanQueryString(t *testing.T) {
 	}
 }
 
+func TestKredensialOAuthBearerGoogle(t *testing.T) {
+	log := &requestLog{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.record(r)
+		jsonHandler(http.StatusOK, textResponse)(w, r)
+	}))
+	defer srv.Close()
+
+	oauthToken := "ya29.a0AfH6SMA-sample-token-12345"
+	p, err := New(Config{
+		Name:       "gemini-oauth",
+		Kind:       providers.KindGoogle,
+		BaseURL:    srv.URL,
+		Credential: security.Secret(oauthToken),
+		SSRFPolicy: testPolicy(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := p.ChatCompletion(context.Background(), simpleRequest()); err != nil {
+		t.Fatalf("ChatCompletion: %v", err)
+	}
+
+	if got := log.Header("Authorization"); got != "Bearer "+oauthToken {
+		t.Errorf("Authorization = %q, mau 'Bearer %s'", got, oauthToken)
+	}
+	if got := log.Header(headerAPIKey); got != "" {
+		t.Errorf("x-goog-api-key tidak boleh terkirim untuk token OAuth, dapat: %q", got)
+	}
+}
+
 func TestExtraHeadersTidakBisaMenimpaAutentikasi(t *testing.T) {
 	log := &requestLog{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

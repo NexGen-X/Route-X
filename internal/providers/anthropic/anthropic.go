@@ -255,7 +255,12 @@ func (p *Provider) newRequest(ctx context.Context, method, url string, body []by
 	for k, v := range p.headers {
 		req.Header.Set(k, v)
 	}
-	req.Header.Set(headerAPIKey, p.credential.Reveal())
+	cred := p.credential.Reveal()
+	if strings.HasPrefix(cred, "Bearer ") {
+		req.Header.Set("Authorization", cred)
+	} else if cred != "" {
+		req.Header.Set(headerAPIKey, cred)
+	}
 	req.Header.Set(headerVersion, p.apiVersion)
 	req.Header.Set("Accept", accept)
 	if body != nil {

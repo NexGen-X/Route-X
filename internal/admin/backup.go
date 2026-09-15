@@ -29,7 +29,7 @@ func (h *Handlers) getBackupStatus(w http.ResponseWriter, r *http.Request) {
 			current_database(),
 			pg_size_pretty(pg_database_size(current_database())),
 			pg_database_size(current_database()),
-			(SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public')
+			(SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema())
 	`)
 	if err := row.Scan(&dbName, &dbSize, &dbBytes, &totalTables); err != nil {
 		mapRepoError(w, r, err, "status database")

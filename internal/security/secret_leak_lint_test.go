@@ -79,6 +79,8 @@ func TestSecretLeakLint(t *testing.T) {
 		"internal/database/repo/upstream/upstream_test.go":    "Memuat data uji untuk fungsi masking hint.",
 		"internal/providers/anthropic/anthropic.go":           "Memuat dokumentasi pesan error upstream Anthropic.",
 		"internal/security/secret_leak_lint_test.go":          "Berkas linter itu sendiri yang memuat regex pendeteksi rahasia.",
+		"README.md":                                           "Dokumentasi contoh panggilan API dengan format sk_live_ placeholder.",
+		"docs/QUICKSTART.md":                                  "Panduan integrasi cepat dengan contoh panggilan API sk_live_ placeholder.",
 	}
 
 	// 1. Pola pendeteksian sk- atau sk_live_ >= 20 karakter

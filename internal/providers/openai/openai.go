@@ -238,7 +238,8 @@ func (p *Provider) setHeaders(h http.Header, hasBody, streaming bool) {
 	// Reveal dipanggil tepat di titik pemakaian dan hasilnya tidak disimpan ke variabel
 	// mana pun: nilai aslinya hanya hidup selama pemanggilan ini.
 	if !p.credential.IsZero() {
-		h.Set("Authorization", "Bearer "+p.credential.Reveal())
+		token := strings.TrimPrefix(p.credential.Reveal(), "Bearer ")
+		h.Set("Authorization", "Bearer "+token)
 	}
 	if p.organization != "" {
 		h.Set("OpenAI-Organization", p.organization)

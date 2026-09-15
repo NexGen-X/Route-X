@@ -32,6 +32,10 @@ import {
   FlaskConical,
   Zap,
   AlertTriangle,
+  ArrowUpRight,
+  ExternalLink,
+  Lock,
+  XCircle,
 } from 'lucide-react';
 import {
   KNOWN_PROVIDERS,
@@ -41,6 +45,7 @@ import {
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { extractAuthTokenFromInput } from '../utils/authExtractor';
 
 interface ModelTestResult {
   ok: boolean;
@@ -111,38 +116,8 @@ export const Providers: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAddModelModalOpen, setIsAddModelModalOpen] = useState(false);
 
-  // Form Tambah Key Inline di Drawer
-  const [isAddingKeyInline, setIsAddingKeyInline] = useState(false);
-  const [newKeyForm, setNewKeyForm] = useState({
-    label: 'Primary API Key',
-    api_key: '',
-  });
-  const [showNewKeySecret, setShowNewKeySecret] = useState(false);
-  const [isSavingKey, setIsSavingKey] = useState(false);
-
   // State Form Create Provider Baru / Preset
   const [selectedPreset, setSelectedPreset] = useState<KnownProviderPreset | null>(null);
-  const [quickApiKey, setQuickApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [selectedEgressPoolId, setSelectedEgressPoolId] = useState<string>('');
-  const [syncAfterSave, setSyncAfterSave] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [savingStep, setSavingStep] = useState('');
-
-  const [newProv, setNewProv] = useState({
-    name: '',
-    display_name: '',
-    kind: 'openai',
-    base_url: 'https://api.openai.com/v1',
-    priority: 100,
-    weight: 100,
-    timeout_ms: 30000,
-    egress_pool_id: undefined as string | undefined,
-  });
-
-  // State Form Tambah Model Manual
-  const [newModelName, setNewModelName] = useState('');
-  const [isSavingModel, setIsSavingModel] = useState(false);
 
   // State Form Konfigurasi Provider
   const [configForm, setConfigForm] = useState({
@@ -482,94 +457,12 @@ export const Providers: React.FC = () => {
   // ---------------------------------------------------------------------------
   const handleSelectPreset = (preset: KnownProviderPreset) => {
     setSelectedPreset(preset);
-    setQuickApiKey('');
-    setSelectedEgressPoolId('');
-    setSyncAfterSave(true);
-    setNewProv({
-      name: preset.name,
-      display_name: preset.displayName,
-      kind: preset.kind,
-      base_url: preset.baseUrl,
-      priority: preset.defaultPriority,
-      weight: preset.defaultWeight,
-      timeout_ms: 30000,
-      egress_pool_id: undefined,
-    });
     setIsCreateModalOpen(true);
   };
 
   const handleOpenCustomCreate = () => {
     setSelectedPreset(null);
-    setQuickApiKey('');
-    setSelectedEgressPoolId('');
-    setSyncAfterSave(false);
-    setNewProv({
-      name: 'custom-provider',
-      display_name: 'Custom Provider',
-      kind: 'openai_compatible',
-      base_url: 'https://api.openai-proxy.local/v1',
-      priority: 100,
-      weight: 100,
-      timeout_ms: 30000,
-      egress_pool_id: undefined,
-    });
     setIsCreateModalOpen(true);
-  };
-
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    setSavingStep('Mendaftarkan provider ke PostgreSQL...');
-
-    try {
-      const created = await api.providers.create({
-        ...newProv,
-        name: newProv.name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
-        display_name: newProv.display_name.trim(),
-        base_url: newProv.base_url.trim(),
-        egress_pool_id: selectedEgressPoolId || undefined,
-      });
-
-      if (quickApiKey.trim()) {
-        setSavingStep('Menyimpan dan mengenkripsi API Key (AES-256-GCM)...');
-        try {
-          await api.credentials.create(created.id, {
-            label: 'Primary API Key',
-            api_key: quickApiKey.trim(),
-          });
-        } catch (keyErr: any) {
-          toast.warn('Provider dibuat, namun kunci API gagal disimpan: ' + keyErr.message);
-        }
-      }
-
-      let pulledCount = 0;
-      if (syncAfterSave && quickApiKey.trim()) {
-        setSavingStep('Melakukan discovery & menarik model upstream...');
-        try {
-          const syncRes = await api.providers.syncModels(created.id);
-          pulledCount = syncRes.count;
-        } catch (err) {
-          toast.warn('Provider dibuat, tetapi sinkronisasi model awal gagal: ' + (err instanceof Error ? err.message : String(err)));
-        }
-      }
-
-      await loadData();
-      setIsCreateModalOpen(false);
-
-      if (pulledCount > 0) {
-        toast.success(`Provider "${created.display_name || created.name}" berhasil didaftarkan (${pulledCount} model ditarik)`);
-      } else {
-        toast.success(`Provider "${created.display_name || created.name}" berhasil didaftarkan`);
-      }
-
-      // Langsung buka drawer untuk provider baru
-      handleOpenDrawer(created, 'models');
-    } catch (err: any) {
-      toast.error('Gagal mendaftarkan provider: ' + (err.message || err));
-    } finally {
-      setIsSaving(false);
-      setSavingStep('');
-    }
   };
 
   const getModelBadges = (modelName: string, providerKind: string) => {
@@ -1153,7 +1046,8 @@ export const Providers: React.FC = () => {
       <CreateProviderModalChild
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        selectedPreset={null}
+        selectedPreset={selectedPreset}
+        providers={providers}
         egressPools={egressPools}
         loadData={loadData}
         handleOpenDrawer={handleOpenDrawer}
@@ -1313,7 +1207,11 @@ export const CredentialsTabChild: React.FC<any> = ({
   selectedProvider, credentials, handleToggleKey, handleDeleteKey, loadProviderDetails, toast, api, copyWithFeedback
 }) => {
   const [isAddingKeyInline, setIsAddingKeyInline] = useState(false);
+  const [inlineAuthTab, setInlineAuthTab] = useState<'apikey' | 'authlogin'>('apikey');
   const [newKeyForm, setNewKeyForm] = useState({ label: 'Primary API Key', api_key: '' });
+  const [authFallbackInput, setAuthFallbackInput] = useState('');
+  const [authExtractedToken, setAuthExtractedToken] = useState('');
+  const [authExtractionHint, setAuthExtractionHint] = useState('');
   const [showNewKeySecret, setShowNewKeySecret] = useState(false);
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
@@ -1326,26 +1224,54 @@ export const CredentialsTabChild: React.FC<any> = ({
     };
   }, []);
 
+  const matchedPreset = useMemo(() => {
+    if (!selectedProvider) return null;
+    return KNOWN_PROVIDERS.find((p) => p.kind === selectedProvider.kind || p.name === selectedProvider.name || p.id === selectedProvider.name.split('-')[0]) || null;
+  }, [selectedProvider]);
+
+  const handleInlineFallbackChange = (val: string) => {
+    setAuthFallbackInput(val);
+    const res = extractAuthTokenFromInput(val);
+    setAuthExtractedToken(res.token);
+    setAuthExtractionHint(res.cleanHint || '');
+    if (res.token) {
+      setNewKeyForm((prev) => ({ ...prev, api_key: res.token }));
+    }
+  };
+
+  const resetInlineForm = () => {
+    setIsAddingKeyInline(false);
+    setInlineAuthTab('apikey');
+    setAuthFallbackInput('');
+    setAuthExtractedToken('');
+    setAuthExtractionHint('');
+    setNewKeyForm({
+      label: (credentials || []).length === 0 ? 'Primary API Key' : 'Backup API Key',
+      api_key: '',
+    });
+  };
+
   const handleCreateKey = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedProvider) return;
-    const keyLabel = newKeyForm.label.trim();
-    const keySecret = newKeyForm.api_key.trim();
+    const keyLabel = newKeyForm.label.trim() || (inlineAuthTab === 'authlogin' ? 'Auth Login Credential' : 'Primary API Key');
+    const keySecret = inlineAuthTab === 'apikey'
+      ? newKeyForm.api_key.trim()
+      : (authExtractedToken.trim() || authFallbackInput.trim());
 
     if (!keySecret) {
-      toast.error('Secret token API key wajib diisi');
+      toast.error('Secret token atau kredensial API key wajib diisi');
       return;
     }
 
     setIsSavingKey(true);
     try {
-      await api.credentials.create(selectedProvider.id, { label: keyLabel || 'Primary API Key', api_key: keySecret });
-      toast.success('API Key berhasil ditambahkan dengan enkripsi AES-256-GCM');
-      setIsAddingKeyInline(false);
-      setNewKeyForm({ label: 'Backup API Key', api_key: '' });
+      await api.credentials.create(selectedProvider.id, { label: keyLabel, api_key: keySecret });
+      toast.success('Kredensial berhasil ditambahkan dengan enkripsi AES-256-GCM');
+      resetInlineForm();
       await loadProviderDetails(selectedProvider.id);
     } catch (err: any) {
-      toast.error('Gagal menambahkan API Key: ' + (err.message || err));
+      toast.error('Gagal menambahkan kredensial: ' + (err.message || err));
     } finally {
       setIsSavingKey(false);
     }
@@ -1366,25 +1292,125 @@ export const CredentialsTabChild: React.FC<any> = ({
       </div>
 
       {isAddingKeyInline && (
-        <div className="p-3 rounded-xl border border-accent/40 bg-accent/5 space-y-2.5">
+        <div className="p-3 rounded-xl border border-accent/40 bg-accent/5 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-white">Key Baru</span>
-            <button type="button" onClick={() => setIsAddingKeyInline(false)} className="text-[11px] text-text-muted hover:text-white">Batal</button>
+            <span className="text-xs font-semibold text-white">Tambah Kredensial Baru</span>
+            <button type="button" onClick={resetInlineForm} className="text-[11px] text-text-muted hover:text-white">Batal</button>
           </div>
+
+          {/* Mode Switcher Tabs */}
+          <div className="flex border-b border-border/60 gap-3 text-xs">
+            <button
+              type="button"
+              onClick={() => setInlineAuthTab('apikey')}
+              className={`pb-1.5 font-medium transition-colors flex items-center gap-1 ${
+                inlineAuthTab === 'apikey'
+                  ? 'border-b-2 border-accent text-accent font-semibold'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              <KeyRound className="w-3 h-3" /> Input API Key Manual
+            </button>
+            <button
+              type="button"
+              onClick={() => setInlineAuthTab('authlogin')}
+              className={`pb-1.5 font-medium transition-colors flex items-center gap-1 ${
+                inlineAuthTab === 'authlogin'
+                  ? 'border-b-2 border-accent text-accent font-semibold'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              <ArrowUpRight className="w-3 h-3" /> Auth Login / Salin Redirect URL
+            </button>
+          </div>
+
           <form onSubmit={handleCreateKey} className="space-y-2.5 text-xs">
-            <input type="text" required placeholder="Label — mis. Primary API Key" value={newKeyForm.label} onChange={(e) => setNewKeyForm({ ...newKeyForm, label: e.target.value })} className="w-full px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent" />
-            <div className="relative">
-              <input type={showNewKeySecret ? 'text' : 'password'} required placeholder="Secret / Token — mis. sk-ant-..." value={newKeyForm.api_key} onChange={(e) => setNewKeyForm({ ...newKeyForm, api_key: e.target.value })} className="w-full px-2.5 py-1.5 pr-9 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent" />
-              <button type="button" onClick={() => setShowNewKeySecret(!showNewKeySecret)} className="absolute right-2 top-2 text-text-muted hover:text-white">
-                {showNewKeySecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
+            <div>
+              <label className="block text-[11px] font-medium text-text-secondary mb-1">Label Kredensial</label>
+              <input
+                type="text"
+                required
+                placeholder="mis. Primary API Key atau Claude OAuth Token"
+                value={newKeyForm.label}
+                onChange={(e) => setNewKeyForm({ ...newKeyForm, label: e.target.value })}
+                className="w-full px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
+              />
             </div>
-            <div className="flex justify-end gap-1.5">
-              <button type="button" onClick={() => setIsAddingKeyInline(false)} className="px-2.5 py-1.5 text-xs rounded-lg bg-bg-surface-2 text-text-primary border border-border hover:text-white transition-colors">Batal</button>
-              <button type="submit" disabled={isSavingKey} className="px-2.5 py-1.5 text-xs rounded-lg bg-accent text-black font-bold hover:bg-accent-hover transition-colors disabled:opacity-50 flex items-center gap-1">
-                {isSavingKey ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                Simpan
-              </button>
+
+            {inlineAuthTab === 'apikey' ? (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-medium text-text-secondary">Secret API Key *</label>
+                  {matchedPreset?.apiKeyHelp && (
+                    <span className="text-[10px] text-accent font-mono">{matchedPreset.apiKeyHelp}</span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type={showNewKeySecret ? 'text' : 'password'}
+                    required
+                    placeholder={matchedPreset?.apiKeyPlaceholder || 'sk-... atau Secret Key'}
+                    value={newKeyForm.api_key}
+                    onChange={(e) => setNewKeyForm({ ...newKeyForm, api_key: e.target.value })}
+                    className="w-full px-2.5 py-1.5 pr-9 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
+                  />
+                  <button type="button" onClick={() => setShowNewKeySecret(!showNewKeySecret)} className="absolute right-2 top-2 text-text-muted hover:text-white">
+                    {showNewKeySecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2 pt-0.5">
+                {matchedPreset?.authLoginUrl && (
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-bg-surface/80 border border-border/60">
+                    <span className="text-[11px] text-text-secondary truncate">{matchedPreset.authLoginLabel || 'Buka Otorisasi Resmi'}</span>
+                    <a
+                      href={matchedPreset.authLoginUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2 py-1 rounded bg-accent text-black font-semibold text-[11px] flex items-center gap-1 hover:opacity-90 flex-shrink-0"
+                    >
+                      Buka Portal <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+                <p className="text-[11px] text-text-muted">
+                  {matchedPreset?.authInstructions || 'Salin URL redirect / callback atau token yang didapatkan dari portal login dan tempelkan ke bawah.'}
+                </p>
+                <div>
+                  <textarea
+                    rows={2}
+                    placeholder="Tempel seluruh URL redirect (misal: http://.../callback?code=xxx) atau token di sini..."
+                    value={authFallbackInput}
+                    onChange={(e) => handleInlineFallbackChange(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
+                  />
+                  {authExtractedToken && (
+                    <div className="mt-1.5 p-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="truncate">
+                        Token Terdeteksi ({authExtractionHint}):{' '}
+                        <strong className="text-white">
+                          {authExtractedToken.length > 20 ? `${authExtractedToken.slice(0, 8)}...${authExtractedToken.slice(-6)}` : authExtractedToken}
+                        </strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[10px] text-text-muted flex items-center gap-1" title="Terenkripsi AES-256-GCM">
+                <Lock className="w-3 h-3 text-accent flex-shrink-0" /> AES-256-GCM
+              </span>
+              <div className="flex gap-1.5">
+                <button type="button" onClick={resetInlineForm} className="px-2.5 py-1.5 text-xs rounded-lg bg-bg-surface-2 text-text-primary border border-border hover:text-white transition-colors">Batal</button>
+                <button type="submit" disabled={isSavingKey} className="px-2.5 py-1.5 text-xs rounded-lg bg-accent text-black font-bold hover:bg-accent-hover transition-colors disabled:opacity-50 flex items-center gap-1">
+                  {isSavingKey ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Simpan Kredensial
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -1525,9 +1551,24 @@ export const SettingsTabChild: React.FC<any> = ({
 };
 
 
-export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selectedPreset, egressPools, loadData, toast, handleOpenDrawer, api }) => {
+export const CreateProviderModalChild: React.FC<any> = ({
+  isOpen,
+  onClose,
+  selectedPreset,
+  providers = [],
+  egressPools = [],
+  loadData,
+  toast,
+  handleOpenDrawer,
+  api,
+}) => {
+  const [authTab, setAuthTab] = useState<'authlogin' | 'apikey'>('apikey');
   const [quickApiKey, setQuickApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [authFallbackInput, setAuthFallbackInput] = useState('');
+  const [authExtractedToken, setAuthExtractedToken] = useState('');
+  const [authExtractionHint, setAuthExtractionHint] = useState('');
+  const [socketPingStatus, setSocketPingStatus] = useState<{ testing: boolean; latency?: number; ok?: boolean } | null>(null);
   const [selectedEgressPoolId, setSelectedEgressPoolId] = useState('');
   const [syncAfterSave, setSyncAfterSave] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -1547,11 +1588,23 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
   useEffect(() => {
     if (isOpen) {
       setQuickApiKey('');
+      setAuthFallbackInput('');
+      setAuthExtractedToken('');
+      setAuthExtractionHint('');
+      setShowApiKey(false);
       setSelectedEgressPoolId('');
+      setSocketPingStatus(null);
+
       if (selectedPreset) {
+        const existingCount = (providers || []).filter(
+          (p: any) => p.kind === selectedPreset.kind || p.name === selectedPreset.name || p.name.startsWith(selectedPreset.name + '-')
+        ).length;
+        const uniqueName = existingCount > 0 ? `${selectedPreset.name}-${existingCount + 1}` : selectedPreset.name;
+
         setSyncAfterSave(true);
+        setAuthTab(selectedPreset.authLoginType ? 'authlogin' : 'apikey');
         setNewProv({
-          name: selectedPreset.name,
+          name: uniqueName,
           display_name: selectedPreset.displayName,
           kind: selectedPreset.kind,
           base_url: selectedPreset.baseUrl,
@@ -1562,6 +1615,7 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
         });
       } else {
         setSyncAfterSave(false);
+        setAuthTab('apikey');
         setNewProv({
           name: 'custom-provider',
           display_name: 'Custom Provider',
@@ -1574,7 +1628,38 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
         });
       }
     }
-  }, [isOpen, selectedPreset]);
+  }, [isOpen, selectedPreset, providers]);
+
+  const handleFallbackInputChange = (val: string) => {
+    setAuthFallbackInput(val);
+    const res = extractAuthTokenFromInput(val);
+    setAuthExtractedToken(res.token);
+    setAuthExtractionHint(res.cleanHint || '');
+  };
+
+  const handleTestSocket = async () => {
+    setSocketPingStatus({ testing: true });
+    const start = performance.now();
+    try {
+      const targetUrl = (newProv.base_url || '').replace(/\/+$/, '');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+      const res = await fetch(`${targetUrl}/models`, { method: 'GET', signal: controller.signal })
+        .catch(() => fetch(`${targetUrl}/api/tags`, { method: 'GET', signal: controller.signal }))
+        .catch(() => fetch(`${targetUrl}/v1/models`, { method: 'GET', signal: controller.signal }));
+
+      clearTimeout(timeoutId);
+      const latency = Math.round(performance.now() - start);
+      setSocketPingStatus({ testing: false, latency, ok: Boolean(res && res.ok) });
+    } catch {
+      setSocketPingStatus({ testing: false, latency: 0, ok: false });
+    }
+  };
+
+  const effectiveApiKey = authTab === 'apikey'
+    ? quickApiKey.trim()
+    : (authExtractedToken.trim() || authFallbackInput.trim());
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1590,20 +1675,20 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
         egress_pool_id: selectedEgressPoolId || undefined,
       });
 
-      if (quickApiKey.trim()) {
-        setSavingStep('Menyimpan dan mengenkripsi API Key (AES-256-GCM)...');
+      if (effectiveApiKey) {
+        setSavingStep('Menyimpan dan mengenkripsi Kredensial (AES-256-GCM)...');
         try {
           await api.credentials.create(created.id, {
-            label: 'Primary API Key',
-            api_key: quickApiKey.trim(),
+            label: authTab === 'authlogin' ? 'Auth Login Credential' : 'Primary API Key',
+            api_key: effectiveApiKey,
           });
         } catch (keyErr: any) {
-          toast.warn('Provider dibuat, namun kunci API gagal disimpan: ' + keyErr.message);
+          toast.warn('Provider dibuat, namun kredensial gagal disimpan: ' + (keyErr.message || keyErr));
         }
       }
 
       let pulledCount = 0;
-      if (syncAfterSave && quickApiKey.trim()) {
+      if (syncAfterSave && (effectiveApiKey || selectedPreset?.authLoginType === 'local_socket')) {
         setSavingStep('Melakukan discovery & menarik model upstream...');
         try {
           const syncRes = await api.providers.syncModels(created.id);
@@ -1657,21 +1742,77 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
       }
     >
       <form id="create-provider-form" onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+        {/* Preset Brand Banner */}
+        {selectedPreset && (
+          <div
+            className="p-3 rounded-xl border flex items-center justify-between gap-3"
+            style={{
+              backgroundColor: selectedPreset.bgColor,
+              borderColor: selectedPreset.borderColor,
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center shadow-sm"
+                style={{
+                  backgroundColor: selectedPreset.color,
+                  color: '#000',
+                }}
+              >
+                <ProviderBrandIcon providerIdOrKind={selectedPreset.id} className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h4 className="font-bold text-white text-sm">{selectedPreset.displayName}</h4>
+                <span className="text-[11px] text-text-secondary font-mono">
+                  Dialek: {selectedPreset.kind} • {selectedPreset.tag}
+                </span>
+              </div>
+            </div>
+
+            {selectedPreset.highlightModels && selectedPreset.highlightModels.length > 0 && (
+              <div className="hidden sm:block text-right">
+                <span className="text-[10px] text-text-muted block font-mono uppercase">Highlight Model:</span>
+                <span className="text-[11px] font-mono text-white font-semibold">
+                  {selectedPreset.highlightModels.slice(0, 2).join(', ')}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5" title="ID teknis unik tanpa spasi, contoh nama-provider-unik">ID *</label>
-            <input type="text" required placeholder="nama-provider-unik" value={newProv.name} onChange={(e) => setNewProv({ ...newProv, name: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent" />
+            <label className="block text-xs font-medium text-text-secondary mb-1.5" title="ID teknis unik tanpa spasi, contoh nama-provider-unik">ID Unik *</label>
+            <input
+              type="text"
+              required
+              placeholder="nama-provider-unik"
+              value={newProv.name}
+              onChange={(e) => setNewProv({ ...newProv, name: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+            />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama *</label>
-            <input type="text" required placeholder="Nama Provider" value={newProv.display_name} onChange={(e) => setNewProv({ ...newProv, display_name: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent" />
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Tampilan *</label>
+            <input
+              type="text"
+              required
+              placeholder="Nama Provider"
+              value={newProv.display_name}
+              onChange={(e) => setNewProv({ ...newProv, display_name: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+            />
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="col-span-1">
             <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Format protokol upstream">Kind</label>
-            <select value={newProv.kind} onChange={(e) => setNewProv({ ...newProv, kind: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent">
+            <select
+              value={newProv.kind}
+              onChange={(e) => setNewProv({ ...newProv, kind: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+            >
               <option value="openai">OpenAI</option>
               <option value="anthropic">Anthropic</option>
               <option value="google">Google Gemini</option>
@@ -1681,26 +1822,287 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Alamat endpoint HTTP upstream">Base URL *</label>
-            <input type="text" required value={newProv.base_url} onChange={(e) => setNewProv({ ...newProv, base_url: e.target.value })} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent" />
+            <input
+              type="text"
+              required
+              value={newProv.base_url}
+              onChange={(e) => setNewProv({ ...newProv, base_url: e.target.value })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+            />
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Boleh kosong, bisa ditambah belakangan dari tab Kredensial">API Key (opsional)</label>
-          <div className="relative">
-            <input type={showApiKey ? 'text' : 'password'} placeholder={selectedPreset?.apiKeyPlaceholder || 'sk-... atau Bearer Token'} value={quickApiKey} onChange={(e) => setQuickApiKey(e.target.value)} className="w-full px-3 py-2 pr-10 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent" />
-            <button type="button" onClick={() => setShowApiKey(!showApiKey)} className="absolute right-2.5 top-2.5 text-text-muted hover:text-white">
-              {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        {/* DUAL-AUTH SECTION */}
+        <div className="rounded-xl border border-border bg-bg-surface-2/60 p-3.5 space-y-3">
+          {/* Dual-Auth Tab Switcher */}
+          <div className="flex border-b border-border/80 gap-3 pb-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setAuthTab('authlogin')}
+              className={`pb-1 font-medium transition-colors flex items-center gap-1.5 ${
+                authTab === 'authlogin'
+                  ? 'border-b-2 border-accent text-accent font-bold'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              <ArrowUpRight className="w-3.5 h-3.5" />
+              1. Auth Login & Otorisasi Terpandu
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuthTab('apikey')}
+              className={`pb-1 font-medium transition-colors flex items-center gap-1.5 ${
+                authTab === 'apikey'
+                  ? 'border-b-2 border-accent text-accent font-bold'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              2. Input API Key Manual
             </button>
           </div>
-          <p className="text-[11px] text-text-muted mt-1.5 flex items-center gap-1.5" title="Token langsung dienkripsi sebelum disimpan ke basis data PostgreSQL.">
-            <Shield className="w-3.5 h-3.5 text-accent flex-shrink-0" /> Dienkripsi sebelum disimpan
-          </p>
+
+          {/* TAB 1: AUTH LOGIN TERPANDU */}
+          {authTab === 'authlogin' && (
+            <div className="space-y-3 pt-1">
+              {/* Alur A: Redirect Callback URL Copying (HuggingFace, Claude, Cloudflare, OAuth) */}
+              {selectedPreset?.authLoginType === 'oauth_fallback' && (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2.5 text-xs text-text-secondary">
+                    <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
+                      1
+                    </span>
+                    <div>
+                      <p className="font-semibold text-white">Buka Halaman Otorisasi Resmi</p>
+                      <p className="text-[11px] text-text-muted mt-0.5">
+                        {selectedPreset.authInstructions}
+                      </p>
+                      {selectedPreset.authLoginUrl && (
+                        <a
+                          href={selectedPreset.authLoginUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg bg-accent text-black font-semibold text-xs hover:opacity-90 transition-opacity"
+                        >
+                          <span>{selectedPreset.authLoginLabel || 'Buka Halaman Otorisasi'}</span>
+                          <ArrowUpRight className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 text-xs text-text-secondary pt-2 border-t border-border/50">
+                    <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
+                      2
+                    </span>
+                    <div className="flex-1 space-y-1.5">
+                      <label className="block font-semibold text-white">
+                        Salin URL Callback / Redirect atau Token Fallback:
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={authFallbackInput}
+                        onChange={(e) => handleFallbackInputChange(e.target.value)}
+                        placeholder="Tempel seluruh URL redirect (misal: http://localhost:54321/callback?code=xxx atau token) di sini..."
+                        className="w-full px-3 py-2 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
+                      />
+                      {authExtractedToken && (
+                        <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span>
+                            Token/Kode Otorisasi Terdeteksi ({authExtractionHint}):{' '}
+                            <strong className="text-white">
+                              {authExtractedToken.length > 25
+                                ? `${authExtractedToken.slice(0, 12)}...${authExtractedToken.slice(-6)}`
+                                : authExtractedToken}
+                            </strong>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Alur B: Console Token Portal */}
+              {selectedPreset?.authLoginType === 'console_token' && (
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2.5 text-xs text-text-secondary">
+                    <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
+                      1
+                    </span>
+                    <div>
+                      <p className="font-semibold text-white">Ambil Token dari Konsol Resmi</p>
+                      <p className="text-[11px] text-text-muted mt-0.5">
+                        {selectedPreset.authInstructions}
+                      </p>
+                      {selectedPreset.authLoginUrl && (
+                        <a
+                          href={selectedPreset.authLoginUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg bg-accent text-black font-semibold text-xs hover:opacity-90 transition-opacity"
+                        >
+                          <span>{selectedPreset.authLoginLabel || 'Buka Konsol Provider'}</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 text-xs text-text-secondary pt-2 border-t border-border/50">
+                    <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
+                      2
+                    </span>
+                    <div className="flex-1 space-y-1.5">
+                      <label className="block font-semibold text-white">
+                        Tempelkan Token atau URL Redirect yang Anda Peroleh:
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showApiKey ? 'text' : 'password'}
+                          placeholder={selectedPreset.authFallbackHint || 'Tempel token di sini...'}
+                          value={authFallbackInput}
+                          onChange={(e) => handleFallbackInputChange(e.target.value)}
+                          className="w-full px-3 py-2 pr-10 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white"
+                        >
+                          {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                      {authExtractedToken && (
+                        <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span>
+                            Token Terdeteksi ({authExtractionHint}):{' '}
+                            <strong className="text-white">
+                              {authExtractedToken.length > 25
+                                ? `${authExtractedToken.slice(0, 12)}...${authExtractedToken.slice(-6)}`
+                                : authExtractedToken}
+                            </strong>
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Alur C: Local Socket Zero-Config */}
+              {(selectedPreset?.authLoginType === 'local_socket' || (!selectedPreset && (newProv.base_url.includes('localhost') || newProv.base_url.includes('127.0.0.1')))) && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
+                    <Server className="w-4 h-4 text-accent" />
+                    <span>Socket Server Lokal (Zero-Config)</span>
+                  </div>
+                  <p className="text-[11px] text-text-muted">
+                    {selectedPreset?.authInstructions ||
+                      'Provider lokal tidak memerlukan API key eksternal. Pastikan server lokal aktif di port yang sesuai.'}
+                  </p>
+                  <div className="pt-2 flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleTestSocket}
+                      isLoading={socketPingStatus?.testing}
+                      icon={<Activity className="w-3.5 h-3.5 text-accent" />}
+                    >
+                      Uji Respons Socket ({newProv.base_url})
+                    </Button>
+                    {socketPingStatus && !socketPingStatus.testing && (
+                      <span
+                        className={`text-xs font-mono font-semibold flex items-center gap-1 ${
+                          socketPingStatus.ok ? 'text-emerald-400' : 'text-red-400'
+                        }`}
+                      >
+                        {socketPingStatus.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                        {socketPingStatus.ok
+                          ? `Tersambung (${socketPingStatus.latency} ms)`
+                          : 'Gagal tersambung ke socket'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Alur D: Custom Manual Provider Default */}
+              {!selectedPreset && !(newProv.base_url.includes('localhost') || newProv.base_url.includes('127.0.0.1')) && (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-text-muted">
+                    Jika Anda memiliki URL redirect callback OAuth atau token sementara dari server upstream, tempelkan di bawah. Sistem akan mengekstrak kode atau token secara otomatis.
+                  </p>
+                  <textarea
+                    rows={2}
+                    value={authFallbackInput}
+                    onChange={(e) => handleFallbackInputChange(e.target.value)}
+                    placeholder="Tempel seluruh URL redirect atau token di sini..."
+                    className="w-full px-3 py-2 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
+                  />
+                  {authExtractedToken && (
+                    <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>
+                        Token Terdeteksi ({authExtractionHint}):{' '}
+                        <strong className="text-white">{authExtractedToken}</strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: INPUT MANUAL API KEY */}
+          {authTab === 'apikey' && (
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between">
+                <label className="block font-bold text-white text-xs">
+                  API Key / Secret Token
+                </label>
+                {selectedPreset?.apiKeyHelp && (
+                  <span className="text-[10px] text-accent font-mono flex items-center gap-1">
+                    <ExternalLink className="w-2.5 h-2.5" />
+                    {selectedPreset.apiKeyHelp}
+                  </span>
+                )}
+              </div>
+
+              <div className="relative">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  placeholder={selectedPreset?.apiKeyPlaceholder || 'sk-... atau Bearer Token'}
+                  value={quickApiKey}
+                  onChange={(e) => setQuickApiKey(e.target.value)}
+                  className="w-full px-3 py-2 pr-10 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white"
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-text-muted flex items-center gap-1.5" title="Kredensial langsung dienkripsi sebelum disimpan ke database.">
+                <Lock className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                Dienkripsi amplop AES-256-GCM tingkat record PostgreSQL dengan AAD.
+              </p>
+            </div>
+          )}
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Jalur koneksi keluar dari server ke upstream">Egress</label>
-          <select value={selectedEgressPoolId} onChange={(e) => setSelectedEgressPoolId(e.target.value)} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent">
+          <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Jalur koneksi keluar dari server ke upstream">Jalur Egress Outbound</label>
+          <select
+            value={selectedEgressPoolId}
+            onChange={(e) => setSelectedEgressPoolId(e.target.value)}
+            className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+          >
             <option value="">Direct Outbound (Tanpa Proxy)</option>
             {egressPools.map((pool: any) => (
               <option key={pool.id} value={pool.id}>{pool.name} ({pool.kind})</option>
@@ -1708,16 +2110,24 @@ export const CreateProviderModalChild: React.FC<any> = ({ isOpen, onClose, selec
           </select>
         </div>
 
-        {quickApiKey.trim() && (
+        {(effectiveApiKey || selectedPreset?.authLoginType === 'local_socket') && (
           <div className="flex items-center gap-2 pt-1">
-            <input type="checkbox" id="syncModelsToggle" checked={syncAfterSave} onChange={(e) => setSyncAfterSave(e.target.checked)} className="rounded bg-bg-surface-2 border-border" />
-            <label htmlFor="syncModelsToggle" className="font-medium text-white cursor-pointer" title="Menarik daftar model dari upstream setelah provider tersimpan">Tarik model otomatis</label>
+            <input
+              type="checkbox"
+              id="syncModelsToggle"
+              checked={syncAfterSave}
+              onChange={(e) => setSyncAfterSave(e.target.checked)}
+              className="rounded bg-bg-surface-2 border-border"
+            />
+            <label htmlFor="syncModelsToggle" className="font-medium text-white cursor-pointer" title="Menarik daftar model dari upstream setelah provider tersimpan">
+              Tarik model upstream otomatis setelah disimpan
+            </label>
           </div>
         )}
 
         {isSaving && savingStep && (
           <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2 animate-pulse">
-            <RefreshCw className="w-4 h-4 animate-spin" /><span>{savingStep}</span>
+            <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" /><span>{savingStep}</span>
           </div>
         )}
       </form>

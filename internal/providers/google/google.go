@@ -282,7 +282,12 @@ func (p *Provider) newRequest(ctx context.Context, method, endpoint string, body
 	for k, v := range p.headers {
 		req.Header.Set(k, v)
 	}
-	req.Header.Set(headerAPIKey, p.credential.Reveal())
+	cred := p.credential.Reveal()
+	if strings.HasPrefix(cred, "ya29.") || strings.HasPrefix(cred, "Bearer ") {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(cred, "Bearer "))
+	} else if cred != "" {
+		req.Header.Set(headerAPIKey, cred)
+	}
 	req.Header.Set("Accept", accept)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

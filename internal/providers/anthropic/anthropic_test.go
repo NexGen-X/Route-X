@@ -270,6 +270,38 @@ func TestHeaderAutentikasiTerkirimDenganNamaTepat(t *testing.T) {
 	}
 }
 
+func TestHeaderAutentikasiBearerToken(t *testing.T) {
+	bearerToken := "Bearer sk-ant-session-token-12345"
+	log := &requestLog{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.record(r)
+		jsonHandler(http.StatusOK, textResponse)(w, r)
+	}))
+	defer srv.Close()
+
+	p, err := New(Config{
+		Name:       "anthropic-bearer",
+		Kind:       providers.KindAnthropic,
+		BaseURL:    srv.URL,
+		Credential: security.Secret(bearerToken),
+		SSRFPolicy: testPolicy(),
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	if _, err := p.ChatCompletion(context.Background(), simpleRequest()); err != nil {
+		t.Fatalf("ChatCompletion() error: %v", err)
+	}
+
+	if got := log.Header("Authorization"); got != bearerToken {
+		t.Errorf("Authorization = %q, mau %q", got, bearerToken)
+	}
+	if got := log.Header(headerAPIKey); got != "" {
+		t.Errorf("header %s tidak boleh terkirim untuk token Bearer, dapat: %q", headerAPIKey, got)
+	}
+}
+
 func TestExtraHeadersTidakBisaMenimpaAutentikasi(t *testing.T) {
 	log := &requestLog{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

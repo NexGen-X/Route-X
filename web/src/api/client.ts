@@ -268,7 +268,17 @@ export const api = {
   },
 
   models: {
-    list: () => request<{ items: Model[] }>('/api/admin/upstreams/models'),
+    list: (params?: { search?: string; family?: string; enabled?: boolean; limit?: number; cursor?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.search) q.set('search', params.search);
+      if (params?.family) q.set('family', params.family);
+      if (params?.enabled !== undefined) q.set('enabled', String(params.enabled));
+      if (params?.limit) q.set('limit', String(params.limit));
+      if (params?.cursor) q.set('cursor', params.cursor);
+      const qs = q.toString();
+      const path = '/api/admin/upstreams/models';
+      return request<{ items: Model[]; next_cursor?: string }>(qs ? `${path}?${qs}` : path);
+    },
     get: (id: string) =>
       request<{ model: Model; aliases: ModelAlias[]; mappings: ProviderModel[] }>(
         `/api/admin/upstreams/models/${encodeURIComponent(id)}`

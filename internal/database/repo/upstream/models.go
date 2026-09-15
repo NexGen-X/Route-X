@@ -385,11 +385,15 @@ func listModelsQuery(f ModelFilter, cursor string, limit int) (string, []any) {
 		add("m.family = $%d", f.Family)
 	}
 	if f.Search != "" {
-		// Satu argumen dipakai dua kali, jadi kondisinya dirakit langsung.
 		args = append(args, f.Search)
 		n := len(args)
 		conds = append(conds, fmt.Sprintf(
-			"(m.model_id ilike '%%' || $%d || '%%' or m.display_name ilike '%%' || $%d || '%%')", n, n))
+			"(m.model_id ilike '%%' || $%d || '%%' "+
+				"or m.display_name ilike '%%' || $%d || '%%' "+
+				"or m.family ilike '%%' || $%d || '%%' "+
+				"or exists (select 1 from provider_models pm join providers p on p.id = pm.provider_id where pm.model_id = m.id and (p.name ilike '%%' || $%d || '%%' or p.display_name ilike '%%' || $%d || '%%' or pm.upstream_model_name ilike '%%' || $%d || '%%')) "+
+				"or exists (select 1 from model_aliases ma where ma.model_id = m.id and ma.alias ilike '%%' || $%d || '%%'))",
+			n, n, n, n, n, n, n))
 	}
 	if f.ExcludeDeprecated {
 		conds = append(conds, "m.deprecated_at is null")

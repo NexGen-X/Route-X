@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { api } from '../api/client';
 import type { Model, ProviderModel, Price } from '../types';
 import { Card } from '../components/common/Card';
@@ -8,7 +8,7 @@ import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Tooltip } from '../components/common/Tooltip';
-import { Cpu, Plus, DollarSign, Trash2 } from 'lucide-react';
+import { Cpu, Plus, DollarSign, Trash2, Search, X } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 
@@ -18,6 +18,7 @@ export const Models: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // State untuk Modal Pricing
   const [isPricingOpen, setIsPricingOpen] = useState(false);
@@ -57,6 +58,25 @@ export const Models: React.FC = () => {
   useEffect(() => {
     loadModels();
   }, []);
+
+  const filteredModels = useMemo(() => {
+    if (!searchQuery.trim()) return models;
+    const q = searchQuery.toLowerCase().trim();
+    return models.filter((m) => {
+      return (
+        m.model_id.toLowerCase().includes(q) ||
+        m.display_name.toLowerCase().includes(q) ||
+        (m.family && m.family.toLowerCase().includes(q)) ||
+        (m.providers &&
+          m.providers.some(
+            (p) =>
+              p.provider_name.toLowerCase().includes(q) ||
+              p.display_name.toLowerCase().includes(q) ||
+              p.upstream_model_name.toLowerCase().includes(q)
+          ))
+      );
+    });
+  }, [models, searchQuery]);
 
   const handleCreateModel = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,6 +226,34 @@ export const Models: React.FC = () => {
         </div>
       )}
 
+      {/* Toolbar Pencarian Model */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-bg-surface-1 p-3 rounded-xl border border-border">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            type="text"
+            placeholder="Cari model berdasarkan nama, slug, provider, atau family (mis. deepseek, claude, tknharbor)..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-9 py-2 bg-bg-surface-2 border border-border rounded-lg text-xs text-white placeholder:text-text-muted focus:outline-none focus:border-accent"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-white rounded-md cursor-pointer transition-colors"
+              aria-label="Hapus pencarian"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 text-xs font-mono text-text-muted px-1">
+          <span>Menampilkan <strong className="text-white">{filteredModels.length}</strong> dari {models.length} model</span>
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[...Array(6)].map((_, idx) => (
@@ -243,9 +291,27 @@ export const Models: React.FC = () => {
             Daftarkan Model Sekarang
           </Button>
         </Card>
+      ) : filteredModels.length === 0 ? (
+        <Card className="p-10 text-center rounded-box bg-bg-surface-1 border border-border/60">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto mb-3">
+            <Search className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-white mb-1">Model Tidak Ditemukan</h3>
+          <p className="text-xs text-text-secondary max-w-md mx-auto mb-4 leading-relaxed">
+            Tidak ada model yang cocok dengan kata kunci <span className="font-mono text-accent">"{searchQuery}"</span>. Coba gunakan nama model, provider, atau family lain.
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setSearchQuery('')}
+            className="mx-auto"
+          >
+            Reset Pencarian
+          </Button>
+        </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {models.map((m) => (
+          {filteredModels.map((m) => (
             <Card key={m.id} className="p-5 flex flex-col justify-between">
               <div>
                 <div className="flex items-start justify-between">

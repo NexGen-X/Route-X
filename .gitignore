@@ -16,3 +16,7 @@ web/coverage/
 
 # State sesi e2e (berisi cookie + token CSRF staging, dibuat ulang tiap run)
 web/e2e/.auth-*.json
+
+# Biner kompilasi Go
+ai-gateway
+ai-gateway-*

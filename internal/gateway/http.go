@@ -806,10 +806,7 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 	return tModel, saring, targets, nil
 }
 
-// siapkanTier2 membungkus siapkanTierFallback demi kompatibilitas kode lama.
-func (h *Handlers) siapkanTier2(ctx context.Context, tier2ModelName string, pr *persiapan, stream bool) (*upstream.Model, []*upstream.RouteCandidate, []policy.Target, *Rejection) {
-	return h.siapkanTierFallback(ctx, tier2ModelName, nil, pr, stream)
-}
+
 
 // saringKandidatTier2 menerapkan penyaringan provider yang sama seperti jalur
 // tier1 di kandidat(): larangan provider dari penyaring konten dan pembatasan
@@ -883,9 +880,7 @@ func (h *Handlers) cobaTierFallbackSekali(ctx context.Context, tier ComboTier, p
 	return out, nil
 }
 
-func (h *Handlers) cobaTier2Sekali(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) (*Outcome[*providers.ChatResponse], *Rejection) {
-	return h.cobaTierFallbackSekali(ctx, ComboTier{Tier: 2, Model: tier2ModelName}, pr, j)
-}
+
 
 // cobaTierFallbackMengalir mencoba eksekusi satu tier fallback streaming.
 func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier, pr *persiapan, j *jejak) (*Outcome[providers.Stream], *Rejection) {
@@ -926,9 +921,7 @@ func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier,
 	return out, nil
 }
 
-func (h *Handlers) cobaTier2Mengalir(ctx context.Context, tier2ModelName string, pr *persiapan, j *jejak) (*Outcome[providers.Stream], *Rejection) {
-	return h.cobaTierFallbackMengalir(ctx, ComboTier{Tier: 2, Model: tier2ModelName}, pr, j)
-}
+
 
 // cakupanCache menyusun konteks pemilik untuk kunci response cache.
 //
@@ -1027,9 +1020,6 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 					// jejak percobaan tetap diakumulasikan, dan kegagalan dicatat.
 					h.catatRute(r, pr, tOut.Attempts, tOut.Candidate)
 					out = tOut
-					if out.Err == nil {
-						break // Berhasil!
-					}
 				}
 				if out.Err == nil {
 					break
@@ -1247,9 +1237,6 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 				case tOut != nil:
 					h.catatRute(r, pr, tOut.Attempts, tOut.Candidate)
 					out = tOut
-					if out.Err == nil {
-						break // Berhasil!
-					}
 				}
 				if out.Err == nil {
 					break

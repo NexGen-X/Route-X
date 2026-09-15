@@ -12,7 +12,7 @@ RUN go mod download
 COPY . .
 # Copy frontend build output to where embed.go expects it
 COPY --from=frontend-builder /app/dist ./web/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -o ai-gateway ./cmd/ai-gateway
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o ai-gateway ./cmd/ai-gateway
 
 FROM alpine:latest
 WORKDIR /opt/routex

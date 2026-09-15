@@ -1,16 +1,18 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 echo "🚀 Memulai Instalasi Route-X secara NATIVE (Biner & Systemd)..."
 
 echo "🧹 Mematikan versi Docker (jika sedang berjalan)..."
 docker compose down || true
 
 echo "📦 1/4 Membangun Antarmuka Web (React/Vite)..."
-cd /root/Route-X/web
+cd "$SCRIPT_DIR/web"
 npm install
 npm run build
-cd ..
+cd "$SCRIPT_DIR"
 
 echo "📡 Memasang dan Mengonfigurasi Xray-core NATIVE..."
 if ! command -v xray &> /dev/null; then
@@ -29,9 +31,9 @@ EOF
 
 mkdir -p /var/lib/route-x/xray
 if [ ! -f /var/lib/route-x/xray/config.json ]; then
-    cp /root/Route-X/deploy/xray/config.json /var/lib/route-x/xray/config.json
+    cp "$SCRIPT_DIR/deploy/xray/config.json" /var/lib/route-x/xray/config.json
 fi
-cp /root/Route-X/deploy/xray/config.json /usr/local/etc/xray/config.json 2>/dev/null || true
+cp "$SCRIPT_DIR/deploy/xray/config.json" /usr/local/etc/xray/config.json 2>/dev/null || true
 
 # Atur hak akses agar user nobody (xray) dan routex dapat membaca
 chmod 755 /var/lib/route-x
@@ -42,7 +44,7 @@ chmod 644 /var/lib/route-x/xray/config.json
 grep -q "127.0.0.1 xray" /etc/hosts || echo "127.0.0.1 xray" >> /etc/hosts
 
 echo "🔨 2/4 Membangun Biner Core (Golang)..."
-CGO_ENABLED=0 GOOS=linux go build -o ai-gateway ./cmd/ai-gateway
+CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o ai-gateway ./cmd/ai-gateway
 
 echo "🛑 3/4 Menghentikan layanan sementara..."
 systemctl stop routex || true
@@ -51,12 +53,11 @@ systemctl stop xray || true
 
 echo "📁 Menyalin ke direktori produksi (/opt/routex)..."
 mkdir -p /opt/routex
-cp ai-gateway /opt/routex/
-chmod +x /opt/routex/ai-gateway
+install -m 755 ai-gateway /opt/routex/ai-gateway
 
 # Pasang unit systemd routex jika tersedia
-if [ -f /root/Route-X/deploy/systemd/routex.service ]; then
-    cp /root/Route-X/deploy/systemd/routex.service /etc/systemd/system/routex.service
+if [ -f "$SCRIPT_DIR/deploy/systemd/routex.service" ]; then
+    cp "$SCRIPT_DIR/deploy/systemd/routex.service" /etc/systemd/system/routex.service
 fi
 
 echo "🔄 4/4 Menjalankan Migrasi Skema Database Asli..."

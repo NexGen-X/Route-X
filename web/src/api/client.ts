@@ -392,6 +392,11 @@ export const api = {
       }),
     delete: (id: string) =>
       request<void>(`/api/admin/gateway/budgets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    toggle: (id: string, enabled: boolean) =>
+      request<Budget>(`/api/admin/gateway/budgets/${encodeURIComponent(id)}/toggle`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      }),
     reset: (id: string) =>
       request<Budget>(`/api/admin/gateway/budgets/${encodeURIComponent(id)}/reset`, { method: 'POST' }),
   },

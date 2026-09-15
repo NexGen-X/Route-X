@@ -7,7 +7,7 @@ import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
-import { Coins, Plus, RotateCcw } from 'lucide-react';
+import { Coins, Plus, RotateCcw, Power } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { formatUSD, percentageOfDecimal } from '../utils/money';
@@ -82,6 +82,16 @@ export const Budgets: React.FC = () => {
       loadBudgets();
     } catch (err: any) {
       toast.error('Gagal reset anggaran: ' + (err.message || err));
+    }
+  };
+
+  const handleToggle = async (b: Budget) => {
+    try {
+      await api.budgets.toggle(b.id, !b.enabled);
+      toast.success(`Anggaran "${b.name}" ${!b.enabled ? 'diaktifkan' : 'dinonaktifkan'}.`);
+      loadBudgets();
+    } catch (err: any) {
+      toast.error('Gagal mengubah status anggaran: ' + (err.message || err));
     }
   };
 
@@ -237,7 +247,20 @@ export const Budgets: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-5 pt-3 border-t border-border flex justify-end">
+              <div className="mt-5 pt-3 border-t border-border flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => handleToggle(b)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors cursor-pointer ${
+                    b.enabled
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                      : 'bg-bg-surface-2 text-text-muted border-border hover:text-white'
+                  }`}
+                  title={b.enabled ? 'Klik untuk menonaktifkan anggaran' : 'Klik untuk mengaktifkan anggaran'}
+                >
+                  <Power className="w-3 h-3" />
+                  <span>{b.enabled ? 'Aktif' : 'Nonaktif'}</span>
+                </button>
                 <Button
                   variant="secondary"
                   size="sm"

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
@@ -30,7 +29,6 @@ import {
   Sliders,
   Search,
   FlaskConical,
-  Zap,
   AlertTriangle,
   ArrowUpRight,
   ExternalLink,
@@ -87,14 +85,11 @@ export const Providers: React.FC = () => {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [models, setModels] = useState<ProviderModel[]>([]);
   const [providerDetailsError, setProviderDetailsError] = useState<string | null>(null);
-  const [modelSearch, setModelSearch] = useState('');
 
   // Status Aksi & Pengujian
   const [probingId, setProbingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [testingModelId, setTestingModelId] = useState<string | null>(null);
-  const [copiedModelId, setCopiedModelId] = useState<string | null>(null);
-  const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
   const [modelTestResults, setModelTestResults] = useState<Record<string, ModelTestResult>>({});
   // Timer indikator salin; disimpan agar bisa dibatalkan saat unmount.
   const copyTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -118,17 +113,6 @@ export const Providers: React.FC = () => {
 
   // State Form Create Provider Baru / Preset
   const [selectedPreset, setSelectedPreset] = useState<KnownProviderPreset | null>(null);
-
-  // State Form Konfigurasi Provider
-  const [configForm, setConfigForm] = useState({
-    display_name: '',
-    base_url: '',
-    priority: 100,
-    weight: 100,
-    timeout_ms: 30000,
-    enabled: true,
-  });
-  const [isSavingConfig, setIsSavingConfig] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Helper: Deteksi Custom / Manual Provider
@@ -163,14 +147,6 @@ export const Providers: React.FC = () => {
       const found = providers.find((p: Provider) => p.id === selectedProvider.id);
       if (found) {
         setSelectedProvider(found);
-        setConfigForm({
-          display_name: found.display_name || found.name,
-          base_url: found.base_url,
-          priority: found.priority,
-          weight: found.weight,
-          timeout_ms: found.timeout_ms || 30000,
-          enabled: found.enabled,
-        });
       }
     }
   }, [providers]);
@@ -201,15 +177,6 @@ export const Providers: React.FC = () => {
   const handleOpenDrawer = (prov: Provider, tab: 'models' | 'credentials' | 'settings' = 'models') => {
     setSelectedProvider(prov);
     setDrawerTab(tab);
-    setConfigForm({
-      display_name: prov.display_name || prov.name,
-      base_url: prov.base_url,
-      priority: prov.priority,
-      weight: prov.weight,
-      timeout_ms: prov.timeout_ms || 30000,
-      enabled: prov.enabled,
-    });
-    setIsAddingKeyInline(false);
     setIsDrawerOpen(true);
     loadProviderDetails(prov.id);
   };
@@ -267,34 +234,6 @@ export const Providers: React.FC = () => {
   // ---------------------------------------------------------------------------
   // Handlers: API Keys
   // ---------------------------------------------------------------------------
-  const handleCreateKey = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!selectedProvider) return;
-    const formData = new FormData(e.currentTarget);
-    const keyLabel = ((formData.get('label') as string) || newKeyForm.label || '').trim();
-    const keySecret = ((formData.get('api_key') as string) || newKeyForm.api_key || '').trim();
-
-    if (!keySecret) {
-      toast.error('Secret token API key wajib diisi');
-      return;
-    }
-
-    setIsSavingKey(true);
-    try {
-      await api.credentials.create(selectedProvider.id, {
-        label: keyLabel || 'Primary API Key',
-        api_key: keySecret,
-      });
-      toast.success('API Key berhasil ditambahkan dengan enkripsi AES-256-GCM');
-      setIsAddingKeyInline(false);
-      setNewKeyForm({ label: 'Backup API Key', api_key: '' });
-      await loadProviderDetails(selectedProvider.id);
-    } catch (err) {
-      toast.error('Gagal menambahkan API Key: ' + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setIsSavingKey(false);
-    }
-  };
 
   const handleToggleKey = async (cred: Credential) => {
     if (!selectedProvider) return;
@@ -390,30 +329,6 @@ export const Providers: React.FC = () => {
     }
   };
 
-  const handleAddModelManual = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!selectedProvider) return;
-    const formData = new FormData(e.currentTarget);
-    const trimmed = ((formData.get('model_name') as string) || newModelName || '').trim();
-    if (!trimmed) {
-      toast.error('Nama model wajib diisi');
-      return;
-    }
-
-    setIsSavingModel(true);
-    try {
-      await api.providers.addModel(selectedProvider.id, trimmed);
-      toast.success(`Model "${trimmed}" berhasil didaftarkan`);
-      setNewModelName('');
-      setIsAddModelModalOpen(false);
-      await loadProviderDetails(selectedProvider.id);
-    } catch (err: any) {
-      toast.error('Gagal menambahkan model: ' + (err.message || err));
-    } finally {
-      setIsSavingModel(false);
-    }
-  };
-
   // ---------------------------------------------------------------------------
   // Handlers: Katalog Proxy & Konfigurasi Teknis
   // ---------------------------------------------------------------------------
@@ -430,28 +345,6 @@ export const Providers: React.FC = () => {
     }
   };
 
-  const handleSaveConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProvider) return;
-    setIsSavingConfig(true);
-    try {
-      await api.providers.update(selectedProvider.id, {
-        display_name: configForm.display_name.trim(),
-        base_url: configForm.base_url.trim(),
-        priority: configForm.priority,
-        weight: configForm.weight,
-        timeout_ms: configForm.timeout_ms,
-        enabled: configForm.enabled,
-      });
-      toast.success('Konfigurasi provider berhasil disimpan');
-      await loadData();
-    } catch (err) {
-      toast.error('Gagal menyimpan konfigurasi: ' + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setIsSavingConfig(false);
-    }
-  };
-
   // ---------------------------------------------------------------------------
   // Handlers: Form Tambah Provider Baru / Preset
   // ---------------------------------------------------------------------------
@@ -464,43 +357,6 @@ export const Providers: React.FC = () => {
     setSelectedPreset(null);
     setIsCreateModalOpen(true);
   };
-
-  const getModelBadges = (modelName: string, providerKind: string) => {
-    const lower = modelName.toLowerCase();
-    let brand = 'Upstream';
-    let context = 'Standard';
-
-    if (lower.includes('claude')) {
-      brand = 'Anthropic';
-      context = '200K';
-    } else if (lower.includes('gpt-4') || lower.includes('o1') || lower.includes('o3')) {
-      brand = 'OpenAI';
-      context = '128K';
-    } else if (lower.includes('deepseek')) {
-      brand = 'DeepSeek';
-      context = lower.includes('r1') ? '128K' : '64K';
-    } else if (lower.includes('gemini')) {
-      brand = 'Google';
-      context = '1M';
-    } else if (lower.includes('llama')) {
-      brand = 'Meta';
-      context = '128K';
-    } else if (lower.includes('mistral') || lower.includes('codestral')) {
-      brand = 'Mistral';
-      context = '32K';
-    } else if (providerKind === 'ollama') {
-      brand = 'Local';
-      context = 'Local Host';
-    }
-
-    return { brand, context };
-  };
-
-  const filteredModels = useMemo(() => {
-    if (!modelSearch.trim()) return models;
-    const term = modelSearch.toLowerCase();
-    return models.filter((m) => m.upstream_model_name.toLowerCase().includes(term));
-  }, [models, modelSearch]);
 
   const copyWithFeedback = async (text: string, successMessage: string, onSuccess?: () => void) => {
     try {
@@ -730,17 +586,21 @@ export const Providers: React.FC = () => {
                         className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 ${
                           isHealthy
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : isDegraded
+                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                             : 'bg-red-500/10 text-red-400 border-red-500/20'
                         }`}
                       >
                         <span
                           className={`w-1.5 h-1.5 rounded-full ${
-                            isHealthy ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
+                            isHealthy ? 'bg-emerald-400 animate-pulse' : isDegraded ? 'bg-amber-400' : 'bg-red-400'
                           }`}
                         />
                         <span>
                           {isHealthy
                             ? `HEALTHY ${p.last_latency_ms ? `(${p.last_latency_ms} ms)` : ''}`
+                            : isDegraded
+                            ? `DEGRADED ${p.last_latency_ms ? `(${p.last_latency_ms} ms)` : ''}`
                             : 'UNHEALTHY'}
                         </span>
                       </span>
@@ -1148,6 +1008,7 @@ export const ModelsTabChild: React.FC<any> = ({
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
                   <span className="font-mono text-xs sm:text-sm font-bold text-white truncate min-w-0 flex-1">{model.upstream_model_name}</span>
                   <span className="hidden md:inline px-1.5 py-0.2 text-[10px] rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-mono flex-shrink-0">{brand}</span>
+                  <span className="hidden sm:inline px-1.5 py-0.2 text-[10px] rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono flex-shrink-0">{context}</span>
                   <button
                     type="button"
                     onClick={() => void copyWithFeedback(model.upstream_model_name, `Model ID "${model.upstream_model_name}" disalin`, () => {

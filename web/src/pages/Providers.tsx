@@ -7,6 +7,8 @@ import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { Drawer } from '../components/common/Drawer';
 import { Tooltip } from '../components/common/Tooltip';
+import { Select } from '../components/common/Select';
+import { Checkbox } from '../components/common/Checkbox';
 import {
   Server,
   Plus,
@@ -1677,18 +1679,18 @@ export const CreateProviderModalChild: React.FC<any> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="col-span-1">
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Kind</label>
-            <select
+            <Select
+              label="Kind"
               value={newProv.kind}
-              onChange={(e) => setNewProv({ ...newProv, kind: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
-            >
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="google">Google Gemini</option>
-              <option value="openai_compatible">OpenAI Compatible</option>
-              <option value="custom">Custom Engine</option>
-            </select>
+              onChange={(val) => setNewProv({ ...newProv, kind: val })}
+              options={[
+                { value: 'openai', label: 'OpenAI', description: 'Model keluarga GPT & reasoning o-series' },
+                { value: 'anthropic', label: 'Anthropic', description: 'Model Claude 3.5 & 3.7 series' },
+                { value: 'google', label: 'Google Gemini', description: 'Model Gemini 1.5, 2.0 & Flash series' },
+                { value: 'openai_compatible', label: 'OpenAI Compatible', description: 'Groq, DeepSeek, Together, Ollama, dll.' },
+                { value: 'custom', label: 'Custom Engine', description: 'Format payload proprietary/internal' },
+              ]}
+            />
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Base URL *</label>
@@ -1967,31 +1969,30 @@ export const CreateProviderModalChild: React.FC<any> = ({
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1.5">Jalur Egress Outbound</label>
-          <select
+          <Select
+            label="Jalur Egress Outbound"
             value={selectedEgressPoolId}
-            onChange={(e) => setSelectedEgressPoolId(e.target.value)}
-            className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
-          >
-            <option value="">Direct Outbound (Tanpa Proxy)</option>
-            {egressPools.map((pool: any) => (
-              <option key={pool.id} value={pool.id}>{pool.name} ({pool.kind})</option>
-            ))}
-          </select>
+            onChange={(val) => setSelectedEgressPoolId(val)}
+            placeholder="Direct Outbound (Tanpa Proxy)"
+            options={[
+              { value: '', label: 'Direct Outbound (Tanpa Proxy)', description: 'Koneksi langsung dari server tanpa melalui proxy' },
+              ...egressPools.map((pool: any) => ({
+                value: pool.id,
+                label: `${pool.name} (${pool.kind})`,
+                description: `Protokol: ${pool.kind} · Region: ${pool.region || 'Default'}`,
+              })),
+            ]}
+          />
         </div>
 
         {(effectiveApiKey || selectedPreset?.authLoginType === 'local_socket') && (
-          <div className="flex items-center gap-2 pt-1">
-            <input
-              type="checkbox"
+          <div className="pt-1">
+            <Checkbox
               id="syncModelsToggle"
               checked={syncAfterSave}
               onChange={(e) => setSyncAfterSave(e.target.checked)}
-              className="rounded bg-bg-surface-2 border-border"
+              label="Tarik model upstream otomatis setelah disimpan"
             />
-            <label htmlFor="syncModelsToggle" className="font-medium text-white cursor-pointer">
-              Tarik model upstream otomatis setelah disimpan
-            </label>
           </div>
         )}
 

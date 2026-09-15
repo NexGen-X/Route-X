@@ -2,6 +2,7 @@ import React from 'react';
 import { Menu, ShieldCheck, Search } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../common/Badge';
+import { Tooltip } from '../common/Tooltip';
 
 interface HeaderProps {
   title: string;
@@ -39,20 +40,21 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {onOpenCommandPalette && (
           <>
+            <Tooltip content="Cari Cepat (⌘K)" position="bottom">
+              <button
+                type="button"
+                onClick={onOpenCommandPalette}
+                className="sm:hidden p-2 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-text-secondary hover:text-white transition-all shadow-sm cursor-pointer"
+                aria-label="Buka Command Palette"
+              >
+                <Search className="w-4 h-4 text-text-muted" />
+              </button>
+            </Tooltip>
             <button
               type="button"
               onClick={onOpenCommandPalette}
-              className="sm:hidden p-2 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-text-secondary hover:text-white transition-all shadow-sm"
-              title="Buka Command Palette"
-              aria-label="Buka Command Palette"
-            >
-              <Search className="w-4 h-4 text-text-muted" />
-            </button>
-            <button
-              type="button"
-              onClick={onOpenCommandPalette}
-              className="hidden sm:inline-flex items-center gap-2.5 px-3 py-1.5 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-xs text-text-secondary hover:text-white transition-all shadow-sm group"
-              title="Buka Command Palette (Ctrl+K atau ⌘K)"
+              className="hidden sm:inline-flex items-center gap-2.5 px-3 py-1.5 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-xs text-text-secondary hover:text-white transition-all shadow-sm group cursor-pointer"
+              aria-label="Buka Command Palette (Ctrl+K atau ⌘K)"
             >
               <Search className="w-3.5 h-3.5 text-text-muted group-hover:text-accent transition-colors" />
               <span className="text-text-muted group-hover:text-text-secondary text-xs">Cari cepat...</span>

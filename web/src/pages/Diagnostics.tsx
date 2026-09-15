@@ -4,6 +4,7 @@ import type { Diagnostics as DiagType, BackgroundJob, ResponseCacheStats } from 
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
+import { Tooltip } from '../components/common/Tooltip';
 import { RefreshCw, Clock, Play, Zap, Trash2, CheckCircle2 } from 'lucide-react';
 import { PageHeader } from '../components/common/PageHeader';
 import { useToast } from '../context/ToastContext';
@@ -227,15 +228,17 @@ export const Diagnostics: React.FC = () => {
                   className="w-16 bg-bg-base border border-border/80 rounded px-1.5 py-0.5 text-xs text-white font-mono focus:border-accent focus:outline-none"
                 />
                 <span className="text-xs text-text-secondary">menit</span>
-                <button
-                  onClick={handleSaveTTL}
-                  disabled={updatingCache}
-                  className="p-1.5 rounded bg-accent/20 hover:bg-accent/30 text-accent ml-auto text-xs min-w-[28px] min-h-[28px] flex items-center justify-center cursor-pointer"
-                  title="Simpan TTL"
-                  aria-label="Simpan TTL"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                </button>
+                <Tooltip content="Simpan TTL" position="left">
+                  <button
+                    type="button"
+                    onClick={handleSaveTTL}
+                    disabled={updatingCache}
+                    className="p-1.5 rounded bg-accent/20 hover:bg-accent/30 text-accent ml-auto text-xs min-w-[28px] min-h-[28px] flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                    aria-label="Simpan TTL"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
               </div>
             </div>
             <span className="text-[10px] text-text-muted mt-1 block">

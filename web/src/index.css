@@ -198,3 +198,54 @@ input[type="radio"]:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* -------------------------------------------------------------------------- */
+/* 6. In-App Utility Classes & Form Controls Normalization                   */
+/* -------------------------------------------------------------------------- */
+
+/* Custom panel scrollbar untuk Drawer, Modal, dan dropdown */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #262626 transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 9999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #3F3F46;
+}
+
+/* Batasi resize textarea hanya secara vertikal agar tidak merusak layout grid */
+textarea {
+  resize: vertical;
+}
+
+/* Normalisasi Select dropdown lintas OS (Windows, macOS, Linux, iOS, Android) */
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: #141416;
+  color: #F5F5F5;
+}
+
+/* Normalisasi Date / Time picker dialog native */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  color-scheme: dark;
+}
+

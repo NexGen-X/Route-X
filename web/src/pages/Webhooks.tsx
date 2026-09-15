@@ -7,6 +7,7 @@ import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { Modal } from '../components/common/Modal';
 import { Checkbox } from '../components/common/Checkbox';
+import { Tooltip } from '../components/common/Tooltip';
 import { PageHeader } from '../components/common/PageHeader';
 import { Webhook as WebhookIcon, Plus, Trash2, Zap, Play, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -234,9 +235,17 @@ export const Webhooks: React.FC = () => {
 
               <div className="mt-4 pt-3 border-t border-border flex justify-between items-center" onClick={(e) => e.stopPropagation()}>
                 <div className="text-[11px] text-text-muted flex items-center gap-2">
-                  <span title={wh.last_delivery_at}>
-                    Terakhir: {wh.last_delivery_status || 'Belum pernah'}
-                  </span>
+                  {wh.last_delivery_at ? (
+                    <Tooltip content={`Waktu: ${new Date(wh.last_delivery_at).toLocaleString()}`} position="top">
+                      <span className="cursor-default">
+                        Terakhir: {wh.last_delivery_status || 'Belum pernah'}
+                      </span>
+                    </Tooltip>
+                  ) : (
+                    <span>
+                      Terakhir: {wh.last_delivery_status || 'Belum pernah'}
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button variant="secondary" size="sm" onClick={() => handleTest(wh)} icon={<Play className="w-3.5 h-3.5" />}>
@@ -269,7 +278,7 @@ export const Webhooks: React.FC = () => {
           </>
         }
       >
-        <form id="create-webhook-form" onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-webhook-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama *</label>
             <input

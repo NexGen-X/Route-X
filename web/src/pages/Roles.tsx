@@ -6,6 +6,7 @@ import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
+import { Tooltip } from '../components/common/Tooltip';
 import { ShieldCheck, Plus, Trash2, Save, SlidersHorizontal, Lock, Crown } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
@@ -180,9 +181,11 @@ export const RolesPage: React.FC = () => {
                     <div className="flex items-center gap-1.5 min-w-0">
                       <h4 className="text-sm font-bold text-white truncate">{r.name}</h4>
                       {isSuperAdmin && (
-                        <span title="Peran Tertinggi / Root" className="inline-flex items-center">
-                          <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        </span>
+                        <Tooltip content="Peran Tertinggi / Root">
+                          <span className="inline-flex items-center">
+                            <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          </span>
+                        </Tooltip>
                       )}
                     </div>
                     <div className="flex gap-1 shrink-0">
@@ -225,13 +228,14 @@ export const RolesPage: React.FC = () => {
                       </Button>
 
                       {r.is_system ? (
-                        <div
-                          className="flex items-center gap-1 text-[11px] text-text-muted px-2.5 py-1 rounded-nav bg-bg-surface-2 border border-border/40 cursor-default select-none"
-                          title="Peran sistem bawaan dilindungi dari penghapusan demi kestabilan gateway"
-                        >
-                          <Lock className="w-3 h-3 text-text-muted" />
-                          <span>Terkunci</span>
-                        </div>
+                        <Tooltip content="Peran sistem dilindungi dari penghapusan" position="left">
+                          <div
+                            className="flex items-center gap-1 text-[11px] text-text-muted px-2.5 py-1 rounded-nav bg-bg-surface-2 border border-border/40 cursor-default select-none"
+                          >
+                            <Lock className="w-3 h-3 text-text-muted" />
+                            <span>Terkunci</span>
+                          </div>
+                        </Tooltip>
                       ) : (
                         <Button
                           variant="secondary"
@@ -268,7 +272,7 @@ export const RolesPage: React.FC = () => {
           </>
         }
       >
-        <form id="create-role-form" onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-role-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Peran *</label>
             <input

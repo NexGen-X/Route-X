@@ -292,7 +292,7 @@ export const Budgets: React.FC = () => {
           </>
         }
       >
-        <form id="create-budget-form" onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-budget-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Anggaran *</label>
             <input

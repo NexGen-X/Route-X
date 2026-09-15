@@ -340,7 +340,7 @@ export const Egress: React.FC = () => {
 
                     <div className="flex justify-between py-1 border-b border-border/40">
                       <span className="text-text-muted">Target Proxy</span>
-                      <span className="font-mono text-accent text-[11px] truncate max-w-[190px]" title={p.masked_hint || '[ENCRYPTED AT REST]'}>
+                      <span className="font-mono text-accent text-[11px] truncate max-w-[190px]">
                         {p.masked_hint || '[ENCRYPTED AT REST]'}
                       </span>
                     </div>
@@ -408,7 +408,7 @@ export const Egress: React.FC = () => {
           </>
         }
       >
-        <form id="create-egress-form" onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-egress-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <Select
             label="Preset / Sumber Proxy"
             value=""
@@ -545,7 +545,7 @@ export const Egress: React.FC = () => {
           </>
         }
       >
-        <form id="edit-egress-form" onSubmit={handleUpdate} className="space-y-4 text-xs">
+        <form id="edit-egress-form" noValidate onSubmit={handleUpdate} className="space-y-4 text-xs">
           <Select
             label="Preset / Sumber Proxy"
             value=""

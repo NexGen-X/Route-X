@@ -1,6 +1,7 @@
 import React, { useEffect, useId } from 'react';
 import FocusTrap from 'focus-trap-react';
 import { X } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 // Kunci body bersama lintas Modal/Drawer agar lapisan bertumpuk tidak saling melepas kunci.
 function __acquireBodyLock(): void {
@@ -113,14 +114,16 @@ export const Drawer: React.FC<DrawerProps> = ({
               {headerExtra && <div className="pt-0.5">{headerExtra}</div>}
             </div>
 
-            <button
-              onClick={onClose}
-              title="Tutup Panel (Esc)"
-              aria-label="Tutup panel"
-              className="text-text-muted hover:text-white p-1.5 rounded-xl hover:bg-bg-surface border border-transparent hover:border-border transition-all flex-shrink-0 cursor-pointer"
-            >
-              <X className="w-5 h-5" aria-hidden="true" />
-            </button>
+            <Tooltip content="Tutup Panel (Esc)" position="left">
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Tutup panel"
+                className="text-text-muted hover:text-white p-1.5 rounded-xl hover:bg-bg-surface border border-transparent hover:border-border transition-all flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <X className="w-5 h-5" aria-hidden="true" />
+              </button>
+            </Tooltip>
           </div>
 
           {/* Drawer Body: satu-satunya area scroll; pb-4 (16px) agar item

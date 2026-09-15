@@ -53,7 +53,7 @@ export const Login: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form noValidate onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="login-email" className="block text-xs font-medium text-text-secondary mb-1.5">
               Alamat Email

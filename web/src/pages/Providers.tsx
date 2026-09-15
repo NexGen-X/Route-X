@@ -6,6 +6,7 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { Drawer } from '../components/common/Drawer';
+import { Tooltip } from '../components/common/Tooltip';
 import {
   Server,
   Plus,
@@ -610,15 +611,16 @@ export const Providers: React.FC = () => {
                   {/* Base URL */}
                   <div className="p-2 rounded-lg bg-bg-base/70 border border-border/60 flex items-center justify-between text-xs font-mono text-text-secondary">
                     <span className="truncate pr-2">{p.base_url}</span>
-                    <button
-                      type="button"
-                      onClick={() => void copyWithFeedback(p.base_url, 'Base URL disalin ke clipboard')}
-                      title="Salin Base URL"
-                      aria-label="Salin Base URL"
-                      className="p-2 -mr-1 rounded-md text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
+                    <Tooltip content="Salin Base URL" position="top">
+                      <button
+                        type="button"
+                        onClick={() => void copyWithFeedback(p.base_url, 'Base URL disalin ke clipboard')}
+                        aria-label="Salin Base URL"
+                        className="p-2 -mr-1 rounded-md text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </Tooltip>
                   </div>
 
                   {/* Jalur Proxy Egress */}
@@ -639,7 +641,6 @@ export const Providers: React.FC = () => {
                     onClick={() => handleProbe(p)}
                     isLoading={probingId === p.id}
                     icon={<Activity className="w-3.5 h-3.5" />}
-                    title="Uji kesehatan dan latensi provider sekarang"
                   >
                     Probe
                   </Button>
@@ -649,7 +650,6 @@ export const Providers: React.FC = () => {
                     size="sm"
                     onClick={() => handleOpenDrawer(p, 'models')}
                     icon={<Sliders className="w-3.5 h-3.5" />}
-                    title="Buka konfigurasi, model, kredensial, dan setelan provider"
                   >
                     Kelola
                   </Button>
@@ -691,25 +691,27 @@ export const Providers: React.FC = () => {
         title={
           <div className="flex items-center gap-2 min-w-0">
             {/* Icon Provider di Drawer Header: Klik untuk trigger probe */}
-            <button
-              type="button"
-              onClick={() => selectedProvider && handleProbe(selectedProvider)}
-              title="Klik icon untuk memeriksa status kesehatan provider"
-              className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-sm ${
-                isManualProvider
-                  ? 'bg-purple-950/50 border border-purple-500/50 text-purple-300 hover:scale-105 hover:border-purple-300'
-                  : 'bg-bg-surface border border-border text-accent hover:scale-105 hover:border-accent'
-              }`}
-            >
-              {selectedProvider && (
-                <ProviderBrandIcon
-                  providerIdOrKind={selectedProvider.kind}
-                  name={selectedProvider.name}
-                  className="w-5 h-5"
-                  isCustom={isManualProvider}
-                />
-              )}
-            </button>
+            <Tooltip content="Uji kesehatan provider sekarang" position="bottom">
+              <button
+                type="button"
+                onClick={() => selectedProvider && handleProbe(selectedProvider)}
+                aria-label="Periksa status kesehatan provider"
+                className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                  isManualProvider
+                    ? 'bg-purple-950/50 border border-purple-500/50 text-purple-300 hover:scale-105 hover:border-purple-300'
+                    : 'bg-bg-surface border border-border text-accent hover:scale-105 hover:border-accent'
+                }`}
+              >
+                {selectedProvider && (
+                  <ProviderBrandIcon
+                    providerIdOrKind={selectedProvider.kind}
+                    name={selectedProvider.name}
+                    className="w-5 h-5"
+                    isCustom={isManualProvider}
+                  />
+                )}
+              </button>
+            </Tooltip>
             <div className="truncate min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="truncate font-bold text-white text-sm">
@@ -733,15 +735,16 @@ export const Providers: React.FC = () => {
               <span className="font-mono text-[11px] text-text-secondary truncate flex-1 min-w-0">
                 {selectedProvider.base_url}
               </span>
-              <button
-                type="button"
-                onClick={() => void copyWithFeedback(selectedProvider.base_url, 'Base URL disalin')}
-                className="p-1 rounded text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 cursor-pointer"
-                title="Salin Base URL"
-                aria-label="Salin Base URL"
-              >
-                <Copy className="w-3 h-3" />
-              </button>
+              <Tooltip content="Salin Base URL" position="bottom">
+                <button
+                  type="button"
+                  onClick={() => void copyWithFeedback(selectedProvider.base_url, 'Base URL disalin')}
+                  className="p-1 rounded text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  aria-label="Salin Base URL"
+                >
+                  <Copy className="w-3 h-3" />
+                </button>
+              </Tooltip>
             </div>
           )
         }
@@ -976,23 +979,27 @@ export const ModelsTabChild: React.FC<any> = ({
             className="w-full pl-8 pr-2 py-1.5 text-xs bg-bg-surface-2 border border-border rounded-lg text-white font-mono placeholder:text-text-muted outline-none focus:border-accent"
           />
         </div>
-        <button
-          type="button"
-          onClick={() => handleSyncModels(selectedProvider)}
-          disabled={syncingId === selectedProvider.id}
-          title="Tarik daftar model dari upstream"
-          className="p-1.5 sm:p-2 rounded-lg bg-bg-surface-2 text-text-primary border border-border hover:bg-border/60 hover:text-white transition-colors cursor-pointer disabled:opacity-50 flex-shrink-0"
-        >
-          {syncingId === selectedProvider.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <DownloadCloud className="w-4 h-4" />}
-        </button>
-        <button
-          type="button"
-          onClick={onOpenAddModelModal}
-          title="Tambah model manual"
-          className="p-1.5 sm:p-2 rounded-lg bg-accent text-black hover:bg-accent-hover transition-colors cursor-pointer flex-shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
+        <Tooltip content="Tarik model dari upstream" position="top">
+          <button
+            type="button"
+            onClick={() => handleSyncModels(selectedProvider)}
+            disabled={syncingId === selectedProvider.id}
+            aria-label="Tarik daftar model dari upstream"
+            className="p-1.5 sm:p-2 rounded-lg bg-bg-surface-2 text-text-primary border border-border hover:bg-border/60 hover:text-white transition-colors cursor-pointer disabled:opacity-50 flex-shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            {syncingId === selectedProvider.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <DownloadCloud className="w-4 h-4" />}
+          </button>
+        </Tooltip>
+        <Tooltip content="Tambah model manual" position="top">
+          <button
+            type="button"
+            onClick={onOpenAddModelModal}
+            aria-label="Tambah model manual"
+            className="p-1.5 sm:p-2 rounded-lg bg-accent text-black hover:bg-accent-hover transition-colors cursor-pointer flex-shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </Tooltip>
       </div>
 
       {filteredModels.length > 0 ? (
@@ -1141,7 +1148,7 @@ export const CredentialsTabChild: React.FC<any> = ({
   return (
     <div className="space-y-2.5 sm:space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-bold text-white flex items-center gap-1.5 min-w-0" title="Token otentikasi disimpan dengan enkripsi amplop AES-256-GCM">
+        <span className="text-xs font-bold text-white flex items-center gap-1.5 min-w-0">
           <KeyRound className="w-3.5 h-3.5 text-accent flex-shrink-0" />
           <span className="truncate">Kredensial · AES-256-GCM</span>
         </span>
@@ -1185,7 +1192,7 @@ export const CredentialsTabChild: React.FC<any> = ({
             </button>
           </div>
 
-          <form onSubmit={handleCreateKey} className="space-y-2.5 text-xs">
+          <form noValidate onSubmit={handleCreateKey} className="space-y-2.5 text-xs">
             <div>
               <label className="block text-[11px] font-medium text-text-secondary mb-1">Label Kredensial</label>
               <input
@@ -1262,7 +1269,7 @@ export const CredentialsTabChild: React.FC<any> = ({
             )}
 
             <div className="flex items-center justify-between pt-1">
-              <span className="text-[10px] text-text-muted flex items-center gap-1" title="Terenkripsi AES-256-GCM">
+              <span className="text-[10px] text-text-muted flex items-center gap-1">
                 <Lock className="w-3 h-3 text-accent flex-shrink-0" /> AES-256-GCM
               </span>
               <div className="flex gap-1.5">
@@ -1357,22 +1364,22 @@ export const SettingsTabChild: React.FC<any> = ({
   return (
     <div className="space-y-4">
       {isManualProvider && (
-        <form onSubmit={handleSaveConfig} className="space-y-3">
+        <form noValidate onSubmit={handleSaveConfig} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Nama tampilan provider di antarmuka">Nama Tampilan</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Tampilan</label>
               <input type="text" value={configForm.display_name} onChange={(e) => setConfigForm({ ...configForm, display_name: e.target.value })} className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1.5" title="URL endpoint API upstream">Base URL Endpoint</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Base URL Endpoint</label>
               <input type="text" value={configForm.base_url} onChange={(e) => setConfigForm({ ...configForm, base_url: e.target.value })} className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white font-mono outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Semakin kecil angka, semakin tinggi prioritas pemilihan rute">Prioritas Routing</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Prioritas Routing</label>
               <input type="number" value={configForm.priority} onChange={(e) => setConfigForm({ ...configForm, priority: parseInt(e.target.value) || 100 })} className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white font-mono outline-none focus:border-accent" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Bobot load-balancing antar provider (semakin besar semakin sering dipanggil)">Bobot Load Balance</label>
+              <label className="block text-xs font-medium text-text-secondary mb-1.5">Bobot Load Balance</label>
               <input type="number" value={configForm.weight} onChange={(e) => setConfigForm({ ...configForm, weight: parseInt(e.target.value) || 100 })} className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white font-mono outline-none focus:border-accent" />
             </div>
           </div>
@@ -1385,14 +1392,14 @@ export const SettingsTabChild: React.FC<any> = ({
       <div>
         <label className="block text-xs font-medium text-text-secondary mb-2">Jalur Egress Outbound</label>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          <div onClick={() => handleSelectProxyPreset(null, 'Direct Outbound (Tanpa Proxy)')} title="Koneksi langsung dari server tanpa menggunakan proxy" className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between gap-2 ${!selectedProvider?.egress_pool_id ? 'border-accent bg-accent/10 shadow-sm' : 'border-border bg-bg-surface-2/40 hover:border-border/80'}`}>
+          <div onClick={() => handleSelectProxyPreset(null, 'Direct Outbound (Tanpa Proxy)')} className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between gap-2 ${!selectedProvider?.egress_pool_id ? 'border-accent bg-accent/10 shadow-sm' : 'border-border bg-bg-surface-2/40 hover:border-border/80'}`}>
             <span className="flex items-center gap-1.5 min-w-0"><Globe className="w-3.5 h-3.5 text-accent flex-shrink-0" /><span className="font-bold text-white truncate">Direct (Tanpa Proxy)</span></span>
             {!selectedProvider?.egress_pool_id && <span className="px-1.5 py-0.2 text-[10px] rounded bg-accent text-black font-bold flex-shrink-0">Aktif</span>}
           </div>
           {egressPools.map((pool: any) => {
             const isSelected = selectedProvider?.egress_pool_id === pool.id;
             return (
-              <div key={pool.id} onClick={() => handleSelectProxyPreset(pool.id, pool.name)} title={`${pool.name} · ${pool.kind} · Region: ${pool.region || 'Default'}`} className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between gap-2 ${isSelected ? 'border-accent bg-accent/10 shadow-sm' : 'border-border bg-bg-surface-2/40 hover:border-border/80'}`}>
+              <div key={pool.id} onClick={() => handleSelectProxyPreset(pool.id, pool.name)} className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between gap-2 ${isSelected ? 'border-accent bg-accent/10 shadow-sm' : 'border-border bg-bg-surface-2/40 hover:border-border/80'}`}>
                 <span className="flex items-center gap-1.5 min-w-0"><Globe className="w-3.5 h-3.5 text-accent flex-shrink-0" /><span className="font-bold text-white truncate">{pool.name}</span></span>
                 {isSelected && <span className="px-1.5 py-0.2 text-[10px] rounded bg-accent text-black font-bold flex-shrink-0">Aktif</span>}
               </div>
@@ -1403,8 +1410,10 @@ export const SettingsTabChild: React.FC<any> = ({
 
       <div className="pt-3 border-t border-border">
         <div className="px-2.5 py-2 rounded-lg border border-red-500/30 bg-red-500/10 flex items-center justify-between gap-2">
-          <span className="text-[11px] text-red-400 font-bold flex items-center gap-1.5 min-w-0" title="Menghapus provider ini beserta seluruh kredensial API key dan pemetaan model upstream secara permanen"><AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" /><span className="truncate">Hapus · permanen, ikut key + model</span></span>
-          <button type="button" onClick={() => handleDeleteProvider(selectedProvider)} title="Hapus provider beserta key dan model secara permanen" aria-label="Hapus provider" className="p-1.5 rounded-md bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25 transition-colors cursor-pointer flex-shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+          <span className="text-[11px] text-red-400 font-bold flex items-center gap-1.5 min-w-0"><AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" /><span className="truncate">Hapus · permanen, ikut key + model</span></span>
+          <Tooltip content="Hapus Provider Permanen" position="left">
+            <button type="button" onClick={() => handleDeleteProvider(selectedProvider)} aria-label="Hapus provider" className="p-1.5 rounded-md bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25 transition-colors cursor-pointer flex-shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+          </Tooltip>
         </div>
       </div>
     </div>
@@ -1602,7 +1611,7 @@ export const CreateProviderModalChild: React.FC<any> = ({
         </>
       }
     >
-      <form id="create-provider-form" onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
+      <form id="create-provider-form" noValidate onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
         {/* Preset Brand Banner */}
         {selectedPreset && (
           <div
@@ -1643,7 +1652,7 @@ export const CreateProviderModalChild: React.FC<any> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5" title="ID teknis unik tanpa spasi, contoh nama-provider-unik">ID Unik *</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Unik *</label>
             <input
               type="text"
               required
@@ -1668,7 +1677,7 @@ export const CreateProviderModalChild: React.FC<any> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="col-span-1">
-            <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Format protokol upstream">Kind</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Kind</label>
             <select
               value={newProv.kind}
               onChange={(e) => setNewProv({ ...newProv, kind: e.target.value })}
@@ -1682,7 +1691,7 @@ export const CreateProviderModalChild: React.FC<any> = ({
             </select>
           </div>
           <div className="col-span-2">
-            <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Alamat endpoint HTTP upstream">Base URL *</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Base URL *</label>
             <input
               type="text"
               required
@@ -1949,7 +1958,7 @@ export const CreateProviderModalChild: React.FC<any> = ({
                   {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-[11px] text-text-muted flex items-center gap-1.5" title="Kredensial langsung dienkripsi sebelum disimpan ke database.">
+              <p className="text-[11px] text-text-muted flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-accent flex-shrink-0" />
                 Dienkripsi amplop AES-256-GCM tingkat record PostgreSQL dengan AAD.
               </p>
@@ -1958,7 +1967,7 @@ export const CreateProviderModalChild: React.FC<any> = ({
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1.5" title="Jalur koneksi keluar dari server ke upstream">Jalur Egress Outbound</label>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">Jalur Egress Outbound</label>
           <select
             value={selectedEgressPoolId}
             onChange={(e) => setSelectedEgressPoolId(e.target.value)}
@@ -1980,7 +1989,7 @@ export const CreateProviderModalChild: React.FC<any> = ({
               onChange={(e) => setSyncAfterSave(e.target.checked)}
               className="rounded bg-bg-surface-2 border-border"
             />
-            <label htmlFor="syncModelsToggle" className="font-medium text-white cursor-pointer" title="Menarik daftar model dari upstream setelah provider tersimpan">
+            <label htmlFor="syncModelsToggle" className="font-medium text-white cursor-pointer">
               Tarik model upstream otomatis setelah disimpan
             </label>
           </div>
@@ -2047,11 +2056,11 @@ export const AddModelModalChild: React.FC<any> = ({ isOpen, onClose, selectedPro
         </>
       }
     >
-      <form id="add-model-manual-form" onSubmit={handleAddModelManual} className="space-y-4 text-xs">
+      <form id="add-model-manual-form" noValidate onSubmit={handleAddModelManual} className="space-y-4 text-xs">
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1.5" title="String ID model persis sesuai dokumentasi provider Anda">ID Model *</label>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Model *</label>
           <input type="text" name="model_name" required placeholder="claude-3-7-sonnet, gpt-4o, atau deepseek/deepseek-chat" value={newModelName} onChange={(e) => setNewModelName(e.target.value)} className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent" />
-          <p className="text-[11px] text-text-muted mt-1" title="Masukkan string ID model persis sesuai dokumentasi provider Anda.">Sesuai dokumentasi provider.</p>
+          <p className="text-[11px] text-text-muted mt-1">Sesuai dokumentasi provider.</p>
         </div>
       </form>
     </Modal>

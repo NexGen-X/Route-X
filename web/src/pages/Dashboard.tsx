@@ -644,10 +644,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
         {/* Chart Column (2 cols) */}
         <div className="lg:col-span-2 bg-[#121316] border border-[#20242D] rounded-xl p-4 sm:p-5 shadow-lg flex flex-col justify-between">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 mb-3 sm:mb-4">
-            <div
-              className="flex items-center gap-2"
-              title="Fluktuasi inferensi request gateway secara berkelanjutan"
-            >
+            <div className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-primary flex-shrink-0" />
               <h3 className="text-sm font-semibold text-white tracking-tight truncate">Volume & Dinamika Lalu Lintas</h3>
             </div>
@@ -664,7 +661,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                   type="button"
                   onClick={() => setMetricType(m)}
                   aria-pressed={metricType === m}
-                  title={m === 'requests' ? 'Jumlah request' : m === 'tokens' ? 'Jumlah token' : 'Latensi'}
+                  aria-label={m === 'requests' ? 'Jumlah request' : m === 'tokens' ? 'Jumlah token' : 'Latensi'}
                   className={`px-2 sm:px-3 py-1 sm:py-1.5 min-h-[28px] sm:min-h-[30px] rounded-md capitalize transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
                     metricType === m
                       ? 'bg-primary text-black font-bold shadow'
@@ -682,7 +679,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                   type="button"
                   onClick={() => setTimeWindow(w)}
                   aria-pressed={timeWindow === w}
-                  title={`Rentang ${w}`}
+                  aria-label={`Rentang waktu ${w}`}
                   className={`px-2 sm:px-2.5 py-1 sm:py-1.5 min-h-[28px] sm:min-h-[30px] rounded-md transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-primary ${
                     timeWindow === w
                       ? 'bg-[#2A2F3D] text-white font-semibold'
@@ -810,10 +807,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
       {/* ==================================================================== */}
       <div className="space-y-3 sm:space-y-4">
         <div className="flex flex-row items-center justify-between gap-3">
-          <div
-            className="flex items-center gap-2 min-w-0"
-            title="Ketersediaan koneksi upstream, status circuit breaker, dan respons latensi terkini"
-          >
+          <div className="flex items-center gap-2 min-w-0">
             <Server className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             <h3 className="text-sm font-semibold text-white tracking-tight truncate">Status Kesehatan Upstream Providers</h3>
           </div>
@@ -821,7 +815,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             variant="ghost"
             size="sm"
             onClick={() => onNavigate('/upstreams/providers')}
-            title="Buka halaman kelola provider"
+            aria-label="Buka halaman kelola provider"
             className="text-xs text-primary hover:underline whitespace-nowrap flex-shrink-0 p-0 h-auto"
           >
             Kelola &rarr;
@@ -846,7 +840,6 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
               return (
                 <div
                   key={p.id}
-                  title={p.base_url || p.name}
                   className="bg-[#121316] border border-[#20242D] rounded-xl p-3.5 sm:p-4 hover:border-primary/40 transition-all flex flex-col justify-between shadow-sm group"
                 >
                   <div className="flex items-center justify-between gap-2.5 sm:gap-3">
@@ -864,7 +857,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                         </p>
                       </div>
                     </div>
-                    <span title={`Status: ${p.last_health_status || (p.enabled ? 'unknown' : 'disabled')}`} className="flex-shrink-0">
+                    <span className="flex-shrink-0">
                       <Badge variant={isHealthy ? 'success' : isDegraded ? 'warn' : 'error'}>
                         {p.last_health_status || (p.enabled ? 'unknown' : 'disabled')}
                       </Badge>

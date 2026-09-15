@@ -7,6 +7,7 @@ import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
+import { Tooltip } from '../components/common/Tooltip';
 import { Cpu, Plus, DollarSign, Trash2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
@@ -261,14 +262,16 @@ export const Models: React.FC = () => {
                     <Badge variant={m.enabled ? 'success' : 'neutral'}>
                       {m.enabled ? 'active' : 'disabled'}
                     </Badge>
-                    <button
-                      onClick={() => handleDeleteModel(m.id, m.display_name)}
-                      className="p-1.5 h-8 w-8 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-                      title="Hapus Model"
-                      aria-label={`Hapus model ${m.display_name}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <Tooltip content="Hapus Model" position="left">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteModel(m.id, m.display_name)}
+                        className="p-1.5 h-8 w-8 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 cursor-pointer"
+                        aria-label={`Hapus model ${m.display_name}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
 
@@ -293,17 +296,17 @@ export const Models: React.FC = () => {
                 <div className="flex flex-wrap gap-1.5">
                   {m.providers && m.providers.length > 0 ? (
                     m.providers.map((p) => (
-                      <span
-                        key={p.provider_id}
-                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/25 text-purple-300 text-[11px] font-medium"
-                        title={`Upstream model name: ${p.upstream_model_name}`}
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                        <span className="font-semibold text-white">{p.display_name || p.provider_name}</span>
-                        {p.upstream_model_name !== m.model_id && (
-                          <span className="text-[10px] text-text-muted font-mono">({p.upstream_model_name})</span>
-                        )}
-                      </span>
+                      <Tooltip key={p.provider_id} content={`Upstream model: ${p.upstream_model_name}`}>
+                        <span
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/25 text-purple-300 text-[11px] font-medium"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                          <span className="font-semibold text-white">{p.display_name || p.provider_name}</span>
+                          {p.upstream_model_name !== m.model_id && (
+                            <span className="text-[10px] text-text-muted font-mono">({p.upstream_model_name})</span>
+                          )}
+                        </span>
+                      </Tooltip>
                     ))
                   ) : (
                     <span className="text-[11px] text-text-muted italic">Belum terhubung ke provider</span>
@@ -351,7 +354,7 @@ export const Models: React.FC = () => {
           </>
         }
       >
-        <form id="create-model-form" onSubmit={handleCreateModel} className="space-y-4 text-xs">
+        <form id="create-model-form" noValidate onSubmit={handleCreateModel} className="space-y-4 text-xs">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Model Kanonik *</label>
             <input
@@ -438,7 +441,7 @@ export const Models: React.FC = () => {
             <p className="text-[11px]">Hubungkan provider terlebih dahulu sebelum mengatur struktur harga.</p>
           </div>
         ) : (
-          <form id="pricing-form" onSubmit={handleSavePrice} className="space-y-4 text-xs">
+          <form id="pricing-form" noValidate onSubmit={handleSavePrice} className="space-y-4 text-xs">
             <Select
               label="Pilih Pemetaan Provider"
               value={selectedMappingId}

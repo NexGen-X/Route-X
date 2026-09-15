@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
+import { Tooltip } from '../components/common/Tooltip';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers, Edit2, Globe, Terminal, ShieldCheck, ArrowRight, ChevronDown, ChevronUp, Server, CheckCircle2 } from 'lucide-react';
@@ -809,7 +810,7 @@ export const RoutingRules: React.FC = () => {
                     <div className="flex items-center justify-between gap-2 p-2.5 rounded bg-surface border border-border/50 text-xs">
                       <div className="min-w-0 flex-1">
                         <span className="text-[10px] text-text-muted block font-sans">Target Model</span>
-                        <span className="font-mono font-bold text-white truncate block" title={modelDisplayName}>
+                        <span className="font-mono font-bold text-white truncate block">
                           {modelDisplayName}
                         </span>
                       </div>
@@ -900,7 +901,7 @@ export const RoutingRules: React.FC = () => {
                   <div className="mt-3.5 space-y-2 text-xs">
                     <div className="flex justify-between py-1 border-b border-border/40">
                       <span className="text-text-muted">Target Model</span>
-                      <span className="font-mono text-white truncate max-w-[180px]" title={modelDisplayName}>
+                      <span className="font-mono text-white truncate max-w-[180px]">
                         {modelDisplayName}
                       </span>
                     </div>
@@ -961,7 +962,6 @@ export const RoutingRules: React.FC = () => {
                     className="w-full sm:w-auto justify-center text-purple-300 border-purple-500/30 hover:bg-purple-500/10"
                     onClick={() => handleOpenProviders(r)}
                     icon={<Server className="w-3.5 h-3.5" />}
-                    title="Ubah pemetaan provider & bobot secara cepat"
                   >
                     Providers
                   </Button>
@@ -1112,7 +1112,7 @@ export const RoutingRules: React.FC = () => {
                           <span className="text-[10px] text-text-muted font-sans uppercase tracking-wider block">
                             Provider Upstream
                           </span>
-                          <h4 className="text-xs font-bold text-white truncate" title={providerName}>
+                          <h4 className="text-xs font-bold text-white truncate">
                             {providerName}
                           </h4>
                           <span className="text-[11px] font-mono text-sky-300 block truncate">
@@ -1241,7 +1241,7 @@ export const RoutingRules: React.FC = () => {
             </div>
           </div>
 
-          <form id="create-routing-rule-form" onSubmit={handleCreate} className="space-y-4">
+          <form id="create-routing-rule-form" noValidate onSubmit={handleCreate} className="space-y-4">
             {mode === 'model_only' && (
               <div className="p-3 bg-sky-500/10 border border-sky-500/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
                 <Zap className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
@@ -1673,16 +1673,18 @@ export const RoutingRules: React.FC = () => {
                             </span>
                           </div>
                           {fallbackTiers.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFallbackTiers((prev) => prev.filter((t) => t.id !== tier.id));
-                              }}
-                              className="p-1 rounded text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-                              title={`Hapus Tier ${tierNum}`}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <Tooltip content={`Hapus Tier ${tierNum}`} position="left">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFallbackTiers((prev) => prev.filter((t) => t.id !== tier.id));
+                                }}
+                                aria-label={`Hapus Tier ${tierNum}`}
+                                className="p-1 rounded text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </Tooltip>
                           )}
                         </div>
 
@@ -1935,7 +1937,7 @@ export const RoutingRules: React.FC = () => {
             </div>
           </div>
 
-          <form id="edit-routing-rule-form" onSubmit={handleEditSave} className="space-y-4">
+          <form id="edit-routing-rule-form" noValidate onSubmit={handleEditSave} className="space-y-4">
             {editMode === 'model_only' && (
               <div className="p-3 bg-sky-500/10 border border-sky-500/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
                 <Zap className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
@@ -2364,16 +2366,18 @@ export const RoutingRules: React.FC = () => {
                             </span>
                           </div>
                           {editFallbackTiers.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditFallbackTiers((prev) => prev.filter((t) => t.id !== tier.id));
-                              }}
-                              className="p-1 rounded text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-                              title={`Hapus Tier ${tierNum}`}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <Tooltip content={`Hapus Tier ${tierNum}`} position="left">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditFallbackTiers((prev) => prev.filter((t) => t.id !== tier.id));
+                                }}
+                                aria-label={`Hapus Tier ${tierNum}`}
+                                className="p-1 rounded text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </Tooltip>
                           )}
                         </div>
 
@@ -2576,7 +2580,7 @@ export const RoutingRules: React.FC = () => {
           </div>
         }
       >
-        <form id="providers-routing-rule-form" onSubmit={handleSaveProviders} className="space-y-4 text-xs">
+        <form id="providers-routing-rule-form" noValidate onSubmit={handleSaveProviders} className="space-y-4 text-xs">
           <div className="space-y-3">
             {providers.map(p => {
               const targetM = models.find(m => m.id === selectedRule?.match_model_id || m.model_id === selectedRule?.match_model_id);

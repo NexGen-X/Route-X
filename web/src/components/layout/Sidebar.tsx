@@ -20,6 +20,7 @@ import {
   Webhook,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { Tooltip } from '../common/Tooltip';
 
 interface SidebarProps {
   currentPath: string;
@@ -131,15 +132,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentPath === item.path;
-                return (
+                const buttonContent = (
                   <button
-                    key={item.path}
                     onClick={() => {
                       onNavigate(item.path);
                       setIsMobileOpen(false);
                     }}
-                    title={isCollapsed ? item.name : undefined}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-nav text-sm transition-all relative group ${
+                    aria-label={item.name}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-nav text-sm transition-all relative group cursor-pointer ${
                       isActive
                         ? 'bg-bg-surface-2 text-white font-medium border border-border shadow-inner'
                         : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/60'
@@ -155,6 +155,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     />
                     {!isCollapsed && <span className="truncate">{item.name}</span>}
                   </button>
+                );
+
+                return isCollapsed ? (
+                  <Tooltip key={item.path} content={item.name} position="right" className="w-full">
+                    {buttonContent}
+                  </Tooltip>
+                ) : (
+                  <React.Fragment key={item.path}>
+                    {buttonContent}
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -176,26 +186,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                 </div>
               </div>
-              <button
-                onClick={logout}
-                title="Keluar (Logout)"
-                aria-label="Keluar dari akun"
-                className="p-1.5 text-text-muted hover:text-status-error hover:bg-status-error/10 rounded-inner transition-colors cursor-pointer"
-              >
-                <LogOut className="w-4 h-4" aria-hidden="true" />
-              </button>
+              <Tooltip content="Keluar (Logout)" position="top">
+                <button
+                  type="button"
+                  onClick={logout}
+                  aria-label="Keluar dari akun"
+                  className="p-1.5 text-text-muted hover:text-status-error hover:bg-status-error/10 rounded-inner transition-colors cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </Tooltip>
             </div>
           )}
 
           <div className="flex items-center justify-between">
-            <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              className="hidden lg:flex items-center justify-center w-9 h-9 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors ml-auto cursor-pointer"
-              title={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
-              aria-label={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
-            >
-              {isCollapsed ? <ChevronRight className="w-4 h-4" aria-hidden="true" /> : <ChevronLeft className="w-4 h-4" aria-hidden="true" />}
-            </button>
+            <Tooltip content={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'} position="right">
+              <button
+                type="button"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="hidden lg:flex items-center justify-center w-9 h-9 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors ml-auto cursor-pointer"
+                aria-label={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
+              >
+                {isCollapsed ? <ChevronRight className="w-4 h-4" aria-hidden="true" /> : <ChevronLeft className="w-4 h-4" aria-hidden="true" />}
+              </button>
+            </Tooltip>
           </div>
         </div>
       </aside>

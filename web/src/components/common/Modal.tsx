@@ -1,6 +1,7 @@
 import React, { useEffect, useId } from 'react';
 import FocusTrap from 'focus-trap-react';
 import { X } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 // Kunci body bersama lintas Modal/Drawer agar lapisan bertumpuk tidak saling melepas kunci.
 function __acquireBodyLock(): void {
@@ -91,13 +92,16 @@ export const Modal: React.FC<ModalProps> = ({
               <h2 id={titleId} className="text-base font-semibold text-text-primary">{title}</h2>
               {subtitle && <p className="text-xs text-text-secondary mt-0.5">{subtitle}</p>}
             </div>
-            <button
-              onClick={onClose}
-              aria-label="Tutup modal"
-              className="text-text-muted hover:text-text-primary p-1 rounded-inner hover:bg-bg-surface-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <Tooltip content="Tutup (Esc)" position="left">
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Tutup modal"
+                className="text-text-muted hover:text-text-primary p-1 rounded-inner hover:bg-bg-surface-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </Tooltip>
           </div>
           <div className="p-5 overflow-y-auto flex-1 scrollbar-thin">{children}</div>
           {footer && (

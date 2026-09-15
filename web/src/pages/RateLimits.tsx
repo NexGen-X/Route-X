@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { Tooltip } from '../components/common/Tooltip';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Gauge, Plus, Trash2 } from 'lucide-react';
@@ -186,9 +187,11 @@ export const RateLimits: React.FC = () => {
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-white uppercase">{l.scope}</h4>
-                    <span className="text-[11px] text-text-muted font-mono" title={l.scope_id}>
-                      {getScopeDisplay(l.scope, l.scope_id).label}
-                    </span>
+                    <Tooltip content={`Scope ID: ${l.scope_id}`} position="bottom">
+                      <span className="text-[11px] text-text-muted font-mono cursor-default">
+                        {getScopeDisplay(l.scope, l.scope_id).label}
+                      </span>
+                    </Tooltip>
                   </div>
                 </div>
                 <Badge variant={l.enabled ? 'success' : 'neutral'}>
@@ -255,7 +258,7 @@ export const RateLimits: React.FC = () => {
           </>
         }
       >
-        <form id="create-rate-limit-form" onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-rate-limit-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select
               label="Cakupan (Scope)"

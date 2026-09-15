@@ -407,7 +407,7 @@ export const Settings: React.FC = () => {
         </div>
 
         {/* Form Domain */}
-        <form onSubmit={handleSaveDomain} className="mt-6 space-y-4">
+        <form noValidate onSubmit={handleSaveDomain} className="mt-6 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2 space-y-1.5">
               <label htmlFor="custom-domain" className="text-xs font-semibold text-white">Nama Domain FQDN</label>
@@ -476,7 +476,7 @@ export const Settings: React.FC = () => {
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded bg-bg-surface-2 gap-1 sm:gap-2 min-w-0">
                   <span className="text-text-secondary shrink-0 text-[11px] sm:text-xs">Base URL Endpoint:</span>
-                  <span className="text-emerald-400 font-mono font-semibold truncate max-w-full" title={domainConfig.base_url}>
+                  <span className="text-emerald-400 font-mono font-semibold truncate max-w-full">
                     {domainConfig.base_url}
                   </span>
                 </div>
@@ -563,7 +563,7 @@ export const Settings: React.FC = () => {
                               <span className="text-[10px] text-accent font-mono bg-accent/10 px-1.5 py-0.2 rounded">
                                 {(p.transport || '?').toUpperCase()}
                               </span>
-                              <span className="text-[10px] text-text-muted font-mono truncate max-w-[140px]" title={p.path_or_sni || ''}>
+                              <span className="text-[10px] text-text-muted font-mono truncate max-w-[140px]">
                                 {p.path_or_sni || '-'}
                               </span>
                             </div>
@@ -677,7 +677,7 @@ export const Settings: React.FC = () => {
         <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
             <span className="text-text-muted block text-[11px] font-medium">Basis Data</span>
-            <span className="font-mono text-white text-sm font-semibold truncate block" title={backupStatus?.database_name || '-'}>
+            <span className="font-mono text-white text-sm font-semibold truncate block">
               {backupStatus?.database_name || 'Memuat...'}
             </span>
             <span className="text-[10px] text-accent font-mono mt-0.5 block">
@@ -704,7 +704,7 @@ export const Settings: React.FC = () => {
           </div>
           <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
             <span className="text-text-muted block text-[11px] font-medium">Cadangan Server Terakhir</span>
-            <span className="font-mono text-emerald-400 text-xs font-semibold truncate block" title={backupStatus?.last_server_backup?.file_name || 'Belum ada'}>
+            <span className="font-mono text-emerald-400 text-xs font-semibold truncate block">
               {backupStatus?.last_server_backup ? backupStatus.last_server_backup.file_size : 'Belum ada'}
             </span>
             <span className="text-[10px] text-text-muted font-mono mt-0.5 truncate block">
@@ -1053,7 +1053,7 @@ export const Settings: React.FC = () => {
           </div>
         }
       >
-        <form id="create-setting-form" onSubmit={handleCreateSetting} className="space-y-4 text-xs">
+        <form id="create-setting-form" noValidate onSubmit={handleCreateSetting} className="space-y-4 text-xs">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
               Kunci Parameter (Key) *
@@ -1143,7 +1143,7 @@ export const Settings: React.FC = () => {
           <div className="p-3 bg-bg-surface-2 rounded-lg border border-border space-y-1.5 font-mono">
             <div className="flex justify-between text-text-secondary">
               <span>Berkas Cadangan:</span>
-              <span className="text-white font-bold truncate max-w-[200px]" title={selectedBackupFile?.name}>
+              <span className="text-white font-bold truncate max-w-[200px]">
                 {selectedBackupFile?.name}
               </span>
             </div>

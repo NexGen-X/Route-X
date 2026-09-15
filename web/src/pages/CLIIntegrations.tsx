@@ -626,7 +626,7 @@ export const CLIIntegrations: React.FC = () => {
 
                 {tool.installed && (
                   <div className="mb-4 bg-[#1C1C1C] p-2 rounded border border-[#262626] text-[11px] font-mono text-text-muted space-y-0.5">
-                    <div className="truncate text-white" title={tool.path}>
+                    <div className="truncate text-white">
                       📍 <span className="text-text-muted">Path:</span> {tool.path}
                     </div>
                     {tool.version && (

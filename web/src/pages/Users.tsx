@@ -302,7 +302,7 @@ export const UsersPage: React.FC = () => {
           </>
         }
       >
-        <form id="create-user-form" onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-user-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Email *</label>
             <input

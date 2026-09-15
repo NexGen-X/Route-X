@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-// import type { APIKey } from '../types';
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { Tooltip } from '../components/common/Tooltip';
 import { PageHeader } from '../components/common/PageHeader';
 import { KeyRound, Plus, RotateCw, Trash2, Copy, Check } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -306,14 +306,16 @@ export const APIKeys: React.FC = () => {
               <span className="font-mono text-xs text-accent break-all select-all font-semibold">
                 {createdRawKey}
               </span>
-              <button
-                onClick={() => copyToClipboard(createdRawKey)}
-                aria-label="Salin kunci API ke clipboard"
-                title="Salin kunci API ke clipboard"
-                className="p-2 text-text-muted hover:text-accent rounded-nav ml-2 flex-shrink-0 cursor-pointer"
-              >
-                {copied ? <Check className="w-4 h-4 text-accent" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
-              </button>
+              <Tooltip content={copied ? "Tersalin ke clipboard!" : "Salin Kunci API"} position="left">
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(createdRawKey)}
+                  aria-label="Salin kunci API ke clipboard"
+                  className="p-2 text-text-muted hover:text-accent rounded-nav ml-2 flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                >
+                  {copied ? <Check className="w-4 h-4 text-accent" aria-hidden="true" /> : <Copy className="w-4 h-4" aria-hidden="true" />}
+                </button>
+              </Tooltip>
             </div>
             <p className="text-xs text-text-muted">
               Pastikan Anda telah menyalin dan menyimpan token di atas di tempat yang aman (seperti environment variable).
@@ -339,7 +341,7 @@ export const APIKeys: React.FC = () => {
           </>
         }
       >
-        <form id="create-api-key-form" onSubmit={handleCreate} className="space-y-4 text-xs">
+        <form id="create-api-key-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
             <label htmlFor="api-key-name" className="block text-xs font-medium text-text-secondary mb-1.5">Nama Kunci *</label>
             <input
@@ -399,7 +401,7 @@ export const APIKeys: React.FC = () => {
           </>
         }
       >
-        <form id="edit-allowed-form" onSubmit={handleSaveAllowed} className="space-y-4 text-xs">
+        <form id="edit-allowed-form" noValidate onSubmit={handleSaveAllowed} className="space-y-4 text-xs">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Allowed Models (ID)</label>
             <input

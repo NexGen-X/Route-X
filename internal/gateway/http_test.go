@@ -1030,9 +1030,9 @@ func TestEkstrakComboPipeline(t *testing.T) {
 	}
 
 	// 4. Alias extraction
-	alias := ekstrakComboAlias(newRule)
+	alias := router.ExtractComboAlias(newRule.Description)
 	if alias != "super-gateway" {
-		t.Errorf("ekstrakComboAlias = %q; ingin 'super-gateway'", alias)
+		t.Errorf("router.ExtractComboAlias = %q; ingin 'super-gateway'", alias)
 	}
 }
 

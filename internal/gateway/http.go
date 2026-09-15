@@ -683,15 +683,6 @@ func ekstrakComboPipeline(rule *router.Rule) []ComboTier {
 	return nil
 }
 
-// ekstrakComboAlias membaca virtual model alias dari aturan combo routing bila ada.
-// Format dalam description: [combo:alias=<virtual_alias>]
-func ekstrakComboAlias(rule *router.Rule) string {
-	if rule == nil {
-		return ""
-	}
-	return router.ExtractComboAlias(rule.Description)
-}
-
 // ekstrakTier2Model membaca target fallback model dari aturan combo routing format lama.
 // Format dalam description: [combo:tier2=<model_name>]
 func ekstrakTier2Model(rule *router.Rule) string {

@@ -5,6 +5,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
+import { Checkbox } from '../components/common/Checkbox';
 import { PageHeader } from '../components/common/PageHeader';
 import { Tooltip } from '../components/common/Tooltip';
 import { ShieldCheck, Plus, Trash2, Save, SlidersHorizontal, Lock, Crown } from 'lucide-react';
@@ -467,19 +468,19 @@ export const RolesPage: React.FC = () => {
                       {groupPerms.map((p) => {
                         const checked = editPerms.includes(p.key);
                         return (
-                          <label
+                          <div
                             key={p.key}
+                            onClick={() => togglePerm(p.key)}
                             className={`flex items-start gap-2.5 p-2.5 rounded-lg border cursor-pointer transition-all ${
                               checked
                                 ? 'bg-accent/5 border-accent/40 text-white shadow-sm'
                                 : 'bg-bg-surface-2/60 border-border/60 text-text-secondary hover:border-border'
                             }`}
                           >
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={checked}
                               onChange={() => togglePerm(p.key)}
-                              className="mt-0.5 rounded bg-bg-surface border-border text-accent focus:ring-accent"
+                              onClick={(e) => e.stopPropagation()}
                             />
                             <div className="min-w-0">
                               <span className="block font-mono text-[11px] font-semibold text-white truncate">
@@ -489,7 +490,7 @@ export const RolesPage: React.FC = () => {
                                 {p.description}
                               </span>
                             </div>
-                          </label>
+                          </div>
                         );
                       })}
                     </div>
@@ -513,21 +514,21 @@ export const RolesPage: React.FC = () => {
                     <h4 className="text-xs font-bold text-white">Izin Lainnya</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {otherPerms.map((p) => (
-                        <label
+                        <div
                           key={p.key}
-                          className="flex items-start gap-2.5 p-2.5 rounded-lg bg-bg-surface-2 border border-border cursor-pointer"
+                          onClick={() => togglePerm(p.key)}
+                          className="flex items-start gap-2.5 p-2.5 rounded-lg bg-bg-surface-2 border border-border cursor-pointer hover:border-border/80"
                         >
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             checked={editPerms.includes(p.key)}
                             onChange={() => togglePerm(p.key)}
-                            className="mt-0.5 rounded bg-bg-surface border-border text-accent focus:ring-accent"
+                            onClick={(e) => e.stopPropagation()}
                           />
                           <div>
                             <span className="block font-mono text-[11px] text-white font-semibold">{p.key}</span>
                             <span className="block text-[10px] text-text-muted mt-0.5">{p.description}</span>
                           </div>
-                        </label>
+                        </div>
                       ))}
                     </div>
                   </div>

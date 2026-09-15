@@ -328,18 +328,57 @@ func (r *Repo) TouchUsage(ctx context.Context, id string, ip netip.Addr) error {
 	return repo.Err("mencatat pemakaian API key", err)
 }
 
+func isUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if r != '-' {
+				return false
+			}
+		} else {
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // replaceAllowed mengganti seluruh daftar putih model dan provider satu key.
+// Mendukung input berupa UUID langsung maupun model_id slug atau provider name.
 func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, providerIDs []string) error {
 	if _, err := r.q.Exec(ctx, `delete from api_key_allowed_models where api_key_id = $1`, keyID); err != nil {
 		return repo.Err("menghapus daftar putih model", err)
 	}
 	if len(modelIDs) > 0 {
-		// unnest dipakai agar seluruh daftar masuk dalam satu perjalanan ke database,
-		// bukan satu insert per baris.
-		if _, err := r.q.Exec(ctx, `
-			insert into api_key_allowed_models (api_key_id, model_id)
-			select $1, unnest($2::uuid[])`, keyID, modelIDs); err != nil {
-			return repo.Err("menyimpan daftar putih model", err)
+		resolvedModelIDs := make([]string, 0, len(modelIDs))
+		for _, raw := range modelIDs {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			if isUUID(raw) {
+				resolvedModelIDs = append(resolvedModelIDs, raw)
+			} else {
+				var id string
+				err := r.q.QueryRow(ctx, `select id::text from models where model_id = $1`, raw).Scan(&id)
+				if err == nil {
+					resolvedModelIDs = append(resolvedModelIDs, id)
+				} else {
+					resolvedModelIDs = append(resolvedModelIDs, raw)
+				}
+			}
+		}
+
+		if len(resolvedModelIDs) > 0 {
+			if _, err := r.q.Exec(ctx, `
+				insert into api_key_allowed_models (api_key_id, model_id)
+				select $1, unnest($2::uuid[])
+				on conflict do nothing`, keyID, resolvedModelIDs); err != nil {
+				return repo.Err("menyimpan daftar putih model", err)
+			}
 		}
 	}
 
@@ -347,10 +386,32 @@ func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, provi
 		return repo.Err("menghapus daftar putih provider", err)
 	}
 	if len(providerIDs) > 0 {
-		if _, err := r.q.Exec(ctx, `
-			insert into api_key_allowed_providers (api_key_id, provider_id)
-			select $1, unnest($2::uuid[])`, keyID, providerIDs); err != nil {
-			return repo.Err("menyimpan daftar putih provider", err)
+		resolvedProviderIDs := make([]string, 0, len(providerIDs))
+		for _, raw := range providerIDs {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			if isUUID(raw) {
+				resolvedProviderIDs = append(resolvedProviderIDs, raw)
+			} else {
+				var id string
+				err := r.q.QueryRow(ctx, `select id::text from providers where name = $1`, raw).Scan(&id)
+				if err == nil {
+					resolvedProviderIDs = append(resolvedProviderIDs, id)
+				} else {
+					resolvedProviderIDs = append(resolvedProviderIDs, raw)
+				}
+			}
+		}
+
+		if len(resolvedProviderIDs) > 0 {
+			if _, err := r.q.Exec(ctx, `
+				insert into api_key_allowed_providers (api_key_id, provider_id)
+				select $1, unnest($2::uuid[])
+				on conflict do nothing`, keyID, resolvedProviderIDs); err != nil {
+				return repo.Err("menyimpan daftar putih provider", err)
+			}
 		}
 	}
 	return nil
@@ -359,6 +420,100 @@ func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, provi
 // SetAllowed mengganti daftar putih model dan provider satu key.
 func (r *Repo) SetAllowed(ctx context.Context, keyID string, modelIDs, providerIDs []string) error {
 	return r.replaceAllowed(ctx, keyID, modelIDs, providerIDs)
+}
+
+// GetAllowed mengambil daftar model_id dan provider_id yang diizinkan untuk satu key.
+func (r *Repo) GetAllowed(ctx context.Context, keyID string) (modelIDs, providerIDs []string, err error) {
+	rows, err := r.q.Query(ctx, `select model_id::text from api_key_allowed_models where api_key_id = $1 order by model_id`, keyID)
+	if err != nil {
+		return nil, nil, repo.Err("mengambil daftar model yang diizinkan", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, nil, repo.Err("memindai model yang diizinkan", err)
+		}
+		modelIDs = append(modelIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, repo.Err("iterasi model yang diizinkan", err)
+	}
+
+	pRows, err := r.q.Query(ctx, `select provider_id::text from api_key_allowed_providers where api_key_id = $1 order by provider_id`, keyID)
+	if err != nil {
+		return nil, nil, repo.Err("mengambil daftar provider yang diizinkan", err)
+	}
+	defer pRows.Close()
+	for pRows.Next() {
+		var id string
+		if err := pRows.Scan(&id); err != nil {
+			return nil, nil, repo.Err("memindai provider yang diizinkan", err)
+		}
+		providerIDs = append(providerIDs, id)
+	}
+	if err := pRows.Err(); err != nil {
+		return nil, nil, repo.Err("iterasi provider yang diizinkan", err)
+	}
+
+	if modelIDs == nil {
+		modelIDs = []string{}
+	}
+	if providerIDs == nil {
+		providerIDs = []string{}
+	}
+	return modelIDs, providerIDs, nil
+}
+
+// GetAllowedMap mengambil daftar model_id dan provider_id dalam jumlah sekaligus untuk sejumlah keyID.
+func (r *Repo) GetAllowedMap(ctx context.Context, keyIDs []string) (map[string][]string, map[string][]string, error) {
+	modelMap := make(map[string][]string, len(keyIDs))
+	providerMap := make(map[string][]string, len(keyIDs))
+	if len(keyIDs) == 0 {
+		return modelMap, providerMap, nil
+	}
+
+	rows, err := r.q.Query(ctx, `
+		select api_key_id::text, model_id::text
+		from api_key_allowed_models
+		where api_key_id = any($1::uuid[])
+		order by api_key_id, model_id`, keyIDs)
+	if err != nil {
+		return nil, nil, repo.Err("mengambil batch model yang diizinkan", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var kID, mID string
+		if err := rows.Scan(&kID, &mID); err != nil {
+			return nil, nil, repo.Err("memindai batch model", err)
+		}
+		modelMap[kID] = append(modelMap[kID], mID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, repo.Err("iterasi batch model", err)
+	}
+
+	pRows, err := r.q.Query(ctx, `
+		select api_key_id::text, provider_id::text
+		from api_key_allowed_providers
+		where api_key_id = any($1::uuid[])
+		order by api_key_id, provider_id`, keyIDs)
+	if err != nil {
+		return nil, nil, repo.Err("mengambil batch provider yang diizinkan", err)
+	}
+	defer pRows.Close()
+	for pRows.Next() {
+		var kID, pID string
+		if err := pRows.Scan(&kID, &pID); err != nil {
+			return nil, nil, repo.Err("memindai batch provider", err)
+		}
+		providerMap[kID] = append(providerMap[kID], pID)
+	}
+	if err := pRows.Err(); err != nil {
+		return nil, nil, repo.Err("iterasi batch provider", err)
+	}
+
+	return modelMap, providerMap, nil
 }
 
 // AllowsModel melaporkan apakah key boleh memakai model tertentu.

@@ -650,6 +650,14 @@ type KeyCreatedResponse struct {
 
 func (KeyCreatedResponse) adalahDTO() {}
 
+// KeyAllowedResponse adalah respons daftar model dan provider yang diizinkan untuk satu API key.
+type KeyAllowedResponse struct {
+	ModelIDs    []string `json:"model_ids"`
+	ProviderIDs []string `json:"provider_ids"`
+}
+
+func (KeyAllowedResponse) adalahDTO() {}
+
 // UserDTO adalah akun pengguna administratif konsol.
 type UserDTO struct {
 	ID                  string     `json:"id"`

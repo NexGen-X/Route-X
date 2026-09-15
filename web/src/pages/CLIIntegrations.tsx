@@ -23,6 +23,7 @@ import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
 import { Select } from '../components/common/Select';
+import { Checkbox } from '../components/common/Checkbox';
 import type { CLITool, CLIDetectedResponse, Model, RoutingRule } from '../types';
 import { useToast } from '../context/ToastContext';
 import { copyTextToClipboard } from '../utils/clipboard';
@@ -554,15 +555,12 @@ export const CLIIntegrations: React.FC = () => {
             ))}
           </div>
 
-          <label className="flex items-center gap-1.5 text-xs text-text-secondary ml-2 cursor-pointer whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={onlyInstalled}
-              onChange={(e) => setOnlyInstalled(e.target.checked)}
-              className="rounded border-[#333] bg-[#1C1C1C] text-accent focus:ring-0 cursor-pointer"
-            />
-            Terinstall Saja
-          </label>
+          <Checkbox
+            checked={onlyInstalled}
+            onChange={(e) => setOnlyInstalled(e.target.checked)}
+            label="Terinstall Saja"
+            className="ml-2 whitespace-nowrap"
+          />
         </div>
       </div>
 
@@ -933,15 +931,11 @@ export const CLIIntegrations: React.FC = () => {
           {userApiKey && (
             <div className="flex items-center justify-between bg-[#1A1A1A] px-3 py-2 rounded border border-[#262626] text-xs">
               <span className="text-text-muted">Sertakan Kunci API Anda ke skrip ekspor:</span>
-              <label className="flex items-center gap-1.5 cursor-pointer text-white font-mono">
-                <input
-                  type="checkbox"
-                  checked={includeKeyInModal}
-                  onChange={(e) => setIncludeKeyInModal(e.target.checked)}
-                  className="rounded border-[#333] bg-[#121212] text-accent focus:ring-0"
-                />
-                Inject OPENAI_API_KEY & ANTHROPIC_API_KEY
-              </label>
+              <Checkbox
+                checked={includeKeyInModal}
+                onChange={(e) => setIncludeKeyInModal(e.target.checked)}
+                label={<span className="text-white font-mono">Inject OPENAI_API_KEY & ANTHROPIC_API_KEY</span>}
+              />
             </div>
           )}
 

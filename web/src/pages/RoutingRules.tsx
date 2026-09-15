@@ -8,6 +8,7 @@ import { Drawer } from '../components/common/Drawer';
 import { Tooltip } from '../components/common/Tooltip';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
+import { Checkbox } from '../components/common/Checkbox';
 import { Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers, Edit2, Globe, Terminal, ShieldCheck, ArrowRight, ChevronDown, ChevronUp, Server, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
@@ -1505,16 +1506,14 @@ export const RoutingRules: React.FC = () => {
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <label className="flex items-center gap-2 font-semibold text-white cursor-pointer min-w-0">
-                              <input
-                                type="checkbox"
+                            <div className="flex items-center gap-2 font-semibold text-white cursor-pointer min-w-0">
+                              <Checkbox
                                 checked={isChecked}
                                 onChange={() => toggleCreateProvider(p.id)}
-                                className="rounded border-border bg-bg-surface-2 text-purple-400 focus:ring-purple-400 flex-shrink-0 cursor-pointer"
                               />
                               <span className="truncate">{p.display_name || p.name}</span>
                               <span className="text-[10px] text-text-muted font-mono">({p.kind})</span>
-                            </label>
+                            </div>
 
                             {targetM ? (
                               matchedUpstream ? (
@@ -2198,16 +2197,14 @@ export const RoutingRules: React.FC = () => {
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <label className="flex items-center gap-2 font-semibold text-white cursor-pointer min-w-0">
-                              <input
-                                type="checkbox"
+                            <div className="flex items-center gap-2 font-semibold text-white cursor-pointer min-w-0">
+                              <Checkbox
                                 checked={isChecked}
                                 onChange={() => toggleEditProvider(p.id)}
-                                className="rounded border-border bg-bg-surface-2 text-purple-400 focus:ring-purple-400 flex-shrink-0 cursor-pointer"
                               />
                               <span className="truncate">{p.display_name || p.name}</span>
                               <span className="text-[10px] text-text-muted font-mono">({p.kind})</span>
-                            </label>
+                            </div>
 
                             {targetM ? (
                               matchedUpstream ? (
@@ -2588,16 +2585,14 @@ export const RoutingRules: React.FC = () => {
               return (
                 <div key={p.id} className="p-3 bg-bg-surface-2 border border-border rounded-lg flex flex-col gap-2">
                   <div className="flex items-center justify-between gap-2">
-                    <label className="flex items-center gap-2 font-semibold text-white cursor-pointer min-w-0">
-                      <input
-                        type="checkbox"
+                    <div className="flex items-center gap-2 font-semibold text-white cursor-pointer min-w-0">
+                      <Checkbox
                         checked={ruleProviders.includes(p.id)}
                         onChange={() => toggleProvider(p.id)}
-                        className="rounded border-border bg-bg-surface-2 text-accent focus:ring-accent flex-shrink-0 cursor-pointer"
                       />
                       <span className="truncate">{p.display_name || p.name}</span>
                       <span className="text-[10px] text-text-muted font-mono">({p.kind})</span>
-                    </label>
+                    </div>
                     {targetM ? (
                       matchedUpstream ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">

@@ -7,10 +7,12 @@ import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { Tooltip } from '../components/common/Tooltip';
 import { PageHeader } from '../components/common/PageHeader';
-import { KeyRound, Plus, RotateCw, Trash2, Copy, Check } from 'lucide-react';
+import { KeyRound, Plus, RotateCw, Trash2, Copy, Check, Search, Cpu, Server } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { Checkbox } from '../components/common/Checkbox';
+import type { Model, Provider } from '../types';
 
 export const APIKeys: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -20,6 +22,19 @@ export const APIKeys: React.FC = () => {
     queryFn: () => api.apiKeys.list(),
   });
   const keys = keysData?.items || [];
+
+  const { data: modelsData } = useQuery({
+    queryKey: ['models'],
+    queryFn: () => api.models.list(),
+  });
+  const models = (modelsData?.items || []) as Model[];
+
+  const { data: providersData } = useQuery({
+    queryKey: ['providers'],
+    queryFn: () => api.providers.list(),
+  });
+  const providers = (providersData?.items || []) as Provider[];
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newKey, setNewKey] = useState({
     name: '',
@@ -30,8 +45,12 @@ export const APIKeys: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [isAllowedOpen, setIsAllowedOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState<any>(null);
-  const [allowedModels, setAllowedModels] = useState<string>('');
-  const [allowedProviders, setAllowedProviders] = useState<string>('');
+  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
+  const [selectedProviderIds, setSelectedProviderIds] = useState<string[]>([]);
+  const [allowedActiveTab, setAllowedActiveTab] = useState<'models' | 'providers'>('models');
+  const [modelSearch, setModelSearch] = useState('');
+  const [providerSearch, setProviderSearch] = useState('');
+  const [isLoadingAllowed, setIsLoadingAllowed] = useState(false);
 
   // Timer indikator salin; dibatalkan saat unmount agar tidak ada setState basi.
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,25 +149,58 @@ export const APIKeys: React.FC = () => {
   };
 
 
-  const handleOpenAllowed = (k: any) => {
+  const handleOpenAllowed = async (k: any) => {
     setSelectedKey(k);
-    setAllowedModels((k.model_ids || []).join(', '));
-    setAllowedProviders((k.provider_ids || []).join(', '));
     setIsAllowedOpen(true);
+    setAllowedActiveTab('models');
+    setModelSearch('');
+    setProviderSearch('');
+
+    const initialModels: string[] = k.allowed_models || k.model_ids || [];
+    const initialProviders: string[] = k.allowed_providers || k.provider_ids || [];
+    setSelectedModelIds(initialModels);
+    setSelectedProviderIds(initialProviders);
+
+    try {
+      setIsLoadingAllowed(true);
+      const res = await api.apiKeys.getAllowed(k.id);
+      if (res) {
+        setSelectedModelIds(res.model_ids || []);
+        setSelectedProviderIds(res.provider_ids || []);
+      }
+    } catch {
+      // Gunakan initial value jika endpoint spesifik gagal
+    } finally {
+      setIsLoadingAllowed(false);
+    }
   };
 
   const handleSaveAllowed = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedKey) return;
     try {
-      const m_ids = allowedModels.split(',').map(s => s.trim()).filter(Boolean);
-      const p_ids = allowedProviders.split(',').map(s => s.trim()).filter(Boolean);
-      await api.apiKeys.setAllowed(selectedKey.id, { model_ids: m_ids, provider_ids: p_ids });
+      await api.apiKeys.setAllowed(selectedKey.id, {
+        model_ids: selectedModelIds,
+        provider_ids: selectedProviderIds,
+      });
       toast.success('Allowed Models & Providers berhasil diperbarui.');
       setIsAllowedOpen(false);
       queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
     } catch (err: any) {
       toast.error('Gagal menyimpan allowed list: ' + (err.message || err));
     }
+  };
+
+  const toggleModel = (id: string) => {
+    setSelectedModelIds((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+    );
+  };
+
+  const toggleProvider = (id: string) => {
+    setSelectedProviderIds((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
   };
 
   return (
@@ -247,6 +299,26 @@ export const APIKeys: React.FC = () => {
                   <span className="text-text-muted">Terakhir Digunakan</span>
                   <span className="font-mono text-text-secondary">
                     {k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Belum pernah'}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-border/40 items-center">
+                  <span className="text-text-muted">Scope Model</span>
+                  <span className="font-mono text-xs">
+                    {(k.allowed_models && k.allowed_models.length > 0) ? (
+                      <span className="text-amber-400 font-medium">{k.allowed_models.length} Model Dibatasi</span>
+                    ) : (
+                      <span className="text-accent font-medium">Semua Model</span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-border/40 items-center">
+                  <span className="text-text-muted">Scope Provider</span>
+                  <span className="font-mono text-xs">
+                    {(k.allowed_providers && k.allowed_providers.length > 0) ? (
+                      <span className="text-amber-400 font-medium">{k.allowed_providers.length} Provider Dibatasi</span>
+                    ) : (
+                      <span className="text-accent font-medium">Semua Provider</span>
+                    )}
                   </span>
                 </div>
               </div>
@@ -388,40 +460,298 @@ export const APIKeys: React.FC = () => {
       <Modal
         isOpen={isAllowedOpen}
         onClose={() => setIsAllowedOpen(false)}
-        title="Edit Allowed Models & Providers"
-        subtitle="Batasi kunci ini hanya untuk model atau provider tertentu (pisahkan dengan koma)"
+        title={`Scope Hak Akses: ${selectedKey?.name || 'Kunci API'}`}
+        subtitle="Atur model AI dan provider upstream yang boleh diakses oleh kunci ini. Kosongkan semua untuk akses penuh tanpa batasan."
         footer={
           <>
             <Button variant="ghost" onClick={() => setIsAllowedOpen(false)}>
               Batal
             </Button>
-            <Button variant="primary" type="submit" form="edit-allowed-form">
-              Simpan Perubahan
+            <Button variant="primary" type="submit" form="edit-allowed-form" isLoading={isLoadingAllowed}>
+              Simpan Perubahan Scope
             </Button>
           </>
         }
       >
         <form id="edit-allowed-form" noValidate onSubmit={handleSaveAllowed} className="space-y-4 text-xs">
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Allowed Models (ID)</label>
-            <input
-              type="text"
-              placeholder="gpt-4o, claude-3"
-              value={allowedModels}
-              onChange={(e) => setAllowedModels(e.target.value)}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
-            />
+          {/* Tab navigation */}
+          <div className="flex border-b border-border gap-2">
+            <button
+              type="button"
+              onClick={() => setAllowedActiveTab('models')}
+              className={`flex items-center gap-2 px-3 py-2.5 font-medium border-b-2 transition-all cursor-pointer ${
+                allowedActiveTab === 'models'
+                  ? 'border-accent text-accent'
+                  : 'border-transparent text-text-secondary hover:text-white'
+              }`}
+            >
+              <Cpu className="w-4 h-4" />
+              <span>Model yang Diizinkan</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                selectedModelIds.length > 0 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-bg-surface-2 text-text-muted'
+              }`}>
+                {selectedModelIds.length > 0 ? `${selectedModelIds.length} Dibatasi` : 'Semua (Bebas)'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAllowedActiveTab('providers')}
+              className={`flex items-center gap-2 px-3 py-2.5 font-medium border-b-2 transition-all cursor-pointer ${
+                allowedActiveTab === 'providers'
+                  ? 'border-accent text-accent'
+                  : 'border-transparent text-text-secondary hover:text-white'
+              }`}
+            >
+              <Server className="w-4 h-4" />
+              <span>Provider yang Diizinkan</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                selectedProviderIds.length > 0 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-bg-surface-2 text-text-muted'
+              }`}>
+                {selectedProviderIds.length > 0 ? `${selectedProviderIds.length} Dibatasi` : 'Semua (Bebas)'}
+              </span>
+            </button>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Allowed Providers (ID)</label>
-            <input
-              type="text"
-              placeholder="openai, anthropic"
-              value={allowedProviders}
-              onChange={(e) => setAllowedProviders(e.target.value)}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
-            />
-          </div>
+
+          {/* TAB 1: MODELS */}
+          {allowedActiveTab === 'models' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                  <input
+                    type="text"
+                    placeholder="Cari model berdasarkan nama atau ID..."
+                    value={modelSearch}
+                    onChange={(e) => setModelSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-xs text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedModelIds(models.map((m) => m.id))}
+                    className="px-2.5 py-1 text-[11px] rounded bg-bg-surface-2 hover:bg-bg-surface-3 text-text-secondary hover:text-white border border-border cursor-pointer transition-colors"
+                  >
+                    Pilih Semua
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedModelIds([])}
+                    className="px-2.5 py-1 text-[11px] rounded bg-bg-surface-2 hover:bg-bg-surface-3 text-accent hover:text-accent/80 border border-border cursor-pointer transition-colors"
+                  >
+                    Bebaskan (Semua)
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Hint */}
+              <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+                selectedModelIds.length === 0
+                  ? 'bg-accent/5 border-accent/20 text-text-secondary'
+                  : 'bg-amber-500/5 border-amber-500/20 text-amber-200/90'
+              }`}>
+                <span>
+                  {selectedModelIds.length === 0 ? (
+                    <>✨ <strong>Mode Bebas:</strong> Kunci ini diizinkan memanggil semua model yang aktif di gateway.</>
+                  ) : (
+                    <>🔒 <strong>Mode Terbatas:</strong> Hanya <strong>{selectedModelIds.length}</strong> model yang dicentang yang boleh diakses.</>
+                  )}
+                </span>
+                {selectedModelIds.length > 0 && (
+                  <span className="font-mono text-[10px] text-amber-300 shrink-0">
+                    {selectedModelIds.length} / {models.length} model
+                  </span>
+                )}
+              </div>
+
+              {/* Models List */}
+              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 border border-border/50 rounded-lg p-2 bg-bg-surface-1">
+                {models.filter((m) => {
+                  if (!modelSearch.trim()) return true;
+                  const q = modelSearch.toLowerCase();
+                  return (
+                    (m.display_name && m.display_name.toLowerCase().includes(q)) ||
+                    (m.model_id && m.model_id.toLowerCase().includes(q)) ||
+                    (m.family && m.family.toLowerCase().includes(q))
+                  );
+                }).length === 0 ? (
+                  <div className="py-6 text-center text-text-muted text-xs">
+                    Tidak ada model yang cocok dengan pencarian "{modelSearch}".
+                  </div>
+                ) : (
+                  models.filter((m) => {
+                    if (!modelSearch.trim()) return true;
+                    const q = modelSearch.toLowerCase();
+                    return (
+                      (m.display_name && m.display_name.toLowerCase().includes(q)) ||
+                      (m.model_id && m.model_id.toLowerCase().includes(q)) ||
+                      (m.family && m.family.toLowerCase().includes(q))
+                    );
+                  }).map((m) => {
+                    const isChecked = selectedModelIds.includes(m.id);
+                    return (
+                      <div
+                        key={m.id}
+                        onClick={() => toggleModel(m.id)}
+                        className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all ${
+                          isChecked
+                            ? 'bg-accent/10 border-accent/40 text-white shadow-sm'
+                            : 'bg-bg-surface-2/60 border-border/60 text-text-secondary hover:border-border hover:bg-bg-surface-2'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Checkbox
+                            checked={isChecked}
+                            onChange={() => toggleModel(m.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="min-w-0">
+                            <span className="block font-medium text-white truncate text-xs">
+                              {m.display_name || m.model_id}
+                            </span>
+                            <span className="block font-mono text-[10px] text-text-muted truncate">
+                              {m.model_id}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          {m.family && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-bg-surface border border-border text-text-muted font-mono">
+                              {m.family}
+                            </span>
+                          )}
+                          {m.providers && m.providers.length > 0 && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-accent/10 text-accent border border-accent/20 font-mono">
+                              {m.providers.length} upstream
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: PROVIDERS */}
+          {allowedActiveTab === 'providers' && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                  <input
+                    type="text"
+                    placeholder="Cari provider berdasarkan nama atau tipe..."
+                    value={providerSearch}
+                    onChange={(e) => setProviderSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-xs text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProviderIds(providers.map((p) => p.id))}
+                    className="px-2.5 py-1 text-[11px] rounded bg-bg-surface-2 hover:bg-bg-surface-3 text-text-secondary hover:text-white border border-border cursor-pointer transition-colors"
+                  >
+                    Pilih Semua
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProviderIds([])}
+                    className="px-2.5 py-1 text-[11px] rounded bg-bg-surface-2 hover:bg-bg-surface-3 text-accent hover:text-accent/80 border border-border cursor-pointer transition-colors"
+                  >
+                    Bebaskan (Semua)
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Hint */}
+              <div className={`p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+                selectedProviderIds.length === 0
+                  ? 'bg-accent/5 border-accent/20 text-text-secondary'
+                  : 'bg-amber-500/5 border-amber-500/20 text-amber-200/90'
+              }`}>
+                <span>
+                  {selectedProviderIds.length === 0 ? (
+                    <>✨ <strong>Mode Bebas:</strong> Kunci ini diizinkan merutekan request ke semua provider upstream.</>
+                  ) : (
+                    <>🔒 <strong>Mode Terbatas:</strong> Hanya <strong>{selectedProviderIds.length}</strong> provider yang dicentang yang boleh digunakan.</>
+                  )}
+                </span>
+                {selectedProviderIds.length > 0 && (
+                  <span className="font-mono text-[10px] text-amber-300 shrink-0">
+                    {selectedProviderIds.length} / {providers.length} provider
+                  </span>
+                )}
+              </div>
+
+              {/* Providers List */}
+              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 border border-border/50 rounded-lg p-2 bg-bg-surface-1">
+                {providers.filter((p) => {
+                  if (!providerSearch.trim()) return true;
+                  const q = providerSearch.toLowerCase();
+                  return (
+                    (p.name && p.name.toLowerCase().includes(q)) ||
+                    (p.display_name && p.display_name.toLowerCase().includes(q)) ||
+                    (p.kind && p.kind.toLowerCase().includes(q))
+                  );
+                }).length === 0 ? (
+                  <div className="py-6 text-center text-text-muted text-xs">
+                    Tidak ada provider yang cocok dengan pencarian "{providerSearch}".
+                  </div>
+                ) : (
+                  providers.filter((p) => {
+                    if (!providerSearch.trim()) return true;
+                    const q = providerSearch.toLowerCase();
+                    return (
+                      (p.name && p.name.toLowerCase().includes(q)) ||
+                      (p.display_name && p.display_name.toLowerCase().includes(q)) ||
+                      (p.kind && p.kind.toLowerCase().includes(q))
+                    );
+                  }).map((p) => {
+                    const isChecked = selectedProviderIds.includes(p.id);
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => toggleProvider(p.id)}
+                        className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all ${
+                          isChecked
+                            ? 'bg-accent/10 border-accent/40 text-white shadow-sm'
+                            : 'bg-bg-surface-2/60 border-border/60 text-text-secondary hover:border-border hover:bg-bg-surface-2'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Checkbox
+                            checked={isChecked}
+                            onChange={() => toggleProvider(p.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <div className="min-w-0">
+                            <span className="block font-medium text-white truncate text-xs">
+                              {p.display_name || p.name}
+                            </span>
+                            <span className="block font-mono text-[10px] text-text-muted truncate">
+                              {p.name}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-bg-surface border border-border text-text-muted font-mono uppercase">
+                            {p.kind}
+                          </span>
+                          <span className={`w-2 h-2 rounded-full ${p.enabled ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
         </form>
       </Modal>
     </div>

@@ -476,6 +476,8 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ enabled }),
       }),
+    getAllowed: (id: string) =>
+      request<{ model_ids: string[]; provider_ids: string[] }>(`/api/admin/access/api-keys/${encodeURIComponent(id)}/allowed`),
     setAllowed: (id: string, data: { model_ids: string[]; provider_ids: string[] }) =>
       request<APIKey>(`/api/admin/access/api-keys/${encodeURIComponent(id)}/allowed`, {
         method: 'PUT',

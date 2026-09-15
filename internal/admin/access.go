@@ -31,7 +31,9 @@ func (h *Handlers) accessRoutes(r chi.Router) {
 		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Post("/{id}/rotate", h.rotateAPIKey)
 		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Post("/{id}/revoke", h.revokeAPIKey)
 		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Post("/{id}/toggle", h.toggleAPIKey)
+		kr.With(auth.RequirePermission(seed.PermAPIKeysRead)).Get("/{id}/allowed", h.getAPIKeyAllowed)
 		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Post("/{id}/allowed", h.setAllowedAPIKey)
+		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Put("/{id}/allowed", h.setAllowedAPIKey)
 	})
 
 	// 2. Admin Users
@@ -95,9 +97,22 @@ func (h *Handlers) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	keyIDs := make([]string, 0, len(items))
+	for _, k := range items {
+		keyIDs = append(keyIDs, k.ID)
+	}
+	modelMap, providerMap, _ := h.keyRepo.GetAllowedMap(ctx, keyIDs)
+
 	keysDTO := make([]KeyDTO, 0, len(items))
 	for _, k := range items {
-		keysDTO = append(keysDTO, toKeyDTO(k, nil, nil))
+		var mIDs, pIDs []string
+		if modelMap != nil {
+			mIDs = modelMap[k.ID]
+		}
+		if providerMap != nil {
+			pIDs = providerMap[k.ID]
+		}
+		keysDTO = append(keysDTO, toKeyDTO(k, mIDs, pIDs))
 	}
 
 	_ = h.respond(w, r, http.StatusOK, ListEnvelope[KeyDTO]{
@@ -116,8 +131,9 @@ func (h *Handlers) getAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mIDs, pIDs, _ := h.keyRepo.GetAllowed(ctx, id)
 	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
-		Key:    toKeyDTO(k, nil, nil),
+		Key:    toKeyDTO(k, mIDs, pIDs),
 		Masked: k.Masked(),
 	})
 }
@@ -478,17 +494,42 @@ func (h *Handlers) toggleAPIKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handlers) getAPIKeyAllowed(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	mIDs, pIDs, err := h.keyRepo.GetAllowed(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "izin model/provider api key")
+		return
+	}
+
+	_ = h.respond(w, r, http.StatusOK, KeyAllowedResponse{
+		ModelIDs:    mIDs,
+		ProviderIDs: pIDs,
+	})
+}
+
 func (h *Handlers) setAllowedAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
 	var req struct {
-		ModelIDs    []string `json:"model_ids"`
-		ProviderIDs []string `json:"provider_ids"`
+		ModelIDs         []string `json:"model_ids"`
+		ProviderIDs      []string `json:"provider_ids"`
+		AllowedModels    []string `json:"allowed_models"`
+		AllowedProviders []string `json:"allowed_providers"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
+	}
+
+	if len(req.ModelIDs) == 0 && len(req.AllowedModels) > 0 {
+		req.ModelIDs = req.AllowedModels
+	}
+	if len(req.ProviderIDs) == 0 && len(req.AllowedProviders) > 0 {
+		req.ProviderIDs = req.AllowedProviders
 	}
 
 	if err := h.keyRepo.SetAllowed(ctx, id, req.ModelIDs, req.ProviderIDs); err != nil {

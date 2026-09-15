@@ -6,6 +6,7 @@ import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { Select } from '../components/common/Select';
+import { Checkbox } from '../components/common/Checkbox';
 import { PageHeader } from '../components/common/PageHeader';
 import {
   Network,
@@ -649,17 +650,13 @@ export const Egress: React.FC = () => {
               />
             </div>
           </div>
-          <div className="flex items-center gap-2 pt-2">
-            <input
-              type="checkbox"
+          <div className="pt-2">
+            <Checkbox
               id="editPoolEnabled"
               checked={editForm.enabled}
               onChange={(e) => setEditForm({ ...editForm, enabled: e.target.checked })}
-              className="rounded border-border bg-bg-surface-2 text-accent focus:ring-accent"
+              label="Aktifkan pool ini untuk menerima lalu lintas keluar"
             />
-            <label htmlFor="editPoolEnabled" className="text-white font-medium cursor-pointer">
-              Aktifkan pool ini untuk menerima lalu lintas keluar
-            </label>
           </div>
         </form>
       </Drawer>

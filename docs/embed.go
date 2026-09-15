@@ -78,6 +78,36 @@ const scalarHTML = `<!doctype html>
         margin: 0;
         background-color: #0A0A0A;
         font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      /* App-controlled scrollbar untuk Firefox & WebKit */
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #1F1F1F #0C0C0C;
+        -webkit-tap-highlight-color: transparent;
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #0C0C0C;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #1F1F1F;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #2D2D2D;
+      }
+      ::selection {
+        background-color: #BEF264;
+        color: #0A0A0A;
+      }
+      input::-ms-reveal,
+      input::-ms-clear {
+        display: none !important;
       }
       /* Custom styling untuk penyesuaian tema Route-X */
       :root {

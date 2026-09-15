@@ -7,9 +7,25 @@
     background-color: #0A0A0A;
     color: #F5F5F5;
   }
+
+  /* Universal Selection Color */
+  ::selection {
+    background-color: #A3E635;
+    color: #0A0A0A;
+  }
 }
 
-/* Custom dark scrollbar */
+/* -------------------------------------------------------------------------- */
+/* 1. Universal App-Controlled Scrollbar (Firefox + Chromium + WebKit)        */
+/* -------------------------------------------------------------------------- */
+
+/* Firefox & W3C Standard */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1F1F1F #0C0C0C;
+}
+
+/* WebKit & Blink (Chrome, Safari, Edge, Android Chrome, iOS Safari) */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -28,6 +44,37 @@
   background: #2D2D2D;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 2. Mobile & Touch Normalization (iOS Safari & Android)                    */
+/* -------------------------------------------------------------------------- */
+
+/* Hilangkan kedipan native abu-abu/biru pada Android dan iOS saat disentuh */
+*, *::before, *::after {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Cegah iOS Safari auto-zoom pada input form saat disentuh di layar kecil */
+@media (max-width: 768px) {
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="number"],
+  input[type="url"],
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* 3. Cross-Browser Input Normalization (Edge, Chrome, Safari, Firefox)      */
+/* -------------------------------------------------------------------------- */
+
+/* Sembunyikan ikon mata & tombol clear native Edge/Windows pada kolom password */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none !important;
+}
+
 /* Sembunyikan spinner tombol panah bawaan browser pada input[type=number] */
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button {
@@ -36,10 +83,118 @@ input[type=number]::-webkit-outer-spin-button {
 }
 input[type=number] {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 
-/* Custom checkbox styling untuk menggantikan kotak abu-abu bawaan browser */
+/* Override latar autofill Chrome/Edge/Safari agar tidak silau/putih terang di dark mode */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 40px #141416 inset !important;
+  -webkit-text-fill-color: #F5F5F5 !important;
+  caret-color: #A3E635 !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 4. In-App Rendered Checkbox (Tanpa Kotak Abu-Abu / Bevel Bawaan OS)       */
+/* -------------------------------------------------------------------------- */
+
 input[type="checkbox"] {
-  accent-color: #A3E635;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  min-width: 1rem;
+  min-height: 1rem;
+  border: 1px solid #27272A;
+  border-radius: 0.25rem;
+  background-color: #141416;
+  display: inline-grid;
+  place-content: center;
   cursor: pointer;
+  vertical-align: middle;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+input[type="checkbox"]:hover:not(:disabled) {
+  border-color: #A3E635;
+  box-shadow: 0 0 8px rgba(163, 230, 53, 0.2);
+}
+
+input[type="checkbox"]:focus-visible {
+  border-color: #A3E635;
+  box-shadow: 0 0 0 2px #0A0A0A, 0 0 0 4px #A3E635;
+}
+
+input[type="checkbox"]:checked {
+  background-color: #A3E635;
+  border-color: #A3E635;
+  box-shadow: 0 0 10px rgba(163, 230, 53, 0.3);
+}
+
+input[type="checkbox"]:checked::before {
+  content: "";
+  width: 0.55rem;
+  height: 0.55rem;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  background-color: #0A0A0A;
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 5. In-App Rendered Radio Button (Bulatan seragam di semua OS)              */
+/* -------------------------------------------------------------------------- */
+
+input[type="radio"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 1rem;
+  height: 1rem;
+  min-width: 1rem;
+  min-height: 1rem;
+  border: 1px solid #27272A;
+  border-radius: 9999px;
+  background-color: #141416;
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: all 0.15s ease-in-out;
+  outline: none;
+}
+
+input[type="radio"]:hover:not(:disabled) {
+  border-color: #A3E635;
+  box-shadow: 0 0 8px rgba(163, 230, 53, 0.2);
+}
+
+input[type="radio"]:focus-visible {
+  border-color: #A3E635;
+  box-shadow: 0 0 0 2px #0A0A0A, 0 0 0 4px #A3E635;
+}
+
+input[type="radio"]:checked {
+  border-color: #A3E635;
+}
+
+input[type="radio"]:checked::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background-color: #A3E635;
+}
+
+input[type="radio"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

@@ -6,6 +6,7 @@ import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { Modal } from '../components/common/Modal';
+import { Checkbox } from '../components/common/Checkbox';
 import { PageHeader } from '../components/common/PageHeader';
 import { Webhook as WebhookIcon, Plus, Trash2, Zap, Play, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
@@ -324,15 +325,13 @@ export const Webhooks: React.FC = () => {
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Event Subscriptions</label>
             <div className="space-y-2 mt-2">
               {availableEvents.map(ev => (
-                <label key={ev} className="flex items-center gap-2 cursor-pointer text-white">
-                  <input
-                    type="checkbox"
+                <div key={ev}>
+                  <Checkbox
                     checked={newWebhook.events.includes(ev)}
                     onChange={() => toggleEvent(ev)}
-                    className="rounded bg-bg-surface-2 border-border text-accent focus:ring-accent"
+                    label={ev}
                   />
-                  <span>{ev}</span>
-                </label>
+                </div>
               ))}
             </div>
             <p className="mt-1.5 text-text-muted">Biarkan kosong untuk berlangganan semua event.</p>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/common/Button';
+import { Checkbox } from '../components/common/Checkbox';
 import { ApiError } from '../api/client';
 import { ShieldCheck, AlertCircle, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
@@ -100,15 +101,11 @@ export const Login: React.FC = () => {
           </div>
 
           <div className="flex items-center justify-between text-xs py-1">
-            <label className="flex items-center gap-2 text-text-secondary cursor-pointer">
-              <input
-                type="checkbox"
-                checked={keepSignedIn}
-                onChange={(e) => setKeepSignedIn(e.target.checked)}
-                className="w-4 h-4 rounded bg-bg-surface-2 border-border text-accent focus:ring-0 cursor-pointer"
-              />
-              <span>Ingat saya selama 30 hari</span>
-            </label>
+            <Checkbox
+              checked={keepSignedIn}
+              onChange={(e) => setKeepSignedIn(e.target.checked)}
+              label="Ingat saya selama 30 hari"
+            />
           </div>
 
           <Button

@@ -233,26 +233,35 @@ func (c *CSRF) checkOrigin(r *http.Request) string {
 		return "permintaan tanpa header Origin maupun Referer"
 	}
 
-	if c.origin != "" {
-		if !strings.EqualFold(origin, c.origin) {
-			return "origin di luar PUBLIC_URL"
-		}
-		return ""
-	}
-
-	// PUBLIC_URL tidak diisi — keadaan yang hanya sah di luar produksi, karena config
-	// mewajibkannya saat APP_ENV=production. Yang dibandingkan hanya host-nya, bukan
-	// skemanya: menebak skema request sendiri menuntut mempercayai X-Forwarded-Proto,
-	// yang bisa dipalsukan siapa pun dan karena itu tidak layak menjadi dasar keputusan
-	// keamanan.
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" {
 		return "origin tidak bisa diurai"
 	}
-	if !strings.EqualFold(u.Host, r.Host) {
-		return "origin berbeda dengan host request"
+
+	if c.origin != "" && strings.EqualFold(origin, c.origin) {
+		return ""
 	}
-	return ""
+
+	if strings.EqualFold(u.Host, r.Host) {
+		return ""
+	}
+
+	if fwdHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); fwdHost != "" {
+		if strings.EqualFold(u.Host, fwdHost) {
+			return ""
+		}
+	}
+
+	if c.origin != "" {
+		if uOrig, err := url.Parse(c.origin); err == nil && uOrig.Host != "" {
+			if strings.EqualFold(u.Host, uOrig.Host) {
+				return ""
+			}
+		}
+		return "origin di luar PUBLIC_URL"
+	}
+
+	return "origin berbeda dengan host request"
 }
 
 // originOf mengambil bagian "skema://host" dari sebuah URL, "" bila tidak lengkap.

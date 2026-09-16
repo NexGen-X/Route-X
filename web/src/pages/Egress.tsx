@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { CloudProvisionDrawer } from '../components/egress/CloudProvisionDrawer';
 
 export const Egress: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -31,6 +32,7 @@ export const Egress: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isProvisionOpen, setIsProvisionOpen] = useState(false);
   const [editingPool, setEditingPool] = useState<EgressPool | null>(null);
   const [showCreateProxyUrl, setShowCreateProxyUrl] = useState(false);
   const [showEditProxyUrl, setShowEditProxyUrl] = useState(false);
@@ -183,6 +185,15 @@ export const Egress: React.FC = () => {
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={loadPools} isLoading={isLoading}>
               <RefreshCw className="w-3.5 h-3.5" />
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsProvisionOpen(true)}
+              icon={<Zap className="w-3.5 h-3.5 text-accent" />}
+              className="border-accent/40 hover:border-accent"
+            >
+              Auto-Deploy Cloud Relay
             </Button>
             <Button
               variant="primary"
@@ -660,6 +671,13 @@ export const Egress: React.FC = () => {
           </div>
         </form>
       </Drawer>
+
+      {/* Drawer Auto-Deploy Cloud Relay (Cloudflare & Deno) */}
+      <CloudProvisionDrawer
+        isOpen={isProvisionOpen}
+        onClose={() => setIsProvisionOpen(false)}
+        onSuccess={() => void loadPools()}
+      />
     </div>
   );
 };

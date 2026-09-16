@@ -99,6 +99,8 @@ func (h *Handlers) upstreamsRoutes(r chi.Router) {
 	r.Route("/egress-pools", func(er chi.Router) {
 		er.With(auth.RequirePermission(seed.PermProvidersRead)).Get("/", h.listEgressPools)
 		er.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/", h.createEgressPool)
+		er.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/provision/cloudflare", h.provisionCloudflareAIGateway)
+		er.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/provision/deno", h.provisionDenoRelay)
 		er.With(auth.RequirePermission(seed.PermProvidersRead)).Get("/{id}", h.getEgressPool)
 		er.With(auth.RequirePermission(seed.PermProvidersWrite)).Put("/{id}", h.updateEgressPool)
 		er.With(auth.RequirePermission(seed.PermProvidersWrite)).Delete("/{id}", h.deleteEgressPool)

@@ -200,7 +200,7 @@ func (r *ModelRepo) Resolve(ctx context.Context, requested string) (*Model, erro
 		select `+modelColumns+` from (
 			select `+modelColumns+`, 0 as source
 			from models m
-			where m.model_id = $1
+			where m.model_id = $1 or m.id::text = $1
 			union all
 			select `+modelColumns+`, 1 as source
 			from models m

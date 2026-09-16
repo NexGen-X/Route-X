@@ -64,8 +64,8 @@ penyerang bisa menghabiskan jatah seluruh pengguna.
 
 ## 5. Setelah deploy pertama
 
-  1. Login admin@id-tech.cloud, ganti password saat diminta.
-  2. Hapus INITIAL_ADMIN_PASSWORD dari /etc/routex/routex.env, restart.
+  1. Login ke konsol (admin@id-tech.cloud atau default onboarding admin@routex.local / RouteX#Initial2026!), ganti password saat diminta.
+  2. Hapus INITIAL_ADMIN_PASSWORD dari /etc/routex/routex.env jika diisi, restart.
   3. Verifikasi: landing 200 + judul Route-X, /healthz ok, /readyz 200.
 
 ## 6. Operasional harian

@@ -33,7 +33,9 @@ METRICS_TOKEN=$(openssl rand -hex 32 | tr -d '\n')
 echo "METRICS_TOKEN=\"${METRICS_TOKEN}\""
 
 echo ""
-echo "# Kredensial Super Administrator Awal:"
+echo "# Kredensial Administrator Awal (Opsional):"
+echo "# Jika dikosongkan, Route-X menggunakan admin default (admin@routex.local / RouteX#Initial2026!)"
+echo "# dengan bantuan tombol '1-Klik Autofill' pada tampilan login pertama kali."
 echo "INITIAL_ADMIN_EMAIL=\"admin@id-tech.cloud\""
 RAND_PASS="$(openssl rand -base64 16 | tr -dc 'A-Za-z0-9!@#$%^&*' | head -c 14)A1!"
 KEY_NAME="INITIAL_ADMIN_PASSWORD"

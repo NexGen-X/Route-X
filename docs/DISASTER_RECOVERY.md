@@ -71,7 +71,7 @@ systemctl status routex --no-pager
    ```bash
    curl -i http://127.0.0.1:8080/health
    ```
-2. Pastikan tabel metadata (roles, models, api_keys) terisi normal:
+2. Pastikan tabel metadata (users, models, api_keys) terisi normal:
    ```bash
-   sudo -u postgres psql -d routex_prod -c "SELECT COUNT(*) FROM roles; SELECT COUNT(*) FROM models;"
+   sudo -u postgres psql -d routex_prod -c "SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM models;"
    ```

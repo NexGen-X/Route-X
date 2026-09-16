@@ -2,9 +2,9 @@
 
 <div align="center">
 
-**Enterprise-grade, high-performance AI Gateway with Dynamic Routing, Multi-Provider Failover, Budget Governance, and Unified Observability.**
+**Open-source, self-hosted, high-performance AI Gateway with Dynamic Routing, Multi-Provider Failover, Micro-Budget Governance, and Unified Observability.**
 
-[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev)
+[![Go Version](https://img.shields.io/badge/Go-1.27+-00ADD8?style=flat&logo=go)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=flat&logo=tailwind-css)](https://tailwindcss.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat&logo=postgresql)](https://postgresql.org)
@@ -16,15 +16,20 @@
 
 ## 🌟 Fitur Utama
 
-- **100% OpenAI API Compatible**: Mendukung integrasi *drop-in* untuk seluruh library AI modern (OpenAI Python/Node SDK, LangChain, LlamaIndex, LiteLLM, cURL).
+- **100% OpenAI API Compatible**: Mendukung integrasi *drop-in* untuk seluruh library AI modern (OpenAI Python/Node SDK, LangChain, LlamaIndex, LiteLLM, Cursor, Cline, Open WebUI, cURL).
 - **Combo Routing Pipeline**:
   - **Single Priority**: Rute langsung ke provider dengan latensi terendah.
   - **Cascading Failover**: Pengalihan otomatis saat upstream mengalami gangguan, kehabisan saldo, atau rate limit.
   - **Weighted Load Balancing**: Pembagian beban dinamis dengan algoritma weighted round-robin.
-- **Enterprise RBAC & Keamanan**:
-  - Peran *Super Admin* dengan proteksi *anti-lockout* permanen.
-  - 5 grup perizinan matriks hak akses.
-  - Hashing kunci API berbasis HMAC-SHA256 ber-pepper rahasia server.
+- **Single-Admin Architecture & Keamanan Sederhana**:
+  - Dirancang khusus untuk open-source & self-hosted personal/tim kecil tanpa kerumitan matriks peran (RBAC).
+  - Seluruh pengguna terautentikasi memiliki peran tunggal `Admin` dengan hak akses penuh (`*`).
+  - Proteksi *anti-lockout* permanen pada akun admin aktif terakhir.
+  - Hashing kunci API berbasis HMAC-SHA256 ber-pepper server & Argon2id untuk sandi konsol.
+- **First-Run Onboarding (Setup Awal Instan)**:
+  - Instalasi baru otomatis mendeteksi ketiadaan admin kustom dan menyediakan kredensial bawaan.
+  - Kartu bantuan di halaman Login web dilengkapi tombol **"Gunakan Kredensial Default (1-Klik)"** untuk autofill instan.
+  - Pengalihan paksa ganti kata sandi pada login pertama; setelah sandi diperbarui, kartu setup dinonaktifkan permanen.
 - **Micro-Budget & Cost Governance**:
   - Pelacakan biaya komputasi presisi tinggi dengan skala 8 desimal (`0.00000001` USD).
   - Pagu pengeluaran harian dan bulanan dengan pemutusan otomatis (*hard stop*) saat kuota terlampaui.
@@ -36,7 +41,31 @@
 
 ---
 
-## 🚀 Panduan Memulai Cepat (Quickstart)
+## ⚡ Instalasi Cepat (Quick Install)
+
+### Opsi A: Docker Compose (Direkomendasikan)
+```bash
+git clone https://github.com/NexGen-X/Route-X.git
+cd Route-X
+bash deploy.sh
+```
+
+### Opsi B: Native Linux (Systemd & Binary)
+```bash
+git clone https://github.com/NexGen-X/Route-X.git
+cd Route-X
+sudo bash install-native.sh
+```
+
+### 🔐 Kredensial Login Pertama Kali:
+Buka konsol dashboard di peramban Anda (`http://localhost:8080/login`):
+- **Email**: `admin@routex.local`
+- **Password**: `RouteX#Initial2026!`
+*(Gunakan tombol 1-Klik Autofill pada kartu "SETUP AWAL" di halaman login untuk langsung mengisi kolom kredensial).*
+
+---
+
+## 🚀 Panduan Pengembang (Developer Guide)
 
 Silakan buka dokumentasi integrasi lengkap di:
 👉 [**docs/QUICKSTART.md**](docs/QUICKSTART.md)
@@ -79,7 +108,7 @@ Klien / SDK (Python, JS, cURL)
 │  └────────────────┘   └──────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
              │
-             ├──▶ PostgreSQL (Metadata, Partitioned Logs, RBAC)
+             ├──▶ PostgreSQL (Metadata, Partitioned Logs, User Accounts)
              ├──▶ Redis (Distributed Cache, Sliding Window Rate Limit)
              └──▶ Upstream AI Providers (TokenHarbor, JustWorker, etc.)
 ```

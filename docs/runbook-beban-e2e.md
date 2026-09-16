@@ -51,7 +51,7 @@ Hanya untuk staging lokal, jangan tiru di produksi.
 
   go build -o /tmp/ai-gateway-staging ./cmd/ai-gateway
   set -a; . /tmp/staging.env; set +a
-  /tmp/ai-gateway-staging -migrate   # harus: applied=9, seed 25 permissions
+  /tmp/ai-gateway-staging -migrate   # harus: applied=10, seed akun admin awal
   /tmp/ai-gateway-staging            # di latar; healthz di :18080
 
 ## 4. Nyalakan echo upstream
@@ -110,13 +110,12 @@ failover teruji. Suntik chaos tengah jalan lewat flag file:
 Ekspektasi saat chaos: failover tetap 200, Redis mati chat 200
 + login 401 + readyz redis down, prompt unik menembus cache.
 
-## 8. Jalan Playwright menyeluruh (butuh admin + Viewer khusus e2e)
+## 8. Jalan Playwright menyeluruh (butuh admin khusus e2e)
 
   POST /api/admin/access/users
-    {"email":"admin-e2e@local",...}            # peran Super Admin (seed awal)
-    {"email":"e2e-viewer@local","name":"E2E Viewer",
+    {"email":"admin-e2e@local",...}            # akun Admin (seed awal)
+    {"email":"e2e-viewer@local","name":"E2E User",
      "password":"<kuat>","must_change_password":false}
-  POST /api/admin/access/users/<id>/roles {"role_id":"<id-peran-Viewer>"}
 
   cd web
   BASE_URL=http://127.0.0.1:18080 \
@@ -125,9 +124,9 @@ Ekspektasi saat chaos: failover tetap 200, Redis mati chat 200
     npx playwright test --workers=1
 
 Hasil 2026-09-09: 24/24 lolos 13,4 detik. Rincian:
-2 setup auth (login admin + viewer tepat 1 kali tiap peran),
-4 aksi-tulis (buat API key UI, alokasikan budget UI, rule+limit API,
-Viewer 403), 3 alur inti, 14 semua-halaman + 1 fallback rute.
+2 setup auth (login admin + user tepat 1 kali),
+4 aksi-tulis (buat API key UI, alokasikan budget UI, rule+limit API),
+3 alur inti, 14 semua-halaman + 1 fallback rute.
 Hasil 2026-09-10 (5 browser, termasuk mobile): 200 lolos 10,3 menit
 --workers=1 full suite (2 setup + 17 menyeluruh + 1 fallback + 5 aksi-tulis
 + 3 alur-inti + 6 sisa-kritis + 12 mobile-responsif + 1 drawer, per browser
@@ -144,19 +143,17 @@ Observability grid 2x2): chromium+mobile-chrome+mobile-safari 127 passed
 7,6 mnt --workers=1, 4 gagal awal lalu hijau semua saat rerun parsial:
 1 Observabilitas mobile-safari tombol Latency P95 terpotong @408px (akar:
 Card action flex-shrink-0 tanpa wrap; fix grid-cols-2 + Card stack),
-2 CLI mobile (akar: viewer seed tanpa grant peran Viewer sehingga
-/api/admin/cli/detected 403; fix grant sesuai runbook baris grant),
-1 filter mobile flaky TTL (lolos rerun). Pelajaran: seed viewer WAJIB
-grant peran Viewer, dan binary staging harus direbuild setelah tiap
-perubahan web karena dist di-embed (dist lama = fix tak terbaca test).
+2 CLI mobile (timing render),
+1 filter mobile flaky TTL (lolos rerun). Pelajaran: binary staging harus
+direbuild setelah tiap perubahan web karena dist di-embed (dist lama = fix
+tak terbaca test).
 Staging wajib UPSTREAM_ALLOW_HTTP=true + UPSTREAM_ALLOWED_PRIVATE_ADDRS
 =127.0.0.1/32 + provider echo-sisa prio1 + echo-konten prio10 + mapping
 gpt-5, kalau tidak 4 test sisa-kritis gagal setup (bukan bug kode).
-Tambahan sejak runbook ini: 3 halaman baru di menyeluruh
-(Katalog Model, Pengguna Admin, Peran & Izin) + 1 test tulis UI
-(buat peran kustom + user baru + grant + hapus bersih).
-Rincian 33: 2 setup + 17 menyeluruh (14 lama + 3 baru) + 1 fallback
-+ 5 aksi-tulis (4 lama + 1 users/roles) + 3 alur inti
+Tambahan sejak runbook ini: halaman Katalog Model, Pengguna Admin + test
+tulis UI (buat user baru + rotasi password + hapus bersih).
+Rincian: 2 setup + 17 menyeluruh + 1 fallback
++ 5 aksi-tulis + 3 alur inti
 + 5 sisa-kritis (providers/egress/users/filter/RL/kuota, 1 skip jadwal).
 Hasil 2026-09-09 (3 browser): 86 lolos 4,5 menit = 2 setup auth
 + 28 x 3 browser (4 aksi-tulis + 3 alur inti + 15 menyeluruh -

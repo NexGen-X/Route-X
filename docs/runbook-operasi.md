@@ -11,10 +11,10 @@ Restore ke database kosong (verifikasi berkala):
   createdb routex_restore
   pg_restore -d routex_restore /var/backups/routex-TANGGAL.dump
   psql -d routex_restore -tAc "SELECT count(*) FROM schema_migrations;"
-  # harus: 9 (migrasi 0001 sampai 0009)
+  # harus: 10 (migrasi 0001 sampai 0010)
 
-Hasil uji 2026-09-09: dump 254 KB, 453 objek, restore ke DB baru
-users/roles/models sama dengan sumber, schema_migrations=9.
+Hasil uji: dump ~254 KB, restore ke DB baru
+users/models sama dengan sumber, schema_migrations=10.
 
 ## 2. Alert yang disarankan
 

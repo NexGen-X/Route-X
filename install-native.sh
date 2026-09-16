@@ -85,3 +85,13 @@ echo "   - Cek log Xray   : journalctl -fu xray"
 echo "   - Status Layanan :"
 systemctl is-active routex caddy xray
 
+echo ""
+echo "=================================================================="
+echo " 🎉 SETUP AWAL (FIRST-RUN ONBOARDING):"
+echo " Kredensial Administrator Bawaan:"
+echo "   - Email    : admin@routex.local"
+echo "   - Password : RouteX#Initial2026!"
+echo "   (Atau klik tombol 'Gunakan Kredensial Default' di halaman Login)"
+echo "   * Anda akan langsung diminta memperbarui kata sandi saat pertama login."
+echo "=================================================================="
+

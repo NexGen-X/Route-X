@@ -72,7 +72,7 @@ Skrip ini akan menampilkan kunci rahasia yang siap disalin:
 - `ENCRYPTION_KEY`
 - `API_KEY_PEPPER`
 - `METRICS_TOKEN`
-- `INITIAL_ADMIN_EMAIL` & `INITIAL_ADMIN_PASSWORD`
+- `INITIAL_ADMIN_EMAIL` & `INITIAL_ADMIN_PASSWORD` (Opsional — default onboarding bila dikosongkan)
 
 ---
 
@@ -106,8 +106,8 @@ Skrip ini akan menampilkan kunci rahasia yang siap disalin:
 | `ENCRYPTION_KEY` | *(Dari Langkah 3)* | Tepat 32-byte Base64 |
 | `API_KEY_PEPPER` | *(Dari Langkah 3)* | Minimal 32-byte Base64 |
 | `METRICS_TOKEN` | *(Dari Langkah 3)* | Token metrik Prometheus |
-| `INITIAL_ADMIN_EMAIL` | `admin@id-tech.cloud` | Email login pertama kali |
-| `INITIAL_ADMIN_PASSWORD` | *(Dari Langkah 3)* | Password login pertama kali |
+| `INITIAL_ADMIN_EMAIL` | `admin@routex.local` (Opsional) | Email login admin pertama (atau kosongkan untuk default) |
+| `INITIAL_ADMIN_PASSWORD` | `RouteX#Initial2026!` (Opsional) | Password login admin pertama (atau kosongkan untuk default) |
 | `METRICS_ALLOW_LOOPBACK` | `false` | Pengerasan keamanan |
 | `RATE_LIMIT_FAIL_CLOSED` | `false` | Kebijakan fail-open |
 
@@ -126,7 +126,7 @@ Skrip ini akan menampilkan kunci rahasia yang siap disalin:
    ```text
    https://<nama-app>-<username>.koyeb.app/login
    ```
-3. Masuk menggunakan email dan password yang Anda tentukan di `INITIAL_ADMIN_EMAIL` & `INITIAL_ADMIN_PASSWORD`.
+3. Masuk menggunakan email dan password yang Anda tentukan di `INITIAL_ADMIN_EMAIL` & `INITIAL_ADMIN_PASSWORD`, atau gunakan tombol **"Gunakan Kredensial Default (1-Klik)"** pada kartu bantuan setup awal (`admin@routex.local` / `RouteX#Initial2026!`). Anda akan langsung diminta memperbarui kata sandi baru.
 4. Anda sekarang memiliki AI Gateway pribadi yang aktif 24/7 tanpa biaya sepeser pun!
 
 ---

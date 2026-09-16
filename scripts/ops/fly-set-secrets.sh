@@ -63,7 +63,7 @@ ${FLY_BIN} secrets set -a "${APP_NAME}" \
 echo ""
 echo "=================================================================="
 echo " Secrets berhasil disetel di Fly.io!"
-echo " Kredensial Super Admin Awal Anda:"
+echo " Kredensial Admin Awal Anda:"
 echo " Email   : admin@id-tech.cloud"
 echo " Password: ${RAND_ADMIN_PASS}"
 echo "=================================================================="

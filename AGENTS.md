@@ -19,12 +19,15 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 - Role terbatas tersedia: `hermes_reader` (SELECT-only di `routex`), `hermes_tester` (CREATEDB, DB `routex_test`)
 - Smoke env ephemeral lama ada di `/var/tmp/routex-m8-local-20260908/` (pg 51885, redis 45193) — jangan dipakai untuk kerja baru
 
-## Konfigurasi app
+## Konfigurasi app & Arsitektur Identitas
 - Wajib: `DATABASE_URL` (postgres://), `REDIS_URL` (redis://), `SESSION_SECRET`, `ENCRYPTION_KEY`, `API_KEY_PEPPER`
+- Opsional: `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` (jika kosong, seed otomatis membuat default admin `admin@routex.local` / `RouteX#Initial2026!` dengan `MustChangePassword: true`)
+- Arsitektur Single-Admin: Seluruh peran RBAC (`roles`, `permissions`, `user_roles`) telah dihapus (migrasi 0010). Setiap user terautentikasi adalah `Admin` dengan hak penuh (`*`).
+- Endpoint `GET /api/auth/setup-hint` mendeteksi status onboarding awal dan dinonaktifkan otomatis begitu kata sandi diperbarui.
 - Tidak ada `.env` di repo — baca `internal/config/config.go` untuk daftar env lengkap
 
 ## Aturan
 - Bahasa komentar/log di codebase ini: Indonesia. Ikuti gaya yang ada.
-- Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0009_budget_alerts.sql`)
+- Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0010_drop_roles.sql`)
 - Jangan commit secret; jangan ubah `go.mod` tanpa alasan; PR via `gh`
 - MCP Hermes yang terpasang untuk repo ini: `filesystem` (scope /root/Route-X), `github`, `context7` (dok library), `routexdb` (SELECT-only ke `routex`), `routexredis`

@@ -4,7 +4,7 @@ Dokumen ini memandu deployment Route-X ke platform cloud **Render** menggunakan 
 
 Arsitektur di Render:
 - **Web Service (Docker)**: Menjalankan binary Go `ai-gateway` yang meng-embed frontend SPA React Vite.
-- **Managed PostgreSQL**: Basis data primer, auto-migrasi schema, dan auto-seed permissions saat start.
+- **Managed PostgreSQL**: Basis data primer, auto-migrasi schema, dan penyiapan akun admin awal saat start.
 - **Managed Redis**: Distributed cache, rate limiter per-IP/per-email, dan response caching.
 
 ---
@@ -30,8 +30,8 @@ Skrip ini akan mencetak format konfigurasi siap salin:
 - `ENCRYPTION_KEY`: Kunci AES-256-GCM (tepat 32-byte Base64).
 - `API_KEY_PEPPER`: Pepper hash kunci API (min 32-byte Base64).
 - `METRICS_TOKEN`: Token autentikasi scraper Prometheus.
-- `INITIAL_ADMIN_EMAIL`: Email administrator awal (contoh: `admin@id-tech.cloud`).
-- `INITIAL_ADMIN_PASSWORD`: Kata sandi awal yang kuat (min 12 karakter).
+- `INITIAL_ADMIN_EMAIL`: Email administrator awal (opsional, default: `admin@routex.local`).
+- `INITIAL_ADMIN_PASSWORD`: Kata sandi awal yang kuat (opsional, default: `RouteX#Initial2026!`).
 
 ---
 
@@ -50,8 +50,8 @@ Blueprint `render.yaml` di repositori ini secara otomatis mendirikan Web Service
    - `PUBLIC_URL`: URL layanan Render Anda (contoh: `https://route-x.onrender.com` atau domain kustom Anda).
    - `ENCRYPTION_KEY`: Masukkan nilai dari skrip langkah 2.
    - `API_KEY_PEPPER`: Masukkan nilai dari skrip langkah 2.
-   - `INITIAL_ADMIN_EMAIL`: Masukkan email admin Anda.
-   - `INITIAL_ADMIN_PASSWORD`: Masukkan kata sandi admin Anda.
+   - `INITIAL_ADMIN_EMAIL`: (Opsional) Masukkan email admin Anda atau biarkan default.
+   - `INITIAL_ADMIN_PASSWORD`: (Opsional) Masukkan kata sandi admin Anda atau biarkan default.
 6. Klik **Apply**. Render akan mulai membangun container Docker dan menginisialisasi database serta Redis.
 
 ---
@@ -63,8 +63,8 @@ Selama proses deploy:
 2. **Stage 2 (Backend Build)**: Binary Go `ai-gateway` dikompilasi dengan menyematkan aset `web/dist` ke dalamnya.
 3. **Stage 3 (Runtime)**: Image Alpine Linux minimalis (~25MB) dijalankan.
 4. **Bootstrapping**:
-   - `ai-gateway` otomatis terhubung ke `DATABASE_URL` dan menjalankan migrasi skema database (`0001_initial.sql` dst).
-   - `seed.Run` otomatis menanam peran, permissions, serta membuat akun Super Admin pertama jika tabel pengguna masih kosong.
+   - `ai-gateway` otomatis terhubung ke `DATABASE_URL` dan menjalankan migrasi skema database (`0001_initial.sql` sampai `0010_drop_roles.sql`).
+   - `seed.Run` otomatis membuat akun Admin pertama jika tabel pengguna masih kosong (menggunakan `INITIAL_ADMIN_*` jika disetel, atau default onboarding `admin@routex.local` / `RouteX#Initial2026!`).
    - Server mendengarkan pada port yang diatur Render (`PORT=10000`).
 
 ---
@@ -85,7 +85,7 @@ Setelah status di Render Dashboard berubah menjadi **Live**:
 
 2. **Masuk ke Konsol Administrasi**:
    - Buka browser ke `https://route-x.onrender.com/login`.
-   - Masuk menggunakan email dan kata sandi yang Anda tentukan pada `INITIAL_ADMIN_EMAIL` & `INITIAL_ADMIN_PASSWORD`.
+   - Masuk menggunakan email dan kata sandi yang Anda tentukan pada `INITIAL_ADMIN_EMAIL` & `INITIAL_ADMIN_PASSWORD`, atau gunakan tombol **"Gunakan Kredensial Default (1-Klik)"** pada kartu onboarding jika menggunakan kredensial bawaan (`admin@routex.local` / `RouteX#Initial2026!`).
 
 ---
 

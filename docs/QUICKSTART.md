@@ -4,9 +4,22 @@ Dokumentasi ini memandu pengembang dalam mengintegrasikan aplikasi dengan **Rout
 
 ---
 
-## 🔑 1. Autentikasi Klien
+## 🖥️ 1. Akses Konsol Web & Setup Admin Pertama
 
-Seluruh permintaan ke gateway wajib menyertakan kunci API klien (*Client API Key*) yang dibuat melalui dashboard konsol administrasi (`https://id-tech.cloud/#/api-keys`).
+Setelah gateway dinyalakan, buka konsol web di peramban:
+`http://localhost:8080/login` (atau domain produksi Anda).
+
+- **Instalasi Baru (First-Run)**: Tampilan login dilengkapi kartu bantuan **"SETUP AWAL"** dengan tombol **"Gunakan Kredensial Default (1-Klik)"**.
+- **Kredensial Bawaan**:
+  - Email: `admin@routex.local`
+  - Password: `RouteX#Initial2026!`
+- **Pengalihan Wajib**: Pada login pertama, Anda akan langsung diarahkan untuk membuat kata sandi baru. Setelah kata sandi diperbarui, kartu bantuan setup akan dinonaktifkan secara permanen.
+
+---
+
+## 🔑 2. Autentikasi Klien API
+
+Seluruh permintaan inferensi ke gateway wajib menyertakan kunci API klien (*Client API Key*) yang dibuat melalui menu **Client API Keys** di konsol administrasi (`/#/api-keys`).
 
 Gunakan salah satu format header berikut:
 ```http

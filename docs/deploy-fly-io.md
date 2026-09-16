@@ -85,9 +85,13 @@ fly secrets set \
   ENCRYPTION_KEY="$(openssl rand -base64 32)" \
   API_KEY_PEPPER="$(openssl rand -base64 32)" \
   METRICS_TOKEN="$(openssl rand -hex 32)" \
-  INITIAL_ADMIN_EMAIL="admin@id-tech.cloud" \
-  INITIAL_ADMIN_PASSWORD="<GANTI_PASSWORD_KUAT_MIN_16_KARAKTER>" \
   PUBLIC_URL="https://<nama-aplikasi-anda>.fly.dev"
+
+# Catatan: INITIAL_ADMIN_EMAIL & INITIAL_ADMIN_PASSWORD bersifat opsional.
+# Jika tidak disetel, Route-X otomatis mengaktifkan setup awal dengan
+# admin default (admin@routex.local / RouteX#Initial2026!).
+# Anda juga dapat menyetelnya secara eksplisit:
+# fly secrets set INITIAL_ADMIN_EMAIL="admin@domain.com" INITIAL_ADMIN_PASSWORD="<password>"
 ```
 
 ---
@@ -102,7 +106,7 @@ fly deploy
 Fly.io akan:
 1. Membangun kontainer Docker secara multi-stage (Node 20 Vite + Go 1.27 + Alpine).
 2. Menyalakan mesin di region yang dipilih.
-3. Menjalankan auto-migrasi skema database dan seed data peran/admin.
+3. Menjalankan auto-migrasi skema database (0001 sampai 0010) dan inisialisasi akun admin.
 4. Memvalidasi health check di `/healthz`.
 
 ---
@@ -122,7 +126,7 @@ Fly.io akan:
    ```bash
    fly open /login
    ```
-   Masuk menggunakan email dan password yang Anda tentukan pada `INITIAL_ADMIN_EMAIL` & `INITIAL_ADMIN_PASSWORD`.
+   Masuk menggunakan email dan password yang Anda tentukan, atau gunakan kredensial onboarding default (`admin@routex.local` / `RouteX#Initial2026!`) dengan tombol **"Gunakan Kredensial Default (1-Klik)"**. Anda akan otomatis diarahkan untuk mengganti password baru pada login pertama.
 
 ---
 

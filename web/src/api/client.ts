@@ -338,6 +338,38 @@ export const api = {
       request<void>(`/api/admin/upstreams/egress-pools/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     test: (id: string) =>
       request<EgressProbeResult>(`/api/admin/upstreams/egress-pools/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+    provisionCloudflare: (data: {
+      account_id: string;
+      api_token: string;
+      gateway_id?: string;
+      name?: string;
+      collect_logs?: boolean;
+      enable_cache?: boolean;
+      region?: string;
+    }) =>
+      request<{
+        pool: EgressPool;
+        provider_type: string;
+        target_url: string;
+        already_exist?: boolean;
+      }>('/api/admin/upstreams/egress-pools/provision/cloudflare', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    provisionDeno: (data: {
+      access_token: string;
+      project_name?: string;
+      name?: string;
+      region?: string;
+    }) =>
+      request<{
+        pool: EgressPool;
+        provider_type: string;
+        target_url: string;
+      }>('/api/admin/upstreams/egress-pools/provision/deno', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   },
 
   // Gateway Policies

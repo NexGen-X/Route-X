@@ -112,12 +112,16 @@ mkdir -p /etc/caddy
 if [ ! -f /etc/caddy/Caddyfile ] || ! grep -q "8080" /etc/caddy/Caddyfile 2>/dev/null; then
     cat << 'EOF' > /etc/caddy/Caddyfile
 :80 {
+    encode zstd gzip
+
     reverse_proxy 127.0.0.1:8080 {
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
         header_up X-Real-Ip {remote_host}
+
+        transport http {
+            keepalive 300s
+            keepalive_idle_conns 250
+        }
     }
-    encode gzip
 }
 EOF
 fi

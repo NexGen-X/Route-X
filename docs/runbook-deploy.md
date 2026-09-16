@@ -46,12 +46,16 @@ saat kompilasi. Urutan terbalik = dashboard basi.
 ## 4. Caddy (/etc/caddy/Caddyfile)
 
   id-tech.cloud {
+      encode zstd gzip
+
       reverse_proxy 127.0.0.1:8080 {
-          header_up X-Forwarded-For {remote_host}
-          header_up X-Forwarded-Proto {scheme}
           header_up X-Real-Ip {remote_host}
+
+          transport http {
+              keepalive 300s
+              keepalive_idle_conns 250
+          }
       }
-      encode gzip
   }
 
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

@@ -36,11 +36,11 @@ jobs:
         run: go vet ./...
       - name: Test
         env:
-          TEST_DATABASE_URL: postgres://routex:routex@127.0.0.1:5432/routex_test?sslmode=disable
+          TEST_DATABASE_URL: postgres://routex:test_secret_pw@127.0.0.1:5432/routex_test?sslmode=disable
         run: go test ./... -count=1
       - name: Secret lint
         env:
-          TEST_DATABASE_URL: postgres://routex:routex@127.0.0.1:5432/routex_test?sslmode=disable
+          TEST_DATABASE_URL: postgres://routex:test_secret_pw@127.0.0.1:5432/routex_test?sslmode=disable
         run: go test ./internal/security/ -run TestSecretLeakLint -count=1
 
   web:

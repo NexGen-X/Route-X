@@ -18,8 +18,7 @@ import type {
   APIKey,
   User,
   UserDetail,
-  Role,
-  RoleDetail,
+  SetupHintResponse,
   Session,
   Webhook,
   WebhookDelivery,
@@ -159,6 +158,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    setupHint: () => request<SetupHintResponse>('/api/auth/setup-hint'),
   },
 
   // Observability
@@ -501,7 +501,7 @@ export const api = {
       return request<{ items: User[]; next_cursor?: string }>(`/api/admin/access/users?${q.toString()}`);
     },
     get: (id: string) => request<UserDetail>(`/api/admin/access/users/${encodeURIComponent(id)}`),
-    create: (data: { email: string; name: string; password?: string; role_ids: string[]; must_change_password?: boolean }) =>
+    create: (data: { email: string; name: string; password?: string; must_change_password?: boolean }) =>
       request<User>('/api/admin/access/users', {
         method: 'POST',
         body: JSON.stringify(data),
@@ -515,16 +515,6 @@ export const api = {
       request<{ status: string }>(`/api/admin/access/users/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
-    grantRole: (id: string, roleId: string) =>
-      request<{ status: string }>(`/api/admin/access/users/${encodeURIComponent(id)}/roles`, {
-        method: 'POST',
-        body: JSON.stringify({ role_id: roleId }),
-      }),
-    revokeRole: (id: string, roleId: string) =>
-      request<{ status: string }>(
-        `/api/admin/access/users/${encodeURIComponent(id)}/roles/${encodeURIComponent(roleId)}`,
-        { method: 'DELETE' }
-      ),
     forceResetPassword: (id: string, tempPassword?: string) =>
       // Backend menjawab {status:"password_reset"}; temp password diisi admin di request.
       request<{ status: string }>(`/api/admin/access/users/${encodeURIComponent(id)}/force-reset-password`, {
@@ -536,27 +526,6 @@ export const api = {
         `/api/admin/access/users/${encodeURIComponent(id)}/revoke-sessions`,
         { method: 'POST' }
       ),
-  },
-
-  roles: {
-    list: () => request<{ items: Role[] }>('/api/admin/access/roles'),
-    get: (roleId: string) =>
-      request<RoleDetail>(`/api/admin/access/roles/${encodeURIComponent(roleId)}`),
-    create: (data: { name: string; description?: string; rank: number; permissions?: string[] }) =>
-      request<Role>('/api/admin/access/roles', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    delete: (roleId: string) =>
-      request<{ status: string }>(`/api/admin/access/roles/${encodeURIComponent(roleId)}`, {
-        method: 'DELETE',
-      }),
-    permissions: () => request<{ items: { key: string; description: string }[] }>('/api/admin/access/permissions'),
-    setPermissions: (roleId: string, permissions: string[]) =>
-      request<{ status: string }>(`/api/admin/access/roles/${encodeURIComponent(roleId)}/permissions`, {
-        method: 'PUT',
-        body: JSON.stringify({ permissions }),
-      }),
   },
 
   sessions: {

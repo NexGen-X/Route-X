@@ -54,7 +54,6 @@ type Handlers struct {
 	policyRepo     *policy.Repo
 	keyRepo        *keys.Repo
 	usersRepo      *identity.Users
-	rolesRepo      *identity.Roles
 	sessionsRepo   *identity.Sessions
 	settingsRepo   *identity.Settings
 	auditRepo      *identity.Audit
@@ -88,7 +87,6 @@ type Config struct {
 	PolicyRepo     *policy.Repo
 	KeyRepo        *keys.Repo
 	UsersRepo      *identity.Users
-	RolesRepo      *identity.Roles
 	SessionsRepo   *identity.Sessions
 	SettingsRepo   *identity.Settings
 	AuditRepo      *identity.Audit
@@ -136,7 +134,6 @@ func NewHandlers(cfg Config) *Handlers {
 		policyRepo:     cfg.PolicyRepo,
 		keyRepo:        cfg.KeyRepo,
 		usersRepo:      cfg.UsersRepo,
-		rolesRepo:      cfg.RolesRepo,
 		sessionsRepo:   cfg.SessionsRepo,
 		settingsRepo:   cfg.SettingsRepo,
 		auditRepo:      cfg.AuditRepo,

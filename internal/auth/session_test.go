@@ -34,14 +34,11 @@ func TestLoginSuccess(t *testing.T) {
 	if res.Principal.SessionID == "" || res.Principal.SessionID != res.Principal.Session.ID {
 		t.Errorf("SessionID = %q, Session.ID = %q", res.Principal.SessionID, res.Principal.Session.ID)
 	}
-	if got := res.Principal.TopRole(); got != seed.RoleOperator {
-		t.Errorf("TopRole() = %q, mau %q", got, seed.RoleOperator)
+	if got := res.Principal.TopRole(); got != "Admin" {
+		t.Errorf("TopRole() = %q, mau %q", got, "Admin")
 	}
 	if !res.Principal.Can(seed.PermProvidersWrite) {
-		t.Errorf("Operator seharusnya punya %s; izin = %v", seed.PermProvidersWrite, res.Principal.Permissions)
-	}
-	if res.Principal.Can(seed.PermUsersWrite) {
-		t.Errorf("Operator seharusnya TIDAK punya %s", seed.PermUsersWrite)
+		t.Errorf("Admin seharusnya punya %s; izin = %v", seed.PermProvidersWrite, res.Principal.Permissions)
 	}
 
 	// Email case-insensitive: repository sudah menjaminnya, tetapi jalur login harus
@@ -601,24 +598,57 @@ func TestTouchOnlyWhenStale(t *testing.T) {
 	}
 }
 
-// Pengguna tanpa peran tetap bisa masuk, tetapi tidak memiliki izin apa pun — dan daftar
-// izinnya harus slice kosong, bukan nil, supaya respons API memuat [] bukan null.
-func TestLoginWithoutRoles(t *testing.T) {
+// Seluruh pengguna terautentikasi memiliki peran Admin dan izin penuh dalam arsitektur single-admin.
+func TestLoginUserPrincipal(t *testing.T) {
 	e := newEnv(t)
-	e.makeUser(t, "tanpa-peran@example.test", "")
+	e.makeUser(t, "admin-uji@example.test", "")
 
-	res := e.login(t, "tanpa-peran@example.test")
+	res := e.login(t, "admin-uji@example.test")
 	if res.Principal.Permissions == nil {
-		t.Error("Permissions nil, mau slice kosong")
+		t.Error("Permissions nil, mau slice non-nil")
 	}
-	if len(res.Principal.Permissions) != 0 || len(res.Principal.Roles) != 0 {
-		t.Errorf("izin = %v, peran = %v; keduanya harus kosong", res.Principal.Permissions, res.Principal.Roles)
+	if res.Principal.TopRole() != "Admin" {
+		t.Errorf("TopRole() = %q, mau 'Admin'", res.Principal.TopRole())
 	}
-	if res.Principal.TopRole() != "" {
-		t.Errorf("TopRole() = %q, mau kosong", res.Principal.TopRole())
+	if !res.Principal.Can(seed.PermHealthRead) {
+		t.Error("admin terautentikasi seharusnya punya izin penuh")
 	}
-	if res.Principal.Can(seed.PermHealthRead) {
-		t.Error("pengguna tanpa peran seharusnya tidak punya izin apa pun")
+}
+
+func TestSetupHint(t *testing.T) {
+	e := newEnv(t)
+
+	// Database baru yang telah di-seed memiliki admin default dengan MustChangePassword = true
+	hint, err := e.svc.SetupHint(e.ctx)
+	if err != nil {
+		t.Fatalf("SetupHint: %v", err)
+	}
+	if !hint.HasDefaultAdmin {
+		t.Error("HasDefaultAdmin = false padahal admin default ada dan must_change_password")
+	}
+	if hint.DefaultEmail != "admin@routex.local" {
+		t.Errorf("DefaultEmail = %q", hint.DefaultEmail)
+	}
+	if hint.DefaultPassword != "RouteX#Initial2026!" {
+		t.Errorf("DefaultPassword = %q", hint.DefaultPassword)
+	}
+
+	u, err := e.users.GetByEmail(e.ctx, "admin@routex.local")
+	if err != nil {
+		t.Fatalf("GetByEmail admin default: %v", err)
+	}
+
+	// Ganti password sehingga MustChangePassword = false
+	if err := e.users.ChangePassword(e.ctx, u.ID, security.Secret("sandi-baru-yang-sangat-kuat-123"), false); err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+
+	hint, err = e.svc.SetupHint(e.ctx)
+	if err != nil {
+		t.Fatalf("SetupHint kedua: %v", err)
+	}
+	if hint.HasDefaultAdmin {
+		t.Error("HasDefaultAdmin = true padahal password sudah diganti")
 	}
 }
 

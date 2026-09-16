@@ -86,6 +86,7 @@ func (h *Handlers) Routes() http.Handler {
 	r := chi.NewRouter()
 
 	r.Post("/login", h.Login)
+	r.Get("/setup-hint", h.SetupHint)
 
 	r.Group(func(authed chi.Router) {
 		authed.Use(h.svc.RequireSession())
@@ -188,6 +189,17 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	h.cookies.SetSession(w, res.Token)
 	h.writeprincipal(w, r, res.Principal, http.StatusOK)
+}
+
+// SetupHint menangani GET /setup-hint untuk memberikan kredensial bawaan awal jika akun admin
+// default belum diganti passwordnya.
+func (h *Handlers) SetupHint(w http.ResponseWriter, r *http.Request) {
+	hint, err := h.svc.SetupHint(r.Context())
+	if err != nil {
+		h.fail(w, r, "gagal memeriksa setup hint", err)
+		return
+	}
+	h.write(w, r, http.StatusOK, hint)
 }
 
 // Me menangani GET /me: mengembalikan identitas dan kewenangan sesi yang sedang dipakai.

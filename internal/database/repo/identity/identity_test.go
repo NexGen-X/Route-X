@@ -11,13 +11,11 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NexGen-X/Route-X/internal/config"
@@ -221,77 +219,6 @@ func makeUser(ctx context.Context, t *testing.T, r *Users, email string) User {
 	}
 	return u
 }
-
-// makeRole membuat peran beserta izin-izinnya.
-func makeRole(ctx context.Context, t *testing.T, r *Roles, name string, rank int, keys ...string) Role {
-	t.Helper()
-
-	role, err := r.Create(ctx, NewRole{Name: name, Description: "peran " + name, Rank: rank})
-	if err != nil {
-		t.Fatalf("Create(%q): %v", name, err)
-	}
-	if len(keys) == 0 {
-		return role
-	}
-
-	perms := make([]NewPermission, len(keys))
-	for i, k := range keys {
-		perms[i] = NewPermission{Key: k, Description: "izin " + k}
-	}
-	if err := r.EnsurePermissions(ctx, perms); err != nil {
-		t.Fatalf("EnsurePermissions: %v", err)
-	}
-	if err := r.SetPermissions(ctx, role.ID, keys); err != nil {
-		t.Fatalf("SetPermissions: %v", err)
-	}
-	return role
-}
-
-// countingQuerier membungkus repo.Querier sambil menghitung jumlah query yang dikirim.
-//
-// Dipakai untuk membuktikan sebuah operasi benar-benar satu perjalanan ke database,
-// bukan N+1. Itu tidak bisa dibuktikan dari hasilnya saja: pola "ambil peran lalu ambil
-// izin tiap peran" memberi jawaban yang sama persis, hanya dengan biaya yang bertambah
-// setiap kali seorang admin diberi peran tambahan.
-type countingQuerier struct {
-	inner repo.Querier
-	mu    sync.Mutex
-	calls int
-}
-
-func newCountingQuerier(inner repo.Querier) *countingQuerier {
-	return &countingQuerier{inner: inner}
-}
-
-func (c *countingQuerier) note() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.calls++
-}
-
-func (c *countingQuerier) count() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.calls
-}
-
-func (c *countingQuerier) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	c.note()
-	return c.inner.Exec(ctx, sql, args...)
-}
-
-func (c *countingQuerier) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	c.note()
-	return c.inner.Query(ctx, sql, args...)
-}
-
-func (c *countingQuerier) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	c.note()
-	return c.inner.QueryRow(ctx, sql, args...)
-}
-
-// Repository harus bisa memakai Querier apa pun, bukan hanya pool konkret.
-var _ repo.Querier = (*countingQuerier)(nil)
 
 // --- Test tanpa database -----------------------------------------------------
 
@@ -595,16 +522,11 @@ func TestMarshalMetadata(t *testing.T) {
 func TestErrorTranslationIntegration(t *testing.T) {
 	ctx, db := newTestDB(t)
 	users := NewUsers(db.Pool)
-	roles := NewRoles(db.Pool)
 	sessions := NewSessions(db.Pool)
 	audit := NewAudit(db.Pool)
 	settings := NewSettings(db.Pool)
 
-	user := makeUser(ctx, t, users, "terjemahan@routex.test")
-	role := makeRole(ctx, t, roles, "Admin", 20, permProvidersWrite)
-	if err := roles.Grant(ctx, user.ID, role.ID, ""); err != nil {
-		t.Fatalf("Grant: %v", err)
-	}
+	makeUser(ctx, t, users, "terjemahan@routex.test")
 
 	const missing = "8b1f4a2c-0d3e-4f5a-9b8c-7d6e5f4a3b2c"
 
@@ -626,32 +548,12 @@ func TestErrorTranslationIntegration(t *testing.T) {
 			},
 		},
 		{
-			name:       "keunikan nama peran",
-			constraint: "roles_name_key",
-			want:       repo.ErrConflict,
-			run: func() error {
-				_, err := roles.Create(ctx, NewRole{Name: "Admin", Rank: 30})
-				return err
-			},
-		},
-		{
-			name:       "peran yang sama diberikan dua kali",
-			constraint: "user_roles_pkey",
-			want:       repo.ErrConflict,
-			run:        func() error { return roles.Grant(ctx, user.ID, role.ID, "") },
-		},
-		{
 			name: "sesi untuk pengguna yang tidak ada",
 			want: repo.ErrInvalidReference,
 			run: func() error {
 				_, err := sessions.Create(ctx, NewSession{UserID: missing, TTL: time.Hour})
 				return err
 			},
-		},
-		{
-			name: "peran yang tidak ada",
-			want: repo.ErrInvalidReference,
-			run:  func() error { return roles.Grant(ctx, user.ID, missing, "") },
 		},
 		{
 			name: "pelaku audit yang tidak ada",
@@ -675,11 +577,6 @@ func TestErrorTranslationIntegration(t *testing.T) {
 			run:  func() error { return settings.Delete(ctx, "tidak.ada") },
 		},
 		{
-			name: "peran yang tidak dimiliki",
-			want: repo.ErrNotFound,
-			run:  func() error { return roles.Revoke(ctx, user.ID, missing, "") },
-		},
-		{
 			name:       "email kosong",
 			constraint: "users_email_not_empty",
 			want:       repo.ErrConstraint,
@@ -687,12 +584,6 @@ func TestErrorTranslationIntegration(t *testing.T) {
 				_, err := users.Create(ctx, NewUser{Email: "   ", Password: testPassword})
 				return err
 			},
-		},
-		{
-			name:       "kunci izin salah bentuk",
-			constraint: "permissions_key_format",
-			want:       repo.ErrConstraint,
-			run:        func() error { return roles.EnsurePermissions(ctx, []NewPermission{{Key: "SALAH"}}) },
 		},
 		{
 			name:       "kunci setelan kosong",
@@ -804,9 +695,7 @@ func TestErrorMessagesDoNotLeakSecretsIntegration(t *testing.T) {
 func TestRepositoriesShareTransactionIntegration(t *testing.T) {
 	ctx, db := newTestDB(t)
 	users := NewUsers(db.Pool)
-	roles := NewRoles(db.Pool)
 	audit := NewAudit(db.Pool)
-	role := makeRole(ctx, t, roles, "Admin", 20, permProvidersRead)
 
 	var userID string
 	err := repo.InTx(ctx, db.Pool, func(q repo.Querier) error {
@@ -815,9 +704,6 @@ func TestRepositoriesShareTransactionIntegration(t *testing.T) {
 			return err
 		}
 		userID = created.ID
-		if err := NewRoles(q).Grant(ctx, created.ID, role.ID, ""); err != nil {
-			return err
-		}
 		return NewAudit(q).Write(ctx, Event{
 			Actor:        ActorOf(created, "Admin"),
 			Action:       ActionLogin,
@@ -830,10 +716,6 @@ func TestRepositoriesShareTransactionIntegration(t *testing.T) {
 
 	if _, err := users.GetByID(ctx, userID); err != nil {
 		t.Errorf("pengguna tidak tersimpan: %v", err)
-	}
-	granted, err := roles.OfUser(ctx, userID)
-	if err != nil || len(granted) != 1 {
-		t.Errorf("peran tidak tersimpan: %v (%d peran)", err, len(granted))
 	}
 	page, err := audit.List(ctx, AuditFilter{ActorUserID: userID}, repo.Page{})
 	if err != nil || len(page.Entries) != 1 {
@@ -874,8 +756,7 @@ func TestSchemaIsolationIntegration(t *testing.T) {
 	}
 
 	for _, table := range []string{
-		"users", "roles", "permissions", "role_permissions", "user_roles",
-		"sessions", "audit_logs", "settings", "schema_migrations",
+		"users", "sessions", "audit_logs", "settings", "schema_migrations",
 	} {
 		var n int
 		if err := db.Pool.QueryRow(ctx,

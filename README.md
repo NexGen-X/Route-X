@@ -50,12 +50,11 @@ cd Route-X
 bash deploy.sh
 ```
 
-### Opsi B: Native Linux (Systemd & Binary)
+### Opsi B: Native Linux 1-Liner (Route-X + Caddy + Xray + PostgreSQL + Redis)
 ```bash
-git clone https://github.com/NexGen-X/Route-X.git
-cd Route-X
-sudo bash install-native.sh
+curl -fsSL https://raw.githubusercontent.com/NexGen-X/Route-X/main/install-native.sh | sudo bash
 ```
+*(Atau jika sudah mengkloning repositori: `sudo bash install-native.sh`)*
 
 ### 🔐 Kredensial Login Pertama Kali:
 Buka konsol dashboard di peramban Anda (`http://localhost:8080/login`):

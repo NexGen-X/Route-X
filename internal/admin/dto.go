@@ -758,19 +758,19 @@ func (WebhookDTO) adalahDTO() {}
 // DeliveryDTO adalah status pengiriman rekaman webhook individual.
 // Catatan Keamanan: payload mentah tidak disertakan di sini demi privasi data inferensi.
 type DeliveryDTO struct {
-	ID                 int64      `json:"id"`
-	WebhookID          string     `json:"webhook_id"`
-	Event              string     `json:"event"`
+	ID                 int64           `json:"id"`
+	WebhookID          string          `json:"webhook_id"`
+	Event              string          `json:"event"`
 	Payload            json.RawMessage `json:"payload,omitempty"`
-	Status             string     `json:"status"`
-	AttemptCount       int        `json:"attempt_count"`
-	NextAttemptAt      time.Time  `json:"next_attempt_at"`
-	LockedAt           *time.Time `json:"locked_at,omitempty"`
-	LockedBy           *string    `json:"locked_by,omitempty"`
-	ResponseStatusCode *int       `json:"response_status_code"`
-	ErrorMessage       *string    `json:"error_message"`
-	CreatedAt          time.Time  `json:"created_at"`
-	DeliveredAt        *time.Time `json:"delivered_at"`
+	Status             string          `json:"status"`
+	AttemptCount       int             `json:"attempt_count"`
+	NextAttemptAt      time.Time       `json:"next_attempt_at"`
+	LockedAt           *time.Time      `json:"locked_at,omitempty"`
+	LockedBy           *string         `json:"locked_by,omitempty"`
+	ResponseStatusCode *int            `json:"response_status_code"`
+	ErrorMessage       *string         `json:"error_message"`
+	CreatedAt          time.Time       `json:"created_at"`
+	DeliveredAt        *time.Time      `json:"delivered_at"`
 }
 
 func (DeliveryDTO) adalahDTO() {}
@@ -890,7 +890,6 @@ type ServerBackupInfo struct {
 	FileSize  string    `json:"file_size"`
 	CreatedAt time.Time `json:"created_at"`
 }
-
 
 // AuditEntryDTO adalah catatan jejak audit aktivitas administratif.
 type AuditEntryDTO struct {

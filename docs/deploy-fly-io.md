@@ -86,7 +86,7 @@ fly secrets set \
   API_KEY_PEPPER="$(openssl rand -base64 32)" \
   METRICS_TOKEN="$(openssl rand -hex 32)" \
   INITIAL_ADMIN_EMAIL="admin@id-tech.cloud" \
-  INITIAL_ADMIN_PASSWORD="KataSandiKuatMinimal16KarakterA1!" \
+  INITIAL_ADMIN_PASSWORD="<GANTI_PASSWORD_KUAT_MIN_16_KARAKTER>" \
   PUBLIC_URL="https://<nama-aplikasi-anda>.fly.dev"
 ```
 

@@ -1409,5 +1409,3 @@ func TestChatCompletionsResolusiNamaAturanDanComboAlias(t *testing.T) {
 		t.Fatalf("permintaan nama fiktif harus 404; didapat %d", w3.Code)
 	}
 }
-
-

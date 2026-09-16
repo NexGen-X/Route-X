@@ -797,8 +797,6 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 	return tModel, saring, targets, nil
 }
 
-
-
 // saringKandidatTier2 menerapkan penyaringan provider yang sama seperti jalur
 // tier1 di kandidat(): larangan provider dari penyaring konten dan pembatasan
 // provider pada API key — tanpa akses writer. Gagal-tertutup: error pemeriksaan
@@ -871,8 +869,6 @@ func (h *Handlers) cobaTierFallbackSekali(ctx context.Context, tier ComboTier, p
 	return out, nil
 }
 
-
-
 // cobaTierFallbackMengalir mencoba eksekusi satu tier fallback streaming.
 func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier, pr *persiapan, j *jejak) (*Outcome[providers.Stream], *Rejection) {
 	tModel, cands, targets, rj := h.siapkanTierFallback(ctx, tier.Model, tier.ProviderIDs, pr, true)
@@ -911,8 +907,6 @@ func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier,
 	}
 	return out, nil
 }
-
-
 
 // cakupanCache menyusun konteks pemilik untuk kunci response cache.
 //

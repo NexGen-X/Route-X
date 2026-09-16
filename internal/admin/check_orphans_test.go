@@ -2,13 +2,13 @@ package admin
 
 import (
 	"fmt"
+	"github.com/go-chi/chi/v5"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
-	"github.com/go-chi/chi/v5"
 )
 
 func TestCheckOrphans(t *testing.T) {

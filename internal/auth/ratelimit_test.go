@@ -224,7 +224,7 @@ func TestLimiterWindowRollsOver(t *testing.T) {
 // ReasonRateLimited dengan lama tunggu, supaya lapisan HTTP bisa menjawab 429 alih-alih
 // menyuruh pengguna mencoba password lain.
 func TestLoginRateLimited(t *testing.T) {
-	limiter, _ := newLimiter(t, WithLoginRateLimits(0, 2), WithLoginRateWindow(time.Minute))
+	limiter, _ := newLimiter(t, WithLoginRateLimits(0, 2), WithLoginRateWindow(time.Hour))
 	e := newEnv(t, WithLoginLimiter(limiter))
 	e.makeUser(t, "batas@example.test", seed.RoleViewer)
 

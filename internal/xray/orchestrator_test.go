@@ -47,7 +47,7 @@ func TestNewShortID(t *testing.T) {
 	}
 }
 
-func TestGenerateConfig_AllProtocols(t *testing.T) {
+func TestGenerateConfig(t *testing.T) {
 	s := DefaultState("ai.test.example.com")
 	data, err := GenerateConfig(s)
 	if err != nil {
@@ -60,24 +60,15 @@ func TestGenerateConfig_AllProtocols(t *testing.T) {
 	}
 
 	inbounds, ok := parsed["inbounds"].([]any)
-	if !ok || len(inbounds) < 10 {
-		t.Fatalf("jumlah inbound tidak sesuai: %v", len(inbounds))
+	if !ok || len(inbounds) != 3 {
+		t.Fatalf("jumlah inbound tidak sesuai: %v, diharapkan 3", len(inbounds))
 	}
 
-	// Pastikan inbound mencakup semua protokol utama
+	// Pastikan inbound mencakup semua protokol aktif
 	expectedTags := map[string]bool{
 		"socks-internal":   false,
 		"http-internal":    false,
-		"vless-ws-in":      false,
-		"vless-grpc-in":    false,
-		"trojan-ws-in":     false,
-		"trojan-grpc-in":   false,
-		"vmess-ws-in":      false,
-		"vmess-grpc-in":    false,
-		"ss-ws-in":         false,
-		"vless-xhttp-in":   false,
 		"vless-reality-in": false,
-		"ss-standalone-in": false,
 	}
 
 	for _, in := range inbounds {
@@ -97,33 +88,9 @@ func TestGenerateConfig_AllProtocols(t *testing.T) {
 	}
 }
 
-func TestGenerateShareLinks_AllProtocols(t *testing.T) {
+func TestGenerateShareLinks(t *testing.T) {
 	s := DefaultState("ai.test.example.com")
 	links := GenerateShareLinks(s)
-
-	if !strings.HasPrefix(links.VlessWS, "vless://") {
-		t.Errorf("VlessWS tidak diawali 'vless://': %s", links.VlessWS)
-	}
-	if !strings.Contains(links.VlessWS, "ai.test.example.com:443") {
-		t.Errorf("VlessWS tidak memuat host & port: %s", links.VlessWS)
-	}
-	if !strings.Contains(links.VlessWS, "type=ws") {
-		t.Errorf("VlessWS tidak memuat type=ws: %s", links.VlessWS)
-	}
-
-	if !strings.HasPrefix(links.VlessGRPC, "vless://") {
-		t.Errorf("VlessGRPC tidak diawali 'vless://': %s", links.VlessGRPC)
-	}
-	if !strings.Contains(links.VlessGRPC, "type=grpc") {
-		t.Errorf("VlessGRPC tidak memuat type=grpc: %s", links.VlessGRPC)
-	}
-
-	if !strings.HasPrefix(links.VlessXHTTP, "vless://") {
-		t.Errorf("VlessXHTTP tidak diawali 'vless://': %s", links.VlessXHTTP)
-	}
-	if !strings.Contains(links.VlessXHTTP, "type=splithttp") {
-		t.Errorf("VlessXHTTP tidak memuat type=splithttp: %s", links.VlessXHTTP)
-	}
 
 	if !strings.HasPrefix(links.VlessReality, "vless://") {
 		t.Errorf("VlessReality tidak diawali 'vless://': %s", links.VlessReality)
@@ -131,43 +98,25 @@ func TestGenerateShareLinks_AllProtocols(t *testing.T) {
 	if !strings.Contains(links.VlessReality, "security=reality") {
 		t.Errorf("VlessReality tidak memuat security=reality: %s", links.VlessReality)
 	}
-
-	if !strings.HasPrefix(links.TrojanWS, "trojan://") {
-		t.Errorf("TrojanWS tidak diawali 'trojan://': %s", links.TrojanWS)
-	}
-	if !strings.Contains(links.TrojanWS, s.TrojanPassword) {
-		t.Errorf("TrojanWS tidak memuat password: %s", links.TrojanWS)
+	if !strings.Contains(links.VlessReality, "flow=xtls-rprx-vision") {
+		t.Errorf("VlessReality tidak memuat flow=xtls-rprx-vision: %s", links.VlessReality)
 	}
 
-	if !strings.HasPrefix(links.TrojanGRPC, "trojan://") {
-		t.Errorf("TrojanGRPC tidak diawali 'trojan://': %s", links.TrojanGRPC)
+	if !strings.HasPrefix(links.SocksInternal, "socks5://") {
+		t.Errorf("SocksInternal tidak diawali 'socks5://': %s", links.SocksInternal)
 	}
-	if !strings.Contains(links.TrojanGRPC, "type=grpc") {
-		t.Errorf("TrojanGRPC tidak memuat type=grpc: %s", links.TrojanGRPC)
-	}
-
-	if !strings.HasPrefix(links.VmessWS, "vmess://") {
-		t.Errorf("VmessWS tidak diawali 'vmess://': %s", links.VmessWS)
-	}
-	if !strings.HasPrefix(links.VmessGRPC, "vmess://") {
-		t.Errorf("VmessGRPC tidak diawali 'vmess://': %s", links.VmessGRPC)
+	if !strings.HasPrefix(links.HTTPInternal, "http://") {
+		t.Errorf("HTTPInternal tidak diawali 'http://': %s", links.HTTPInternal)
 	}
 
-	if !strings.HasPrefix(links.ShadowsocksWS, "ss://") {
-		t.Errorf("ShadowsocksWS tidak diawali 'ss://': %s", links.ShadowsocksWS)
-	}
-	if !strings.HasPrefix(links.Shadowsocks, "ss://") {
-		t.Errorf("Shadowsocks tidak diawali 'ss://': %s", links.Shadowsocks)
-	}
-
-	if len(links.Protocols) < 10 {
-		t.Fatalf("daftar Protocols terlalu sedikit: dapat %d", len(links.Protocols))
+	if len(links.Protocols) != 3 {
+		t.Fatalf("daftar Protocols salah: dapat %d, ingin 3", len(links.Protocols))
 	}
 
 	// Pastikan parsing URL tidak panic
-	parsed, err := url.Parse(links.VlessWS)
+	parsed, err := url.Parse(links.VlessReality)
 	if err != nil {
-		t.Fatalf("gagal mem-parsing URL VlessWS: %v", err)
+		t.Fatalf("gagal mem-parsing URL VlessReality: %v", err)
 	}
 	if parsed.User.Username() != s.UUID {
 		t.Errorf("UUID di URL salah: dapat %s, ingin %s", parsed.User.Username(), s.UUID)

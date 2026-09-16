@@ -778,29 +778,20 @@ func (XrayProtocolDTO) adalahDTO() {}
 
 // DomainConfigDTO merepresentasikan konfigurasi nama domain publik dan status HTTPS otomatis.
 type DomainConfigDTO struct {
-	Domain            string            `json:"domain"`
-	Mode              string            `json:"mode"`
-	Status            string            `json:"status"`
-	PublicURL         string            `json:"public_url"`
-	BaseURL           string            `json:"base_url"`
-	ServerIP          string            `json:"server_ip"`
-	ResolvedIPs       []string          `json:"resolved_ips,omitempty"`
-	DNSMatched        bool              `json:"dns_matched"`
-	LastChecked       *time.Time        `json:"last_checked,omitempty"`
-	Message           string            `json:"message,omitempty"`
-	XrayEnabled       bool              `json:"xray_enabled"`
-	XrayUUID          string            `json:"xray_uuid,omitempty"`
-	XrayVlessWS       string            `json:"xray_vless_ws,omitempty"`
-	XrayVlessGRPC     string            `json:"xray_vless_grpc,omitempty"`
-	XrayVlessXHTTP    string            `json:"xray_vless_xhttp,omitempty"`
-	XrayVlessReality  string            `json:"xray_vless_reality,omitempty"`
-	XrayTrojanWS      string            `json:"xray_trojan_ws,omitempty"`
-	XrayTrojanGRPC    string            `json:"xray_trojan_grpc,omitempty"`
-	XrayVmessWS       string            `json:"xray_vmess_ws,omitempty"`
-	XrayVmessGRPC     string            `json:"xray_vmess_grpc,omitempty"`
-	XrayShadowsocksWS string            `json:"xray_shadowsocks_ws,omitempty"`
-	XrayShadowsocks   string            `json:"xray_shadowsocks,omitempty"`
-	XrayProtocols     []XrayProtocolDTO `json:"xray_protocols,omitempty"`
+	Domain           string            `json:"domain"`
+	Mode             string            `json:"mode"`
+	Status           string            `json:"status"`
+	PublicURL        string            `json:"public_url"`
+	BaseURL          string            `json:"base_url"`
+	ServerIP         string            `json:"server_ip"`
+	ResolvedIPs      []string          `json:"resolved_ips,omitempty"`
+	DNSMatched       bool              `json:"dns_matched"`
+	LastChecked      *time.Time        `json:"last_checked,omitempty"`
+	Message          string            `json:"message,omitempty"`
+	XrayEnabled      bool              `json:"xray_enabled"`
+	XrayUUID         string            `json:"xray_uuid,omitempty"`
+	XrayVlessReality string            `json:"xray_vless_reality,omitempty"`
+	XrayProtocols    []XrayProtocolDTO `json:"xray_protocols,omitempty"`
 }
 
 func (DomainConfigDTO) adalahDTO() {}

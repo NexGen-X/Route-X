@@ -135,7 +135,7 @@ func (c *CloudflareClient) ProvisionAIGateway(ctx context.Context, p CloudflareP
 			if len(cfResp.Errors) > 0 {
 				msg = cfResp.Errors[0].Message
 			}
-			return nil, fmt.Errorf("Cloudflare API error: %s", msg)
+			return nil, fmt.Errorf("cloudflare API error: %s", msg)
 		}
 	}
 

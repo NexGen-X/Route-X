@@ -194,7 +194,7 @@ func (c *DenoClient) ensureProject(ctx context.Context, token, projectName strin
 	if errMsg == "" {
 		errMsg = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBytes))
 	}
-	return "", fmt.Errorf("Deno API error: %s", errMsg)
+	return "", fmt.Errorf("deno API error: %s", errMsg)
 }
 
 func (c *DenoClient) deployScript(ctx context.Context, token, projectID, projectName string) (*DenoProvisionResult, error) {
@@ -243,7 +243,7 @@ func (c *DenoClient) deployScript(ctx context.Context, token, projectID, project
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(respBytes))
 		}
-		return nil, fmt.Errorf("Deno Deployment error: %s", errMsg)
+		return nil, fmt.Errorf("deno deployment error: %s", errMsg)
 	}
 
 	var depResp denoDeploymentResp

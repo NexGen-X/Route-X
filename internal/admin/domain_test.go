@@ -108,31 +108,19 @@ func TestGetXrayLinks(t *testing.T) {
 	if state.UUID == "" {
 		t.Error("UUID Xray kosong")
 	}
-	if !strings.HasPrefix(links.VlessWS, "vless://") {
-		t.Errorf("VlessWS tidak valid: %s", links.VlessWS)
-	}
-	if !strings.Contains(links.VlessWS, "ai.gateway.test") {
-		t.Errorf("VlessWS tidak memuat domain: %s", links.VlessWS)
-	}
-	if !strings.HasPrefix(links.TrojanWS, "trojan://") {
-		t.Errorf("TrojanWS tidak valid: %s", links.TrojanWS)
-	}
-	if !strings.HasPrefix(links.TrojanGRPC, "trojan://") {
-		t.Errorf("TrojanGRPC tidak valid: %s", links.TrojanGRPC)
-	}
-	if !strings.HasPrefix(links.VmessWS, "vmess://") {
-		t.Errorf("VmessWS tidak valid: %s", links.VmessWS)
-	}
-	if !strings.HasPrefix(links.VmessGRPC, "vmess://") {
-		t.Errorf("VmessGRPC tidak valid: %s", links.VmessGRPC)
-	}
 	if !strings.HasPrefix(links.VlessReality, "vless://") {
 		t.Errorf("VlessReality tidak valid: %s", links.VlessReality)
 	}
-	if !strings.HasPrefix(links.Shadowsocks, "ss://") {
-		t.Errorf("Shadowsocks tidak valid: %s", links.Shadowsocks)
+	if !strings.Contains(links.VlessReality, "security=reality") {
+		t.Errorf("VlessReality tidak memuat security=reality: %s", links.VlessReality)
 	}
-	if len(links.Protocols) < 10 {
-		t.Errorf("daftar Protocols kurang lengkap: %d", len(links.Protocols))
+	if !strings.HasPrefix(links.SocksInternal, "socks5://") {
+		t.Errorf("SocksInternal tidak valid: %s", links.SocksInternal)
+	}
+	if !strings.HasPrefix(links.HTTPInternal, "http://") {
+		t.Errorf("HTTPInternal tidak valid: %s", links.HTTPInternal)
+	}
+	if len(links.Protocols) != 3 {
+		t.Errorf("daftar Protocols salah: %d, diharapkan 3", len(links.Protocols))
 	}
 }

@@ -559,16 +559,7 @@ export interface DomainConfig {
   message?: string;
   xray_enabled?: boolean;
   xray_uuid?: string;
-  xray_vless_ws?: string;
-  xray_vless_grpc?: string;
-  xray_vless_xhttp?: string;
   xray_vless_reality?: string;
-  xray_trojan_ws?: string;
-  xray_trojan_grpc?: string;
-  xray_vmess_ws?: string;
-  xray_vmess_grpc?: string;
-  xray_shadowsocks_ws?: string;
-  xray_shadowsocks?: string;
   xray_protocols?: XrayProtocolItem[];
 }
 

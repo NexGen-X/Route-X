@@ -10,7 +10,7 @@ set -euo pipefail
 
 echo "=================================================================="
 echo " Route-X — Kunci Kriptografi Siap Pakai untuk Produksi"
-echo " (Kompatibel dengan Koyeb, Render, Fly.io, Docker, & VPS)"
+echo " (Kompatibel dengan Render, Fly.io, Docker, & VPS)"
 echo "=================================================================="
 echo ""
 echo "# Salin nilai-nilai berikut ke panel Environment Variables layanan Anda:"

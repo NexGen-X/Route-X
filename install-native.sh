@@ -10,6 +10,7 @@
 # ==============================================================================
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+export PATH="/usr/local/go/bin:/usr/local/bin:$PATH"
 
 echo "=================================================================="
 echo " 🚀 ROUTE-X AUTOMATED NATIVE LINUX INSTALLER"
@@ -109,8 +110,24 @@ if ! command -v caddy &>/dev/null; then
 fi
 
 mkdir -p /etc/caddy
-if [ ! -f /etc/caddy/Caddyfile ] || ! grep -q "8080" /etc/caddy/Caddyfile 2>/dev/null; then
+if [ ! -f /etc/caddy/Caddyfile ]; then
     cat << 'EOF' > /etc/caddy/Caddyfile
+:80 {
+    encode zstd gzip
+
+    reverse_proxy 127.0.0.1:8080 {
+        header_up X-Real-Ip {remote_host}
+
+        transport http {
+            keepalive 300s
+            keepalive_idle_conns 250
+        }
+    }
+}
+EOF
+elif ! grep -q ":80" /etc/caddy/Caddyfile 2>/dev/null; then
+    cat << 'EOF' >> /etc/caddy/Caddyfile
+
 :80 {
     encode zstd gzip
 
@@ -166,15 +183,20 @@ if ! command -v node &>/dev/null; then
     apt-get install -y nodejs
 fi
 
-if ! command -v go &>/dev/null; then
-    echo "   Golang tidak ditemukan. Mengunduh Golang..."
+GO_VER=0
+if command -v go &>/dev/null; then
+    GO_VER="$(go version 2>/dev/null | grep -oE 'go1\.[0-9]+' | cut -d. -f2 || echo 0)"
+fi
+
+if [ "$GO_VER" -lt 27 ]; then
+    echo "   Golang >= 1.27 diperlukan. Mengunduh Golang 1.27.1..."
     ARCH="$(uname -m)"
     case "$ARCH" in
         x86_64) GO_ARCH="amd64" ;;
         aarch64|arm64) GO_ARCH="arm64" ;;
         *) GO_ARCH="amd64" ;;
     esac
-    wget -q "https://dl.google.com/go/go1.24.1.linux-${GO_ARCH}.tar.gz" -O /tmp/go.tar.gz
+    wget -q "https://dl.google.com/go/go1.27.1.linux-${GO_ARCH}.tar.gz" -O /tmp/go.tar.gz
     rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz
     rm -f /tmp/go.tar.gz
     export PATH="/usr/local/go/bin:$PATH"

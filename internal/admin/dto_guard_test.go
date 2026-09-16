@@ -343,22 +343,8 @@ func TestDTOSerializationSecurity(t *testing.T) {
 		},
 		admin.UserDetailResponse{
 			User:        admin.UserDTO{ID: "u-1"},
-			Roles:       []admin.RoleDTO{{ID: "r-1", Name: "super_admin"}},
-			Permissions: []string{"system:admin"},
-		},
-		admin.RoleDTO{
-			ID:        "r-1",
-			Name:      "super_admin",
-			CreatedAt: now,
-		},
-		admin.RoleDetailDTO{
-			RoleDTO:     admin.RoleDTO{ID: "r-1"},
-			Permissions: []admin.PermissionDTO{{ID: "p-1", Key: "system:admin", CreatedAt: now}},
-		},
-		admin.PermissionDTO{
-			ID:        "p-1",
-			Key:       "system:admin",
-			CreatedAt: now,
+			Roles:       []string{"Admin"},
+			Permissions: []string{"*"},
 		},
 		admin.SessionDTO{
 			ID:         "s-1",

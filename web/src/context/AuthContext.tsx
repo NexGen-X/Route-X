@@ -104,17 +104,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const can = (perm: string): boolean => {
-    if (!principal) return false;
-    const roles = principal.roles ?? [];
-    const perms = principal.permissions ?? [];
-    if (roles.includes('Super Admin')) return true;
-    return perms.includes(perm);
+  const can = (_perm: string): boolean => {
+    // Single-admin architecture: all authenticated principals have full access.
+    return !!principal;
   };
 
-  const hasRole = (role: string): boolean => {
-    if (!principal) return false;
-    return (principal.roles ?? []).includes(role);
+  const hasRole = (_role: string): boolean => {
+    // Single-admin architecture: all authenticated principals have full admin rights.
+    return !!principal;
   };
 
   return (

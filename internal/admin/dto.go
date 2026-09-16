@@ -678,42 +678,12 @@ func (UserDTO) adalahDTO() {}
 
 // UserDetailResponse adalah detail akun admin beserta daftar peran dan izin efektifnya.
 type UserDetailResponse struct {
-	User        UserDTO   `json:"user"`
-	Roles       []RoleDTO `json:"roles"`
-	Permissions []string  `json:"permissions"`
+	User        UserDTO  `json:"user"`
+	Roles       []string `json:"roles"`
+	Permissions []string `json:"permissions"`
 }
 
 func (UserDetailResponse) adalahDTO() {}
-
-// RoleDTO adalah definisi peran pada kontrol akses berbasis peran (RBAC).
-type RoleDTO struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	IsSystem    bool      `json:"is_system"`
-	Rank        int       `json:"rank"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-func (RoleDTO) adalahDTO() {}
-
-// RoleDetailDTO adalah peran administratif beserta daftar izin spesifiknya.
-type RoleDetailDTO struct {
-	RoleDTO
-	Permissions []PermissionDTO `json:"permissions"`
-}
-
-func (RoleDetailDTO) adalahDTO() {}
-
-// PermissionDTO adalah entri katalog hak akses administratif.
-type PermissionDTO struct {
-	ID          string    `json:"id"`
-	Key         string    `json:"key"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-}
-
-func (PermissionDTO) adalahDTO() {}
 
 // SessionDTO adalah informasi sesi login admin aktif.
 type SessionDTO struct {
@@ -1544,40 +1514,6 @@ func toUserDTO(u *identity.User, roles []string) UserDTO {
 		CreatedAt:           u.CreatedAt,
 		UpdatedAt:           u.UpdatedAt,
 		Roles:               roles,
-	}
-}
-
-func toRoleDTO(r identity.Role) RoleDTO {
-	return RoleDTO{
-		ID:          r.ID,
-		Name:        r.Name,
-		Description: r.Description,
-		IsSystem:    r.IsSystem,
-		Rank:        r.Rank,
-		CreatedAt:   r.CreatedAt,
-	}
-}
-
-func toRoleDetailDTO(d *identity.RoleDetail) RoleDetailDTO {
-	if d == nil {
-		return RoleDetailDTO{}
-	}
-	perms := make([]PermissionDTO, 0, len(d.Permissions))
-	for _, p := range d.Permissions {
-		perms = append(perms, toPermissionDTO(p))
-	}
-	return RoleDetailDTO{
-		RoleDTO:     toRoleDTO(d.Role),
-		Permissions: perms,
-	}
-}
-
-func toPermissionDTO(p identity.Permission) PermissionDTO {
-	return PermissionDTO{
-		ID:          p.ID,
-		Key:         p.Key,
-		Description: p.Description,
-		CreatedAt:   p.CreatedAt,
 	}
 }
 

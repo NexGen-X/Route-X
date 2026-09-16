@@ -25,9 +25,8 @@ const Diagnostics = React.lazy(() => import('./pages/Diagnostics').then((m) => (
 const CLIIntegrations = React.lazy(() => import('./pages/CLIIntegrations').then((m) => ({ default: m.CLIIntegrations })));
 // Halaman katalog model kanonis (dipakai rute /models dan /upstreams/models)
 const Models = React.lazy(() => import('./pages/Models').then((m) => ({ default: m.Models })));
-// Halaman identitas: daftar akun admin dan matriks peran-izin RBAC.
+// Halaman identitas: daftar akun admin dan status sesi.
 const UsersPage = React.lazy(() => import('./pages/Users').then((m) => ({ default: m.UsersPage })));
-const RolesPage = React.lazy(() => import('./pages/Roles').then((m) => ({ default: m.RolesPage })));
 
 const Shell: React.FC = () => {
   const { principal, user, isLoading } = useAuth();
@@ -170,15 +169,8 @@ const Shell: React.FC = () => {
       case '/users':
         return {
           title: 'Pengguna Admin',
-          subtitle: 'Akun konsol, peran, status, dan sesi',
+          subtitle: 'Akun konsol, status, dan sesi',
           content: <UsersPage />,
-        };
-      case '/access/roles':
-      case '/roles':
-        return {
-          title: 'Peran & Izin',
-          subtitle: 'Peran kustom dan matriks izin RBAC',
-          content: <RolesPage />,
         };
       case '/system/webhooks':
         return {

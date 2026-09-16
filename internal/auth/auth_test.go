@@ -156,7 +156,6 @@ type env struct {
 
 	users    *identity.Users
 	sessions *identity.Sessions
-	roles    *identity.Roles
 }
 
 // newEnv menyiapkan lingkungan test di atas schema sekali pakai.
@@ -173,9 +172,8 @@ func newEnv(t *testing.T, opts ...Option) *env {
 		SessionSecret: security.Secret(testSessionSecret),
 	}
 
-	// Katalog izin dan empat peran bawaan ditanam lewat seed yang sama dengan produksi,
-	// sehingga test memakai kunci izin yang sungguhan alih-alih daftar tiruan yang bisa
-	// menyimpang dari kenyataan. Admin pertama tidak ikut dibuat karena cfg tidak memuat
+	// Katalog model ditanam lewat seed yang sama dengan produksi.
+	// Admin pertama tidak ikut dibuat karena cfg tidak memuat
 	// INITIAL_ADMIN_*; test membuat penggunanya sendiri.
 	if _, err := seed.Run(ctx, pool, cfg, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -186,7 +184,6 @@ func newEnv(t *testing.T, opts ...Option) *env {
 		ctx: ctx, pool: pool, svc: svc, cfg: cfg, logs: logs,
 		users:    identity.NewUsers(pool),
 		sessions: identity.NewSessions(pool),
-		roles:    identity.NewRoles(pool),
 	}
 }
 
@@ -275,9 +272,8 @@ func randomHex(t *testing.T, n int) string {
 
 // --- Fixture ----------------------------------------------------------------
 
-// makeUser membuat pengguna aktif dengan testPassword dan memberinya peran bernama role.
-// role kosong berarti tanpa peran sama sekali.
-func (e *env) makeUser(t *testing.T, email, role string) identity.User {
+// makeUser membuat pengguna aktif dengan testPassword.
+func (e *env) makeUser(t *testing.T, email, _ string) identity.User {
 	t.Helper()
 	u, err := e.users.Create(e.ctx, identity.NewUser{
 		Email:       email,
@@ -288,22 +284,7 @@ func (e *env) makeUser(t *testing.T, email, role string) identity.User {
 	if err != nil {
 		t.Fatalf("membuat pengguna %q: %v", email, err)
 	}
-	if role != "" {
-		e.grant(t, u.ID, role)
-	}
 	return u
-}
-
-// grant memberi peran bawaan kepada pengguna.
-func (e *env) grant(t *testing.T, userID, role string) {
-	t.Helper()
-	detail, err := e.roles.GetByName(e.ctx, role)
-	if err != nil {
-		t.Fatalf("mengambil peran %q: %v", role, err)
-	}
-	if err := e.roles.Grant(e.ctx, userID, detail.ID, ""); err != nil {
-		t.Fatalf("memberi peran %q: %v", role, err)
-	}
 }
 
 // login menjalankan Login dan menghentikan test bila gagal.

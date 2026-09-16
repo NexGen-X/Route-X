@@ -3,6 +3,10 @@ package auth
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/NexGen-X/Route-X/internal/database/seed"
+	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/observability"
+	"github.com/NexGen-X/Route-X/internal/security"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -10,11 +14,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"github.com/NexGen-X/Route-X/internal/database/seed"
-	"github.com/NexGen-X/Route-X/internal/httpx"
-	"github.com/NexGen-X/Route-X/internal/observability"
-	"github.com/NexGen-X/Route-X/internal/security"
 )
 
 // testRequestID dipasang di setiap request test supaya jalur korelasi audit ↔ log ikut
@@ -177,10 +176,7 @@ func TestHandlersFullFlow(t *testing.T) {
 	if body.Session.ID == "" || body.Session.ExpiresAt.IsZero() {
 		t.Errorf("sesi di balasan = %+v", body.Session)
 	}
-	if !contains(body.Permissions, seed.PermUsersWrite) {
-		t.Errorf("Super Admin tanpa %s; izin = %v", seed.PermUsersWrite, body.Permissions)
-	}
-	if len(body.Roles) != 1 || body.Roles[0] != seed.RoleSuperAdmin {
+	if len(body.Roles) != 1 || body.Roles[0] != "Admin" {
 		t.Errorf("peran = %v", body.Roles)
 	}
 	c.csrf = body.CSRFToken
@@ -692,5 +688,50 @@ func TestHandlersInternalErrorIsGeneric(t *testing.T) {
 	}
 	if env.Error.RequestID != testRequestID {
 		t.Errorf("request_id = %q, mau %q", env.Error.RequestID, testRequestID)
+	}
+}
+
+func TestSetupHintEndpoint(t *testing.T) {
+	e := newEnv(t)
+	c := e.newClient(t)
+
+	// Database baru yang telah di-seed memiliki admin default dengan MustChangePassword = true
+	res := c.do(http.MethodGet, "/setup-hint", nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, mau 200", res.StatusCode)
+	}
+	var hint SetupHintResponse
+	if err := json.NewDecoder(res.Body).Decode(&hint); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if !hint.HasDefaultAdmin {
+		t.Error("HasDefaultAdmin = false padahal admin default aktif dan must_change_password")
+	}
+	if hint.DefaultEmail != "admin@routex.local" {
+		t.Errorf("DefaultEmail = %q", hint.DefaultEmail)
+	}
+	if hint.DefaultPassword != "RouteX#Initial2026!" {
+		t.Errorf("DefaultPassword = %q", hint.DefaultPassword)
+	}
+
+	u, err := e.users.GetByEmail(e.ctx, "admin@routex.local")
+	if err != nil {
+		t.Fatalf("GetByEmail admin: %v", err)
+	}
+
+	// Ganti password
+	if err := e.users.ChangePassword(e.ctx, u.ID, security.Secret("sandi-baru-yang-kuat-1234"), false); err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+
+	res = c.do(http.MethodGet, "/setup-hint", nil)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, mau 200", res.StatusCode)
+	}
+	if err := json.NewDecoder(res.Body).Decode(&hint); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if hint.HasDefaultAdmin {
+		t.Error("HasDefaultAdmin = true padahal password sudah diubah")
 	}
 }

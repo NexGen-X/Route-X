@@ -45,12 +45,6 @@ func (h *Handlers) authorizeProviderAccess(ctx context.Context, providerID strin
 	if !ok || principal == nil {
 		return nil, repo.ErrNotFound
 	}
-	if slices.Contains(principal.Roles, seed.RoleSuperAdmin) {
-		return p, nil
-	}
-	if p.OwnerUserID == nil || *p.OwnerUserID != principal.User.ID {
-		return nil, repo.ErrNotFound
-	}
 	return p, nil
 }
 
@@ -139,14 +133,6 @@ func (h *Handlers) listProviders(w http.ResponseWriter, r *http.Request) {
 	}
 	if s := r.URL.Query().Get("owner_user_id"); s != "" {
 		filter.OwnerUserID = s
-	}
-
-	// Isolasi BYOK: Pengguna non-superadmin hanya dapat melihat provider publik
-	// atau provider BYOK miliknya sendiri.
-	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
-		if !slices.Contains(p.Roles, seed.RoleSuperAdmin) {
-			filter.AccessibleByUserID = p.User.ID
-		}
 	}
 
 	page := repo.Page{

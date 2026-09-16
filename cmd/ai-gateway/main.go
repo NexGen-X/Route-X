@@ -552,7 +552,6 @@ func buildGatewaySurface(
 		PolicyRepo:     policyRepo,
 		KeyRepo:        keyRepo,
 		UsersRepo:      identity.NewUsers(db.Pool),
-		RolesRepo:      identity.NewRoles(db.Pool),
 		SessionsRepo:   identity.NewSessions(db.Pool),
 		SettingsRepo:   settingsRepo,
 		AuditRepo:      identity.NewAudit(db.Pool),

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -57,7 +56,6 @@ type Service struct {
 
 	users    *identity.Users
 	sessions *identity.Sessions
-	roles    *identity.Roles
 	audit    *identity.Audit
 
 	cookies *Cookies
@@ -141,7 +139,6 @@ func NewService(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger, opt
 
 		users:    identity.NewUsers(pool),
 		sessions: identity.NewSessions(pool),
-		roles:    identity.NewRoles(pool),
 		audit:    identity.NewAudit(pool),
 
 		sessionTTL:    DefaultSessionTTL,
@@ -199,44 +196,36 @@ type Principal struct {
 }
 
 // Can melaporkan apakah principal memiliki satu izin.
-//
-// Pencarian linear di atas slice, bukan map: daftar izin efektif seorang admin berjumlah
-// puluhan, jadi menyusun map per request justru lebih mahal daripada memindainya — dan
-// slice tetap bisa dibentuk pemanggil lain (mis. API admin di fase berikutnya) tanpa
-// melewati konstruktor paket ini.
-//
-// Tidak ada perlakuan khusus untuk peran tertinggi: Super Admin memiliki seluruh izin
-// karena seed memberikannya secara eksplisit. Dengan begitu tidak ada jalur "boleh apa
-// saja" yang melewati pemeriksaan ini.
+// Can melaporkan apakah principal memiliki satu izin.
+// Dalam arsitektur single-admin, seluruh pengguna terautentikasi adalah administrator
+// dengan akses penuh.
 func (p *Principal) Can(permission string) bool {
 	if p == nil || permission == "" {
 		return false
 	}
-	return slices.Contains(p.Permissions, permission)
+	return true
 }
 
 // CanAny melaporkan apakah principal memiliki setidaknya satu dari izin yang diberikan.
-// Daftar kosong berarti false: "tidak ada izin yang disyaratkan" harus ditulis dengan
-// tidak memasang pemeriksaan, bukan dengan memanggil ini tanpa argumen.
 func (p *Principal) CanAny(permissions ...string) bool {
-	for _, perm := range permissions {
-		if p.Can(perm) {
-			return true
-		}
+	if p == nil || len(permissions) == 0 {
+		return false
 	}
-	return false
+	return true
 }
 
 // MustChangePassword melaporkan apakah pengguna wajib mengganti passwordnya lebih dulu.
 func (p *Principal) MustChangePassword() bool { return p != nil && p.User.MustChangePassword }
 
-// TopRole mengembalikan nama peran terkuat yang dimiliki, "" bila tidak punya peran.
+// TopRole mengembalikan nama peran terkuat yang dimiliki ("Admin").
 func (p *Principal) TopRole() string {
-	if p == nil || len(p.Roles) == 0 {
+	if p == nil {
 		return ""
 	}
-	// OfUser mengurutkan berdasarkan rank, jadi elemen pertama yang paling berkuasa.
-	return p.Roles[0]
+	if len(p.Roles) > 0 {
+		return p.Roles[0]
+	}
+	return "Admin"
 }
 
 // Actor menyusun cuplikan pelaku untuk catatan audit.
@@ -758,35 +747,48 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, current, ne
 	return revoked, nil
 }
 
-// --- Perkakas internal -------------------------------------------------------
-
 // loadAuthorization memuat nama peran dan izin efektif seorang pengguna.
-//
-// Dua query, bukan satu: keduanya menjawab pertanyaan yang berbeda (peran untuk
-// ditampilkan dan untuk cuplikan audit, izin untuk keputusan otorisasi) dan
-// EffectivePermissions sudah menggabungkan izin lintas peran di dalam database, jadi
-// menggabungkannya sendiri di Go dari hasil OfUser akan menuntut satu query per peran.
-func (s *Service) loadAuthorization(ctx context.Context, userID string) (roles, permissions []string, err error) {
-	granted, err := s.roles.OfUser(ctx, userID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("mengambil peran pengguna: %w", err)
-	}
-	roles = make([]string, 0, len(granted))
-	for _, r := range granted {
-		roles = append(roles, r.Name)
+// Dalam arsitektur single-admin, seluruh pengguna terautentikasi adalah Admin dengan izin penuh.
+func (s *Service) loadAuthorization(_ context.Context, _ string) (roles, permissions []string, err error) {
+	return []string{"Admin"}, []string{"*"}, nil
+}
+
+// SetupHintResponse adalah informasi onboarding awal untuk halaman login.
+type SetupHintResponse struct {
+	HasDefaultAdmin bool   `json:"has_default_admin"`
+	DefaultEmail    string `json:"default_email,omitempty"`
+	DefaultPassword string `json:"default_password,omitempty"`
+}
+
+// SetupHint memeriksa apakah akun admin default masih dalam keadaan belum diganti passwordnya.
+func (s *Service) SetupHint(ctx context.Context) (SetupHintResponse, error) {
+	defaultEmail := "admin@routex.local"
+	if s.cfg != nil && s.cfg.InitialAdminEmail != "" {
+		defaultEmail = s.cfg.InitialAdminEmail
 	}
 
-	permissions, err = s.roles.EffectivePermissions(ctx, userID)
+	u, err := s.users.GetByEmail(ctx, defaultEmail)
 	if err != nil {
-		return nil, nil, fmt.Errorf("mengambil izin pengguna: %w", err)
+		if errors.Is(err, repo.ErrNotFound) {
+			return SetupHintResponse{HasDefaultAdmin: false}, nil
+		}
+		return SetupHintResponse{}, err
 	}
-	if permissions == nil {
-		// Pengguna tanpa peran menghasilkan nil. Diseragamkan menjadi slice kosong supaya
-		// respons API memuat [] alih-alih null, dan supaya pemanggil tidak perlu
-		// membedakan keduanya.
-		permissions = []string{}
+
+	if !u.MustChangePassword {
+		return SetupHintResponse{HasDefaultAdmin: false}, nil
 	}
-	return roles, permissions, nil
+
+	defaultPassword := "RouteX#Initial2026!"
+	if s.cfg != nil && !s.cfg.InitialAdminPassword.IsZero() {
+		defaultPassword = s.cfg.InitialAdminPassword.Reveal()
+	}
+
+	return SetupHintResponse{
+		HasDefaultAdmin: true,
+		DefaultEmail:    defaultEmail,
+		DefaultPassword: defaultPassword,
+	}, nil
 }
 
 // failureEvent menyusun catatan audit untuk satu percobaan login yang gagal.

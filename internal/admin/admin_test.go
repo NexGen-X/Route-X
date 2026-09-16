@@ -199,7 +199,6 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 	// Buat Akun Super Admin
 	usersRepo := identity.NewUsers(pool)
-	rolesRepo := identity.NewRoles(pool)
 	adminUser, err := usersRepo.Create(ctx, identity.NewUser{
 		Email:              "superadmin@routex.internal",
 		DisplayName:        "Super Admin",
@@ -208,14 +207,6 @@ func setupTestEnv(t *testing.T) *testEnv {
 	})
 	if err != nil {
 		t.Fatalf("buat super admin: %v", err)
-	}
-
-	superRole, err := rolesRepo.GetByName(ctx, seed.RoleSuperAdmin)
-	if err != nil {
-		t.Fatalf("ambil role super admin: %v", err)
-	}
-	if err := rolesRepo.Grant(ctx, adminUser.ID, superRole.ID, adminUser.ID); err != nil {
-		t.Fatalf("grant super admin: %v", err)
 	}
 
 	// Buat Akun Viewer
@@ -227,14 +218,6 @@ func setupTestEnv(t *testing.T) *testEnv {
 	})
 	if err != nil {
 		t.Fatalf("buat viewer: %v", err)
-	}
-
-	viewerRole, err := rolesRepo.GetByName(ctx, seed.RoleViewer)
-	if err != nil {
-		t.Fatalf("ambil role viewer: %v", err)
-	}
-	if err := rolesRepo.Grant(ctx, viewerUser.ID, viewerRole.ID, adminUser.ID); err != nil {
-		t.Fatalf("grant viewer: %v", err)
 	}
 
 	// Inisialisasi Repositories
@@ -278,7 +261,6 @@ func setupTestEnv(t *testing.T) *testEnv {
 		PolicyRepo:     policyRepo,
 		KeyRepo:        keyRepo,
 		UsersRepo:      usersRepo,
-		RolesRepo:      rolesRepo,
 		SessionsRepo:   sessionsRepo,
 		SettingsRepo:   settingsRepo,
 		AuditRepo:      auditRepo,
@@ -413,29 +395,29 @@ func TestAdminAuthenticationRequired(t *testing.T) {
 	}
 }
 
-func TestAdminViewerRBACRestriction(t *testing.T) {
+func TestAdminViewerSingleAdminAccess(t *testing.T) {
 	env := setupTestEnv(t)
 	client := env.newClient(t)
 
-	// Login sebagai Viewer
+	// Login sebagai admin kedua
 	client.login("viewer@routex.internal", testPassword)
 
-	// 1. Viewer diizinkan membaca diagnostics (memiliki PermHealthRead)
+	// 1. Membaca diagnostics berhasil
 	res, _ := client.do(http.MethodGet, "/api/admin/system/diagnostics", nil, false)
 	if res.StatusCode != http.StatusOK {
 		t.Errorf("viewer GET diagnostics status = %d, mau %d", res.StatusCode, http.StatusOK)
 	}
 
-	// 2. Viewer DITOLAK saat mencoba membuat provider (tidak memiliki PermProvidersWrite)
+	// 2. Admin terautentikasi memiliki akses penuh untuk membuat provider
 	provPayload := map[string]any{
-		"name":         "test-provider",
-		"display_name": "Test Provider",
+		"name":         "test-provider-admin",
+		"display_name": "Test Provider Admin",
 		"kind":         "openai",
 		"base_url":     "https://api.openai.com/v1",
 	}
 	resMut, _ := client.do(http.MethodPost, "/api/admin/upstreams/providers", provPayload, true)
-	if resMut.StatusCode != http.StatusForbidden {
-		t.Errorf("viewer POST providers status = %d, mau %d (Forbidden)", resMut.StatusCode, http.StatusForbidden)
+	if resMut.StatusCode != http.StatusCreated {
+		t.Errorf("viewer POST providers status = %d, mau %d (Created)", resMut.StatusCode, http.StatusCreated)
 	}
 }
 
@@ -614,23 +596,6 @@ func TestAdminSystemEndpoints(t *testing.T) {
 	resInvalid, _ := client.do(http.MethodPost, "/api/admin/system/jobs/job_fiktif_tidak_ada/run", nil, true)
 	if resInvalid.StatusCode != http.StatusNotFound {
 		t.Errorf("pemicuan job tidak dikenal status = %d, diharapkan 404", resInvalid.StatusCode)
-	}
-
-	// 3. Permissions Catalog
-	resPerms, bodyPerms := client.do(http.MethodGet, "/api/admin/access/permissions", nil, false)
-	if resPerms.StatusCode != http.StatusOK {
-		t.Fatalf("permissions status = %d", resPerms.StatusCode)
-	}
-	var permsResp struct {
-		Items []struct {
-			Key string `json:"Key"`
-		} `json:"items"`
-	}
-	if err := json.Unmarshal(bodyPerms, &permsResp); err != nil {
-		t.Fatalf("unmarshal permissions: %v", err)
-	}
-	if len(permsResp.Items) < 20 {
-		t.Errorf("jumlah izin katalog = %d, mau >= 20", len(permsResp.Items))
 	}
 }
 
@@ -1082,60 +1047,24 @@ func TestAddProviderModelBuatModelBaru(t *testing.T) {
 	}
 }
 
-// TestBYOKIsolationAndNestedCredentialSecurity menguji kepatuhan isolasi BYOK (5.1)
-// dan pencegahan manipulasi kredensial pada sumber daya bersarang /providers/{id}/credentials/{cred_id}.
-func TestBYOKIsolationAndNestedCredentialSecurity(t *testing.T) {
+// TestNestedCredentialSecurity menguji kepatuhan keamanan kredensial bersarang
+// pada rute /providers/{id}/credentials/{cred_id} (memastikan kredensial provider A tidak bisa dimanipulasi lewat rute provider B).
+func TestNestedCredentialSecurity(t *testing.T) {
 	env := setupTestEnv(t)
 	ctx := context.Background()
 
-	usersRepo := identity.NewUsers(env.pool)
-	rolesRepo := identity.NewRoles(env.pool)
 	providerRepo := upstream.NewProviderRepo(env.pool)
 	credentialRepo, _ := upstream.NewCredentialRepo(env.pool, env.cipher)
 
-	// Ambil role Operator (memiliki izin providers:write & credentials:write)
-	opRole, err := rolesRepo.GetByName(ctx, seed.RoleOperator)
-	if err != nil {
-		t.Fatalf("ambil role operator: %v", err)
-	}
-
-	userA, err := usersRepo.Create(ctx, identity.NewUser{
-		Email: "tenant-a@example.test", DisplayName: "Tenant A", Password: security.Secret(testPassword),
-	})
-	if err != nil {
-		t.Fatalf("buat user A: %v", err)
-	}
-	_ = rolesRepo.Grant(ctx, userA.ID, opRole.ID, env.adminUser.ID)
-
-	userB, err := usersRepo.Create(ctx, identity.NewUser{
-		Email: "tenant-b@example.test", DisplayName: "Tenant B", Password: security.Secret(testPassword),
-	})
-	if err != nil {
-		t.Fatalf("buat user B: %v", err)
-	}
-	_ = rolesRepo.Grant(ctx, userB.ID, opRole.ID, env.adminUser.ID)
-
-	// Buat provider publik, provider BYOK A, dan provider BYOK B
-	provShared, err := providerRepo.Create(ctx, upstream.CreateProviderParams{
-		Name: "shared-provider-test", DisplayName: "Shared Provider", Kind: "openai", BaseURL: "https://api.openai.com",
-	})
-	if err != nil {
-		t.Fatalf("buat provShared: %v", err)
-	}
-
-	ownerA := userA.ID
 	provA, err := providerRepo.Create(ctx, upstream.CreateProviderParams{
-		Name: "byok-a-test", DisplayName: "BYOK A", Kind: "openai", BaseURL: "https://api.openai.com",
-		IsBYOK: true, OwnerUserID: &ownerA,
+		Name: "prov-a-test", DisplayName: "Provider A", Kind: "openai", BaseURL: "https://api.openai.com",
 	})
 	if err != nil {
 		t.Fatalf("buat provA: %v", err)
 	}
 
-	ownerB := userB.ID
 	provB, err := providerRepo.Create(ctx, upstream.CreateProviderParams{
-		Name: "byok-b-test", DisplayName: "BYOK B", Kind: "openai", BaseURL: "https://api.openai.com",
-		IsBYOK: true, OwnerUserID: &ownerB,
+		Name: "prov-b-test", DisplayName: "Provider B", Kind: "openai", BaseURL: "https://api.openai.com",
 	})
 	if err != nil {
 		t.Fatalf("buat provB: %v", err)
@@ -1149,67 +1078,19 @@ func TestBYOKIsolationAndNestedCredentialSecurity(t *testing.T) {
 		t.Fatalf("buat credA: %v", err)
 	}
 
-	// Login sebagai User B (Operator)
-	clientB := env.newClient(t)
-	clientB.login("tenant-b@example.test", testPassword)
+	// Login sebagai Admin
+	client := env.newClient(t)
+	client.login("superadmin@routex.internal", testPassword)
 
-	// User B mencoba mengakses provA -> HARUS 404 (bukan 200, bukan bocor)
-	res, _ := clientB.do(http.MethodGet, "/api/admin/upstreams/providers/"+provA.ID, nil, false)
+	// Eksploitasi Rute Bersarang: Mencoba menghapus credA lewat provB -> HARUS 404
+	res, _ := client.do(http.MethodDelete, "/api/admin/upstreams/providers/"+provB.ID+"/credentials/"+credA.ID, nil, true)
 	if res.StatusCode != http.StatusNotFound {
-		t.Errorf("User B mengakses provA GET = %d, diharapkan 404", res.StatusCode)
+		t.Errorf("Menghapus credA lewat provB = %d, diharapkan 404", res.StatusCode)
 	}
 
-	// User B mencoba mengarahkan BaseURL provA ke host miliknya -> HARUS 404
-	res, _ = clientB.do(http.MethodPut, "/api/admin/upstreams/providers/"+provA.ID, map[string]any{
-		"base_url": "https://attacker.test",
-	}, true)
+	// Eksploitasi Rute Bersarang: Mencoba toggle credA lewat provB -> HARUS 404
+	res, _ = client.do(http.MethodPost, "/api/admin/upstreams/providers/"+provB.ID+"/credentials/"+credA.ID+"/toggle", map[string]any{"enabled": false}, true)
 	if res.StatusCode != http.StatusNotFound {
-		t.Errorf("User B memodifikasi BaseURL provA PUT = %d, diharapkan 404", res.StatusCode)
+		t.Errorf("Toggle credA lewat provB = %d, diharapkan 404", res.StatusCode)
 	}
-
-	// User B mencoba menghapus provA -> HARUS 404
-	res, _ = clientB.do(http.MethodDelete, "/api/admin/upstreams/providers/"+provA.ID, nil, true)
-	if res.StatusCode != http.StatusNotFound {
-		t.Errorf("User B menghapus provA DELETE = %d, diharapkan 404", res.StatusCode)
-	}
-
-	// User B mencoba toggle provA -> HARUS 404
-	res, _ = clientB.do(http.MethodPost, "/api/admin/upstreams/providers/"+provA.ID+"/toggle", map[string]any{"enabled": false}, true)
-	if res.StatusCode != http.StatusNotFound {
-		t.Errorf("User B toggle provA POST = %d, diharapkan 404", res.StatusCode)
-	}
-
-	// User B mencoba melihat kredensial provA -> HARUS 404
-	res, _ = clientB.do(http.MethodGet, "/api/admin/upstreams/providers/"+provA.ID+"/credentials", nil, false)
-	if res.StatusCode != http.StatusNotFound {
-		t.Errorf("User B mendaftar kredensial provA GET = %d, diharapkan 404", res.StatusCode)
-	}
-
-	// Eksploitasi Rute Bersarang: User B mencoba menghapus credA lewat provB miliknya -> HARUS 404
-	res, _ = clientB.do(http.MethodDelete, "/api/admin/upstreams/providers/"+provB.ID+"/credentials/"+credA.ID, nil, true)
-	if res.StatusCode != http.StatusNotFound {
-		t.Errorf("User B menghapus credA lewat provB = %d, diharapkan 404", res.StatusCode)
-	}
-
-	// Eksploitasi Rute Bersarang: User B mencoba toggle credA lewat provB miliknya -> HARUS 404
-	res, _ = clientB.do(http.MethodPost, "/api/admin/upstreams/providers/"+provB.ID+"/credentials/"+credA.ID+"/toggle", map[string]any{"enabled": false}, true)
-	if res.StatusCode != http.StatusNotFound {
-		t.Errorf("User B toggle credA lewat provB = %d, diharapkan 404", res.StatusCode)
-	}
-
-	// List providers oleh User B: provShared dan provB harus muncul, provA TIDAK BOLEH muncul
-	resList, bodyList := clientB.do(http.MethodGet, "/api/admin/upstreams/providers", nil, false)
-	if resList.StatusCode != http.StatusOK {
-		t.Fatalf("User B list providers = %d", resList.StatusCode)
-	}
-	var listResp struct {
-		Items []ProviderDTO `json:"items"`
-	}
-	_ = json.Unmarshal(bodyList, &listResp)
-	for _, item := range listResp.Items {
-		if item.ID == provA.ID {
-			t.Fatalf("provA milik Tenant A bocor di list providers Tenant B!")
-		}
-	}
-	_ = provShared
 }

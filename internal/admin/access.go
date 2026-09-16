@@ -1,8 +1,6 @@
 package admin
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -43,24 +41,11 @@ func (h *Handlers) accessRoutes(r chi.Router) {
 		ur.With(auth.RequirePermission(seed.PermUsersRead)).Get("/{id}", h.getUser)
 		ur.With(auth.RequirePermission(seed.PermUsersWrite)).Put("/{id}", h.updateUser)
 		ur.With(auth.RequirePermission(seed.PermUsersWrite)).Delete("/{id}", h.deleteUser)
-		ur.With(auth.RequirePermission(seed.PermRolesWrite)).Post("/{id}/roles", h.grantUserRole)
-		ur.With(auth.RequirePermission(seed.PermRolesWrite)).Delete("/{id}/roles/{role_id}", h.revokeUserRole)
 		ur.With(auth.RequirePermission(seed.PermUsersWrite)).Post("/{id}/force-reset-password", h.forceResetPassword)
 		ur.With(auth.RequirePermission(seed.PermUsersWrite)).Post("/{id}/revoke-sessions", h.revokeUserSessions)
 	})
 
-	// 3. Roles & Permissions
-	r.Route("/roles", func(rr chi.Router) {
-		rr.With(auth.RequirePermission(seed.PermRolesRead)).Get("/", h.listRoles)
-		rr.With(auth.RequirePermission(seed.PermRolesWrite)).Post("/", h.createRole)
-		rr.With(auth.RequirePermission(seed.PermRolesRead)).Get("/{id}", h.getRole)
-		rr.With(auth.RequirePermission(seed.PermRolesWrite)).Delete("/{id}", h.deleteRole)
-		rr.With(auth.RequirePermission(seed.PermRolesWrite)).Put("/{id}/permissions", h.setRolePermissions)
-	})
-
-	r.With(auth.RequirePermission(seed.PermRolesRead)).Get("/permissions", h.listPermissions)
-
-	// 4. Sessions
+	// 3. Sessions
 	r.Route("/sessions", func(sr chi.Router) {
 		sr.With(auth.RequirePermission(seed.PermUsersRead)).Get("/", h.listSessions)
 		sr.With(auth.RequirePermission(seed.PermUsersWrite)).Delete("/{id}", h.revokeSession)
@@ -560,18 +545,7 @@ func (h *Handlers) listUsers(w http.ResponseWriter, r *http.Request) {
 
 	usersDTO := make([]UserDTO, 0, len(userPage.Users))
 	for _, u := range userPage.Users {
-		// Error di sini berarti 500: menampilkan peran kosong seolah pengguna
-		// tak punya hak membuat operator salah menyimpulkan kewenangan.
-		roles, err := h.rolesRepo.OfUser(ctx, u.ID)
-		if err != nil {
-			mapRepoError(w, r, err, "peran pengguna")
-			return
-		}
-		roleNames := make([]string, 0, len(roles))
-		for _, r := range roles {
-			roleNames = append(roleNames, r.Name)
-		}
-		usersDTO = append(usersDTO, toUserDTO(&u, roleNames))
+		usersDTO = append(usersDTO, toUserDTO(&u, []string{"Admin"}))
 	}
 
 	_ = h.respond(w, r, http.StatusOK, ListEnvelope[UserDTO]{
@@ -590,42 +564,17 @@ func (h *Handlers) getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sama seperti listUsers: error berarti 500, bukan peran/izin kosong yang
-	// menyesatkan operator tentang kewenangan pengguna.
-	userRoles, err := h.rolesRepo.OfUser(ctx, id)
-	if err != nil {
-		mapRepoError(w, r, err, "peran pengguna")
-		return
-	}
-	perms, err := h.rolesRepo.EffectivePermissions(ctx, id)
-	if err != nil {
-		mapRepoError(w, r, err, "izin pengguna")
-		return
-	}
-
-	roleNames := make([]string, 0, len(userRoles))
-	roleDTOs := make([]RoleDTO, 0, len(userRoles))
-	for _, role := range userRoles {
-		roleNames = append(roleNames, role.Name)
-		roleDTOs = append(roleDTOs, toRoleDTO(role.Role))
-	}
-	if perms == nil {
-		perms = make([]string, 0)
-	}
-
 	_ = h.respond(w, r, http.StatusOK, UserDetailResponse{
-		User:        toUserDTO(&u, roleNames),
-		Roles:       roleDTOs,
-		Permissions: perms,
+		User:        toUserDTO(&u, []string{"Admin"}),
+		Permissions: []string{"*"},
 	})
 }
 
 type createUserReq struct {
-	Email              string   `json:"email"`
-	Name               string   `json:"name"`
-	Password           string   `json:"password"`
-	MustChangePassword bool     `json:"must_change_password"`
-	RoleIDs            []string `json:"role_ids"`
+	Email              string `json:"email"`
+	Name               string `json:"name"`
+	Password           string `json:"password"`
+	MustChangePassword bool   `json:"must_change_password"`
 }
 
 func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
@@ -636,61 +585,19 @@ func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var actorID string
-	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
-		actorID = p.User.ID
-	}
-
-	// Sama seperti grantUserRole: tidak boleh mencetak peran di atas pelaku
-	// lewat pembuatan pengguna. Dicek SEBELUM InTx supaya tidak ada user
-	// yatim bila salah satu peran ditolak.
-	for _, roleID := range req.RoleIDs {
-		if msg, ditolak := h.peranDiAtasPelaku(ctx, actorID, roleID); ditolak {
-			httpx.BadRequest(w, r, "rank_forbidden", msg)
-			return
-		}
-	}
-
-	var createdUser identity.User
-	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
-		txUsers := identity.NewUsers(q)
-		txRoles := identity.NewRoles(q)
-
-		u, err := txUsers.Create(ctx, identity.NewUser{
-			Email:              req.Email,
-			DisplayName:        req.Name,
-			Password:           security.Secret(req.Password),
-			MustChangePassword: req.MustChangePassword,
-		})
-		if err != nil {
-			return err
-		}
-		createdUser = u
-
-		for _, roleID := range req.RoleIDs {
-			if err := txRoles.Grant(ctx, u.ID, roleID, actorID); err != nil {
-				return err
-			}
-		}
-		return nil
+	u, err := h.usersRepo.Create(ctx, identity.NewUser{
+		Email:              req.Email,
+		DisplayName:        req.Name,
+		Password:           security.Secret(req.Password),
+		MustChangePassword: req.MustChangePassword,
 	})
-
 	if err != nil {
 		mapRepoError(w, r, err, "pengguna")
 		return
 	}
 
-	h.writeAudit(ctx, r, "create", "user", createdUser.ID, map[string]any{"email": createdUser.Email})
-	userRoles, err := h.rolesRepo.OfUser(ctx, createdUser.ID)
-	if err != nil {
-		mapRepoError(w, r, err, "peran pengguna")
-		return
-	}
-	roleNames := make([]string, 0, len(userRoles))
-	for _, role := range userRoles {
-		roleNames = append(roleNames, role.Name)
-	}
-	_ = h.respond(w, r, http.StatusCreated, toUserDTO(&createdUser, roleNames))
+	h.writeAudit(ctx, r, "create", "user", u.ID, map[string]any{"email": u.Email})
+	_ = h.respond(w, r, http.StatusCreated, toUserDTO(&u, []string{"Admin"}))
 }
 
 func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
@@ -717,17 +624,18 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Status != "" {
-		// Menonaktifkan/mengunci pemegang TERAKHIR Super Admin DITOLAK: sama
-		// saja dengan menghapusnya — manajemen identitas terkunci — tetapi
-		// lewat jalur yang tidak dijaga Revoke maupun deleteUser.
-		// Hanya status non-aktif yang dijaga; mengaktifkan kembali selalu boleh.
 		if identity.UserStatus(req.Status) != identity.UserStatusActive {
-			if super, err := h.rolesRepo.GetByName(ctx, seed.RoleSuperAdmin); err == nil {
-				if memegang, err := h.memegangPeran(ctx, id, super.ID); err == nil && memegang {
-					if n, err := h.rolesRepo.CountHolders(ctx, super.ID); err == nil && n <= 1 {
-						httpx.BadRequest(w, r, "last_superadmin_forbidden", "pengguna ini pemegang terakhir peran Super Admin; beri peran itu ke admin lain dulu sebelum menonaktifkannya")
-						return
-					}
+			// Mengubah status akun SENDIRI menjadi non-aktif DITOLAK: salah klik atau
+			// sesi curian langsung mengunci admin keluar tanpa jejak khusus.
+			if p, ok := auth.PrincipalFrom(ctx); ok && p != nil && p.User.ID == id {
+				httpx.BadRequest(w, r, "self_disable_forbidden", "akun sendiri tidak bisa dinonaktifkan; minta admin lain yang melakukannya")
+				return
+			}
+			// Menonaktifkan admin aktif TERAKHIR DITOLAK: mencegah lockout sistem.
+			if activePage, err := h.usersRepo.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2}); err == nil {
+				if len(activePage.Users) <= 1 {
+					httpx.BadRequest(w, r, "last_admin_forbidden", "pengguna ini admin aktif terakhir; buat admin lain dulu sebelum menonaktifkannya")
+					return
 				}
 			}
 		}
@@ -738,35 +646,16 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Mengubah status akun SENDIRI menjadi non-aktif DITOLAK: salah klik atau
-	// sesi curian langsung mengunci admin keluar tanpa jejak khusus — sama
-	// bahayanya dengan self-delete yang sudah ditolak deleteUser.
-	if req.Status != "" && identity.UserStatus(req.Status) != identity.UserStatusActive {
-		if p, ok := auth.PrincipalFrom(ctx); ok && p != nil && p.User.ID == id {
-			httpx.BadRequest(w, r, "self_disable_forbidden", "akun sendiri tidak bisa dinonaktifkan; minta admin lain yang melakukannya")
-			return
-		}
-	}
-
 	// Gagal baca-ulang setelah update berarti 500, BUKAN 200 dengan user
 	// kosong: menjawab zero-value membuat operator mengira pengguna terhapus
-	// datanya, dan peran/izin kosong disangka "tak punya hak".
+	// datanya.
 	u, err := h.usersRepo.GetByID(ctx, id)
 	if err != nil {
 		mapRepoError(w, r, err, "pengguna")
 		return
 	}
 	h.writeAudit(ctx, r, "update", "user", id, nil)
-	userRoles, err := h.rolesRepo.OfUser(ctx, id)
-	if err != nil {
-		mapRepoError(w, r, err, "peran pengguna")
-		return
-	}
-	roleNames := make([]string, 0, len(userRoles))
-	for _, role := range userRoles {
-		roleNames = append(roleNames, role.Name)
-	}
-	_ = h.respond(w, r, http.StatusOK, toUserDTO(&u, roleNames))
+	_ = h.respond(w, r, http.StatusOK, toUserDTO(&u, []string{"Admin"}))
 }
 
 func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
@@ -780,15 +669,11 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "self_delete_forbidden", "akun sendiri tidak bisa dihapus; minta admin lain yang menghapusnya")
 		return
 	}
-	// Menghapus satu-satunya pemegang Super Admin DITOLAK: tanpa ini,
-	// deleteUser menjadi jalan memutar pencabutan terakhir yang sudah dijaga
-	// Revoke — hapus usernya langsung, perannya ikut hilang via cascade.
-	if super, err := h.rolesRepo.GetByName(ctx, seed.RoleSuperAdmin); err == nil {
-		if memegang, err := h.memegangPeran(ctx, id, super.ID); err == nil && memegang {
-			if n, err := h.rolesRepo.CountHolders(ctx, super.ID); err == nil && n <= 1 {
-				httpx.BadRequest(w, r, "last_superadmin_forbidden", "pengguna ini pemegang terakhir peran Super Admin; beri peran itu ke admin lain dulu")
-				return
-			}
+	// Menghapus admin aktif TERAKHIR DITOLAK untuk mencegah lockout sistem.
+	if activePage, err := h.usersRepo.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2}); err == nil {
+		if len(activePage.Users) <= 1 {
+			httpx.BadRequest(w, r, "last_admin_forbidden", "pengguna ini admin aktif terakhir; buat admin lain dulu sebelum menghapusnya")
+			return
 		}
 	}
 
@@ -799,113 +684,6 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 
 	h.writeAudit(ctx, r, "delete", "user", id, nil)
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
-}
-
-// memegangPeran melaporkan apakah pengguna memegang satu peran. Error berarti
-// "tidak diketahui" — pemanggil memperlakukannya sebagai bukan pemegang supaya
-// permintaan tidak gagal karena pemeriksaan tambahan, sementara penegakan
-// sesungguhnya tetap di lapisan repo.
-func (h *Handlers) memegangPeran(ctx context.Context, userID, roleID string) (bool, error) {
-	peran, err := h.rolesRepo.OfUser(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	for _, p := range peran {
-		if p.ID == roleID {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// peranDiAtasPelaku melaporkan apakah peran target LEBIH berkuasa (rank lebih
-// kecil) dari peran terkuat pelaku. Rank kecil = berkuasa (Super Admin = 0).
-// Kegagalan membaca rank di kedua sisi berarti tolak — aman secara default:
-// pemberian peran tidak boleh lolos karena pemeriksaannya yang rusak.
-func (h *Handlers) peranDiAtasPelaku(ctx context.Context, actorID, roleID string) (string, bool) {
-	target, err := h.rolesRepo.Get(ctx, roleID)
-	if err != nil {
-		return "peran target tidak ditemukan", true
-	}
-	if actorID == "" {
-		return "identitas pemberi tidak diketahui", true
-	}
-	pelaku, err := h.rolesRepo.TopRank(ctx, actorID)
-	if err != nil {
-		return "peringkat pemberi tidak bisa dipastikan", true
-	}
-	if target.Role.Rank < pelaku {
-		return "peran ini lebih berkuasa dari peran Anda; mintalah kepada pemegang peran yang setara atau lebih tinggi", true
-	}
-	return "", false
-}
-
-// superAdminID mengembalikan ID peran "Super Admin", atau "" bila tidak
-// ditemukan. Kegagalan di sini berarti guard pemegang-terakhir Revoke
-// dilewati (fail-open): revokeUserRole tetap menolak hapus-diri lewat
-// lapisan lain, dan kegagalan baca peran adalah keadaan sementara yang
-// tidak boleh mengunci pencabutan peran biasa.
-func (h *Handlers) superAdminID(ctx context.Context) string {
-	super, err := h.rolesRepo.GetByName(ctx, seed.RoleSuperAdmin)
-	if err != nil {
-		return ""
-	}
-	return super.ID
-}
-
-func (h *Handlers) grantUserRole(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := chi.URLParam(r, "id")
-
-	var req struct {
-		RoleID string `json:"role_id"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
-		return
-	}
-
-	var actorID string
-	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
-		actorID = p.User.ID
-	}
-
-	// Pelaku tidak boleh memberi peran yang LEBIH berkuasa dari dirinya sendiri:
-	// tanpa ini, siapa pun yang memegang roles:write (mis. peran kustom yang
-	// diberi izin itu) bisa mencetak Super Admin untuk dirinya sendiri.
-	// TopRank gagal (mis. pelaku tanpa peran) berarti tolak — aman secara default.
-	if msg, ditolak := h.peranDiAtasPelaku(ctx, actorID, req.RoleID); ditolak {
-		httpx.BadRequest(w, r, "rank_forbidden", msg)
-		return
-	}
-
-	if err := h.rolesRepo.Grant(ctx, id, req.RoleID, actorID); err != nil {
-		mapRepoError(w, r, err, "pemberian peran")
-		return
-	}
-	h.writeAudit(ctx, r, "grant_role", "user", id, map[string]any{"role_id": req.RoleID})
-	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "granted"})
-}
-
-func (h *Handlers) revokeUserRole(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := chi.URLParam(r, "id")
-	roleID := chi.URLParam(r, "role_id")
-
-	if err := h.rolesRepo.Revoke(ctx, id, roleID, h.superAdminID(ctx)); err != nil {
-		// Penolakan pemegang-terakhir punya pesannya sendiri: pesan generik
-		// mapRepoError ("sudah ada atau melanggar keunikan") menyesatkan di
-		// sini karena tidak ada yang "sudah ada".
-		if errors.Is(err, repo.ErrConflict) {
-			httpx.BadRequest(w, r, "last_holder_forbidden", "pengguna ini pemegang terakhir peran Super Admin; beri peran itu ke pengguna lain dulu sebelum mencabutnya")
-			return
-		}
-		mapRepoError(w, r, err, "pencabutan peran")
-		return
-	}
-
-	h.writeAudit(ctx, r, "revoke_role", "user", id, map[string]any{"role_id": roleID})
-	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "revoked"})
 }
 
 func (h *Handlers) forceResetPassword(w http.ResponseWriter, r *http.Request) {
@@ -954,157 +732,6 @@ func (h *Handlers) revokeUserSessions(w http.ResponseWriter, r *http.Request) {
 
 	h.writeAudit(ctx, r, "revoke_sessions", "user", id, map[string]any{"count": count})
 	_ = h.respond(w, r, http.StatusOK, StatusCountResponse{Status: "revoked", Count: int64(count)})
-}
-
-// -----------------------------------------------------------------------------
-// Roles & Permissions Handlers
-// -----------------------------------------------------------------------------
-
-func (h *Handlers) listRoles(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	roles, err := h.rolesRepo.List(ctx)
-	if err != nil {
-		mapRepoError(w, r, err, "peran")
-		return
-	}
-
-	rolesDTO := make([]RoleDTO, 0, len(roles))
-	for _, rl := range roles {
-		rolesDTO = append(rolesDTO, toRoleDTO(rl))
-	}
-
-	_ = h.respond(w, r, http.StatusOK, ListEnvelope[RoleDTO]{
-		Items: rolesDTO,
-	})
-}
-
-func (h *Handlers) getRole(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := chi.URLParam(r, "id")
-
-	detail, err := h.rolesRepo.Get(ctx, id)
-	if err != nil {
-		mapRepoError(w, r, err, "peran")
-		return
-	}
-
-	_ = h.respond(w, r, http.StatusOK, toRoleDetailDTO(&detail))
-}
-
-func (h *Handlers) createRole(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	var req struct {
-		Name        string   `json:"name"`
-		Description string   `json:"description"`
-		Rank        int      `json:"rank"`
-		Permissions []string `json:"permissions"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
-		return
-	}
-
-	var createdRole identity.Role
-	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
-		txRoles := identity.NewRoles(q)
-		rl, err := txRoles.Create(ctx, identity.NewRole{
-			Name:        req.Name,
-			Description: req.Description,
-			Rank:        req.Rank,
-		})
-		if err != nil {
-			return err
-		}
-		createdRole = rl
-
-		if len(req.Permissions) > 0 {
-			if err := txRoles.SetPermissions(ctx, rl.ID, req.Permissions); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
-	if err != nil {
-		mapRepoError(w, r, err, "peran")
-		return
-	}
-
-	h.writeAudit(ctx, r, "create", "role", createdRole.ID, map[string]any{"name": createdRole.Name})
-	_ = h.respond(w, r, http.StatusCreated, toRoleDTO(createdRole))
-}
-
-func (h *Handlers) deleteRole(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := chi.URLParam(r, "id")
-
-	// Peran sistem tidak bisa dihapus lewat API: tolak eksplisit dengan 400
-	// yang jelas, bukan mengandalkan penolakan repo di bawah.
-	if detail, err := h.rolesRepo.Get(ctx, id); err == nil && detail.Role.IsSystem {
-		httpx.BadRequest(w, r, "system_role_forbidden", "peran sistem tidak boleh dihapus")
-		return
-	}
-
-	// Peran kustom dihapus BERSAMA pemegangnya dalam satu transaksi: Revoke
-	// menolak pencabutan pemegang TERAKHIR (guard anti-lockout), dan baris
-	// user_roles memakai ON DELETE RESTRICT — tanpa pelepasan ini, peran
-	// kustom yang pernah dipakai satu orang pun tidak bisa dihapus lewat API
-	// (revoke -> 409, delete -> FK error). Guard Revoke tetap berlaku untuk
-	// peran yang TETAP ADA; yang dihapus di sini kehilangan maknanya sehingga
-	// penolakan pemegang-terakhir tidak lagi relevan.
-	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
-		txRoles := identity.NewRoles(q)
-		if _, err := q.Exec(ctx, `delete from user_roles where role_id = $1`, id); err != nil {
-			return err
-		}
-		return txRoles.Delete(ctx, id)
-	})
-	if err != nil {
-		mapRepoError(w, r, err, "peran")
-		return
-	}
-
-	h.writeAudit(ctx, r, "delete", "role", id, nil)
-	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
-}
-
-func (h *Handlers) setRolePermissions(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := chi.URLParam(r, "id")
-
-	var req struct {
-		Permissions []string `json:"permissions"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
-		return
-	}
-
-	if err := h.rolesRepo.SetPermissions(ctx, id, req.Permissions); err != nil {
-		mapRepoError(w, r, err, "izin peran")
-		return
-	}
-
-	h.writeAudit(ctx, r, "set_permissions", "role", id, map[string]any{"permissions": req.Permissions})
-	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "updated"})
-}
-
-func (h *Handlers) listPermissions(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	perms, err := h.rolesRepo.ListPermissions(ctx)
-	if err != nil {
-		mapRepoError(w, r, err, "katalog izin")
-		return
-	}
-
-	permDTOs := make([]PermissionDTO, 0, len(perms))
-	for _, p := range perms {
-		permDTOs = append(permDTOs, toPermissionDTO(p))
-	}
-
-	_ = h.respond(w, r, http.StatusOK, ListEnvelope[PermissionDTO]{
-		Items: permDTOs,
-	})
 }
 
 // -----------------------------------------------------------------------------

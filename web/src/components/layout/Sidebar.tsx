@@ -16,7 +16,6 @@ import {
   Code2,
   Cpu,
   Users,
-  ShieldCheck,
   Webhook,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -75,7 +74,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { name: 'API Keys', path: '/access/api-keys', icon: KeyRound },
         { name: 'Users', path: '/access/users', icon: Users },
-        { name: 'Roles', path: '/access/roles', icon: ShieldCheck },
         { name: 'Budgets & Limits', path: '/gateway/budgets', icon: Coins },
       ],
     },

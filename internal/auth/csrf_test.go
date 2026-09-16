@@ -402,3 +402,25 @@ func TestOriginOf(t *testing.T) {
 		}
 	}
 }
+
+func TestCSRFOriginMatchesRequestHostEvenWhenPublicURLSet(t *testing.T) {
+	h := newCSRFHarness(t, "http://127.0.0.1:8080")
+	const sessionID = "3f3e0f6a-0000-4000-8000-0000000000aa"
+	token := h.csrf.Issue(sessionID)
+
+	r := httptest.NewRequest(http.MethodPost, "http://54.179.116.100/api/auth/change-password", nil)
+	r.Header.Set("Origin", "http://54.179.116.100")
+	r.Header.Set(HeaderCSRFToken, token)
+	r.AddCookie(&http.Cookie{Name: h.cookies.CSRFName(), Value: token})
+	principal := &Principal{
+		User:      identity.User{ID: "11111111-1111-4111-8111-111111111111"},
+		SessionID: sessionID,
+	}
+	r = r.WithContext(WithPrincipal(r.Context(), principal))
+	rec := httptest.NewRecorder()
+	h.handler.ServeHTTP(rec, r)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, mau %d, body = %s", rec.Code, http.StatusNoContent, rec.Body)
+	}
+}

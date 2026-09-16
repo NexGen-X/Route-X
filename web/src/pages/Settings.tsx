@@ -63,7 +63,6 @@ export const Settings: React.FC = () => {
   const [isDomainLoading, setIsDomainLoading] = useState(false);
   const [isDomainSaving, setIsDomainSaving] = useState(false);
   const [domainFeedback, setDomainFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
-  const [protocolFilter, setProtocolFilter] = useState<string>('all');
   // Backup & Disaster Recovery state
   const [backupStatus, setBackupStatus] = useState<BackupStatusResponse | null>(null);
   const [isBackupLoading, setIsBackupLoading] = useState(false);
@@ -482,7 +481,7 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
 
-              {/* Integrasi Lengkap Multi-Protokol Xray-Core */}
+              {/* Integrasi Xray-Core: VLESS Reality Stealth Tunnel & Local Internal Bridge */}
               {domainConfig.xray_enabled && (
                 <div className="mt-4 pt-4 border-t border-accent/20 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -491,106 +490,71 @@ export const Settings: React.FC = () => {
                         <Zap className="w-3.5 h-3.5" />
                       </div>
                       <div>
-                        <span className="text-xs font-bold text-white block">Xray Multi-Protokol Stealth Suite</span>
-                        <span className="text-[10px] text-text-muted">Port 443 Multiplexed TLS, Reality, Shadowsocks & Bridge Internal</span>
+                        <span className="text-xs font-bold text-white block">Xray Stealth Egress & Internal Bridge Suite</span>
+                        <span className="text-[10px] text-text-muted">Port 8443 XTLS-Vision Reality Tunnel & Port 10808/10809 Local Bridges</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                        {domainConfig.xray_protocols?.length ?? 0} Protokol Siap Pakai
+                        {domainConfig.xray_protocols?.length ?? 0} Protokol Aktif
                       </span>
                     </div>
                   </div>
 
-                  {/* Kategori Filter Tabs */}
-                  <div className="flex flex-wrap items-center gap-1 p-1 bg-bg-surface-2 rounded-lg border border-border text-[11px]">
-                    {[
-                      { id: 'all', label: 'Semua Protokol' },
-                      { id: 'vless', label: 'VLESS (WS/gRPC/Reality/XHTTP)' },
-                      { id: 'trojan', label: 'Trojan (WS/gRPC)' },
-                      { id: 'vmess', label: 'VMess (WS/gRPC)' },
-                      { id: 'shadowsocks', label: 'Shadowsocks' },
-                      { id: 'socks5', label: 'Bridge Internal' },
-                    ].map((tab) => (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setProtocolFilter(tab.id)}
-                        className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                          protocolFilter === tab.id
-                            ? 'bg-accent text-white shadow-sm'
-                            : 'text-text-muted hover:text-white hover:bg-bg-surface-2'
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Daftar Kartu Protokol */}
+                  {/* Daftar Kartu Protokol (VLESS-Reality & Internal Bridges) */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {(domainConfig.xray_protocols || [])
-                      .filter((p) => {
-                        if (protocolFilter === 'all') return true;
-                        if (protocolFilter === 'vless') return p.protocol === 'vless';
-                        if (protocolFilter === 'trojan') return p.protocol === 'trojan';
-                        if (protocolFilter === 'vmess') return p.protocol === 'vmess';
-                        if (protocolFilter === 'shadowsocks') return p.protocol === 'shadowsocks';
-                        if (protocolFilter === 'socks5') return p.protocol === 'socks5' || p.protocol === 'http';
-                        return true;
-                      })
-                      .map((p) => (
-                        <div
-                          key={p.id}
-                          className="p-3 rounded-lg bg-bg-surface-2 border border-border flex flex-col justify-between gap-2.5 hover:border-accent/40 transition-colors"
-                        >
-                          <div>
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="text-[12px] font-bold text-white leading-tight">{p.name}</span>
-                              <span
-                                className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-semibold whitespace-nowrap uppercase ${
-                                  p.security === 'reality'
-                                    ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                                    : p.security === 'tls'
-                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                    : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                                }`}
-                              >
-                                {p.security === 'none' ? `Port ${p.port ?? '?'}` : `${(p.security || '?').toUpperCase()} ${p.port ?? '?'}`}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <span className="text-[10px] text-accent font-mono bg-accent/10 px-1.5 py-0.2 rounded">
-                                {(p.transport || '?').toUpperCase()}
-                              </span>
-                              <span className="text-[10px] text-text-muted font-mono truncate max-w-[140px]">
-                                {p.path_or_sni || '-'}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-text-secondary mt-1.5 line-clamp-2">{p.description || ''}</p>
-                          </div>
-
-                          <div className="pt-2 border-t border-border/50">
-                            <button
-                              type="button"
-                              onClick={() => handleCopyLink(p.id, p.share_link)}
-                              className="w-full py-1.5 px-2 rounded bg-bg-surface-2 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
+                    {(domainConfig.xray_protocols || []).map((p) => (
+                      <div
+                        key={p.id}
+                        className="p-3 rounded-lg bg-bg-surface-2 border border-border flex flex-col justify-between gap-2.5 hover:border-accent/40 transition-colors"
+                      >
+                        <div>
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-[12px] font-bold text-white leading-tight">{p.name}</span>
+                            <span
+                              className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-semibold whitespace-nowrap uppercase ${
+                                p.security === 'reality'
+                                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                                  : p.security === 'tls'
+                                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                  : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                              }`}
                             >
-                              {copiedLinkKey === p.id ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                  <span className="text-emerald-400 font-semibold">Tautan Tersalin!</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3.5 h-3.5 text-text-muted" />
-                                  <span>Salin Tautan Klien</span>
-                                </>
-                              )}
-                            </button>
+                              {p.security === 'none' ? `Port ${p.port ?? '?'}` : `${(p.security || '?').toUpperCase()} ${p.port ?? '?'}`}
+                            </span>
                           </div>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="text-[10px] text-accent font-mono bg-accent/10 px-1.5 py-0.2 rounded">
+                              {(p.transport || '?').toUpperCase()}
+                            </span>
+                            <span className="text-[10px] text-text-muted font-mono truncate max-w-[140px]">
+                              {p.path_or_sni || '-'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-text-secondary mt-1.5 line-clamp-2">{p.description || ''}</p>
                         </div>
-                      ))}
+
+                        <div className="pt-2 border-t border-border/50">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyLink(p.id, p.share_link)}
+                            className="w-full py-1.5 px-2 rounded bg-bg-surface-2 hover:bg-accent/20 text-[11px] text-white font-medium border border-border flex items-center justify-center gap-1.5 transition-colors"
+                          >
+                            {copiedLinkKey === p.id ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                <span className="text-emerald-400 font-semibold">Tautan Tersalin!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5 text-text-muted" />
+                                <span>{p.protocol === 'socks5' || p.protocol === 'http' ? 'Salin URL Proxy' : 'Salin Tautan Klien'}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}

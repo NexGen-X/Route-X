@@ -578,15 +578,6 @@ func TestNoSecretsLeak(t *testing.T) {
 	}
 }
 
-func contains(values []string, want string) bool {
-	for _, v := range values {
-		if v == want {
-			return true
-		}
-	}
-	return false
-}
-
 // Jalur bertahan: handler dipanggil langsung tanpa RequireSession di depannya. Lewat
 // Routes() ini tidak mungkin terjadi, tetapi handler-nya diekspor dan bisa dipasang di
 // router lain — jadi ia harus gagal tertutup alih-alih menyentuh principal nil.

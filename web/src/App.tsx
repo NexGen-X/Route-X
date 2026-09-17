@@ -123,6 +123,7 @@ const Shell: React.FC = () => {
           subtitle: 'Manajemen pool proxy keluar HTTP/HTTPS/SOCKS5',
           content: <Egress />,
         };
+      case '/upstreams/routing':
       case '/gateway/routing':
       case '/routing':
         return {
@@ -172,10 +173,11 @@ const Shell: React.FC = () => {
           subtitle: 'Akun konsol, status, dan sesi',
           content: <UsersPage />,
         };
+      case '/webhooks':
       case '/system/webhooks':
         return {
           title: 'Webhooks',
-          subtitle: 'Manage system event notifications',
+          subtitle: 'Pengiriman notifikasi event sistem ke endpoint HTTP eksternal',
           content: <Webhooks />,
         };
       case '/system/settings':

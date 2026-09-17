@@ -190,8 +190,14 @@ export const api = {
       return request<{ items: RequestLog[]; next_cursor?: string }>(`/api/admin/requests?${q.toString()}`);
     },
     get: (id: string) => request<RequestLog>(`/api/admin/requests/${encodeURIComponent(id)}`),
-    events: (id: string) => request<{ events: RequestEvent[] }>(`/api/admin/requests/${encodeURIComponent(id)}/events`),
-    payload: (id: string) => request<RequestPayload>(`/api/admin/requests/${encodeURIComponent(id)}/payload`),
+    events: (id: string, createdAt?: string) => {
+      const q = createdAt ? `?created_at=${encodeURIComponent(createdAt)}` : '';
+      return request<{ events: RequestEvent[] }>(`/api/admin/requests/${encodeURIComponent(id)}/events${q}`);
+    },
+    payload: (id: string, createdAt?: string) => {
+      const q = createdAt ? `?created_at=${encodeURIComponent(createdAt)}` : '';
+      return request<RequestPayload>(`/api/admin/requests/${encodeURIComponent(id)}/payload${q}`);
+    },
   },
 
   // Upstreams

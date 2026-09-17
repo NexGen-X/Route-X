@@ -671,7 +671,7 @@ export const Models: React.FC = () => {
                       onClick={() => handleOpenPricing(m)}
                       icon={<DollarSign className="w-3.5 h-3.5" />}
                     >
-                      Pricing
+                      Harga
                     </Button>
                   </div>
                 </Card>

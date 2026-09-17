@@ -52,7 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navGroups: NavGroup[] = [
     {
-      title: 'OVERVIEW & LOGS',
+      title: 'Ringkasan & Aktivitas',
       items: [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
         { name: 'Requests Inspector', path: '/requests', icon: Terminal },
@@ -60,7 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'UPSTREAMS & ROUTING',
+      title: 'Penyedia AI & Perutean',
       items: [
         { name: 'Providers', path: '/upstreams/providers', icon: Server },
         { name: 'Models & Pricing', path: '/upstreams/models', icon: Cpu },
@@ -70,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'ACCESS & COST',
+      title: 'Akses & Anggaran',
       items: [
         { name: 'API Keys', path: '/access/api-keys', icon: KeyRound },
         { name: 'Users', path: '/access/users', icon: Users },
@@ -78,7 +78,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'SYSTEM',
+      title: 'Sistem & Pengaturan',
       items: [
         { name: 'Webhooks', path: '/system/webhooks', icon: Webhook },
         { name: 'Settings', path: '/system/settings', icon: Sliders },
@@ -197,12 +197,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pt-1">
+            {!isCollapsed && (
+              <div className="flex items-center gap-2 text-[11px] text-text-secondary px-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span className="font-medium">Route-X Online</span>
+              </div>
+            )}
             <Tooltip content={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'} position="right">
               <button
                 type="button"
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className="hidden lg:flex items-center justify-center w-9 h-9 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors ml-auto cursor-pointer"
+                className="hidden lg:flex items-center justify-center w-8 h-8 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors ml-auto cursor-pointer"
                 aria-label={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
               >
                 {isCollapsed ? <ChevronRight className="w-4 h-4" aria-hidden="true" /> : <ChevronLeft className="w-4 h-4" aria-hidden="true" />}

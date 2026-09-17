@@ -32,17 +32,18 @@ x-api-key: sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ---
 
-## 🚀 2. Endpoint Utama
+## 🚀 3. Endpoint Utama
 
-| Endpoint | Metode | Deskripsi |
-|---|:---:|---|
-| `https://api.your-domain.com/v1/chat/completions` | `POST` | Inferensi percakapan (mendukung streaming SSE dan non-streaming). |
-| `https://api.your-domain.com/v1/models` | `GET` | Daftar seluruh model AI yang aktif dan tersedia di gateway. |
-| `https://api.your-domain.com/v1/embeddings` | `POST` | Vektorisasi teks untuk RAG / Semantic Search. |
+| Endpoint | Metode | Protokol | Deskripsi |
+|---|:---:|:---:|---|
+| `https://api.your-domain.com/v1/chat/completions` | `POST` | OpenAI | Inferensi percakapan standar OpenAI (streaming SSE & unary). |
+| `https://api.your-domain.com/v1/messages` | `POST` | Anthropic | Protokol asli Anthropic Claude (Claude Code, Cursor, dll.). |
+| `https://api.your-domain.com/v1/models` | `GET` | OpenAI | Daftar seluruh model AI aktif dan alias yang tersedia. |
+| `https://api.your-domain.com/v1/embeddings` | `POST` | OpenAI | Vektorisasi teks untuk RAG / Pencarian Semantik. |
 
 ---
 
-## 💻 3. Contoh Integrasi Kode
+## 💻 4. Contoh Integrasi Kode
 
 ### A. Python (Official `openai` SDK)
 
@@ -184,7 +185,27 @@ print(response.text)
 
 ---
 
-## ⚡ 4. Fitur Cerdas Gateway
+### F. Anthropic Claude Protocol (`/v1/messages`)
+
+Route-X menyediakan native passthrough untuk endpoint Anthropic, memungkinkan perkakas seperti Claude Code, Cursor, atau Anthropic SDK terhubung langsung:
+
+```bash
+curl -X POST https://api.your-domain.com/v1/messages \
+  -H "x-api-key: sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "claude-3-5-sonnet",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "user", "content": "Halo Claude via Route-X!"}
+    ]
+  }'
+```
+
+---
+
+## ⚡ 5. Fitur Cerdas Gateway
 
 1. **Model Aliasing**:
    Anda dapat menggunakan alias umum seperti `gpt-4o`, `claude-3-5-sonnet`, atau nama kustom. Route-X akan otomatis memetakan alias tersebut ke model riil di upstream provider.
@@ -197,7 +218,7 @@ print(response.text)
 
 ---
 
-## 🛑 5. Penanganan Error Standar
+## 🛑 6. Penanganan Error Standar
 
 Route-X mengembalikan format error standar yang seragam:
 

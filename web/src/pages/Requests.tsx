@@ -6,6 +6,7 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   Search,
   RefreshCw,
@@ -157,37 +158,35 @@ export const Requests: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header & Filter Bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white">Requests Inspector</h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Penelusuran audit lalu lintas inferensi AI, detail payload request/response, dan urutan failover.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsLiveFeed(!isLiveFeed)}
-            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-inner text-xs font-semibold border transition-all ${
-              isLiveFeed
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/40 animate-pulse'
-                : 'bg-bg-surface-2 text-text-secondary border-border hover:text-white'
-            }`}
-          >
-            <Radio className={`w-3.5 h-3.5 ${isLiveFeed ? 'text-emerald-400' : 'text-text-muted'}`} />
-            <span>{isLiveFeed ? 'Live Polling Aktif' : 'Live Stream'}</span>
-          </button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => loadRequests()}
-            isLoading={isLoading}
-            icon={<RefreshCw className="w-3.5 h-3.5" />}
-          >
-            Segarkan
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="Requests Inspector"
+        description="Penelusuran audit lalu lintas inferensi AI, detail payload request/response, dan urutan failover."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setIsLiveFeed(!isLiveFeed)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-inner text-xs font-semibold border transition-all ${
+                isLiveFeed
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/40 animate-pulse'
+                  : 'bg-bg-surface-2 text-text-secondary border-border hover:text-white'
+              }`}
+            >
+              <Radio className={`w-3.5 h-3.5 ${isLiveFeed ? 'text-emerald-400' : 'text-text-muted'}`} />
+              <span>{isLiveFeed ? 'Live Polling Aktif' : 'Live Stream'}</span>
+            </button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => loadRequests()}
+              isLoading={isLoading}
+              icon={<RefreshCw className="w-3.5 h-3.5" />}
+            >
+              Segarkan
+            </Button>
+          </>
+        }
+      />
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadRequests()} />}
 
@@ -309,7 +308,7 @@ export const Requests: React.FC = () => {
                   <div className="flex items-center justify-between text-[11px] font-mono text-text-secondary">
                     <span className="text-text-muted truncate max-w-[140px]">
                       {r.provider_name || r.provider_id || '-'}
-                      {r.is_stream && <span className="ml-1 text-[9px] px-1 rounded bg-[#252A36] text-primary">SSE</span>}
+                      {r.is_stream && <span className="ml-1 text-[9px] px-1 rounded bg-bg-surface-3 text-accent border border-border/50">SSE</span>}
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="text-white font-semibold">{r.duration_ms}ms</span>
@@ -320,7 +319,7 @@ export const Requests: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between text-[10px] text-text-muted font-mono pt-1 border-t border-[#1C2029]">
+                  <div className="flex items-center justify-between text-[10px] text-text-muted font-mono pt-1 border-t border-border/60">
                     <span className="truncate max-w-[180px]">ID: {r.request_id}</span>
                     <span className="text-accent flex items-center gap-0.5 font-medium">
                       Detail <ChevronRight className="w-3 h-3" />

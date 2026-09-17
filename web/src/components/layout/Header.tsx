@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
         {principal && (
           <Badge variant="lime" size="md">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate max-w-[80px] xs:max-w-[120px] sm:max-w-none">{principal.roles[0] || 'User'}</span>
+            <span className="truncate max-w-[80px] xs:max-w-[120px] sm:max-w-none">{principal.roles[0] || 'Admin'}</span>
           </Badge>
         )}
       </div>

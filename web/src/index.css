@@ -249,3 +249,19 @@ input[type="datetime-local"] {
   color-scheme: dark;
 }
 
+/* -------------------------------------------------------------------------- */
+/* 7. Comfortable Table Density & Visual Rhythm                               */
+/* -------------------------------------------------------------------------- */
+table th {
+  padding-top: 0.875rem;
+  padding-bottom: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+table td {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  vertical-align: middle;
+}
+

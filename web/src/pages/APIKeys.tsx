@@ -7,7 +7,7 @@ import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { Tooltip } from '../components/common/Tooltip';
 import { PageHeader } from '../components/common/PageHeader';
-import { KeyRound, Plus, RotateCw, Trash2, Copy, Check, Search } from 'lucide-react';
+import { KeyRound, Plus, RotateCw, Trash2, Copy, Check, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { copyTextToClipboard } from '../utils/clipboard';
@@ -43,6 +43,8 @@ export const APIKeys: React.FC = () => {
   const models = (modelsData?.items || []) as Model[];
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [monthlyBudgetUsd, setMonthlyBudgetUsd] = useState('');
+  const [showRateLimitAdvanced, setShowRateLimitAdvanced] = useState(false);
   const [newKey, setNewKey] = useState({
     name: '',
     rpm_limit: 120,
@@ -143,10 +145,35 @@ export const APIKeys: React.FC = () => {
         model_ids: [],
         provider_ids: [],
       });
+
+      const budgetNum = Number(monthlyBudgetUsd);
+      if (Number.isFinite(budgetNum) && budgetNum > 0) {
+        try {
+          await api.budgets.create({
+            name: `Anggaran ${newKey.name.trim()}`,
+            scope: 'api_key',
+            scope_id: res.id,
+            period: 'monthly',
+            limit_usd: budgetNum.toFixed(2),
+            alert_threshold_pct: 80,
+            action_on_exceed: 'block',
+          });
+        } catch {
+          // non-blocking
+        }
+      }
+
       setIsCreateOpen(false);
+      setMonthlyBudgetUsd('');
       setCreatedRawKey(res.raw_key || null);
-      toast.success('Kunci API baru berhasil dibuat.', 'API Key Dibuat');
+      toast.success(
+        budgetNum > 0
+          ? `Kunci API dan alokasi anggaran $${budgetNum.toFixed(2)}/bulan berhasil dibuat.`
+          : 'Kunci API baru berhasil dibuat.',
+        'API Key Dibuat'
+      );
       queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
+      queryClient.invalidateQueries({ queryKey: ['budgets'] });
     } catch (err: any) {
       toast.error('Gagal membuat API key: ' + (err.message || err));
     }
@@ -495,31 +522,68 @@ export const APIKeys: React.FC = () => {
               className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="api-key-rpm" className="block text-xs font-medium text-text-secondary mb-1.5">Batas RPM (0 = tanpa batas)</label>
+          <div>
+            <label htmlFor="api-key-budget" className="block text-xs font-medium text-text-secondary mb-1.5">
+              Pagu Anggaran Bulanan (USD, Opsional)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted font-mono text-xs">$</span>
               <input
-                id="api-key-rpm"
-                name="rpm_limit"
+                id="api-key-budget"
                 type="number"
-                min={0}
-                value={newKey.rpm_limit}
-                onChange={(e) => setNewKey({ ...newKey, rpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                step="0.01"
+                min="0"
+                placeholder="Contoh: 10.00 (Kosongkan jika tanpa batas anggaran)"
+                value={monthlyBudgetUsd}
+                onChange={(e) => setMonthlyBudgetUsd(e.target.value)}
+                className="w-full pl-7 pr-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent text-xs"
               />
             </div>
-            <div>
-              <label htmlFor="api-key-tpm" className="block text-xs font-medium text-text-secondary mb-1.5">Batas TPM (0 = tanpa batas)</label>
-              <input
-                id="api-key-tpm"
-                name="tpm_limit"
-                type="number"
-                min={0}
-                value={newKey.tpm_limit}
-                onChange={(e) => setNewKey({ ...newKey, tpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
-              />
-            </div>
+            <p className="text-[11px] text-text-muted mt-1 leading-relaxed">
+              Otomatis membatasi pengeluaran per bulan untuk kunci ini tanpa perlu repot membuka menu Anggaran.
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-border/60">
+            <button
+              type="button"
+              onClick={() => setShowRateLimitAdvanced(!showRateLimitAdvanced)}
+              className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-accent font-medium transition-colors cursor-pointer"
+            >
+              {showRateLimitAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent" /> : <ChevronDown className="w-3.5 h-3.5 text-accent" />}
+              <span>{showRateLimitAdvanced ? 'Sembunyikan Batas Kecepatan (RPM/TPM)' : '⚙️ Batasi Kecepatan Permintaan (RPM / TPM)'}</span>
+            </button>
+
+            {showRateLimitAdvanced && (
+              <div className="grid grid-cols-2 gap-3 mt-2.5 p-3 rounded-xl border border-border/80 bg-bg-surface-2/40">
+                <div>
+                  <label htmlFor="api-key-rpm" className="block text-xs font-medium text-text-secondary mb-1">Batas Pesan / Menit (RPM)</label>
+                  <input
+                    id="api-key-rpm"
+                    name="rpm_limit"
+                    type="number"
+                    min={0}
+                    value={newKey.rpm_limit}
+                    onChange={(e) => setNewKey({ ...newKey, rpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
+                    className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
+                    placeholder="0 = Tanpa batas"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="api-key-tpm" className="block text-xs font-medium text-text-secondary mb-1">Batas Token / Menit (TPM)</label>
+                  <input
+                    id="api-key-tpm"
+                    name="tpm_limit"
+                    type="number"
+                    min={0}
+                    value={newKey.tpm_limit}
+                    onChange={(e) => setNewKey({ ...newKey, tpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
+                    className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
+                    placeholder="0 = Tanpa batas"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </form>
       </Modal>

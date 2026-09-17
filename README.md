@@ -152,7 +152,7 @@ cd Route-X
 cd web && npm install && npm run build && cd ..
 
 # 3. Compile Go Binary
-go build -ldflags "-X main.version=v1.0.1" -o ai-gateway ./cmd/ai-gateway
+go build -ldflags "-X main.version=v1.1.0" -o ai-gateway ./cmd/ai-gateway
 
 # 4. Run Database Migrations
 ./ai-gateway -migrate

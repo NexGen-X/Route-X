@@ -1439,6 +1439,7 @@ export const CreateProviderModalChild: React.FC<any> = ({
   const [socketPingStatus, setSocketPingStatus] = useState<{ testing: boolean; latency?: number; ok?: boolean } | null>(null);
   const [selectedEgressPoolId, setSelectedEgressPoolId] = useState('');
   const [syncAfterSave, setSyncAfterSave] = useState(true);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savingStep, setSavingStep] = useState('');
 
@@ -1462,6 +1463,7 @@ export const CreateProviderModalChild: React.FC<any> = ({
       setShowApiKey(false);
       setSelectedEgressPoolId('');
       setSocketPingStatus(null);
+      setShowAdvanced(!selectedPreset);
 
       if (selectedPreset) {
         const existingCount = (providers || []).filter(
@@ -1648,57 +1650,73 @@ export const CreateProviderModalChild: React.FC<any> = ({
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {!selectedPreset ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Unik *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="nama-provider-unik"
+                  value={newProv.name}
+                  onChange={(e) => setNewProv({ ...newProv, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Tampilan *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nama Provider"
+                  value={newProv.display_name}
+                  onChange={(e) => setNewProv({ ...newProv, display_name: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="col-span-1">
+                <Select
+                  label="Kind"
+                  value={newProv.kind}
+                  onChange={(val) => setNewProv({ ...newProv, kind: val })}
+                  options={[
+                    { value: 'openai', label: 'OpenAI', description: 'Model keluarga GPT & reasoning o-series' },
+                    { value: 'anthropic', label: 'Anthropic', description: 'Model Claude 3.5 & 3.7 series' },
+                    { value: 'google', label: 'Google Gemini', description: 'Model Gemini 1.5, 2.0 & Flash series' },
+                    { value: 'openai_compatible', label: 'OpenAI Compatible', description: 'Groq, DeepSeek, Together, Ollama, dll.' },
+                    { value: 'custom', label: 'Custom Engine', description: 'Format payload proprietary/internal' },
+                  ]}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-text-secondary mb-1.5">Base URL *</label>
+                <input
+                  type="text"
+                  required
+                  value={newProv.base_url}
+                  onChange={(e) => setNewProv({ ...newProv, base_url: e.target.value })}
+                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                />
+              </div>
+            </div>
+          </>
+        ) : (
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Unik *</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Label di Route-X</label>
             <input
               type="text"
               required
-              placeholder="nama-provider-unik"
-              value={newProv.name}
-              onChange={(e) => setNewProv({ ...newProv, name: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Tampilan *</label>
-            <input
-              type="text"
-              required
-              placeholder="Nama Provider"
+              placeholder={selectedPreset.displayName}
               value={newProv.display_name}
               onChange={(e) => setNewProv({ ...newProv, display_name: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white text-xs focus:outline-none focus:border-accent"
             />
           </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="col-span-1">
-            <Select
-              label="Kind"
-              value={newProv.kind}
-              onChange={(val) => setNewProv({ ...newProv, kind: val })}
-              options={[
-                { value: 'openai', label: 'OpenAI', description: 'Model keluarga GPT & reasoning o-series' },
-                { value: 'anthropic', label: 'Anthropic', description: 'Model Claude 3.5 & 3.7 series' },
-                { value: 'google', label: 'Google Gemini', description: 'Model Gemini 1.5, 2.0 & Flash series' },
-                { value: 'openai_compatible', label: 'OpenAI Compatible', description: 'Groq, DeepSeek, Together, Ollama, dll.' },
-                { value: 'custom', label: 'Custom Engine', description: 'Format payload proprietary/internal' },
-              ]}
-            />
-          </div>
-          <div className="col-span-2">
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Base URL *</label>
-            <input
-              type="text"
-              required
-              value={newProv.base_url}
-              onChange={(e) => setNewProv({ ...newProv, base_url: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
-            />
-          </div>
-        </div>
+        )}
 
         {/* DUAL-AUTH SECTION */}
         <div className="rounded-xl border border-border bg-bg-surface-2/60 p-3.5 space-y-3">
@@ -1964,30 +1982,88 @@ export const CreateProviderModalChild: React.FC<any> = ({
           )}
         </div>
 
-        <div>
-          <Select
-            label="Jalur Egress Outbound"
-            value={selectedEgressPoolId}
-            onChange={(val) => setSelectedEgressPoolId(val)}
-            placeholder="Direct Outbound (Tanpa Proxy)"
-            options={[
-              { value: '', label: 'Direct Outbound (Tanpa Proxy)', description: 'Koneksi langsung dari server tanpa melalui proxy' },
-              ...egressPools.map((pool: any) => ({
-                value: pool.id,
-                label: `${pool.name} (${pool.kind})`,
-                description: `Protokol: ${pool.kind} · Region: ${pool.region || 'Default'}`,
-              })),
-            ]}
-          />
-        </div>
-
         {(effectiveApiKey || selectedPreset?.authLoginType === 'local_socket') && (
           <div className="pt-1">
             <Checkbox
               id="syncModelsToggle"
               checked={syncAfterSave}
               onChange={(e) => setSyncAfterSave(e.target.checked)}
-              label="Tarik model upstream otomatis setelah disimpan"
+              label="Tarik model upstream otomatis setelah disimpan (Rekomendasi)"
+            />
+          </div>
+        )}
+
+        {selectedPreset && (
+          <div className="pt-2 border-t border-border/60">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-accent font-medium transition-colors py-1 cursor-pointer"
+            >
+              {showAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent" /> : <ChevronDown className="w-3.5 h-3.5 text-accent" />}
+              <span>{showAdvanced ? 'Sembunyikan Pengaturan Lanjutan' : '⚙️ Pengaturan Lanjutan (ID Unik, Base URL, Egress Proxy)'}</span>
+            </button>
+            {showAdvanced && (
+              <div className="mt-2.5 p-3.5 rounded-xl border border-border/80 bg-bg-surface-2/40 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Unik *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="nama-provider-unik"
+                      value={newProv.name}
+                      onChange={(e) => setNewProv({ ...newProv, name: e.target.value })}
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Base URL *</label>
+                    <input
+                      type="text"
+                      required
+                      value={newProv.base_url}
+                      onChange={(e) => setNewProv({ ...newProv, base_url: e.target.value })}
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Select
+                    label="Jalur Egress Outbound (Opsional)"
+                    value={selectedEgressPoolId}
+                    onChange={(val) => setSelectedEgressPoolId(val)}
+                    placeholder="Direct Outbound (Tanpa Proxy)"
+                    options={[
+                      { value: '', label: 'Direct Outbound (Tanpa Proxy)', description: 'Koneksi langsung dari server tanpa melalui proxy' },
+                      ...egressPools.map((pool: any) => ({
+                        value: pool.id,
+                        label: `${pool.name} (${pool.kind})`,
+                        description: `Protokol: ${pool.kind} · Region: ${pool.region || 'Default'}`,
+                      })),
+                    ]}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!selectedPreset && (
+          <div>
+            <Select
+              label="Jalur Egress Outbound"
+              value={selectedEgressPoolId}
+              onChange={(val) => setSelectedEgressPoolId(val)}
+              placeholder="Direct Outbound (Tanpa Proxy)"
+              options={[
+                { value: '', label: 'Direct Outbound (Tanpa Proxy)', description: 'Koneksi langsung dari server tanpa melalui proxy' },
+                ...egressPools.map((pool: any) => ({
+                  value: pool.id,
+                  label: `${pool.name} (${pool.kind})`,
+                  description: `Protokol: ${pool.kind} · Region: ${pool.region || 'Default'}`,
+                })),
+              ]}
             />
           </div>
         )}

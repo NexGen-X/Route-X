@@ -6,6 +6,7 @@ import { Button } from '../components/common/Button';
 import { Select } from '../components/common/Select';
 import { Badge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   Sliders,
   Save,
@@ -329,7 +330,12 @@ export const Settings: React.FC = () => {
   const serverIP = domainConfig?.server_ip || null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      <PageHeader
+        title="Pengaturan Sistem"
+        description="Konfigurasi domain publik HTTPS, pencadangan basis data, dan parameter operasional gateway."
+      />
+
       {loadError && (
         <QueryError message={loadError} onRetry={() => void loadSettings()} />
       )}

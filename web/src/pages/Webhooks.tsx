@@ -163,7 +163,7 @@ export const Webhooks: React.FC = () => {
         description="Pengiriman event asinkron ke HTTP endpoint eksternal untuk integrasi monitoring, alerting Slack/Discord, dan audit."
         actions={
           <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)} icon={<Plus className="w-4 h-4" />}>
-            Create Webhook
+            Buat Webhook
           </Button>
         }
       />

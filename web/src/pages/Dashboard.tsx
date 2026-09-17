@@ -53,10 +53,12 @@ import {
   ShieldCheck,
   CheckCircle2,
   Terminal,
-  Radio,
   ArrowDown,
   ArrowUp,
   BarChart3,
+  Sparkles,
+  X,
+  KeyRound,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -83,6 +85,20 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('routex_dismiss_onboarding') !== 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const dismissOnboarding = () => {
+    setShowOnboarding(false);
+    try {
+      localStorage.setItem('routex_dismiss_onboarding', 'true');
+    } catch {}
+  };
 
   const loadData = async (showToast = false) => {
     if (showToast) setIsRefreshing(true);
@@ -194,38 +210,31 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
       {/* ==================================================================== */}
       {/* 1. HERO OPERATIONAL STATUS & ACTION BAR                             */}
       {/* ==================================================================== */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#16181D] via-[#121316] to-[#0D0E10] border border-[#23262F] p-5 shadow-2xl">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-        <div className="absolute bottom-0 left-1/3 w-64 h-64 bg-accent/5 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+      <div className="bg-bg-surface border border-border rounded-card p-6 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span role="status" aria-live="polite" className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border shadow-sm ${loadError ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400'}`} />
-                {loadError ? 'STATUS GATEWAY TIDAK TERSEDIA' : 'GATEWAY OPERATIONAL'}
+            <div className="flex flex-wrap items-center gap-3">
+              <span role="status" aria-live="polite" className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold border ${loadError ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
+                <span className={`w-2 h-2 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400'}`} />
+                {loadError ? 'Gateway Tidak Tersedia' : 'Gateway Siap & Beroperasi'}
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono bg-[#1C1F26] border border-[#2B303C] text-text-secondary">
-                <Radio className="w-3 h-3 text-primary animate-pulse" />
-                Multi-Hop Egress Active
-              </span>
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono bg-[#1C1F26] border border-[#2B303C] text-text-secondary">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono bg-bg-surface-2 border border-border text-text-secondary">
                 {healthyProvidersCount}/{providers.length || 0} Upstream Sehat
               </span>
             </div>
 
-            <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-              Route-X Mission Control
+            <h2 className="text-2xl font-bold tracking-tight text-white">
+              Route-X Gateway Control
             </h2>
-            <p className="text-xs text-text-secondary max-w-2xl leading-relaxed">
-              Gateway AI enterprise dengan perutean cerdas multi-provider, fallback instan, proteksi SSRF,
-              dan isolasi egress anti-blokir berkecepatan tinggi.
+            <p className="text-sm text-text-secondary max-w-2xl leading-relaxed">
+              Gateway AI enterprise dengan perutean cerdas multi-provider, failover instan, proteksi SSRF,
+              dan isolasi egress berkecepatan tinggi.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#181A20] border border-[#2A2E39] text-xs font-mono text-text-primary shadow-inner">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-inner bg-bg-surface-2 border border-border text-xs font-mono text-text-primary">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
               <span className="font-semibold text-white">{overview?.in_flight_requests ?? 0}</span>
               <span className="text-text-muted">in-flight</span>
             </div>
@@ -252,15 +261,15 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
         </div>
 
         {/* Quick Cluster Info Pill Strip */}
-        <div className="relative mt-5 pt-4 border-t border-[#1F232B] flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-text-secondary">
+        <div className="mt-6 pt-4 border-t border-border/70 flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-text-secondary">
           <div className="flex flex-wrap items-center gap-4 sm:gap-6">
             <div className="flex items-center gap-1.5">
               <span className="text-text-muted">Runtime:</span>
-              <span className="text-white font-medium">{overview?.go_version || '-'}</span>
+              <span className="text-text-primary font-medium">{overview?.go_version || '-'}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-text-muted">OS/Arch:</span>
-              <span className="text-white font-medium">{overview?.os_arch || '-'}</span>
+              <span className="text-text-primary font-medium">{overview?.os_arch || '-'}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-text-muted">Goroutines:</span>
@@ -268,47 +277,132 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             </div>
             <div className="flex items-center gap-1.5">
               <span className="text-text-muted">Uptime:</span>
-              <span className="text-white font-medium">{overview ? formatUptime(overview.uptime_seconds) : '-'}</span>
+              <span className="text-text-primary font-medium">{overview ? formatUptime(overview.uptime_seconds) : '-'}</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => onNavigate('/cli-integrations')}
-              className="text-[11px] text-primary hover:underline flex items-center gap-1 transition-colors"
-            >
-              <Terminal className="w-3 h-3" /> Integrasi CLI & SDK &rarr;
-            </button>
-          </div>
+          <button
+            onClick={() => onNavigate('/cli-integrations')}
+            className="text-xs text-accent hover:underline flex items-center gap-1 transition-colors"
+          >
+            <Terminal className="w-3.5 h-3.5" /> Integrasi CLI & SDK &rarr;
+          </button>
         </div>
       </div>
 
       {/* ==================================================================== */}
-      {/* 2. SYSTEM TELEMETRY — 4 HIGH-DENSITY LIVE RUNTIME CARDS              */}
+      {/* 2. ONBOARDING & QUICK-START GUIDE (Ramah Pemula)                     */}
       {/* ==================================================================== */}
-      <div className="space-y-3">
+      {showOnboarding && (
+        <div className="bg-bg-surface border border-accent/20 rounded-card p-6 shadow-sm relative overflow-hidden">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-accent" />
+                <h3 className="text-sm font-bold text-white tracking-tight">
+                  Panduan Cepat Memulai Route-X
+                </h3>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Tiga langkah mudah untuk menghubungkan editor atau aplikasi Anda ke Route-X AI Gateway:
+              </p>
+            </div>
+            <button
+              onClick={dismissOnboarding}
+              aria-label="Tutup panduan"
+              className="text-text-muted hover:text-white p-1 rounded-nav hover:bg-bg-surface-2 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+            {/* Step 1 */}
+            <div
+              onClick={() => onNavigate('/upstreams/providers')}
+              className="p-4 rounded-inner bg-bg-surface-2 border border-border/80 hover:border-accent/50 cursor-pointer transition-all space-y-2 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent font-semibold">
+                  Langkah 1
+                </span>
+                <Server className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
+              </div>
+              <h4 className="text-xs font-bold text-white group-hover:text-accent transition-colors">
+                Tambah Penyedia AI Upstream
+              </h4>
+              <p className="text-[11px] text-text-secondary leading-relaxed">
+                Hubungkan API Key OpenAI, Anthropic, Gemini, DeepSeek, Groq, atau Ollama lokal Anda.
+              </p>
+            </div>
+
+            {/* Step 2 */}
+            <div
+              onClick={() => onNavigate('/access/api-keys')}
+              className="p-4 rounded-inner bg-bg-surface-2 border border-border/80 hover:border-accent/50 cursor-pointer transition-all space-y-2 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent font-semibold">
+                  Langkah 2
+                </span>
+                <KeyRound className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
+              </div>
+              <h4 className="text-xs font-bold text-white group-hover:text-accent transition-colors">
+                Terbitkan Kunci API Klien
+              </h4>
+              <p className="text-[11px] text-text-secondary leading-relaxed">
+                Buat kunci API terenkripsi untuk mengamankan dan mengontrol akses dari aplikasi/editor Anda.
+              </p>
+            </div>
+
+            {/* Step 3 */}
+            <div
+              onClick={() => onNavigate('/cli-integrations')}
+              className="p-4 rounded-inner bg-bg-surface-2 border border-border/80 hover:border-accent/50 cursor-pointer transition-all space-y-2 group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent font-semibold">
+                  Langkah 3
+                </span>
+                <Terminal className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
+              </div>
+              <h4 className="text-xs font-bold text-white group-hover:text-accent transition-colors">
+                Sambungkan Editor atau CLI
+              </h4>
+              <p className="text-[11px] text-text-secondary leading-relaxed">
+                Gunakan template 1-klik untuk Claude Code, Cursor, Aider, Open WebUI, atau pustaka SDK Anda.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* 3. SYSTEM TELEMETRY — 4 LIVE RUNTIME CARDS                           */}
+      {/* ==================================================================== */}
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-              <Cpu className="w-4 h-4 text-primary" />
+          <div className="flex items-center gap-2.5">
+            <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-accent" />
               Telemetri Runtime Gateway
-            </h2>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#1A1D24] text-text-muted border border-[#282D37] font-mono">
+            </h3>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-bg-surface-2 text-text-secondary border border-border font-mono">
               polling 5 detik
             </span>
           </div>
-          <span className="text-xs text-text-muted hidden sm:inline">
+          <span className="text-xs text-text-secondary hidden sm:inline">
             Status alokasi memori, throughput jaringan, dan pool tunnel egress
           </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Card 1: Memory */}
-          <div className="bg-[#121316] border border-[#20242D] rounded-xl p-4 flex flex-col justify-between hover:border-primary/40 transition-all shadow-md group">
+          <div className="bg-bg-surface border border-border rounded-card p-5 flex flex-col justify-between hover:border-border/80 transition-all shadow-sm">
             <div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform">
+                  <div className="p-2 rounded-inner bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     <Cpu className="w-4 h-4" />
                   </div>
                   <div>
@@ -335,9 +429,9 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                     {overview ? `${formatBytes(overview.host_ram_used_bytes)} / ${formatBytes(overview.host_ram_total_bytes)}` : '-'}
                   </span>
                 </div>
-                <div className="w-full h-1.5 bg-[#1B1E26] rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-bg-surface-3 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500"
+                    className="h-full bg-accent rounded-full transition-all duration-500"
                     style={{ width: `${hostRAMPct}%` }}
                   />
                 </div>
@@ -345,7 +439,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             </div>
 
             {/* Breakdown rows */}
-            <div className="mt-4 pt-3 border-t border-[#1C2029] space-y-1.5 text-xs">
+            <div className="mt-4 pt-3 border-t border-border/60 space-y-1.5 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-text-muted">RAM Kontainer</span>
                 <span className="font-mono text-text-secondary">
@@ -364,11 +458,11 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
           </div>
 
           {/* Card 2: Network */}
-          <div className="bg-[#121316] border border-[#20242D] rounded-xl p-4 flex flex-col justify-between hover:border-cyan-500/40 transition-all shadow-md group">
+          <div className="bg-bg-surface border border-border rounded-card p-5 flex flex-col justify-between hover:border-border/80 transition-all shadow-sm">
             <div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:scale-105 transition-transform">
+                  <div className="p-2 rounded-inner bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
                     <Share2 className="w-4 h-4" />
                   </div>
                   <div>
@@ -390,7 +484,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             </div>
 
             {/* Breakdown rows with indicator bars */}
-            <div className="mt-4 pt-3 border-t border-[#1C2029] space-y-2.5 text-xs">
+            <div className="mt-4 pt-3 border-t border-border/60 space-y-2.5 text-xs">
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-text-muted flex items-center gap-1">
@@ -400,7 +494,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                     {overview ? `${formatBytes(overview.net_recv_bytes)} · ${(overview.net_recv_rate_mb_s ?? 0).toFixed(1)} MB/s` : '-'}
                   </span>
                 </div>
-                <div className="w-full h-1 bg-[#1B1E26] rounded-full overflow-hidden">
+                <div className="w-full h-1 bg-bg-surface-3 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-cyan-400 rounded-full transition-all duration-500"
                     style={{
@@ -423,7 +517,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                     {overview ? `${formatBytes(overview.net_sent_bytes)} · ${(overview.net_sent_rate_mb_s ?? 0).toFixed(1)} MB/s` : '-'}
                   </span>
                 </div>
-                <div className="w-full h-1 bg-[#1B1E26] rounded-full overflow-hidden">
+                <div className="w-full h-1 bg-bg-surface-3 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-emerald-400 rounded-full transition-all duration-500"
                     style={{
@@ -440,11 +534,11 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
           </div>
 
           {/* Card 3: Egress Pool */}
-          <div className="bg-[#121316] border border-[#20242D] rounded-xl p-4 flex flex-col justify-between hover:border-emerald-500/40 transition-all shadow-md group">
+          <div className="bg-bg-surface border border-border rounded-card p-5 flex flex-col justify-between hover:border-border/80 transition-all shadow-sm">
             <div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:scale-105 transition-transform">
+                  <div className="p-2 rounded-inner bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     <ShieldCheck className="w-4 h-4" />
                   </div>
                   <div>
@@ -466,7 +560,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             </div>
 
             {/* Breakdown rows */}
-            <div className="mt-4 pt-3 border-t border-[#1C2029] space-y-1.5 text-xs">
+            <div className="mt-4 pt-3 border-t border-border/60 space-y-1.5 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-text-muted">Xray & WARP</span>
                 <span className="font-mono text-white font-semibold">{overview?.egress_xray_count ?? 0}</span>
@@ -491,11 +585,11 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
           </div>
 
           {/* Card 4: Uptime & CPU */}
-          <div className="bg-[#121316] border border-[#20242D] rounded-xl p-4 flex flex-col justify-between hover:border-amber-500/40 transition-all shadow-md group">
+          <div className="bg-bg-surface border border-border rounded-card p-5 flex flex-col justify-between hover:border-border/80 transition-all shadow-sm">
             <div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:scale-105 transition-transform">
+                  <div className="p-2 rounded-inner bg-amber-500/10 text-amber-400 border border-amber-500/20">
                     <Clock className="w-4 h-4" />
                   </div>
                   <div>
@@ -520,9 +614,9 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                   <span>Proxy CPU</span>
                   <span className="text-amber-400 font-bold">{((overview?.proxy_cpu_pct ?? 0)).toFixed(1)}%</span>
                 </div>
-                <div className="w-full h-1.5 bg-[#1B1E26] rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-bg-surface-3 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-500"
+                    className="h-full bg-amber-400 rounded-full transition-all duration-500"
                     style={{ width: `${Math.min(100, overview?.proxy_cpu_pct || 0)}%` }}
                   />
                 </div>
@@ -530,7 +624,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             </div>
 
             {/* Breakdown rows */}
-            <div className="mt-4 pt-3 border-t border-[#1C2029] space-y-1.5 text-xs">
+            <div className="mt-4 pt-3 border-t border-border/60 space-y-1.5 text-xs">
               <div className="flex items-center justify-between">
                 <span className="text-text-muted">Host CPU</span>
                 <span className="font-mono text-text-secondary">{((overview?.host_cpu_pct ?? 0)).toFixed(1)}%</span>

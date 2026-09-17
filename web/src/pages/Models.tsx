@@ -288,7 +288,7 @@ export const Models: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Model Registry & Pricing"
-        description="Katalog model kanonik, pemetaan alias, dan struktur harga per 1 juta token dengan presisi skala 8 desimal."
+        description="Katalog model AI kanonik, pemetaan ke penyedia upstream, serta konfigurasi tarif biaya token."
         actions={
           <Button
             variant="primary"

@@ -282,7 +282,7 @@ export const APIKeys: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Client API Keys"
-        description="Kunci akses klien dengan hashing HMAC-SHA256 ber-pepper server dan batas kuota mandiri."
+        description="Kunci otentikasi aman untuk menghubungkan Cursor, Cline, Open WebUI, atau aplikasi Anda ke Route-X Gateway dengan kontrol kuota mandiri."
         actions={
           <Button
             variant="primary"

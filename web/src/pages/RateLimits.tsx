@@ -119,7 +119,7 @@ export const RateLimits: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Rate Limits"
-        description="Pembatasan laju permintaan terdistribusi via Redis (RPM, TPM, RPS) per IP, API key, atau global."
+        description="Pengendalian volume lalu lintas inferensi (Permintaan & Token per Menit) per Kunci API, IP, atau Global."
         actions={
           <Button
             variant="primary"
@@ -162,7 +162,7 @@ export const RateLimits: React.FC = () => {
             <div>
               <h3 className="text-base font-bold text-white">Belum Ada Aturan Rate Limit</h3>
               <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                Tetapkan batasan laju kuota terdistribusi berbasis Redis (RPM, TPM, atau RPS) per Kunci API, Alamat IP Klien, atau Model untuk mencegah kelebihan beban.
+                Tetapkan batasan laju kuota inferensi (RPM, TPM, atau RPS) per Kunci API, Alamat IP Klien, atau Model untuk mencegah lonjakan beban yang tidak diinginkan.
               </p>
             </div>
             <Button

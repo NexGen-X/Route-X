@@ -676,7 +676,7 @@ export const RoutingRules: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Routing Rules Engine"
-        description="Strategi pemilihan upstream (Priority, Lowest Cost, Lowest Latency, Weighted, Round-Robin) dan failover otomatis."
+        description="Strategi perutean upstream cerdas (Prioritas, Biaya Terendah, Latensi Cepat, Bobot, Round-Robin) dengan failover otomatis."
         actions={
           <Button
             variant="primary"

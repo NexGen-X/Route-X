@@ -132,7 +132,7 @@ export const Budgets: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Budgets & Cost Control"
-        description="Alokasi batas pengeluaran moneter USD skala 8 desimal dengan peringatan ambang batas dan pemblokiran otomatis."
+        description="Kontrol batas pengeluaran biaya AI (Global, per Kunci API, atau per Model) dengan peringatan dini dan pemblokiran otomatis."
         actions={
           <Button
             variant="primary"
@@ -176,7 +176,7 @@ export const Budgets: React.FC = () => {
             <div>
               <h3 className="text-base font-bold text-white">Belum Ada Anggaran yang Dialokasikan</h3>
               <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                Tetapkan pagu pengeluaran inferensi USD skala 8 desimal (harian, mingguan, atau bulanan) untuk mencegah lonjakan biaya upstream tanpa terduga.
+                Tetapkan pagu pengeluaran inferensi USD (harian, mingguan, atau bulanan) untuk mencegah lonjakan biaya upstream tanpa terduga.
               </p>
             </div>
             <Button

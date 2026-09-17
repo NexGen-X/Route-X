@@ -524,11 +524,7 @@ export const Providers: React.FC = () => {
             return (
               <div
                 key={p.id}
-                className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col justify-between group shadow-sm ${
-                  isCustom
-                    ? 'bg-[#15121e] border-purple-900/40 hover:border-purple-500/60 hover:shadow-[0_0_20px_rgba(168,85,247,0.15)]'
-                    : 'bg-[#131316] border-border hover:border-accent/40 hover:shadow-[0_0_20px_rgba(202,240,69,0.1)]'
-                }`}
+                className="bg-bg-surface border border-border hover:border-border/80 rounded-card p-5 transition-all flex flex-col justify-between shadow-sm group"
               >
                 {/* Bagian Atas: Icon, Identitas & Status Kesehatan */}
                 <div className="space-y-3.5">

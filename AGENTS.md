@@ -30,4 +30,24 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 - Bahasa komentar/log di codebase ini: Indonesia. Ikuti gaya yang ada.
 - Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0010_drop_roles.sql`)
 - Jangan commit secret; jangan ubah `go.mod` tanpa alasan; PR via `gh`
-- MCP Hermes yang terpasang untuk repo ini: `filesystem` (scope /root/Route-X), `github`, `context7` (dok library), `routexdb` (SELECT-only ke `routex`), `routexredis`
+- MCP Resmi yang terpasang untuk repo ini:
+  - `codebase-memory-mcp`: Knowledge Graph & AST indeks kode Go & TS (`search_graph`, `trace_path`, `get_code_snippet`)
+  - `postgres`: Akses langsung inspeksi DB `routex` (localhost:5432)
+  - `redis`: Akses langsung inspeksi cache & sliding-window rate limit (localhost:6379)
+  - `puppeteer`: Browser headless untuk validasi UI konsol web React (`web/`)
+
+## Prosedur Rilis & Patch v1.0.0.1 (Checklist Pra-Rilis)
+Sebelum mempublikasikan patch atau rilis `v1.0.0.1`, lakukan verifikasi berurutan berikut:
+1. **Audit Data Race**: Jalankan `go test -race ./...` (wajib 0 data race terdeteksi).
+2. **Formatting Go**: Jalankan `gofmt -l .` (wajib kosong/bersih).
+3. **Integritas Database**: Pastikan berkas migrasi `internal/database/migrations/` berurutan rapi dan tidak merusak skema produksi.
+4. **Build Frontend**: Jalankan `cd /root/Route-X/web && npm run build` (wajib kompilasi `tsc` dan `vite build` sukses tanpa error tipe).
+5. **Uji Probing Gateway E2E**: Jalankan `./scripts/probe_e2e_gateway.sh` untuk memvalidasi rute `/v1/chat/completions` (non-stream & SSE stream) serta `/v1/messages` Anthropic.
+6. **Validasi Observabilitas**: Jalankan `./scripts/check_metrics.sh` untuk memverifikasi endpoint `/metrics` tidak merekam kegagalan terselubung.
+7. **Sinkronisasi Versi**:
+   - Perbarui versi pada `web/package.json` menjadi `1.0.0.1`.
+   - Tambahkan catatan perubahan rilis pada `CHANGELOG.md` di bawah seksi `## [v1.0.0.1]`.
+8. **Git Tagging & Publikasi**:
+   - Lakukan commit perubahan: `git commit -m "release: v1.0.0.1 - patch release"`
+   - Buat tag git: `git tag -a v1.0.0.1 -m "Release v1.0.0.1"`
+   - Buat release via GitHub CLI: `gh release create v1.0.0.1 --title "v1.0.0.1" --notes-file ...`

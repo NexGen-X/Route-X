@@ -6,7 +6,7 @@
   <strong>High-Performance, Self-Hosted AI Gateway with OpenAI & Anthropic Dual-Protocol Ingestion, Dynamic Routing, Micro-Budget Governance, and Instant CLI Synchronization.</strong>
 </p>
 
-[![Release](https://img.shields.io/badge/Release-v1.0.0.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.0.0.0)
+[![Release](https://img.shields.io/badge/Release-v1.0.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.0.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
@@ -152,7 +152,7 @@ cd Route-X
 cd web && npm install && npm run build && cd ..
 
 # 3. Compile Go Binary
-go build -ldflags "-X main.version=v1.0.0.0" -o ai-gateway ./cmd/ai-gateway
+go build -ldflags "-X main.version=v1.0.1" -o ai-gateway ./cmd/ai-gateway
 
 # 4. Run Database Migrations
 ./ai-gateway -migrate

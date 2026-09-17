@@ -63,7 +63,7 @@ done
 BASE_URL="${BASE_URL%/}"
 
 echo "=================================================================="
-echo -e "${COLOR_BOLD}Route-X — Pengujian Probing Gateway E2E (v1.0.0.1 Readiness)${COLOR_RESET}"
+echo -e "${COLOR_BOLD}Route-X — Pengujian Probing Gateway E2E (v1.0.1 Readiness)${COLOR_RESET}"
 echo "Target URL : ${BASE_URL}"
 echo "Model      : ${TEST_MODEL:-"(auto-detect /v1/models)"}"
 echo "=================================================================="
@@ -159,7 +159,7 @@ REQ_BODY=$(cat <<EOF
 {
   "model": "${TEST_MODEL}",
   "messages": [
-    {"role": "user", "content": "Halo Route-X, verifikasi integritas sistem v1.0.0.1. Jawab 'OK'."}
+    {"role": "user", "content": "Halo Route-X, verifikasi integritas sistem v1.0.1. Jawab 'OK'."}
   ],
   "max_tokens": 10
 }

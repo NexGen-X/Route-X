@@ -39,7 +39,7 @@ Aturan ini berlaku wajib bagi AI agent dan pengembang yang bekerja di repositori
 
 ---
 
-## 5. Dual-Protocol Engine & Streaming (v1.0.0.1 Patch Standards)
+## 5. Dual-Protocol Engine & Streaming (v1.0.1 Patch Standards)
 - **Kompatibilitas OpenAI**: Rute `/v1/chat/completions` dan `/v1/responses` harus sepenuhnya mematuhi spesifikasi OpenAI, baik non-streaming maupun streaming SSE.
 - **Kompatibilitas Anthropic**: Rute `/v1/messages` dan `/v1/v1/messages` harus menangani konversi dua arah secara presisi (roles, multi-modal content parts, tool calls).
 - **Integritas Streaming SSE**: Chunk streaming tidak boleh memotong karakter UTF-8 multibyte atau merusak framing JSON event `data: {...}`.

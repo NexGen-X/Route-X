@@ -29,7 +29,8 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 ## Aturan
 - Bahasa komentar/log di codebase ini: Indonesia. Ikuti gaya yang ada.
 - Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0010_drop_roles.sql`)
-- Jangan commit secret; jangan ubah `go.mod` tanpa alasan; PR via `gh`
+- **Alur Kerja Git Wajib PR (PR-Only Policy)**: Dilarang keras melakukan komit atau push langsung ke branch `main`. Setiap perubahan wajib dibuat pada branch terisolasi (`feat/*`, `fix/*`, `chore/*`), didorong ke remote, diajukan melalui `gh pr create`, dipantau hingga status CI hijau (`gh pr checks <id> --watch`), dan digabungkan melalui `gh pr merge <id> --squash --delete-branch`.
+- Jangan commit secret; jangan ubah `go.mod` tanpa alasan.
 - MCP Resmi yang terpasang untuk repo ini:
   - `codebase-memory-mcp`: Knowledge Graph & AST indeks kode Go & TS (`search_graph`, `trace_path`, `get_code_snippet`)
   - `postgres`: Akses langsung inspeksi DB `routex` (localhost:5432)

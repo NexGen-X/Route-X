@@ -44,3 +44,17 @@ Aturan ini berlaku wajib bagi AI agent dan pengembang yang bekerja di repositori
 - **Kompatibilitas Anthropic**: Rute `/v1/messages` dan `/v1/v1/messages` harus menangani konversi dua arah secara presisi (roles, multi-modal content parts, tool calls).
 - **Integritas Streaming SSE**: Chunk streaming tidak boleh memotong karakter UTF-8 multibyte atau merusak framing JSON event `data: {...}`.
 - **Zero-Touch CLI Protection**: Konfigurasi otomatis untuk alat CLI pengembang (Claude Code, OpenCode, Aider, SGPT) tidak boleh mengganggu environment Antigravity (`agy`).
+
+---
+
+## 6. Alur Kerja Git & Penegakan Wajib Pull Request (PR-Only Policy)
+- **Larangan Keras Direct Push**: Dilarang keras melakukan komit langsung atau `git push origin main`. Cabang `main` adalah cabang produksi yang dilindungi.
+- **Wajib Feature / Task Branch**: Setiap perubahan (fitur, bugfix, refaktor, perapian UI, atau dokumentasi) wajib dikerjakan pada cabang terisolasi baru yang dicabangkan dari `main` mutakhir (`git checkout -b feat/...`, `fix/...`, atau `chore/...`).
+- **Verifikasi Lokal Sebelum Push**:
+  - `gofmt -l .` (wajib bersih tanpa berkas yang perlu diformat).
+  - `go test -race ./...` (wajib 0 data race terdeteksi).
+  - `cd web && npm run build` (wajib lulus kompilasi TypeScript dan Vite tanpa error).
+- **Wajib Pull Request**: Seluruh integrasi kode ke cabang `main` WAJIB melalui Pull Request menggunakan GitHub CLI (`gh pr create --base main --head <branch>`).
+- **Pemantauan & Kepatuhan CI**: Setelah PR dibuat, status CI GitHub Actions (`ci/go` dan `ci/web`) wajib dipantau menggunakan `gh pr checks <PR_NUMBER> --watch`. Dilarang menggabungkan PR jika ada pemeriksaan CI yang gagal atau merah.
+- **Metode Penggabungan**: Penggabungan ke `main` hanya diizinkan melalui `gh pr merge <PR_NUMBER> --squash --delete-branch` setelah seluruh checks berstatus hijau.
+

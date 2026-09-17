@@ -205,10 +205,7 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	_ = m.syncGlobalEnvScript(homeDir, toolDef, fullEnvVars)
 
 	// 3. Tulis file konfigurasi lokal spesifik jika ada direktorinya.
-	// Catatan: apiKey sengaja TIDAK diteruskan — file konfigurasi lokal
-	// (claude/aider/fabric) tidak memakai API key, dan menuliskannya di sana
-	// hanya menambah titik bocor (DATA-001).
-	_ = m.applyToolSpecificConfig(homeDir, toolDef, p.Mode, p.Target, gwURL, "")
+	_ = m.applyToolSpecificConfig(homeDir, toolDef, p.Mode, p.Target, gwURL, p.APIKey)
 
 	execPath := m.findBinary(toolDef.BinaryNames, homeDir)
 	status := &ToolStatus{
@@ -455,6 +452,53 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 			envPath := filepath.Join(fabricDir, ".env")
 			content := fmt.Sprintf("OPENAI_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
 			_ = os.WriteFile(envPath, []byte(content), 0644)
+		}
+
+	case "opencode":
+		// Tulis atau perbarui ~/.config/opencode/opencode.json jika direktori ~/.config/opencode ada
+		opencodeDir := filepath.Join(homeDir, ".config", "opencode")
+		if fi, err := os.Stat(opencodeDir); err == nil && fi.IsDir() {
+			configPath := filepath.Join(opencodeDir, "opencode.json")
+			var cfg map[string]any
+			if data, err := os.ReadFile(configPath); err == nil {
+				_ = json.Unmarshal(data, &cfg)
+			}
+			if cfg == nil {
+				cfg = make(map[string]any)
+			}
+			cfg["$schema"] = "https://opencode.ai/config.json"
+			providers, ok := cfg["provider"].(map[string]any)
+			if !ok || providers == nil {
+				providers = make(map[string]any)
+				cfg["provider"] = providers
+			}
+			routexProv, ok := providers["routex"].(map[string]any)
+			if !ok || routexProv == nil {
+				routexProv = map[string]any{
+					"npm": "@ai-sdk/openai-compatible",
+					"options": map[string]any{
+						"baseURL": gwURL,
+					},
+					"models": map[string]any{},
+				}
+				providers["routex"] = routexProv
+			}
+			if opts, ok := routexProv["options"].(map[string]any); ok {
+				opts["baseURL"] = gwURL
+				if apiKey != "" {
+					opts["apiKey"] = apiKey
+				}
+			}
+			models, ok := routexProv["models"].(map[string]any)
+			if !ok || models == nil {
+				models = make(map[string]any)
+				routexProv["models"] = models
+			}
+			models[target] = map[string]any{"name": target}
+			cfg["model"] = "routex/" + target
+			if data, err := json.MarshalIndent(cfg, "", "  "); err == nil {
+				_ = os.WriteFile(configPath, data, 0644)
+			}
 		}
 	}
 

@@ -360,8 +360,15 @@ export const Settings: React.FC = () => {
               </p>
             </div>
           </div>
-          <Button variant="secondary" size="sm" onClick={loadDomainConfig} isLoading={isDomainLoading}>
-            <RefreshCw className="w-3.5 h-3.5" />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={loadDomainConfig}
+            isLoading={isDomainLoading}
+            icon={<RefreshCw className="w-4 h-4" />}
+            title="Segarkan Konfigurasi Domain"
+          >
+            <span className="hidden sm:inline">Segarkan</span>
           </Button>
         </div>
 
@@ -617,9 +624,15 @@ export const Settings: React.FC = () => {
               </p>
             </div>
           </div>
-          <Button variant="secondary" size="sm" onClick={loadBackupStatus} isLoading={isBackupLoading}>
-            <RefreshCw className={`w-3.5 h-3.5 ${isBackupLoading ? 'animate-spin' : ''}`} />
-            <span className="ml-1.5 hidden sm:inline">Segarkan Status</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={loadBackupStatus}
+            isLoading={isBackupLoading}
+            icon={<RefreshCw className="w-4 h-4" />}
+            title="Segarkan Status Pencadangan"
+          >
+            <span className="hidden sm:inline">Segarkan Status</span>
           </Button>
         </div>
 
@@ -829,20 +842,33 @@ export const Settings: React.FC = () => {
 
       {/* 3. Runtime Parameters Section */}
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-              <Sliders className="w-5 h-5 text-accent" />
-              Runtime Parameters
-            </h3>
-            <p className="text-xs text-text-secondary mt-0.5">
-              Setelan parameter operasional dinamis yang tersimpan di basis data tanpa perlu restart biner.
-            </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0">
+              <Sliders className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                Runtime Parameters
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
+                  Operasional Dinamis
+                </span>
+              </h2>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Setelan parameter operasional dinamis yang tersimpan di basis data tanpa perlu restart biner.
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2 self-end sm:self-auto">
-            <Button variant="secondary" size="sm" onClick={loadSettings} isLoading={isLoading}>
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline ml-1.5">Segarkan</span>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end shrink-0">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={loadSettings}
+              isLoading={isLoading}
+              icon={<RefreshCw className="w-4 h-4" />}
+              title="Segarkan Parameter Runtime"
+            >
+              <span className="hidden sm:inline">Segarkan</span>
             </Button>
             <Button
               variant="primary"

@@ -87,7 +87,7 @@ const Shell: React.FC = () => {
       case '/':
         return {
           title: 'Dashboard',
-          subtitle: 'Live health of the inference proxy — traffic, credential pools, and upstreams.',
+          subtitle: 'Kesehatan runtime proxy inferensi — lalu lintas, pool kredensial, dan status upstream.',
           content: <Dashboard onNavigate={navigate} />,
         };
       case '/observability':

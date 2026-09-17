@@ -243,7 +243,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
               Route-X Gateway Control
             </h2>
             <p className="text-sm text-text-secondary max-w-2xl leading-relaxed">
-              Gateway AI enterprise dengan perutean cerdas multi-provider, failover instan, proteksi SSRF,
+              Gateway AI modern untuk pengembang dan tim, dengan perutean cerdas multi-provider, failover instan, proteksi SSRF,
               dan isolasi egress berkecepatan tinggi.
             </p>
           </div>

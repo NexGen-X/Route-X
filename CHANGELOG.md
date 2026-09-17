@@ -8,21 +8,33 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [v1.1.0] - 2026-09-17
 
-### 🌟 Paradigma "Low Floor, High Ceiling" (Ramah Pemula hingga Tingkat Ahli)
+### 🌟 Paradigma "Low Floor, High Ceiling" & Pengalaman Personal Developer
 - **Resep Cepat 1-Klik di Dashboard (Quick Setup Recipes)**:
   - Penambahan kartu resep siap pakai di Dashboard:
     - 🛠️ *Coding Asisten*: Panduan kilat dan cuplikan variabel shell untuk menghubungkan Cursor, Claude Code, Cline, atau OpenCode secara instan.
     - 💰 *Hemat Biaya 90%*: Strategi mengarahkan prompt rutin ke model murah (DeepSeek V3 / Groq LLaMA) dengan fallback otomatis ke GPT-4o / Claude 3.5 Sonnet.
-    - 🛡️ *Anti-Downtime Enterprise*: Panduan failover multi-upstream otomatis (< 200ms) saat provider utama mengalami error atau rate limit.
+    - 🛡️ *Anti-Downtime*: Panduan failover multi-upstream otomatis (< 200ms) saat provider utama mengalami gangguan atau rate limit.
 - **Progressive Disclosure pada Penambahan Provider**:
-  - Tampilan default bagi pemula dibuat super ringkas: cukup pilih logo penyedia, beri nama label, dan masukkan API Key.
+  - Tampilan default dibuat super ringkas: cukup pilih logo penyedia, beri nama label, dan masukkan API Key.
   - Parameter teknis tingkat lanjut (ID Unik, Dialek Kind, Base URL kustom, Jalur Egress Proxy, Bobot, dan Timeout) disembunyikan secara rapi di balik lipatan *Pengaturan Lanjutan*.
 - **Progressive Disclosure pada Perutean Cerdas (Routing Rules)**:
-  - Form perutean disederhanakan: pemula cukup memilih target model dan strategi utama.
+  - Form perutean disederhanakan: pengguna cukup memilih target model dan strategi utama.
   - Konfigurasi batas toleransi kegagalan (*max attempts*) dan jeda backoff (*backoff ms*) dirapikan ke dalam akordeon opsi toleransi lanjutan.
-- **Penyatuan Pembuatan Kunci API & Alokasi Anggaran**:
-  - Pengguna kini dapat langsung menetapkan pagu pengeluaran bulanan (USD) saat membuat Kunci API baru tanpa harus berpindah ke halaman Anggaran.
-  - Batas kecepatan RPM (Pesan/Menit) dan TPM (Token/Menit) diorganisir dalam lipatan pembatasan lanjutan yang jelas.
+- **Penyatuan Pembuatan Kunci API & Alokasi Anggaran Cepat**:
+  - Pengguna dapat langsung menetapkan pagu pengeluaran bulanan (USD) saat membuat Kunci API baru.
+  - Penambahan chip nominal instan (`+$10`, `+$25`, `+$50`, `+$100`) untuk penetapan anggaran secepat kilat.
+  - Batas kecepatan RPM (Pesan/Menit) dan TPM (Token/Menit) diorganisir dalam lipatan pembatasan lanjutan yang rapi.
+- **Template Pagu Anggaran Personal di Halaman Budgets**:
+  - Template 1-klik di Drawer dan kartu Empty State:
+    - 🟢 *Dev Hemat ($10/bln)*: Pagu $10 dengan batas peringatan 80%.
+    - 🔵 *Koding Rutin ($30/bln)*: Pagu $30 dengan batas peringatan 85%.
+    - 🟣 *Power User ($100/bln)*: Pagu $100 dengan batas peringatan 90%.
+- **Template Batas Laju Cepat di Halaman Rate Limits**:
+  - Template 1-klik: *Dev / Sandbox (60 RPM)*, *Standar IDE (300 RPM)*, dan *High Load (1200 RPM)*.
+- **Universal Clipboard Fallback**:
+  - Penambahan mekanisme fallback klasik `document.execCommand('copy')` pada utilitas clipboard, menjamin tombol salin snippet dan kunci API bekerja 100% andal di seluruh lingkungan browser (Localhost, IP VPS, HTTP LAN `http://192.168.x.x:8080`, dan WebView).
+- **Penyempurnaan Nada Komunikasi Antarmuka**:
+  - Transformasi bahasa antarmuka menjadi ramah bagi pengembang mandiri (*personal developer*), melokalisasi subjudul dashboard, dan menjaga tata letak tetap lapang (*uncluttered*).
 
 ---
 

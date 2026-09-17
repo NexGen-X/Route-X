@@ -6,10 +6,30 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ---
 
-## [v1.0.0.0] - 2026-09-17
+## [v1.0.1] - 2026-09-17
+
+### 🎨 Penyempurnaan UI/UX & Stabilitas Tampilan (Live Staging Review)
+- **Requests Inspector**:
+  - Perbaikan penelusuran timeline event dan payload menggunakan UUID primary key `req.id` dan parameter partisi `created_at`.
+  - Penanganan anggun respon 404 payload saat retensi body request dinonaktifkan demi privasi (`catch(() => null)`), menghilangkan banner error semu dan langsung menampilkan rincian latensi waterfall, biaya, dan perintah cURL.
+- **Katalog Model & Pricing**:
+  - Standardisasi label tombol aksi pada mode kartu grid menjadi `Harga` (selaras dan konsisten dengan tampilan tabel).
+- **Navigasi & Router Aliases**:
+  - Penambahan alias rute `/upstreams/routing` dan `/webhooks` pada router aplikasi `App.tsx`.
+  - Lokalisasi subjudul halaman Webhooks ke Bahasa Indonesia teknis yang konsisten.
+- **Perapian Tata Letak & Kenyamanan Pengguna (PR #6 & PR #8)**:
+  - Perbaikan jarak vertikal dan keterbacaan tabel di semua resolusi.
+  - Pembersihan kode warna hex arbitrer menjadi token desain terstandar.
+  - Transformasi responsif mobile (viewport 390px) pada daftar kartu, laci navigasi, dan dialog aksi.
+- **Alur Kerja Pengembang (PR-Only Policy)**:
+  - Penegakan aturan wajib Pull Request dan perlindungan cabang `main` pada aturan repositori `.agents/rules/routex-dev.md`.
+
+---
+
+## [v1.0.0] - 2026-09-17
 
 ### 🚀 Sorotan Rilis Resmi Perdana (Initial Release)
-Route-X v1.0.0.0 adalah rilis resmi pertama dari gateway AI berkinerja tinggi, self-hosted, dan open-source yang dirancang untuk mengorkestrasi inferensi multi-provider, routing cerdas, tata kelola anggaran presisi, dan integrasi mulus dengan ekosistem CLI developer.
+Route-X v1.0.0 adalah rilis resmi pertama dari gateway AI berkinerja tinggi, self-hosted, dan open-source yang dirancang untuk mengorkestrasi inferensi multi-provider, routing cerdas, tata kelola anggaran presisi, dan integrasi mulus dengan ekosistem CLI developer.
 
 ### ✨ Fitur Utama yang Dirilis
 - **Mesin Dual-Protocol (OpenAI & Anthropic Native)**:

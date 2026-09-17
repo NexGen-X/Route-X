@@ -449,7 +449,7 @@ func (m *Manager) ensureShellAutoLoad(homeDir string) {
 	bashrcPath := filepath.Join(homeDir, ".bashrc")
 	if data, err := os.ReadFile(bashrcPath); err == nil {
 		if !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
-			_ = os.WriteFile(bashrcPath, []byte(string(data)+hook), 0644)
+			_ = os.WriteFile(bashrcPath, []byte(hook+"\n"+string(data)), 0644)
 		}
 	}
 

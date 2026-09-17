@@ -22,11 +22,17 @@ if [ ! -f .env ]; then
     SEC_PGPASS=$(openssl rand -hex 16 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 32 | head -n 1)
     SEC_METRICS=$(openssl rand -hex 16 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 32 | head -n 1)
 
-    sed -i "s/^SESSION_SECRET=.*/SESSION_SECRET=${SEC_SESSION}/" .env 2>/dev/null || true
-    sed -i "s/^ENCRYPTION_KEY=.*/ENCRYPTION_KEY=${SEC_ENC}/" .env 2>/dev/null || true
-    sed -i "s/^API_KEY_PEPPER=.*/API_KEY_PEPPER=${SEC_PEPPER}/" .env 2>/dev/null || true
-    sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${SEC_PGPASS}/" .env 2>/dev/null || true
-    sed -i "s/^METRICS_TOKEN=.*/METRICS_TOKEN=${SEC_METRICS}/" .env 2>/dev/null || true
+    KEY_SESS="SESSION_SECRET"
+    KEY_ENC="ENCRYPTION_KEY"
+    KEY_PEPPER="API_KEY_PEPPER"
+    KEY_PG="POSTGRES_PASSWORD"
+    KEY_METRICS="METRICS_TOKEN"
+
+    sed -i "s|^${KEY_SESS}=.*|${KEY_SESS}=${SEC_SESSION}|" .env 2>/dev/null || true
+    sed -i "s|^${KEY_ENC}=.*|${KEY_ENC}=${SEC_ENC}|" .env 2>/dev/null || true
+    sed -i "s|^${KEY_PEPPER}=.*|${KEY_PEPPER}=${SEC_PEPPER}|" .env 2>/dev/null || true
+    sed -i "s|^${KEY_PG}=.*|${KEY_PG}=${SEC_PGPASS}|" .env 2>/dev/null || true
+    sed -i "s|^${KEY_METRICS}=.*|${KEY_METRICS}=${SEC_METRICS}|" .env 2>/dev/null || true
     echo "   File .env berhasil dibuat dengan aman."
 fi
 

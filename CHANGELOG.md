@@ -6,6 +6,26 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ---
 
+## [v1.1.0] - 2026-09-17
+
+### 🌟 Paradigma "Low Floor, High Ceiling" (Ramah Pemula hingga Tingkat Ahli)
+- **Resep Cepat 1-Klik di Dashboard (Quick Setup Recipes)**:
+  - Penambahan kartu resep siap pakai di Dashboard:
+    - 🛠️ *Coding Asisten*: Panduan kilat dan cuplikan variabel shell untuk menghubungkan Cursor, Claude Code, Cline, atau OpenCode secara instan.
+    - 💰 *Hemat Biaya 90%*: Strategi mengarahkan prompt rutin ke model murah (DeepSeek V3 / Groq LLaMA) dengan fallback otomatis ke GPT-4o / Claude 3.5 Sonnet.
+    - 🛡️ *Anti-Downtime Enterprise*: Panduan failover multi-upstream otomatis (< 200ms) saat provider utama mengalami error atau rate limit.
+- **Progressive Disclosure pada Penambahan Provider**:
+  - Tampilan default bagi pemula dibuat super ringkas: cukup pilih logo penyedia, beri nama label, dan masukkan API Key.
+  - Parameter teknis tingkat lanjut (ID Unik, Dialek Kind, Base URL kustom, Jalur Egress Proxy, Bobot, dan Timeout) disembunyikan secara rapi di balik lipatan *Pengaturan Lanjutan*.
+- **Progressive Disclosure pada Perutean Cerdas (Routing Rules)**:
+  - Form perutean disederhanakan: pemula cukup memilih target model dan strategi utama.
+  - Konfigurasi batas toleransi kegagalan (*max attempts*) dan jeda backoff (*backoff ms*) dirapikan ke dalam akordeon opsi toleransi lanjutan.
+- **Penyatuan Pembuatan Kunci API & Alokasi Anggaran**:
+  - Pengguna kini dapat langsung menetapkan pagu pengeluaran bulanan (USD) saat membuat Kunci API baru tanpa harus berpindah ke halaman Anggaran.
+  - Batas kecepatan RPM (Pesan/Menit) dan TPM (Token/Menit) diorganisir dalam lipatan pembatasan lanjutan yang jelas.
+
+---
+
 ## [v1.0.1] - 2026-09-17
 
 ### 🎨 Penyempurnaan UI/UX & Stabilitas Tampilan (Live Staging Review)

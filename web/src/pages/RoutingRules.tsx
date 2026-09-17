@@ -32,6 +32,7 @@ export const RoutingRules: React.FC = () => {
   const [selectedRule, setSelectedRule] = useState<any>(null);
   const [ruleProviders, setRuleProviders] = useState<string[]>([]);
   const [ruleWeights, setRuleWeights] = useState<Record<string, number>>({});
+  const [showRetryAdvanced, setShowRetryAdvanced] = useState(false);
 
   // Edit Drawer States
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -1435,28 +1436,40 @@ export const RoutingRules: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Maksimal Percobaan</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={newRule.max_attempts}
-                      onChange={(e) => setNewRule({ ...newRule, max_attempts: parseInt(e.target.value) || 3 })}
-                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Jeda Backoff (ms)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={newRule.backoff_ms}
-                      onChange={(e) => setNewRule({ ...newRule, backoff_ms: parseInt(e.target.value) || 200 })}
-                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
-                    />
-                  </div>
+                <div className="pt-2 border-t border-border/60">
+                  <button
+                    type="button"
+                    onClick={() => setShowRetryAdvanced(!showRetryAdvanced)}
+                    className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-accent font-medium transition-colors cursor-pointer"
+                  >
+                    {showRetryAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent" /> : <ChevronDown className="w-3.5 h-3.5 text-accent" />}
+                    <span>{showRetryAdvanced ? 'Sembunyikan Toleransi Kegagalan & Retry' : '⚙️ Toleransi Kegagalan & Retry (Lanjutan)'}</span>
+                  </button>
+                  {showRetryAdvanced && (
+                    <div className="grid grid-cols-2 gap-3 mt-2.5 p-3 rounded-xl border border-border/80 bg-bg-surface-2/40">
+                      <div>
+                        <label className="block text-xs font-medium text-text-secondary mb-1">Maksimal Percobaan</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          value={newRule.max_attempts}
+                          onChange={(e) => setNewRule({ ...newRule, max_attempts: parseInt(e.target.value) || 3 })}
+                          className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-text-secondary mb-1">Jeda Backoff (ms)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={newRule.backoff_ms}
+                          onChange={(e) => setNewRule({ ...newRule, backoff_ms: parseInt(e.target.value) || 200 })}
+                          className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Provider Selection & Weights directly in Create */}

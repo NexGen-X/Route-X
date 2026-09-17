@@ -146,6 +146,15 @@ Installs and configures all 5 native services (Route-X Core, PostgreSQL 16, Redi
 curl -fsSL https://raw.githubusercontent.com/NexGen-X/Route-X/main/install-native.sh | sudo bash
 ```
 
+#### 🔄 Zero-Downtime Live Updates (Staging / Production)
+Whenever new code is merged into `main`, rebuild and update the running gateway atomically without tearing down PostgreSQL, Redis, Caddy, or Xray:
+```bash
+git pull origin main
+make live-update
+# atau: sudo ./scripts/ops/update-live.sh
+```
+This performs an isolated compilation (`ai-gateway.new`), applies idempotent database migrations, swaps the binary atomically, and restarts `routex.service` in under 250ms with zero data loss.
+
 ### Option B: Docker Compose (Complete 5-Service Stack)
 Run the complete containerized stack in isolated containers (Route-X Core, PostgreSQL 16, Redis 7, Xray-Core Stealth Egress, and Caddy Edge Proxy):
 

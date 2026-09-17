@@ -1,12 +1,67 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Menyiapkan arsitektur Docker Route-X..."
+echo "🚀 Menyiapkan arsitektur Docker Route-X (5 Layanan: Route-X, DB, Redis, Xray, Caddy)..."
 
-# Pastikan folder konfigurasi tersedia
+# 1. Pastikan folder konfigurasi tersedia
 mkdir -p deploy/caddy deploy/xray
 
-echo "📦 Membangun ulang image Docker (Kompilasi Frontend & Backend)..."
+# 2. Otomatis inisialisasi file .env bila belum ada
+if [ ! -f .env ]; then
+    echo "🔑 Membuat file konfigurasi .env baru dengan kunci rahasia unik..."
+    if [ -f .env.example ]; then
+        cp .env.example .env
+    else
+        touch .env
+    fi
+
+    # Hasilkan kunci kriptografi acak aman
+    SEC_SESSION=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
+    SEC_ENC=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
+    SEC_PEPPER=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
+    SEC_PGPASS=$(openssl rand -hex 16 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 32 | head -n 1)
+    SEC_METRICS=$(openssl rand -hex 16 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 32 | head -n 1)
+
+    KEY_SESS="SESSION_SECRET"
+    KEY_ENC="ENCRYPTION_KEY"
+    KEY_PEPPER="API_KEY_PEPPER"
+    KEY_PG="POSTGRES_PASSWORD"
+    KEY_METRICS="METRICS_TOKEN"
+
+    sed -i "s|^${KEY_SESS}=.*|${KEY_SESS}=${SEC_SESSION}|" .env 2>/dev/null || true
+    sed -i "s|^${KEY_ENC}=.*|${KEY_ENC}=${SEC_ENC}|" .env 2>/dev/null || true
+    sed -i "s|^${KEY_PEPPER}=.*|${KEY_PEPPER}=${SEC_PEPPER}|" .env 2>/dev/null || true
+    sed -i "s|^${KEY_PG}=.*|${KEY_PG}=${SEC_PGPASS}|" .env 2>/dev/null || true
+    sed -i "s|^${KEY_METRICS}=.*|${KEY_METRICS}=${SEC_METRICS}|" .env 2>/dev/null || true
+    echo "   File .env berhasil dibuat dengan aman."
+fi
+
+# 3. Pastikan konfigurasi default Xray tersedia
+if [ ! -f deploy/xray/config.json ]; then
+    echo "📡 Menyiapkan konfigurasi bawaan Xray SOCKS5 (10808) & HTTP (10809)..."
+    cat << 'EOF' > deploy/xray/config.json
+{
+  "log": { "loglevel": "warning" },
+  "inbounds": [{
+    "port": 10808,
+    "listen": "0.0.0.0",
+    "protocol": "socks",
+    "settings": { "auth": "noauth", "udp": true }
+  }, {
+    "port": 10809,
+    "listen": "0.0.0.0",
+    "protocol": "http",
+    "settings": {}
+  }],
+  "outbounds": [{
+    "protocol": "freedom",
+    "settings": {}
+  }]
+}
+EOF
+fi
+
+echo "📦 Membangun image Docker (Kompilasi Frontend & Backend)..."
 echo "🧹 Membersihkan kontainer lama..."
 docker compose down --remove-orphans
 docker rm -f routex-postgres routex-gateway routex-caddy routex-redis routex-xray 2>/dev/null || true

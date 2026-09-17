@@ -174,48 +174,68 @@ grep -q "127.0.0.1 xray" /etc/hosts || echo "127.0.0.1 xray" >> /etc/hosts
 systemctl enable xray
 systemctl restart xray || true
 
-# 9. Memeriksa Lingkungan Kompilasi (Node.js & Golang)
+# 9. Memasang Biner Route-X Core (Menggunakan Biner Rilis Resmi v1.1.0)
 echo ""
-echo "🛠️ [6/7] Memeriksa build toolchain (Node.js & Golang)..."
-if ! command -v node &>/dev/null; then
-    echo "   Memasang Node.js 20 LTS (NodeSource)..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs
-fi
+echo "🛠️ [6/7] Menyiapkan biner resmi Route-X Gateway v1.1.0..."
+mkdir -p "$INSTALL_DIR"
 
-GO_VER=0
-if command -v go &>/dev/null; then
-    GO_VER="$(go version 2>/dev/null | grep -oE 'go1\.[0-9]+' | cut -d. -f2 || echo 0)"
-fi
-
-if [ "$GO_VER" -lt 27 ]; then
-    echo "   Golang >= 1.27 diperlukan. Mengunduh Golang 1.27.1..."
+INSTALLED_FROM_RELEASE=0
+if [ -f "$SRC_DIR/bin/ai-gateway" ]; then
+    echo "   Ditemukan biner lokal $SRC_DIR/bin/ai-gateway. Menyalin ke $INSTALL_DIR..."
+    install -m 755 "$SRC_DIR/bin/ai-gateway" "$INSTALL_DIR/ai-gateway"
+    INSTALLED_FROM_RELEASE=1
+else
+    RELEASE_TAG="v1.1.0"
     ARCH="$(uname -m)"
     case "$ARCH" in
-        x86_64) GO_ARCH="amd64" ;;
-        aarch64|arm64) GO_ARCH="arm64" ;;
-        *) GO_ARCH="amd64" ;;
+        x86_64) TARBALL_NAME="routex-${RELEASE_TAG}-linux-amd64.tar.gz" ;;
+        *) TARBALL_NAME="routex-${RELEASE_TAG}-linux-amd64.tar.gz" ;;
     esac
-    wget -q "https://dl.google.com/go/go1.27.1.linux-${GO_ARCH}.tar.gz" -O /tmp/go.tar.gz
-    rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz
-    rm -f /tmp/go.tar.gz
-    export PATH="/usr/local/go/bin:$PATH"
-    grep -q "/usr/local/go/bin" /etc/profile || echo 'export PATH="/usr/local/go/bin:$PATH"' >> /etc/profile
+
+    DOWNLOAD_URL="https://github.com/NexGen-X/Route-X/releases/download/${RELEASE_TAG}/${TARBALL_NAME}"
+    echo "   Mengunduh biner rilis statis resmi dari GitHub: ${DOWNLOAD_URL}..."
+    if curl -fsSL "$DOWNLOAD_URL" -o /tmp/routex-release.tar.gz 2>/dev/null; then
+        tar -xzf /tmp/routex-release.tar.gz -C "$INSTALL_DIR" ai-gateway
+        chmod 755 "$INSTALL_DIR/ai-gateway"
+        rm -f /tmp/routex-release.tar.gz
+        echo "   Biner Route-X ${RELEASE_TAG} berhasil dipasang (bebas kompilasi)!"
+        INSTALLED_FROM_RELEASE=1
+    else
+        echo "   Peringatan: Gagal mengunduh biner rilis. Beralih ke fallback kompilasi dari sumber..."
+    fi
 fi
 
-# Kompilasi Web Frontend
-echo "   Membangun Antarmuka Web (React/Vite)..."
-cd "$SRC_DIR/web"
-npm install --no-audit --no-fund
-npm run build
-cd "$SRC_DIR"
+# Fallback kompilasi dari source code bila pengunduhan biner tidak tersedia
+if [ "$INSTALLED_FROM_RELEASE" -eq 0 ]; then
+    echo "   Memeriksa toolchain kompilasi Node.js & Golang..."
+    if ! command -v node &>/dev/null; then
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>/dev/null || true
+        apt-get install -y nodejs
+    fi
 
-# Kompilasi Backend Gateway
-echo "   Membangun Biner Core Route-X (Golang)..."
-CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o ai-gateway ./cmd/ai-gateway
+    if ! command -v go &>/dev/null; then
+        ARCH="$(uname -m)"
+        case "$ARCH" in
+            x86_64) GO_ARCH="amd64" ;;
+            aarch64|arm64) GO_ARCH="arm64" ;;
+            *) GO_ARCH="amd64" ;;
+        esac
+        wget -q "https://dl.google.com/go/go1.24.0.linux-${GO_ARCH}.tar.gz" -O /tmp/go.tar.gz
+        rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz
+        rm -f /tmp/go.tar.gz
+        export PATH="/usr/local/go/bin:$PATH"
+    fi
 
-mkdir -p "$INSTALL_DIR"
-install -m 755 ai-gateway "$INSTALL_DIR/ai-gateway"
+    echo "   Membangun Web Frontend (npm run build)..."
+    cd "$SRC_DIR/web"
+    npm install --no-audit --no-fund
+    npm run build
+    cd "$SRC_DIR"
+
+    echo "   Membangun Biner Core Route-X (go build)..."
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${RELEASE_TAG:-v1.1.0}" -o ai-gateway ./cmd/ai-gateway
+    install -m 755 ai-gateway "$INSTALL_DIR/ai-gateway"
+fi
 
 # 10. Konfigurasi Lingkungan, Systemd Service & Migrasi Database
 echo ""

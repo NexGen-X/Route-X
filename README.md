@@ -139,15 +139,15 @@ tar -xzvf routex-v1.1.0-linux-amd64.tar.gz
 ./ai-gateway
 ```
 
-### Option A: Automated Native Linux 1-Liner (Recommended for Production)
-Installs and configures Route-X, PostgreSQL, Redis, Caddy (with Auto-TLS), and systemd service:
+### Option A: Automated Native Linux 1-Liner (Recommended for Production VPS)
+Installs and configures all 5 native services (Route-X Core, PostgreSQL 16, Redis 7, Xray-Core Stealth Egress, and Caddy with Auto-TLS) via systemd in under 45 seconds:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NexGen-X/Route-X/main/install-native.sh | sudo bash
 ```
 
-### Option B: Docker Compose
-Run the complete containerized stack in isolated containers:
+### Option B: Docker Compose (Complete 5-Service Stack)
+Run the complete containerized stack in isolated containers (Route-X Core, PostgreSQL 16, Redis 7, Xray-Core Stealth Egress, and Caddy Edge Proxy):
 
 ```bash
 git clone https://github.com/NexGen-X/Route-X.git

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   caddy:
     image: caddy:2-alpine
@@ -38,11 +36,12 @@ services:
     depends_on:
       - db
       - redis
+      - xray
     networks:
       - routex-network
 
   db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: routex-postgres
     restart: unless-stopped
     environment:

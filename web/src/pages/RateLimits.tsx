@@ -8,7 +8,7 @@ import { Modal } from '../components/common/Modal';
 import { Tooltip } from '../components/common/Tooltip';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
-import { Gauge, Plus, Trash2 } from 'lucide-react';
+import { Gauge, Plus, Trash2, Sparkles } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 
@@ -317,6 +317,62 @@ export const RateLimits: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Quick Rate Limit Presets */}
+          <div className="p-3 rounded-xl bg-accent/5 border border-accent/20 space-y-2">
+            <span className="text-[11px] font-semibold text-accent flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              Template Proteksi Cepat (Rekomendasi Pemakaian)
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setNewLimit((prev) => ({
+                    ...prev,
+                    requests_per_minute: 60,
+                    tokens_per_minute: 100000,
+                    requests_per_second: 5,
+                  }))
+                }
+                className="px-2 py-1.5 rounded-lg bg-bg-surface-2 border border-border hover:border-emerald-500/50 hover:bg-emerald-500/10 text-center transition-all cursor-pointer group"
+              >
+                <span className="block text-xs font-bold text-white group-hover:text-emerald-300">60 RPM</span>
+                <span className="block text-[10px] text-text-muted mt-0.5">Dev / Sandbox</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setNewLimit((prev) => ({
+                    ...prev,
+                    requests_per_minute: 300,
+                    tokens_per_minute: 500000,
+                    requests_per_second: 15,
+                  }))
+                }
+                className="px-2 py-1.5 rounded-lg bg-bg-surface-2 border border-border hover:border-sky-500/50 hover:bg-sky-500/10 text-center transition-all cursor-pointer group"
+              >
+                <span className="block text-xs font-bold text-white group-hover:text-sky-300">300 RPM</span>
+                <span className="block text-[10px] text-text-muted mt-0.5">Standar IDE</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setNewLimit((prev) => ({
+                    ...prev,
+                    requests_per_minute: 1200,
+                    tokens_per_minute: 2000000,
+                    requests_per_second: 50,
+                  }))
+                }
+                className="px-2 py-1.5 rounded-lg bg-bg-surface-2 border border-border hover:border-purple-500/50 hover:bg-purple-500/10 text-center transition-all cursor-pointer group"
+              >
+                <span className="block text-xs font-bold text-white group-hover:text-purple-300">1200 RPM</span>
+                <span className="block text-[10px] text-text-muted mt-0.5">High Load</span>
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">Req / Menit (RPM)</label>

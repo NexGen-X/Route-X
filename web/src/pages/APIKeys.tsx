@@ -146,26 +146,28 @@ export const APIKeys: React.FC = () => {
         provider_ids: [],
       });
 
+      const keyId = (res as any)?.key?.id || res.id;
       const budgetNum = Number(monthlyBudgetUsd);
-      if (Number.isFinite(budgetNum) && budgetNum > 0) {
+      if (keyId && Number.isFinite(budgetNum) && budgetNum > 0) {
         try {
           await api.budgets.create({
             name: `Anggaran ${newKey.name.trim()}`,
             scope: 'api_key',
-            scope_id: res.id,
+            scope_id: keyId,
             period: 'monthly',
             limit_usd: budgetNum.toFixed(2),
             alert_threshold_pct: 80,
             action_on_exceed: 'block',
           });
-        } catch {
-          // non-blocking
+        } catch (bErr: any) {
+          toast.warn('Kunci dibuat, namun alokasi anggaran otomatis gagal: ' + (bErr.message || bErr));
         }
       }
 
       setIsCreateOpen(false);
       setMonthlyBudgetUsd('');
-      setCreatedRawKey(res.raw_key || null);
+      const rawKeyRevealed = (res as any)?.raw_key || (res as any)?.key?.raw_key || res.raw_key || null;
+      setCreatedRawKey(rawKeyRevealed);
       toast.success(
         budgetNum > 0
           ? `Kunci API dan alokasi anggaran $${budgetNum.toFixed(2)}/bulan berhasil dibuat.`
@@ -539,7 +541,33 @@ export const APIKeys: React.FC = () => {
                 className="w-full pl-7 pr-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent text-xs"
               />
             </div>
-            <p className="text-[11px] text-text-muted mt-1 leading-relaxed">
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              <span className="text-[10px] text-text-muted font-medium">Pilihan Cepat:</span>
+              {['10.00', '25.00', '50.00', '100.00'].map((amt) => (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => setMonthlyBudgetUsd(amt)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono border transition-colors cursor-pointer ${
+                    monthlyBudgetUsd === amt
+                      ? 'bg-accent/15 border-accent text-accent font-semibold'
+                      : 'bg-bg-surface-2 border-border text-text-secondary hover:text-white hover:border-text-muted'
+                  }`}
+                >
+                  ${parseFloat(amt)}
+                </button>
+              ))}
+              {monthlyBudgetUsd && (
+                <button
+                  type="button"
+                  onClick={() => setMonthlyBudgetUsd('')}
+                  className="text-[10px] text-text-muted hover:text-rose-400 ml-auto cursor-pointer"
+                >
+                  Hapus
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-text-muted mt-1.5 leading-relaxed">
               Otomatis membatasi pengeluaran per bulan untuk kunci ini tanpa perlu repot membuka menu Anggaran.
             </p>
           </div>

@@ -7,7 +7,7 @@ import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
-import { Coins, Plus, RotateCcw, Power } from 'lucide-react';
+import { Coins, Plus, RotateCcw, Power, Sparkles } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { formatUSD, percentageOfDecimal } from '../utils/money';
@@ -179,14 +179,35 @@ export const Budgets: React.FC = () => {
                 Tetapkan pagu pengeluaran inferensi USD (harian, mingguan, atau bulanan) untuk mencegah lonjakan biaya upstream tanpa terduga.
               </p>
             </div>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setIsCreateOpen(true)}
-              icon={<Plus className="w-4 h-4 text-black" />}
-            >
-              Alokasikan Anggaran Pertama
-            </Button>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setIsCreateOpen(true)}
+                icon={<Plus className="w-4 h-4 text-black" />}
+              >
+                Alokasikan Anggaran
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setNewBudget({
+                    name: 'Pagu Dev Santai',
+                    scope: 'global',
+                    scope_id: '',
+                    period: 'monthly',
+                    max_spend_usd: '10.00',
+                    alert_threshold: 80,
+                    action: 'block',
+                  });
+                  setIsCreateOpen(true);
+                }}
+                icon={<Sparkles className="w-3.5 h-3.5 text-accent" />}
+              >
+                Template Dev $10/bln
+              </Button>
+            </div>
           </div>
         </Card>
       ) : (
@@ -293,6 +314,70 @@ export const Budgets: React.FC = () => {
         }
       >
         <form id="create-budget-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
+          {/* Quick Presets Khusus Developer / Pemakaian Pribadi */}
+          <div className="p-3 rounded-xl bg-accent/5 border border-accent/20 space-y-2">
+            <span className="text-[11px] font-semibold text-accent flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              Template Pagu Cepat (Pemakaian Pribadi & Koding)
+            </span>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setNewBudget((prev) => ({
+                    ...prev,
+                    name: 'Pagu Dev Santai',
+                    max_spend_usd: '10.00',
+                    alert_threshold: 80,
+                    period: 'monthly',
+                    scope: 'global',
+                    scope_id: '',
+                  }))
+                }
+                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-emerald-500/50 hover:bg-emerald-500/10 text-center transition-all cursor-pointer group"
+              >
+                <span className="block text-xs font-bold text-white group-hover:text-emerald-300">$10 / bln</span>
+                <span className="block text-[10px] text-text-muted mt-0.5">Dev Hemat</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setNewBudget((prev) => ({
+                    ...prev,
+                    name: 'Pagu Koding Rutin',
+                    max_spend_usd: '30.00',
+                    alert_threshold: 85,
+                    period: 'monthly',
+                    scope: 'global',
+                    scope_id: '',
+                  }))
+                }
+                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-sky-500/50 hover:bg-sky-500/10 text-center transition-all cursor-pointer group"
+              >
+                <span className="block text-xs font-bold text-white group-hover:text-sky-300">$30 / bln</span>
+                <span className="block text-[10px] text-text-muted mt-0.5">Koding Harian</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setNewBudget((prev) => ({
+                    ...prev,
+                    name: 'Pagu Power Developer',
+                    max_spend_usd: '100.00',
+                    alert_threshold: 90,
+                    period: 'monthly',
+                    scope: 'global',
+                    scope_id: '',
+                  }))
+                }
+                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-purple-500/50 hover:bg-purple-500/10 text-center transition-all cursor-pointer group"
+              >
+                <span className="block text-xs font-bold text-white group-hover:text-purple-300">$100 / bln</span>
+                <span className="block text-[10px] text-text-muted mt-0.5">Power User</span>
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Anggaran *</label>
             <input

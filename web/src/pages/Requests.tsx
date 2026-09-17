@@ -133,9 +133,10 @@ export const Requests: React.FC = () => {
     setIsInspectorOpen(true);
     setInspectorError(null);
     try {
+      const targetId = req.id || req.request_id;
       const [eventsRes, payloadRes] = await Promise.all([
-        api.requests.events(req.request_id),
-        api.requests.payload(req.request_id),
+        api.requests.events(targetId, req.created_at).catch(() => ({ events: [] })),
+        api.requests.payload(targetId, req.created_at).catch(() => null),
       ]);
       if (inspectorReqRef.current !== reqId) return;
       setReqEvents(eventsRes.events || []);

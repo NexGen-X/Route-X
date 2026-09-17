@@ -253,7 +253,7 @@ export const Settings: React.FC = () => {
     e.preventDefault();
     const domain = inputDomain.trim().toLowerCase();
     if (!domain || !/^(?!-)(?!.*--)([a-z0-9-]{1,63}\.)+[a-z]{2,}$/.test(domain)) {
-      setDomainFeedback({ type: 'error', message: 'Nama domain tidak valid (contoh: id-tech.cloud).' });
+      setDomainFeedback({ type: 'error', message: 'Nama domain tidak valid (contoh: gateway.example.com).' });
       return;
     }
 

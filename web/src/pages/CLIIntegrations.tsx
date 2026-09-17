@@ -92,7 +92,7 @@ export const CLIIntegrations: React.FC = () => {
     if (typeof window !== 'undefined') {
       return window.location.origin;
     }
-    return 'https://id-tech.cloud';
+    return 'http://localhost:8080';
   }, []);
 
   // Temukan aturan combo dinamis dari database (aturan dengan tag [combo:...] pada deskripsinya)

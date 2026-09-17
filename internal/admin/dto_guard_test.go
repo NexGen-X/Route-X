@@ -93,7 +93,7 @@ func TestDTOSerializationSecurity(t *testing.T) {
 			Status:     "active",
 			PublicURL:  "https://ai.example.com",
 			BaseURL:    "https://ai.example.com/v1",
-			ServerIP:   "54.179.116.100",
+			ServerIP:   "203.0.113.100",
 			DNSMatched: true,
 			Message:    "ok",
 		},

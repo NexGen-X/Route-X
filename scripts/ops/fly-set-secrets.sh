@@ -36,7 +36,7 @@ if ! command -v fly &> /dev/null && ! command -v flyctl &> /dev/null; then
   echo "  ENCRYPTION_KEY=\"${ENCRYPTION_KEY_VAL}\" \\"
   echo "  API_KEY_PEPPER=\"${API_KEY_PEPPER_VAL}\" \\"
   echo "  METRICS_TOKEN=\"${METRICS_TOKEN_VAL}\" \\"
-  echo "  INITIAL_ADMIN_EMAIL=\"admin@id-tech.cloud\" \\"
+  echo "  INITIAL_ADMIN_EMAIL=\"admin@example.com\" \\"
   PASS_KEY="INITIAL_ADMIN_PASSWORD"
   echo "  ${PASS_KEY}=\"${RAND_ADMIN_PASS}\" \\"
   echo "  PUBLIC_URL=\"https://${APP_NAME}.fly.dev\""
@@ -56,7 +56,7 @@ ${FLY_BIN} secrets set -a "${APP_NAME}" \
   ENCRYPTION_KEY="${ENCRYPTION_KEY_VAL}" \
   API_KEY_PEPPER="${API_KEY_PEPPER_VAL}" \
   METRICS_TOKEN="${METRICS_TOKEN_VAL}" \
-  INITIAL_ADMIN_EMAIL="admin@id-tech.cloud" \
+  INITIAL_ADMIN_EMAIL="admin@example.com" \
   ${PASS_KEY}="${RAND_ADMIN_PASS}" \
   PUBLIC_URL="https://${APP_NAME}.fly.dev"
 
@@ -64,6 +64,6 @@ echo ""
 echo "=================================================================="
 echo " Secrets berhasil disetel di Fly.io!"
 echo " Kredensial Admin Awal Anda:"
-echo " Email   : admin@id-tech.cloud"
+echo " Email   : admin@example.com"
 echo " Password: ${RAND_ADMIN_PASS}"
 echo "=================================================================="

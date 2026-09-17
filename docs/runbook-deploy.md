@@ -1,4 +1,4 @@
-# Runbook deploy Route-X ke id-tech.cloud
+# Runbook deploy Route-X ke gateway.example.com
 
 Arsitektur: Cloudflare DNS -> Caddy :443 (TLS otomatis Let's Encrypt)
 -> reverse_proxy 127.0.0.1:8080 (systemd routex.service).
@@ -6,7 +6,7 @@ Dashboard tersemat di biner via web/embed.go, jadi satu biner cukup.
 
 ## 1. Prasyarat sekali saja
 
-  - DNS A id-tech.cloud ke IP publik server (saat deploy: 54.179.116.100).
+  - DNS A gateway.example.com ke IP publik server (saat deploy: 203.0.113.100).
   - Caddy terinstall dari repo resmi (v2.11.4 saat deploy).
   - DB routex_prod (owner routex), direktori /opt/routex dan /etc/routex.
 
@@ -14,7 +14,7 @@ Dashboard tersemat di biner via web/embed.go, jadi satu biner cukup.
 
   APP_ENV=production
   PORT=8080
-  PUBLIC_URL=https://id-tech.cloud
+  PUBLIC_URL=https://gateway.example.com
   DATABASE_URL=postgres://routex:***@127.0.0.1:5432/routex_prod?sslmode=require
   REDIS_URL=redis://127.0.0.1:6379/0
   SESSION_SECRET=<64 hex>
@@ -25,7 +25,7 @@ Dashboard tersemat di biner via web/embed.go, jadi satu biner cukup.
   RATE_LIMIT_FAIL_CLOSED=true
   TRUSTED_PROXIES=127.0.0.1/32
   UPSTREAM_ALLOW_HTTP=false
-  INITIAL_ADMIN_EMAIL=admin@id-tech.cloud
+  INITIAL_ADMIN_EMAIL=admin@routex.local
   INITIAL_ADMIN_PASSWORD=<GANTI_PASSWORD_MIN_16_KARAKTER>
 
 Validasi config menolak boot bila PUBLIC_URL bukan https,
@@ -38,14 +38,14 @@ DATABASE_URL pakai sslmode=disable, atau METRICS_TOKEN < 32 char.
   set -a; . /etc/routex/routex.env; set +a
   /opt/routex/ai-gateway -migrate
   systemctl restart routex
-  curl https://id-tech.cloud/healthz && curl https://id-tech.cloud/readyz
+  curl https://gateway.example.com/healthz && curl https://gateway.example.com/readyz
 
 Catatan: build web DULU baru build Go, karena dist tersemat via go:embed
 saat kompilasi. Urutan terbalik = dashboard basi.
 
 ## 4. Caddy (/etc/caddy/Caddyfile)
 
-  id-tech.cloud {
+  gateway.example.com {
       encode zstd gzip
 
       reverse_proxy 127.0.0.1:8080 {
@@ -68,7 +68,7 @@ penyerang bisa menghabiskan jatah seluruh pengguna.
 
 ## 5. Setelah deploy pertama
 
-  1. Login ke konsol (admin@id-tech.cloud atau default onboarding admin@routex.local / RouteX#Initial2026!), ganti password saat diminta.
+  1. Login ke konsol (admin@routex.local atau default onboarding admin@routex.local / RouteX#Initial2026!), ganti password saat diminta.
   2. Hapus INITIAL_ADMIN_PASSWORD dari /etc/routex/routex.env jika diisi, restart.
   3. Verifikasi: landing 200 + judul Route-X, /healthz ok, /readyz 200.
 

@@ -22,13 +22,13 @@ services:
     environment:
       - APP_ENV=production
       - PORT=8080
-      - PUBLIC_URL=https://id-tech.cloud
+      - PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
       - DATABASE_URL=postgres://routex:${POSTGRES_PASSWORD}@db:5432/routex_prod?sslmode=prefer
       - REDIS_URL=redis://redis:6379/0
       - SESSION_SECRET=${SESSION_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - API_KEY_PEPPER=${API_KEY_PEPPER}
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@id-tech.cloud}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@example.com}
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
       - METRICS_TOKEN=${METRICS_TOKEN}
       - TRUSTED_PROXIES=0.0.0.0/0

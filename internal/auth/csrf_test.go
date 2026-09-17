@@ -408,8 +408,8 @@ func TestCSRFOriginMatchesRequestHostEvenWhenPublicURLSet(t *testing.T) {
 	const sessionID = "3f3e0f6a-0000-4000-8000-0000000000aa"
 	token := h.csrf.Issue(sessionID)
 
-	r := httptest.NewRequest(http.MethodPost, "http://54.179.116.100/api/auth/change-password", nil)
-	r.Header.Set("Origin", "http://54.179.116.100")
+	r := httptest.NewRequest(http.MethodPost, "http://203.0.113.100/api/auth/change-password", nil)
+	r.Header.Set("Origin", "http://203.0.113.100")
 	r.Header.Set(HeaderCSRFToken, token)
 	r.AddCookie(&http.Cookie{Name: h.cookies.CSRFName(), Value: token})
 	principal := &Principal{

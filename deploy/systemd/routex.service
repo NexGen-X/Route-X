@@ -1,5 +1,5 @@
 [Unit]
-Description=Route-X AI Gateway (id-tech.cloud)
+Description=Route-X AI Gateway
 After=network-online.target postgresql.service redis-server.service
 Wants=network-online.target
 

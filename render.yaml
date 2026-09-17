@@ -54,7 +54,7 @@ services:
         sync: false # Wajib minimal 32-byte Base64 (openssl rand -base64 32)
       # Akun Inisial Super Admin (di-seed otomatis saat database masih kosong)
       - key: INITIAL_ADMIN_EMAIL
-        sync: false # contoh: admin@id-tech.cloud
+        sync: false # contoh: admin@example.com
       - key: INITIAL_ADMIN_PASSWORD
         sync: false # minimal 12 karakter dengan variasi karakter
       # Metrik Prometheus & Telemetri

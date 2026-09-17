@@ -221,7 +221,7 @@ Route-X exposes standardized endpoints compatible with all official AI SDKs:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://id-tech.cloud/v1",
+    base_url="https://your-routex-domain.com/v1",
     api_key="sk_live_your_routex_api_key"
 )
 
@@ -238,7 +238,7 @@ for chunk in response:
 
 ### cURL Example (Anthropic Messages API)
 ```bash
-curl -X POST https://id-tech.cloud/v1/messages \
+curl -X POST https://your-routex-domain.com/v1/messages \
   -H "x-api-key: sk_live_your_routex_api_key" \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \

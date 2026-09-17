@@ -1,6 +1,6 @@
 # Route-X Quickstart & Developer Integration Guide
 
-Dokumentasi ini memandu pengembang dalam mengintegrasikan aplikasi dengan **Route-X AI Gateway** (`https://id-tech.cloud`). Route-X menyediakan endpoint yang 100% kompatibel dengan protokol standar **OpenAI API**, sehingga Anda dapat langsung menggunakan pustaka resmi OpenAI (Python, Node.js), LangChain, LlamaIndex, atau cURL tanpa perlu mengubah kode aplikasi secara signifikan.
+Dokumentasi ini memandu pengembang dalam mengintegrasikan aplikasi dengan **Route-X AI Gateway** (`https://api.your-domain.com`). Route-X menyediakan endpoint yang 100% kompatibel dengan protokol standar **OpenAI API**, sehingga Anda dapat langsung menggunakan pustaka resmi OpenAI (Python, Node.js), LangChain, LlamaIndex, atau cURL tanpa perlu mengubah kode aplikasi secara signifikan.
 
 ---
 
@@ -36,9 +36,9 @@ x-api-key: sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 | Endpoint | Metode | Deskripsi |
 |---|:---:|---|
-| `https://id-tech.cloud/v1/chat/completions` | `POST` | Inferensi percakapan (mendukung streaming SSE dan non-streaming). |
-| `https://id-tech.cloud/v1/models` | `GET` | Daftar seluruh model AI yang aktif dan tersedia di gateway. |
-| `https://id-tech.cloud/v1/embeddings` | `POST` | Vektorisasi teks untuk RAG / Semantic Search. |
+| `https://api.your-domain.com/v1/chat/completions` | `POST` | Inferensi percakapan (mendukung streaming SSE dan non-streaming). |
+| `https://api.your-domain.com/v1/models` | `GET` | Daftar seluruh model AI yang aktif dan tersedia di gateway. |
+| `https://api.your-domain.com/v1/embeddings` | `POST` | Vektorisasi teks untuk RAG / Semantic Search. |
 
 ---
 
@@ -57,7 +57,7 @@ from openai import OpenAI
 
 # Inisialisasi klien dengan Base URL Route-X
 client = OpenAI(
-    base_url="https://id-tech.cloud/v1",
+    base_url="https://api.your-domain.com/v1",
     api_key="sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 )
 
@@ -101,7 +101,7 @@ Kode Node.js:
 import OpenAI from 'openai';
 
 const client = new OpenAI({
-  baseURL: 'https://id-tech.cloud/v1',
+  baseURL: 'https://api.your-domain.com/v1',
   apiKey: 'sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
 });
 
@@ -123,7 +123,7 @@ main().catch(console.error);
 
 ```bash
 # Non-streaming
-curl -X POST https://id-tech.cloud/v1/chat/completions \
+curl -X POST https://api.your-domain.com/v1/chat/completions \
   -H "Authorization: Bearer sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{
@@ -135,7 +135,7 @@ curl -X POST https://id-tech.cloud/v1/chat/completions \
   }'
 
 # Streaming (SSE)
-curl -N -X POST https://id-tech.cloud/v1/chat/completions \
+curl -N -X POST https://api.your-domain.com/v1/chat/completions \
   -H "Authorization: Bearer sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{
@@ -156,7 +156,7 @@ from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(
     model="gpt-5.6-terra",
-    openai_api_base="https://id-tech.cloud/v1",
+    openai_api_base="https://api.your-domain.com/v1",
     openai_api_key="sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     temperature=0.5
 )
@@ -174,7 +174,7 @@ from llama_index.llms.openai import OpenAI
 
 llm = OpenAI(
     model="gpt-5.6-terra",
-    api_base="https://id-tech.cloud/v1",
+    api_base="https://api.your-domain.com/v1",
     api_key="sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 )
 

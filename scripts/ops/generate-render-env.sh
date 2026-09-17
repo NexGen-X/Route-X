@@ -33,7 +33,7 @@ echo "METRICS_TOKEN=\"${METRICS_TOKEN}\""
 
 echo ""
 echo "# Setelan Akun Administrator Awal (Opsional - default: admin@routex.local / RouteX#Initial2026!):"
-echo "INITIAL_ADMIN_EMAIL=\"admin@id-tech.cloud\""
+echo "INITIAL_ADMIN_EMAIL=\"admin@example.com\""
 PASS_VAL="$(openssl rand -base64 16 | tr -dc 'A-Za-z0-9!@#$%^&*' | head -c 16)A1!"
 KEY_NAME="INITIAL_ADMIN_PASSWORD"
 echo "${KEY_NAME}=\"${PASS_VAL}\""

@@ -185,6 +185,9 @@ func (h *Handlers) Routes() http.Handler {
 	// itu tetap bekerja; perbedaan bentuk body-nya yang belum didukung diteruskan lewat
 	// ChatRequest.Extra, bukan ditelan diam-diam.
 	r.Post("/responses", h.ChatCompletions)
+	// /v1/messages melayani Anthropic Messages API (Claude Code, dsb.)
+	r.Post("/messages", h.AnthropicMessages)
+	r.Post("/v1/messages", h.AnthropicMessages)
 	r.Post("/embeddings", h.Embeddings)
 	r.Get("/models", h.Models)
 	return r
@@ -226,6 +229,10 @@ func (h *Handlers) siapkanChat(w http.ResponseWriter, r *http.Request, j *jejak)
 		httpx.BadRequest(w, r, httpx.CodeInvalidRequest, err.Error())
 		return nil, false
 	}
+	return h.siapkanChatParsed(w, r, req, body, j)
+}
+
+func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req *providers.ChatRequest, body []byte, j *jejak) (*persiapan, bool) {
 	j.pasangDiminta(req.Model)
 
 	// Penyaring konten fase pertama: ukuran dan pola, keduanya bisa dijawab dari body saja.

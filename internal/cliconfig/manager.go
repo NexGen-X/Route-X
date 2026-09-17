@@ -200,6 +200,17 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	// API key tidak ditulis ke disk; operator memasukkannya ke lingkungan proses
 	// CLI melalui secret manager atau shell aktif.
 	homeDir, _ := os.UserHomeDir()
+	if p.APIKey != "" && homeDir != "" {
+		routexDir := filepath.Join(homeDir, ".routex")
+		_ = os.MkdirAll(routexDir, 0755)
+		keyEnvPath := filepath.Join(routexDir, "key.env")
+		if qKey, err := shellQuote(p.APIKey); err == nil {
+			keyContent := fmt.Sprintf("export ROUTEX_API_KEY=%s\nexport ANTHROPIC_API_KEY=%s\nexport OPENAI_API_KEY=%s\nexport OPENCODE_API_KEY=%s\n",
+				qKey, qKey, qKey, qKey)
+			_ = os.WriteFile(keyEnvPath, []byte(keyContent), 0600)
+		}
+	}
+
 	fullEnvVars := m.buildEnvVars(toolDef, p.Mode, p.Target, gwURL)
 
 	_ = m.syncGlobalEnvScript(homeDir, toolDef, fullEnvVars)
@@ -331,8 +342,13 @@ func (m *Manager) detectVersion(ctx context.Context, path string, versionArg str
 func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[string]string {
 	vars := make(map[string]string)
 
+	actualURL := gwURL
+	if tool.ID == "claude" {
+		actualURL = strings.TrimSuffix(gwURL, "/v1")
+	}
+
 	if tool.EnvVarBaseURL != "" {
-		vars[tool.EnvVarBaseURL] = gwURL
+		vars[tool.EnvVarBaseURL] = actualURL
 	}
 
 	if tool.EnvVarModel != "" {
@@ -383,9 +399,11 @@ func (m *Manager) syncGlobalEnvScript(homeDir string, tool ToolDef, vars map[str
 		existing = string(data)
 	}
 
-	header := "#!/bin/bash\n# Route-X Personal AI Gateway - CLI Environments\n# Muat skrip ini dengan: source ~/.routex/cli-env.sh\n\n"
+	header := "#!/bin/bash\n# Route-X Personal AI Gateway - CLI Environments\n# Muat skrip ini dengan: source ~/.routex/cli-env.sh\n\nif [ -f \"$HOME/.routex/key.env\" ]; then\n    . \"$HOME/.routex/key.env\"\nfi\n\n"
 	if !strings.HasPrefix(existing, "#!/bin/bash") {
 		existing = header
+	} else if !strings.Contains(existing, "key.env") {
+		existing = strings.Replace(existing, "#!/bin/bash\n", header, 1)
 	}
 
 	markerStart := fmt.Sprintf("# --- BEGIN ROUTE-X %s ---", strings.ToUpper(tool.ID))
@@ -413,7 +431,41 @@ func (m *Manager) syncGlobalEnvScript(homeDir string, tool ToolDef, vars map[str
 
 	// Hapus assignment API key legacy dari file host, lalu batasi izin file.
 	newContent = m.removeAPIKeysFromScript(newContent)
-	return os.WriteFile(envFile, []byte(newContent), 0600)
+	if err := os.WriteFile(envFile, []byte(newContent), 0600); err != nil {
+		return err
+	}
+
+	m.ensureShellAutoLoad(homeDir)
+	return nil
+}
+
+// ensureShellAutoLoad memastikan skrip login shell otomatis memuat ~/.routex/cli-env.sh.
+func (m *Manager) ensureShellAutoLoad(homeDir string) {
+	if homeDir == "" {
+		return
+	}
+	hook := "\n# >>> Route-X AI Gateway CLI Auto-Loader >>>\nif [ -f \"$HOME/.routex/cli-env.sh\" ]; then\n    . \"$HOME/.routex/cli-env.sh\"\nfi\n# <<< Route-X AI Gateway CLI Auto-Loader <<<\n"
+
+	bashrcPath := filepath.Join(homeDir, ".bashrc")
+	if data, err := os.ReadFile(bashrcPath); err == nil {
+		if !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
+			_ = os.WriteFile(bashrcPath, []byte(string(data)+hook), 0644)
+		}
+	}
+
+	zshrcPath := filepath.Join(homeDir, ".zshrc")
+	if data, err := os.ReadFile(zshrcPath); err == nil {
+		if !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
+			_ = os.WriteFile(zshrcPath, []byte(string(data)+hook), 0644)
+		}
+	}
+
+	profilePath := "/etc/profile.d/routex.sh"
+	if fi, err := os.Stat("/etc/profile.d"); err == nil && fi.IsDir() {
+		if data, err := os.ReadFile(profilePath); err != nil || !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
+			_ = os.WriteFile(profilePath, []byte(hook), 0644)
+		}
+	}
 }
 
 // applyToolSpecificConfig menulis berkas konfigurasi lokal jika aplikabel.
@@ -423,20 +475,23 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 	}
 
 	switch tool.ID {
+	case "agy":
+		// CRITICAL: Jangan pernah mengubah atau menyentuh konfigurasi Antigravity CLI.
+		return nil
+
 	case "claude":
-		// Tulis ~/.claude/settings.json jika folder ~/.claude ada
+		// Tulis ~/.claude/settings.json
 		claudeDir := filepath.Join(homeDir, ".claude")
-		if fi, err := os.Stat(claudeDir); err == nil && fi.IsDir() {
-			settingsPath := filepath.Join(claudeDir, "settings.json")
-			// Tambahkan konfigurasi baseUrl aman
-			cfg := map[string]any{
-				"anthropic_base_url": gwURL,
-				"model":              target,
-			}
-			data, err := json.MarshalIndent(cfg, "", "  ")
-			if err == nil {
-				_ = os.WriteFile(settingsPath, data, 0644)
-			}
+		_ = os.MkdirAll(claudeDir, 0755)
+		settingsPath := filepath.Join(claudeDir, "settings.json")
+		claudeURL := strings.TrimSuffix(gwURL, "/v1")
+		cfg := map[string]any{
+			"anthropic_base_url": claudeURL,
+			"model":              target,
+		}
+		data, err := json.MarshalIndent(cfg, "", "  ")
+		if err == nil {
+			_ = os.WriteFile(settingsPath, data, 0644)
 		}
 
 	case "aider":
@@ -446,59 +501,71 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 		_ = os.WriteFile(aiderConfigPath, []byte(content), 0644)
 
 	case "fabric":
-		// Tulis ~/.config/fabric/.env jika direktori ada
+		// Tulis ~/.config/fabric/.env
 		fabricDir := filepath.Join(homeDir, ".config", "fabric")
-		if fi, err := os.Stat(fabricDir); err == nil && fi.IsDir() {
-			envPath := filepath.Join(fabricDir, ".env")
-			content := fmt.Sprintf("OPENAI_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
-			_ = os.WriteFile(envPath, []byte(content), 0644)
-		}
+		_ = os.MkdirAll(fabricDir, 0755)
+		envPath := filepath.Join(fabricDir, ".env")
+		content := fmt.Sprintf("OPENAI_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
+		_ = os.WriteFile(envPath, []byte(content), 0644)
+
+	case "sgpt":
+		// Tulis ~/.config/shell_gpt/.sgptrc
+		sgptDir := filepath.Join(homeDir, ".config", "shell_gpt")
+		_ = os.MkdirAll(sgptDir, 0755)
+		sgptPath := filepath.Join(sgptDir, ".sgptrc")
+		content := fmt.Sprintf("OPENAI_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
+		_ = os.WriteFile(sgptPath, []byte(content), 0644)
+
+	case "opencommit":
+		// Tulis ~/.opencommit
+		ocoPath := filepath.Join(homeDir, ".opencommit")
+		content := fmt.Sprintf("OCO_OPENAI_BASE_PATH=%s\nOCO_MODEL=%s\n", gwURL, target)
+		_ = os.WriteFile(ocoPath, []byte(content), 0644)
 
 	case "opencode":
-		// Tulis atau perbarui ~/.config/opencode/opencode.json jika direktori ~/.config/opencode ada
+		// Tulis atau perbarui ~/.config/opencode/opencode.json
 		opencodeDir := filepath.Join(homeDir, ".config", "opencode")
-		if fi, err := os.Stat(opencodeDir); err == nil && fi.IsDir() {
-			configPath := filepath.Join(opencodeDir, "opencode.json")
-			var cfg map[string]any
-			if data, err := os.ReadFile(configPath); err == nil {
-				_ = json.Unmarshal(data, &cfg)
+		_ = os.MkdirAll(opencodeDir, 0755)
+		configPath := filepath.Join(opencodeDir, "opencode.json")
+		var cfg map[string]any
+		if data, err := os.ReadFile(configPath); err == nil {
+			_ = json.Unmarshal(data, &cfg)
+		}
+		if cfg == nil {
+			cfg = make(map[string]any)
+		}
+		cfg["$schema"] = "https://opencode.ai/config.json"
+		providers, ok := cfg["provider"].(map[string]any)
+		if !ok || providers == nil {
+			providers = make(map[string]any)
+			cfg["provider"] = providers
+		}
+		routexProv, ok := providers["routex"].(map[string]any)
+		if !ok || routexProv == nil {
+			routexProv = map[string]any{
+				"npm": "@ai-sdk/openai-compatible",
+				"options": map[string]any{
+					"baseURL": gwURL,
+				},
+				"models": map[string]any{},
 			}
-			if cfg == nil {
-				cfg = make(map[string]any)
+			providers["routex"] = routexProv
+		}
+		if opts, ok := routexProv["options"].(map[string]any); ok {
+			opts["baseURL"] = gwURL
+			if apiKey != "" {
+				opts["apiKey"] = apiKey
 			}
-			cfg["$schema"] = "https://opencode.ai/config.json"
-			providers, ok := cfg["provider"].(map[string]any)
-			if !ok || providers == nil {
-				providers = make(map[string]any)
-				cfg["provider"] = providers
-			}
-			routexProv, ok := providers["routex"].(map[string]any)
-			if !ok || routexProv == nil {
-				routexProv = map[string]any{
-					"npm": "@ai-sdk/openai-compatible",
-					"options": map[string]any{
-						"baseURL": gwURL,
-					},
-					"models": map[string]any{},
-				}
-				providers["routex"] = routexProv
-			}
-			if opts, ok := routexProv["options"].(map[string]any); ok {
-				opts["baseURL"] = gwURL
-				if apiKey != "" {
-					opts["apiKey"] = apiKey
-				}
-			}
-			models, ok := routexProv["models"].(map[string]any)
-			if !ok || models == nil {
-				models = make(map[string]any)
-				routexProv["models"] = models
-			}
-			models[target] = map[string]any{"name": target}
-			cfg["model"] = "routex/" + target
-			if data, err := json.MarshalIndent(cfg, "", "  "); err == nil {
-				_ = os.WriteFile(configPath, data, 0644)
-			}
+		}
+		models, ok := routexProv["models"].(map[string]any)
+		if !ok || models == nil {
+			models = make(map[string]any)
+			routexProv["models"] = models
+		}
+		models[target] = map[string]any{"name": target}
+		cfg["model"] = "routex/" + target
+		if data, err := json.MarshalIndent(cfg, "", "  "); err == nil {
+			_ = os.WriteFile(configPath, data, 0644)
 		}
 	}
 

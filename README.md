@@ -6,7 +6,7 @@
   <strong>High-Performance, Self-Hosted AI Gateway with OpenAI & Anthropic Dual-Protocol Ingestion, Dynamic Routing, Micro-Budget Governance, and Instant CLI Synchronization.</strong>
 </p>
 
-[![Release](https://img.shields.io/badge/Release-v1.0.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.0.0)
+[![Release](https://img.shields.io/badge/Release-v1.1.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.1.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
@@ -124,6 +124,21 @@ Calling diverse AI APIs directly creates vendor lock-in, unmanaged API key spraw
 
 ## ⚡ Quickstart
 
+### Option 0: Pre-Built Release Binary (Fastest for Solo Dev & Homelab)
+Download and run the official static Linux amd64 binary directly (zero compilation needed):
+
+```bash
+# 1. Download official v1.1.0 release tarball
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.1.0/routex-v1.1.0-linux-amd64.tar.gz
+
+# 2. Extract binary
+tar -xzvf routex-v1.1.0-linux-amd64.tar.gz
+
+# 3. Run database migrations & start gateway
+./ai-gateway -migrate
+./ai-gateway
+```
+
 ### Option A: Automated Native Linux 1-Liner (Recommended for Production)
 Installs and configures Route-X, PostgreSQL, Redis, Caddy (with Auto-TLS), and systemd service:
 
@@ -200,6 +215,37 @@ aider --model routex/claude-3-7-sonnet
 | **Fabric** | OpenAI Compatible | `~/.config/fabric/.env` | ✅ Verified |
 | **OpenCommit** | OpenAI Compatible | `~/.opencommit` | ✅ Verified |
 | **Antigravity CLI** | *Protected Native* | *Isolated / Untouched* | 🛡️ Locked (Zero-Touch) |
+
+---
+
+## 🛠️ Connecting Your IDE & Solo Developer Tools
+
+Route-X sits seamlessly between your personal coding environment and upstream AI providers. Use your Route-X Gateway URL (`http://localhost:8080/v1` or your VPS address) and Route-X API Key (`rtx_...`):
+
+### 1. Cursor IDE
+1. Open Cursor **Settings** > **Models**.
+2. Under **OpenAI API Key**, paste your Route-X Key (`rtx_...`).
+3. Under **Override OpenAI Base URL**, enter: `http://localhost:8080/v1` (or `https://ai.yourdomain.com/v1`).
+4. Add your desired models (e.g. `claude-3-5-sonnet`, `gpt-4o`, `deepseek-chat`).
+
+### 2. VS Code (Cline / Roo Code / Continue)
+- **API Provider**: `OpenAI Compatible`
+- **Base URL**: `http://localhost:8080/v1`
+- **API Key**: `rtx_...`
+- **Model ID**: Your preferred upstream model or combo route name.
+
+### 3. Claude Code CLI
+```bash
+export ANTHROPIC_BASE_URL="http://localhost:8080"
+export ANTHROPIC_API_KEY="rtx_..."
+claude -p "Explain this codebase"
+```
+
+### 4. Personal Projects (.env.local)
+```env
+OPENAI_BASE_URL=http://localhost:8080/v1
+OPENAI_API_KEY=rtx_...
+```
 
 ---
 

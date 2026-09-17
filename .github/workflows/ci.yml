@@ -7,7 +7,7 @@ on:
 
 jobs:
   go:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16
@@ -44,7 +44,7 @@ jobs:
         run: go test ./internal/security/ -run TestSecretLeakLint -count=1
 
   web:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: web

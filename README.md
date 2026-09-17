@@ -4,6 +4,7 @@
 
 **Open-source, self-hosted, high-performance AI Gateway with Dynamic Routing, Multi-Provider Failover, Micro-Budget Governance, and Unified Observability.**
 
+[![Release](https://img.shields.io/badge/Release-v1.0.0.0-success?style=flat&logo=github)](https://github.com/NexGen-X/Route-X/releases)
 [![Go Version](https://img.shields.io/badge/Go-1.27+-00ADD8?style=flat&logo=go)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=flat&logo=tailwind-css)](https://tailwindcss.com)
@@ -14,9 +15,16 @@
 
 ---
 
-## 🌟 Fitur Utama
+## 🌟 Fitur Utama (v1.0.0.0)
 
-- **100% OpenAI API Compatible**: Mendukung integrasi *drop-in* untuk seluruh library AI modern (OpenAI Python/Node SDK, LangChain, LlamaIndex, LiteLLM, Cursor, Cline, Open WebUI, cURL).
+- **Dual-Protocol Engine (OpenAI & Anthropic Native)**:
+  - **100% OpenAI API Compatible**: `/v1/chat/completions` untuk seluruh library AI modern (OpenAI SDK, LangChain, LlamaIndex, Cursor, Cline).
+  - **Anthropic Messages API Native**: Mendukung penuh `/v1/messages` dan `/v1/v1/messages` dengan transpilasi skema otomatis untuk Claude Code CLI dan alat berbasis Anthropic lainnya (non-streaming & streaming SSE).
+- **Automated Developer CLI Integrations**:
+  - Konfigurasi terpadu untuk Claude Code, OpenCode, Aider, Shell-GPT (SGPT), Fabric, dan OpenCommit.
+  - Pengujian live diagnostik koneksi dan latensi (ms) langsung dari dashboard.
+  - Auto-loader shell (`~/.bashrc` & `/etc/profile.d/routex.sh`) untuk lingkungan terminal instan.
+  - Proteksi sistem mutlak untuk Antigravity CLI (`agy`).
 - **Combo Routing Pipeline**:
   - **Single Priority**: Rute langsung ke provider dengan latensi terendah.
   - **Cascading Failover**: Pengalihan otomatis saat upstream mengalami gangguan, kehabisan saldo, atau rate limit.
@@ -25,7 +33,7 @@
   - Dirancang khusus untuk open-source & self-hosted personal/tim kecil tanpa kerumitan matriks peran (RBAC).
   - Seluruh pengguna terautentikasi memiliki peran tunggal `Admin` dengan hak akses penuh (`*`).
   - Proteksi *anti-lockout* permanen pada akun admin aktif terakhir.
-  - Hashing kunci API berbasis HMAC-SHA256 ber-pepper server & Argon2id untuk sandi konsol.
+  - Hashing kunci API berbasis HMAC-SHA256 ber-pepper server, enkripsi AES-256-GCM kredensial, proteksi SSRF dialer, & Argon2id untuk sandi konsol.
 - **First-Run Onboarding (Setup Awal Instan)**:
   - Instalasi baru otomatis mendeteksi ketiadaan admin kustom dan menyediakan kredensial bawaan.
   - Kartu bantuan di halaman Login web dilengkapi tombol **"Gunakan Kredensial Default (1-Klik)"** untuk autofill instan.

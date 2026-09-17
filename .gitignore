@@ -18,5 +18,5 @@ web/coverage/
 web/e2e/.auth-*.json
 
 # Biner kompilasi Go
-ai-gateway
-ai-gateway-*
+/ai-gateway
+/ai-gateway-*

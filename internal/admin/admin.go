@@ -26,6 +26,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/gateway"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/oauth"
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/responsecache"
 	"github.com/NexGen-X/Route-X/internal/security"
@@ -66,6 +67,8 @@ type Handlers struct {
 	cipher         *security.Cipher
 	responseCache  *responsecache.Engine
 	cliManager     *cliconfig.Manager
+	oauthRepo      *upstream.OAuthRepo
+	oauthClient    *oauth.GoogleOAuthClient
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	version string
 	commit  string
@@ -80,6 +83,8 @@ type Config struct {
 	Logger         *slog.Logger
 	ProviderRepo   *upstream.ProviderRepo
 	CredentialRepo *upstream.CredentialRepo
+	OAuthRepo      *upstream.OAuthRepo
+	OAuthClient    *oauth.GoogleOAuthClient
 	ModelRepo      *upstream.ModelRepo
 	PricingRepo    *upstream.PricingRepo
 	RoutingRepo    *upstream.RoutingRepo
@@ -146,6 +151,8 @@ func NewHandlers(cfg Config) *Handlers {
 		cipher:         cfg.Cipher,
 		responseCache:  cfg.ResponseCache,
 		cliManager:     cfg.CLIManager,
+		oauthRepo:      cfg.OAuthRepo,
+		oauthClient:    cfg.OAuthClient,
 		version:        cfg.Version,
 		commit:         cfg.Commit,
 		builtAt:        cfg.BuiltAt,

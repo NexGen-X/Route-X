@@ -41,6 +41,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/gateway"
 	"github.com/NexGen-X/Route-X/internal/health"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/oauth"
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/ratelimit"
 	"github.com/NexGen-X/Route-X/internal/responsecache"
@@ -523,6 +524,15 @@ func buildGatewaySurface(
 	webhookJob := worker.NewWebhookWorker(db.Pool, webhookRepo, webhookDispatcher, logger)
 	workerSup.Register(webhookJob, 1*time.Second, 2*time.Second)
 
+	// 7. OAuth token refresher: memantau dan me-refresh token Google Antigravity & OAuth upstream
+	oauthRepo, err := upstream.NewOAuthRepo(db.Pool, cipher)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	googleOAuthClient := oauth.NewGoogleOAuthClient(nil)
+	oauthJob := worker.NewOAuthRefreshWorker(db.Pool, oauthRepo, creds, googleOAuthClient, logger)
+	workerSup.Register(oauthJob, 10*time.Minute, 1*time.Minute)
+
 	workerSup.Start(ctx)
 
 	authn := apikey.NewAuthenticator(keyRepo, metrics, logger)
@@ -545,6 +555,8 @@ func buildGatewaySurface(
 		Logger:         logger,
 		ProviderRepo:   providersRepo,
 		CredentialRepo: creds,
+		OAuthRepo:      oauthRepo,
+		OAuthClient:    googleOAuthClient,
 		ModelRepo:      models,
 		PricingRepo:    upstream.NewPricingRepo(db.Pool),
 		RoutingRepo:    upstream.NewRoutingRepo(db.Pool),

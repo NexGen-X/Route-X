@@ -72,6 +72,16 @@ func (h *Handlers) upstreamsRoutes(r chi.Router) {
 		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Post("/{id}/credentials", h.createCredential)
 		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Delete("/{id}/credentials/{cred_id}", h.deleteCredential)
 		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Post("/{id}/credentials/{cred_id}/toggle", h.toggleCredential)
+
+		// Strategi Rotasi Kredensial Universal
+		pr.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/{id}/credential-strategy", h.setProviderCredentialStrategy)
+
+		// OAuth Multi-Account di bawah provider
+		pr.With(auth.RequirePermission(seed.PermProvidersRead)).Get("/{id}/oauth/sessions", h.listOAuthSessions)
+		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Post("/{id}/oauth/exchange", h.exchangeOAuthCode)
+		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Post("/{id}/oauth/refresh", h.refreshOAuthSession)
+		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Post("/{id}/oauth/sessions/{session_id}/toggle", h.toggleOAuthSession)
+		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Delete("/{id}/oauth/sessions/{session_id}", h.deleteOAuthSession)
 	})
 
 	// 2. Models

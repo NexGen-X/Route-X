@@ -81,6 +81,10 @@ func TestExchangeAuthCodeMock(t *testing.T) {
 				http.Error(w, `{"error":"invalid_grant"}`, 400)
 				return
 			}
+			if r.FormValue("client_secret") != GetDefaultAntigravityClientSecret() {
+				http.Error(w, `{"error":"invalid_client_secret"}`, 400)
+				return
+			}
 
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
@@ -96,6 +100,10 @@ func TestExchangeAuthCodeMock(t *testing.T) {
 		if r.FormValue("grant_type") == "refresh_token" {
 			if r.FormValue("refresh_token") != "1//sample-refresh" {
 				http.Error(w, `{"error":"invalid_grant"}`, 400)
+				return
+			}
+			if r.FormValue("client_secret") != GetDefaultAntigravityClientSecret() {
+				http.Error(w, `{"error":"invalid_client_secret"}`, 400)
 				return
 			}
 

@@ -114,7 +114,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     defaultWeight: 100,
     highlightModels: ['gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro'],
     authLoginType: 'oauth_fallback',
-    authLoginUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com&redirect_uri=http://localhost:4567&response_type=code&scope=https://www.googleapis.com/auth/cloud-platform%20https://www.googleapis.com/auth/generative-language.retrieval&access_type=offline&prompt=consent',
+    authLoginUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com&redirect_uri=http://localhost:4567&response_type=code&scope=https://www.googleapis.com/auth/cloud-platform%20https://www.googleapis.com/auth/userinfo.email%20https://www.googleapis.com/auth/userinfo.profile%20openid&access_type=offline&prompt=consent',
     authLoginLabel: 'Login dengan Akun Google Antigravity',
     authInstructions: 'Klik tombol di bawah untuk membuka halaman otorisasi Google di browser. Setelah otorisasi berhasil, browser akan dialihkan ke URL lokal (mis. http://localhost:4567/?code=4/0A...). Salin seluruh URL redirect tersebut atau kode otorisasi dan tempelkan ke kolom di bawah. Backend Route-X akan otomatis menukarkan token dan mengaktifkan auto-refresh tanpa perlu konfigurasi Client ID / Secret manual.',
     authFallbackHint: 'http://localhost:4567/?code=4/0A... atau kode otorisasi 4/0A...',

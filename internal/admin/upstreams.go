@@ -608,13 +608,21 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Susun discovery URL berdasarkan dialek provider
 	var discoveryURL string
+	var reqBody io.Reader
+	method := http.MethodGet
 	lowerKind := strings.ToLower(p.Kind)
 	lowerName := strings.ToLower(p.Name)
 	trimmedBase := strings.TrimRight(p.BaseURL, "/")
+	isAntigravity := strings.Contains(trimmedBase, "cloudcode-pa.googleapis.com") || strings.Contains(lowerName, "antigravity")
 
-	if lowerKind == "google" || strings.Contains(trimmedBase, "googleapis.com") {
-		// API key hanya dikirim lewat header x-goog-api-key (di bawah), tidak
-		// ditempelkan ke query URL: URL masuk log aplikasi dan pesan error admin.
+	if isAntigravity {
+		method = http.MethodPost
+		discoveryURL = trimmedBase + "/v1internal:fetchAvailableModels"
+		if !strings.HasPrefix(discoveryURL, "http") {
+			discoveryURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
+		}
+		reqBody = strings.NewReader("{}")
+	} else if lowerKind == "google" || strings.Contains(trimmedBase, "generativelanguage.googleapis.com") {
 		discoveryURL = "https://generativelanguage.googleapis.com/v1beta/models"
 	} else if lowerKind == "ollama" || strings.Contains(lowerName, "ollama") {
 		discoveryURL = trimmedBase + "/api/tags"
@@ -624,15 +632,22 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		discoveryURL = trimmedBase + "/v1/models"
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
+	req, err := http.NewRequestWithContext(ctx, method, discoveryURL, reqBody)
 	if err != nil {
 		httpx.BadRequest(w, r, "invalid_url", err.Error())
 		return
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Route-X-Discovery/1.0")
+	if isAntigravity {
+		req.Header.Set("User-Agent", "antigravity/1.0.0")
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req.Header.Set("User-Agent", "Route-X-Discovery/1.0")
+	}
 	if apiKey != "" {
-		if lowerKind == "anthropic" {
+		if isAntigravity || strings.HasPrefix(apiKey, "ya29.") || strings.HasPrefix(apiKey, "Bearer ") {
+			req.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(apiKey, "Bearer "))
+		} else if lowerKind == "anthropic" {
 			req.Header.Set("x-api-key", apiKey)
 			req.Header.Set("anthropic-version", "2023-06-01")
 		} else if lowerKind == "google" || strings.Contains(trimmedBase, "googleapis.com") {
@@ -674,8 +689,31 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 			var oaiResp openAIModelDiscoveryResponse
 			var ollamaResp ollamaModelDiscoveryResponse
 			var googleResp googleModelDiscoveryResponse
+			var antigravityResp struct {
+				Models          map[string]any `json:"models"`
+				AgentModelSorts []struct {
+					Groups []struct {
+						ModelIDs []string `json:"modelIds"`
+					} `json:"groups"`
+				} `json:"agentModelSorts"`
+				CommandModelIds []string            `json:"commandModelIds"`
+				TieredModelIds  map[string][]string `json:"tieredModelIds"`
+			}
 
-			if err := json.Unmarshal(bodyBytes, &oaiResp); err == nil && len(oaiResp.Data) > 0 {
+			if isAntigravity && json.Unmarshal(bodyBytes, &antigravityResp) == nil && (len(antigravityResp.Models) > 0 || len(antigravityResp.AgentModelSorts) > 0) {
+				for id := range antigravityResp.Models {
+					rawIDs = append(rawIDs, id)
+				}
+				for _, sort := range antigravityResp.AgentModelSorts {
+					for _, g := range sort.Groups {
+						rawIDs = append(rawIDs, g.ModelIDs...)
+					}
+				}
+				rawIDs = append(rawIDs, antigravityResp.CommandModelIds...)
+				for _, list := range antigravityResp.TieredModelIds {
+					rawIDs = append(rawIDs, list...)
+				}
+			} else if err := json.Unmarshal(bodyBytes, &oaiResp); err == nil && len(oaiResp.Data) > 0 {
 				for _, item := range oaiResp.Data {
 					if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
 						rawIDs = append(rawIDs, trimmed)

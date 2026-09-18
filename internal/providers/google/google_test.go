@@ -809,3 +809,197 @@ func TestProviderMemenuhiKontrak(t *testing.T) {
 		t.Errorf("Kind() = %q", iface.Kind())
 	}
 }
+
+func TestAntigravityMode(t *testing.T) {
+	t.Run("Deteksi Antigravity dan default baseURL", func(t *testing.T) {
+		p, err := New(Config{
+			Name:       "antigravity-deepmind",
+			Credential: security.Secret("ya29.fake-token"),
+		})
+		if err != nil {
+			t.Fatalf("New Antigravity: %v", err)
+		}
+		if !p.isAntigravity() {
+			t.Errorf("diharapkan isAntigravity() bernilai true")
+		}
+		if p.baseURL != AntigravityBaseURL {
+			t.Errorf("baseURL = %q, diharapkan %q", p.baseURL, AntigravityBaseURL)
+		}
+	})
+
+	t.Run("HealthCheck Antigravity memanggil fetchAvailableModels", func(t *testing.T) {
+		called := false
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1internal:fetchAvailableModels" && r.Method == http.MethodPost {
+				called = true
+				if ua := r.Header.Get("User-Agent"); ua != "antigravity/1.0.0" {
+					t.Errorf("User-Agent = %q, ingin antigravity/1.0.0", ua)
+				}
+				if auth := r.Header.Get("Authorization"); auth != "Bearer ya29.test" {
+					t.Errorf("Authorization = %q, ingin Bearer ya29.test", auth)
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"models":{"gemini-3-flash":{}}}`))
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		defer srv.Close()
+
+		p, err := New(Config{
+			Name:       "antigravity-deepmind",
+			BaseURL:    srv.URL,
+			SSRFPolicy: testPolicy(),
+			Credential: security.Secret("ya29.test"),
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		res := p.HealthCheck(context.Background())
+		if !res.Healthy {
+			t.Errorf("HealthCheck Antigravity tidak sehat: %v", res.ErrorMessage)
+		}
+		if !called {
+			t.Errorf("/v1internal:fetchAvailableModels tidak dipanggil")
+		}
+	})
+
+	t.Run("Models Discovery Antigravity", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1internal:fetchAvailableModels" {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{
+					"models": {"gemini-3-flash": {}, "claude-sonnet-4-6": {}},
+					"agentModelSorts": [{"groups": [{"modelIds": ["gemini-pro-agent"]}]}],
+					"commandModelIds": ["gemini-3.6-flash-high"]
+				}`))
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		defer srv.Close()
+
+		p, err := New(Config{
+			Name:       "antigravity-deepmind",
+			BaseURL:    srv.URL,
+			SSRFPolicy: testPolicy(),
+			Credential: security.Secret("ya29.test"),
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		models, err := p.Models(context.Background())
+		if err != nil {
+			t.Fatalf("Models: %v", err)
+		}
+		if len(models) < 4 {
+			t.Fatalf("diharapkan 4 model, dapat %d", len(models))
+		}
+	})
+
+	t.Run("ChatCompletion Antigravity membungkus envelope", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1internal:generateContent" && r.Method == http.MethodPost {
+				var req struct {
+					Model   string `json:"model"`
+					Request struct {
+						Contents []geminiContent `json:"contents"`
+					} `json:"request"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Errorf("decode error: %v", err)
+					http.Error(w, err.Error(), 400)
+					return
+				}
+				if req.Model != "gemini-3-flash" {
+					t.Errorf("req.Model = %q, ingin gemini-3-flash", req.Model)
+				}
+				if len(req.Request.Contents) == 0 {
+					t.Errorf("contents kosong")
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{
+					"response": {
+						"candidates": [{
+							"content": {
+								"role": "model",
+								"parts": [{"text": "Pong!"}]
+							},
+							"finishReason": "STOP"
+						}],
+						"usageMetadata": {
+							"promptTokenCount": 2,
+							"candidatesTokenCount": 5,
+							"totalTokenCount": 7
+						}
+					}
+				}`))
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		defer srv.Close()
+
+		p, err := New(Config{
+			Name:       "antigravity-deepmind",
+			BaseURL:    srv.URL,
+			SSRFPolicy: testPolicy(),
+			Credential: security.Secret("ya29.test"),
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		resp, err := p.ChatCompletion(context.Background(), &providers.ChatRequest{
+			Model: "gemini-3-flash",
+			Messages: []providers.Message{
+				{Role: providers.RoleUser, Content: "ping"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("ChatCompletion: %v", err)
+		}
+		if len(resp.Choices) == 0 || resp.Choices[0].Message.Content != "Pong!" {
+			t.Errorf("respons tidak sesuai: %+v", resp)
+		}
+	})
+
+	t.Run("ChatCompletionStream Antigravity mengalirkan SSE", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1internal:streamGenerateContent" && r.Method == http.MethodPost {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = w.Write([]byte("data: {\"response\": {\"candidates\": [{\"content\": {\"role\": \"model\", \"parts\": [{\"text\": \"Pong!\"}]}, \"finishReason\": \"STOP\"}]}}\n\n"))
+				return
+			}
+			http.NotFound(w, r)
+		}))
+		defer srv.Close()
+
+		p, err := New(Config{
+			Name:       "antigravity-deepmind",
+			BaseURL:    srv.URL,
+			SSRFPolicy: testPolicy(),
+			Credential: security.Secret("ya29.test"),
+		})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		stream, err := p.ChatCompletionStream(context.Background(), &providers.ChatRequest{
+			Model: "gemini-3-flash",
+			Messages: []providers.Message{
+				{Role: providers.RoleUser, Content: "ping"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("ChatCompletionStream: %v", err)
+		}
+		defer stream.Close()
+
+		ev, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("stream.Recv: %v", err)
+		}
+		if ev == nil || ev.Delta != "Pong!" {
+			t.Errorf("event streaming tidak sesuai: %+v", ev)
+		}
+	})
+}

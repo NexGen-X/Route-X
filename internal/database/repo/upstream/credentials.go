@@ -312,7 +312,6 @@ func (r *CredentialRepo) SetPriority(ctx context.Context, id string, priority in
 	return nil
 }
 
-
 // Reveal mendekripsi satu kredensial tertentu.
 //
 // Dipakai untuk uji koneksi dari dashboard dan untuk memindahkan kredensial ke penyedia

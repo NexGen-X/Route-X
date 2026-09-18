@@ -222,4 +222,3 @@ func XrayStateAAD() string {
 func OAuthSessionAAD(sessionID string) string {
 	return "provider_oauth:" + sessionID
 }
-

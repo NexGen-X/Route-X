@@ -39,6 +39,9 @@ const (
 	// DefaultBaseURL adalah endpoint publik Gemini API.
 	DefaultBaseURL = "https://generativelanguage.googleapis.com"
 
+	// AntigravityBaseURL adalah endpoint resmi Antigravity Cloud Code upstream.
+	AntigravityBaseURL = "https://daily-cloudcode-pa.googleapis.com"
+
 	// APIVersion adalah versi jalur Gemini API yang dipakai adapter ini. v1beta adalah
 	// jalur yang memuat seluruh kemampuan yang diterjemahkan di sini (tool, thinking,
 	// respons berskema); v1 masih tertinggal beberapa di antaranya.
@@ -104,6 +107,9 @@ var _ providers.Provider = (*Provider)(nil)
 // New membuat provider Google dari konfigurasi.
 func New(cfg Config) (*Provider, error) {
 	base := strings.TrimSpace(cfg.BaseURL)
+	if strings.Contains(strings.ToLower(cfg.Name), "antigravity") && (base == "" || base == DefaultBaseURL) {
+		base = AntigravityBaseURL
+	}
 	if base == "" {
 		base = DefaultBaseURL
 	}
@@ -172,6 +178,12 @@ func (p *Provider) Kind() string { return p.kind }
 
 // Name mengembalikan nama provider.
 func (p *Provider) Name() string { return p.name }
+
+// isAntigravity memeriksa apakah provider ini menargetkan backend Google Antigravity Cloud Code.
+func (p *Provider) isAntigravity() bool {
+	return strings.Contains(p.baseURL, "cloudcode-pa.googleapis.com") ||
+		strings.Contains(strings.ToLower(p.name), "antigravity")
+}
 
 // String menyamarkan seluruh isi Provider.
 //
@@ -288,6 +300,9 @@ func (p *Provider) newRequest(ctx context.Context, method, endpoint string, body
 	} else if cred != "" {
 		req.Header.Set(headerAPIKey, cred)
 	}
+	if p.isAntigravity() && req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", "antigravity/1.0.0")
+	}
 	req.Header.Set("Accept", accept)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -373,6 +388,48 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 	if err != nil {
 		return nil, err
 	}
+	if p.isAntigravity() {
+		var reqObj any
+		if err := json.Unmarshal(body, &reqObj); err != nil {
+			return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "gagal memproses payload Antigravity")
+		}
+		modelName := strings.TrimPrefix(req.Model, "models/")
+		envelope := map[string]any{
+			"model":   modelName,
+			"project": "",
+			"request": reqObj,
+		}
+		envelopeBytes, err := json.Marshal(envelope)
+		if err != nil {
+			return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "gagal membungkus permintaan Antigravity")
+		}
+
+		endpoint := p.endpoint("/v1internal:generateContent")
+		resp, err := p.do(ctx, p.client, http.MethodPost, endpoint, envelopeBytes, "application/json")
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		raw, err := p.readAll(resp)
+		if err != nil {
+			return nil, err
+		}
+
+		var upstream generateResponse
+		var env struct {
+			Response generateResponse `json:"response"`
+		}
+		if err := json.Unmarshal(raw, &env); err == nil && (len(env.Response.Candidates) > 0 || env.Response.PromptFeedback != nil) {
+			upstream = env.Response
+		} else {
+			if err := json.Unmarshal(raw, &upstream); err != nil {
+				return nil, providers.Newf(providers.ErrKindServer, p.name, "respons Antigravity tidak bisa diurai")
+			}
+		}
+		return p.toCanonicalResponse(req.Model, &upstream)
+	}
+
 	endpoint, err := p.methodURL(req.Model, "generateContent", "")
 	if err != nil {
 		return nil, err
@@ -479,8 +536,73 @@ func (p *Provider) postJSON(ctx context.Context, endpoint string, body []byte, o
 	return nil
 }
 
-// Models mengambil daftar model dari GET /v1beta/models.
+// Models mengambil daftar model dari provider.
 func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
+	if p.isAntigravity() {
+		endpoint := p.endpoint("/v1internal:fetchAvailableModels")
+		resp, err := p.do(ctx, p.client, http.MethodPost, endpoint, []byte("{}"), "application/json")
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		raw, err := p.readAll(resp)
+		if err != nil {
+			return nil, err
+		}
+
+		var payload struct {
+			Models          map[string]any `json:"models"`
+			AgentModelSorts []struct {
+				Groups []struct {
+					ModelIDs []string `json:"modelIds"`
+				} `json:"groups"`
+			} `json:"agentModelSorts"`
+			CommandModelIds []string            `json:"commandModelIds"`
+			TieredModelIds  map[string][]string `json:"tieredModelIds"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return nil, providers.Newf(providers.ErrKindServer, p.name, "daftar model Antigravity tidak bisa diurai")
+		}
+
+		seen := make(map[string]bool)
+		var out []providers.ModelInfo
+
+		addModel := func(id string) {
+			id = strings.TrimSpace(id)
+			if id == "" || seen[id] {
+				return
+			}
+			seen[id] = true
+			out = append(out, providers.ModelInfo{
+				ID:      id,
+				OwnedBy: providers.KindGoogle,
+				Created: 0,
+			})
+		}
+
+		for id := range payload.Models {
+			addModel(id)
+		}
+		for _, sort := range payload.AgentModelSorts {
+			for _, g := range sort.Groups {
+				for _, id := range g.ModelIDs {
+					addModel(id)
+				}
+			}
+		}
+		for _, id := range payload.CommandModelIds {
+			addModel(id)
+		}
+		for _, list := range payload.TieredModelIds {
+			for _, id := range list {
+				addModel(id)
+			}
+		}
+
+		return out, nil
+	}
+
 	// pageSize=1000 adalah batas maksimum Gemini; bawaannya 50, dan daftar yang terpotong
 	// akan tampak seperti model yang hilang bagi operator.
 	resp, err := p.do(ctx, p.client, http.MethodGet, p.endpoint("/"+APIVersion+"/models")+"?pageSize=1000", nil, "application/json")
@@ -519,10 +641,9 @@ func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 	return out, nil
 }
 
-// HealthCheck memeriksa provider lewat GET /v1beta/models, bukan lewat generateContent.
-//
-// Daftar model tidak menagih token dan tidak menyentuh kuota model, tetapi tetap melewati
-// jalur yang sama pentingnya: DNS, TLS, proxy egress, dan autentikasi key.
+// HealthCheck memeriksa provider.
+// Untuk Antigravity memanggil POST /v1internal:fetchAvailableModels.
+// Untuk Gemini standar memanggil GET /v1beta/models?pageSize=1.
 func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 	timeout := p.healthTimeout
 	if timeout <= 0 {
@@ -532,6 +653,26 @@ func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 	defer cancel()
 
 	start := time.Now()
+	if p.isAntigravity() {
+		endpoint := p.endpoint("/v1internal:fetchAvailableModels")
+		resp, err := p.do(ctx, p.client, http.MethodPost, endpoint, []byte("{}"), "application/json")
+		latency := time.Since(start)
+		if err != nil {
+			res := providers.HealthResult{Healthy: false, Latency: latency, ErrorKind: providers.ErrKindUnknown}
+			if e := providers.AsError(err); e != nil {
+				res.ErrorKind = e.Kind
+				res.StatusCode = e.StatusCode
+				res.ErrorMessage = e.Message
+			} else {
+				res.ErrorMessage = "gagal menghubungi Google Antigravity"
+			}
+			return res
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return providers.HealthResult{Healthy: true, Latency: latency, StatusCode: resp.StatusCode}
+	}
+
 	resp, err := p.do(ctx, p.client, http.MethodGet, p.endpoint("/"+APIVersion+"/models")+"?pageSize=1", nil, "application/json")
 	latency := time.Since(start)
 
@@ -549,5 +690,5 @@ func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 
-	return providers.HealthResult{Healthy: true, Latency: time.Since(start), StatusCode: resp.StatusCode}
+	return providers.HealthResult{Healthy: true, Latency: latency, StatusCode: resp.StatusCode}
 }

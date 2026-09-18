@@ -520,6 +520,8 @@ func getCuratedProviderModels(kind, name string) []string {
 	k := strings.ToLower(kind)
 	n := strings.ToLower(name)
 	switch {
+	case strings.Contains(n, "antigravity") || strings.Contains(n, "cloudcode"):
+		return []string{"gemini-3-flash", "gemini-pro-agent", "claude-sonnet-4-6", "gemini-3.6-flash-high", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"}
 	case strings.Contains(n, "anthropic") || k == "anthropic":
 		return []string{"claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-opus"}
 	case strings.Contains(n, "openai") || k == "openai":

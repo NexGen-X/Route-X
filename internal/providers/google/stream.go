@@ -27,6 +27,45 @@ func (p *Provider) ChatCompletionStream(ctx context.Context, req *providers.Chat
 	if err != nil {
 		return nil, err
 	}
+	if p.isAntigravity() {
+		var reqObj any
+		if err := json.Unmarshal(body, &reqObj); err != nil {
+			return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "gagal memproses payload Antigravity")
+		}
+		modelName := strings.TrimPrefix(req.Model, "models/")
+		envelope := map[string]any{
+			"model":   modelName,
+			"project": "",
+			"request": reqObj,
+		}
+		envelopeBytes, err := json.Marshal(envelope)
+		if err != nil {
+			return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "gagal membungkus permintaan Antigravity")
+		}
+
+		endpoint := p.endpoint("/v1internal:streamGenerateContent?alt=sse")
+		streamCtx, cancel := context.WithCancel(ctx)
+		resp, err := p.do(streamCtx, p.streamClient, http.MethodPost, endpoint, envelopeBytes, "text/event-stream")
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		if ct := strings.ToLower(resp.Header.Get("Content-Type")); strings.Contains(ct, "application/json") {
+			resp.Body.Close()
+			cancel()
+			return nil, providers.Newf(providers.ErrKindServer, p.name,
+				"upstream menjawab JSON biasa, bukan aliran SSE")
+		}
+		return &stream{
+			provider: p,
+			resp:     resp,
+			reader:   providers.NewSSEReader(resp.Body),
+			created:  time.Now().Unix(),
+			model:    req.Model,
+			cancel:   cancel,
+		}, nil
+	}
+
 	endpoint, err := p.methodURL(req.Model, "streamGenerateContent", "alt=sse")
 	if err != nil {
 		return nil, err
@@ -176,6 +215,14 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 	var chunk generateResponse
 	if err := json.Unmarshal(ev.Data, &chunk); err != nil {
 		return nil, s.failure(nil, "peristiwa aliran Gemini tidak bisa diurai")
+	}
+	if len(chunk.Candidates) == 0 && chunk.UsageMetadata == nil {
+		var env struct {
+			Response generateResponse `json:"response"`
+		}
+		if err := json.Unmarshal(ev.Data, &env); err == nil && (len(env.Response.Candidates) > 0 || env.Response.UsageMetadata != nil) {
+			chunk = env.Response
+		}
 	}
 	// blockReason maupun error yang menumpang di tengah aliran diklasifikasi sama seperti
 	// pada respons non-streaming; bedanya di sini StreamedBytes ikut terisi.

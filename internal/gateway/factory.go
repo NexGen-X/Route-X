@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -462,6 +463,35 @@ func (f *Factory) buatTarget(
 		}
 	}
 
+	baseURL := t.BaseURL
+	proxyURL := proxy
+
+	if !proxy.IsZero() {
+		rawProxy := proxy.Reveal()
+		if strings.Contains(rawProxy, "gateway.ai.cloudflare.com") {
+			// Cloudflare AI Gateway adalah AI reverse proxy, bukan forward proxy HTTP CONNECT.
+			// Alih-alih membungkus koneksi via HTTP CONNECT tunnel yang ditolak oleh gateway edge,
+			// base URL provider diarahkan langsung ke endpoint Cloudflare AI Gateway per provider.
+			cfBase := strings.TrimRight(rawProxy, "/")
+			switch t.Kind {
+			case providers.KindOpenAI, providers.KindOpenAICompatible, providers.KindCustom:
+				baseURL = cfBase + "/openai"
+				proxyURL = ""
+			case providers.KindAnthropic:
+				baseURL = cfBase + "/anthropic"
+				proxyURL = ""
+			case providers.KindGoogle:
+				if strings.Contains(t.BaseURL, "generativelanguage.googleapis.com") {
+					baseURL = cfBase + "/google-ai-studio"
+					proxyURL = ""
+				}
+			}
+		} else if strings.Contains(rawProxy, ".deno.dev") {
+			baseURL = strings.TrimRight(rawProxy, "/")
+			proxyURL = ""
+		}
+	}
+
 	switch t.Kind {
 	case providers.KindOpenAI, providers.KindOpenAICompatible, providers.KindCustom:
 		// Base URL divalidasi DI SINI karena openai.New sengaja tidak melakukannya — kontrak
@@ -479,17 +509,17 @@ func (f *Factory) buatTarget(
 		// BYOK selalu memakai kebijakan paling ketat: base URL-nya diketik pengguna,
 		// jadi pelonggaran operator (mis. loopback untuk Ollama lokal) tidak boleh
 		// berlaku untuknya.
-		if err := security.ValidateBaseURL(t.BaseURL, kebijakan); err != nil {
+		if err := security.ValidateBaseURL(baseURL, kebijakan); err != nil {
 			return nil, fmt.Errorf("base URL provider %q tidak sah: %w", t.Name, err)
 		}
 		return openai.New(openai.Config{
 			Name:       t.Name,
 			Kind:       t.Kind,
-			BaseURL:    t.BaseURL,
+			BaseURL:    baseURL,
 			Credential: rahasia,
 			Timeout:    timeout,
 			SSRFPolicy: kebijakan,
-			ProxyURL:   proxy,
+			ProxyURL:   proxyURL,
 		})
 
 	case providers.KindAnthropic:
@@ -500,22 +530,22 @@ func (f *Factory) buatTarget(
 		return anthropic.New(anthropic.Config{
 			Name:       t.Name,
 			Kind:       t.Kind,
-			BaseURL:    t.BaseURL,
+			BaseURL:    baseURL,
 			Credential: rahasia,
 			Timeout:    timeout,
 			SSRFPolicy: kebijakan,
-			ProxyURL:   proxy,
+			ProxyURL:   proxyURL,
 		})
 
 	case providers.KindGoogle:
 		return google.New(google.Config{
 			Name:       t.Name,
 			Kind:       t.Kind,
-			BaseURL:    t.BaseURL,
+			BaseURL:    baseURL,
 			Credential: rahasia,
 			Timeout:    timeout,
 			SSRFPolicy: kebijakan,
-			ProxyURL:   proxy,
+			ProxyURL:   proxyURL,
 		})
 
 	default:

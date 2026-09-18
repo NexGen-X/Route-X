@@ -308,6 +308,24 @@ func TestFactoryEgressBenarBenarSampaiKeTransport(t *testing.T) {
 	}
 }
 
+func TestFactoryCloudflareAIGatewayEgressRewritesBaseURL(t *testing.T) {
+	cfGatewayURL := "https://gateway.ai.cloudflare.com/v1/test-account/my-gateway"
+	eg := &sumberEgress{url: security.Secret(cfGatewayURL)}
+	f := pabrikUji(t, kredensialUji(), eg)
+
+	pool := "8f1f0b6e-0000-4000-8000-00000000e004"
+	c := kandidatUji(providers.KindOpenAI, "https://api.openai.com/v1")
+	c.EgressPoolID = &pool
+
+	prov, err := f.Provider(context.Background(), c)
+	if err != nil {
+		t.Fatalf("Provider: %v", err)
+	}
+	if prov == nil {
+		t.Fatal("provider nil")
+	}
+}
+
 func TestFactoryEgressTanpaSumberDitolak(t *testing.T) {
 	srv := serverUji(t)
 	f := pabrikUji(t, kredensialUji(), nil)

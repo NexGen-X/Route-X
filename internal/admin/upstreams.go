@@ -1706,24 +1706,54 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		ssrfPolicy = h.factory.SSRFPolicy()
 	}
 	dialer := &net.Dialer{Timeout: 7 * time.Second}
-	transport := &http.Transport{
-		Proxy:             http.ProxyURL(parsedProxy),
-		DialContext:       security.GuardedDialContext(ssrfPolicy, dialer),
-		TLSClientConfig:   &tls.Config{InsecureSkipVerify: false, MinVersion: tls.VersionTLS12},
-		DisableKeepAlives: true,
+
+	var transport *http.Transport
+	var probeURL string
+	var extraHeaders map[string]string
+
+	if parsedProxy.Host == "gateway.ai.cloudflare.com" || strings.Contains(parsedProxy.Host, "gateway.ai.cloudflare.com") {
+		// Cloudflare AI Gateway adalah AI reverse proxy edge, bukan forward proxy HTTP CONNECT.
+		// Pengujian konektivitas riil dilakukan langsung ke endpoint trace edge Cloudflare AI Gateway.
+		transport = &http.Transport{
+			DialContext:       security.GuardedDialContext(ssrfPolicy, dialer),
+			TLSClientConfig:   &tls.Config{InsecureSkipVerify: false, MinVersion: tls.VersionTLS12},
+			DisableKeepAlives: true,
+		}
+		probeURL = "https://gateway.ai.cloudflare.com/cdn-cgi/trace"
+	} else if strings.HasSuffix(parsedProxy.Host, ".deno.dev") {
+		// Deno Deploy Relay adalah reverse proxy relay.
+		transport = &http.Transport{
+			DialContext:       security.GuardedDialContext(ssrfPolicy, dialer),
+			TLSClientConfig:   &tls.Config{InsecureSkipVerify: false, MinVersion: tls.VersionTLS12},
+			DisableKeepAlives: true,
+		}
+		probeURL = "https://" + parsedProxy.Host + "/cdn-cgi/trace"
+		extraHeaders = map[string]string{"x-target-host": "cloudflare.com"}
+	} else {
+		transport = &http.Transport{
+			Proxy:             http.ProxyURL(parsedProxy),
+			DialContext:       security.GuardedDialContext(ssrfPolicy, dialer),
+			TLSClientConfig:   &tls.Config{InsecureSkipVerify: false, MinVersion: tls.VersionTLS12},
+			DisableKeepAlives: true,
+		}
+		probeURL = "https://cloudflare.com/cdn-cgi/trace"
 	}
+
 	client := &http.Client{
 		Transport: transport,
 		Timeout:   7 * time.Second,
 	}
 
 	start := time.Now()
-	probeReq, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://cloudflare.com/cdn-cgi/trace", nil)
+	probeReq, err := http.NewRequestWithContext(ctx, http.MethodGet, probeURL, nil)
 	if err != nil {
 		httpx.InternalError(w, r)
 		return
 	}
 	probeReq.Header.Set("User-Agent", "Route-X-Probe/1.0")
+	for k, v := range extraHeaders {
+		probeReq.Header.Set(k, v)
+	}
 
 	resp, err := client.Do(probeReq)
 	duration := int(time.Since(start).Milliseconds())

@@ -21,6 +21,29 @@ func TestCloudflareProvisionAIGateway_Success(t *testing.T) {
 			t.Errorf("path = %s, want /accounts/test-acc/ai-gateway/gateways", r.URL.Path)
 		}
 
+		var req cfGatewayReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		if req.ID != "my-gateway" {
+			t.Errorf("req.ID = %s, want my-gateway", req.ID)
+		}
+		if !req.CollectLogs {
+			t.Errorf("req.CollectLogs = false, want true")
+		}
+		if req.RateLimitingTechnique != "fixed" {
+			t.Errorf("req.RateLimitingTechnique = %s, want fixed", req.RateLimitingTechnique)
+		}
+		if req.RateLimitingInterval != 0 || req.RateLimitingLimit != 0 {
+			t.Errorf("rate limit interval/limit = %d/%d, want 0/0", req.RateLimitingInterval, req.RateLimitingLimit)
+		}
+		if req.CacheTTL != 300 {
+			t.Errorf("req.CacheTTL = %d, want 300", req.CacheTTL)
+		}
+		if req.CacheInvalidateOnUpdate {
+			t.Errorf("req.CacheInvalidateOnUpdate = true, want false")
+		}
+
 		resp := cfGatewayResp{
 			Success: true,
 			Result: struct {
@@ -42,6 +65,7 @@ func TestCloudflareProvisionAIGateway_Success(t *testing.T) {
 		APIToken:    "test-token",
 		GatewayID:   "my-gateway",
 		CollectLogs: true,
+		EnableCache: true,
 	})
 
 	if err != nil {

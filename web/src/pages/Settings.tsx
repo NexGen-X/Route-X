@@ -347,15 +347,17 @@ export const Settings: React.FC = () => {
               <Globe className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                Domain Publik & Otomatis HTTPS (SSL)
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base sm:text-lg font-bold text-white">
+                  Domain Publik & Otomatis HTTPS (SSL)
+                </h2>
                 {domainConfig?.status === 'active' && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                  <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 whitespace-nowrap">
                     <ShieldCheck className="w-3 h-3" /> Aktif & Terlindungi
                   </span>
                 )}
-              </h2>
-              <p className="text-xs text-text-secondary mt-0.5">
+              </div>
+              <p className="text-xs text-text-secondary mt-1 leading-relaxed">
                 Hubungkan nama domain kustom Anda (mis. Cloudflare atau DNS Registrar). Backend akan otomatis mengonfigurasi sertifikat TLS/HTTPS untuk panel dan endpoint API.
               </p>
             </div>
@@ -613,13 +615,15 @@ export const Settings: React.FC = () => {
               <Database className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                Pencadangan & Pemulihan Database (SQL)
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base sm:text-lg font-bold text-white">
+                  Pencadangan & Pemulihan Database (SQL)
+                </h2>
+                <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">
                   PostgreSQL Native
                 </span>
-              </h2>
-              <p className="text-xs text-text-secondary mt-0.5">
+              </div>
+              <p className="text-xs text-text-secondary mt-1 leading-relaxed">
                 Ekspor dan pemulihan komprehensif seluruh skema basis data, model, provider, aturan routing, dan kunci API dalam format SQL standar (<code className="text-text-muted font-mono">.sql</code> / <code className="text-text-muted font-mono">.sql.gz</code>).
               </p>
             </div>
@@ -842,24 +846,26 @@ export const Settings: React.FC = () => {
 
       {/* 3. Runtime Parameters Section */}
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-start md:items-center justify-between gap-4 pb-5 border-b border-border">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0 mt-0.5">
               <Sliders className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                Runtime Parameters
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                  Runtime Parameters
+                </h2>
+                <span className="inline-flex items-center text-[10px] sm:text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">
                   Operasional Dinamis
                 </span>
-              </h2>
-              <p className="text-xs text-text-secondary mt-0.5">
+              </div>
+              <p className="text-xs text-text-secondary mt-1 leading-relaxed">
                 Setelan parameter operasional dinamis yang tersimpan di basis data tanpa perlu restart biner.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end shrink-0">
+          <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 pt-1 sm:pt-0">
             <Button
               variant="secondary"
               size="sm"
@@ -867,14 +873,16 @@ export const Settings: React.FC = () => {
               isLoading={isLoading}
               icon={<RefreshCw className="w-4 h-4" />}
               title="Segarkan Parameter Runtime"
+              className="flex-1 sm:flex-initial justify-center"
             >
-              <span className="hidden sm:inline">Segarkan</span>
+              Segarkan
             </Button>
             <Button
               variant="primary"
               size="sm"
               onClick={() => setIsCreateSettingOpen(true)}
               icon={<Plus className="w-4 h-4" />}
+              className="flex-1 sm:flex-initial justify-center"
             >
               Tambah Parameter
             </Button>
@@ -898,10 +906,10 @@ export const Settings: React.FC = () => {
                 variant="secondary"
                 size="sm"
                 onClick={() => setIsCreateSettingOpen(true)}
-                icon={<Plus className="w-3.5 h-3.5" />}
+                icon={<Plus className="w-4 h-4" />}
                 className="text-xs mx-auto"
               >
-                Buat Parameter Baru
+                Tambah Parameter
               </Button>
             </div>
           </Card>

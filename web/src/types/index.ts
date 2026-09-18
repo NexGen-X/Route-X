@@ -47,6 +47,7 @@ export interface Provider {
   rate_limit_tpm?: number;
   max_concurrent?: number;
   egress_pool_id?: string;
+  credential_strategy?: 'round_robin' | 'priority';
   created_at: string;
   updated_at: string;
 }
@@ -57,8 +58,27 @@ export interface Credential {
   label: string;
   masked_hint: string;
   enabled: boolean;
+  priority?: number;
   weight: number;
   expires_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OAuthSession {
+  id: string;
+  provider_id: string;
+  credential_id: string;
+  account_email: string;
+  account_name?: string;
+  client_id: string;
+  redirect_uri: string;
+  scopes: string[];
+  last_refreshed_at?: string;
+  last_refresh_error?: string;
+  enabled: boolean;
+  expires_at?: string;
+  masked_hint?: string;
   created_at: string;
   updated_at: string;
 }

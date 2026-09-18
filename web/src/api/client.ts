@@ -3,6 +3,7 @@ import type {
   Principal,
   Provider,
   Credential,
+  OAuthSession,
   Model,
   ModelAlias,
   ProviderModel,
@@ -251,6 +252,42 @@ export const api = {
           method: 'POST',
           body: JSON.stringify({ model }),
         }
+      ),
+    setCredentialStrategy: (id: string, strategy: 'round_robin' | 'priority') =>
+      request<Provider>(`/api/admin/upstreams/providers/${encodeURIComponent(id)}/credential-strategy`, {
+        method: 'POST',
+        body: JSON.stringify({ strategy }),
+      }),
+    oauthExchange: (id: string, data: { code: string; redirect_uri?: string }) =>
+      request<{ status: string; account_email: string; account_name?: string; expires_at: string; session: OAuthSession }>(
+        `/api/admin/upstreams/providers/${encodeURIComponent(id)}/oauth/exchange`,
+        {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }
+      ),
+    listOAuthSessions: (id: string) =>
+      request<{ items: OAuthSession[] }>(`/api/admin/upstreams/providers/${encodeURIComponent(id)}/oauth/sessions`),
+    refreshOAuth: (id: string, sessionId?: string) =>
+      request<{ status: string; refreshed_count: number }>(
+        `/api/admin/upstreams/providers/${encodeURIComponent(id)}/oauth/refresh`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ session_id: sessionId }),
+        }
+      ),
+    toggleOAuthSession: (id: string, sessionId: string, enabled: boolean) =>
+      request<{ status: string; session_id: string; enabled: boolean }>(
+        `/api/admin/upstreams/providers/${encodeURIComponent(id)}/oauth/sessions/${encodeURIComponent(sessionId)}/toggle`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ enabled }),
+        }
+      ),
+    deleteOAuthSession: (id: string, sessionId: string) =>
+      request<void>(
+        `/api/admin/upstreams/providers/${encodeURIComponent(id)}/oauth/sessions/${encodeURIComponent(sessionId)}`,
+        { method: 'DELETE' }
       ),
   },
 

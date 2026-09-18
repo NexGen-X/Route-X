@@ -323,6 +323,7 @@ type ProviderDTO struct {
 	LastHealthAt        *time.Time      `json:"last_health_at"`
 	LastLatencyMS       *int            `json:"last_latency_ms"`
 	ConsecutiveFailures int             `json:"consecutive_failures"`
+	CredentialStrategy  string          `json:"credential_strategy"`
 	Metadata            json.RawMessage `json:"metadata"`
 	CreatedAt           time.Time       `json:"created_at"`
 	UpdatedAt           time.Time       `json:"updated_at"`
@@ -354,6 +355,7 @@ type CredentialMetaDTO struct {
 	Label        string     `json:"label"`
 	MaskedHint   string     `json:"masked_hint"`
 	Enabled      bool       `json:"enabled"`
+	Priority     int        `json:"priority"`
 	LastUsedAt   *time.Time `json:"last_used_at"`
 	ExpiresAt    *time.Time `json:"expires_at"`
 	AuthFailures int        `json:"auth_failures"`
@@ -1150,6 +1152,7 @@ func toProviderDTO(p *upstream.Provider) ProviderDTO {
 		LastHealthAt:        p.LastHealthAt,
 		LastLatencyMS:       p.LastLatencyMS,
 		ConsecutiveFailures: p.ConsecutiveFailures,
+		CredentialStrategy:  p.CredentialStrategy,
 		Metadata:            meta,
 		CreatedAt:           p.CreatedAt,
 		UpdatedAt:           p.UpdatedAt,
@@ -1184,6 +1187,7 @@ func toCredentialMetaDTO(c *upstream.CredentialMeta) CredentialMetaDTO {
 		Label:        c.Label,
 		MaskedHint:   c.MaskedHint,
 		Enabled:      c.Enabled,
+		Priority:     c.Priority,
 		LastUsedAt:   c.LastUsedAt,
 		ExpiresAt:    c.ExpiresAt,
 		AuthFailures: c.AuthFailures,
@@ -1736,6 +1740,41 @@ type CLIExportScriptDTO struct {
 }
 
 func (CLIExportScriptDTO) adalahDTO() {}
+
+// OAuthExchangeResponseDTO adalah respons dari penukaran kode OAuth.
+type OAuthExchangeResponseDTO struct {
+	Status       string                     `json:"status"`
+	AccountEmail string                     `json:"account_email"`
+	AccountName  string                     `json:"account_name,omitempty"`
+	ExpiresAt    string                     `json:"expires_at"`
+	Session      *upstream.OAuthSessionMeta `json:"session,omitempty"`
+}
+
+func (OAuthExchangeResponseDTO) adalahDTO() {}
+
+// OAuthSessionsResponseDTO membungkus daftar sesi OAuth.
+type OAuthSessionsResponseDTO struct {
+	Items []*upstream.OAuthSessionMeta `json:"items"`
+}
+
+func (OAuthSessionsResponseDTO) adalahDTO() {}
+
+// OAuthRefreshResponseDTO adalah respons dari refresh token manual.
+type OAuthRefreshResponseDTO struct {
+	Status         string `json:"status"`
+	RefreshedCount int    `json:"refreshed_count"`
+}
+
+func (OAuthRefreshResponseDTO) adalahDTO() {}
+
+// OAuthToggleResponseDTO adalah respons dari toggle enable/disable sesi OAuth.
+type OAuthToggleResponseDTO struct {
+	Status    string `json:"status"`
+	SessionID string `json:"session_id"`
+	Enabled   bool   `json:"enabled"`
+}
+
+func (OAuthToggleResponseDTO) adalahDTO() {}
 
 // Ensure netip import is used
 var _ = netip.Prefix{}

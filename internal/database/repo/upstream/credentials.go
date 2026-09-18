@@ -25,6 +25,7 @@ type CredentialMeta struct {
 	EncryptionKeyID string
 
 	Enabled      bool
+	Priority     int
 	LastUsedAt   *time.Time
 	ExpiresAt    *time.Time
 	AuthFailures int
@@ -77,7 +78,7 @@ func (r *CredentialRepo) ActiveKeyID() string { return r.cipher.KeyID() }
 // baris untuk dekripsi memang harus berbeda.
 const credentialColumns = `
 	id::text, provider_id::text, label, masked_hint, encryption_key_id,
-	enabled, last_used_at, expires_at, auth_failures,
+	enabled, priority, last_used_at, expires_at, auth_failures,
 	created_at, updated_at, created_by::text`
 
 // scanCredential membaca satu baris sesuai credentialColumns.
@@ -85,7 +86,7 @@ func scanCredential(row pgxRow) (*CredentialMeta, error) {
 	var c CredentialMeta
 	err := row.Scan(
 		&c.ID, &c.ProviderID, &c.Label, &c.MaskedHint, &c.EncryptionKeyID,
-		&c.Enabled, &c.LastUsedAt, &c.ExpiresAt, &c.AuthFailures,
+		&c.Enabled, &c.Priority, &c.LastUsedAt, &c.ExpiresAt, &c.AuthFailures,
 		&c.CreatedAt, &c.UpdatedAt, &c.CreatedBy,
 	)
 	if err != nil {
@@ -104,6 +105,8 @@ type CreateCredentialParams struct {
 	Secret security.Secret
 	// ExpiresAt opsional, dipakai mengingatkan rotasi sebelum kredensial mati.
 	ExpiresAt *time.Time
+	// Priority menentukan prioritas saat provider menggunakan strategi priority (makin kecil makin utama).
+	Priority  *int
 	CreatedBy *string
 }
 
@@ -141,11 +144,11 @@ func (r *CredentialRepo) Create(ctx context.Context, p CreateCredentialParams) (
 	row := r.q.QueryRow(ctx, `
 		insert into provider_credentials (
 			id, provider_id, label, ciphertext, encryption_key_id, masked_hint,
-			expires_at, created_by
-		) values ($1, $2, $3, $4, $5, $6, $7, $8)
+			expires_at, created_by, priority
+		) values ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9, 100))
 		returning `+credentialColumns,
 		id, p.ProviderID, strOr(p.Label, DefaultCredentialLabel), ciphertext,
-		r.cipher.KeyID(), maskCredential(p.Secret), p.ExpiresAt, p.CreatedBy,
+		r.cipher.KeyID(), maskCredential(p.Secret), p.ExpiresAt, p.CreatedBy, p.Priority,
 	)
 
 	meta, err := scanCredential(row)
@@ -213,6 +216,10 @@ func (r *CredentialRepo) List(ctx context.Context, providerID string) ([]*Creden
 // Kredensial yang mati atau sudah kedaluwarsa tidak pernah dipilih. Bila baris masih
 // dienkripsi kunci lama, errornya membungkus security.ErrKeyMismatch supaya operator
 // tahu ini soal rotasi yang belum selesai, bukan data yang rusak.
+//
+// Pemilihan mendukung strategi universal yang diatur di tingkat provider:
+// - "round_robin": beban diputar merata bergantian (Least Recently Used).
+// - "priority": kredensial prioritas utama selalu dipilih selama sehat; cadangan hanya saat limit/error.
 func (r *CredentialRepo) Active(ctx context.Context, providerID string) (*ActiveCredential, error) {
 	const op = "mengambil kredensial aktif provider"
 	if !idOK(providerID) {
@@ -224,12 +231,24 @@ func (r *CredentialRepo) Active(ctx context.Context, providerID string) (*Active
 		expiresAt             *time.Time
 	)
 	err := r.q.QueryRow(ctx, `
-		select id::text, label, ciphertext, expires_at
-		from provider_credentials
-		where provider_id = $1
-		  and enabled
-		  and (expires_at is null or expires_at > now())
-		order by auth_failures asc, last_used_at asc nulls first, created_at asc
+		select c.id::text, c.label, c.ciphertext, c.expires_at
+		from provider_credentials c
+		join providers p on p.id = c.provider_id
+		where c.provider_id = $1
+		  and c.enabled
+		  and (c.expires_at is null or c.expires_at > now())
+		order by
+		  c.auth_failures asc,
+		  case
+		    when p.credential_strategy = 'priority' then c.priority
+		    else null
+		  end asc,
+		  case
+		    when p.credential_strategy = 'priority' then c.created_at
+		    else null
+		  end asc,
+		  c.last_used_at asc nulls first,
+		  c.created_at asc
 		limit 1`, providerID).Scan(&id, &label, &ciphertext, &expiresAt)
 	if err != nil {
 		return nil, repo.Err(op, err)
@@ -240,6 +259,57 @@ func (r *CredentialRepo) Active(ctx context.Context, providerID string) (*Active
 		return nil, fmt.Errorf("%s (kredensial %s): %w", op, id, err)
 	}
 	return &ActiveCredential{ID: id, Label: label, Secret: secret, ExpiresAt: expiresAt}, nil
+}
+
+// UpdateSecret memperbarui ciphertext kredensial (misalnya setelah auto-refresh token OAuth) dan mereset kegagalan autentikasi.
+func (r *CredentialRepo) UpdateSecret(ctx context.Context, id string, secret security.Secret, expiresAt *time.Time) error {
+	const op = "memperbarui rahasia kredensial provider"
+	if !idOK(id) {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	if secret.IsZero() {
+		return fmt.Errorf("%s: %w: kredensial kosong", op, repo.ErrConstraint)
+	}
+
+	ciphertext, err := r.cipher.EncryptSecret(secret, security.CredentialAAD(id))
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	tag, err := r.q.Exec(ctx, `
+		update provider_credentials
+		set ciphertext = $2,
+		    encryption_key_id = $3,
+		    masked_hint = $4,
+		    expires_at = $5,
+		    auth_failures = 0,
+		    updated_at = now()
+		where id = $1`,
+		id, ciphertext, r.cipher.KeyID(), maskCredential(secret), expiresAt,
+	)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	return nil
+}
+
+// SetPriority mengubah urutan prioritas kredensial saat provider memakai strategi priority.
+func (r *CredentialRepo) SetPriority(ctx context.Context, id string, priority int) error {
+	const op = "mengatur prioritas kredensial"
+	if !idOK(id) {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	tag, err := r.q.Exec(ctx, `update provider_credentials set priority = $2, updated_at = now() where id = $1`, id, priority)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	return nil
 }
 
 // Reveal mendekripsi satu kredensial tertentu.

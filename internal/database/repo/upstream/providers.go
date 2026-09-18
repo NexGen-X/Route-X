@@ -44,10 +44,11 @@ type Provider struct {
 	LastLatencyMS       *int
 	ConsecutiveFailures int
 
-	Metadata  []byte
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	CreatedBy *string
+	Metadata           []byte
+	CredentialStrategy string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	CreatedBy          *string
 }
 
 // ProviderRepo adalah akses data provider beserta kesehatannya.
@@ -71,7 +72,7 @@ const providerColumns = `
 	rate_limit_rpm, rate_limit_tpm, max_concurrent, egress_pool_id::text,
 	is_byok, owner_user_id::text,
 	last_health_status, last_health_at, last_latency_ms, consecutive_failures,
-	metadata, created_at, updated_at, created_by::text`
+	metadata, credential_strategy, created_at, updated_at, created_by::text`
 
 // scanProvider membaca satu baris sesuai providerColumns.
 func scanProvider(row pgxRow) (*Provider, error) {
@@ -82,7 +83,7 @@ func scanProvider(row pgxRow) (*Provider, error) {
 		&p.RateLimitRPM, &p.RateLimitTPM, &p.MaxConcurrent, &p.EgressPoolID,
 		&p.IsBYOK, &p.OwnerUserID,
 		&p.LastHealthStatus, &p.LastHealthAt, &p.LastLatencyMS, &p.ConsecutiveFailures,
-		&p.Metadata, &p.CreatedAt, &p.UpdatedAt, &p.CreatedBy,
+		&p.Metadata, &p.CredentialStrategy, &p.CreatedAt, &p.UpdatedAt, &p.CreatedBy,
 	)
 	if err != nil {
 		return nil, err
@@ -122,8 +123,9 @@ type CreateProviderParams struct {
 	OwnerUserID *string
 
 	// Metadata adalah JSON mentah; nil menjadi '{}'.
-	Metadata  []byte
-	CreatedBy *string
+	Metadata           []byte
+	CredentialStrategy *string
+	CreatedBy          *string
 }
 
 // Create menyimpan provider baru.
@@ -143,20 +145,25 @@ func (r *ProviderRepo) Create(ctx context.Context, p CreateProviderParams) (*Pro
 		}
 	}
 
+	strat := "round_robin"
+	if p.CredentialStrategy != nil && *p.CredentialStrategy != "" {
+		strat = *p.CredentialStrategy
+	}
+
 	row := r.q.QueryRow(ctx, `
 		insert into providers (
 			name, display_name, kind, base_url,
 			enabled, priority, weight, timeout_ms, max_retries,
 			rate_limit_rpm, rate_limit_tpm, max_concurrent, egress_pool_id,
-			is_byok, owner_user_id, metadata, created_by
+			is_byok, owner_user_id, metadata, credential_strategy, created_by
 		) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-			coalesce($16::jsonb, '{}'::jsonb), $17)
+			coalesce($16::jsonb, '{}'::jsonb), $17, $18)
 		returning `+providerColumns,
 		p.Name, p.DisplayName, p.Kind, p.BaseURL,
 		boolOr(p.Enabled, true), intOr(p.Priority, DefaultPriority), intOr(p.Weight, DefaultWeight),
 		intOr(p.TimeoutMS, DefaultTimeoutMS), intOr(p.MaxRetries, DefaultMaxRetries),
 		p.RateLimitRPM, p.RateLimitTPM, p.MaxConcurrent, p.EgressPoolID,
-		p.IsBYOK, p.OwnerUserID, p.Metadata, p.CreatedBy,
+		p.IsBYOK, p.OwnerUserID, p.Metadata, strat, p.CreatedBy,
 	)
 
 	provider, err := scanProvider(row)
@@ -220,7 +227,8 @@ type UpdateProviderParams struct {
 	MaxConcurrent Opt[int]
 	EgressPoolID  Opt[string]
 
-	Metadata []byte
+	Metadata           []byte
+	CredentialStrategy *string
 }
 
 // Update mengubah field yang diminta saja dan mengembalikan baris hasilnya.
@@ -244,6 +252,7 @@ func (r *ProviderRepo) Update(ctx context.Context, id string, p UpdateProviderPa
 		{"display_name", p.DisplayName},
 		{"kind", p.Kind},
 		{"base_url", p.BaseURL},
+		{"credential_strategy", p.CredentialStrategy},
 	} {
 		if f.value != nil {
 			set.add(f.column, *f.value)
@@ -283,6 +292,11 @@ func (r *ProviderRepo) Update(ctx context.Context, id string, p UpdateProviderPa
 		return nil, repo.Err(op, err)
 	}
 	return provider, nil
+}
+
+// SetCredentialStrategy mengubah strategi rotasi kredensial (round_robin atau priority).
+func (r *ProviderRepo) SetCredentialStrategy(ctx context.Context, id, strategy string) (*Provider, error) {
+	return r.Update(ctx, id, UpdateProviderParams{CredentialStrategy: &strategy})
 }
 
 // SetEnabled menyalakan atau mematikan provider. Provider yang mati tidak pernah

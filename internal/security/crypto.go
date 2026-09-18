@@ -217,3 +217,8 @@ func CLIToolAAD(toolID string) string {
 func XrayStateAAD() string {
 	return "setting:system:xray:config"
 }
+
+// OAuthSessionAAD membentuk AAD standar untuk refresh token sesi OAuth provider.
+func OAuthSessionAAD(sessionID string) string {
+	return "provider_oauth:" + sessionID
+}

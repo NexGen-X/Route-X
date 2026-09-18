@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Provider, Credential, EgressPool, ProviderModel } from '../types';
+import type { Provider, Credential, EgressPool, ProviderModel, OAuthSession } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
@@ -37,6 +37,10 @@ import {
   ExternalLink,
   Lock,
   XCircle,
+  Users,
+  Layers,
+  Clock,
+  RotateCcw,
 } from 'lucide-react';
 import {
   KNOWN_PROVIDERS,
@@ -87,6 +91,7 @@ export const Providers: React.FC = () => {
   // Data Child untuk Selected Provider
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [models, setModels] = useState<ProviderModel[]>([]);
+  const [oauthSessions, setOauthSessions] = useState<OAuthSession[]>([]);
   const [providerDetailsError, setProviderDetailsError] = useState<string | null>(null);
 
   // Status Aksi & Pengujian
@@ -155,23 +160,26 @@ export const Providers: React.FC = () => {
   }, [providers]);
 
   // ---------------------------------------------------------------------------
-  // Load Detail Child untuk Provider Terpilih (Credentials & Models)
+  // Load Detail Child untuk Provider Terpilih (Credentials, Models, OAuth)
   // ---------------------------------------------------------------------------
   const loadProviderDetails = async (providerId: string) => {
     const reqId = ++providerDetailsReqRef.current;
     setProviderDetailsError(null);
     try {
-      const [credsRes, modsRes] = await Promise.all([
+      const [credsRes, modsRes, oauthRes] = await Promise.all([
         api.credentials.list(providerId),
         api.providers.models(providerId),
+        api.providers.listOAuthSessions(providerId).catch(() => ({ items: [] })),
       ]);
       if (providerDetailsReqRef.current !== reqId) return;
       setCredentials(credsRes.items || []);
       setModels(modsRes.items || []);
+      setOauthSessions(oauthRes.items || []);
     } catch (err) {
       if (providerDetailsReqRef.current !== reqId) return;
       setCredentials([]);
       setModels([]);
+      setOauthSessions([]);
       setProviderDetailsError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -870,17 +878,23 @@ export const Providers: React.FC = () => {
               />
             )}
 
-            {/* TAB 2: KREDENSIAL API KEY */}
+            {/* TAB 2: KREDENSIAL API KEY & OAUTH POOL */}
             {drawerTab === 'credentials' && (
               <CredentialsTabChild
                 selectedProvider={selectedProvider}
                 credentials={credentials}
+                oauthSessions={oauthSessions}
                 handleToggleKey={handleToggleKey}
                 handleDeleteKey={handleDeleteKey}
                 loadProviderDetails={loadProviderDetails}
                 toast={toast}
+                confirmModal={confirmModal}
                 api={api}
                 copyWithFeedback={copyWithFeedback}
+                onUpdateProvider={(updated: Provider) => {
+                  setSelectedProvider(updated);
+                  loadData();
+                }}
               />
             )}
 
@@ -1070,7 +1084,17 @@ export const ModelsTabChild: React.FC<any> = ({
 
 
 export const CredentialsTabChild: React.FC<any> = ({
-  selectedProvider, credentials, handleToggleKey, handleDeleteKey, loadProviderDetails, toast, api, copyWithFeedback
+  selectedProvider,
+  credentials,
+  oauthSessions = [],
+  handleToggleKey,
+  handleDeleteKey,
+  loadProviderDetails,
+  toast,
+  confirmModal,
+  api,
+  copyWithFeedback,
+  onUpdateProvider,
 }) => {
   const [isAddingKeyInline, setIsAddingKeyInline] = useState(false);
   const [inlineAuthTab, setInlineAuthTab] = useState<'apikey' | 'authlogin'>('apikey');
@@ -1081,6 +1105,8 @@ export const CredentialsTabChild: React.FC<any> = ({
   const [showNewKeySecret, setShowNewKeySecret] = useState(false);
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
+  const [isUpdatingStrategy, setIsUpdatingStrategy] = useState(false);
+  const [isRefreshingOAuth, setIsRefreshingOAuth] = useState<string | null>(null);
   const copyTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
@@ -1130,6 +1156,65 @@ export const CredentialsTabChild: React.FC<any> = ({
     });
   };
 
+  const handleStrategyChange = async (newStrategy: 'round_robin' | 'priority') => {
+    if (!selectedProvider) return;
+    setIsUpdatingStrategy(true);
+    try {
+      await api.providers.setCredentialStrategy(selectedProvider.id, newStrategy);
+      toast.success(`Strategi antar-akun diubah ke: ${newStrategy === 'round_robin' ? 'Round Robin (Load Balanced)' : 'Priority Failover (Utama -> Cadangan)'}`);
+      if (onUpdateProvider) {
+        onUpdateProvider({ ...selectedProvider, credential_strategy: newStrategy });
+      }
+    } catch (err: any) {
+      toast.error('Gagal memperbarui strategi: ' + (err.message || err));
+    } finally {
+      setIsUpdatingStrategy(false);
+    }
+  };
+
+  const handleRefreshOAuthSession = async (sessionId: string) => {
+    if (!selectedProvider) return;
+    setIsRefreshingOAuth(sessionId);
+    try {
+      await api.providers.refreshOAuth(selectedProvider.id, sessionId);
+      toast.success('Token akun berhasil diperbarui oleh OAuth engine!');
+      await loadProviderDetails(selectedProvider.id);
+    } catch (err: any) {
+      toast.error('Gagal merefresh token: ' + (err.message || err));
+    } finally {
+      setIsRefreshingOAuth(null);
+    }
+  };
+
+  const handleToggleOAuthSession = async (session: OAuthSession) => {
+    if (!selectedProvider) return;
+    try {
+      await api.providers.toggleOAuthSession(selectedProvider.id, session.id, !session.enabled);
+      toast.success(`Akun ${session.account_email} ${!session.enabled ? 'diaktifkan' : 'dialihkan ke Standby'}`);
+      await loadProviderDetails(selectedProvider.id);
+    } catch (err: any) {
+      toast.error('Gagal mengubah status akun: ' + (err.message || err));
+    }
+  };
+
+  const handleDeleteOAuthSession = async (session: OAuthSession) => {
+    if (!selectedProvider) return;
+    const confirmed = await confirmModal({
+      title: `Hapus Akun "${session.account_email}"?`,
+      message: 'Sesi OAuth dan kredensial akses untuk akun ini akan dihapus dari pool. Gateway tidak akan lagi menggunakan akun ini.',
+      confirmText: 'Hapus Akun',
+      danger: true,
+    });
+    if (!confirmed) return;
+    try {
+      await api.providers.deleteOAuthSession(selectedProvider.id, session.id);
+      toast.success(`Akun ${session.account_email} berhasil dihapus dari pool`);
+      await loadProviderDetails(selectedProvider.id);
+    } catch (err: any) {
+      toast.error('Gagal menghapus akun: ' + (err.message || err));
+    }
+  };
+
   const handleCreateKey = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedProvider) return;
@@ -1139,14 +1224,21 @@ export const CredentialsTabChild: React.FC<any> = ({
       : (authExtractedToken.trim() || authFallbackInput.trim());
 
     if (!keySecret) {
-      toast.error('Secret token atau kredensial API key wajib diisi');
+      toast.error('Secret token atau URL redirect / kode otorisasi wajib diisi');
       return;
     }
 
     setIsSavingKey(true);
     try {
-      await api.credentials.create(selectedProvider.id, { label: keyLabel, api_key: keySecret });
-      toast.success('Kredensial berhasil ditambahkan dengan enkripsi AES-256-GCM');
+      if (isAntigravity) {
+        const oauthRes = await api.providers.oauthExchange(selectedProvider.id, {
+          code: keySecret,
+        });
+        toast.success(`Akun Google (${oauthRes.account_email || 'Antigravity'}) berhasil dihubungkan ke pool! Auto-refresh aktif.`);
+      } else {
+        await api.credentials.create(selectedProvider.id, { label: keyLabel, api_key: keySecret });
+        toast.success('Kredensial berhasil ditambahkan dengan enkripsi AES-256-GCM');
+      }
       resetInlineForm();
       await loadProviderDetails(selectedProvider.id);
     } catch (err: any) {
@@ -1156,12 +1248,35 @@ export const CredentialsTabChild: React.FC<any> = ({
     }
   };
 
+  const formatExpiry = (expiresAtStr: string) => {
+    if (!expiresAtStr) return null;
+    const expiresAt = new Date(expiresAtStr).getTime();
+    const now = Date.now();
+    const diffMs = expiresAt - now;
+    if (diffMs <= 0) {
+      return { text: 'Kedaluwarsa (Menunggu Auto-Refresh)', color: 'text-red-400 bg-red-500/10 border-red-500/30' };
+    }
+    const diffMins = Math.round(diffMs / 60000);
+    if (diffMins <= 15) {
+      return { text: `Kedaluwarsa dlm ${diffMins}m (Segera direfresh)`, color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' };
+    }
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    return {
+      text: hours > 0 ? `Aktif dlm ${hours}j ${mins}m` : `Aktif dlm ${mins}m`,
+      color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+    };
+  };
+
+  const currentStrategy = selectedProvider?.credential_strategy || 'round_robin';
+
   return (
-    <div className="space-y-2.5 sm:space-y-3">
+    <div className="space-y-3">
+      {/* Header Row */}
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-bold text-white flex items-center gap-1.5 min-w-0">
           <KeyRound className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-          <span className="truncate">Kredensial · AES-256-GCM</span>
+          <span className="truncate">Kredensial & Pool Akun · AES-256-GCM</span>
         </span>
         {!isAddingKeyInline && (
           <button
@@ -1176,17 +1291,69 @@ export const CredentialsTabChild: React.FC<any> = ({
               });
               setIsAddingKeyInline(true);
             }}
-            className="p-1.5 rounded-lg bg-accent text-black hover:bg-accent-hover transition-colors flex-shrink-0"
+            className="px-2.5 py-1.5 rounded-lg bg-accent text-black font-bold hover:bg-accent-hover transition-colors flex items-center gap-1 text-xs"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-3.5 h-3.5" />
+            <span>{isAntigravity ? 'Hubungkan Akun Google' : 'Tambah Key'}</span>
           </button>
         )}
       </div>
 
+      {/* Universal Credential Strategy Control */}
+      <div className="p-3 rounded-xl border border-border bg-bg-surface-2/60 space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-accent flex-shrink-0" />
+            <div>
+              <span className="text-xs font-bold text-white block">Strategi Rotasi Antar-Akun</span>
+              <span className="text-[10px] text-text-muted">
+                Aturan pemilihan akun / kredensial aktif saat inferensi
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 bg-bg-surface p-1 rounded-lg border border-border">
+            <button
+              type="button"
+              disabled={isUpdatingStrategy}
+              onClick={() => handleStrategyChange('round_robin')}
+              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1.5 ${
+                currentStrategy === 'round_robin'
+                  ? 'bg-accent text-black shadow-sm'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              <RotateCcw className="w-3 h-3" />
+              Round Robin (50:50)
+            </button>
+            <button
+              type="button"
+              disabled={isUpdatingStrategy}
+              onClick={() => handleStrategyChange('priority')}
+              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1.5 ${
+                currentStrategy === 'priority'
+                  ? 'bg-accent text-black shadow-sm'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              <Sliders className="w-3 h-3" />
+              Priority Failover
+            </button>
+          </div>
+        </div>
+        <p className="text-[11px] text-text-secondary leading-relaxed pl-6">
+          {currentStrategy === 'round_robin'
+            ? '🔄 Round Robin: Permintaan LLM dibagi merata secara bergantian ke seluruh akun aktif untuk memaksimalkan throughput bersamaan.'
+            : '⚡ Priority Failover: Menggunakan Akun Utama terlebih dahulu. Jika kuota habis atau terkena rate limit (429), otomatis beralih ke akun Cadangan.'}
+        </p>
+      </div>
+
+      {/* Form Tambah Kredensial / Akun Baru Inline */}
       {isAddingKeyInline && (
         <div className="p-3 rounded-xl border border-accent/40 bg-accent/5 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold text-white">Tambah Kredensial Baru</span>
+            <span className="text-xs font-semibold text-white">
+              {isAntigravity ? 'Hubungkan Akun Google Antigravity Tambahan' : 'Tambah Kredensial Baru'}
+            </span>
             <button type="button" onClick={resetInlineForm} className="text-[11px] text-text-muted hover:text-white">Batal</button>
           </div>
 
@@ -1223,28 +1390,30 @@ export const CredentialsTabChild: React.FC<any> = ({
             <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-xs text-text-secondary flex items-start gap-2">
               <Shield className="w-4 h-4 text-accent shrink-0 mt-0.5" />
               <div>
-                <span className="font-semibold text-white block">Autentikasi Akun Terdaftar</span>
+                <span className="font-semibold text-white block">OAuth Token Exchange Engine</span>
                 <span className="text-[11px] text-text-muted">
-                  Google Antigravity hanya mendukung autentikasi login akun terdaftar. Login melalui portal resmi dan salin seluruh URL redirect/fallback ke kolom di bawah.
+                  Buka login Google di bawah, beri izin, lalu salin seluruh URL redirect browser (mis. http://localhost:4567/?code=...) atau kodenya ke kolom di bawah. Backend Route-X otomatis menukarkan token dan mengaktifkan auto-refresh tanpa input Client ID/Secret.
                 </span>
               </div>
             </div>
           )}
 
           <form noValidate onSubmit={handleCreateKey} className="space-y-2.5 text-xs">
-            <div>
-              <label className="block text-[11px] font-medium text-text-secondary mb-1">Label Kredensial</label>
-              <input
-                type="text"
-                required
-                placeholder="mis. Primary API Key atau Claude OAuth Token"
-                value={newKeyForm.label}
-                onChange={(e) => setNewKeyForm({ ...newKeyForm, label: e.target.value })}
-                className="w-full px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
-              />
-            </div>
+            {!isAntigravity && (
+              <div>
+                <label className="block text-[11px] font-medium text-text-secondary mb-1">Label Kredensial</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="mis. Primary API Key atau Backup Token"
+                  value={newKeyForm.label}
+                  onChange={(e) => setNewKeyForm({ ...newKeyForm, label: e.target.value })}
+                  className="w-full px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
+                />
+              </div>
+            )}
 
-            {inlineAuthTab === 'apikey' ? (
+            {inlineAuthTab === 'apikey' && !isAntigravity ? (
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[11px] font-medium text-text-secondary">Secret API Key *</label>
@@ -1270,12 +1439,12 @@ export const CredentialsTabChild: React.FC<any> = ({
               <div className="space-y-2 pt-0.5">
                 {matchedPreset?.authLoginUrl && (
                   <div className="flex items-center justify-between p-2 rounded-lg bg-bg-surface/80 border border-border/60">
-                    <span className="text-[11px] text-text-secondary truncate">{matchedPreset.authLoginLabel || 'Buka Otorisasi Resmi'}</span>
+                    <span className="text-[11px] text-text-secondary truncate">{matchedPreset.authLoginLabel || 'Buka Halaman Login'}</span>
                     <a
                       href={matchedPreset.authLoginUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="px-2 py-1 rounded bg-accent text-black font-semibold text-[11px] flex items-center gap-1 hover:opacity-90 flex-shrink-0"
+                      className="px-2.5 py-1 rounded bg-accent text-black font-semibold text-[11px] flex items-center gap-1 hover:opacity-90 flex-shrink-0"
                     >
                       Buka Portal <ExternalLink className="w-3 h-3" />
                     </a>
@@ -1287,7 +1456,7 @@ export const CredentialsTabChild: React.FC<any> = ({
                 <div>
                   <textarea
                     rows={2}
-                    placeholder="Tempel seluruh URL redirect (misal: http://.../callback?code=xxx) atau token di sini..."
+                    placeholder="Tempel seluruh URL redirect (misal: http://localhost:4567/?code=...) atau kode di sini..."
                     value={authFallbackInput}
                     onChange={(e) => handleInlineFallbackChange(e.target.value)}
                     className="w-full px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
@@ -1296,7 +1465,7 @@ export const CredentialsTabChild: React.FC<any> = ({
                     <div className="mt-1.5 p-1.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
                       <Check className="w-3.5 h-3.5 flex-shrink-0" />
                       <span className="truncate">
-                        Token Terdeteksi ({authExtractionHint}):{' '}
+                        Kode Terdeteksi ({authExtractionHint}):{' '}
                         <strong className="text-white">
                           {authExtractedToken.length > 20 ? `${authExtractedToken.slice(0, 8)}...${authExtractedToken.slice(-6)}` : authExtractedToken}
                         </strong>
@@ -1309,13 +1478,13 @@ export const CredentialsTabChild: React.FC<any> = ({
 
             <div className="flex items-center justify-between pt-1">
               <span className="text-[10px] text-text-muted flex items-center gap-1">
-                <Lock className="w-3 h-3 text-accent flex-shrink-0" /> AES-256-GCM
+                <Lock className="w-3 h-3 text-accent flex-shrink-0" /> Enkripsi AES-256-GCM
               </span>
               <div className="flex gap-1.5">
                 <button type="button" onClick={resetInlineForm} className="px-2.5 py-1.5 text-xs rounded-lg bg-bg-surface-2 text-text-primary border border-border hover:text-white transition-colors">Batal</button>
                 <button type="submit" disabled={isSavingKey} className="px-2.5 py-1.5 text-xs rounded-lg bg-accent text-black font-bold hover:bg-accent-hover transition-colors disabled:opacity-50 flex items-center gap-1">
                   {isSavingKey ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  Simpan Kredensial
+                  {isAntigravity ? 'Verifikasi & Hubungkan Akun' : 'Simpan Kredensial'}
                 </button>
               </div>
             </div>
@@ -1323,34 +1492,218 @@ export const CredentialsTabChild: React.FC<any> = ({
         </div>
       )}
 
-      {credentials.length > 0 ? (
+      {/* POOL 1: OAuth Sessions (Google Antigravity & Multi-Account OAuth) */}
+      {oauthSessions.length > 0 && (
         <div className="space-y-2">
-          {credentials.map((cred: any) => (
-            <div key={cred.id} className="px-2.5 py-2 rounded-xl border border-border bg-bg-surface-2/40 flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between text-xs px-0.5">
+            <span className="font-semibold text-white flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-accent" />
+              Pool Akun Google ({oauthSessions.length} Terdaftar · {oauthSessions.filter((s: any) => s.enabled).length} Aktif)
+            </span>
+            <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
+              <Clock className="w-3 h-3" /> Worker Auto-Refresh (10m)
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {oauthSessions.map((session: any, index: number) => {
+              const expiry = formatExpiry(session.expires_at);
+              const isRefreshing = isRefreshingOAuth === session.id;
+
+              return (
+                <div
+                  key={session.id}
+                  className={`p-3 rounded-xl border transition-all ${
+                    session.enabled
+                      ? 'border-border bg-bg-surface-2/70 shadow-sm'
+                      : 'border-border/60 bg-bg-surface-2/20 opacity-70'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      {session.avatar_url ? (
+                        <img
+                          src={session.avatar_url}
+                          alt=""
+                          className="w-8 h-8 rounded-full border border-border shrink-0 object-cover"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center font-bold text-accent text-xs shrink-0">
+                          {(session.account_email || 'G')[0].toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-white text-xs truncate">
+                            {session.account_email || 'Akun Google'}
+                          </span>
+                          {session.account_name && (
+                            <span className="text-[10px] text-text-muted truncate hidden sm:inline">
+                              ({session.account_name})
+                            </span>
+                          )}
+                          {currentStrategy === 'priority' && (
+                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                              index === 0 ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-bg-surface text-text-muted border border-border'
+                            }`}>
+                              {index === 0 ? 'Utama' : `Cadangan #${index}`}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border flex items-center gap-1 ${
+                              session.enabled
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30'
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${session.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
+                            {session.enabled ? 'Aktif' : 'Standby'}
+                          </span>
+
+                          {expiry && (
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${expiry.color}`}>
+                              {expiry.text}
+                            </span>
+                          )}
+
+                          {session.last_refresh_error ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-500/10 text-red-400 border border-red-500/30 truncate max-w-[200px]" title={session.last_refresh_error}>
+                              Gagal Refresh: {session.last_refresh_error}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-text-muted hidden md:inline">
+                              Auto-refresh aktif
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions: Standby Toggle, Refresh Now, Delete */}
+                    <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleOAuthSession(session)}
+                        title={session.enabled ? 'Alihkan ke Standby (Nonaktifkan sementara tanpa menghapus)' : 'Aktifkan Akun'}
+                        className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer flex items-center gap-1 ${
+                          session.enabled
+                            ? 'bg-bg-surface border-border text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/30'
+                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                        }`}
+                      >
+                        <Power className="w-3.5 h-3.5" />
+                        <span className="text-[10px] font-medium hidden sm:inline">
+                          {session.enabled ? 'Standby' : 'Aktifkan'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRefreshOAuthSession(session.id)}
+                        disabled={isRefreshing}
+                        title="Refresh Access Token Sekarang via Google OAuth"
+                        className="p-1.5 rounded-lg border border-border bg-bg-surface text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-accent' : ''}`} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteOAuthSession(session)}
+                        title="Hapus Akun dari Pool"
+                        className="p-1.5 rounded-lg border border-border bg-bg-surface text-text-muted hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* POOL 2: Kredensial Standard (Non-OAuth atau Fallback API Key) */}
+      {credentials.length > 0 && oauthSessions.length === 0 && (
+        <div className="space-y-2">
+          {credentials.map((cred: any, index: number) => (
+            <div
+              key={cred.id}
+              className={`px-2.5 py-2 rounded-xl border flex items-center justify-between gap-2 transition-all ${
+                cred.enabled
+                  ? 'border-border bg-bg-surface-2/40'
+                  : 'border-border/60 bg-bg-surface-2/15 opacity-70'
+              }`}
+            >
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cred.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
                 <span className="font-bold text-white text-xs truncate">{cred.label}</span>
+                {currentStrategy === 'priority' && (
+                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase shrink-0 ${
+                    index === 0 ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-bg-surface text-text-muted border border-border'
+                  }`}>
+                    {index === 0 ? 'Utama' : `Cadangan #${index}`}
+                  </span>
+                )}
                 <span className="text-[11px] text-text-muted font-mono truncate hidden sm:inline">{cred.masked_hint || 'sk-****'}</span>
-                <button type="button" onClick={() => void copyWithFeedback(cred.masked_hint || '', 'Masked key disalin', () => { setCopiedTokenId(cred.id); copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000)); })} className="text-text-muted hover:text-white flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void copyWithFeedback(cred.masked_hint || '', 'Masked key disalin', () => {
+                    setCopiedTokenId(cred.id);
+                    copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000));
+                  })}
+                  className="text-text-muted hover:text-white flex-shrink-0"
+                >
                   {copiedTokenId === cred.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                 </button>
               </div>
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                <button type="button" onClick={() => handleToggleKey(cred)} className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer">
-                  {cred.enabled ? <Power className="w-3.5 h-3.5 text-amber-400" /> : <Check className="w-3.5 h-3.5 text-emerald-400" />}
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleToggleKey(cred)}
+                  title={cred.enabled ? 'Alihkan ke Standby' : 'Aktifkan'}
+                  className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-[11px] ${
+                    cred.enabled
+                      ? 'text-amber-400 hover:bg-amber-500/10'
+                      : 'text-emerald-400 hover:bg-emerald-500/10'
+                  }`}
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  <span className="text-[10px] hidden sm:inline">{cred.enabled ? 'Standby' : 'Aktif'}</span>
                 </button>
-                <button type="button" onClick={() => handleDeleteKey(cred)} className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteKey(cred)}
+                  className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
           ))}
         </div>
-      ) : (
+      )}
+
+      {/* Empty State */}
+      {credentials.length === 0 && oauthSessions.length === 0 && !isAddingKeyInline && (
         <div className="p-5 rounded-xl border border-dashed border-border text-center space-y-2">
           <KeyRound className="w-8 h-8 text-text-muted mx-auto" />
-          <p className="text-xs text-text-secondary">Belum ada kredensial API key untuk provider ini.</p>
-          <Button variant="primary" size="sm" onClick={() => setIsAddingKeyInline(true)} icon={<Plus className="w-3.5 h-3.5" />}>Tambah API Key Pertama</Button>
+          <p className="text-xs text-text-secondary">
+            {isAntigravity
+              ? 'Belum ada akun Google Antigravity yang terhubung ke pool.'
+              : 'Belum ada kredensial API key untuk provider ini.'}
+          </p>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => setIsAddingKeyInline(true)}
+            icon={<Plus className="w-3.5 h-3.5" />}
+          >
+            {isAntigravity ? 'Hubungkan Akun Google Pertama' : 'Tambah API Key Pertama'}
+          </Button>
         </div>
       )}
     </div>
@@ -1587,14 +1940,26 @@ export const CreateProviderModalChild: React.FC<any> = ({
       });
 
       if (effectiveApiKey) {
-        setSavingStep('Menyimpan dan mengenkripsi Kredensial (AES-256-GCM)...');
-        try {
-          await api.credentials.create(created.id, {
-            label: authTab === 'authlogin' ? 'Auth Login Credential' : 'Primary API Key',
-            api_key: effectiveApiKey,
-          });
-        } catch (keyErr: any) {
-          toast.warn('Provider dibuat, namun kredensial gagal disimpan: ' + (keyErr.message || keyErr));
+        if (selectedPreset?.authLoginType === 'oauth_fallback' || selectedPreset?.id === 'antigravity') {
+          setSavingStep('Menukarkan token OAuth ke Google & mengaktifkan auto-refresh worker...');
+          try {
+            const oauthRes = await api.providers.oauthExchange(created.id, {
+              code: effectiveApiKey,
+            });
+            toast.success(`Akun Google (${oauthRes.account_email || 'Antigravity'}) berhasil dihubungkan! Auto-refresh aktif.`);
+          } catch (oauthErr: any) {
+            toast.warn('Provider dibuat, namun autentikasi OAuth gagal ditukar: ' + (oauthErr.message || oauthErr));
+          }
+        } else {
+          setSavingStep('Menyimpan dan mengenkripsi Kredensial (AES-256-GCM)...');
+          try {
+            await api.credentials.create(created.id, {
+              label: authTab === 'authlogin' ? 'Auth Login Credential' : 'Primary API Key',
+              api_key: effectiveApiKey,
+            });
+          } catch (keyErr: any) {
+            toast.warn('Provider dibuat, namun kredensial gagal disimpan: ' + (keyErr.message || keyErr));
+          }
         }
       }
 
@@ -1796,9 +2161,9 @@ export const CreateProviderModalChild: React.FC<any> = ({
             <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-xs text-text-secondary flex items-start gap-2">
               <Shield className="w-4 h-4 text-accent shrink-0 mt-0.5" />
               <div>
-                <span className="font-semibold text-white block">Autentikasi Akun Terdaftar</span>
+                <span className="font-semibold text-white block">OAuth Token Exchange Engine</span>
                 <span className="text-[11px] text-text-muted">
-                  Google Antigravity hanya mendukung autentikasi login akun terdaftar. Login melalui portal resmi dan salin seluruh URL redirect/fallback ke kolom di bawah.
+                  Google Antigravity menggunakan autentikasi akun Google terdaftar dengan multi-account pooling & auto-refresh token otomatis. Cukup login dan salin seluruh URL redirect/callback (atau kode otorisasi) ke kolom di bawah. Tanpa perlu mengisi Client ID/Secret manual.
                 </span>
               </div>
             </div>

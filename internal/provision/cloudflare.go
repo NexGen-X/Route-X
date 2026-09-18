@@ -54,9 +54,13 @@ type CloudflareProvisionResult struct {
 }
 
 type cfGatewayReq struct {
-	ID                    string `json:"id"`
-	CollectLogs           bool   `json:"collect_logs"`
-	RateLimitingTechnique string `json:"rate_limiting_technique,omitempty"`
+	ID                      string `json:"id"`
+	CollectLogs             bool   `json:"collect_logs"`
+	RateLimitingTechnique   string `json:"rate_limiting_technique"`
+	RateLimitingInterval    int    `json:"rate_limiting_interval"`
+	RateLimitingLimit       int    `json:"rate_limiting_limit"`
+	CacheTTL                int    `json:"cache_ttl"`
+	CacheInvalidateOnUpdate bool   `json:"cache_invalidate_on_update"`
 }
 
 type cfGatewayResp struct {
@@ -86,10 +90,19 @@ func (c *CloudflareClient) ProvisionAIGateway(ctx context.Context, p CloudflareP
 
 	apiURL := fmt.Sprintf("%s/accounts/%s/ai-gateway/gateways", c.baseURL, p.AccountID)
 
+	cacheTTL := 0
+	if p.EnableCache {
+		cacheTTL = 300
+	}
+
 	reqBody := cfGatewayReq{
-		ID:                    gatewayID,
-		CollectLogs:           p.CollectLogs,
-		RateLimitingTechnique: "fixed",
+		ID:                      gatewayID,
+		CollectLogs:             p.CollectLogs,
+		RateLimitingTechnique:   "fixed",
+		RateLimitingInterval:    0,
+		RateLimitingLimit:       0,
+		CacheTTL:                cacheTTL,
+		CacheInvalidateOnUpdate: false,
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)
@@ -131,9 +144,15 @@ func (c *CloudflareClient) ProvisionAIGateway(ctx context.Context, p CloudflareP
 			}
 		}
 		if !alreadyExist {
+			var msgs []string
+			for _, e := range cfResp.Errors {
+				if e.Message != "" {
+					msgs = append(msgs, e.Message)
+				}
+			}
 			msg := "error tidak diketahui dari Cloudflare"
-			if len(cfResp.Errors) > 0 {
-				msg = cfResp.Errors[0].Message
+			if len(msgs) > 0 {
+				msg = strings.Join(msgs, ", ")
 			}
 			return nil, fmt.Errorf("cloudflare API error: %s", msg)
 		}

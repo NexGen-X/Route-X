@@ -96,7 +96,30 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     authInstructions: 'Login dengan Akun Google Anda, klik "Create API key", salin kunci token Google AI Studio, dan tempelkan di bawah ini.',
     authFallbackHint: 'AIzaSy...',
   },
-  // 4. Cerebras (Ultra-Fast Wafer Scale)
+  // 4. Google Antigravity (DeepMind Agentic Platform)
+  {
+    id: 'antigravity',
+    name: 'antigravity-deepmind',
+    displayName: 'Google Antigravity',
+    kind: 'openai_compatible',
+    baseUrl: 'https://antigravity.google/api/v1',
+    tag: 'OAuth Redirect Fallback',
+    description: 'Platform AI otonom dari Google DeepMind. Autentikasi eksklusif menggunakan akun terdaftar via OAuth redirect fallback URL.',
+    color: '#8B5CF6',
+    bgColor: 'rgba(139, 92, 246, 0.12)',
+    borderColor: 'rgba(139, 92, 246, 0.35)',
+    apiKeyPlaceholder: 'Tempel seluruh URL redirect atau token otorisasi...',
+    apiKeyHelp: 'antigravity.google/docs',
+    defaultPriority: 95,
+    defaultWeight: 100,
+    highlightModels: ['gemini-3.8-flash', 'gemini-2.5-pro', 'claude-3-7-sonnet'],
+    authLoginType: 'oauth_fallback',
+    authLoginUrl: 'https://antigravity.google',
+    authLoginLabel: 'Login dengan Akun Google Antigravity',
+    authInstructions: 'Klik tombol di bawah untuk login ke akun Google Antigravity Anda di browser. Setelah otorisasi berhasil, salin seluruh URL redirect/callback (atau kode otorisasi) dari browser dan tempelkan ke kolom di bawah.',
+    authFallbackHint: 'URL redirect http://.../callback?code=xxx atau token otorisasi',
+  },
+  // 5. Cerebras (Ultra-Fast Wafer Scale)
   {
     id: 'cerebras',
     name: 'cerebras-fast',
@@ -742,6 +765,27 @@ export const CustomProviderIcon: React.FC<{ className?: string }> = ({ className
   </svg>
 );
 
+export const AntigravityIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={className}
+  >
+    {/* Inti partikel agen gravitational */}
+    <circle cx="12" cy="12" r="2.5" fill="currentColor" />
+    {/* Cincin orbit gravitasi ganda bersilangan */}
+    <ellipse cx="12" cy="12" rx="9" ry="4.5" transform="rotate(-30 12 12)" />
+    <ellipse cx="12" cy="12" rx="9" ry="4.5" transform="rotate(30 12 12)" />
+    {/* Pulsar ascensi anti-gravitasi kutub atas & bawah */}
+    <circle cx="12" cy="3" r="1" fill="currentColor" />
+    <circle cx="12" cy="21" r="1" fill="currentColor" />
+  </svg>
+);
+
 // Helper for dynamic provider icon selection
 export const ProviderBrandIcon: React.FC<{
   providerIdOrKind: string;
@@ -757,6 +801,9 @@ export const ProviderBrandIcon: React.FC<{
 
   if (query.includes('custom') || query.includes('manual')) {
     return <CustomProviderIcon className={className} />;
+  }
+  if (query.includes('antigravity') || query.includes('agy')) {
+    return <AntigravityIcon className={className} />;
   }
   if (query.includes('anthropic') || query.includes('claude')) {
     return <AnthropicIcon className={className} />;

@@ -1092,8 +1092,19 @@ export const CredentialsTabChild: React.FC<any> = ({
 
   const matchedPreset = useMemo(() => {
     if (!selectedProvider) return null;
-    return KNOWN_PROVIDERS.find((p) => p.kind === selectedProvider.kind || p.name === selectedProvider.name || p.id === selectedProvider.name.split('-')[0]) || null;
+    return (
+      KNOWN_PROVIDERS.find(
+        (p) =>
+          p.name === selectedProvider.name ||
+          selectedProvider.name.startsWith(p.id) ||
+          p.id === selectedProvider.name.split('-')[0] ||
+          (p.kind === selectedProvider.kind && !['openai_compatible', 'custom'].includes(p.kind))
+      ) || null
+    );
   }, [selectedProvider]);
+
+  const isAntigravity = matchedPreset?.id === 'antigravity';
+  const isCustomProvider = !matchedPreset;
 
   const handleInlineFallbackChange = (val: string) => {
     setAuthFallbackInput(val);
@@ -1107,12 +1118,14 @@ export const CredentialsTabChild: React.FC<any> = ({
 
   const resetInlineForm = () => {
     setIsAddingKeyInline(false);
-    setInlineAuthTab('apikey');
+    setInlineAuthTab(isAntigravity ? 'authlogin' : 'apikey');
     setAuthFallbackInput('');
     setAuthExtractedToken('');
     setAuthExtractionHint('');
     setNewKeyForm({
-      label: (credentials || []).length === 0 ? 'Primary API Key' : 'Backup API Key',
+      label: isAntigravity
+        ? 'Antigravity Session Token'
+        : (credentials || []).length === 0 ? 'Primary API Key' : 'Backup API Key',
       api_key: '',
     });
   };
@@ -1120,7 +1133,7 @@ export const CredentialsTabChild: React.FC<any> = ({
   const handleCreateKey = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedProvider) return;
-    const keyLabel = newKeyForm.label.trim() || (inlineAuthTab === 'authlogin' ? 'Auth Login Credential' : 'Primary API Key');
+    const keyLabel = newKeyForm.label.trim() || (isAntigravity ? 'Antigravity Session Token' : inlineAuthTab === 'authlogin' ? 'Auth Login Credential' : 'Primary API Key');
     const keySecret = inlineAuthTab === 'apikey'
       ? newKeyForm.api_key.trim()
       : (authExtractedToken.trim() || authFallbackInput.trim());
@@ -1151,7 +1164,20 @@ export const CredentialsTabChild: React.FC<any> = ({
           <span className="truncate">Kredensial · AES-256-GCM</span>
         </span>
         {!isAddingKeyInline && (
-          <button type="button" onClick={() => setIsAddingKeyInline(true)} className="p-1.5 rounded-lg bg-accent text-black hover:bg-accent-hover transition-colors flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setInlineAuthTab(isAntigravity ? 'authlogin' : 'apikey');
+              setNewKeyForm({
+                label: isAntigravity
+                  ? 'Antigravity Session Token'
+                  : (credentials || []).length === 0 ? 'Primary API Key' : 'Backup API Key',
+                api_key: '',
+              });
+              setIsAddingKeyInline(true);
+            }}
+            className="p-1.5 rounded-lg bg-accent text-black hover:bg-accent-hover transition-colors flex-shrink-0"
+          >
             <Plus className="w-4 h-4" />
           </button>
         )}
@@ -1164,31 +1190,46 @@ export const CredentialsTabChild: React.FC<any> = ({
             <button type="button" onClick={resetInlineForm} className="text-[11px] text-text-muted hover:text-white">Batal</button>
           </div>
 
-          {/* Mode Switcher Tabs */}
-          <div className="flex border-b border-border/60 gap-3 text-xs">
-            <button
-              type="button"
-              onClick={() => setInlineAuthTab('apikey')}
-              className={`pb-1.5 font-medium transition-colors flex items-center gap-1 ${
-                inlineAuthTab === 'apikey'
-                  ? 'border-b-2 border-accent text-accent font-semibold'
-                  : 'text-text-muted hover:text-white'
-              }`}
-            >
-              <KeyRound className="w-3 h-3" /> Input API Key Manual
-            </button>
-            <button
-              type="button"
-              onClick={() => setInlineAuthTab('authlogin')}
-              className={`pb-1.5 font-medium transition-colors flex items-center gap-1 ${
-                inlineAuthTab === 'authlogin'
-                  ? 'border-b-2 border-accent text-accent font-semibold'
-                  : 'text-text-muted hover:text-white'
-              }`}
-            >
-              <ArrowUpRight className="w-3 h-3" /> Auth Login / Salin Redirect URL
-            </button>
-          </div>
+          {/* Mode Switcher Tabs: Hanya untuk Provider Resmi NON-Antigravity */}
+          {!isAntigravity && !isCustomProvider && (
+            <div className="flex border-b border-border/60 gap-3 text-xs">
+              <button
+                type="button"
+                onClick={() => setInlineAuthTab('apikey')}
+                className={`pb-1.5 font-medium transition-colors flex items-center gap-1 ${
+                  inlineAuthTab === 'apikey'
+                    ? 'border-b-2 border-accent text-accent font-semibold'
+                    : 'text-text-muted hover:text-white'
+                }`}
+              >
+                <KeyRound className="w-3 h-3" /> Input API Key Manual
+              </button>
+              <button
+                type="button"
+                onClick={() => setInlineAuthTab('authlogin')}
+                className={`pb-1.5 font-medium transition-colors flex items-center gap-1 ${
+                  inlineAuthTab === 'authlogin'
+                    ? 'border-b-2 border-accent text-accent font-semibold'
+                    : 'text-text-muted hover:text-white'
+                }`}
+              >
+                <ArrowUpRight className="w-3 h-3" /> Auth Login / Salin Redirect URL
+              </button>
+            </div>
+          )}
+
+          {/* Banner Khusus Google Antigravity */}
+          {isAntigravity && (
+            <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-xs text-text-secondary flex items-start gap-2">
+              <Shield className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-white block">Autentikasi Akun Terdaftar</span>
+                <span className="text-[11px] text-text-muted">
+                  Google Antigravity hanya mendukung autentikasi login akun terdaftar. Login melalui portal resmi dan salin seluruh URL redirect/fallback ke kolom di bawah.
+                </span>
+              </div>
+            </div>
+          )}
 
           <form noValidate onSubmit={handleCreateKey} className="space-y-2.5 text-xs">
             <div>
@@ -1720,33 +1761,48 @@ export const CreateProviderModalChild: React.FC<any> = ({
 
         {/* DUAL-AUTH SECTION */}
         <div className="rounded-xl border border-border bg-bg-surface-2/60 p-3.5 space-y-3">
-          {/* Dual-Auth Tab Switcher */}
-          <div className="flex border-b border-border/80 gap-3 pb-2 text-xs">
-            <button
-              type="button"
-              onClick={() => setAuthTab('authlogin')}
-              className={`pb-1 font-medium transition-colors flex items-center gap-1.5 ${
-                authTab === 'authlogin'
-                  ? 'border-b-2 border-accent text-accent font-bold'
-                  : 'text-text-muted hover:text-white'
-              }`}
-            >
-              <ArrowUpRight className="w-3.5 h-3.5" />
-              1. Auth Login & Otorisasi Terpandu
-            </button>
-            <button
-              type="button"
-              onClick={() => setAuthTab('apikey')}
-              className={`pb-1 font-medium transition-colors flex items-center gap-1.5 ${
-                authTab === 'apikey'
-                  ? 'border-b-2 border-accent text-accent font-bold'
-                  : 'text-text-muted hover:text-white'
-              }`}
-            >
-              <KeyRound className="w-3.5 h-3.5" />
-              2. Input API Key Manual
-            </button>
-          </div>
+          {/* Dual-Auth Tab Switcher: Hanya untuk Provider Resmi NON-Antigravity */}
+          {selectedPreset?.id !== 'antigravity' && selectedPreset !== null && (
+            <div className="flex border-b border-border/80 gap-3 pb-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setAuthTab('authlogin')}
+                className={`pb-1 font-medium transition-colors flex items-center gap-1.5 ${
+                  authTab === 'authlogin'
+                    ? 'border-b-2 border-accent text-accent font-bold'
+                    : 'text-text-muted hover:text-white'
+                }`}
+              >
+                <ArrowUpRight className="w-3.5 h-3.5" />
+                1. Auth Login & Otorisasi Terpandu
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthTab('apikey')}
+                className={`pb-1 font-medium transition-colors flex items-center gap-1.5 ${
+                  authTab === 'apikey'
+                    ? 'border-b-2 border-accent text-accent font-bold'
+                    : 'text-text-muted hover:text-white'
+                }`}
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                2. Input API Key Manual
+              </button>
+            </div>
+          )}
+
+          {/* Banner Khusus Google Antigravity */}
+          {selectedPreset?.id === 'antigravity' && (
+            <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-xs text-text-secondary flex items-start gap-2">
+              <Shield className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-white block">Autentikasi Akun Terdaftar</span>
+                <span className="text-[11px] text-text-muted">
+                  Google Antigravity hanya mendukung autentikasi login akun terdaftar. Login melalui portal resmi dan salin seluruh URL redirect/fallback ke kolom di bawah.
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* TAB 1: AUTH LOGIN TERPANDU */}
           {authTab === 'authlogin' && (

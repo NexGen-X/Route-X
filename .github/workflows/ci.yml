@@ -5,9 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+# Token GITHUB_TOKEN hanya butuh akses baca; tidak ada langkah yang menulis ke repo.
+permissions:
+  contents: read
+
 jobs:
   go:
     runs-on: ubuntu-latest
+    # go test -race jauh lebih lambat dari biasanya; beri rampatan 20 menit.
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -23,8 +29,8 @@ jobs:
           --health-timeout=5s
           --health-retries=5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: "1.27.1"
           cache: true
@@ -37,20 +43,21 @@ jobs:
       - name: Test
         env:
           TEST_DATABASE_URL: postgres://routex:test_secret_pw@127.0.0.1:5432/routex_test?sslmode=disable
-        run: go test ./... -count=1
+        run: go test -race ./... -count=1
       - name: Secret lint
         env:
           TEST_DATABASE_URL: postgres://routex:test_secret_pw@127.0.0.1:5432/routex_test?sslmode=disable
-        run: go test ./internal/security/ -run TestSecretLeakLint -count=1
+        run: go test -race ./internal/security/ -run TestSecretLeakLint -count=1
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "24"
           cache: npm

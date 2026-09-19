@@ -50,7 +50,15 @@ export const CLIIntegrations: React.FC = () => {
   // Kunci API global pengguna untuk menghasilkan skrip terminal siap pakai
   const [userApiKey, setUserApiKey] = useState<string>(() => {
     try {
-      return localStorage.getItem('routex_cli_apikey') || '';
+      // Migrasi sekali: key lama mungkin masih tersimpan permanen di localStorage.
+      // Pindahkan ke sessionStorage (terhapus otomatis saat tab/browser ditutup)
+      // lalu hapus jejak lama agar tidak disimpan ganda.
+      const legacy = localStorage.getItem('routex_cli_apikey');
+      if (legacy !== null) {
+        sessionStorage.setItem('routex_cli_apikey', legacy);
+        localStorage.removeItem('routex_cli_apikey');
+      }
+      return sessionStorage.getItem('routex_cli_apikey') || '';
     } catch {
       return '';
     }
@@ -658,6 +666,9 @@ export const CLIIntegrations: React.FC = () => {
               <p className="text-[11px] text-text-muted">
                 Kunci ini digunakan saat melakukan uji sambungan dan disematkan ke snippet shell agar terbebas dari error 401.
               </p>
+              <p className="text-[11px] text-text-muted">
+                Kunci hanya disimpan untuk sesi tab ini (sessionStorage) dan terhapus otomatis saat tab/browser ditutup.
+              </p>
             </div>
           </div>
 
@@ -671,7 +682,7 @@ export const CLIIntegrations: React.FC = () => {
                   const val = e.target.value.trim();
                   setUserApiKey(val);
                   try {
-                    localStorage.setItem('routex_cli_apikey', val);
+                    sessionStorage.setItem('routex_cli_apikey', val);
                   } catch {}
                 }}
                 className="w-full bg-bg-surface-2 border border-border rounded-md px-3 py-1.5 text-xs text-white placeholder:text-text-muted focus:border-accent focus:outline-none font-mono pr-8"
@@ -692,7 +703,7 @@ export const CLIIntegrations: React.FC = () => {
                 onClick={() => {
                   setUserApiKey('');
                   try {
-                    localStorage.removeItem('routex_cli_apikey');
+                    sessionStorage.removeItem('routex_cli_apikey');
                   } catch {}
                 }}
                 className="text-xs min-h-[36px] text-text-muted hover:text-red-400"
@@ -718,7 +729,7 @@ export const CLIIntegrations: React.FC = () => {
                   if (k.raw_key) {
                     setUserApiKey(k.raw_key);
                     try {
-                      localStorage.setItem('routex_cli_apikey', k.raw_key);
+                      sessionStorage.setItem('routex_cli_apikey', k.raw_key);
                     } catch {}
                     toast.success(`Kunci "${k.name}" dipilih dan diterapkan.`);
                   } else {

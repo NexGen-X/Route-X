@@ -8,7 +8,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -504,6 +506,12 @@ func (h *Handlers) resolveGatewayURL(r *http.Request) string {
 // serta mendaftarkan pool egress bawaan untuk routing lalu lintas.
 func (h *Handlers) syncXrayConfig(ctx context.Context, domain string, actorID string) (xray.State, xray.Links) {
 	state := xray.DefaultState(domain)
+	// Host bridge selalu dari konfigurasi deployment (env XRAY_BRIDGE_HOST),
+	// bukan dari state tersimpan: topologi container native vs Docker harus
+	// konsisten antara config Xray & URL egress pool meski state lama dipakai.
+	if h.xrayBridgeHost != "" {
+		state.BridgeHost = h.xrayBridgeHost
+	}
 
 	if h.settingsRepo != nil {
 		if s, err := h.settingsRepo.Get(ctx, SettingKeyXrayConfig); err == nil && len(s.Value) > 0 {
@@ -511,6 +519,11 @@ func (h *Handlers) syncXrayConfig(ctx context.Context, domain string, actorID st
 				state = existing
 				state.Domain = domain
 				state.UpdatedAt = time.Now().UTC()
+				// State dari DB mungkin pra-PR ini (tanpa bridge_host) atau
+				// terkunci ke host lama — selalu samakan ke konfigurasi aktif.
+				if h.xrayBridgeHost != "" {
+					state.BridgeHost = h.xrayBridgeHost
+				}
 			}
 		}
 		state.EnsureDefaults(domain)
@@ -529,46 +542,102 @@ func (h *Handlers) syncXrayConfig(ctx context.Context, domain string, actorID st
 
 	cfgBytes, err := xray.GenerateConfig(state)
 	if err == nil {
+		// Tulis config ke kedua kandidat: native systemd membaca /var/lib, sedangkan
+		// Docker Compose mengekspos ./deploy/xray/config.runtime.json ke container
+		// Xray terpisah via volume. SyncToFileCandidates menulis keduanya.
 		_, _ = xray.SyncToFileCandidates(cfgBytes, "/var/lib/route-x/xray/config.json", "./deploy/xray/config.runtime.json")
 	}
 
 	if h.egressRepo != nil {
-		h.ensureXrayEgressPool(ctx)
+		h.ensureXrayEgressPool(ctx, state)
 	}
 
 	links := xray.GenerateShareLinks(state)
 	return state, links
 }
 
-// ensureXrayEgressPool memastikan entitas Egress Pool untuk jalur Xray lokal telah terdaftar di database.
-func (h *Handlers) ensureXrayEgressPool(ctx context.Context) {
+// defaultXrayEgressPoolName adalah nama pool egress bawaan yang dikelola sinkronisasi
+// Xray Route-X. Nama ini dipakai untuk membedakan pool milik kita dari pool lain.
+const defaultXrayEgressPoolName = "⚡ Xray Stealth Tunnel (Local)"
+
+// knownXrayBridgeHosts adalah host yang dianggap masih mengarah ke bridge bawaan
+// Route-X: loopback (deploy systemd satu host) serta nama layanan lama docker-compose
+// sebelum bridge dipindahkan ke loopback.
+var knownXrayBridgeHosts = map[string]bool{
+	"127.0.0.1": true,
+	"localhost": true,
+	"xray":      true,
+}
+
+// ensureXrayEgressPool memastikan entitas Egress Pool untuk jalur Xray lokal telah
+// terdaftar di database dengan kredensial bridge yang mutakhir.
+//
+// Pool bawaan diperbarui URL-nya (bukan dibuat ulang) saat sinkronisasi berikutnya
+// jika masih mengarah ke bridge bawaan — ini menutup celah instalasi lama yang
+// pool-nya terdaftar tanpa kredensial. URL yang sudah admin arahkan ke host lain
+// tidak pernah ditimpa supaya penyesuaian manual tetap aman.
+func (h *Handlers) ensureXrayEgressPool(ctx context.Context, state xray.State) {
 	if h.egressRepo == nil {
 		return
 	}
+
+	want := security.Secret(xray.BridgeEgressURL(state))
+
 	pools, err := h.egressRepo.List(ctx, false)
 	if err != nil {
 		return
 	}
 	for _, p := range pools {
-		if strings.Contains(p.Name, "Xray") {
+		if !strings.Contains(p.Name, "Xray") {
+			continue
+		}
+		// Pool bawaan ditemukan: segarkan kredensial hanya bila masih bridge kita.
+		current, err := h.egressRepo.ProxyURL(ctx, p.ID)
+		if err != nil || !isManagedXrayBridge(current, state) {
 			return
 		}
+		if current != want {
+			if _, err := h.egressRepo.SetProxyURL(ctx, p.ID, want); err != nil {
+				h.logger.ErrorContext(ctx, "gagal memperbarui kredensial pool egress Xray", "error", err)
+			}
+		}
+		return
 	}
 
 	region := "local"
 	enabled := true
 	_, _ = h.egressRepo.Create(ctx, upstream.CreateEgressParams{
-		Name:     "⚡ Xray Stealth Tunnel (Local)",
+		Name:     defaultXrayEgressPoolName,
 		Kind:     "socks5",
-		ProxyURL: security.Secret("socks5://xray:10808"),
+		ProxyURL: want,
 		Region:   &region,
 		Enabled:  &enabled,
 	})
 }
 
+// isManagedXrayBridge melaporkan apakah sebuah URL proxy masih mengarah ke bridge
+// bawaan Route-X (host dikenali + porta bridge). Dipakai agar kredensial pool aman
+// diperbarui tanpa menimpa pool yang sudah admin arahkan ke lokasi lain.
+func isManagedXrayBridge(proxyURL security.Secret, state xray.State) bool {
+	if proxyURL.IsZero() {
+		return false
+	}
+	u, err := url.Parse(proxyURL.Reveal())
+	if err != nil {
+		return false
+	}
+	if !knownXrayBridgeHosts[u.Hostname()] {
+		return false
+	}
+	return u.Port() == strconv.Itoa(state.SocksPort)
+}
+
 // getXrayLinks menghasilkan tautan share URL VLESS/Trojan untuk domain aktif saat ini.
 func (h *Handlers) getXrayLinks(ctx context.Context, domain string) (xray.State, xray.Links) {
 	state := xray.DefaultState(domain)
+	if h.xrayBridgeHost != "" {
+		state.BridgeHost = h.xrayBridgeHost
+	}
 	if h.settingsRepo != nil {
 		if s, err := h.settingsRepo.Get(ctx, SettingKeyXrayConfig); err == nil && len(s.Value) > 0 {
 			if existing, decodeErr := h.decodeXrayState(s.Value); decodeErr == nil && existing.UUID != "" {

@@ -20,3 +20,8 @@ web/e2e/.auth-*.json
 # Biner kompilasi Go
 /ai-gateway
 /ai-gateway-*
+
+# Config Xray hasil generate runtime (berisi kredensial acak per-instalasi).
+# Docker Compose mengekspos ./deploy/xray ke container gateway & xray sekaligus;
+# config.runtime.json ditulis gateway & dibaca xray, jangan di-commit.
+deploy/xray/config.runtime.json

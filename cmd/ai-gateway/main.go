@@ -576,6 +576,7 @@ func buildGatewaySurface(
 		Cipher:         cipher,
 		ResponseCache:  respCache,
 		CLIManager:     cliMgr,
+		XrayBridgeHost: cfg.XrayBridgeHost,
 		Version:        version,
 		Commit:         commit,
 		BuiltAt:        builtAt,

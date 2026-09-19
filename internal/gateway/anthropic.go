@@ -498,13 +498,52 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 
 	rc := http.NewResponseController(w)
 	var (
-		terkirim     int64
-		usage        providers.Usage
-		msgID        = randomMsgID()
-		modelName    = pr.model.ModelID
-		hasTextBlock = false
-		stopReason   = "end_turn"
+		terkirim   int64
+		usage      providers.Usage
+		msgID      = randomMsgID()
+		modelName  = pr.model.ModelID
+		stopReason = "end_turn"
+
+		// Mesin blok konten Anthropic. Anthropic menyusun pesan sebagai urutan
+		// content_block_start -> content_block_delta* -> content_block_stop, dan
+		// tiap blok punya index sendiri di dalam pesan. Bentuk kanonik gateway
+		// sebaliknya memisahkan text dari tool_calls, jadi state blok harus
+		// dijaga di sini: blok dibuka secara malas saat potongan pertama benar-benar
+		// tiba, bukan di awal, supaya pesan tanpa teks tidak mengirim blok hampa.
+		indexBlokSekarang int    // index blok yang sedang terbuka
+		tipeBlokSekarang  string // "text" atau "tool_use"; kosong berarti belum ada blok
+		blokTerbuka       bool
+		blokBerikutnya    int             // index untuk content_block berikutnya
+		blokTool          = map[int]int{} // index tool kanonik -> index blok keluaran
 	)
+
+	// kirimEvent menulis satu peristiwa SSE beserta framingnya lalu memflush klien.
+	// Menulis SSE tanpa flush segera menumpuk chunk di buffer proxy dan mematikan
+	// tujuan streaming itu sendiri. Kegagalan tulisan dianggap aliran sudah putus:
+	// false memberitahu pemanggil untuk berhenti memproses.
+	kirimEvent := func(nama string, muat []byte) bool {
+		n, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", nama, muat)
+		if err != nil {
+			return false
+		}
+		terkirim += int64(n)
+		return rc.Flush() == nil
+	}
+
+	// tutupBlok menutup content_block yang masih terbuka. Hanya ada satu blok
+	// terbuka dalam satu waktu, persis seperti aliran Anthropic yang sesungguhnya.
+	tutupBlok := func() {
+		if !blokTerbuka {
+			return
+		}
+		muat, _ := json.Marshal(map[string]any{
+			"type":  "content_block_stop",
+			"index": indexBlokSekarang,
+		})
+		kirimEvent("content_block_stop", muat)
+		blokTerbuka = false
+		tipeBlokSekarang = ""
+	}
 
 	defer func() {
 		if usage.TotalTokens <= 0 && terkirim > 0 {
@@ -541,20 +580,9 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 	}
 	_ = rc.Flush()
 
-	// 2. Buka text content block awal (index 0)
-	blockStartPayload, _ := json.Marshal(map[string]any{
-		"type":  "content_block_start",
-		"index": 0,
-		"content_block": map[string]any{
-			"type": "text",
-			"text": "",
-		},
-	})
-	if _, err := fmt.Fprintf(w, "event: content_block_start\ndata: %s\n\n", blockStartPayload); err != nil {
-		return
-	}
-	_ = rc.Flush()
-	hasTextBlock = true
+	// 2. content block dibuka secara malas di dalam loop baca, bukan di sini: jenis
+	// blok pertama dan jumlahnya baru diketahui saat potongan tiba. Membuka blok
+	// text di sini membuat pesan tool-only mengirim blok text hampa di index 0.
 
 	// Baca stream peristiwa
 	for {
@@ -589,36 +617,102 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 			}
 		}
 
+		// Catatan tentang reasoning: ev.ReasoningDelta sengaja TIDAK di-stream ke
+		// sini. Anthropic hanya menerima blok thinking yang disertai signature
+		// kriptografis dari sisi server; bentuk kanonik gateway tidak membawa
+		// signature (providers.StreamEvent tidak punya field Signature), dan
+		// adapter Anthropic memang menjatuhkannya secara eksplisit. Memblokir
+		// thinking tanpa signature yang sah hanya membuang-buang output, jadi
+		// jejak penalaran dilewati pada permukaan ini.
+
+		// Potongan teks: buka blok text bila belum ada blok text yang terbuka.
+		// Transisi tool -> text menutup blok tool lama lebih dulu.
 		if ev.Delta != "" {
+			if tipeBlokSekarang != "text" {
+				tutupBlok()
+				indexBlokSekarang = blokBerikutnya
+				blokBerikutnya++
+				blockStartPayload, _ := json.Marshal(map[string]any{
+					"type":  "content_block_start",
+					"index": indexBlokSekarang,
+					"content_block": map[string]any{
+						"type": "text",
+						"text": "",
+					},
+				})
+				if !kirimEvent("content_block_start", blockStartPayload) {
+					return
+				}
+				blokTerbuka = true
+				tipeBlokSekarang = "text"
+			}
 			deltaPayload, _ := json.Marshal(map[string]any{
 				"type":  "content_block_delta",
-				"index": 0,
+				"index": indexBlokSekarang,
 				"delta": map[string]any{
 					"type": "text_delta",
 					"text": ev.Delta,
 				},
 			})
-			n, err := fmt.Fprintf(w, "event: content_block_delta\ndata: %s\n\n", deltaPayload)
-			terkirim += int64(n)
-			if err != nil {
-				return
-			}
-			if err := rc.Flush(); err != nil {
+			if !kirimEvent("content_block_delta", deltaPayload) {
 				return
 			}
 			j.tandaiTTFT()
+			continue
+		}
+
+		// Potongan tool_calls. Adapter mengirim content_block_start tool_use sebagai
+		// satu peristiwa (membawa id dan nama, tanpa argumen), lalu setiap potongan
+		// argumen sebagai input_json_delta terpisah. Keduanya disusun ulang ke blok
+		// tool_use di index yang sama.
+		for _, tc := range ev.ToolCalls {
+			idx, dikenal := blokTool[tc.Index]
+			if !dikenal {
+				// Tool baru: tutup blok yang sedang terbuka (text atau tool lain)
+				// sebelum membuka blok tool_use di index berikutnya.
+				tutupBlok()
+				idx = blokBerikutnya
+				blokBerikutnya++
+				blokTool[tc.Index] = idx
+				indexBlokSekarang = idx
+				blockStartPayload, _ := json.Marshal(map[string]any{
+					"type":  "content_block_start",
+					"index": idx,
+					"content_block": map[string]any{
+						"type":  "tool_use",
+						"id":    tc.ID,
+						"name":  tc.Function.Name,
+						"input": map[string]any{},
+					},
+				})
+				if !kirimEvent("content_block_start", blockStartPayload) {
+					return
+				}
+				blokTerbuka = true
+				tipeBlokSekarang = "tool_use"
+			}
+			// Argumen dikirim sebagai delta JSON sebagaimana adanya, tanpa diurai:
+			// model kadang menghasilkan JSON tidak sah yang harus tetap sampai ke
+			// klien utuh (lihat dokumentasi providers.FunctionCall.Arguments).
+			if tc.Function.Arguments != "" {
+				deltaPayload, _ := json.Marshal(map[string]any{
+					"type":  "content_block_delta",
+					"index": idx,
+					"delta": map[string]any{
+						"type":         "input_json_delta",
+						"partial_json": tc.Function.Arguments,
+					},
+				})
+				if !kirimEvent("content_block_delta", deltaPayload) {
+					return
+				}
+				j.tandaiTTFT()
+			}
 		}
 	}
 
-	// 3. Tutup content block
-	if hasTextBlock {
-		stopBlockPayload, _ := json.Marshal(map[string]any{
-			"type":  "content_block_stop",
-			"index": 0,
-		})
-		_, _ = fmt.Fprintf(w, "event: content_block_stop\ndata: %s\n\n", stopBlockPayload)
-		_ = rc.Flush()
-	}
+	// 3. Tutup content block yang masih terbuka saat aliran berakhir.
+	tutupBlok()
 
 	// 4. Kirim message_delta
 	outputTokens := usage.OutputTokens

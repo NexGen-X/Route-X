@@ -20,6 +20,33 @@ import { useToast } from '../context/ToastContext';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { QueryError } from '../components/common/QueryError';
 
+// `request_body`/`response_body` dikirim backend sebagai JSON mentah (json.RawMessage,
+// lihat TrafficPayloadDTO pada internal/admin/dto.go:289). Render aman: prettify bila
+// berupa object, tampilkan apa adanya bila string, dan placeholder bila kosong.
+const formatRawPayload = (raw: unknown): string => {
+  if (raw === null || raw === undefined) return '(kosong atau tidak direkam)';
+  if (typeof raw === 'string') return raw.trim() || '(kosong atau tidak direkam)';
+  try {
+    return JSON.stringify(raw, null, 2);
+  } catch {
+    return String(raw);
+  }
+};
+
+// Ambil teks prompt pertama dari body request OpenAI-style untuk perintah cURL.
+// Struktur OpenAI: { "messages": [{ "role": "user", "content": "..." }] }.
+const extractPromptText = (body: unknown): string => {
+  if (!body || typeof body !== 'object') return '';
+  const messages = (body as { messages?: unknown }).messages;
+  if (!Array.isArray(messages)) return '';
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue;
+    const content = (msg as { content?: unknown }).content;
+    if (typeof content === 'string' && content.trim()) return content;
+  }
+  return '';
+};
+
 export const Requests: React.FC = () => {
   const { toast } = useToast();
   const [requests, setRequests] = useState<RequestLog[]>([]);
@@ -108,7 +135,7 @@ export const Requests: React.FC = () => {
   const copyAsCurl = async () => {
     if (!selectedReq) return;
     const gwURL = `${window.location.protocol}//${window.location.host}/v1/chat/completions`;
-    const promptText = reqPayload?.prompt_text || 'Hello Route-X';
+    const promptText = extractPromptText(reqPayload?.request_body) || 'Hello Route-X';
     const curlCmd = `curl -X POST "${gwURL}" \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer rx_live_personal_gateway" \\\n  -d '{\n    "model": ${JSON.stringify(selectedReq.model_id)},\n    "messages": [{"role": "user", "content": ${JSON.stringify(promptText)}}]\n  }'`;
     try {
       await copyTextToClipboard(curlCmd);
@@ -495,7 +522,7 @@ export const Requests: React.FC = () => {
                         <div
                           key={idx}
                           style={{ width: `${pct}%` }}
-                          title={`${ev.provider_id || ev.event_type}: ${ev.latency_ms}ms (${pct}%)`}
+                          title={`${ev.provider_id || ev.kind}: ${ev.latency_ms}ms (${pct}%)`}
                           className={`${colors[idx % colors.length]} hover:opacity-80 transition-all border-r border-black/30 first:rounded-l-full last:rounded-r-full`}
                         />
                       );
@@ -514,7 +541,7 @@ export const Requests: React.FC = () => {
                   reqEvents.map((ev, idx) => (
                     <span key={idx} className="flex items-center gap-1 font-mono">
                       <span className={`w-2 h-2 rounded-full ${['bg-accent', 'bg-cyan-500', 'bg-purple-500', 'bg-amber-500', 'bg-emerald-500'][idx % 5]}`} />
-                      {ev.provider_id || ev.event_type}: {ev.latency_ms}ms
+                      {ev.provider_id || ev.kind}: {ev.latency_ms}ms
                     </span>
                   ))
                 ) : (
@@ -551,7 +578,7 @@ export const Requests: React.FC = () => {
                       <div className="flex items-center gap-3">
                         <span className="w-2 h-2 rounded-full bg-accent" />
                         <div>
-                          <span className="font-semibold text-white">{ev.event_type}</span>
+                          <span className="font-semibold text-white">{ev.kind}</span>
                           <span className="text-text-muted ml-2 font-mono">{ev.provider_id || '-'}</span>
                         </div>
                       </div>
@@ -569,16 +596,21 @@ export const Requests: React.FC = () => {
               </h4>
               {reqPayload ? (
                 <div className="space-y-3 text-xs">
+                  {reqPayload.truncated && (
+                    <div className="text-[11px] text-amber-500">
+                      Payload terpotong saat perekaman ({reqPayload.size_bytes ?? 0} byte).
+                    </div>
+                  )}
                   <div>
-                    <span className="text-text-muted block mb-1">Prompt Masukan:</span>
+                    <span className="text-text-muted block mb-1">Body Permintaan:</span>
                     <pre className="p-3 bg-black/60 rounded-inner border border-border font-mono text-[11px] overflow-x-auto max-h-40 whitespace-pre-wrap text-text-primary">
-                      {reqPayload.prompt_text || '(kosong atau tidak direkam)'}
+                      {formatRawPayload(reqPayload.request_body)}
                     </pre>
                   </div>
                   <div>
-                    <span className="text-text-muted block mb-1">Respons Keluaran:</span>
+                    <span className="text-text-muted block mb-1">Body Respons:</span>
                     <pre className="p-3 bg-black/60 rounded-inner border border-border font-mono text-[11px] overflow-x-auto max-h-40 whitespace-pre-wrap text-text-primary">
-                      {reqPayload.response_text || '(kosong atau tidak direkam)'}
+                      {formatRawPayload(reqPayload.response_body)}
                     </pre>
                   </div>
                 </div>

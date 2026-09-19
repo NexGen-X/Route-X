@@ -174,7 +174,10 @@ export const Observability: React.FC = () => {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series}>
+              {/* TrafficPointDTO.cost_usd dikirim backend sebagai string presisi desimal
+                  (internal/admin/dto.go:137); recharts hanya bisa memplot angka, jadi
+                  konversi ke number per titik sebelum masuk chart. */}
+              <AreaChart data={series.map((p) => ({ ...p, cost_usd: Number(p.cost_usd ?? 0) }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" />
                 <XAxis
                   dataKey="timestamp"

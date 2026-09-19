@@ -203,6 +203,20 @@ if [ -f "$SRC_DIR/deploy/xray/config.json" ]; then
     cp "$SRC_DIR/deploy/xray/config.json" /usr/local/etc/xray/config.json 2>/dev/null || true
 fi
 
+# Konfigurasi Xray hanya mendengarkan di loopback (127.0.0.1) dan mewajibkan
+# autentikasi, tetapi kata sandinya berupa placeholder agar repo bebas secret.
+# Operator WAJIB mengganti "<GANTI_PASSWORD_INI>" pada kedua berkas di atas
+# dengan kata sandi acak kuat, lalu mencocokkannya pada URL egress pool Xray di
+# dashboard admin (mis. socks5://routex:<sandi>@xray:10808) sebelum jalur
+# keluar Xray dipakai. Tanpa langkah ini Xray menolak koneksi (fail-closed).
+for cfg in /var/lib/route-x/xray/config.json /usr/local/etc/xray/config.json; do
+    if [ -f "$cfg" ] && grep -q "GANTI_PASSWORD_INI" "$cfg"; then
+        echo "   ⚠️  $cfg masih memakai kata sandi placeholder <GANTI_PASSWORD_INI>."
+        echo "      Ganti dengan kata sandi acak kuat, lalu cocokkan pada egress"
+        echo "      pool Xray di dashboard admin sebelum jalur keluar dipakai."
+    fi
+done
+
 chmod 755 /var/lib/route-x
 chmod 755 /var/lib/route-x/xray
 chmod 644 /var/lib/route-x/xray/config.json 2>/dev/null || true

@@ -81,21 +81,34 @@ if [ ! -f .env ]; then
 fi
 
 # 3. Pastikan konfigurasi default Xray tersedia
+# Konfigurasi ini hanya mendengarkan di loopback (127.0.0.1) dan mewajibkan
+# autentikasi (accounts) supaya tidak menjadi open proxy. Kata sandi sengaja
+# berupa placeholder agar repo bebas secret; ganti "<GANTI_PASSWORD_INI>"
+# saat deploy dan cocokkan pada URL egress pool Xray di dashboard admin.
 if [ ! -f deploy/xray/config.json ]; then
     echo "📡 Menyiapkan konfigurasi bawaan Xray SOCKS5 (10808) & HTTP (10809)..."
     cat << 'EOF' > deploy/xray/config.json
 {
   "log": { "loglevel": "warning" },
   "inbounds": [{
+    "tag": "socks-in",
     "port": 10808,
-    "listen": "0.0.0.0",
+    "listen": "127.0.0.1",
     "protocol": "socks",
-    "settings": { "auth": "noauth", "udp": true }
+    "settings": {
+      "auth": "password",
+      "accounts": [{ "user": "routex", "pass": "<GANTI_PASSWORD_INI>" }],
+      "udp": true
+    }
   }, {
+    "tag": "http-in",
     "port": 10809,
-    "listen": "0.0.0.0",
+    "listen": "127.0.0.1",
     "protocol": "http",
-    "settings": {}
+    "settings": {
+      "accounts": [{ "user": "routex", "pass": "<GANTI_PASSWORD_INI>" }],
+      "allowTransparent": false
+    }
   }],
   "outbounds": [{
     "protocol": "freedom",

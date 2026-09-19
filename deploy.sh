@@ -3,6 +3,43 @@ set -e
 
 echo "🚀 Menyiapkan arsitektur Docker Route-X (5 Layanan: Route-X, DB, Redis, Xray, Caddy)..."
 
+# rand_b64 menghasilkan N byte acak terenkode base64 standar.
+#
+# ENCRYPTION_KEY dan API_KEY_PEPPER wajib dikirimkan sebagai base64: validasi
+# config (internal/config/config.go) mendedekode nilainya, dan AES-256-GCM
+# mensyaratkan tepat 32 byte. openssl rand -hex 32 menghasilkan 64 karakter
+# heksadesimal yang justru didekode menjadi 48 byte, sehingga gateway menolak
+# boot. Format ini identik dengan scripts/ops/generate-secrets.sh.
+rand_b64() {
+    local out
+    out="$(openssl rand -base64 "$1" 2>/dev/null)"
+    if [ -z "$out" ]; then
+        out="$(head -c "$1" /dev/urandom | base64 2>/dev/null)"
+    fi
+    printf '%s' "$out"
+}
+
+# rand_hex menghasilkan 2*N karakter heksadesimal untuk sandi dan token bebas
+# format (tidak didekode panjang tetap oleh config).
+rand_hex() {
+    openssl rand -hex "$1" 2>/dev/null || head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'
+}
+
+# detect_host mencari alamat publik utama server: IP keluar rute default adalah
+# alamat yang dilihat oleh klien eksternal. Dipakai sebagai host HTTPS default
+# PUBLIC_URL; operator dengan domain sendiri menyetel variabel DOMAIN.
+detect_host() {
+    local host
+    host="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}' || true)"
+    if [ -z "$host" ]; then
+        host="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+    fi
+    if [ -z "$host" ]; then
+        host="localhost"
+    fi
+    printf '%s' "$host"
+}
+
 # 1. Pastikan folder konfigurasi tersedia
 mkdir -p deploy/caddy deploy/xray
 
@@ -16,23 +53,30 @@ if [ ! -f .env ]; then
     fi
 
     # Hasilkan kunci kriptografi acak aman
-    SEC_SESSION=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
-    SEC_ENC=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
-    SEC_PEPPER=$(openssl rand -hex 32 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 64 | head -n 1)
-    SEC_PGPASS=$(openssl rand -hex 16 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 32 | head -n 1)
-    SEC_METRICS=$(openssl rand -hex 16 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 32 | head -n 1)
+    SEC_SESSION="$(rand_b64 48)"
+    SEC_ENC="$(rand_b64 32)"
+    SEC_PEPPER="$(rand_b64 32)"
+    SEC_PGPASS="$(rand_hex 16)"
+    SEC_METRICS="$(rand_hex 32)"
+
+    # PUBLIC_URL wajib https saat APP_ENV=production (validasi config menolak
+    # boot bila skemanya http). Host diambil dari DOMAIN operator atau alamat
+    # publik utama server.
+    SEC_PUBLIC_URL="https://${PUBLIC_URL_HOST:-${DOMAIN:-$(detect_host)}}"
 
     KEY_SESS="SESSION_SECRET"
     KEY_ENC="ENCRYPTION_KEY"
     KEY_PEPPER="API_KEY_PEPPER"
     KEY_PG="POSTGRES_PASSWORD"
     KEY_METRICS="METRICS_TOKEN"
+    KEY_PURL="PUBLIC_URL"
 
     sed -i "s|^${KEY_SESS}=.*|${KEY_SESS}=${SEC_SESSION}|" .env 2>/dev/null || true
     sed -i "s|^${KEY_ENC}=.*|${KEY_ENC}=${SEC_ENC}|" .env 2>/dev/null || true
     sed -i "s|^${KEY_PEPPER}=.*|${KEY_PEPPER}=${SEC_PEPPER}|" .env 2>/dev/null || true
     sed -i "s|^${KEY_PG}=.*|${KEY_PG}=${SEC_PGPASS}|" .env 2>/dev/null || true
     sed -i "s|^${KEY_METRICS}=.*|${KEY_METRICS}=${SEC_METRICS}|" .env 2>/dev/null || true
+    sed -i "s|^${KEY_PURL}=.*|${KEY_PURL}=${SEC_PUBLIC_URL}|" .env 2>/dev/null || true
     echo "   File .env berhasil dibuat dengan aman."
 fi
 

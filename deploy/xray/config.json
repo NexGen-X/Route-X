@@ -1,15 +1,24 @@
 {
   "log": { "loglevel": "warning" },
   "inbounds": [{
+    "tag": "socks-in",
     "port": 10808,
-    "listen": "0.0.0.0",
+    "listen": "127.0.0.1",
     "protocol": "socks",
-    "settings": { "auth": "noauth", "udp": true }
+    "settings": {
+      "auth": "password",
+      "accounts": [{ "user": "routex", "pass": "<GANTI_PASSWORD_INI>" }],
+      "udp": true
+    }
   }, {
+    "tag": "http-in",
     "port": 10809,
-    "listen": "0.0.0.0",
+    "listen": "127.0.0.1",
     "protocol": "http",
-    "settings": {}
+    "settings": {
+      "accounts": [{ "user": "routex", "pass": "<GANTI_PASSWORD_INI>" }],
+      "allowTransparent": false
+    }
   }],
   "outbounds": [{
     "protocol": "freedom",

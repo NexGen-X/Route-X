@@ -361,24 +361,31 @@ export interface RequestLog {
   created_at: string;
 }
 
+// Kontrak mengikuti TrafficEventDTO (internal/admin/dto.go:264): field utama
+// label event adalah `kind`, bukan `event_type`.
 export interface RequestEvent {
-  id: number;
-  event_type: string;
+  seq: number;
+  kind: string;
   provider_id?: string;
-  model_id?: string;
-  latency_ms: number;
+  provider_name?: string;
+  upstream_model?: string;
   status_code?: number;
-  error_type?: string;
+  latency_ms?: number;
+  error_kind?: string;
   error_message?: string;
+  detail?: unknown;
   created_at: string;
 }
 
+// Kontrak mengikuti TrafficPayloadDTO (internal/admin/dto.go:289): bodies dikirim
+// sebagai JSON mentah (json.RawMessage), bukan teks prompt/response siap pakai.
 export interface RequestPayload {
-  request_id: string;
-  prompt_text?: string;
-  response_text?: string;
-  is_compressed: boolean;
-  created_at: string;
+  request_headers?: unknown;
+  request_body?: unknown;
+  response_headers?: unknown;
+  response_body?: unknown;
+  truncated?: boolean;
+  size_bytes?: number;
 }
 
 export interface ObservabilitySummary {
@@ -397,12 +404,14 @@ export interface ObservabilitySummary {
   circuit_breakers_open: number;
 }
 
+// Kontrak mengikuti TrafficPointDTO (internal/admin/dto.go:129): biaya dikirim
+// sebagai string presisi desimal, BUKAN number — harus dikonversi saat plot.
 export interface TimeSeriesPoint {
   timestamp: string;
   requests: number;
   errors: number;
   tokens: number;
-  cost_usd: number;
+  cost_usd: string;
   p50_latency_ms: number;
   p95_latency_ms: number;
 }

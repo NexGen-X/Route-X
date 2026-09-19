@@ -52,6 +52,33 @@ fi
 
 echo "📁 Direktori Sumber: $SRC_DIR"
 
+# Menentukan host publik yang melayani Route-X. PUBLIC_URL divalidasi wajib
+# https saat APP_ENV=production, dan CSRF dashboard membandingkan origin request
+# dengan origin PUBLIC_URL, jadi edge server (Caddy) juga harus melayani HTTPS
+# pada host ini. Operator dengan domain menyetel variabel DOMAIN sebelum
+# instalasi; tanpa domain, alamat IP keluar rute default server dipakai.
+ROUTEX_HOST="${DOMAIN:-${PUBLIC_URL_HOST:-}}"
+if [ -z "$ROUTEX_HOST" ]; then
+    ROUTEX_HOST="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}' || true)"
+fi
+if [ -z "$ROUTEX_HOST" ]; then
+    ROUTEX_HOST="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+fi
+if [ -z "$ROUTEX_HOST" ]; then
+    ROUTEX_HOST="$(hostname -f 2>/dev/null || hostname)"
+fi
+echo "🌐 Host publik: ${ROUTEX_HOST}"
+
+# Tidak ada CA publik yang menerbitkan sertifikat untuk alamat IP, jadi Caddy
+# memakai CA internalnya (self-signed) untuk IP; domain mendapat sertifikat
+# Let's Encrypt otomatis.
+CADDY_TLS_LINE=""
+case "$ROUTEX_HOST" in
+    [0-9]*.[0-9]*.[0-9]*.[0-9]*)
+        CADDY_TLS_LINE="    tls internal  # host berupa IP: sertifikat internal Caddy (self-signed)"
+        ;;
+esac
+
 # 4. Memperbarui paket sistem dan utilitas dasar
 echo ""
 echo "📦 [1/7] Memperbarui sistem dan memasang paket inti..."
@@ -110,9 +137,15 @@ if ! command -v caddy &>/dev/null; then
 fi
 
 mkdir -p /etc/caddy
-if [ ! -f /etc/caddy/Caddyfile ]; then
-    cat << 'EOF' > /etc/caddy/Caddyfile
-:80 {
+# Route-X mengharuskan HTTPS pada host publik (PUBLIC_URL produksi wajib https
+# dan CSRF membandingkan origin), jadi Caddy melayani ${ROUTEX_HOST} langsung
+# dengan TLS: Let's Encrypt untuk domain, CA internal untuk IP.
+if [ ! -f /etc/caddy/Caddyfile ] || grep -q "127.0.0.1:8080" /etc/caddy/Caddyfile 2>/dev/null; then
+    # Belum ada Caddyfile, atau berisi blok Route-X versi lama: tulis ulang.
+    cat << EOF > /etc/caddy/Caddyfile
+# Route-X Gateway — host publik: ${ROUTEX_HOST}
+${ROUTEX_HOST} {
+${CADDY_TLS_LINE}
     encode zstd gzip
 
     reverse_proxy 127.0.0.1:8080 {
@@ -125,10 +158,13 @@ if [ ! -f /etc/caddy/Caddyfile ]; then
     }
 }
 EOF
-elif ! grep -q ":80" /etc/caddy/Caddyfile 2>/dev/null; then
-    cat << 'EOF' >> /etc/caddy/Caddyfile
+else
+    # Caddyfile operator lain yang belum memproksi Route-X: tambahkan blok ini.
+    cat << EOF >> /etc/caddy/Caddyfile
 
-:80 {
+# Route-X Gateway — host publik: ${ROUTEX_HOST}
+${ROUTEX_HOST} {
+${CADDY_TLS_LINE}
     encode zstd gzip
 
     reverse_proxy 127.0.0.1:8080 {
@@ -214,13 +250,16 @@ if [ "$INSTALLED_FROM_RELEASE" -eq 0 ]; then
     fi
 
     if ! command -v go &>/dev/null; then
+        # Versi ini wajib mengikuti go.mod (saat ini 1.27.1); toolchain lebih lama
+        # menolak membangun modul.
+        GO_VERSION="1.27.1"
         ARCH="$(uname -m)"
         case "$ARCH" in
             x86_64) GO_ARCH="amd64" ;;
             aarch64|arm64) GO_ARCH="arm64" ;;
             *) GO_ARCH="amd64" ;;
         esac
-        wget -q "https://dl.google.com/go/go1.24.0.linux-${GO_ARCH}.tar.gz" -O /tmp/go.tar.gz
+        wget -q "https://dl.google.com/go/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" -O /tmp/go.tar.gz
         rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz
         rm -f /tmp/go.tar.gz
         export PATH="/usr/local/go/bin:$PATH"
@@ -242,28 +281,45 @@ echo ""
 echo "⚙️ [7/7] Menyiapkan konfigurasi, service systemd & migrasi..."
 mkdir -p /etc/routex
 if [ ! -f /etc/routex/routex.env ]; then
-    SESSION_SECRET="$(openssl rand -hex 32)"
-    ENCRYPTION_KEY="$(openssl rand -base64 32)"
-    API_KEY_PEPPER="$(openssl rand -hex 32)"
-    METRICS_TOKEN="$(openssl rand -hex 32)"
+    # Kunci wajib base64 (config mendedekode nilai dan AES-256-GCM
+    # mensyaratkan tepat 32 byte); hex 64 karakter didekode menjadi 48 byte
+    # dan gateway menolak boot. Format identik scripts/ops/generate-secrets.sh.
+    SESSION_SECRET="$(openssl rand -base64 48 | tr -d '\n')"
+    ENCRYPTION_KEY="$(openssl rand -base64 32 | tr -d '\n')"
+    API_KEY_PEPPER="$(openssl rand -base64 32 | tr -d '\n')"
+    METRICS_TOKEN="$(openssl rand -hex 32 | tr -d '\n')"
 
     cat << EOF > /etc/routex/routex.env
 APP_ENV=production
 PORT=8080
-PUBLIC_URL=http://127.0.0.1:8080
-DATABASE_URL=postgres://${DB_USER}:${DB_PASS}@127.0.0.1:5432/${DB_NAME}?sslmode=disable
+PUBLIC_URL=https://${ROUTEX_HOST}
+DATABASE_URL=postgres://${DB_USER}:${DB_PASS}@127.0.0.1:5432/${DB_NAME}?sslmode=prefer
 REDIS_URL=redis://127.0.0.1:6379/0
-SESSION_SECRET=${SESSION_SECRET}
-ENCRYPTION_KEY=${ENCRYPTION_KEY}
-API_KEY_PEPPER=${API_KEY_PEPPER}
-METRICS_TOKEN=${METRICS_TOKEN}
+SESSION_SECRET="${SESSION_SECRET}"
+ENCRYPTION_KEY="${ENCRYPTION_KEY}"
+API_KEY_PEPPER="${API_KEY_PEPPER}"
+METRICS_TOKEN="${METRICS_TOKEN}"
 RATE_LIMIT_FAIL_CLOSED=false
-UPSTREAM_ALLOW_HTTP=true
+UPSTREAM_ALLOW_HTTP=false
 UPSTREAM_ALLOWED_PRIVATE_ADDRS=127.0.0.1,::1,127.0.0.0/8
 EOF
     chmod 600 /etc/routex/routex.env
     echo "   Berkas /etc/routex/routex.env berhasil dibuat."
 else
+    # Migrasi instalasi lama: koreksi nilai yang membuat validasi produksi
+    # menolak boot atau mengendurkan postur keamanan.
+    if grep -Eq '^PUBLIC_URL=http://' /etc/routex/routex.env; then
+        sed -i -E "s|^PUBLIC_URL=.*|PUBLIC_URL=https://${ROUTEX_HOST}|" /etc/routex/routex.env
+        echo "   PUBLIC_URL diperbarui ke https (produksi mewajibkan https)."
+    fi
+    if grep -q "sslmode=disable" /etc/routex/routex.env; then
+        sed -i 's|sslmode=disable|sslmode=prefer|g' /etc/routex/routex.env
+        echo "   DATABASE_URL: sslmode=disable -> sslmode=prefer."
+    fi
+    if grep -Eq '^UPSTREAM_ALLOW_HTTP=true' /etc/routex/routex.env; then
+        sed -i -E 's|^UPSTREAM_ALLOW_HTTP=true|UPSTREAM_ALLOW_HTTP=false|' /etc/routex/routex.env
+        echo "   UPSTREAM_ALLOW_HTTP dinonaktifkan (bawaan aman produksi)."
+    fi
     grep -q "UPSTREAM_ALLOWED_PRIVATE_ADDRS" /etc/routex/routex.env || \
         echo "UPSTREAM_ALLOWED_PRIVATE_ADDRS=127.0.0.1,::1,127.0.0.0/8" >> /etc/routex/routex.env
 fi
@@ -304,9 +360,19 @@ echo "   journalctl -fu caddy"
 echo "   journalctl -fu xray"
 echo "------------------------------------------------------------------"
 echo " 🎉 SETUP AWAL (FIRST-RUN ONBOARDING):"
-echo "   Akses Dashboard : http://<IP-SERVER-ANDA>/login atau :8080/login"
+echo "   Akses Dashboard : https://${ROUTEX_HOST}/login"
 echo "   Email Default   : admin@routex.local"
 echo "   Password Default: RouteX#Initial2026!"
 echo "   (Atau klik tombol 'Gunakan Kredensial Default (1-Klik)' pada login)"
 echo "   * Anda akan otomatis diminta membuat password baru saat login."
+echo "------------------------------------------------------------------"
+echo " ℹ️ CATATAN HTTPS:"
+echo "   Produksi mewajibkan HTTPS (PUBLIC_URL=https://${ROUTEX_HOST})."
+[ -n "$CADDY_TLS_LINE" ] && \
+    echo "   Host berupa IP sehingga Caddy memakai sertifikat internal (self-signed):" && \
+    echo "   browser akan memperingatkan sertifikat tak terpercaya — lanjutkan untuk" && \
+    echo "   uji coba, atau pasang domain dan jalankan ulang dengan DOMAIN=domainanda."
+[ -z "$CADDY_TLS_LINE" ] && \
+    echo "   Sertifikat Let's Encrypt diterbitkan otomatis oleh Caddy untuk domain ini."
+echo "   Konfigurasi: /etc/routex/routex.env  |  Caddy: /etc/caddy/Caddyfile"
 echo "=================================================================="

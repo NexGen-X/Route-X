@@ -30,18 +30,12 @@ services:
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
       - METRICS_TOKEN=${METRICS_TOKEN}
       - TRUSTED_PROXIES=0.0.0.0/0
-      - UPSTREAM_ALLOWED_PRIVATE_ADDRS=xray,127.0.0.1,::1,127.0.0.0/8,172.16.0.0/12
-      # Xray berjalan di container terpisah pada network bridge ini, jadi gateway
-      # harus memanggilnya lewat nama layanan, bukan loopback (yang berarti
-      # container gateway sendiri). syncXrayConfig memakai nilai ini sebagai
-      # alamat listen config Xray sekaligus host URL egress pool.
-      - XRAY_BRIDGE_HOST=xray
-    volumes:
-      - ./deploy/xray:/opt/routex/deploy/xray
+      # Loopback & subnet privat lokal diizinkan agar egress pool generik
+      # (http/https/socks5) di host/container yang sama tetap dapat dipakai.
+      - UPSTREAM_ALLOWED_PRIVATE_ADDRS=127.0.0.1,::1,127.0.0.0/8,172.16.0.0/12
     depends_on:
       - db
       - redis
-      - xray
     networks:
       - routex-network
 
@@ -64,19 +58,6 @@ services:
     restart: unless-stopped
     volumes:
       - routex_redisdata:/data
-    networks:
-      - routex-network
-
-  xray:
-    image: teddysun/xray:latest
-    container_name: routex-xray
-    restart: unless-stopped
-    # Gateway menulis config.runtime.json (berisi kredensial acak per-instalasi)
-    # ke volume bersama ./deploy/xray. Default image membaca /etc/xray/config.json
-    # yang hanya berisi template statis tanpa kredensial, jadi arahkan ke runtime.
-    command: ["xray", "run", "-config", "/etc/xray/config.runtime.json"]
-    volumes:
-      - ./deploy/xray:/etc/xray
     networks:
       - routex-network
 

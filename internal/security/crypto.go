@@ -212,12 +212,6 @@ func CLIToolAAD(toolID string) string {
 	return "cli_tool:" + toolID
 }
 
-// XrayStateAAD membentuk AAD tetap untuk state kredensial Xray yang disimpan
-// sebagai satu record settings. Ciphertext tidak boleh dipindah ke jenis setting lain.
-func XrayStateAAD() string {
-	return "setting:system:xray:config"
-}
-
 // OAuthSessionAAD membentuk AAD standar untuk refresh token sesi OAuth provider.
 func OAuthSessionAAD(sessionID string) string {
 	return "provider_oauth:" + sessionID

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Menyiapkan arsitektur Docker Route-X (5 Layanan: Route-X, DB, Redis, Xray, Caddy)..."
+echo "🚀 Menyiapkan arsitektur Docker Route-X (4 Layanan: Route-X, DB, Redis, Caddy)..."
 
 # rand_b64 menghasilkan N byte acak terenkode base64 standar.
 #
@@ -41,7 +41,7 @@ detect_host() {
 }
 
 # 1. Pastikan folder konfigurasi tersedia
-mkdir -p deploy/caddy deploy/xray
+mkdir -p deploy/caddy
 
 # 2. Otomatis inisialisasi file .env bila belum ada
 if [ ! -f .env ]; then
@@ -80,52 +80,14 @@ if [ ! -f .env ]; then
     echo "   File .env berhasil dibuat dengan aman."
 fi
 
-# 3. Pastikan konfigurasi default Xray tersedia
-# Konfigurasi ini hanya mendengarkan di loopback (127.0.0.1) dan mewajibkan
-# autentikasi (accounts) supaya tidak menjadi open proxy. Kata sandi sengaja
-# berupa placeholder agar repo bebas secret; ganti "<GANTI_PASSWORD_INI>"
-# saat deploy dan cocokkan pada URL egress pool Xray di dashboard admin.
-if [ ! -f deploy/xray/config.json ]; then
-    echo "📡 Menyiapkan konfigurasi bawaan Xray SOCKS5 (10808) & HTTP (10809)..."
-    cat << 'EOF' > deploy/xray/config.json
-{
-  "log": { "loglevel": "warning" },
-  "inbounds": [{
-    "tag": "socks-in",
-    "port": 10808,
-    "listen": "127.0.0.1",
-    "protocol": "socks",
-    "settings": {
-      "auth": "password",
-      "accounts": [{ "user": "routex", "pass": "<GANTI_PASSWORD_INI>" }],
-      "udp": true
-    }
-  }, {
-    "tag": "http-in",
-    "port": 10809,
-    "listen": "127.0.0.1",
-    "protocol": "http",
-    "settings": {
-      "accounts": [{ "user": "routex", "pass": "<GANTI_PASSWORD_INI>" }],
-      "allowTransparent": false
-    }
-  }],
-  "outbounds": [{
-    "protocol": "freedom",
-    "settings": {}
-  }]
-}
-EOF
-fi
-
 echo "📦 Membangun image Docker (Kompilasi Frontend & Backend)..."
 echo "🧹 Membersihkan kontainer lama..."
 docker compose down --remove-orphans
-docker rm -f routex-postgres routex-gateway routex-caddy routex-redis routex-xray 2>/dev/null || true
+docker rm -f routex-postgres routex-gateway routex-caddy routex-redis 2>/dev/null || true
 docker compose build
 
-echo "🛠️ Menjalankan layanan infrastruktur dasar (PostgreSQL, Redis, Xray)..."
-docker compose up -d db redis xray
+echo "🛠️ Menjalankan layanan infrastruktur dasar (PostgreSQL, Redis)..."
+docker compose up -d db redis
 
 echo "⏳ Menunggu PostgreSQL siap menerima koneksi (5 detik)..."
 sleep 5
@@ -139,7 +101,7 @@ docker compose up -d routex caddy
 
 echo ""
 echo "✅ DEPLOYMENT BERHASIL!"
-echo "Semua 5 layanan kini berjalan secara terisolasi di dalam kontainer Docker."
+echo "Semua 4 layanan kini berjalan secara terisolasi di dalam kontainer Docker."
 echo "--------------------------------------------------------"
 echo "📊 Cek status layanan : docker compose ps"
 echo "📝 Pantau log Route-X : docker compose logs -f routex"

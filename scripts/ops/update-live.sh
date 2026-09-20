@@ -2,7 +2,7 @@
 # ==============================================================================
 # Route-X Zero-Downtime Live Rebuild & Hot-Reload Script
 # Menjalankan pembaruan biner Route-X secara atomik tanpa mematikan database,
-# cache Redis, reverse proxy Caddy, atau routing Xray.
+# cache Redis, atau reverse proxy Caddy.
 # ==============================================================================
 set -euo pipefail
 

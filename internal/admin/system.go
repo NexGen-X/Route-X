@@ -32,8 +32,8 @@ func (h *Handlers) systemRoutes(r chi.Router) {
 
 	// Domain & Automatic HTTPS Management
 	r.Route("/domain", func(dr chi.Router) {
-		// Respons domain memuat tautan provisioning Xray yang setara kredensial.
-		// Karena itu baca domain memerlukan settings:write, bukan akses Viewer.
+		// Respons domain memuat pengaturan sensitif sistem (status HTTPS & DNS),
+		// sehingga membaca domain memerlukan settings:write, bukan akses Viewer.
 		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Get("/", h.getDomainStatus)
 		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Post("/", h.updateDomainConfig)
 		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Delete("/", h.deleteDomainConfig)
@@ -105,7 +105,7 @@ func (h *Handlers) getSetting(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) putSetting(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := chi.URLParam(r, "key")
-	if strings.HasPrefix(key, "cli:config:") || key == SettingKeyXrayConfig {
+	if strings.HasPrefix(key, "cli:config:") {
 		httpx.BadRequest(w, r, "reserved_setting", "Setelan rahasia wajib diubah melalui endpoint khusus")
 		return
 	}

@@ -177,7 +177,7 @@ export const Egress: React.FC = () => {
         }
         description={
           <span>
-            Manajemen proxy keluar (Xray / SOCKS5 / HTTP / HTTPS) untuk merutekan panggilan upstream AI.
+            Manajemen proxy keluar (SOCKS5 / HTTP / HTTPS) untuk merutekan panggilan upstream AI.
             Semua URL proxy dan kredensial disimpan terenkripsi secara aman dengan <strong>AES-256-GCM</strong>.
           </span>
         }
@@ -284,7 +284,7 @@ export const Egress: React.FC = () => {
           </div>
           <h3 className="text-base font-bold text-white">Belum Ada Egress Proxy Pool</h3>
           <p className="text-xs text-text-secondary mt-1 max-w-md mx-auto">
-            Tambahkan proxy keluar (seperti SOCKS5 Xray lokal, BrightData, Smartproxy, atau VPS) untuk menyembunyikan IP gateway atau bypass pemblokiran wilayah AI.
+            Tambahkan proxy keluar (seperti BrightData, Smartproxy, atau VPS) untuk menyembunyikan IP gateway atau bypass pemblokiran wilayah AI.
           </p>
           <Button
             variant="primary"
@@ -300,7 +300,6 @@ export const Egress: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {pools.map((p) => {
             const isTesting = testingId === p.id;
-            const isXrayLocal = (p.name || '').includes('Xray');
 
             return (
               <Card key={p.id} className="p-5 flex flex-col justify-between border-border hover:border-accent/30 transition-all">
@@ -308,14 +307,8 @@ export const Egress: React.FC = () => {
                   {/* Header Kartu */}
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center border ${
-                          isXrayLocal
-                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                            : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
-                        }`}
-                      >
-                        {isXrayLocal ? <Zap className="w-5 h-5" /> : <Network className="w-5 h-5" />}
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center border bg-blue-500/10 border-blue-500/20 text-blue-400">
+                        <Network className="w-5 h-5" />
                       </div>
                       <div>
                         <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
@@ -421,51 +414,12 @@ export const Egress: React.FC = () => {
         }
       >
         <form id="create-egress-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
-          <Select
-            label="Preset / Sumber Proxy"
-            value=""
-            placeholder="Pilih Preset atau Kustom..."
-            onChange={(val) => {
-              if (val === 'custom') return;
-              if (val === 'xray_socks') {
-                setNewPool({
-                  ...newPool,
-                  name: '⚡ Xray SOCKS5 Bridge (Local)',
-                  kind: 'socks5',
-                  proxy_url: 'socks5://xray:10808',
-                  region: 'local',
-                });
-              } else if (val === 'xray_http') {
-                setNewPool({
-                  ...newPool,
-                  name: '⚡ Xray HTTP Bridge (Local)',
-                  kind: 'http',
-                  proxy_url: 'http://xray:10809',
-                  region: 'local',
-                });
-              } else if (val === 'xray_tunnel') {
-                setNewPool({
-                  ...newPool,
-                  name: '⚡ Xray Stealth Tunnel (Multiplexed)',
-                  kind: 'socks5',
-                  proxy_url: 'socks5://xray:10808',
-                  region: 'auto',
-                });
-              }
-            }}
-            options={[
-              { value: 'custom', label: 'Kustom / Manual (Masukkan Proxy Luar)', description: 'Konfigurasi IP/domain proxy eksternal' },
-              { value: 'xray_socks', label: '⚡ Xray SOCKS5 Internal Bridge', description: 'socks5://xray:10808' },
-              { value: 'xray_http', label: '⚡ Xray HTTP Internal Bridge', description: 'http://xray:10809' },
-              { value: 'xray_tunnel', label: '⚡ Xray Stealth Tunnel', description: 'Auto Multiplexed Stealth Routing' },
-            ]}
-          />
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Pool *</label>
             <input
               type="text"
               required
-              placeholder="residential-sg-1 atau xray-tunnel"
+              placeholder="residential-sg-1 atau my-proxy"
               value={newPool.name}
               onChange={(e) => setNewPool({ ...newPool, name: e.target.value })}
               className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
@@ -476,7 +430,7 @@ export const Egress: React.FC = () => {
             value={newPool.kind}
             onChange={(val) => setNewPool({ ...newPool, kind: val })}
             options={[
-              { value: 'socks5', label: 'SOCKS5 Proxy (Termasuk Xray / Sing-box)', description: 'Protokol raw socket tcp/udp dengan stealth transport' },
+              { value: 'socks5', label: 'SOCKS5 Proxy', description: 'Protokol raw socket tcp/udp dengan stealth transport' },
               { value: 'http', label: 'HTTP Proxy', description: 'Standar http proxy forwarder' },
               { value: 'https', label: 'HTTPS Proxy', description: 'Http proxy terenkripsi TLS' },
             ]}
@@ -505,14 +459,11 @@ export const Egress: React.FC = () => {
             <input
               type={showCreateProxyUrl ? 'text' : 'password'}
               required
-              placeholder="socks5://user:pass@host:1080 atau socks5://xray:10808"
+              placeholder="socks5://user:pass@host:1080"
               value={newPool.proxy_url}
               onChange={(e) => setNewPool({ ...newPool, proxy_url: e.target.value })}
               className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
             />
-            <span className="text-[11px] text-text-muted block mt-1">
-              Untuk container Xray internal, gunakan: <code className="text-accent font-mono">socks5://xray:10808</code>
-            </span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -558,36 +509,6 @@ export const Egress: React.FC = () => {
         }
       >
         <form id="edit-egress-form" noValidate onSubmit={handleUpdate} className="space-y-4 text-xs">
-          <Select
-            label="Preset / Sumber Proxy"
-            value=""
-            placeholder="Pilih Preset Baru..."
-            onChange={(val) => {
-              if (val === 'custom') return;
-              if (val === 'xray_socks') {
-                setEditForm({
-                  ...editForm,
-                  name: '⚡ Xray SOCKS5 Bridge (Local)',
-                  kind: 'socks5',
-                  proxy_url: 'socks5://xray:10808',
-                  region: 'local',
-                });
-              } else if (val === 'xray_http') {
-                setEditForm({
-                  ...editForm,
-                  name: '⚡ Xray HTTP Bridge (Local)',
-                  kind: 'http',
-                  proxy_url: 'http://xray:10809',
-                  region: 'local',
-                });
-              }
-            }}
-            options={[
-              { value: 'custom', label: 'Pertahankan / Masukkan URL Manual', description: 'Gunakan URL proxy kustom saat ini' },
-              { value: 'xray_socks', label: '⚡ Xray SOCKS5 Internal Bridge', description: 'socks5://xray:10808' },
-              { value: 'xray_http', label: '⚡ Xray HTTP Internal Bridge', description: 'http://xray:10809' },
-            ]}
-          />
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Pool *</label>
             <input

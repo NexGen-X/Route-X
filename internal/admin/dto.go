@@ -762,38 +762,18 @@ type SettingDTO struct {
 
 func (SettingDTO) adalahDTO() {}
 
-// XrayProtocolDTO merepresentasikan metadata spesifik dari suatu protokol tunnel Xray yang didukung.
-type XrayProtocolDTO struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Protocol    string `json:"protocol"`
-	Transport   string `json:"transport"`
-	Security    string `json:"security"`
-	Port        int    `json:"port"`
-	PathOrSNI   string `json:"path_or_sni"`
-	ShareLink   string `json:"share_link"`
-	EgressURL   string `json:"egress_url"`
-	Description string `json:"description"`
-}
-
-func (XrayProtocolDTO) adalahDTO() {}
-
 // DomainConfigDTO merepresentasikan konfigurasi nama domain publik dan status HTTPS otomatis.
 type DomainConfigDTO struct {
-	Domain           string            `json:"domain"`
-	Mode             string            `json:"mode"`
-	Status           string            `json:"status"`
-	PublicURL        string            `json:"public_url"`
-	BaseURL          string            `json:"base_url"`
-	ServerIP         string            `json:"server_ip"`
-	ResolvedIPs      []string          `json:"resolved_ips,omitempty"`
-	DNSMatched       bool              `json:"dns_matched"`
-	LastChecked      *time.Time        `json:"last_checked,omitempty"`
-	Message          string            `json:"message,omitempty"`
-	XrayEnabled      bool              `json:"xray_enabled"`
-	XrayUUID         string            `json:"xray_uuid,omitempty"`
-	XrayVlessReality string            `json:"xray_vless_reality,omitempty"`
-	XrayProtocols    []XrayProtocolDTO `json:"xray_protocols,omitempty"`
+	Domain      string     `json:"domain"`
+	Mode        string     `json:"mode"`
+	Status      string     `json:"status"`
+	PublicURL   string     `json:"public_url"`
+	BaseURL     string     `json:"base_url"`
+	ServerIP    string     `json:"server_ip"`
+	ResolvedIPs []string   `json:"resolved_ips,omitempty"`
+	DNSMatched  bool       `json:"dns_matched"`
+	LastChecked *time.Time `json:"last_checked,omitempty"`
+	Message     string     `json:"message,omitempty"`
 }
 
 func (DomainConfigDTO) adalahDTO() {}
@@ -919,7 +899,6 @@ type SystemOverviewDTO struct {
 	NetRecvRateMBSec  float64 `json:"net_recv_rate_mb_s"`
 	NetSentRateMBSec  float64 `json:"net_sent_rate_mb_s"`
 	EgressTotalRoutes int     `json:"egress_total_routes"`
-	EgressXrayCount   int     `json:"egress_xray_count"`
 	EgressHTTPCount   int     `json:"egress_http_count"`
 	EgressActiveMode  string  `json:"egress_active_mode"`
 	ContainerCPUCap   float64 `json:"container_cpu_cap"`
@@ -1590,11 +1569,6 @@ func toSettingDTO(s identity.Setting) SettingDTO {
 		} else {
 			val, _ = json.Marshal(obj)
 		}
-	} else if s.Key == SettingKeyXrayConfig {
-		// SEC-002: state ini memuat material autentikasi tunnel. Bahkan
-		// ciphertext tidak berguna bagi klien settings:read dan tidak boleh
-		// membuka detail format penyimpanan internal.
-		val = json.RawMessage(`{"redacted":true}`)
 	}
 	return SettingDTO{
 		Key:         s.Key,

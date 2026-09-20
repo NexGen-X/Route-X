@@ -191,8 +191,13 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	h.writeprincipal(w, r, res.Principal, http.StatusOK)
 }
 
-// SetupHint menangani GET /setup-hint untuk memberikan kredensial bawaan awal jika akun admin
-// default belum diganti passwordnya.
+// SetupHint menangani GET /setup-hint: memberi tahu halaman login apakah akun admin
+// default masih dalam keadaan wajib ganti password, beserta alamat emailnya.
+//
+// Rute ini publik dan tidak terautentikasi, jadi ia hanya boleh membocorkan petunjuk,
+// bukan kredensial. Password default TIDAK dikirim di sini — sebelumnya field
+// default_password membuat endpoint ini bisa dijadikan pintu masuk penuh ke instance
+// oleh siapa pun. Kredensial pertama hanya boleh didapat dari sumber tepercaya.
 func (h *Handlers) SetupHint(w http.ResponseWriter, r *http.Request) {
 	hint, err := h.svc.SetupHint(r.Context())
 	if err != nil {

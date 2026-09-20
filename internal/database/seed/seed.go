@@ -145,3 +145,80 @@ func seedInitialAdmin(ctx context.Context, q repo.Querier, cfg *config.Config, l
 // tidak perlu mengimpor errors di banyak tempat.
 func isNotFound(err error) bool { return errors.Is(err, repo.ErrNotFound) }
 func isConflict(err error) bool { return errors.Is(err, repo.ErrConflict) }
+
+// DefaultAdminEmail adalah alamat admin pertama bila INITIAL_ADMIN_PASSWORD tidak diatur.
+// Password defaultnya sendiri tidak ditulis ulang di sini: nilainya bersifat publik di
+// repositori dan harus diganti segera, itulah inti pemeriksaan WarnDefaultAdminPending.
+const DefaultAdminEmail = "admin@routex.local"
+
+// WarnDefaultAdminPending adalah pemeriksaan fail-fast saat startup: bila akun admin
+// pertama masih menanggung MustChangePassword=true, instance ini belum aman.
+//
+// Latar belakangnya adalah kerentanan admin lemah: ketika INITIAL_ADMIN_PASSWORD tidak
+// diatur, seed membuat admin dengan kredensial yang nilainya tersedia publik di
+// repositori ini. MustChangePassword=true melindungi sebagian (middleware memaksa ganti
+// setelah login), tetapi tidak ada yang mencegah instance dibiarkan dalam keadaan ini
+// berminggu-minggu sambil melayani trafik nyata, dan satu kebocoran password default
+// berarti kehilangan kendali penuh atas gateway.
+//
+// Boot TIDAK diblokir: first-run headless tanpa INITIAL_ADMIN_PASSWORD adalah jalur yang
+// sah dan satu-satunya cara masuk untuk memperbaikinya. Yang dilakukan hanyalah
+// membuat suara yang tidak bisa dilewatkan di log startup.
+//
+// justCreated=true (seed baru saja membuat admin pertama) menandakan first-run yang
+// wajar; false berarti instance sudah pernah boot sebelumnya, sehingga kredensial
+// default yang masih aktif adalah indikasi masalah nyata, bukan onboarding.
+func WarnDefaultAdminPending(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger, justCreated bool) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	email := DefaultAdminEmail
+	if cfg != nil && cfg.InitialAdminEmail != "" {
+		email = cfg.InitialAdminEmail
+	}
+
+	u, err := identity.NewUsers(pool).GetByEmail(ctx, email)
+	if err != nil {
+		// Admin pertama tidak ditemukan, atau terjadi kesalahan baca. Bukan pemeriksaan
+		// keamanan yang bisa menegakkan apa pun di titik ini: jangan hentikan boot
+		// hanya karena pemeriksaan ini sendiri tidak bisa berjalan.
+		if !isNotFound(err) {
+			logger.Warn("gagal memeriksa status password admin pertama",
+				"email", email, "error", err)
+		}
+		return
+	}
+	if !u.MustChangePassword {
+		return // aman: password sudah diganti
+	}
+
+	// passwordDariEnv=false berarti admin memakai password default yang publik;
+	// true berarti operator mengaturnya sendiri lewat INITIAL_ADMIN_PASSWORD, jadi
+	// nilainya tidak terlihat di repositori meski tetap wajib diganti.
+	passwordDariEnv := cfg != nil && !cfg.InitialAdminPassword.IsZero()
+
+	pesan := fmt.Sprintf(
+		"ADMIN PERTAMA %q MASIH MEMAKAI PASSWORD AWAL: instance ini belum aman sampai kata sandinya diganti. "+
+			"Dalam arsitektur single-admin, siapa pun yang memegang kredensial ini memiliki kendali penuh. "+
+			"Ganti sekarang lewat dashboard (wajib ganti setelah login) atau perintah: routex-rotate set-admin-password",
+		email)
+
+	// Bukan first-run tetapi kredensial default publik masih aktif: instance telah
+	// terpapar sejak boot pertama. Ini yang paling mendesak, dicatat di level Error
+	// supaya monitor dan log shipper tidak melewatkannya.
+	if !justCreated && !passwordDariEnv {
+		logger.Error(pesan,
+			"email", email,
+			"sumber_password", "default_publik",
+			"first_run", justCreated,
+			"tindakan_wajib", "ganti password admin pertama sekarang juga")
+		return
+	}
+
+	logger.Warn(pesan,
+		"email", email,
+		"sumber_password", map[bool]string{true: "environment", false: "default_publik"}[passwordDariEnv],
+		"first_run", justCreated,
+		"tindakan_wajib", "ganti password admin pertama sebelum menerima trafik")
+}

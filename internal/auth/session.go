@@ -754,10 +754,20 @@ func (s *Service) loadAuthorization(_ context.Context, _ string) (roles, permiss
 }
 
 // SetupHintResponse adalah informasi onboarding awal untuk halaman login.
+//
+// Hanya berisi petunjuk, bukan kredensial. Alamat email admin pertama boleh diberitahu
+// karena ia tidak menghasilkan akses apa pun dan justru memudahkan onboarding, tetapi
+// password default TIDAK PERNAH dikirim ke klien.
+//
+// Sebelumnya field default_password membuat rute publik tanpa autentikasi ini
+// menyerahkan kredensial admin penuh dalam plaintext kepada siapa pun yang memintanya.
+// Dalam arsitektur single-admin setiap pengguna terautentikasi adalah Admin dengan izin
+// penuh (*), jadi satu permintaan GET cukup untuk menguasai seluruh instance sebelum
+// password diganti. Password hanya boleh didapat dari sumber tepercaya: output instalasi,
+// berkas .env, atau perintah routex-rotate.
 type SetupHintResponse struct {
 	HasDefaultAdmin bool   `json:"has_default_admin"`
 	DefaultEmail    string `json:"default_email,omitempty"`
-	DefaultPassword string `json:"default_password,omitempty"`
 }
 
 // SetupHint memeriksa apakah akun admin default masih dalam keadaan belum diganti passwordnya.
@@ -779,15 +789,14 @@ func (s *Service) SetupHint(ctx context.Context) (SetupHintResponse, error) {
 		return SetupHintResponse{HasDefaultAdmin: false}, nil
 	}
 
-	defaultPassword := "RouteX#Initial2026!"
-	if s.cfg != nil && !s.cfg.InitialAdminPassword.IsZero() {
-		defaultPassword = s.cfg.InitialAdminPassword.Reveal()
-	}
-
+	// Password default sengaja TIDAK disertakan di respons. Membacanya dari
+	// s.cfg.InitialAdminPassword.Reveal() seperti sebelumnya hanya akan mengirim
+	// kredensial admin penuh ke pemanggil mana pun, termasuk yang tidak terautentikasi.
+	// Halaman login hanya diberi tahu bahwa admin pertama masih wajib ganti password,
+	// lalu mengarahkan operator mengambil kredensial dari sumber tepercaya.
 	return SetupHintResponse{
 		HasDefaultAdmin: true,
 		DefaultEmail:    defaultEmail,
-		DefaultPassword: defaultPassword,
 	}, nil
 }
 

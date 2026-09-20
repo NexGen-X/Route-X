@@ -6,6 +6,59 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ---
 
+## [v1.1.1] - 2026-09-20
+
+Rilis perbaikan keamanan & keandalan hasil audit menyeluruh 6 fase. Semua perbaikan
+kritis/high di bawah telah melewati verifikasi 4-lapis (wire protocol, backend & DB,
+frontend & kontrak, live ground-truth) dengan bukti nyata.
+
+### 🔒 Keamanan
+
+- **[CRITICAL] Tidak ada lagi open proxy Xray di jalur runtime** (#29, #30):
+  config statis maupun hasil-generate kini bind loopback (`127.0.0.1`) + wajibkan
+  autentikasi (`auth: password`) pada inbound SOCKS5/HTTP. Sebelumnya gateway
+  menimpa config live dengan `0.0.0.0` + `noauth` setiap sinkronisasi domain,
+  mengembalikan celah tepat setelah deploy.
+- **[CRITICAL] Hentikan pembocoran kata sandi admin default via `/setup-hint`** (#33):
+  endpoint publik tidak lagi mengirim `default_password` plaintext. Ditambah
+  fail-fast startup: admin default yang belum ganti kata sandi dicatat dengan
+  severity ERROR (bukan first-run) dan akses fitur diblokir sampai diganti.
+- **[HIGH] Kunci API CLI pindah ke sessionStorage** (#32): tidak lagi persisten
+  tanpa batas di localStorage; migrasi sekali-jalan menghapus jejak lama.
+- **[HIGH] Migrasi 0012: hapus DEFAULT hardcoded OAuth Client ID vendor** (#34):
+  skema tidak lagi menyimpan client_id Google Antigravity publik sebagai default;
+  insert tanpa nilai ditolak DB (NOT NULL). Data operator eksisting utuh.
+- **[HIGH] Branch protection aktif pada `main`**: required status checks ketat
+  (`go` + `web`), larangan force-push & deletion.
+
+### 🛠️ Keandalan & Kebenaran
+
+- **[CRITICAL] Streaming `tool_use` `/v1/messages`** (#26): blok SSE lengkap &
+  berurutan (content_block_start → input_json_delta → stop_reason `tool_use`);
+  sebelumnya terpotong di tengah JSON.
+- **[HIGH] Kontrak DTO frontend ↔ backend** (#31): timeline event memakai `kind`
+  (bukan `event_type`), viewer payload membaca `request_body`/`response_body`
+  (sebelumnya dead code selamanya), dan chart cost Observability memplot angka
+  (`cost_usd` string → number untuk recharts).
+- **[CRITICAL] Deploy bisa boot** (#27): `deploy.sh` menghasilkan `ENCRYPTION_KEY`
+  32-byte base64 yang valid (sebelumnya 48-byte → gateway tolak start),
+  `PUBLIC_URL` https, `sslmode prefer`, dan `UPSTREAM_ALLOW_HTTP=false`.
+
+### 🧪 Kualitas
+
+- **[HIGH] CI menjalankan `go test -race`** (#28) plus secret-lint, permission
+  minimal, dan pinned SHA untuk seluruh GitHub Actions.
+
+### Catatan Operasional
+
+- Migrasi 0012 bersifat DDL murni; diterapkan otomatis saat boot biner baru.
+  Instance produksi yang masih memakai biner pra-v1.1.1 akan naik dari 11 → 12
+  pada deploy pertama — verifikasi `schema_migrations` setelah deploy.
+- Setelah deploy, layanan perlu restart satu kali agar config Xray baru tertulis
+  ke disk dan biner memuat perbaikan runtime.
+
+---
+
 ## [v1.1.0] - 2026-09-17
 
 ### 🌟 Paradigma "Low Floor, High Ceiling" & Pengalaman Personal Developer

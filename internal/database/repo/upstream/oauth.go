@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
+	"github.com/NexGen-X/Route-X/internal/oauth"
 	"github.com/NexGen-X/Route-X/internal/security"
 )
 
@@ -119,14 +120,18 @@ func (r *OAuthRepo) UpsertSession(ctx context.Context, p UpsertOAuthSessionParam
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
+	// Fallback nilai ada di layer aplikasi, bukan di DEFAULT skema (migrasi 0012
+	// menghapus default vendor). Konstanta eksplisit di internal/oauth/google.go
+	// mudah diaudit dan tidak menyembunyikan identitas vendor di balik skema.
 	clientID := p.ClientID
 	if clientID == "" {
-		clientID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+		clientID = oauth.DefaultAntigravityClientID
 	}
 	redirectURI := p.RedirectURI
 	if redirectURI == "" {
-		redirectURI = "http://localhost:4567"
+		redirectURI = oauth.DefaultRedirectURI
 	}
+	tokenURI := oauth.GoogleTokenEndpoint
 
 	query := `
 		insert into provider_oauth_sessions (
@@ -137,7 +142,7 @@ func (r *OAuthRepo) UpsertSession(ctx context.Context, p UpsertOAuthSessionParam
 		) values (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8,
-			'https://oauth2.googleapis.com/token', $9, $10, now(), null,
+			$9, $10, $11, now(), null,
 			true
 		)
 		on conflict (provider_id, account_email) do update set
@@ -158,7 +163,7 @@ func (r *OAuthRepo) UpsertSession(ctx context.Context, p UpsertOAuthSessionParam
 	err = r.q.QueryRow(ctx, query,
 		id, p.ProviderID, p.CredentialID, p.AccountEmail, p.AccountName,
 		clientID, r.cipher.KeyID(), ciphertext,
-		redirectURI, scopesJSON,
+		tokenURI, redirectURI, scopesJSON,
 	).Scan(&actualID)
 	if err != nil {
 		return nil, repo.Err(op, err)

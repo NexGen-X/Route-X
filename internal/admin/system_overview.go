@@ -227,7 +227,6 @@ func (h *Handlers) getSystemOverview(w http.ResponseWriter, r *http.Request) {
 
 	// Hitung rute egress aktif
 	totalEgress := 0
-	xrayCount := 0
 	httpCount := 0
 	activeMode := "DIRECT"
 
@@ -235,18 +234,10 @@ func (h *Handlers) getSystemOverview(w http.ResponseWriter, r *http.Request) {
 		pools, err := h.egressRepo.List(ctx, false)
 		if err == nil {
 			totalEgress = len(pools)
-			for _, p := range pools {
-				nameLower := strings.ToLower(p.Name)
-				hintLower := strings.ToLower(p.MaskedHint)
-				if strings.Contains(nameLower, "xray") || strings.Contains(hintLower, "xray") || p.Kind == "xray" {
-					xrayCount++
-				} else {
-					httpCount++
-				}
-			}
-			if xrayCount > 0 {
-				activeMode = "XRAY on"
-			} else if totalEgress > 0 {
+			// Seluruh pool egress bersifat generik (SOCKS5/HTTP/HTTPS); tidak
+			// ada kategori terpisah, jadi jumlah pool generik sama dengan total.
+			httpCount = totalEgress
+			if totalEgress > 0 {
 				activeMode = "PROXIES on"
 			}
 		}
@@ -279,7 +270,6 @@ func (h *Handlers) getSystemOverview(w http.ResponseWriter, r *http.Request) {
 		NetRecvRateMBSec:  recvRate,
 		NetSentRateMBSec:  sentRate,
 		EgressTotalRoutes: totalEgress,
-		EgressXrayCount:   xrayCount,
 		EgressHTTPCount:   httpCount,
 		EgressActiveMode:  activeMode,
 		ContainerCPUCap:   float64(runtime.NumCPU()),

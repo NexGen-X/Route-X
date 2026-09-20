@@ -6,6 +6,60 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ---
 
+## [Unreleased] - 2026-09-20
+
+Penghapusan menyeluruh integrasi Xray-core dari Route-X. Keputusan diambil
+berdasarkan audit risiko/manfaat di deployment produksi: integrasi Xray hanya
+memberi 1 manfaat (egress SOCKS5) namun mendominasi banyak risiko (open proxy,
+permukaan serangan, kompleksitas operasional, titik gagal tunggal). Egress pool
+generik (HTTP/HTTPS/SOCKS5) dipertahankan penuh — proxy pihak ketiga (Cloudflare
+Gateway, BrightData, VPS sendiri) tetap dapat dipakai tanpa Xray.
+
+### Removed
+
+- **Integrasi Xray-core dihapus seluruhnya** dari kode dan artifak deployment:
+  paket `internal/xray/` (orchestrator + config generator VLESS Reality),
+  `deploy/xray/`, `deploy/systemd/xray.drop-in.conf`, service `xray` di
+  `docker-compose.yml`, dan instalasi binary xray-core di `install-native.sh`.
+- **Sinkronisasi config Xray otomatis** (`syncXrayConfig`, `ensureXrayEgressPool`,
+  `getXrayLinks`, `encodeXrayState`/`decodeXrayState`) dihapus dari `internal/admin`.
+- **UI terkait Xray dihapus**: panel "Integrasi Xray-Core: VLESS Reality Stealth
+  Tunnel" di halaman Settings, kartu Xray di Dashboard, dan preset Xray SOCKS5/HTTP
+  di form Egress (form manual proxy tetap utuh).
+- **Env `XRAY_BRIDGE_HOST`** tidak lagi dibaca (const/field config dihapus). Env
+  lama pada deployment yang ada diabaikan tanpa error — aman, tapi sebaiknya
+  dibersihkan dari `.env`/`docker-compose` deployment masing-masing.
+- Fungsi `security.XrayStateAAD()` dihapus bersama cabang rotasinya.
+
+### Keamanan
+
+- **Permukaan SSRF Docker dipersempit**: entri hostname `xray` dihapus dari
+  `UPSTREAM_ALLOWED_PRIVATE_ADDRS` di `docker-compose.yml` (pengecualian khusus
+  container xray yang tidak lagi ada). Loopback tetap diizinkan untuk egress pool
+  generik.
+- **Tidak ada lagi forward proxy yang dipasang atau dijalankan** oleh skrip
+  deployment resmi. Sebelumnya `install-native.sh` memasang xray-core dari
+  upstream `XTLS/Xray-install` dan `deploy.sh` menjalankan container xray.
+
+### Migration
+
+- **`0013_drop_xray_settings.sql`**: menghapus record `settings` dengan key
+  `system:xray:config` (state kredensial Xray terenkripsi yang kini yatim).
+  Tabel `egress_pool` dan `domains` **tidak disentuh** — pool proxy generik
+  dipertahankan utuh.
+
+### Catatan Operasional
+
+- Pool egress lama bernama "⚡ Xray Stealth Tunnel (Local)" (jika ada di DB
+  deployment Anda, dibuat oleh `ensureXrayEgressPool` versi sebelumnya) tetap
+  berfungsi sebagai SOCKS5 generik dan dapat dihapus/diperbarui via dashboard
+  admin. Migrasi 0013 tidak menyentuhnya.
+- Layanan `xray.service` pada host native (jika dipasang sebelumnya) menjadi
+  yatim setelah perubahan ini — nonaktifkan dan bersihkan manual:
+  `systemctl disable --now xray`.
+
+---
+
 ## [v1.1.1] - 2026-09-20
 
 Rilis perbaikan keamanan & keandalan hasil audit menyeluruh 6 fase. Semua perbaikan

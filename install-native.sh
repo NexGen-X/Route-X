@@ -5,8 +5,7 @@
 # 1. PostgreSQL (Database primer & auto-setup database/role)
 # 2. Redis Server (Distributed cache & rate limiter)
 # 3. Caddy Web Server (Edge reverse proxy & auto TLS)
-# 4. Xray-core (Egress routing & upstream proxying)
-# 5. Route-X Core & Web UI (Kompilasi biner native + Systemd service)
+# 4. Route-X Core & Web UI (Kompilasi biner native + Systemd service)
 # ==============================================================================
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -81,13 +80,13 @@ esac
 
 # 4. Memperbarui paket sistem dan utilitas dasar
 echo ""
-echo "📦 [1/7] Memperbarui sistem dan memasang paket inti..."
+echo "📦 [1/6] Memperbarui sistem dan memasang paket inti..."
 apt-get update -y
 apt-get install -y curl wget git openssl ca-certificates gnupg lsb-release build-essential
 
 # 5. Memasang dan mengonfigurasi PostgreSQL
 echo ""
-echo "🐘 [2/7] Memeriksa dan memasang PostgreSQL..."
+echo "🐘 [2/6] Memeriksa dan memasang PostgreSQL..."
 if ! command -v psql &>/dev/null; then
     apt-get install -y postgresql postgresql-contrib
 fi
@@ -118,7 +117,7 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_US
 
 # 6. Memasang dan mengonfigurasi Redis
 echo ""
-echo "⚡ [3/7] Memeriksa dan memasang Redis Server..."
+echo "⚡ [3/6] Memeriksa dan memasang Redis Server..."
 if ! command -v redis-server &>/dev/null; then
     apt-get install -y redis-server
 fi
@@ -127,7 +126,7 @@ systemctl start redis-server
 
 # 7. Memasang dan mengonfigurasi Caddy Web Server
 echo ""
-echo "🔒 [4/7] Memeriksa dan memasang Caddy Web Server..."
+echo "🔒 [4/6] Memeriksa dan memasang Caddy Web Server..."
 if ! command -v caddy &>/dev/null; then
     apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg --yes 2>/dev/null || true
@@ -181,52 +180,9 @@ fi
 systemctl enable caddy
 systemctl restart caddy || true
 
-# 8. Memasang dan mengonfigurasi Xray-core
+# 8. Memasang Biner Route-X Core (Menggunakan Biner Rilis Resmi v1.1.0)
 echo ""
-echo "📡 [5/7] Memeriksa dan memasang Xray-core..."
-if ! command -v xray &>/dev/null; then
-    bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-fi
-
-mkdir -p /etc/systemd/system/xray.service.d
-cat << 'EOF' > /etc/systemd/system/xray.service.d/10-donot_touch_single_conf.conf
-[Service]
-ExecStart=
-ExecStart=/usr/local/bin/xray run -config /var/lib/route-x/xray/config.json
-EOF
-
-mkdir -p /var/lib/route-x/xray
-if [ ! -f /var/lib/route-x/xray/config.json ] && [ -f "$SRC_DIR/deploy/xray/config.json" ]; then
-    cp "$SRC_DIR/deploy/xray/config.json" /var/lib/route-x/xray/config.json
-fi
-if [ -f "$SRC_DIR/deploy/xray/config.json" ]; then
-    cp "$SRC_DIR/deploy/xray/config.json" /usr/local/etc/xray/config.json 2>/dev/null || true
-fi
-
-# Konfigurasi Xray hanya mendengarkan di loopback (127.0.0.1) dan mewajibkan
-# autentikasi, tetapi kata sandinya berupa placeholder agar repo bebas secret.
-# Operator WAJIB mengganti "<GANTI_PASSWORD_INI>" pada kedua berkas di atas
-# dengan kata sandi acak kuat, lalu mencocokkannya pada URL egress pool Xray di
-# dashboard admin (mis. socks5://routex:<sandi>@xray:10808) sebelum jalur
-# keluar Xray dipakai. Tanpa langkah ini Xray menolak koneksi (fail-closed).
-for cfg in /var/lib/route-x/xray/config.json /usr/local/etc/xray/config.json; do
-    if [ -f "$cfg" ] && grep -q "GANTI_PASSWORD_INI" "$cfg"; then
-        echo "   ⚠️  $cfg masih memakai kata sandi placeholder <GANTI_PASSWORD_INI>."
-        echo "      Ganti dengan kata sandi acak kuat, lalu cocokkan pada egress"
-        echo "      pool Xray di dashboard admin sebelum jalur keluar dipakai."
-    fi
-done
-
-chmod 755 /var/lib/route-x
-chmod 755 /var/lib/route-x/xray
-chmod 644 /var/lib/route-x/xray/config.json 2>/dev/null || true
-grep -q "127.0.0.1 xray" /etc/hosts || echo "127.0.0.1 xray" >> /etc/hosts
-systemctl enable xray
-systemctl restart xray || true
-
-# 9. Memasang Biner Route-X Core (Menggunakan Biner Rilis Resmi v1.1.0)
-echo ""
-echo "🛠️ [6/7] Menyiapkan biner resmi Route-X Gateway v1.1.0..."
+echo "🛠️ [5/6] Menyiapkan biner resmi Route-X Gateway v1.1.0..."
 mkdir -p "$INSTALL_DIR"
 
 INSTALLED_FROM_RELEASE=0
@@ -290,9 +246,9 @@ if [ "$INSTALLED_FROM_RELEASE" -eq 0 ]; then
     install -m 755 ai-gateway "$INSTALL_DIR/ai-gateway"
 fi
 
-# 10. Konfigurasi Lingkungan, Systemd Service & Migrasi Database
+# 9. Konfigurasi Lingkungan, Systemd Service & Migrasi Database
 echo ""
-echo "⚙️ [7/7] Menyiapkan konfigurasi, service systemd & migrasi..."
+echo "⚙️ [6/6] Menyiapkan konfigurasi, service systemd & migrasi..."
 mkdir -p /etc/routex
 if [ ! -f /etc/routex/routex.env ]; then
     # Kunci wajib base64 (config mendedekode nilai dan AES-256-GCM
@@ -364,14 +320,12 @@ echo "=================================================================="
 echo " 📊 Status Layanan Native:"
 echo "   - Route-X Core : $(systemctl is-active routex || true)"
 echo "   - Caddy Edge   : $(systemctl is-active caddy || true)"
-echo "   - Xray Proxy   : $(systemctl is-active xray || true)"
 echo "   - PostgreSQL   : $(systemctl is-active postgresql || true)"
 echo "   - Redis Server : $(systemctl is-active redis-server || true)"
 echo "------------------------------------------------------------------"
 echo " 📝 Monitoring Log:"
 echo "   journalctl -fu routex"
 echo "   journalctl -fu caddy"
-echo "   journalctl -fu xray"
 echo "------------------------------------------------------------------"
 echo " 🎉 SETUP AWAL (FIRST-RUN ONBOARDING):"
 echo "   Akses Dashboard : https://${ROUTEX_HOST}/login"

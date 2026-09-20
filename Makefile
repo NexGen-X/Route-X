@@ -42,7 +42,7 @@ live-update:
 
 status:
 	@echo "================ Native Services Status ================"
-	@systemctl status routex postgresql redis-server caddy xray --lines=2 --no-pager || true
+	@systemctl status routex postgresql redis-server caddy --lines=2 --no-pager || true
 
 logs:
 	@journalctl -fu routex

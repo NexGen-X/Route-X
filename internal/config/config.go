@@ -42,11 +42,6 @@ const (
 	minSessionSecretLen  = 32
 	minAPIKeyPepperLen   = 32
 	defaultMaxRequestMiB = 10
-
-	// DefaultXrayBridgeHost adalah alamat jembatan Xray untuk deployment native:
-	// gateway & Xray berbagi host yang sama, sehingga loopback cukup dan aman.
-	// Docker Compose wajib menyetel XRAY_BRIDGE_HOST=xray (container terpisah).
-	DefaultXrayBridgeHost = "127.0.0.1"
 )
 
 // Config memuat seluruh konfigurasi aplikasi. Nilai bertipe security.Secret tidak
@@ -102,11 +97,6 @@ type Config struct {
 	// berarti kredensial upstream bisa terkirim tanpa enkripsi ke host mana pun yang
 	// diketikkan operator.
 	UpstreamAllowHTTP bool
-
-	// XrayBridgeHost adalah host/IP jembatan SOCKS5/HTTP internal Xray sekaligus
-	// alamat listen-nya di config Xray. Bawaan 127.0.0.1 (gateway & Xray satu host).
-	// Docker Compose: XRAY_BRIDGE_HOST=xray karena Xray di container terpisah.
-	XrayBridgeHost string
 
 	// UpstreamAllowedPrivateAddrs adalah alamat privat yang boleh dihubungi meski penjaga
 	// SSRF menolak seluruh rentang privat.
@@ -192,8 +182,6 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 
 		MaxRequestBytes: int64(r.intRange("MAX_REQUEST_MIB", defaultMaxRequestMiB, 1, 1024)) << 20,
 		UpstreamTimeout: r.duration("UPSTREAM_TIMEOUT", 120*time.Second),
-
-		XrayBridgeHost: r.str("XRAY_BRIDGE_HOST", DefaultXrayBridgeHost),
 
 		UpstreamAllowHTTP:           r.boolean("UPSTREAM_ALLOW_HTTP", false),
 		UpstreamAllowedPrivateAddrs: r.privateAddrs("UPSTREAM_ALLOWED_PRIVATE_ADDRS"),

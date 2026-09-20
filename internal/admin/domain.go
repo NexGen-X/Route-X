@@ -8,19 +8,15 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
-	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/security"
-	"github.com/NexGen-X/Route-X/internal/xray"
 )
 
 const (
@@ -28,8 +24,6 @@ const (
 	SettingKeyDomainConfig = "system:domain:config"
 	// SettingKeyPublicURL adalah kunci penyimpanan URL kanonikal publik sistem.
 	SettingKeyPublicURL = "system:public_url"
-	// SettingKeyXrayConfig adalah kunci penyimpanan status kredensial dan konfigurasi Xray-core.
-	SettingKeyXrayConfig = "system:xray:config"
 )
 
 var (
@@ -83,52 +77,6 @@ type StoredDomainConfig struct {
 	Status      string    `json:"status"`
 	LastChecked time.Time `json:"last_checked"`
 	Message     string    `json:"message"`
-}
-
-// storedXrayState adalah envelope terenkripsi untuk material autentikasi Xray.
-// Plaintext legacy hanya dibaca untuk migrasi; penulisan baru selalu memakai cipher.
-type storedXrayState struct {
-	Ciphertext string `json:"ciphertext"`
-}
-
-func (h *Handlers) decodeXrayState(raw []byte) (xray.State, error) {
-	var envelope storedXrayState
-	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.Ciphertext != "" {
-		if h.cipher == nil {
-			return xray.State{}, fmt.Errorf("cipher Xray tidak tersedia")
-		}
-		plain, err := h.cipher.Decrypt(envelope.Ciphertext, security.XrayStateAAD())
-		if err != nil {
-			return xray.State{}, fmt.Errorf("membuka state Xray terenkripsi: %w", err)
-		}
-		var state xray.State
-		if err := json.Unmarshal(plain, &state); err != nil {
-			return xray.State{}, fmt.Errorf("membaca state Xray terenkripsi: %w", err)
-		}
-		return state, nil
-	}
-
-	// Kompatibilitas migrasi: format lama adalah JSON plaintext langsung.
-	var legacy xray.State
-	if err := json.Unmarshal(raw, &legacy); err != nil {
-		return xray.State{}, fmt.Errorf("membaca state Xray legacy: %w", err)
-	}
-	return legacy, nil
-}
-
-func (h *Handlers) encodeXrayState(state xray.State) ([]byte, error) {
-	if h.cipher == nil {
-		return nil, fmt.Errorf("cipher Xray tidak tersedia")
-	}
-	plain, err := json.Marshal(state)
-	if err != nil {
-		return nil, fmt.Errorf("menyandikan state Xray: %w", err)
-	}
-	ciphertext, err := h.cipher.Encrypt(plain, security.XrayStateAAD())
-	if err != nil {
-		return nil, fmt.Errorf("mengenkripsi state Xray: %w", err)
-	}
-	return json.Marshal(storedXrayState{Ciphertext: ciphertext})
 }
 
 // detectServerIP mendeteksi IP publik server atau fallback ke interface lokal non-loopback.
@@ -262,25 +210,18 @@ func (h *Handlers) getDomainStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	xrayState, xrayLinks := h.getXrayLinks(ctx, cfg.Domain)
-	protocolDTOs := toXrayProtocolDTOs(xrayLinks.Protocols)
-
 	now := time.Now().UTC()
 	res := DomainConfigDTO{
-		Domain:           cfg.Domain,
-		Mode:             cfg.Mode,
-		Status:           status,
-		PublicURL:        fmt.Sprintf("https://%s", cfg.Domain),
-		BaseURL:          fmt.Sprintf("https://%s/v1", cfg.Domain),
-		ServerIP:         serverIP,
-		ResolvedIPs:      ips,
-		DNSMatched:       dnsMatched,
-		LastChecked:      &now,
-		Message:          message,
-		XrayEnabled:      true,
-		XrayUUID:         xrayState.UUID,
-		XrayVlessReality: xrayLinks.VlessReality,
-		XrayProtocols:    protocolDTOs,
+		Domain:      cfg.Domain,
+		Mode:        cfg.Mode,
+		Status:      status,
+		PublicURL:   fmt.Sprintf("https://%s", cfg.Domain),
+		BaseURL:     fmt.Sprintf("https://%s/v1", cfg.Domain),
+		ServerIP:    serverIP,
+		ResolvedIPs: ips,
+		DNSMatched:  dnsMatched,
+		LastChecked: &now,
+		Message:     message,
 	}
 
 	_ = h.respond(w, r, http.StatusOK, res)
@@ -393,25 +334,17 @@ func (h *Handlers) updateDomainConfig(w http.ResponseWriter, r *http.Request) {
 		"ips":  ips,
 	})
 
-	// Sinkronisasi otomatis konfigurasi Xray-core dan registrasi Egress Pool
-	xrayState, xrayLinks := h.syncXrayConfig(ctx, domain, actorID)
-	protocolDTOs := toXrayProtocolDTOs(xrayLinks.Protocols)
-
 	res := DomainConfigDTO{
-		Domain:           domain,
-		Mode:             mode,
-		Status:           "active",
-		PublicURL:        fmt.Sprintf("https://%s", domain),
-		BaseURL:          fmt.Sprintf("https://%s/v1", domain),
-		ServerIP:         serverIP,
-		ResolvedIPs:      ips,
-		DNSMatched:       dnsMatched,
-		LastChecked:      &now,
-		Message:          "Domain dan HTTPS otomatis berhasil diaktifkan. Anda kini dapat mengakses dashboard dan API via HTTPS.",
-		XrayEnabled:      true,
-		XrayUUID:         xrayState.UUID,
-		XrayVlessReality: xrayLinks.VlessReality,
-		XrayProtocols:    protocolDTOs,
+		Domain:      domain,
+		Mode:        mode,
+		Status:      "active",
+		PublicURL:   fmt.Sprintf("https://%s", domain),
+		BaseURL:     fmt.Sprintf("https://%s/v1", domain),
+		ServerIP:    serverIP,
+		ResolvedIPs: ips,
+		DNSMatched:  dnsMatched,
+		LastChecked: &now,
+		Message:     "Domain dan HTTPS otomatis berhasil diaktifkan. Anda kini dapat mengakses dashboard dan API via HTTPS.",
 	}
 
 	_ = h.respond(w, r, http.StatusOK, res)
@@ -499,174 +432,4 @@ func (h *Handlers) resolveGatewayURL(r *http.Request) string {
 		}
 	}
 	return reqGWURL
-}
-
-// syncXrayConfig menyelaraskan konfigurasi Xray-core saat nama domain kustom disimpan.
-// Fungsi ini memastikan kredensial tersimpan di database, menulis berkas runtime,
-// serta mendaftarkan pool egress bawaan untuk routing lalu lintas.
-func (h *Handlers) syncXrayConfig(ctx context.Context, domain string, actorID string) (xray.State, xray.Links) {
-	state := xray.DefaultState(domain)
-	// Host bridge selalu dari konfigurasi deployment (env XRAY_BRIDGE_HOST),
-	// bukan dari state tersimpan: topologi container native vs Docker harus
-	// konsisten antara config Xray & URL egress pool meski state lama dipakai.
-	if h.xrayBridgeHost != "" {
-		state.BridgeHost = h.xrayBridgeHost
-	}
-
-	if h.settingsRepo != nil {
-		if s, err := h.settingsRepo.Get(ctx, SettingKeyXrayConfig); err == nil && len(s.Value) > 0 {
-			if existing, decodeErr := h.decodeXrayState(s.Value); decodeErr == nil && existing.UUID != "" {
-				state = existing
-				state.Domain = domain
-				state.UpdatedAt = time.Now().UTC()
-				// State dari DB mungkin pra-PR ini (tanpa bridge_host) atau
-				// terkunci ke host lama — selalu samakan ke konfigurasi aktif.
-				if h.xrayBridgeHost != "" {
-					state.BridgeHost = h.xrayBridgeHost
-				}
-			}
-		}
-		state.EnsureDefaults(domain)
-
-		if stateBytes, encodeErr := h.encodeXrayState(state); encodeErr == nil {
-			_, _ = h.settingsRepo.Put(ctx, identity.SettingWrite{
-				Key:         SettingKeyXrayConfig,
-				Value:       stateBytes,
-				Description: "Konfigurasi runtime Xray-core terenkripsi",
-				UpdatedBy:   actorID,
-			})
-		} else {
-			h.logger.ErrorContext(ctx, "gagal mengenkripsi state Xray", "error", encodeErr)
-		}
-	}
-
-	cfgBytes, err := xray.GenerateConfig(state)
-	if err == nil {
-		// Tulis config ke kedua kandidat: native systemd membaca /var/lib, sedangkan
-		// Docker Compose mengekspos ./deploy/xray/config.runtime.json ke container
-		// Xray terpisah via volume. SyncToFileCandidates menulis keduanya.
-		_, _ = xray.SyncToFileCandidates(cfgBytes, "/var/lib/route-x/xray/config.json", "./deploy/xray/config.runtime.json")
-	}
-
-	if h.egressRepo != nil {
-		h.ensureXrayEgressPool(ctx, state)
-	}
-
-	links := xray.GenerateShareLinks(state)
-	return state, links
-}
-
-// defaultXrayEgressPoolName adalah nama pool egress bawaan yang dikelola sinkronisasi
-// Xray Route-X. Nama ini dipakai untuk membedakan pool milik kita dari pool lain.
-const defaultXrayEgressPoolName = "⚡ Xray Stealth Tunnel (Local)"
-
-// knownXrayBridgeHosts adalah host yang dianggap masih mengarah ke bridge bawaan
-// Route-X: loopback (deploy systemd satu host) serta nama layanan lama docker-compose
-// sebelum bridge dipindahkan ke loopback.
-var knownXrayBridgeHosts = map[string]bool{
-	"127.0.0.1": true,
-	"localhost": true,
-	"xray":      true,
-}
-
-// ensureXrayEgressPool memastikan entitas Egress Pool untuk jalur Xray lokal telah
-// terdaftar di database dengan kredensial bridge yang mutakhir.
-//
-// Pool bawaan diperbarui URL-nya (bukan dibuat ulang) saat sinkronisasi berikutnya
-// jika masih mengarah ke bridge bawaan — ini menutup celah instalasi lama yang
-// pool-nya terdaftar tanpa kredensial. URL yang sudah admin arahkan ke host lain
-// tidak pernah ditimpa supaya penyesuaian manual tetap aman.
-func (h *Handlers) ensureXrayEgressPool(ctx context.Context, state xray.State) {
-	if h.egressRepo == nil {
-		return
-	}
-
-	want := security.Secret(xray.BridgeEgressURL(state))
-
-	pools, err := h.egressRepo.List(ctx, false)
-	if err != nil {
-		return
-	}
-	for _, p := range pools {
-		if !strings.Contains(p.Name, "Xray") {
-			continue
-		}
-		// Pool bawaan ditemukan: segarkan kredensial hanya bila masih bridge kita.
-		current, err := h.egressRepo.ProxyURL(ctx, p.ID)
-		if err != nil || !isManagedXrayBridge(current, state) {
-			return
-		}
-		if current != want {
-			if _, err := h.egressRepo.SetProxyURL(ctx, p.ID, want); err != nil {
-				h.logger.ErrorContext(ctx, "gagal memperbarui kredensial pool egress Xray", "error", err)
-			}
-		}
-		return
-	}
-
-	region := "local"
-	enabled := true
-	_, _ = h.egressRepo.Create(ctx, upstream.CreateEgressParams{
-		Name:     defaultXrayEgressPoolName,
-		Kind:     "socks5",
-		ProxyURL: want,
-		Region:   &region,
-		Enabled:  &enabled,
-	})
-}
-
-// isManagedXrayBridge melaporkan apakah sebuah URL proxy masih mengarah ke bridge
-// bawaan Route-X (host dikenali + porta bridge). Dipakai agar kredensial pool aman
-// diperbarui tanpa menimpa pool yang sudah admin arahkan ke lokasi lain.
-func isManagedXrayBridge(proxyURL security.Secret, state xray.State) bool {
-	if proxyURL.IsZero() {
-		return false
-	}
-	u, err := url.Parse(proxyURL.Reveal())
-	if err != nil {
-		return false
-	}
-	if !knownXrayBridgeHosts[u.Hostname()] {
-		return false
-	}
-	return u.Port() == strconv.Itoa(state.SocksPort)
-}
-
-// getXrayLinks menghasilkan tautan share URL VLESS/Trojan untuk domain aktif saat ini.
-func (h *Handlers) getXrayLinks(ctx context.Context, domain string) (xray.State, xray.Links) {
-	state := xray.DefaultState(domain)
-	if h.xrayBridgeHost != "" {
-		state.BridgeHost = h.xrayBridgeHost
-	}
-	if h.settingsRepo != nil {
-		if s, err := h.settingsRepo.Get(ctx, SettingKeyXrayConfig); err == nil && len(s.Value) > 0 {
-			if existing, decodeErr := h.decodeXrayState(s.Value); decodeErr == nil && existing.UUID != "" {
-				state = existing
-				state.Domain = domain
-			}
-		}
-	}
-	state.EnsureDefaults(domain)
-	links := xray.GenerateShareLinks(state)
-	return state, links
-}
-
-// toXrayProtocolDTOs mengonversi daftar ProtocolItem internal xray ke format DTO API admin.
-func toXrayProtocolDTOs(items []xray.ProtocolItem) []XrayProtocolDTO {
-	dtos := make([]XrayProtocolDTO, len(items))
-	for i, item := range items {
-		dtos[i] = XrayProtocolDTO{
-			ID:          item.ID,
-			Name:        item.Name,
-			Protocol:    item.Protocol,
-			Transport:   item.Transport,
-			Security:    item.Security,
-			Port:        item.Port,
-			PathOrSNI:   item.PathOrSNI,
-			ShareLink:   item.ShareLink,
-			EgressURL:   item.EgressURL,
-			Description: item.Description,
-		}
-	}
-	return dtos
 }

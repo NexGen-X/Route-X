@@ -500,7 +500,6 @@ export interface SystemOverview {
   net_recv_rate_mb_s: number;
   net_sent_rate_mb_s: number;
   egress_total_routes: number;
-  egress_xray_count: number;
   egress_http_count: number;
   egress_active_mode: string;
   container_cpu_cap: number;
@@ -564,19 +563,6 @@ export interface CLIExportScriptResponse {
   file_path: string;
 }
 
-export interface XrayProtocolItem {
-  id: string;
-  name: string;
-  protocol: string;
-  transport: string;
-  security: string;
-  port: number;
-  path_or_sni: string;
-  share_link: string;
-  egress_url: string;
-  description: string;
-}
-
 export interface DomainConfig {
   domain: string;
   mode: 'letsencrypt' | 'cloudflare';
@@ -588,10 +574,6 @@ export interface DomainConfig {
   dns_matched: boolean;
   last_checked?: string;
   message?: string;
-  xray_enabled?: boolean;
-  xray_uuid?: string;
-  xray_vless_reality?: string;
-  xray_protocols?: XrayProtocolItem[];
 }
 
 export interface DomainUpdateRequest {

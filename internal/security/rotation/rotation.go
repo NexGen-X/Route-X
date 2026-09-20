@@ -119,7 +119,7 @@ func NewRotator(cfg Config) (*Rotator, error) {
 // 1. provider_credentials
 // 2. webhooks
 // 3. egress_pool
-// 4. settings cli:config:* dan system:xray:config
+// 4. settings cli:config:*
 //
 // Aturan Arsitektur & Keamanan:
 //   - Wajib SATU transaksi tunggal yang melingkupi KETIGA tabel. security.Cipher hanya
@@ -224,7 +224,7 @@ func (r *Rotator) rotateSettingsInTx(ctx context.Context, tx pgx.Tx) (TableResul
 	rows, err := tx.Query(ctx, `
 		SELECT key, value
 		FROM settings
-		WHERE key LIKE 'cli:config:%' OR key = 'system:xray:config'
+		WHERE key LIKE 'cli:config:%'
 		ORDER BY key ASC
 		FOR UPDATE`)
 	if err != nil {
@@ -262,8 +262,6 @@ func (r *Rotator) rotateSettingsInTx(ctx context.Context, tx pgx.Tx) (TableResul
 				return result, fmt.Errorf("setting CLI tanpa ID tool")
 			}
 			field, aad = "api_key_enc", security.CLIToolAAD(toolID)
-		case rec.key == "system:xray:config":
-			field, aad = "ciphertext", security.XrayStateAAD()
 		}
 
 		var ciphertext string

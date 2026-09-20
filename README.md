@@ -110,7 +110,7 @@ Calling diverse AI APIs directly creates vendor lock-in, unmanaged API key spraw
 │                                                  ▼               │
 │  ┌────────────────────────┐         ┌─────────────────────────┐  │
 │  │ Embedded Dashboard     │         │ Egress Proxy Pool       │  │
-│  │ (React 18 + Tailwind)  │         │ (Direct / Xray Mesh)    │  │
+│  │ (React 18 + Tailwind)  │         │ (Direct / Proxy Pool)  │  │
 │  └────────────────────────┘         └────────────┬────────────┘  │
 └──────────────────────────────────────────────────┼───────────────┘
           │                                        │
@@ -140,14 +140,14 @@ tar -xzvf routex-v1.1.0-linux-amd64.tar.gz
 ```
 
 ### Option A: Automated Native Linux 1-Liner (Recommended for Production VPS)
-Installs and configures all 5 native services (Route-X Core, PostgreSQL 16, Redis 7, Xray-Core Stealth Egress, and Caddy with Auto-TLS) via systemd in under 45 seconds:
+Installs and configures all 4 native services (Route-X Core, PostgreSQL 16, Redis 7, and Caddy with Auto-TLS) via systemd in under 45 seconds:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NexGen-X/Route-X/main/install-native.sh | sudo bash
 ```
 
 #### 🔄 Zero-Downtime Live Updates (Staging / Production)
-Whenever new code is merged into `main`, rebuild and update the running gateway atomically without tearing down PostgreSQL, Redis, Caddy, or Xray:
+Whenever new code is merged into `main`, rebuild and update the running gateway atomically without tearing down PostgreSQL, Redis, or Caddy:
 ```bash
 git pull origin main
 make live-update
@@ -155,8 +155,8 @@ make live-update
 ```
 This performs an isolated compilation (`ai-gateway.new`), applies idempotent database migrations, swaps the binary atomically, and restarts `routex.service` in under 250ms with zero data loss.
 
-### Option B: Docker Compose (Complete 5-Service Stack)
-Run the complete containerized stack in isolated containers (Route-X Core, PostgreSQL 16, Redis 7, Xray-Core Stealth Egress, and Caddy Edge Proxy):
+### Option B: Docker Compose (Complete 4-Service Stack)
+Run the complete containerized stack in isolated containers (Route-X Core, PostgreSQL 16, Redis 7, and Caddy Edge Proxy):
 
 ```bash
 git clone https://github.com/NexGen-X/Route-X.git

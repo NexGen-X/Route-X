@@ -1,0 +1,22 @@
+-- ==============================================================================
+-- Route-X Migration 0013: Hapus Pengaturan Xray (system:xray:config)
+-- ==============================================================================
+-- Integrasi Xray-core (VLESS Reality stealth tunnel & internal bridge SOCKS/HTTP)
+-- telah dihapus seluruhnya dari Route-X: orchestrator internal/xray, deploy/xray,
+-- drop-in systemd, env XRAY_BRIDGE_HOST, serta seluruh kode yang menulis/membaca
+-- state Xray di tabel settings. Karena itu record settings 'system:xray:config'
+-- tidak lagi dibaca oleh kode mana pun dan tidak mungkin ditulis ulang.
+--
+-- Migrasi murni DML: hanya menghapus record settings tunggal tersebut. Satu record
+-- per instalasi, jadi dampaknya kecil dan terprediksi.
+--
+-- Fitur egress_pool generik (http/https/socks5) DIPERTAHANKAN sepenuhnya: tabel
+-- egress_pool, kolomnya, dan repositorinya tidak disentuh. Pool egress yang
+-- terdaftar (termasuk pool lama yang dulu dibuat untuk bridge Xray dan kini
+-- menjadi pool SOCKS5 generik) tetap beroperasi apa adanya — admin bebas
+-- memperbarui atau menghapusnya lewat dashboard.
+-- ==============================================================================
+
+-- Hapus record state Xray terenkripsi. Idempoten: DELETE tanpa baris yang cocok
+-- tetap sukses, sehingga aman dijalankan ulang pada database yang sudah bersih.
+DELETE FROM settings WHERE key = 'system:xray:config';

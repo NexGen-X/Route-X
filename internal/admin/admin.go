@@ -61,9 +61,6 @@ type Handlers struct {
 	trafficRepo    *traffic.Repo
 	webhooksRepo   *webhooks.Repo
 	dispatcher     *webhooks.Dispatcher
-	// xrayBridgeHost diisi dari config.XrayBridgeHost (env XRAY_BRIDGE_HOST);
-	// defaultnya loopback, Docker Compose menyetel "xray".
-	xrayBridgeHost string
 	factory        *gateway.Factory
 	breaker        *gateway.Breaker
 	supervisor     *worker.Supervisor
@@ -107,10 +104,6 @@ type Config struct {
 	Cipher         *security.Cipher
 	ResponseCache  *responsecache.Engine
 	CLIManager     *cliconfig.Manager
-	// XrayBridgeHost adalah host jembatan Xray (default 127.0.0.1; Docker: "xray").
-	// Dipakai syncXrayConfig agar config Xray & URL egress pool kedua-duanya
-	// mengarah ke host yang benar untuk topologi deployment ini.
-	XrayBridgeHost string
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	Version string
 	Commit  string
@@ -158,7 +151,6 @@ func NewHandlers(cfg Config) *Handlers {
 		cipher:         cfg.Cipher,
 		responseCache:  cfg.ResponseCache,
 		cliManager:     cfg.CLIManager,
-		xrayBridgeHost: cfg.XrayBridgeHost,
 		oauthRepo:      cfg.OAuthRepo,
 		oauthClient:    cfg.OAuthClient,
 		version:        cfg.Version,

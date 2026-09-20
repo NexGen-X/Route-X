@@ -619,7 +619,7 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                   </div>
                   <div>
                     <span className="text-xs font-semibold text-white block">Egress & Tunnel Pool</span>
-                    <span className="text-[10px] text-text-muted font-mono">Xray & Proxies</span>
+                    <span className="text-[10px] text-text-muted font-mono">Proxies</span>
                   </div>
                 </div>
                 <div className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-400 font-semibold">
@@ -637,10 +637,6 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
 
             {/* Breakdown rows */}
             <div className="mt-4 pt-3 border-t border-border/60 space-y-1.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-text-muted">Xray & WARP</span>
-                <span className="font-mono text-white font-semibold">{overview?.egress_xray_count ?? 0}</span>
-              </div>
               <div className="flex items-center justify-between">
                 <span className="text-text-muted">HTTP/SOCKS</span>
                 <span className="font-mono text-text-secondary">{overview?.egress_http_count ?? 0}</span>

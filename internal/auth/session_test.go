@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -629,8 +631,16 @@ func TestSetupHint(t *testing.T) {
 	if hint.DefaultEmail != "admin@routex.local" {
 		t.Errorf("DefaultEmail = %q", hint.DefaultEmail)
 	}
-	if hint.DefaultPassword != "RouteX#Initial2026!" {
-		t.Errorf("DefaultPassword = %q", hint.DefaultPassword)
+	// H1: respons TIDAK boleh mengandung password default dalam bentuk apa pun.
+	// Struct sudah tidak memiliki field DefaultPassword, dan pemeriksaan ini
+	// menegaskannya di level representasi JSON sehingga tidak ada field tambahan
+	// (atau refactor di masa depan) yang diam-diam membawa kredensial kembali.
+	if raw, err := json.Marshal(hint); err != nil {
+		t.Fatalf("marshal setup hint: %v", err)
+	} else if bytes.Contains(raw, []byte("default_password")) {
+		t.Errorf("respons setup hint masih mengandung key default_password: %s", raw)
+	} else if bytes.Contains(raw, []byte("RouteX#Initial2026!")) {
+		t.Errorf("respons setup hint membocorkan password default: %s", raw)
 	}
 
 	u, err := e.users.GetByEmail(e.ctx, "admin@routex.local")

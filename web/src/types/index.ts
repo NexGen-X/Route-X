@@ -284,10 +284,12 @@ export interface APIKey {
   raw_key?: string; // Hanya saat pertama dibuat atau dirotasi
 }
 
+// SetupHintResponse hanya berisi petunjuk onboarding, bukan kredensial.
+// Field password default sengaja tidak ada: endpoint /setup-hint adalah rute publik
+// tanpa autentikasi, jadi tidak boleh mengirim kata sandi admin ke browser.
 export interface SetupHintResponse {
   has_default_admin: boolean;
   default_email?: string;
-  default_password?: string;
   message?: string;
 }
 

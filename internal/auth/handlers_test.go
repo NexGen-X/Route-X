@@ -691,8 +691,16 @@ func TestSetupHintEndpoint(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, mau 200", res.StatusCode)
 	}
+	// H1: endpoint publik tanpa autentikasi ini tidak boleh mengirim password
+	// default ke pemanggil mana pun. Body mentah dibaca lebih dulu, baru kemudian
+	// diurai: pemeriksaan harus dilakukan pada apa yang benar-benar lewat di kabel,
+	// bukan pada struct yang sudah diketahui tidak punya fieldnya.
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatalf("membaca body: %v", err)
+	}
 	var hint SetupHintResponse
-	if err := json.NewDecoder(res.Body).Decode(&hint); err != nil {
+	if err := json.Unmarshal(body, &hint); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
 	if !hint.HasDefaultAdmin {
@@ -701,8 +709,11 @@ func TestSetupHintEndpoint(t *testing.T) {
 	if hint.DefaultEmail != "admin@routex.local" {
 		t.Errorf("DefaultEmail = %q", hint.DefaultEmail)
 	}
-	if hint.DefaultPassword != "RouteX#Initial2026!" {
-		t.Errorf("DefaultPassword = %q", hint.DefaultPassword)
+	if bytes.Contains(body, []byte("default_password")) {
+		t.Errorf("body setup hint masih mengandung key default_password: %s", body)
+	}
+	if bytes.Contains(body, []byte("RouteX#Initial2026!")) {
+		t.Errorf("body setup hint membocorkan password default: %s", body)
 	}
 
 	u, err := e.users.GetByEmail(e.ctx, "admin@routex.local")

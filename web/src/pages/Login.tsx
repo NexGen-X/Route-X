@@ -4,7 +4,7 @@ import { Button } from '../components/common/Button';
 import { Checkbox } from '../components/common/Checkbox';
 import { api, ApiError } from '../api/client';
 import type { SetupHintResponse } from '../types';
-import { ShieldCheck, AlertCircle, ArrowRight, Eye, EyeOff, Sparkles, Key, Check } from 'lucide-react';
+import { ShieldCheck, AlertCircle, ArrowRight, Eye, EyeOff, Sparkles, Info } from 'lucide-react';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -15,7 +15,6 @@ export const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [setupHint, setSetupHint] = useState<SetupHintResponse | null>(null);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -30,15 +29,6 @@ export const Login: React.FC = () => {
       mounted = false;
     };
   }, []);
-
-  const handleAutofill = () => {
-    if (setupHint?.default_email && setupHint?.default_password) {
-      setEmail(setupHint.default_email);
-      setPassword(setupHint.default_password);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,28 +74,31 @@ export const Login: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-text-secondary leading-relaxed">
-              Gunakan kredensial default di bawah ini untuk login pertama kali. Anda akan langsung diarahkan untuk membuat kata sandi baru.
+              Akun admin pertama masih memakai kata sandi awal dan wajib diganti setelah login.
+              Masuk dengan alamat email di bawah ini, lalu ambil kata sandi awal dari sumber tepercaya
+              Anda (keluaran instalasi, berkas <code className="px-1 py-0.5 rounded bg-bg-base text-accent font-mono">.env</code>,
+              atau perintah <code className="px-1 py-0.5 rounded bg-bg-base text-accent font-mono">routex-rotate</code>).
             </p>
             <div className="bg-bg-base/80 rounded-lg p-2.5 border border-border space-y-1 font-mono text-xs">
               <div className="flex justify-between text-text-muted text-[11px]">
                 <span>Email:</span>
-                <span className="text-white select-all">{setupHint.default_email}</span>
-              </div>
-              <div className="flex justify-between text-text-muted text-[11px]">
-                <span>Password:</span>
-                <span className="text-white select-all">{setupHint.default_password}</span>
+                <button
+                  type="button"
+                  onClick={() => setupHint.default_email && setEmail(setupHint.default_email)}
+                  className="text-white select-all hover:text-accent transition-colors cursor-pointer"
+                  aria-label="Isi alamat email admin"
+                >
+                  {setupHint.default_email ?? '-'}
+                </button>
               </div>
             </div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={handleAutofill}
-              icon={copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Key className="w-3.5 h-3.5 text-accent" />}
-              className="w-full text-xs font-semibold"
-            >
-              {copied ? 'Kredensial Terisi!' : 'Gunakan Kredensial Default (1-Klik)'}
-            </Button>
+            <div className="flex items-start gap-2 text-[11px] text-text-muted leading-relaxed">
+              <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-accent" />
+              <span>
+                Alamat email saja yang ditampilkan di sini. Kata sandi tidak pernah dikirim oleh
+                endpoint ini demi keamanan instance Anda.
+              </span>
+            </div>
           </div>
         )}
 

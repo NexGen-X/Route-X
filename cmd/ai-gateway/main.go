@@ -132,9 +132,15 @@ func run(migrateOnly bool) error {
 
 	// Seed dijalankan setiap start dan bersifat idempoten: katalog izin dan pemetaan
 	// peran ikut tersegarkan bila rilis baru menambah izin.
-	if _, err := seed.Run(ctx, db.Pool, cfg, logger); err != nil {
+	seedRes, err := seed.Run(ctx, db.Pool, cfg, logger)
+	if err != nil {
 		return fmt.Errorf("menanam data awal: %w", err)
 	}
+
+	// Fail-fast admin lemah: jika admin pertama masih MustChangePassword, instance ini
+	// belum aman. Tidak memblokir boot (first-run headless sah), tapi pesan yang
+	// dicatat dibuat seberapa mungkin untuk dilewatkan. Lihat H2.
+	seed.WarnDefaultAdminPending(ctx, db.Pool, cfg, logger, seedRes.AdminCreated)
 
 	if migrateOnly {
 		logger.Info("mode -migrate selesai, server tidak dinyalakan")

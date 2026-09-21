@@ -198,6 +198,40 @@ Upon initial deployment, open the web console at `http://localhost:8080/login` (
 
 ---
 
+## 🧰 Operations CLI (Headless)
+
+Untuk server tanpa browser atau skrip provisioning, API key gateway bisa dibuat langsung dari terminal lewat binary `routex-apikey` — tanpa login dashboard, tanpa token CSRF, dan tanpa merakit SQL atau menghitung HMAC sendiri.
+
+```bash
+# Build sekali
+make build-cli
+
+# Buat key test (prefix sk_test_) — nilai key ke stdout, info lainnya ke stderr
+export DATABASE_URL="postgres://routex:****@127.0.0.1:5432/routex?sslmode=disable"
+export API_KEY_PEPPER="$(openssl rand -base64 32)"   # harus sama persis dengan server
+
+routex-apikey create --name ci-pipeline
+
+# Hanya menangkap key mentahnya; simpan ke secret manager
+routex-apikey create --name ci-pipeline --scope inference > key.txt
+
+# Key produksi (prefix sk_live_) dengan beberapa cakupan
+routex-apikey create --name produksi --live \
+  --scope inference --scope usage:read --scope admin:read
+
+# Sebut pemilik secara eksplisit (default: pengguna pertama yang terdaftar)
+routex-apikey create --name billing --live --owner "2a3203ac-d179-48b2-beb7-1611d9340724"
+
+# Lihat key yang ada — hanya bentuk tersamar, nilai mentah tidak pernah tersimpan
+routex-apikey list
+```
+
+Cakupan yang valid: `inference`, `models:read`, `usage:read`, `admin:read`, `admin:write`. Tanpa `--scope`, default-nya `inference`.
+
+> ⚠️ **`API_KEY_PEPPER` wajib sama dengan server** dan dikodekan base64 (minimal 32 byte setelah didekode). CLI ini mendekodenya otomatis — jangan masukkan string mentah, jika tidak HMAC tidak akan cocok dan key ditolak server. Karena key hanya ditampilkan **satu kali**, simpan langsung hasilnya.
+
+---
+
 ## 💻 Developer CLI Ecosystem
 
 Route-X features built-in, out-of-the-box support for the developer terminal CLI ecosystem.

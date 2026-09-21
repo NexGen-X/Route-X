@@ -1,4 +1,4 @@
-.PHONY: all build build-web build-go test test-coverage migrate live-update status logs help
+.PHONY: all build build-web build-go build-cli test test-coverage migrate live-update status logs help
 
 SHELL := /bin/bash
 VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo "v1.1.0")
@@ -11,6 +11,7 @@ help:
 	@echo "  make build         - Build frontend UI and Go backend binary"
 	@echo "  make build-go      - Build Go backend binary only"
 	@echo "  make build-web     - Build React frontend only"
+	@echo "  make build-cli     - Build perkakas CLI (routex-apikey) only"
 	@echo "  make test          - Run all Go tests"
 	@echo "  make test-coverage - Run Go tests with coverage report"
 	@echo "  make live-update   - Atomic live-rebuild and reload for staging/prod"
@@ -25,7 +26,11 @@ build-go:
 	@echo "--> Building Go binary ($(VERSION) @ $(COMMIT))..."
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$(VERSION)" -o bin/ai-gateway ./cmd/ai-gateway
 
-build: build-web build-go
+build-cli:
+	@echo "--> Building routex-apikey ($(VERSION) @ $(COMMIT))..."
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/routex-apikey ./cmd/routex-apikey
+
+build: build-web build-go build-cli
 
 test:
 	@echo "--> Running Go test suite..."

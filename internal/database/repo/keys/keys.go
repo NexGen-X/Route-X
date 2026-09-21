@@ -34,6 +34,28 @@ const (
 	ScopeAdminWrite = "admin:write"
 )
 
+// KnownScopes adalah daftar cakupan yang dikenali, sesuai constraint api_keys_scopes_known.
+// Dipakai pemanggil yang menerima cakupan dari luar — mis. perkakas CLI — untuk menolak
+// masukan yang salah sebelum menyentuh database, agar pesannya jelas dan tidak
+// bergantung pada teks constraint PostgreSQL.
+var KnownScopes = []string{
+	ScopeInference,
+	ScopeModelsRead,
+	ScopeUsageRead,
+	ScopeAdminRead,
+	ScopeAdminWrite,
+}
+
+// ValidScope melaporkan apakah s adalah cakupan yang dikenali.
+func ValidScope(s string) bool {
+	for _, k := range KnownScopes {
+		if k == s {
+			return true
+		}
+	}
+	return false
+}
+
 // ErrKeyNotUsable dikembalikan Authenticate ketika key ditemukan tetapi tidak boleh
 // dipakai. Alasannya ada di Rejection agar pemanggil bisa memilih pesan dan kode
 // status yang tepat, tanpa perlu menerka dari teks error.

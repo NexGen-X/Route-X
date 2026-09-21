@@ -281,3 +281,70 @@ func TestMetricsDefaultsPerEnv(t *testing.T) {
 		t.Error("RATE_LIMIT_FAIL_CLOSED=true tidak terbaca")
 	}
 }
+
+// LoadKeyTool memakai pembacaan pepper yang sama persis dengan Load: base64 dengan
+// panjang minimum. Inilah penjaga kesalahan HMAC termahal dalam pembuatan API key —
+// pepper mentah (belum base64) harus ditolak di sini, bukan menjadi key yang tidak
+// bisa diautentikasi server.
+func TestLoadKeyTool(t *testing.T) {
+	t.Run("konfigurasi valid", func(t *testing.T) {
+		cfg, err := loadKeyToolFrom(lookupFrom(valid()))
+		if err != nil {
+			t.Fatalf("LoadKeyTool: %v", err)
+		}
+		if len(cfg.APIKeyPepper) != 32 {
+			t.Errorf("pepper = %d byte, mau 32 (panjang setelah didekode base64)", len(cfg.APIKeyPepper))
+		}
+		if got := cfg.DatabaseURL.Reveal(); !strings.Contains(got, "routex:pw@127.0.0.1:5432/routex") {
+			t.Errorf("DatabaseURL tidak terbaca: %q", got)
+		}
+	})
+
+	t.Run("pepper mentah ditolak", func(t *testing.T) {
+		env := valid()
+		env["API_KEY_PEPPER"] = "pepper-mentah-tanpa-base64"
+
+		_, err := loadKeyToolFrom(lookupFrom(env))
+		if err == nil {
+			t.Fatal("LoadKeyTool menerima pepper yang bukan base64")
+		}
+		if !strings.Contains(err.Error(), "API_KEY_PEPPER") {
+			t.Errorf("error = %v, seharusnya menyebut API_KEY_PEPPER", err)
+		}
+	})
+
+	t.Run("pepper kosong ditolak", func(t *testing.T) {
+		env := valid()
+		env["API_KEY_PEPPER"] = ""
+
+		if _, err := loadKeyToolFrom(lookupFrom(env)); err == nil {
+			t.Error("LoadKeyTool menerima pepper kosong")
+		}
+	})
+
+	t.Run("database url wajib", func(t *testing.T) {
+		env := valid()
+		delete(env, "DATABASE_URL")
+
+		_, err := loadKeyToolFrom(lookupFrom(env))
+		if err == nil {
+			t.Fatal("LoadKeyTool menerima tanpa DATABASE_URL")
+		}
+		if !strings.Contains(err.Error(), "DATABASE_URL") {
+			t.Errorf("error = %v, seharusnya menyebut DATABASE_URL", err)
+		}
+	})
+
+	t.Run("tidak menuntut rahasia server", func(t *testing.T) {
+		// Skrip headless tidak punya SESSION_SECRET atau REDIS_URL, dan perkakas ini
+		// tidak membutuhkannya — menuntutnya hanya menghambat otomatisasi.
+		env := valid()
+		delete(env, "SESSION_SECRET")
+		delete(env, "ENCRYPTION_KEY")
+		delete(env, "REDIS_URL")
+
+		if _, err := loadKeyToolFrom(lookupFrom(env)); err != nil {
+			t.Fatalf("LoadKeyTool menuntut rahasia server: %v", err)
+		}
+	})
+}

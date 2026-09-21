@@ -152,6 +152,52 @@ func Load() (*Config, error) {
 // lookupFunc memungkinkan test memuat konfigurasi tanpa menyentuh environment proses.
 type lookupFunc func(string) (string, bool)
 
+// KeyToolConfig adalah konfigurasi minimum yang dibutuhkan perkakas CLI pembuatan
+// API key (routex-apikey): koneksi basis data dan pepper.
+type KeyToolConfig struct {
+	DatabaseURL  security.Secret
+	APIKeyPepper []byte
+}
+
+// LoadKeyTool memuat hanya konfigurasi yang dibutuhkan perkakas CLI API key.
+//
+// Berbeda dengan Load, fungsi ini tidak menuntut SESSION_SECRET, ENCRYPTION_KEY, maupun
+// REDIS_URL: perkakas ini tidak menjalankan server, tidak membuka sesi admin, dan tidak
+// mendekripsi kredensial provider, jadi rahasia itu bukan urusannya. Menuntutnya di sini
+// hanya akan menyulitkan skrip otomatisasi headless — padahal itulah alasan perkakas ini
+// dibuat — dan menuntut apa yang tidak dipakai adalah fail-fast yang menyesatkan.
+//
+// Penerjemahan base64 dan syarat panjang pepper tetap memakai reader yang sama persis
+// dengan Load, supaya tidak ada dua jalur penafsiran API_KEY_PEPPER yang bisa saling
+// tidak cocok antara server dan perkakas CLI.
+func LoadKeyTool() (*KeyToolConfig, error) {
+	// Absennya .env bukan error: di produksi konfigurasi datang dari environment.
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		var pathErr *os.PathError
+		if !errors.As(err, &pathErr) {
+			return nil, fmt.Errorf("membaca .env: %w", err)
+		}
+	}
+	return loadKeyToolFrom(os.LookupEnv)
+}
+
+// loadKeyToolFrom memuat konfigurasi perkakas CLI dari lookup yang diberikan.
+// Dipisahkan dari LoadKeyTool agar test bisa menyusun environment tanpa menyentuh
+// environment prosesnya sendiri.
+func loadKeyToolFrom(lookup lookupFunc) (*KeyToolConfig, error) {
+	r := &reader{lookup: lookup}
+
+	cfg := &KeyToolConfig{
+		DatabaseURL:  r.requiredURL("DATABASE_URL", "postgres", "postgresql"),
+		APIKeyPepper: r.requiredKeyBytesMin("API_KEY_PEPPER", minAPIKeyPepperLen),
+	}
+
+	if len(r.errs) > 0 {
+		return nil, fmt.Errorf("konfigurasi tidak valid:\n  - %s", strings.Join(r.errs, "\n  - "))
+	}
+	return cfg, nil
+}
+
 func loadFrom(lookup lookupFunc) (*Config, error) {
 	r := &reader{lookup: lookup}
 

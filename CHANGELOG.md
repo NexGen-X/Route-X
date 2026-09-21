@@ -60,6 +60,31 @@ Gateway, BrightData, VPS sendiri) tetap dapat dipakai tanpa Xray.
 
 ---
 
+## [Unreleased] - 2026-09-20
+
+Tindak lanjut pembersihan setelah penghapusan Xray (#37).
+
+### Keamanan
+
+- **Izin `GET /api/domain` dilonggarkan dari `settings:write` ke `settings:read`**.
+  Sebelumnya izin tulis diperlukan karena respons memuat tautan provisioning
+  Xray yang setara kredensial. Setelah Xray dihapus, respons hanya berisi status
+  infrastruktur ringan (domain, mode HTTPS, status DNS & IP server), sehingga
+  cukup `settings:read`. Mutasi (`POST`/`DELETE`) tetap `settings:write`.
+  (Area arsitektur Single-Admin: setiap user terautentikasi adalah Admin penuh,
+  perubahan ini terutama menjaga prinsip least-privilege & konsistensi rute.)
+
+### Tests
+
+- **Test AAD untuk `CLIToolAAD` & `OAuthSessionAAD` ditambahkan**
+  (`TestCLIToolAADDiikatKeIDTool`, `TestOAuthSessionAADDiikatKeIDSesi`).
+  Kedua AAD ini adalah satu-satunya AAD settings yang masih aktif di rotasi kunci
+  setelah `XrayStateAAD` dihapus, namun sebelumnya tidak punya test khusus.
+  Test memverifikasi format terikat ke ID, membedakan tiap record, dan tidak
+  bertabrakan dengan `CredentialAAD`/`WebhookAAD`.
+
+---
+
 ## [v1.1.1] - 2026-09-20
 
 Rilis perbaikan keamanan & keandalan hasil audit menyeluruh 6 fase. Semua perbaikan

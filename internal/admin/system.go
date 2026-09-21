@@ -32,9 +32,10 @@ func (h *Handlers) systemRoutes(r chi.Router) {
 
 	// Domain & Automatic HTTPS Management
 	r.Route("/domain", func(dr chi.Router) {
-		// Respons domain memuat pengaturan sensitif sistem (status HTTPS & DNS),
-		// sehingga membaca domain memerlukan settings:write, bukan akses Viewer.
-		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Get("/", h.getDomainStatus)
+		// Respons domain hanya memuat status infrastruktur ringan (domain, mode
+		// HTTPS, status DNS & IP server) — tidak ada kredensial atau rahasia,
+		// sehingga cukup settings:read untuk membaca. Mutasi tetap settings:write.
+		dr.With(auth.RequirePermission(seed.PermSettingsRead)).Get("/", h.getDomainStatus)
 		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Post("/", h.updateDomainConfig)
 		dr.With(auth.RequirePermission(seed.PermSettingsWrite)).Delete("/", h.deleteDomainConfig)
 	})

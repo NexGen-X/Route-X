@@ -6,14 +6,29 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ---
 
-## [Unreleased] - 2026-09-20
+## [v1.2.0] - 2026-09-21
 
-Penghapusan menyeluruh integrasi Xray-core dari Route-X. Keputusan diambil
-berdasarkan audit risiko/manfaat di deployment produksi: integrasi Xray hanya
-memberi 1 manfaat (egress SOCKS5) namun mendominasi banyak risiko (open proxy,
-permukaan serangan, kompleksitas operasional, titik gagal tunggal). Egress pool
-generik (HTTP/HTTPS/SOCKS5) dipertahankan penuh — proxy pihak ketiga (Cloudflare
+Rilis yang menghapus integrasi Xray-core secara menyeluruh (#37) beserta
+tindak lanjut hardening (#38). Keputusan diambil berdasarkan audit
+risiko/manfaat di deployment produksi: integrasi Xray hanya memberi 1 manfaat
+(egress SOCKS5) namun mendominasi banyak risiko (open proxy, permukaan
+serangan, kompleksitas operasional, titik gagal tunggal). Egress pool generik
+(HTTP/HTTPS/SOCKS5) dipertahankan penuh — proxy pihak ketiga (Cloudflare
 Gateway, BrightData, VPS sendiri) tetap dapat dipakai tanpa Xray.
+
+### ⚠️ BREAKING CHANGES
+
+- **Env `XRAY_BRIDGE_HOST` dihapus** dari config; tidak lagi dibaca saat boot.
+  Env lama pada deployment yang ada diabaikan tanpa error (aman), tapi sebaiknya
+  dibersihkan dari `.env`/`docker-compose` deployment masing-masing.
+- **Service `xray` dihapus dari `docker-compose.yml`** dan `deploy.sh` tidak
+  lagi menjalankannya. Deployment Docker harus `docker compose down` sebelum
+  upgrade untuk menghindari container yatim.
+- **`install-native.sh` tidak lagi memasang xray-core** dari upstream
+  `XTLS/Xray-install`. `xray.service` pada host native yang dipasang sebelumnya
+  menjadi yatim — nonaktifkan manual: `systemctl disable --now xray`.
+- **Migration `0013_drop_xray_settings.sql`** menghapus record `settings` key
+  `system:xray:config`. Tabel `egress_pool` dan `domains` **tidak disentuh**.
 
 ### Removed
 
@@ -26,27 +41,33 @@ Gateway, BrightData, VPS sendiri) tetap dapat dipakai tanpa Xray.
 - **UI terkait Xray dihapus**: panel "Integrasi Xray-Core: VLESS Reality Stealth
   Tunnel" di halaman Settings, kartu Xray di Dashboard, dan preset Xray SOCKS5/HTTP
   di form Egress (form manual proxy tetap utuh).
-- **Env `XRAY_BRIDGE_HOST`** tidak lagi dibaca (const/field config dihapus). Env
-  lama pada deployment yang ada diabaikan tanpa error — aman, tapi sebaiknya
-  dibersihkan dari `.env`/`docker-compose` deployment masing-masing.
 - Fungsi `security.XrayStateAAD()` dihapus bersama cabang rotasinya.
 
 ### Keamanan
 
 - **Permukaan SSRF Docker dipersempit**: entri hostname `xray` dihapus dari
-  `UPSTREAM_ALLOWED_PRIVATE_ADDRS` di `docker-compose.yml` (pengecualian khusus
-  container xray yang tidak lagi ada). Loopback tetap diizinkan untuk egress pool
-  generik.
+  `UPSTREAM_ALLOWED_PRIVATE_ADDRS` di `docker-compose.yml` dan `.env.example`
+  (pengecualian khusus container xray yang tidak lagi ada). Loopback tetap
+  diizinkan untuk egress pool generik.
 - **Tidak ada lagi forward proxy yang dipasang atau dijalankan** oleh skrip
   deployment resmi. Sebelumnya `install-native.sh` memasang xray-core dari
   upstream `XTLS/Xray-install` dan `deploy.sh` menjalankan container xray.
+- **Izin `GET /api/domain` dilonggarkan dari `settings:write` ke `settings:read`**
+  (#38). Sebelumnya izin tulis diperlukan karena respons memuat tautan
+  provisioning Xray yang setara kredensial. Setelah Xray dihapus, respons hanya
+  berisi status infrastruktur ringan (domain, mode HTTPS, status DNS & IP
+  server), sehingga cukup `settings:read`. Mutasi (`POST`/`DELETE`) tetap
+  `settings:write`. (Arsitektur Single-Admin: setiap user terautentikasi adalah
+  Admin penuh; perubahan ini menjaga prinsip least-privilege & konsistensi rute.)
 
-### Migration
+### Tests
 
-- **`0013_drop_xray_settings.sql`**: menghapus record `settings` dengan key
-  `system:xray:config` (state kredensial Xray terenkripsi yang kini yatim).
-  Tabel `egress_pool` dan `domains` **tidak disentuh** — pool proxy generik
-  dipertahankan utuh.
+- **Test AAD untuk `CLIToolAAD` & `OAuthSessionAAD` ditambahkan** (#38)
+  (`TestCLIToolAADDiikatKeIDTool`, `TestOAuthSessionAADDiikatKeIDSesi`).
+  Kedua AAD ini adalah satu-satunya AAD settings yang masih aktif di rotasi kunci
+  setelah `XrayStateAAD` dihapus, namun sebelumnya tidak punya test khusus.
+  Test memverifikasi format terikat ke ID, membedakan tiap record, dan tidak
+  bertabrakan dengan `CredentialAAD`/`WebhookAAD`.
 
 ### Catatan Operasional
 
@@ -54,34 +75,6 @@ Gateway, BrightData, VPS sendiri) tetap dapat dipakai tanpa Xray.
   deployment Anda, dibuat oleh `ensureXrayEgressPool` versi sebelumnya) tetap
   berfungsi sebagai SOCKS5 generik dan dapat dihapus/diperbarui via dashboard
   admin. Migrasi 0013 tidak menyentuhnya.
-- Layanan `xray.service` pada host native (jika dipasang sebelumnya) menjadi
-  yatim setelah perubahan ini — nonaktifkan dan bersihkan manual:
-  `systemctl disable --now xray`.
-
----
-
-## [Unreleased] - 2026-09-20
-
-Tindak lanjut pembersihan setelah penghapusan Xray (#37).
-
-### Keamanan
-
-- **Izin `GET /api/domain` dilonggarkan dari `settings:write` ke `settings:read`**.
-  Sebelumnya izin tulis diperlukan karena respons memuat tautan provisioning
-  Xray yang setara kredensial. Setelah Xray dihapus, respons hanya berisi status
-  infrastruktur ringan (domain, mode HTTPS, status DNS & IP server), sehingga
-  cukup `settings:read`. Mutasi (`POST`/`DELETE`) tetap `settings:write`.
-  (Area arsitektur Single-Admin: setiap user terautentikasi adalah Admin penuh,
-  perubahan ini terutama menjaga prinsip least-privilege & konsistensi rute.)
-
-### Tests
-
-- **Test AAD untuk `CLIToolAAD` & `OAuthSessionAAD` ditambahkan**
-  (`TestCLIToolAADDiikatKeIDTool`, `TestOAuthSessionAADDiikatKeIDSesi`).
-  Kedua AAD ini adalah satu-satunya AAD settings yang masih aktif di rotasi kunci
-  setelah `XrayStateAAD` dihapus, namun sebelumnya tidak punya test khusus.
-  Test memverifikasi format terikat ke ID, membedakan tiap record, dan tidak
-  bertabrakan dengan `CredentialAAD`/`WebhookAAD`.
 
 ---
 

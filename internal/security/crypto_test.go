@@ -350,3 +350,37 @@ func TestWebhookAADDiikatKeIDWebhook(t *testing.T) {
 		t.Error("WebhookAAD tidak boleh bertabrakan dengan CredentialAAD untuk ID yang sama")
 	}
 }
+
+// TestCLIToolAADDiikatKeIDTool memastikan AAD API key perkakas CLI terikat ke
+// ID tool dan tidak dapat dipindahkan antar tool (ciphertext splicing).
+func TestCLIToolAADDiikatKeIDTool(t *testing.T) {
+	if got := CLIToolAAD("claude_code"); got != "cli_tool:claude_code" {
+		t.Errorf("CLIToolAAD salah: dapat %q, ingin cli_tool:claude_code", got)
+	}
+	if CLIToolAAD("aider") == CLIToolAAD("opencode") {
+		t.Error("CLIToolAAD tidak boleh sama untuk ID tool yang berbeda")
+	}
+	if CLIToolAAD("123") == CredentialAAD("123") {
+		t.Error("CLIToolAAD tidak boleh bertabrakan dengan CredentialAAD untuk ID yang sama")
+	}
+	if CLIToolAAD("123") == WebhookAAD("123") {
+		t.Error("CLIToolAAD tidak boleh bertabrakan dengan WebhookAAD untuk ID yang sama")
+	}
+}
+
+// TestOAuthSessionAADDiikatKeIDSesi memastikan AAD refresh token OAuth terikat
+// ke ID sesi dan tidak dapat dipindahkan antar sesi provider.
+func TestOAuthSessionAADDiikatKeIDSesi(t *testing.T) {
+	if got := OAuthSessionAAD("sess_1"); got != "provider_oauth:sess_1" {
+		t.Errorf("OAuthSessionAAD salah: dapat %q, ingin provider_oauth:sess_1", got)
+	}
+	if OAuthSessionAAD("a") == OAuthSessionAAD("b") {
+		t.Error("OAuthSessionAAD tidak boleh sama untuk ID sesi yang berbeda")
+	}
+	if OAuthSessionAAD("123") == CredentialAAD("123") {
+		t.Error("OAuthSessionAAD tidak boleh bertabrakan dengan CredentialAAD untuk ID yang sama")
+	}
+	if OAuthSessionAAD("123") == CLIToolAAD("123") {
+		t.Error("OAuthSessionAAD tidak boleh bertabrakan dengan CLIToolAAD untuk ID yang sama")
+	}
+}

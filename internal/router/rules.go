@@ -76,7 +76,16 @@ type ComboPipeline struct {
 }
 
 // Combo melaporkan apakah aturan ini memakai combo pipeline (jalur baru).
-func (r *Rule) Combo() bool { return r.Pipeline != nil && len(r.Pipeline.Models) > 1 }
+//
+// Aman dipanggil pada aturan nil, sama seperti Matches dan String: pemanggil di paket
+// gateway memanggilnya pada Decision.Rule yang boleh nil, dan nil di sana berarti
+// "tidak ada aturan yang cocok" — keadaan biasa, bukan kesalahan yang pantas jadi panic.
+func (r *Rule) Combo() bool {
+	if r == nil {
+		return false
+	}
+	return r.Pipeline != nil && len(r.Pipeline.Models) > 1
+}
 
 // RuleFromRow mengubah baris aturan menjadi bentuk yang dipakai mesin.
 //

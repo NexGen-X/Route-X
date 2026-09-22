@@ -91,6 +91,19 @@ type Plan struct {
 	// diperlakukan sebagai 1.
 	MaxAttempts int
 
+	// Budget adalah anggaran TOTAL percobaan lintas seluruh kandidat, bukan per kandidat.
+	// Nol berarti tanpa anggaran: tiap kandidat memakai MaxAttempts penuhnya sendiri.
+	//
+	// Hanya diisi untuk combo pipeline multi-model, dan bedanya bukan gaya. Pada rule
+	// biasa, satu kandidat yang sibuk boleh menghabiskan seluruh kesabarannya sendirian —
+	// itulah arti "max_attempts per provider". Pada combo pipeline, resepnya adalah SATU
+	// janji ke klien: "paling banyak N percobaan, di model mana pun yang sanggup".
+	// Memberi tiap kandidat jatah N sendiri membuat satu permintaan klien menjadi N×M
+	// request upstream: pada model berbayar itu biaya yang tidak pernah diminta operator
+	// maupun pengguna, dan pada model yang dibatasi laju itu hukuman yang dikirim ke
+	// provider yang sebenarnya sehat.
+	Budget int
+
 	// BackoffBase adalah jeda dasar backoff eksponensial. Nol berarti tanpa jeda.
 	BackoffBase time.Duration
 }
@@ -106,6 +119,15 @@ func PlanFromRule(rule *router.Rule, model string, cands []*upstream.RouteCandid
 	if rule != nil {
 		if rule.MaxAttempts > 0 {
 			p.MaxAttempts = rule.MaxAttempts
+		}
+		// Combo pipeline: attempts resep adalah anggaran TOTAL, bukan per kandidat.
+		// Lihat catatan Plan.Budget kenapa nilainya tidak boleh dibaca sebagai
+		// MaxAttempts. Syarat Combo() — lebih dari satu model — diperiksa di sini
+		// supaya resep dengan satu model tetap berperilaku seperti rule biasa; resep
+		// seperti itu tidak punya cascade, dan memotong anggarannya hanya mengurangi
+		// kesabaran tanpa keuntungan apa pun.
+		if rule.Combo() && rule.Pipeline.Attempts > 0 {
+			p.Budget = rule.Pipeline.Attempts
 		}
 		// BackoffBase 0 berarti kolom NULL/nol, bukan permintaan "tanpa jeda":
 		// menimpa apa adanya mematikan backoff dan membuat retry menghantam
@@ -297,6 +319,12 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 
 	maksPercobaan := max(plan.MaxAttempts, 1)
 
+	// sisa adalah sisa anggaran combo pipeline. Dihitung di sini, di luar loop, karena
+	// anggaran dipakai BERSAMA oleh seluruh kandidat: percobaan pada kandidat pertama
+	// mengurangi jatah kandidat kedua. Nol berarti tanpa anggaran (rule biasa), dan tidak
+	// ada satu pun cabang di bawah yang boleh memperlakukan nol sebagai "habis".
+	sisa := plan.Budget
+
 	for _, c := range plan.Candidates {
 		// Context yang sudah selesai diperiksa sebelum kandidat berikutnya disentuh:
 		// tanpa ini, klien yang sudah pergi tetap membuat gateway menghubungi seluruh
@@ -304,6 +332,18 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 		if err := ctx.Err(); err != nil {
 			out.Err = providers.FromTransport(c.ProviderName, err)
 			return out
+		}
+
+		// Jatah kandidat ini. Tanpa anggaran, tiap kandidat memakai MaxAttempts penuh.
+		// Dengan anggaran, jatahnya adalah yang tersisa, dan habisnya anggaran adalah
+		// alasan berhenti mencoba kandidat berikutnya — bukan kegagalan, melainkan janji
+		// resep combo yang sudah dipenuhi.
+		jatah := maksPercobaan
+		if plan.Budget > 0 {
+			if sisa <= 0 {
+				break
+			}
+			jatah = min(maksPercobaan, sisa)
 		}
 
 		izin, state, gerr := e.izinkan(ctx, c, plan.Model)
@@ -322,8 +362,14 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 			continue
 		}
 
-		hasil, att, ok := cobaKandidat(ctx, e, plan, c, state, maksPercobaan, jalankan)
+		hasil, att, ok := cobaKandidat(ctx, e, plan, c, state, jatah, jalankan)
 		out.Attempts = append(out.Attempts, att...)
+		// Anggaran hanya berkurang oleh percobaan yang benar-benar menghubungi upstream,
+		// sama seperti Percobaan() menghitungnya. Kandidat yang dilewati pemutus arus di
+		// atas tidak memakai anggaran: ia tidak pernah menagih upstream apa pun.
+		if plan.Budget > 0 {
+			sisa -= len(att)
+		}
 		if ok {
 			out.Value = hasil
 			out.Candidate = c

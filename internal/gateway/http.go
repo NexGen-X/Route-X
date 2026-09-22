@@ -282,9 +282,34 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 	keputusan := h.engine.Route(r.Context(), rreq, cands)
 	j.pasangKeputusan(keputusan, req.Stream)
 
+	// Combo pipeline (jalur baru): kandidat adalah GABUNGAN provider dari seluruh model
+	// resep, terurut per pipeline.strategy, dieksekusi dalam satu loop dengan anggaran
+	// total (Plan.Budget). Tidak ada cascade per model — seluruh model sudah berada di
+	// satu daftar, dan urutannya ditentukan oleh resep, bukan oleh tier.
+	//
+	// targets dan model yang dipakai pencatatan tetap milik model yang DIMINTA klien:
+	// pengguna memanggil satu model virtual, dan anggaran, penyaring jawaban, serta
+	// penggunaan token tercatat untuk model itu — sama seperti klien OpenAI yang meminta
+	// "gpt-4o" tetap ditagih sebagai "gpt-4o" meski dilayani snapshot tertentu.
+	if keputusan.Rule.Combo() {
+		tempPr := &persiapan{req: req, model: model, decision: keputusan, principal: p}
+		if gabungan, ok := h.kandidatCombo(r.Context(), tempPr, rreq); ok {
+			return &persiapan{
+				req: req, model: model, decision: keputusan,
+				principal: p, targets: targets,
+				plan: PlanFromRule(keputusan.Rule, model.ModelID, gabungan),
+			}, true
+		}
+		// Resep combo tidak menghasilkan kandidat: jatuh ke daftar kandidat model yang
+		// diminta. Masih ada di keputusan.Candidates, dan kalau daftar itu juga kosong,
+		// tolakTanpaKandidat di bawah yang menjelaskan sebabnya.
+	}
+
 	// Opsi C (Smart Context Bypass):
 	// Jika kandidat Tier 1 kosong ATAU ukuran prompt melebihi seluruh kandidat Tier 1,
 	// dan aturan memiliki pipeline combo fallback: periksa apakah ada tier lanjutan yang sanggup melayani!
+	// Jalur ini memakai tag [combo:...] di description (kompatibilitas rule produksi lama
+	// yang pipeline jsonb-nya masih NULL).
 	kandidatTier1Kekecilan := len(keputusan.Candidates) > 0 &&
 		rreq.Tokens.InputTokens > 0 &&
 		semuaKandidatKekecilan(keputusan.Candidates, rreq.Tokens.InputTokens)
@@ -546,8 +571,102 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 	return out, true
 }
 
-// tolakTanpaKandidat menjelaskan MENGAPA tidak ada provider yang bisa melayani.
+// kandidatCombo mengumpulkan kandidat dari seluruh model dalam resep combo pipeline,
+// lalu mengurutkannya menurut strategi resep.
 //
+// Berbeda dengan kandidat() karena resep combo sengaja mencampur provider dari beberapa
+// model menjadi SATU daftar failover. Urutan antar model ditentukan oleh resep
+// (pipeline.strategy), bukan oleh rule.strategy — kandidat dari model kedua boleh lebih
+// dulu daripada kandidat dari model pertama bila resepnya meminta lowest_latency — dan
+// anggaran total (Plan.Budget) yang membaginya, bukan cascade per model.
+//
+// ok false berarti resep tidak menghasilkan satu pun kandidat yang bisa dipakai. Itu
+// bukan kegagalan yang menolak permintaan: pemanggil menjatuhkannya ke daftar kandidat
+// model yang diminta, yang mungkin masih bisa melayani.
+func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router.Request) ([]*upstream.RouteCandidate, bool) {
+	p := pr.principal
+	var ownerUserID string
+	if p != nil {
+		ownerUserID = p.OwnerUserID()
+	}
+
+	pernah := make(map[string]bool)
+	var gabungan []*upstream.RouteCandidate
+	for _, namaModel := range pr.decision.Rule.Pipeline.Models {
+		// Tiap model di resep adalah model kanonik yang harus diresolve dan diperiksa
+		// kewenangannya sendiri. Melewati pemeriksaan ini akan mengizinkan API key yang
+		// dibatasi ke satu model memakai model lain dalam resep — pelanggaran kewenangan
+		// yang dibungkam oleh daftar kandidat gabungan.
+		m, err := h.models.Resolve(ctx, namaModel)
+		if err != nil || m == nil {
+			h.logger.WarnContext(ctx, "model combo tidak bisa diselesaikan, model dilewati",
+				"model", namaModel, "error", err)
+			continue
+		}
+		if !m.Enabled {
+			h.logger.WarnContext(ctx, "model combo dimatikan, model dilewati",
+				"model", namaModel)
+			continue
+		}
+		if h.restrict != nil && p.ID() != "" {
+			boleh, err := h.restrict.AllowsModel(ctx, p.ID(), m.ID)
+			if err != nil {
+				// GAGAL-TERTUTUP, alasan sama dengan izinModel: ini kontrol kewenangan,
+				// dan melewatkannya saat database tidak bisa dibaca berarti key yang
+				// dibatasi mendapat model yang justru dilarang untuknya.
+				h.logger.ErrorContext(ctx, "pemeriksaan pembatasan model combo gagal",
+					"api_key", p.Masked(), "model", namaModel, "error", err)
+				continue
+			}
+			if !boleh {
+				continue
+			}
+		}
+
+		cands, err := h.candidates.RouteCandidates(ctx, upstream.RouteQuery{
+			ModelID:     m.ID,
+			OwnerUserID: ownerUserID,
+		})
+		if err != nil {
+			h.logger.WarnContext(ctx, "kandidat model combo tidak bisa diambil, model dilewati",
+				"model", namaModel, "error", err)
+			continue
+		}
+
+		for _, c := range cands {
+			// Dua model dalam satu resep bisa dilayani pemetaan provider+model yang sama.
+			// Tanpa dedup, pemetaan itu muncul dua kali dan provider bersangkutan
+			// menanggung beban ganda dari satu permintaan klien.
+			if pernah[c.ProviderModelID] {
+				continue
+			}
+			if h.guard.ProviderDilarang(ctx, c.ProviderID) {
+				continue
+			}
+			if h.restrict != nil && p.ID() != "" {
+				boleh, err := h.restrict.AllowsProvider(ctx, p.ID(), c.ProviderID)
+				if err != nil {
+					h.logger.ErrorContext(ctx, "pemeriksaan pembatasan provider combo gagal",
+						"api_key", p.Masked(), "provider", c.ProviderID, "error", err)
+					continue
+				}
+				if !boleh {
+					continue
+				}
+			}
+			pernah[c.ProviderModelID] = true
+			gabungan = append(gabungan, c)
+		}
+	}
+
+	// Pengurutan dan penyaringan kemampuan (streaming, tools, jendela konteks) dilakukan
+	// di satu tempat oleh Selector, sama seperti jalur satu model. Kandidat yang tidak
+	// sanggup melayani permintaan ini harus dibuang di sini, bukan diletakkan di belakang
+	// barisan failover: menunda kegagalan hanya membakar kuota.
+	gabungan = h.engine.OrderCandidates(rreq, pr.decision.Rule.ID, pr.decision.Rule.Pipeline.Strategy, gabungan)
+	return gabungan, len(gabungan) > 0
+}
+
 // Pesan tunggal "tidak ada provider" adalah jawaban yang tidak bisa ditindaklanjuti
 // siapa pun: operator tidak tahu apakah harus menambah provider, menyalakan streaming pada
 // pemetaan model, atau melonggarkan pembatasan API key. Empat sebab yang mungkin dibedakan
@@ -997,7 +1116,11 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 	j.pasangPercobaan(out.Attempts, out.Candidate)
 
 	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis cascade fallback ke tier-tier berikutnya
-	if out.Err != nil {
+	if out.Err != nil && !pr.decision.Rule.Combo() {
+		// Cascade ini memakai tag [combo:...] di description (jalur lama). Aturan combo
+		// pipeline jsonb TIDAK memakainya: kandidatnya sudah mencakup seluruh model
+		// resep dalam satu loop bercadangan total, sehingga cascade di sini hanya akan
+		// mencoba model-model yang sudah gagal di loop itu.
 		if pipeline := ekstrakComboPipeline(pr.decision.Rule); len(pipeline) > 0 {
 			for _, tier := range pipeline {
 				tOut, rj := h.cobaTierFallbackSekali(r.Context(), tier, pr, j)
@@ -1217,7 +1340,11 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 	j.pasangPercobaan(out.Attempts, out.Candidate)
 
 	// Jika Tier 1 gagal dan aturan adalah combo routing, otomatis cascade fallback ke tier-tier berikutnya
-	if out.Err != nil {
+	if out.Err != nil && !pr.decision.Rule.Combo() {
+		// Cascade ini memakai tag [combo:...] di description (jalur lama). Aturan combo
+		// pipeline jsonb TIDAK memakainya: kandidatnya sudah mencakup seluruh model
+		// resep dalam satu loop bercadangan total, sehingga cascade di sini hanya akan
+		// mencoba model-model yang sudah habis anggarannya di loop itu.
 		if pipeline := ekstrakComboPipeline(pr.decision.Rule); len(pipeline) > 0 {
 			for _, tier := range pipeline {
 				tOut, rj := h.cobaTierFallbackMengalir(r.Context(), tier, pr, j)

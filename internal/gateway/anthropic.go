@@ -338,7 +338,11 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 	j.pasangPercobaan(out.Attempts, out.Candidate)
 
 	// Cascade combo fallback bila Tier 1 gagal
-	if out.Err != nil {
+	if out.Err != nil && !pr.decision.Rule.Combo() {
+		// Cascade ini memakai tag [combo:...] di description (jalur lama). Aturan combo
+		// pipeline jsonb TIDAK memakainya: kandidatnya sudah mencakup seluruh model
+		// resep dalam satu loop bercadangan total, sehingga cascade di sini hanya akan
+		// mencoba model-model yang sudah habis anggarannya di loop itu.
 		if pipeline := ekstrakComboPipeline(pr.decision.Rule); len(pipeline) > 0 {
 			for _, tier := range pipeline {
 				tOut, rj := h.cobaTierFallbackSekali(r.Context(), tier, pr, j)
@@ -459,7 +463,11 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 	h.catatRute(r, pr, out.Attempts, out.Candidate)
 	j.pasangPercobaan(out.Attempts, out.Candidate)
 
-	if out.Err != nil {
+	if out.Err != nil && !pr.decision.Rule.Combo() {
+		// Cascade ini memakai tag [combo:...] di description (jalur lama). Aturan combo
+		// pipeline jsonb TIDAK memakainya: kandidatnya sudah mencakup seluruh model
+		// resep dalam satu loop bercadangan total, sehingga cascade di sini hanya akan
+		// mencoba model-model yang sudah habis anggarannya di loop itu.
 		if pipeline := ekstrakComboPipeline(pr.decision.Rule); len(pipeline) > 0 {
 			for _, tier := range pipeline {
 				tOut, rj := h.cobaTierFallbackMengalir(r.Context(), tier, pr, j)

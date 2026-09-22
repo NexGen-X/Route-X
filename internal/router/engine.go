@@ -126,6 +126,29 @@ func (e *Engine) Route(ctx context.Context, req Request, cands []*upstream.Route
 	return Decision{Rule: rule, Candidates: e.sel.Order(req, rule, cands)}
 }
 
+// OrderCandidates menyusun urutan kandidat menurut strategi yang dibawa resep combo
+// pipeline, tanpa mengikatnya pada satu model.
+//
+// Bukan Order biasa karena kandidat combo berasal dari BEBERAPA model sekaligus, dan
+// strateginya milik resep (pipeline.strategy), bukan aturannya. Strategi aturan tidak
+// dipakai karena pada combo pipeline ia mengatur urutan dalam satu model, sedangkan resep
+// mengatur urutan lintas model — keduanya adalah pertanyaan yang berbeda, dan resep yang
+// menang untuk pertanyaan yang ini.
+//
+// Aturan tiruan dipakai sebagai pembawa strategi karena Selector membaca strategi dari
+// Rule; menjadikan strategi parameter Order berarti membongkar antarmukanya hanya untuk
+// satu pemanggil. ID aturan asli dibawa ikut supaya rotasi round_robin tetap terpisah per
+// aturan — tanpa itu, dua combo rule untuk model pertama yang sama akan saling
+// menggeser titik awal satu sama lain.
+//
+// Izin provider dari aturan TIDAK diterapkan di sini: rule.Providers membatasi pada
+// provider tertentu untuk model pertama, yang tidak punya arti untuk kandidat model lain
+// dalam resep. Penyaringan kewenangan API key dan penyaring konten sudah dilakukan
+// pemanggil sebelum kandidat sampai di sini.
+func (e *Engine) OrderCandidates(req Request, ruleID string, strategy Strategy, cands []*upstream.RouteCandidate) []*upstream.RouteCandidate {
+	return e.sel.Order(req, &Rule{ID: ruleID, Strategy: strategy}, cands)
+}
+
 // aturan mengembalikan aturan aktif dari cache, memuat ulang bila sudah kedaluwarsa.
 //
 // Bila pemuatan ulang gagal, aturan LAMA tetap dipakai dan errornya dikembalikan untuk

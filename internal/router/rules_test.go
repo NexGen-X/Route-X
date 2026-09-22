@@ -1,6 +1,7 @@
 package router
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -220,5 +221,147 @@ func TestRuleString(t *testing.T) {
 		if !strings.Contains(got, petunjuk) {
 			t.Errorf("String() = %q, tidak menyebut %q", got, petunjuk)
 		}
+	}
+}
+
+// Pipeline NULL berarti Model Only: aturan berperilaku persis seperti sebelum fitur
+// combo ada. Ini adalah janji migrasi 0014 — kolom baru nullable dan tidak satu pun
+// baris lama diubah — dan Combo() adalah satu-satunya tempat janji itu ditegakkan.
+func TestRuleFromRowPipelineNullAdalahJalurLama(t *testing.T) {
+	got, err := RuleFromRow(&upstream.RoutingRule{
+		ID: "r1", Name: "model saja", Strategy: string(StrategyPriority), MaxAttempts: 3,
+	})
+	if err != nil {
+		t.Fatalf("RuleFromRow: %v", err)
+	}
+	if got.Pipeline != nil {
+		t.Errorf("Pipeline = %+v, ingin nil untuk baris tanpa pipeline", got.Pipeline)
+	}
+	if got.Combo() {
+		t.Error("Combo() true padahal pipeline NULL — aturan ini bukan combo")
+	}
+	if got.VirtualAlias != "" {
+		t.Errorf("VirtualAlias = %q, ingin kosong", got.VirtualAlias)
+	}
+}
+
+// Pipeline valid terurai utuh: strategi, anggaran total, dan urutan model dipertahankan.
+func TestRuleFromRowPipelineValidTerurai(t *testing.T) {
+	alias := "murah-cerdas"
+	row := &upstream.RoutingRule{
+		ID: "r2", Name: "combo hemat", Strategy: string(StrategyPriority), MaxAttempts: 3,
+		Pipeline:     []byte(`{"strategy":"round_robin","attempts":3,"models":["gpt-4o-mini","gemini-2.5-flash","claude-3-haiku"]}`),
+		VirtualAlias: &alias,
+	}
+
+	got, err := RuleFromRow(row)
+	if err != nil {
+		t.Fatalf("RuleFromRow: %v", err)
+	}
+	if !got.Combo() {
+		t.Fatal("Combo() false padahal pipeline valid dengan 3 model")
+	}
+	switch {
+	case got.Pipeline == nil:
+		t.Fatal("Pipeline nil meski baris membawa pipeline valid")
+	case got.Pipeline.Strategy != StrategyRoundRobin:
+		t.Errorf("Strategi pipeline = %q, ingin round_robin", got.Pipeline.Strategy)
+	case got.Pipeline.Attempts != 3:
+		t.Errorf("Attempts = %d, ingin 3", got.Pipeline.Attempts)
+	case len(got.Pipeline.Models) != 3:
+		t.Fatalf("Models = %v, ingin 3 model", got.Pipeline.Models)
+	case got.Pipeline.Models[0] != "gpt-4o-mini" || got.Pipeline.Models[2] != "claude-3-haiku":
+		// Urutan adalah urutan fallback, jadi terbaliknya merusak janji resep.
+		t.Errorf("urutan Models = %v, ingin terurut seperti di jsonb", got.Pipeline.Models)
+	case got.VirtualAlias != "murah-cerdas":
+		t.Errorf("VirtualAlias = %q, ingin %q", got.VirtualAlias, alias)
+	}
+}
+
+// Strategi weighted dan capability tidak disuguhkan UI pipeline, namun dikenal enum
+// Strategy — memvalidasi hanya 4 di level Go berarti menolak keadaan yang sah menurut
+// enum. Penerimaan kedua nilai ini di sini adalah sengaja, bukan kelalaian.
+func TestRuleFromRowPipelineMenerimaStrategiEnumPenuh(t *testing.T) {
+	for _, s := range []Strategy{StrategyWeighted, StrategyCapability} {
+		row := &upstream.RoutingRule{
+			ID: "rp", Name: "combo enum", Strategy: string(StrategyPriority),
+			Pipeline: []byte(fmt.Sprintf(`{"strategy":%q,"attempts":2,"models":["a","b"]}`, s)),
+		}
+		got, err := RuleFromRow(row)
+		if err != nil {
+			t.Fatalf("RuleFromRow strategi %s: %v", s, err)
+		}
+		if got.Pipeline == nil || got.Pipeline.Strategy != s {
+			t.Errorf("strategi pipeline %q tidak diterima: %+v", s, got.Pipeline)
+		}
+	}
+}
+
+// Pipeline rusak tidak mematikan aturan: jsonb yang tidak bisa diurai hanya membuat
+// aturan berjalan tanpa cascade (jalur lama), dan keadaannya dicatat. Menggagalkan
+// seluruh aturan karena satu field opsional akan diam-diam mengalihkan lalu lintasnya
+// ke aturan berikutnya tanpa operator paham sebabnya.
+func TestRuleFromRowPipelineRusakJatuhKeJalurLama(t *testing.T) {
+	for _, raw := range []string{
+		`{ini bukan json`,
+		`{"strategy":123,"attempts":3,"models":[]}`, // tipe field salah
+		`[]`, // pipeline array, bukan objek
+	} {
+		t.Run(raw, func(t *testing.T) {
+			got, err := RuleFromRow(&upstream.RoutingRule{
+				ID: "r3", Name: "combo rusak", Strategy: string(StrategyPriority),
+				Pipeline: []byte(raw),
+			})
+			if err != nil {
+				t.Fatalf("pipeline rusak menggagalkan RuleFromRow: %v", err)
+			}
+			if got.Pipeline != nil {
+				t.Errorf("Pipeline = %+v, ingin nil agar jatuh ke jalur lama", got.Pipeline)
+			}
+			if got.Combo() {
+				t.Error("Combo() true pada pipeline yang rusak")
+			}
+			// Sisa aturan tetap utuh dan dapat dipakai mesin.
+			if got.Name != "combo rusak" || got.Strategy != StrategyPriority {
+				t.Errorf("aturan terbaca sebagai %+v", got)
+			}
+		})
+	}
+}
+
+// Pengurai pipeline sengaja LEBIH LONGGAR daripada constraint database: ia tidak
+// menolak models kosong maupun attempts nol. Ambang models minimal 1 dijaga di
+// migrasi 0014, bukan di sini — menolaknya di dua tempat hanya membuat pesan error
+// bergantung pada jalur mana yang kebetulan dipakai. Combo() sudah cukup untuk
+// memastikan resep seperti itu tidak dipakai sebagai combo.
+func TestRuleFromRowPipelineTidakLengkapBukanCombo(t *testing.T) {
+	got, err := RuleFromRow(&upstream.RoutingRule{
+		ID: "r4", Name: "combo setengah", Strategy: string(StrategyPriority),
+		Pipeline: []byte(`{"strategy":"round_robin"}`),
+	})
+	if err != nil {
+		t.Fatalf("RuleFromRow: %v", err)
+	}
+	if got.Pipeline == nil || got.Pipeline.Strategy != StrategyRoundRobin {
+		t.Fatalf("Pipeline = %+v, ingin terparse tanpa models", got.Pipeline)
+	}
+	if got.Combo() {
+		t.Error("Combo() true untuk pipeline tanpa models")
+	}
+}
+
+// Ambang Combo() adalah lebih dari satu model: resep dengan satu model hanya
+// menggantikan daftar kandidat biasa, tanpa cascade antar model.
+func TestRuleComboAmbangSatuModel(t *testing.T) {
+	satu := &Rule{Pipeline: &ComboPipeline{Strategy: StrategyPriority, Attempts: 2, Models: []string{"satu"}}}
+	if satu.Combo() {
+		t.Error("Combo() true untuk satu model")
+	}
+	dua := &Rule{Pipeline: &ComboPipeline{Strategy: StrategyPriority, Attempts: 2, Models: []string{"satu", "dua"}}}
+	if !dua.Combo() {
+		t.Error("Combo() false untuk dua model")
+	}
+	if (&Rule{}).Combo() {
+		t.Error("Combo() true tanpa pipeline")
 	}
 }

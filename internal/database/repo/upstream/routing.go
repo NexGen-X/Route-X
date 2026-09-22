@@ -58,6 +58,16 @@ type RoutingRule struct {
 	UpdatedAt time.Time
 	CreatedBy *string
 
+	// Pipeline adalah resep failover multi-model (combo) dalam bentuk jsonb mentah.
+	// nil berarti aturan memakai jalur lama: satu model + daftar kandidat provider.
+	// Isinya diurai menjadi router.ComboPipeline oleh router.RuleFromRow; paket ini
+	// sengaja tidak menafsirkkan agar perubahan bentuk resep hanya punya satu tempat.
+	Pipeline []byte
+
+	// VirtualAlias, bila tidak nil, membuat aturan bisa dipanggil klien seolah ia model
+	// tersendiri. Ini menggantikan tag [combo:alias=...] di description.
+	VirtualAlias *string
+
 	// Providers terurut position naik. Kosong berarti aturan ini berlaku atas SEMUA
 	// provider yang bisa melayani model yang diminta.
 	//
@@ -96,7 +106,8 @@ const routingRuleColumns = `
 	r.match_model_id::text, r.match_api_key_id::text, r.match_capabilities,
 	r.strategy, r.max_attempts, r.backoff_ms,
 	r.failure_threshold, r.open_duration_ms, r.half_open_probes,
-	r.enabled, r.created_at, r.updated_at, r.created_by::text`
+	r.enabled, r.created_at, r.updated_at, r.created_by::text,
+	r.pipeline, r.virtual_alias`
 
 // ruleProviderColumns adalah kolom kandidat yang ikut terbaca pada baris aturan.
 const ruleProviderColumns = `rp.provider_id::text, rp.position, rp.weight`
@@ -122,6 +133,7 @@ func ruleDest(rule *RoutingRule) []any {
 		&rule.Strategy, &rule.MaxAttempts, &rule.BackoffMS,
 		&rule.FailureThreshold, &rule.OpenDurationMS, &rule.HalfOpenProbes,
 		&rule.Enabled, &rule.CreatedAt, &rule.UpdatedAt, &rule.CreatedBy,
+		&rule.Pipeline, &rule.VirtualAlias,
 	}
 }
 

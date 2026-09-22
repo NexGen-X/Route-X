@@ -1,7 +1,9 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -40,6 +42,14 @@ type Rule struct {
 	OpenDuration     time.Duration
 	HalfOpenProbes   int
 
+	// Pipeline adalah resep failover multi-model (combo). Nilai nil berarti aturan
+	// memakai jalur lama: satu model, satu daftar provider, tanpa cascade antar model.
+	Pipeline *ComboPipeline
+
+	// VirtualAlias, bila terisi, membuat aturan ini bisa dipanggil klien seolah ia
+	// model tersendiri. Ini menggantikan tag [combo:alias=...] di description.
+	VirtualAlias string
+
 	// Providers terurut position naik. Kosong berarti aturan ini berlaku atas SEMUA
 	// provider yang bisa melayani model yang diminta.
 	Providers []RuleProvider
@@ -52,6 +62,21 @@ type RuleProvider struct {
 	// Weight nil berarti memakai bobot provider.
 	Weight *int
 }
+
+// ComboPipeline adalah resep failover multi-model: kandidat diurutkan per Strategi,
+// lalu dicoba satu per satu sampai anggaran Attempts habis atau ada yang berhasil.
+type ComboPipeline struct {
+	// Strategy mengurutkan model. Level Go menerima 6 nilai yang dikenal Strategy,
+	// meski constraint database pipeline hanya menerima 4 yang disuguhkan UI.
+	Strategy Strategy `json:"strategy"`
+	// Attempts adalah ANGGARAN TOTAL percobaan lintas seluruh model, bukan per model.
+	Attempts int `json:"attempts"`
+	// Models adalah daftar model_id terurut; urutannya adalah urutan fallback.
+	Models []string `json:"models"`
+}
+
+// Combo melaporkan apakah aturan ini memakai combo pipeline (jalur baru).
+func (r *Rule) Combo() bool { return r.Pipeline != nil && len(r.Pipeline.Models) > 1 }
 
 // RuleFromRow mengubah baris aturan menjadi bentuk yang dipakai mesin.
 //
@@ -99,7 +124,42 @@ func RuleFromRow(row *upstream.RoutingRule) (*Rule, error) {
 	slices.SortStableFunc(r.Providers, func(a, b RuleProvider) int {
 		return a.Position - b.Position
 	})
+
+	// Pipeline diurai di sini, bukan di setiap pemakai, sama seperti konversi milidetik:
+	// jsonb mentah hanya boleh disentuh satu tempat. Yang diurai adalah seluruh isi
+	// resep; penerapan strategi dan pemotongan anggaran adalah urusan gateway (PR #2).
+	//
+	// Pipeline yang rusak TIDAK menggagalkan aturan. Data seperti itu hanya bisa muncul
+	// kalau constraint database dan pengurai tidak lagi sepakat; memadamkan seluruh
+	// aturan karena satu field opsional tak terbaca akan diam-diam merutekan lalu
+	// lintasnya ke aturan berikutnya. Aturan tetap dipakai tanpa cascade (jalur lama),
+	// dan keadaannya dicatat sebagai peringatan.
+	if len(row.Pipeline) > 0 {
+		if p, err := parseComboPipeline(row.Pipeline); err != nil {
+			slog.Warn("pipeline combo aturan tidak bisa dibaca, aturan dipakai tanpa cascade",
+				"aturan", row.Name, "error", err)
+		} else {
+			r.Pipeline = p
+		}
+	}
+	if row.VirtualAlias != nil {
+		r.VirtualAlias = *row.VirtualAlias
+	}
 	return r, nil
+}
+
+// parseComboPipeline mengurai jsonb resep combo menjadi ComboPipeline.
+//
+// Strategi tidak divalidasi di sini: constraint pipeline di database menerima 4 nilai
+// UI, tetapi enum Strategy di Go mengenal 6 — memvalidasi di sini berarti menolak
+// keadaan yang sah menurut salah satunya. Yang tidak dikenal akan ditolak oleh
+// pemakai pipeline saat strategi dipakai, bukan saat resepnya dibaca.
+func parseComboPipeline(raw []byte) (*ComboPipeline, error) {
+	var p ComboPipeline
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 // ExtractComboAlias membaca virtual model alias dari deskripsi aturan combo routing bila ada.

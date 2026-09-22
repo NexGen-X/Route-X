@@ -50,6 +50,7 @@ alter table routing_rules
         and (pipeline->>'strategy') in ('priority', 'round_robin', 'lowest_latency', 'lowest_cost')
         and jsonb_typeof(pipeline->'models') = 'array'
         and jsonb_array_length(pipeline->'models') between 1 and 8
+        and (pipeline->>'attempts') is not null
         and (pipeline->>'attempts')::int between 1 and 20
     ));
 

@@ -204,6 +204,10 @@ func TestRoutingPipelineConstraintIntegration(t *testing.T) {
 			`["prioritas"]`, "routing_rules_pipeline_strategy_valid"},
 		{"models bukan array",
 			`{"strategy":"priority","attempts":2,"models":"a"}`, "routing_rules_pipeline_strategy_valid"},
+		{"attempts hilang sama sekali",
+			`{"strategy":"priority","models":["a","b"]}`, "routing_rules_pipeline_strategy_valid"},
+		{"attempts null secara eksplisit",
+			`{"strategy":"priority","attempts":null,"models":["a","b"]}`, "routing_rules_pipeline_strategy_valid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := pool.Exec(ctx, `

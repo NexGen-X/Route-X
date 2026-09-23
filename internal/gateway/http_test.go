@@ -1409,3 +1409,171 @@ func TestChatCompletionsResolusiNamaAturanDanComboAlias(t *testing.T) {
 		t.Fatalf("permintaan nama fiktif harus 404; didapat %d", w3.Code)
 	}
 }
+
+// TestRoutingVirtualAliasPipelineJsonb membuktikan jalur baru ujung ke ujung: klien
+// memanggil satu virtual_alias, engine memilih aturannya dari kolom virtual_alias
+// (bukan tag description), lalu pipeline jsonb migrasi 0014 menyediakan cascade-nya.
+//
+// Ini adalah inti PR 3: alias dipasang sebagai KOLOM aturan dan di-resolve di mesin
+// dari cache aturan aktif, tanpa satu pun permintaan tambahan ke database.
+func TestRoutingVirtualAliasPipelineJsonb(t *testing.T) {
+	m1 := &upstream.Model{ID: "m-t1", ModelID: "tier1-model", Enabled: true}
+	m2 := &upstream.Model{ID: "m-t2", ModelID: "tier2-model", Enabled: true}
+
+	cand1 := kandidatRute("prov-t1", "upstream-t1")
+	cand2 := kandidatRute("prov-t2", "upstream-t2")
+
+	models := &petaModel{models: map[string]*upstream.Model{
+		// selesaikanModel memakai ID internal (keluaran FindRuleTargetModelID),
+		// sedangkan kandidatCombo memakai nama kanonik per model di resep.
+		"m-t1":        m1,
+		"tier1-model": m1,
+		"m-t2":        m2,
+		"tier2-model": m2,
+	}}
+	cands := &petaKandidat{cands: map[string][]*upstream.RouteCandidate{
+		"m-t1": {cand1},
+		"m-t2": {cand2},
+	}}
+
+	alias := "murah-cerdas"
+	rule := &upstream.RoutingRule{
+		ID:           "r-virtual-alias",
+		Name:         "Combo Virtual Endpoint",
+		MatchModelID: ptrString("m-t1"),
+		Strategy:     "priority",
+		MaxAttempts:  1,
+		Enabled:      true,
+		VirtualAlias: &alias,
+		// Strategi resep priority: urutan failover sama dengan urutan models di resep,
+		// sehingga assertion urutan di bawah deterministik (round_robin sengaja memutar
+		// titik awal tiap permintaan, ujinya terpisah di paket router).
+		Pipeline: []byte(`{"strategy":"priority","attempts":3,"models":["tier1-model","tier2-model"]}`),
+	}
+	engine := router.NewEngine(&sumberAturanTiruan{rules: []*upstream.RoutingRule{rule}}, nil, loggerSenyap())
+
+	p1 := &providerTiruan{
+		nama: "prov-t1", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return nil, providers.Newf(providers.ErrKindServer, "prov-t1", "error 500 dari tier 1")
+		},
+	}
+	p2 := &providerTiruan{
+		nama: "prov-t2", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{
+				ID:  "chatcmpl-virtual",
+				Raw: json.RawMessage(`{"id":"chatcmpl-virtual","choices":[{"message":{"content":"jawaban sukses dari tier 2 via alias"}}]}`),
+			}, nil
+		},
+	}
+
+	factory := &pabrikTiruan{perNama: map[string]providers.Provider{"prov-t1": p1, "prov-t2": p2}}
+
+	h, err := NewHandlers(HandlersDeps{
+		Models:     models,
+		Lister:     &pendaftarModel{},
+		Candidates: cands,
+		Factory:    factory,
+		Engine:     engine,
+		Executor:   NewExecutor(nil, loggerSenyap(), WithSleepFunc(func(context.Context, time.Duration) error { return nil })),
+		Logger:     loggerSenyap(),
+	})
+	if err != nil {
+		t.Fatalf("NewHandlers: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/chat/completions",
+		strings.NewReader(`{"model":"murah-cerdas","messages":[{"role":"user","content":"halo"}]}`))
+	h.Routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; ingin 200 (body: %s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "jawaban sukses dari tier 2 via alias") {
+		t.Errorf("respons tidak memuat jawaban fallback tier 2: %s", w.Body.String())
+	}
+	urutan := factory.urutan()
+	if len(urutan) != 2 || urutan[0] != "prov-t1" || urutan[1] != "prov-t2" {
+		t.Errorf("urutan eksekusi = %v; ingin [prov-t1 prov-t2]", urutan)
+	}
+}
+
+// TestRoutingAliasTagDescriptionLama memverifikasi aturan produksi "raute-x" tetap
+// di-resolve: virtual_alias-nya masih NULL dan aliasnya hanya ada sebagai tag
+// [combo:alias=...] di description. Membuang jalur ini akan memutus lalu lintas yang
+// belum dikonversi ke kolom baru.
+func TestRoutingAliasTagDescriptionLama(t *testing.T) {
+	m1 := &upstream.Model{ID: "m-t1", ModelID: "tier1-model", Enabled: true}
+	m2 := &upstream.Model{ID: "m-t2", ModelID: "tier2-model", Enabled: true}
+
+	cand1 := kandidatRute("prov-t1", "upstream-t1")
+	cand2 := kandidatRute("prov-t2", "upstream-t2")
+
+	models := &petaModel{models: map[string]*upstream.Model{
+		"m-t1": m1, "tier1-model": m1, "m-t2": m2, "tier2-model": m2,
+	}}
+	cands := &petaKandidat{cands: map[string][]*upstream.RouteCandidate{
+		"m-t1": {cand1},
+		"m-t2": {cand2},
+	}}
+
+	rule := &upstream.RoutingRule{
+		ID:           "r-raute-x",
+		Name:         "raute-x",
+		MatchModelID: ptrString("m-t1"),
+		Strategy:     "priority",
+		MaxAttempts:  1,
+		Enabled:      true,
+		// pipeline jsonb masih NULL: aturan ini dijalankan murni lewat tag description.
+		Description: ptrString(`combo produksi [combo:alias=raute-x] [combo:pipeline=[{"tier":2,"model":"tier2-model"}]]`),
+	}
+	engine := router.NewEngine(&sumberAturanTiruan{rules: []*upstream.RoutingRule{rule}}, nil, loggerSenyap())
+
+	p1 := &providerTiruan{
+		nama: "prov-t1", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return nil, providers.Newf(providers.ErrKindServer, "prov-t1", "error 500 dari tier 1")
+		},
+	}
+	p2 := &providerTiruan{
+		nama: "prov-t2", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return &providers.ChatResponse{
+				ID:  "chatcmpl-legacy",
+				Raw: json.RawMessage(`{"id":"chatcmpl-legacy","choices":[{"message":{"content":"jawaban sukses dari tier 2 lewat tag lama"}}]}`),
+			}, nil
+		},
+	}
+	factory := &pabrikTiruan{perNama: map[string]providers.Provider{"prov-t1": p1, "prov-t2": p2}}
+
+	h, err := NewHandlers(HandlersDeps{
+		Models:     models,
+		Lister:     &pendaftarModel{},
+		Candidates: cands,
+		Factory:    factory,
+		Engine:     engine,
+		Executor:   NewExecutor(nil, loggerSenyap(), WithSleepFunc(func(context.Context, time.Duration) error { return nil })),
+		Logger:     loggerSenyap(),
+	})
+	if err != nil {
+		t.Fatalf("NewHandlers: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/chat/completions",
+		strings.NewReader(`{"model":"raute-x","messages":[{"role":"user","content":"halo"}]}`))
+	h.Routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; ingin 200 untuk alias tag lama (body: %s)", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "jawaban sukses dari tier 2 lewat tag lama") {
+		t.Errorf("respons tidak memuat jawaban fallback tier 2: %s", w.Body.String())
+	}
+	urutan := factory.urutan()
+	if len(urutan) != 2 || urutan[0] != "prov-t1" || urutan[1] != "prov-t2" {
+		t.Errorf("urutan eksekusi = %v; ingin [prov-t1 prov-t2]", urutan)
+	}
+}

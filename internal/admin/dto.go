@@ -14,6 +14,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
+	"github.com/NexGen-X/Route-X/internal/router"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
 
@@ -501,6 +502,13 @@ type RoutingRuleDTO struct {
 	UpdatedAt         time.Time         `json:"updated_at"`
 	CreatedBy         *string           `json:"created_by"`
 	Providers         []RuleProviderDTO `json:"providers"`
+	// Pipeline adalah resep failover multi-model (combo). null berarti aturan memakai
+	// jalur lama: satu model, satu daftar kandidat provider. Ini konfigurasi routing,
+	// bukan kredensial — aman dikembalikan ke browser.
+	Pipeline *router.ComboPipelineDTO `json:"pipeline"`
+	// VirtualAlias, bila tidak null, berarti aturan bisa dipanggil klien seolah ia model
+	// tersendiri. null berarti bukan virtual endpoint.
+	VirtualAlias *string `json:"virtual_alias"`
 }
 
 func (RoutingRuleDTO) adalahDTO() {}
@@ -1306,6 +1314,21 @@ func toRoutingRuleDTO(r *upstream.RoutingRule) RoutingRuleDTO {
 	if caps == nil {
 		caps = make([]string, 0)
 	}
+	// Pipeline diurai ke bentuk API di sini, satu-satunya tempat jsonb resep disentuh
+	// untuk respons admin. Pipeline yang tidak bisa diurai sudah dicatat sebagai
+	// peringatan oleh RuleFromRow; DTO tidak punya bentuk lain untuk jsonb cacat, dan
+	// membiarkannya null menjaga makna "pipeline null = jalur lama" tetap konsisten.
+	var pipeline *router.ComboPipelineDTO
+	if len(r.Pipeline) > 0 {
+		if p, err := router.ParseComboPipelineDTO(r.Pipeline); err == nil {
+			pipeline = p
+		}
+	}
+	var alias *string
+	if r.VirtualAlias != nil {
+		salin := *r.VirtualAlias
+		alias = &salin
+	}
 	return RoutingRuleDTO{
 		ID:                r.ID,
 		Name:              r.Name,
@@ -1325,6 +1348,8 @@ func toRoutingRuleDTO(r *upstream.RoutingRule) RoutingRuleDTO {
 		UpdatedAt:         r.UpdatedAt,
 		CreatedBy:         r.CreatedBy,
 		Providers:         provs,
+		Pipeline:          pipeline,
+		VirtualAlias:      alias,
 	}
 }
 

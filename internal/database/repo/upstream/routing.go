@@ -265,6 +265,39 @@ func (r *RoutingRepo) Get(ctx context.Context, id string) (*RoutingRule, error) 
 	return rules[0], nil
 }
 
+// FindByAlias mengambil aturan yang virtual_alias-nya sama dengan alias, aktif maupun
+// tidak.
+//
+// Tidak memfilter enabled karena partial unique index routing_rules_virtual_alias_idx
+// meliputi setiap baris yang aliasnya tidak NULL, terlepas dari statusnya: alias milik
+// aturan yang dimatikan tetap menduduki alias itu, jadi pemeriksaan konflik yang hanya
+// melihat aturan aktif akan melaporkan alias bebas padahal ada yang memakainya.
+//
+// Dipakai admin handler untuk memberi pesan 409 yang jelas saat alias dipasang dua kali,
+// sebelum unik index menolaknya sebagai error 500 yang tidak terbaca operator. Jalur
+// request TIDAK memakai method ini: alias diselesaikan engine lewat ActiveRules yang
+// sudah di-cache, supaya tidak ada query tambahan per permintaan.
+func (r *RoutingRepo) FindByAlias(ctx context.Context, alias string) (*RoutingRule, error) {
+	const op = "mencari aturan routing menurut alias"
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return nil, fmt.Errorf("%s: %w: alias kosong", op, repo.ErrInvalidReference)
+	}
+
+	rules, err := r.queryRules(ctx, op, `
+		select `+routingRuleColumns+`, `+ruleProviderColumns+`
+		from routing_rules r`+ruleProviderJoin+`
+		where r.virtual_alias = $1
+		order by rp.position asc`, alias)
+	if err != nil {
+		return nil, err
+	}
+	if len(rules) == 0 {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	return rules[0], nil
+}
+
 // CreateRoutingRuleParams adalah masukan pembuatan aturan routing.
 //
 // Field pointer yang dibiarkan nil memakai nilai bawaan kolomnya (DefaultMaxAttempts dan
@@ -303,6 +336,14 @@ type CreateRoutingRuleParams struct {
 
 	Enabled   *bool
 	CreatedBy *string
+
+	// Pipeline adalah resep failover multi-model dalam bentuk jsonb mentah. nil berarti
+	// jalur lama (satu model). Isi sudah divalidasi pemanggil; paket ini sengaja tidak
+	// menafsirkan resep supaya bentuknya hanya punya satu tempat pengubahan (router).
+	Pipeline []byte
+	// VirtualAlias, bila tidak nil dan bukan kosong, membuat aturan bisa dipanggil klien
+	// seolah ia model tersendiri. String kosong disimpan sebagai NULL oleh Create.
+	VirtualAlias *string
 }
 
 // Create menyimpan aturan routing baru, tanpa kandidat provider.
@@ -328,18 +369,29 @@ func (r *RoutingRepo) Create(ctx context.Context, p CreateRoutingRuleParams) (*R
 	if p.Description != nil {
 		description = nullIfEmpty(*p.Description)
 	}
+	// Alias kosong disamakan dengan tidak ada: partial unique index
+	// routing_rules_virtual_alias_idx hanya membatasi baris yang aliasnya tidak NULL,
+	// jadi alias '' akan dianggap terisi dan menyebabkan setiap aturan tanpa alias
+	// saling dianggap ganda.
+	var alias any
+	if p.VirtualAlias != nil {
+		alias = nullIfEmpty(*p.VirtualAlias)
+	}
 
 	// Tabel diberi alias "r" supaya klausa returning bisa memakai routingRuleColumns yang
 	// sama dengan query lain, tanpa menuliskan daftar kolomnya dua kali.
+	//
+	// Pipeline dikirim dengan cast ::jsonb: []byte tanpa anotasi diperlakukan pgx
+	// sebagai bytea, yang ditolak kolom jsonb.
 	row := r.q.QueryRow(ctx, `
 		insert into routing_rules as r (
 			name, description, priority,
 			match_model_id, match_api_key_id, match_capabilities,
 			strategy, max_attempts, backoff_ms,
 			failure_threshold, open_duration_ms, half_open_probes,
-			enabled, created_by
+			enabled, created_by, pipeline, virtual_alias
 		) values ($1, $2, $3, $4, $5, coalesce($6::text[], '{}'::text[]),
-			$7, $8, $9, $10, $11, $12, $13, $14)
+			$7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16)
 		returning `+routingRuleColumns,
 		p.Name, description, intOr(p.Priority, DefaultPriority),
 		p.MatchModelID, p.MatchAPIKeyID, p.MatchCapabilities,
@@ -349,6 +401,7 @@ func (r *RoutingRepo) Create(ctx context.Context, p CreateRoutingRuleParams) (*R
 		intOr(p.OpenDurationMS, DefaultOpenDurationMS),
 		intOr(p.HalfOpenProbes, DefaultHalfOpenProbes),
 		boolOr(p.Enabled, true), p.CreatedBy,
+		p.Pipeline, alias,
 	)
 
 	rule, err := scanRule(row)
@@ -388,6 +441,14 @@ type UpdateRoutingRuleParams struct {
 	HalfOpenProbes   *int
 
 	Enabled *bool
+
+	// Pipeline Opt[[]byte]: Clear() mengosongkan resep (kembali ke jalur lama), Set(b)
+	// menggantinya dengan jsonb b. Tidak disebut berarti biarkan resep yang sekarang.
+	Pipeline Opt[[]byte]
+	// VirtualAlias Opt[string]: Clear() menghapus alias, Set(a) memasangnya. Tidak
+	// disebut berarti biarkan alias yang sekarang. String kosong dari pemanggil harus
+	// sudah dinormalisasi menjadi Clear oleh handler.
+	VirtualAlias Opt[string]
 }
 
 // Update mengubah field yang diminta saja dan mengembalikan aturan hasilnya beserta
@@ -439,6 +500,8 @@ func (r *RoutingRepo) Update(ctx context.Context, id string, p UpdateRoutingRule
 	if p.Enabled != nil {
 		set.add("enabled", *p.Enabled)
 	}
+	addOptJSONB(set, "pipeline", p.Pipeline)
+	addOpt(set, "virtual_alias", p.VirtualAlias)
 
 	if set.empty() {
 		return nil, fmt.Errorf("%s: %w", op, ErrNoChanges)

@@ -365,3 +365,125 @@ func TestRuleComboAmbangSatuModel(t *testing.T) {
 		t.Error("Combo() true tanpa pipeline")
 	}
 }
+
+// --- Alias: kolom virtual_alias + kompatibilitas tag description ---------------
+
+// Alias() mengutamakan kolom virtual_alias, dan jatuh ke tag description bila kolomnya
+// kosong. Urutan ini menjaga aturan produksi lama (tag) tetap resolvable sampai
+// dikonversi — membalik urutannya akan membuat tag mengalahkan kolom, sehingga
+// mengedit aturan tanpa menghapus tag lama diam-diam membatalkan alias barunya.
+func TestAliasUtamakanKolomLaluTag(t *testing.T) {
+	kolom := "alias-baru"
+	denganKolom := &Rule{VirtualAlias: kolom, Description: "aturan [combo:alias=alias-lama]"}
+	if got := denganKolom.Alias(); got != kolom {
+		t.Errorf("Alias() = %q, ingin %q (kolom lebih diutamakan)", got, kolom)
+	}
+	hanyaTag := &Rule{Description: "aturan [combo:alias=raute-x]"}
+	if got := hanyaTag.Alias(); got != "raute-x" {
+		t.Errorf("Alias() = %q, ingin raute-x dari tag description", got)
+	}
+	if got := (&Rule{Description: "tanpa tag"}).Alias(); got != "" {
+		t.Errorf("Alias() = %q, ingin kosong", got)
+	}
+	if got := (*Rule)(nil).Alias(); got != "" {
+		t.Errorf("Alias() pada nil = %q, ingin kosong", got)
+	}
+}
+
+// Permintaan ke virtual_alias harus memilih aturan itu, meski ada aturan bawaan yang
+// lebih umum. Inilah inti "virtual endpoint": klien memanggil satu nama, dan keputusan
+// routing-nya diambil dari aturan pemilik alias.
+func TestFirstMatchMengambilSesuaiVirtualAlias(t *testing.T) {
+	rules := []*Rule{
+		{Name: "bawaan", Priority: 100},
+		{Name: "combo-hemat", Priority: 20, VirtualAlias: "murah-cerdas",
+			Pipeline: &ComboPipeline{Strategy: StrategyRoundRobin, Attempts: 3, Models: []string{"a", "b"}}},
+	}
+	got := FirstMatch(rules, Request{ModelName: "murah-cerdas"})
+	if got == nil || got.Name != "combo-hemat" {
+		t.Fatalf("got = %v, mau combo-hemat", got)
+	}
+}
+
+// Aturan produksi "raute-x" memakai tag [combo:alias=...] di description dengan kolom
+// virtual_alias masih NULL. Resolve lewat tag WAJIB tetap berjalan sampai seluruh
+// aturan dikonversi ke kolom — ini bukan kompatibilitas opsional, ini lalu lintas nyata.
+func TestFirstMatchKompatibilitasTagAliasLama(t *testing.T) {
+	rules := []*Rule{
+		{Name: "bawaan", Priority: 100},
+		{Name: "raute-x", Priority: 20,
+			Description: "combo produksi [combo:alias=raute-x]"},
+	}
+	got := FirstMatch(rules, Request{ModelName: "raute-x"})
+	if got == nil || got.Name != "raute-x" {
+		t.Fatalf("got = %v, mau raute-x lewat tag description", got)
+	}
+}
+
+// Matches wajib memperlakukan alias kolom dan alias tag sama: permintaan ke alias
+// diperlakukan sebagai pencocokan eksplisit, sehingga kondisi model lain tidak
+// menyebabkannya ditolak.
+func TestMatchesMenerimaAliasKolomSebagaiTargetEksplisit(t *testing.T) {
+	denganKolom := &Rule{VirtualAlias: "murah-cerdas", MatchModelID: "m-lain"}
+	if !denganKolom.Matches(Request{ModelName: "murah-cerdas", ModelID: "apa pun"}) {
+		t.Error("permintaan ke alias kolom ditolak oleh kondisi model aturan")
+	}
+	denganTag := &Rule{Description: "[combo:alias=murah-cerdas]", MatchModelID: "m-lain"}
+	if !denganTag.Matches(Request{ModelName: "murah-cerdas", ModelID: "apa pun"}) {
+		t.Error("permintaan ke alias tag ditolak oleh kondisi model aturan")
+	}
+}
+
+// --- ComboPipelineDTO: kontrak API -------------------------------------------
+
+func TestParseComboPipelineDTOSah(t *testing.T) {
+	p, err := ParseComboPipelineDTO([]byte(`{"strategy":"round_robin","attempts":3,"models":["a","b","c"]}`))
+	if err != nil {
+		t.Fatalf("ParseComboPipelineDTO: %v", err)
+	}
+	if p.Strategy != "round_robin" || p.Attempts != 3 || len(p.Models) != 3 {
+		t.Fatalf("hasil parse = %+v", p)
+	}
+}
+
+// Validasi DTO mengikuti constraint pipeline (migrasi 0014) persis: penolakan di sini
+// memberi pesan 400 yang menyebut fieldnya, bukan error constraint generik dari database
+// setelah aturan dibuat.
+func TestParseComboPipelineDTOMenolakYangTidakSah(t *testing.T) {
+	for _, tc := range []struct {
+		nama string
+		raw  string
+	}{
+		{"bukan objek", `["a","b"]`},
+		{"strategi asing", `{"strategy":"weighted","attempts":2,"models":["a","b"]}`},
+		{"strategi kosong", `{"strategy":"","attempts":2,"models":["a","b"]}`},
+		{"attempts nol", `{"strategy":"priority","attempts":0,"models":["a","b"]}`},
+		{"attempts lebih dari 20", `{"strategy":"priority","attempts":21,"models":["a","b"]}`},
+		{"models kosong", `{"strategy":"priority","attempts":3,"models":[]}`},
+		{"models lebih dari 8", `{"strategy":"priority","attempts":3,"models":["1","2","3","4","5","6","7","8","9"]}`},
+		{"model ganda", `{"strategy":"priority","attempts":3,"models":["a","a"]}`},
+		{"model kosong", `{"strategy":"priority","attempts":3,"models":["a",""]}`},
+		{"json rusak", `{tidak sah`},
+	} {
+		t.Run(tc.nama, func(t *testing.T) {
+			if _, err := ParseComboPipelineDTO([]byte(tc.raw)); err == nil {
+				t.Errorf("pipeline %q diterima, seharusnya ditolak", tc.raw)
+			}
+		})
+	}
+}
+
+// weighted dan capability dikenal enum Strategy tetapi tidak disuguhkan UI pipeline,
+// sehingga DTO menolaknya — constraint database pun hanya menerima empat nilai UI.
+func TestComboPipelineDTOMenolakStrategiNonUI(t *testing.T) {
+	for _, s := range []string{"weighted", "capability"} {
+		if err := (&ComboPipelineDTO{Strategy: s, Attempts: 2, Models: []string{"a", "b"}}).Valid(); err == nil {
+			t.Errorf("strategi %q diterima DTO, seharusnya hanya 4 nilai UI", s)
+		}
+	}
+	for _, s := range []string{"priority", "round_robin", "lowest_latency", "lowest_cost"} {
+		if err := (&ComboPipelineDTO{Strategy: s, Attempts: 2, Models: []string{"a", "b"}}).Valid(); err != nil {
+			t.Errorf("strategi %q ditolak DTO: %v", s, err)
+		}
+	}
+}

@@ -219,7 +219,8 @@ func (e *Engine) Invalidate() {
 }
 
 // FindRuleTargetModelID mencari target ModelID dari aturan routing bila nama yang diminta
-// cocok dengan nama aturan aktif atau alias combo ([combo:alias=...]).
+// cocok dengan nama aturan aktif atau aliasnya (kolom virtual_alias, atau tag
+// [combo:alias=...] di description untuk aturan produksi yang belum dikonversi).
 func (e *Engine) FindRuleTargetModelID(ctx context.Context, requested string) string {
 	if e == nil || requested == "" {
 		return ""
@@ -229,7 +230,7 @@ func (e *Engine) FindRuleTargetModelID(ctx context.Context, requested string) st
 		return ""
 	}
 	for _, r := range rules {
-		alias := ExtractComboAlias(r.Description)
+		alias := r.Alias()
 		if (r.Name == requested || (alias != "" && alias == requested)) && r.MatchModelID != "" {
 			return r.MatchModelID
 		}

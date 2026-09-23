@@ -249,3 +249,50 @@ func (w *waktuUji) maju(d time.Duration) {
 	w.t = w.t.Add(d)
 	w.mu.Unlock()
 }
+
+// OrderCandidates mengurutkan kandidat dari BEBERAPA model menurut strategi resep combo,
+// bukan strategi aturan. Bedanya nyata: strategi aturan priority akan menempatkan
+// kandidat prioritas-kecil di depan, tapi resep lowest_latency bisa membalik urutan itu
+// berdasarkan latensi — strategi yang dipakai harus strategi resep.
+func TestOrderCandidatesMemakaiStrategiResep(t *testing.T) {
+	e := NewEngine(nil, NewSelector(WithLatencySource(sumberLatensi{
+		"pm-lambat": 900 * time.Millisecond, "pm-cepat": 10 * time.Millisecond,
+	})), nil)
+
+	// Priority naik: "lambat" (1) lebih dulu daripada "cepat" (99) bila diurutkan
+	// berdasarkan strategi priority.
+	cands := []*upstream.RouteCandidate{
+		kandidat("lambat", 1, 1),
+		kandidat("cepat", 99, 1),
+	}
+
+	// Strategi resep lowest_latency membalik urutan: "cepat" di depan.
+	got := e.OrderCandidates(Request{}, "r-combo", StrategyLowestLatency, cands)
+	mau := []string{"cepat", "lambat"}
+	if !slices.Equal(nama(got), mau) {
+		t.Errorf("urutan = %v, mau %v — strategi resep harus mengalahkan prioritas", nama(got), mau)
+	}
+
+	// Strategi resep priority mengembalikan urutan prioritas.
+	got = e.OrderCandidates(Request{}, "r-combo", StrategyPriority, cands)
+	mau = []string{"lambat", "cepat"}
+	if !slices.Equal(nama(got), mau) {
+		t.Errorf("urutan = %v, mau %v", nama(got), mau)
+	}
+}
+
+// Kandidat yang tidak sanggup melayani permintaan dibuang, bukan ditunda: combo pipeline
+// harus membuang kandidat tanpa kemampuan yang diminta sekuensial, sama seperti Order biasa.
+func TestOrderCandidatesMembuangYangTidakSanggup(t *testing.T) {
+	e := NewEngine(nil, NewSelector(), nil)
+
+	cands := []*upstream.RouteCandidate{
+		kandidat("alat-tanpa-tools", 1, 1, func(c *upstream.RouteCandidate) { c.SupportsTools = false }),
+		kandidat("alat-lengkap", 2, 1),
+	}
+	got := e.OrderCandidates(Request{Capabilities: []string{upstream.CapTools}}, "r-combo", StrategyPriority, cands)
+	mau := []string{"alat-lengkap"}
+	if !slices.Equal(nama(got), mau) {
+		t.Errorf("urutan = %v, mau %v — kandidat tanpa tools harus dibuang", nama(got), mau)
+	}
+}

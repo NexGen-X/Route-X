@@ -71,12 +71,25 @@ type ComboPipeline struct {
 	Strategy Strategy `json:"strategy"`
 	// Attempts adalah ANGGARAN TOTAL percobaan lintas seluruh model, bukan per model.
 	Attempts int `json:"attempts"`
-	// Models adalah daftar model_id terurut; urutannya adalah urutan fallback.
+	// Models adalah daftar model_id terurut. Urutannya adalah urutan fallback
+	// ketika Strategi tidak menggesernya: misalnya strategi priority mengurutkan
+	// kandidat gabungan per prioritas provider, sehingga provider model kedua
+	// yang berprioritas lebih kecil bisa didahulukan melebihi model pertama.
+	// Anggap urutan array sebagai preferensi, bukan jaminan absolut.
 	Models []string `json:"models"`
 }
 
 // Combo melaporkan apakah aturan ini memakai combo pipeline (jalur baru).
-func (r *Rule) Combo() bool { return r.Pipeline != nil && len(r.Pipeline.Models) > 1 }
+//
+// Aman dipanggil pada aturan nil, sama seperti Matches dan String: pemanggil di paket
+// gateway memanggilnya pada Decision.Rule yang boleh nil, dan nil di sana berarti
+// "tidak ada aturan yang cocok" — keadaan biasa, bukan kesalahan yang pantas jadi panic.
+func (r *Rule) Combo() bool {
+	if r == nil {
+		return false
+	}
+	return r.Pipeline != nil && len(r.Pipeline.Models) > 1
+}
 
 // RuleFromRow mengubah baris aturan menjadi bentuk yang dipakai mesin.
 //

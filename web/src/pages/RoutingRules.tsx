@@ -5,19 +5,25 @@ import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
-import { Tooltip } from '../components/common/Tooltip';
 import { PageHeader } from '../components/common/PageHeader';
 import { Select } from '../components/common/Select';
 import { Checkbox } from '../components/common/Checkbox';
 import { Plus, Trash2, ZapOff, RotateCcw, RefreshCw, Zap, Shuffle, Layers, Edit2, Globe, Terminal, ShieldCheck, ArrowRight, ChevronDown, ChevronUp, Server, CheckCircle2 } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
-
-export interface FallbackTierItem {
-  id: string;
-  model_id: string;
-  provider_ids: string[];
-}
+import { ComboBuilder } from '../components/routing/ComboBuilder';
+import {
+  LABEL_STRATEGI,
+  pipelineKosong,
+  modeAturan,
+  parsePipeline,
+  parsePipelineDariTag,
+  bangunPipeline,
+  bangunPayloadUpdate,
+  validasiPipeline,
+  validasiAlias,
+  type ComboPipeline,
+} from '../lib/rulePipeline';
 
 export const RoutingRules: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -41,12 +47,9 @@ export const RoutingRules: React.FC = () => {
   const [editTargetModelId, setEditTargetModelId] = useState('');
   const [editTargetProviderId, setEditTargetProviderId] = useState('');
   const [editVirtualAlias, setEditVirtualAlias] = useState('');
-  const [editOriginalAlias, setEditOriginalAlias] = useState('');
-  const [editTier1ModelId, setEditTier1ModelId] = useState('');
-  const [editTier1Providers, setEditTier1Providers] = useState<string[]>([]);
-  const [editFallbackTiers, setEditFallbackTiers] = useState<FallbackTierItem[]>([
-    { id: '1', model_id: '', provider_ids: [] },
-  ]);
+  // Resep combo untuk form edit. Dimuat dari kolom pipeline aturan; bila aturan
+  // produksi lama belum dikonversi, jatuh ke tag [combo:...] di description.
+  const [editPipeline, setEditPipeline] = useState<ComboPipeline>(pipelineKosong());
   const [editRuleProviders, setEditRuleProviders] = useState<string[]>([]);
   const [editRuleWeights, setEditRuleWeights] = useState<Record<string, number>>({});
   const [editRuleForm, setEditRuleForm] = useState({
@@ -69,11 +72,9 @@ export const RoutingRules: React.FC = () => {
   const [targetModelId, setTargetModelId] = useState('');
   const [targetProviderId, setTargetProviderId] = useState('');
   const [virtualAlias, setVirtualAlias] = useState('');
-  const [tier1ModelId, setTier1ModelId] = useState('');
-  const [tier1Providers, setTier1Providers] = useState<string[]>([]);
-  const [fallbackTiers, setFallbackTiers] = useState<FallbackTierItem[]>([
-    { id: '1', model_id: '', provider_ids: [] },
-  ]);
+  // Resep combo untuk form create. pipelineKosong memaksa operator memilih model
+  // sebelum menyimpan (models sengaja kosong, validasi menolak models < 1).
+  const [createPipeline, setCreatePipeline] = useState<ComboPipeline>(pipelineKosong());
   const [createRuleProviders, setCreateRuleProviders] = useState<string[]>([]);
   const [createRuleWeights, setCreateRuleWeights] = useState<Record<string, number>>({});
 
@@ -112,30 +113,29 @@ export const RoutingRules: React.FC = () => {
   };
 
   const getRuleMode = (r: RoutingRule): { mode: string; label: string; badgeVariant: 'info' | 'lime' | 'warn'; detail: string; alias?: string | null; pipelineCount?: number } => {
-    const desc = r.description || '';
-    // Tag struktur [combo:pipeline=...] / [combo:tier2=...] / [model_only] menentukan mode
-    if (desc.includes('[combo:pipeline=') || desc.includes('[combo:tier2=')) {
-      const aliasMatch = desc.match(/\[combo:alias=([^\]]+)\]/);
-      const alias = aliasMatch ? aliasMatch[1] : null;
-
-      let pipelineCount = 2;
-      const pipeMatch = desc.match(/\[combo:pipeline=(\[.*?\])\]/);
-      if (pipeMatch) {
-        try {
-          const parsed = JSON.parse(pipeMatch[1]);
-          pipelineCount = parsed.length + 1;
-        } catch (e) {}
-      }
+    // Sumber kebenaran mode adalah kolom pipeline (migrasi 0014), BUKAN max_attempts.
+    // Memakai max_attempts adalah bug K2: aturan combo dengan anggaran 1 salah dibaca
+    // model_only, lalu simpan berikutnya menghapus provider_ids/weights aturan tersebut.
+    // Tag [combo:...] di description adalah cadangan untuk aturan produksi lama
+    // (mis. raute-x) yang belum dikonversi ke kolom jsonb.
+    if (modeAturan(r) === 'combo') {
+      const modelUtama = models.find((m) => m.id === r.match_model_id);
+      const pipeline = parsePipeline(r) ?? parsePipelineDariTag(r.description, modelUtama?.model_id);
+      const aliasTag = (r.description || '').match(/\[combo:alias=([^\]]+)\]/);
+      const alias = r.virtual_alias ?? (aliasTag ? aliasTag[1] : null);
+      const jumlah = pipeline?.models.length ?? 1;
       return {
         mode: 'combo_routing',
         label: 'COMBO PIPELINE',
         badgeVariant: 'lime',
-        detail: alias ? `Virtual Endpoint: ${alias} (${pipelineCount}-Tier Cascade)` : `${pipelineCount}-Tier Dynamic Cascade`,
+        detail: alias
+          ? `Virtual Endpoint: ${alias} · ${jumlah} model`
+          : `${jumlah} model · ${pipeline ? LABEL_STRATEGI[pipeline.strategy].label : 'Combo'}`,
         alias,
-        pipelineCount,
+        pipelineCount: jumlah,
       };
     }
-    if (r.max_attempts === 1 || desc.includes('[model_only]')) {
+    if (r.max_attempts === 1 || (r.description || '').includes('[model_only]')) {
       return { mode: 'model_only', label: 'MODEL ONLY', badgeVariant: 'info', detail: 'Direct 1:1 Passthrough' };
     }
     return { mode: 'routing', label: 'ROUTING', badgeVariant: 'warn', detail: `${r.max_attempts} percobaan failover` };
@@ -213,9 +213,7 @@ export const RoutingRules: React.FC = () => {
     setTargetModelId('');
     setTargetProviderId('');
     setVirtualAlias('');
-    setTier1ModelId('');
-    setTier1Providers([]);
-    setFallbackTiers([{ id: '1', model_id: '', provider_ids: [] }]);
+    setCreatePipeline(pipelineKosong());
     setCreateRuleProviders([]);
     setCreateRuleWeights({});
     setIsCreateOpen(true);
@@ -278,70 +276,47 @@ export const RoutingRules: React.FC = () => {
             : `[model_only] Direct 1:1 passthrough ke model ${modelName}${selProv ? ` via ${selProv.name}` : ''}`,
         };
       } else if (mode === 'combo_routing') {
-        if (!tier1ModelId) {
-          toast.error('Pilih Model Tier 1 (Utama) terlebih dahulu.');
+        // Validasi resep dilakukan di UI (lib identik dengan constraint backend)
+        // supaya operator tidak kehilangan isian form karena penolakan 400/500.
+        const bersih = bangunPipeline(createPipeline);
+        const errors = [
+          ...validasiPipeline(createPipeline),
+          validasiAlias(virtualAlias, createPipeline),
+        ].filter((e): e is string => typeof e === 'string');
+        if (errors.length > 0) {
+          toast.error(errors[0]);
           return;
         }
-        if (fallbackTiers.length === 0 || fallbackTiers.some((t) => !t.model_id)) {
-          toast.error('Harap pilih model untuk setiap tier fallback.');
-          return;
-        }
-        const allTierModelIds = [tier1ModelId, ...fallbackTiers.map((t) => t.model_id)];
-        const uniqueSet = new Set(allTierModelIds);
-        if (uniqueSet.size !== allTierModelIds.length) {
-          toast.error('Model antar tier tidak boleh sama — model duplikat membuat loop fallback.');
-          return;
-        }
-        const selT1 = models.find((m) => m.id === tier1ModelId);
-        if (!selT1) {
-          toast.error('Model Tier 1 tidak valid di registry.');
+        const modelUtama = models.find((m) => m.model_id === bersih.models[0]);
+        if (!modelUtama) {
+          toast.error(`Model "${bersih.models[0]}" tidak terdaftar di registry.`);
           return;
         }
 
-        // Daftarkan virtual alias bila diisi (Opsi A)
         const cleanAlias = virtualAlias.trim().toLowerCase();
-        if (cleanAlias) {
-          try {
-            await api.models.addAlias(selT1.id, cleanAlias);
-          } catch (aliasErr) {
-            console.warn('Notice saat mendaftarkan alias model:', aliasErr);
-          }
-        }
+        const namaModel = bersih.models.map(
+          (id) => models.find((m) => m.model_id === id)?.display_name || id,
+        );
 
-        // Susun N-Tier Pipeline (Opsi B)
-        const pipelineData = fallbackTiers.map((t, idx) => {
-          const m = models.find((mod) => mod.id === t.model_id);
-          return {
-            tier: idx + 2,
-            model: m?.model_id || t.model_id,
-            providers: t.provider_ids.length > 0 ? t.provider_ids : undefined,
-          };
-        });
-
-        const aliasTag = cleanAlias ? `[combo:alias=${cleanAlias}] ` : '';
-        const pipeTag = `[combo:pipeline=${JSON.stringify(pipelineData)}]`;
-        const legacyTier2 = pipelineData[0]?.model || '';
-        const legacyTag = legacyTier2 ? `[combo:tier2=${legacyTier2}] ` : '';
-
-        const cascadeNames = [
-          `Tier 1 (${selT1.display_name})`,
-          ...pipelineData.map((p) => `Tier ${p.tier} (${models.find((m) => m.model_id === p.model)?.display_name || p.model})`),
-        ].join(' -> ');
-
+        // Jalur baru: resep disimpan di kolom jsonb pipeline + virtual_alias, bukan
+        // lagi ditulis sebagai tag description. Mendaftarkan alias ke model lewat
+        // api.models.addAlias dihentikan — alias sekarang adalah kolom aturan yang
+        // dicek unik oleh partial index, bukan panggilan terpisah yang kegagalannya
+        // hanya tercatat sebagai peringatan.
         payload = {
           ...payload,
           name:
             newRule.name ||
-            (cleanAlias
-              ? cleanAlias
-              : `combo-${selT1.model_id.replace(/[^a-zA-Z0-9_-]/g, '-')}-cascade`),
-          strategy: 'priority',
-          max_attempts: (fallbackTiers.length + 1) * 2,
-          match_model_id: selT1.id,
-          provider_ids: tier1Providers.length > 0 ? tier1Providers : undefined,
+            cleanAlias ||
+            `combo-${bersih.models[0].replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+          strategy: bersih.strategy,
+          max_attempts: bersih.attempts,
+          match_model_id: modelUtama.id,
           description: newRule.description?.trim()
-            ? `${aliasTag}${legacyTag}${pipeTag} ${newRule.description.trim()}`
-            : `${aliasTag}${legacyTag}${pipeTag} Smart Tiered Cascade: ${cascadeNames}`,
+            ? newRule.description.trim()
+            : `Combo ${LABEL_STRATEGI[bersih.strategy].label}: ${namaModel.join(' -> ')}`,
+          pipeline: bersih,
+          virtual_alias: cleanAlias,
         };
       } else {
         const selModel = targetModelId ? models.find((m) => m.id === targetModelId) : null;
@@ -377,9 +352,7 @@ export const RoutingRules: React.FC = () => {
         half_open_probes: 2,
       });
       setVirtualAlias('');
-      setTier1ModelId('');
-      setTier1Providers([]);
-      setFallbackTiers([{ id: '1', model_id: '', provider_ids: [] }]);
+      setCreatePipeline(pipelineKosong());
       setCreateRuleProviders([]);
       setCreateRuleWeights({});
       toast.success('Aturan perutean cerdas berhasil diterapkan');
@@ -398,16 +371,15 @@ export const RoutingRules: React.FC = () => {
     let cleanDesc = r.description || '';
     cleanDesc = cleanDesc
       .replace(/\[combo:alias=[^\]]+\]\s*/g, '')
-      .replace(/\[combo:pipeline=\[.*?\]\]\s*/g, '')
+      .replace(/\[combo:pipeline=\[[\s\S]*?\}\]\s*/g, '')
       .replace(/\[combo:tier2=[^\]]+\]\s*/g, '')
       .replace(/^\[model_only\]\s*/, '')
       .replace(/^\[routing\]\s*/, '')
       .trim();
 
     const aliasMatch = (r.description || '').match(/\[combo:alias=([^\]]+)\]/);
-    const currAlias = aliasMatch ? aliasMatch[1] : (mMode === 'combo_routing' ? (r.name || '').replace(/^pipeline-/, '') : '');
+    const currAlias = (r.virtual_alias && r.virtual_alias.trim()) || (aliasMatch ? aliasMatch[1] : '');
     setEditVirtualAlias(currAlias);
-    setEditOriginalAlias(currAlias);
 
     setEditRuleForm({
       name: r.name || currAlias || '',
@@ -435,41 +407,15 @@ export const RoutingRules: React.FC = () => {
     setEditTargetProviderId(pIds.length === 1 ? pIds[0] : '');
 
     if (mMode === 'combo_routing') {
-      setEditTier1ModelId(r.match_model_id || '');
-      setEditTier1Providers(pIds);
-
-      const pipeMatch = (r.description || '').match(/\[combo:pipeline=(\[.*?\])\]/);
-      if (pipeMatch) {
-        try {
-          const parsed = JSON.parse(pipeMatch[1]);
-          const loadedTiers = parsed.map((p: any) => {
-            const found = models.find((m) => m.model_id === p.model || m.id === p.model);
-            return {
-              id: Math.random().toString(),
-              model_id: found ? found.id : p.model,
-              provider_ids: p.providers || [],
-            };
-          });
-          setEditFallbackTiers(loadedTiers.length > 0 ? loadedTiers : [{ id: '1', model_id: '', provider_ids: [] }]);
-        } catch (e) {
-          setEditFallbackTiers([{ id: '1', model_id: '', provider_ids: [] }]);
-        }
-      } else {
-        const match = (r.description || '').match(/\[combo:tier2=([^\]]+)\]/);
-        if (match) {
-          const tier2Key = match[1];
-          const found = models.find((m) => m.model_id === tier2Key || m.id === tier2Key);
-          setEditFallbackTiers([
-            { id: '1', model_id: found ? found.id : tier2Key, provider_ids: [] },
-          ]);
-        } else {
-          setEditFallbackTiers([{ id: '1', model_id: '', provider_ids: [] }]);
-        }
-      }
+      // Muat resep dari kolom jsonb; aturan produksi lama yang belum dikonversi
+      // (tag [combo:...]) dibaca lewat parsePipelineDariTag agar operator tetap
+      // melihat seluruh modelnya. Menyimpan form ini menulis ulang ke kolom jsonb,
+      // jadi sekali edit, aturan tersebut berpindah ke jalur baru.
+      const modelUtama = models.find((m) => m.id === r.match_model_id);
+      const pipeline = parsePipeline(r) ?? parsePipelineDariTag(r.description, modelUtama?.model_id);
+      setEditPipeline(pipeline ?? pipelineKosong());
     } else {
-      setEditTier1ModelId(r.match_model_id || '');
-      setEditTier1Providers([]);
-      setEditFallbackTiers([{ id: '1', model_id: '', provider_ids: [] }]);
+      setEditPipeline(pipelineKosong());
     }
 
     setIsEditOpen(true);
@@ -506,13 +452,41 @@ export const RoutingRules: React.FC = () => {
     if (!editingRule) return;
 
     try {
-      let payload: any = {
-        priority: editRuleForm.priority,
-        failure_threshold: editRuleForm.failure_threshold,
-        open_duration_ms: editRuleForm.open_duration_ms,
-        half_open_probes: editRuleForm.half_open_probes,
-        backoff_ms: editRuleForm.backoff_ms,
-      };
+      // Mulai dari keadaan tersimpan agar field yang TIDAK diedit formulir ini tetap
+      // utuh — ini perbaikan inti bug K2: handler lama menimpa seluruh payload per
+      // mode, sehingga operator yang hanya mengganti nama aturan combo kehilangan
+      // provider_ids/weights. Setiap mode hanya menimpa field yang dikelolanya.
+      const existingProviders = (editingRule.providers || []).map((p: any) => p.provider_id);
+      const existingWeights: Record<string, number> = {};
+      (editingRule.providers || []).forEach((p: any) => {
+        if (p.weight) existingWeights[p.provider_id] = p.weight;
+      });
+
+      let payload: Record<string, unknown> = bangunPayloadUpdate(
+        {
+          name: editingRule.name || '',
+          description: editingRule.description || '',
+          priority: editingRule.priority ?? 100,
+          strategy: editingRule.strategy || 'priority',
+          max_attempts: editingRule.max_attempts ?? 3,
+          backoff_ms: editingRule.backoff_ms ?? 200,
+          failure_threshold: editingRule.failure_threshold ?? 5,
+          open_duration_ms: editingRule.open_duration_ms ?? 30000,
+          half_open_probes: editingRule.half_open_probes ?? 2,
+          match_model_id: editingRule.match_model_id || '',
+          provider_ids: existingProviders,
+          weights: existingWeights,
+          pipeline: editingRule.pipeline ?? null,
+          virtual_alias: editingRule.virtual_alias ?? '',
+        },
+        {
+          priority: editRuleForm.priority,
+          failure_threshold: editRuleForm.failure_threshold,
+          open_duration_ms: editRuleForm.open_duration_ms,
+          half_open_probes: editRuleForm.half_open_probes,
+          backoff_ms: editRuleForm.backoff_ms,
+        },
+      );
 
       const customDesc = editRuleForm.description?.trim();
 
@@ -532,76 +506,55 @@ export const RoutingRules: React.FC = () => {
           match_model_id: editTargetModelId,
           provider_ids: editTargetProviderId ? [editTargetProviderId] : [],
           weights: {},
+          // Model Only tidak punya resep combo maupun alias — keduanya dikosongkan
+          // eksplisit. Tanpa ini, beralih dari aturan combo ke model_only akan
+          // menyisakan pipeline lama (backend menolak alias tanpa pipeline dengan 400
+          // bila aliasnya tidak ikut dibersihkan).
+          pipeline: null,
+          virtual_alias: '',
           description: customDesc
             ? `[model_only] ${customDesc}`
             : `[model_only] Direct 1:1 passthrough ke model ${modelName}${selProv ? ` via ${selProv.name}` : ''}`,
         };
       } else if (editMode === 'combo_routing') {
-        if (!editTier1ModelId) {
-          toast.error('Pilih Model Tier 1 (Utama) terlebih dahulu.');
+        const bersih = bangunPipeline(editPipeline);
+        const errors = [
+          ...validasiPipeline(editPipeline),
+          validasiAlias(editVirtualAlias, editPipeline),
+        ].filter((e): e is string => typeof e === 'string');
+        if (errors.length > 0) {
+          toast.error(errors[0]);
           return;
         }
-        if (editFallbackTiers.length === 0 || editFallbackTiers.some((t) => !t.model_id)) {
-          toast.error('Harap pilih model untuk setiap tier fallback.');
-          return;
-        }
-        const allTierModelIds = [editTier1ModelId, ...editFallbackTiers.map((t) => t.model_id)];
-        const uniqueSet = new Set(allTierModelIds);
-        if (uniqueSet.size !== allTierModelIds.length) {
-          toast.error('Model antar tier tidak boleh sama — model duplikat membuat loop fallback.');
-          return;
-        }
-        const selT1 = models.find((m) => m.id === editTier1ModelId);
-        if (!selT1) {
-          toast.error('Model Tier 1 tidak valid di registry.');
+        const modelUtama = models.find((m) => m.model_id === bersih.models[0]);
+        if (!modelUtama) {
+          toast.error(`Model "${bersih.models[0]}" tidak terdaftar di registry.`);
           return;
         }
 
-        // Daftarkan virtual alias bila diisi/berubah (Opsi A)
         const cleanAlias = editVirtualAlias.trim().toLowerCase();
-        if (cleanAlias && cleanAlias !== editOriginalAlias) {
-          try {
-            await api.models.addAlias(selT1.id, cleanAlias);
-          } catch (aliasErr) {
-            console.warn('Notice saat mendaftarkan alias model:', aliasErr);
-          }
-        }
+        const namaModel = bersih.models.map(
+          (id) => models.find((m) => m.model_id === id)?.display_name || id,
+        );
 
-        // Susun N-Tier Pipeline (Opsi B)
-        const pipelineData = editFallbackTiers.map((t, idx) => {
-          const m = models.find((mod) => mod.id === t.model_id);
-          return {
-            tier: idx + 2,
-            model: m?.model_id || t.model_id,
-            providers: t.provider_ids.length > 0 ? t.provider_ids : undefined,
-          };
-        });
-
-        const aliasTag = cleanAlias ? `[combo:alias=${cleanAlias}] ` : '';
-        const pipeTag = `[combo:pipeline=${JSON.stringify(pipelineData)}]`;
-        const legacyTier2 = pipelineData[0]?.model || '';
-        const legacyTag = legacyTier2 ? `[combo:tier2=${legacyTier2}] ` : '';
-
-        const cascadeNames = [
-          `Tier 1 (${selT1.display_name})`,
-          ...pipelineData.map((p) => `Tier ${p.tier} (${models.find((m) => m.model_id === p.model)?.display_name || p.model})`),
-        ].join(' -> ');
-
+        // Menyimpan form combo menulis resep ke kolom jsonb + virtual_alias. Ini
+        // sekaligus mengonversi aturan produksi lama (tag description) ke jalur baru:
+        // description bersih dari tag, dan alias berpindah dari tag ke kolom.
+        // pendaftaran alias lewat api.models.addAlias dihentikan.
         payload = {
           ...payload,
           name:
             editRuleForm.name ||
-            (cleanAlias
-              ? cleanAlias
-              : `combo-${selT1.model_id.replace(/[^a-zA-Z0-9_-]/g, '-')}-cascade`),
-          strategy: 'priority',
-          max_attempts: (editFallbackTiers.length + 1) * 2,
-          match_model_id: selT1.id,
-          provider_ids: editTier1Providers.length > 0 ? editTier1Providers : [],
-          weights: {},
+            cleanAlias ||
+            `combo-${bersih.models[0].replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+          strategy: bersih.strategy,
+          max_attempts: bersih.attempts,
+          match_model_id: modelUtama.id,
           description: customDesc
-            ? `${aliasTag}${legacyTag}${pipeTag} ${customDesc}`
-            : `${aliasTag}${legacyTag}${pipeTag} Smart Tiered Cascade: ${cascadeNames}`,
+            ? customDesc
+            : `Combo ${LABEL_STRATEGI[bersih.strategy].label}: ${namaModel.join(' -> ')}`,
+          pipeline: bersih,
+          virtual_alias: cleanAlias,
         };
       } else {
         const selModel = editTargetModelId ? models.find((m) => m.id === editTargetModelId) : null;
@@ -617,6 +570,10 @@ export const RoutingRules: React.FC = () => {
           match_model_id: editTargetModelId ? editTargetModelId : '',
           provider_ids: editRuleProviders,
           weights: editRuleWeights,
+          // Failover multi-provider tidak punya resep combo maupun alias (lihat catatan
+          // mode model_only di atas — alasan pengosongan eksplisitnya sama).
+          pipeline: null,
+          virtual_alias: '',
           description: customDesc
             ? `[routing] ${customDesc}`
             : `[routing] Failover multi-provider (${editRuleForm.strategy}) untuk ${selModel?.display_name || 'semua model'}`,
@@ -626,7 +583,8 @@ export const RoutingRules: React.FC = () => {
       await api.routing.update(editingRule.id, payload);
       setIsEditOpen(false);
       setEditingRule(null);
-      toast.success(`Aturan perutean "${payload.name || editingRule.name}" berhasil diperbarui`);
+      const namaUpdate = (payload.name as string) || editingRule.name;
+      toast.success(`Aturan perutean "${namaUpdate}" berhasil diperbarui`);
       loadRules();
     } catch (err: any) {
       toast.error('Gagal memperbarui aturan: ' + (err.message || err));
@@ -741,7 +699,7 @@ export const RoutingRules: React.FC = () => {
           const cleanCustomDesc = r.description
             ? r.description
                 .replace(/\[combo:alias=[^\]]+\]\s*/g, '')
-                .replace(/\[combo:pipeline=\[.*?\]\]\s*/g, '')
+      .replace(/\[combo:pipeline=\[[\s\S]*?\}\]\s*/g, '')
                 .replace(/\[combo:tier2=[^\]]+\]\s*/g, '')
                 .replace(/^\[(model_only|routing)\]\s*/, '')
                 .trim()
@@ -749,7 +707,8 @@ export const RoutingRules: React.FC = () => {
           const isAutoDesc =
             cleanCustomDesc.startsWith('Direct 1:1 passthrough') ||
             cleanCustomDesc.startsWith('Smart Tiered Cascade:') ||
-            cleanCustomDesc.startsWith('Failover multi-provider');
+            cleanCustomDesc.startsWith('Failover multi-provider') ||
+            cleanCustomDesc.startsWith('Combo ');
 
           const modelDisplayName = matchedModel
             ? (matchedModel.display_name && matchedModel.display_name !== matchedModel.model_id
@@ -849,41 +808,31 @@ export const RoutingRules: React.FC = () => {
                       </div>
                     )}
                     <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
-                      <span className="px-2 py-0.5 rounded bg-accent/15 border border-accent/30 text-accent font-semibold flex items-center gap-1">
-                        T1: {matchedModel?.display_name || 'Tier 1'}
-                      </span>
                       {(() => {
-                        const pipeMatch = r.description?.match(/\[combo:pipeline=(\[.*?\])\]/);
-                        if (pipeMatch) {
-                          try {
-                            const parsed = JSON.parse(pipeMatch[1]);
-                            return parsed.map((p: any) => {
-                              const mObj = models.find(m => m.model_id === p.model || m.id === p.model);
-                              return (
-                                <React.Fragment key={p.tier}>
-                                  <ArrowRight className="w-3 h-3 text-text-muted" />
-                                  <span className="px-2 py-0.5 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300 font-semibold">
-                                    T{p.tier}: {mObj?.display_name || p.model}
-                                    {p.providers?.length ? ` (${p.providers.length} prov)` : ''}
-                                  </span>
-                                </React.Fragment>
-                              );
-                            });
-                          } catch (e) {}
+                        // Rantai model dibaca dari kolom jsonb; aturan produksi lama
+                        // yang belum dikonversi jatuh ke tag description.
+                        const modelUtama = models.find((m) => m.id === r.match_model_id);
+                        const pipeline = parsePipeline(r) ?? parsePipelineDariTag(r.description, modelUtama?.model_id);
+                        if (!pipeline) {
+                          return <span className="text-[10px] text-text-muted italic">Resep combo tidak terbaca</span>;
                         }
-                        const t2Match = r.description?.match(/\[combo:tier2=([^\]]+)\]/);
-                        if (t2Match) {
-                          const mObj = models.find(m => m.model_id === t2Match[1] || m.id === t2Match[1]);
+                        return pipeline.models.map((modelId, i) => {
+                          const mObj = models.find((m) => m.model_id === modelId);
                           return (
-                            <>
-                              <ArrowRight className="w-3 h-3 text-text-muted" />
-                              <span className="px-2 py-0.5 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300 font-semibold">
-                                T2: {mObj?.display_name || t2Match[1]}
+                            <React.Fragment key={`${modelId}-${i}`}>
+                              {i > 0 && <ArrowRight className="w-3 h-3 text-text-muted" />}
+                              <span
+                                className={`px-2 py-0.5 rounded border font-semibold ${
+                                  i === 0
+                                    ? 'bg-accent/15 border-accent/30 text-accent'
+                                    : 'bg-purple-500/15 border-purple-500/30 text-purple-300'
+                                }`}
+                              >
+                                {`T${i + 1}: ${mObj?.display_name || modelId}`}
                               </span>
-                            </>
+                            </React.Fragment>
                           );
-                        }
-                        return null;
+                        });
                       })()}
                     </div>
                     <div className="flex items-center gap-2 pt-1 text-[10px] text-text-muted font-sans">
@@ -1266,7 +1215,7 @@ export const RoutingRules: React.FC = () => {
               <div className="p-3 bg-accent/10 border border-accent/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
                 <Layers className="w-4 h-4 text-accent shrink-0 mt-0.5" />
                 <div className="text-text-secondary">
-                  <strong className="text-accent">Mode Combo Cascade:</strong> Rantai bertingkat cerdas. Permintaan awal dialokasikan ke <span className="text-white font-semibold">Tier 1 (Lokal/Hemat)</span>. Bila kuota habis (429) atau error upstream, otomatis dialihkan ke <span className="text-white font-semibold">Tier 2 (Flagship Fallback)</span>.
+                  <strong className="text-accent">Mode Combo Pipeline:</strong> Beberapa model digabung dalam satu resep failover. Permintaan dilayani model pertama; bila kuota habis (429), error upstream, atau konteks tidak muat, dialihkan otomatis ke model berikutnya dalam resep. Anggaran attempts membatasi TOTAL percobaan lintas seluruh model.
                 </div>
               </div>
             )}
@@ -1564,223 +1513,14 @@ export const RoutingRules: React.FC = () => {
             {/* Mode 3: Combo Pipeline Form Fields */}
             {mode === 'combo_routing' && (
               <div className="space-y-4 pt-1 border-t border-border/40">
-                {/* Tier 1: Model Utama + Provider Selector */}
-                <div className="bg-bg-surface-2/60 p-3.5 rounded-xl border border-border/60 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-accent text-bg-base font-bold text-xs flex items-center justify-center">1</span>
-                      <span className="text-xs font-bold text-white tracking-wide">Tier 1: Model Utama</span>
-                    </div>
-                    <Badge variant="lime">Prioritas 1</Badge>
-                  </div>
-                  <Select
-                    label="Pilih Model Utama"
-                    required
-                    value={tier1ModelId}
-                    onChange={(val) => {
-                      setTier1ModelId(val);
-                      setTier1Providers([]);
-                    }}
-                    placeholder="-- Pilih Model Tier 1 --"
-                    options={models.map((m) => ({
-                      value: m.id,
-                      label: `${m.display_name} (${m.model_id})`,
-                      description: m.providers?.length ? `Tersedia di ${m.providers.length} provider` : undefined,
-                    }))}
-                  />
-                  {tier1ModelId && (
-                    <div>
-                      <label className="block text-[11px] font-medium text-text-secondary mb-1">
-                        Penyaringan Provider Tier 1 (Opsional)
-                      </label>
-                      {(() => {
-                        const m = models.find((mod) => mod.id === tier1ModelId);
-                        const provs = m?.providers || [];
-                        if (provs.length === 0) {
-                          return <span className="text-[10px] text-text-muted">Tidak ada mapping provider untuk model ini.</span>;
-                        }
-                        return (
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {provs.map((mp) => {
-                              const active = tier1Providers.includes(mp.provider_id);
-                              return (
-                                <button
-                                  key={mp.provider_id}
-                                  type="button"
-                                  onClick={() => {
-                                    setTier1Providers((prev) =>
-                                      prev.includes(mp.provider_id)
-                                        ? prev.filter((id) => id !== mp.provider_id)
-                                        : [...prev, mp.provider_id]
-                                    );
-                                  }}
-                                  className={`text-[10px] px-2 py-1 rounded border transition-colors cursor-pointer ${
-                                    active
-                                      ? 'bg-accent/20 border-accent text-accent font-semibold'
-                                      : 'bg-surface border-border text-text-secondary hover:border-border-hover'
-                                  }`}
-                                >
-                                  {mp.display_name || mp.provider_name} {active && '✓'}
-                                </button>
-                              );
-                            })}
-                            {tier1Providers.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setTier1Providers([])}
-                                className="text-[10px] px-1.5 py-1 text-text-muted hover:text-white cursor-pointer"
-                              >
-                                Reset (Semua)
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
-                      <span className="text-[10px] text-text-muted mt-1 block">
-                        {tier1Providers.length === 0
-                          ? 'Semua provider model ini diizinkan melayani Tier 1.'
-                          : `${tier1Providers.length} provider dipilih untuk Tier 1.`}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Fallback Tiers: N-Tier Cascade */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-white tracking-wide flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-accent" />
-                      Rantai Fallback (Cascade Tiers)
-                    </label>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setFallbackTiers((prev) => [
-                          ...prev,
-                          { id: Math.random().toString(), model_id: '', provider_ids: [] },
-                        ]);
-                      }}
-                      className="text-xs py-1"
-                    >
-                      <Plus className="w-3.5 h-3.5 mr-1" /> Tambah Tier Fallback
-                    </Button>
-                  </div>
-
-                  {fallbackTiers.map((tier, idx) => {
-                    const tierNum = idx + 2;
-                    const selModel = models.find((m) => m.id === tier.model_id);
-                    const provs = selModel?.providers || [];
-
-                    return (
-                      <div key={tier.id} className="bg-bg-surface-2/60 p-3.5 rounded-xl border border-border/60 space-y-3 relative">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-accent/15 text-accent font-bold text-xs flex items-center justify-center border border-accent/40">
-                              {tierNum}
-                            </span>
-                            <span className="text-xs font-bold text-white tracking-wide">
-                              Tier {tierNum}: Model Cadangan (Fallback)
-                            </span>
-                          </div>
-                          {fallbackTiers.length > 1 && (
-                            <Tooltip content={`Hapus Tier ${tierNum}`} position="left">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setFallbackTiers((prev) => prev.filter((t) => t.id !== tier.id));
-                                }}
-                                aria-label={`Hapus Tier ${tierNum}`}
-                                className="p-1 rounded text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </Tooltip>
-                          )}
-                        </div>
-
-                        <Select
-                          label={`Pilih Model Tier ${tierNum}`}
-                          required
-                          value={tier.model_id}
-                          onChange={(val) => {
-                            setFallbackTiers((prev) =>
-                              prev.map((t) => (t.id === tier.id ? { ...t, model_id: val, provider_ids: [] } : t))
-                            );
-                          }}
-                          placeholder={`-- Pilih Model Tier ${tierNum} --`}
-                          options={models
-                            .filter((m) => m.id !== tier1ModelId && !fallbackTiers.some((ot) => ot.id !== tier.id && ot.model_id === m.id))
-                            .map((m) => ({
-                              value: m.id,
-                              label: `${m.display_name} (${m.model_id})`,
-                              description: m.providers?.length ? `Tersedia di ${m.providers.length} provider` : undefined,
-                            }))}
-                        />
-
-                        {tier.model_id && (
-                          <div>
-                            <label className="block text-[11px] font-medium text-text-secondary mb-1">
-                              Penyaringan Provider Tier {tierNum} (Opsional)
-                            </label>
-                            {provs.length === 0 ? (
-                              <span className="text-[10px] text-text-muted">Tidak ada mapping provider untuk model ini.</span>
-                            ) : (
-                              <div className="flex flex-wrap gap-1.5 mt-1">
-                                {provs.map((mp) => {
-                                  const active = tier.provider_ids.includes(mp.provider_id);
-                                  return (
-                                    <button
-                                      key={mp.provider_id}
-                                      type="button"
-                                      onClick={() => {
-                                        setFallbackTiers((prev) =>
-                                          prev.map((t) => {
-                                            if (t.id !== tier.id) return t;
-                                            const newPids = active
-                                              ? t.provider_ids.filter((p) => p !== mp.provider_id)
-                                              : [...t.provider_ids, mp.provider_id];
-                                            return { ...t, provider_ids: newPids };
-                                          })
-                                        );
-                                      }}
-                                      className={`text-[10px] px-2 py-1 rounded border transition-colors cursor-pointer ${
-                                        active
-                                          ? 'bg-accent/20 border-accent text-accent font-semibold'
-                                          : 'bg-surface border-border text-text-secondary hover:border-border-hover'
-                                      }`}
-                                    >
-                                      {mp.display_name || mp.provider_name} {active && '✓'}
-                                    </button>
-                                  );
-                                })}
-                                {tier.provider_ids.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setFallbackTiers((prev) =>
-                                        prev.map((t) => (t.id === tier.id ? { ...t, provider_ids: [] } : t))
-                                      );
-                                    }}
-                                    className="text-[10px] px-1.5 py-1 text-text-muted hover:text-white cursor-pointer"
-                                  >
-                                    Reset (Semua)
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                            <span className="text-[10px] text-text-muted mt-1 block">
-                              {tier.provider_ids.length === 0
-                                ? `Semua provider diizinkan melayani Tier ${tierNum}.`
-                                : `${tier.provider_ids.length} provider dipilih untuk Tier ${tierNum}.`}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <ComboBuilder
+                  idPrefix="create-combo"
+                  value={createPipeline}
+                  onChange={setCreatePipeline}
+                  alias={virtualAlias}
+                  onAliasChange={setVirtualAlias}
+                  models={models}
+                />
 
                 {/* Proteksi & Ketahanan Otomatis */}
                 <div className="p-3 bg-accent/5 border border-accent/20 rounded-xl space-y-2">
@@ -1796,14 +1536,14 @@ export const RoutingRules: React.FC = () => {
                       <Zap className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
                       <div>
                         <strong className="text-white block mb-0.5">Smart Context Window Bypass:</strong>
-                        Jika token prompt melebihi limit Tier 1, gateway otomatis melompati ke tier yang muat tanpa error 400.
+                        Jika token prompt melebihi limit model pertama, gateway otomatis melompati ke model yang muat tanpa error 400.
                       </div>
                     </div>
                     <div className="flex items-start gap-2 bg-bg-surface/60 p-2.5 rounded-lg border border-border/40">
                       <ShieldCheck className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
                       <div>
                         <strong className="text-white block mb-0.5">Multi-Error Failover:</strong>
-                        Kegagalan kuota/rate-limit (429), server error (5xx), atau timeout langsung memicu fallback mulus ke tier berikutnya.
+                        Kegagalan kuota/rate-limit (429), server error (5xx), atau timeout langsung memicu fallback mulus ke model berikutnya dalam resep.
                       </div>
                     </div>
                   </div>
@@ -1972,7 +1712,7 @@ export const RoutingRules: React.FC = () => {
               <div className="p-3 bg-accent/10 border border-accent/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
                 <Layers className="w-4 h-4 text-accent shrink-0 mt-0.5" />
                 <div className="text-text-secondary">
-                  <strong className="text-accent">Mode Combo Cascade:</strong> Rantai bertingkat cerdas. Permintaan awal dialokasikan ke <span className="text-white font-semibold">Tier 1 (Lokal/Hemat)</span>. Bila kuota habis (429) atau upstream error, otomatis dialihkan ke <span className="text-white font-semibold">Tier 2 (Flagship Fallback)</span>.
+                  <strong className="text-accent">Mode Combo Pipeline:</strong> Beberapa model digabung dalam satu resep failover. Permintaan dilayani model pertama; bila kuota habis (429), error upstream, atau konteks tidak muat, dialihkan otomatis ke model berikutnya dalam resep. Anggaran attempts membatasi TOTAL percobaan lintas seluruh model.
                 </div>
               </div>
             )}
@@ -2255,223 +1995,14 @@ export const RoutingRules: React.FC = () => {
             {/* Mode 3: Combo Pipeline Form Fields */}
             {editMode === 'combo_routing' && (
               <div className="space-y-4 pt-1 border-t border-border/40">
-                {/* Tier 1: Model Utama + Provider Selector */}
-                <div className="bg-bg-surface-2/60 p-3.5 rounded-xl border border-border/60 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-accent text-bg-base font-bold text-xs flex items-center justify-center">1</span>
-                      <span className="text-xs font-bold text-white tracking-wide">Tier 1: Model Utama</span>
-                    </div>
-                    <Badge variant="lime">Prioritas 1</Badge>
-                  </div>
-                  <Select
-                    label="Pilih Model Utama"
-                    required
-                    value={editTier1ModelId}
-                    onChange={(val) => {
-                      setEditTier1ModelId(val);
-                      setEditTier1Providers([]);
-                    }}
-                    placeholder="-- Pilih Model Tier 1 --"
-                    options={models.map((m) => ({
-                      value: m.id,
-                      label: `${m.display_name} (${m.model_id})`,
-                      description: m.providers?.length ? `Tersedia di ${m.providers.length} provider` : undefined,
-                    }))}
-                  />
-                  {editTier1ModelId && (
-                    <div>
-                      <label className="block text-[11px] font-medium text-text-secondary mb-1">
-                        Penyaringan Provider Tier 1 (Opsional)
-                      </label>
-                      {(() => {
-                        const m = models.find((mod) => mod.id === editTier1ModelId);
-                        const provs = m?.providers || [];
-                        if (provs.length === 0) {
-                          return <span className="text-[10px] text-text-muted">Tidak ada mapping provider untuk model ini.</span>;
-                        }
-                        return (
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {provs.map((mp) => {
-                              const active = editTier1Providers.includes(mp.provider_id);
-                              return (
-                                <button
-                                  key={mp.provider_id}
-                                  type="button"
-                                  onClick={() => {
-                                    setEditTier1Providers((prev) =>
-                                      prev.includes(mp.provider_id)
-                                        ? prev.filter((id) => id !== mp.provider_id)
-                                        : [...prev, mp.provider_id]
-                                    );
-                                  }}
-                                  className={`text-[10px] px-2 py-1 rounded border transition-colors cursor-pointer ${
-                                    active
-                                      ? 'bg-accent/20 border-accent text-accent font-semibold'
-                                      : 'bg-surface border-border text-text-secondary hover:border-border-hover'
-                                  }`}
-                                >
-                                  {mp.display_name || mp.provider_name} {active && '✓'}
-                                </button>
-                              );
-                            })}
-                            {editTier1Providers.length > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setEditTier1Providers([])}
-                                className="text-[10px] px-1.5 py-1 text-text-muted hover:text-white cursor-pointer"
-                              >
-                                Reset (Semua)
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
-                      <span className="text-[10px] text-text-muted mt-1 block">
-                        {editTier1Providers.length === 0
-                          ? 'Semua provider model ini diizinkan melayani Tier 1.'
-                          : `${editTier1Providers.length} provider dipilih untuk Tier 1.`}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Fallback Tiers: N-Tier Cascade */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-white tracking-wide flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-accent" />
-                      Rantai Fallback (Cascade Tiers)
-                    </label>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setEditFallbackTiers((prev) => [
-                          ...prev,
-                          { id: Math.random().toString(), model_id: '', provider_ids: [] },
-                        ]);
-                      }}
-                      className="text-xs py-1"
-                    >
-                      <Plus className="w-3.5 h-3.5 mr-1" /> Tambah Tier Fallback
-                    </Button>
-                  </div>
-
-                  {editFallbackTiers.map((tier, idx) => {
-                    const tierNum = idx + 2;
-                    const selModel = models.find((m) => m.id === tier.model_id);
-                    const provs = selModel?.providers || [];
-
-                    return (
-                      <div key={tier.id} className="bg-bg-surface-2/60 p-3.5 rounded-xl border border-border/60 space-y-3 relative">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-accent/15 text-accent font-bold text-xs flex items-center justify-center border border-accent/40">
-                              {tierNum}
-                            </span>
-                            <span className="text-xs font-bold text-white tracking-wide">
-                              Tier {tierNum}: Model Cadangan (Fallback)
-                            </span>
-                          </div>
-                          {editFallbackTiers.length > 1 && (
-                            <Tooltip content={`Hapus Tier ${tierNum}`} position="left">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditFallbackTiers((prev) => prev.filter((t) => t.id !== tier.id));
-                                }}
-                                aria-label={`Hapus Tier ${tierNum}`}
-                                className="p-1 rounded text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </Tooltip>
-                          )}
-                        </div>
-
-                        <Select
-                          label={`Pilih Model Tier ${tierNum}`}
-                          required
-                          value={tier.model_id}
-                          onChange={(val) => {
-                            setEditFallbackTiers((prev) =>
-                              prev.map((t) => (t.id === tier.id ? { ...t, model_id: val, provider_ids: [] } : t))
-                            );
-                          }}
-                          placeholder={`-- Pilih Model Tier ${tierNum} --`}
-                          options={models
-                            .filter((m) => m.id !== editTier1ModelId && !editFallbackTiers.some((ot) => ot.id !== tier.id && ot.model_id === m.id))
-                            .map((m) => ({
-                              value: m.id,
-                              label: `${m.display_name} (${m.model_id})`,
-                              description: m.providers?.length ? `Tersedia di ${m.providers.length} provider` : undefined,
-                            }))}
-                        />
-
-                        {tier.model_id && (
-                          <div>
-                            <label className="block text-[11px] font-medium text-text-secondary mb-1">
-                              Penyaringan Provider Tier {tierNum} (Opsional)
-                            </label>
-                            {provs.length === 0 ? (
-                              <span className="text-[10px] text-text-muted">Tidak ada mapping provider untuk model ini.</span>
-                            ) : (
-                              <div className="flex flex-wrap gap-1.5 mt-1">
-                                {provs.map((mp) => {
-                                  const active = tier.provider_ids.includes(mp.provider_id);
-                                  return (
-                                    <button
-                                      key={mp.provider_id}
-                                      type="button"
-                                      onClick={() => {
-                                        setEditFallbackTiers((prev) =>
-                                          prev.map((t) => {
-                                            if (t.id !== tier.id) return t;
-                                            const newPids = active
-                                              ? t.provider_ids.filter((p) => p !== mp.provider_id)
-                                              : [...t.provider_ids, mp.provider_id];
-                                            return { ...t, provider_ids: newPids };
-                                          })
-                                        );
-                                      }}
-                                      className={`text-[10px] px-2 py-1 rounded border transition-colors cursor-pointer ${
-                                        active
-                                          ? 'bg-accent/20 border-accent text-accent font-semibold'
-                                          : 'bg-surface border-border text-text-secondary hover:border-border-hover'
-                                      }`}
-                                    >
-                                      {mp.display_name || mp.provider_name} {active && '✓'}
-                                    </button>
-                                  );
-                                })}
-                                {tier.provider_ids.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditFallbackTiers((prev) =>
-                                        prev.map((t) => (t.id === tier.id ? { ...t, provider_ids: [] } : t))
-                                      );
-                                    }}
-                                    className="text-[10px] px-1.5 py-1 text-text-muted hover:text-white cursor-pointer"
-                                  >
-                                    Reset (Semua)
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                            <span className="text-[10px] text-text-muted mt-1 block">
-                              {tier.provider_ids.length === 0
-                                ? `Semua provider diizinkan melayani Tier ${tierNum}.`
-                                : `${tier.provider_ids.length} provider dipilih untuk Tier ${tierNum}.`}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <ComboBuilder
+                  idPrefix="edit-combo"
+                  value={editPipeline}
+                  onChange={setEditPipeline}
+                  alias={editVirtualAlias}
+                  onAliasChange={setEditVirtualAlias}
+                  models={models}
+                />
 
                 {/* Proteksi & Ketahanan Otomatis */}
                 <div className="p-3 bg-accent/5 border border-accent/20 rounded-xl space-y-2">
@@ -2487,14 +2018,14 @@ export const RoutingRules: React.FC = () => {
                       <Zap className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
                       <div>
                         <strong className="text-white block mb-0.5">Smart Context Window Bypass:</strong>
-                        Jika token prompt melebihi limit Tier 1, gateway otomatis melompati ke tier yang muat tanpa error 400.
+                        Jika token prompt melebihi limit model pertama, gateway otomatis melompati ke model yang muat tanpa error 400.
                       </div>
                     </div>
                     <div className="flex items-start gap-2 bg-bg-surface/60 p-2.5 rounded-lg border border-border/40">
                       <ShieldCheck className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
                       <div>
                         <strong className="text-white block mb-0.5">Multi-Error Failover:</strong>
-                        Kegagalan kuota/rate-limit (429), server error (5xx), atau timeout langsung memicu fallback mulus ke tier berikutnya.
+                        Kegagalan kuota/rate-limit (429), server error (5xx), atau timeout langsung memicu fallback mulus ke model berikutnya dalam resep.
                       </div>
                     </div>
                   </div>

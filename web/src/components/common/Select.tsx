@@ -21,6 +21,7 @@ export interface SelectProps {
   searchable?: boolean;
   className?: string;
   id?: string;
+  'aria-label'?: string;
 }
 
 export const Select: React.FC<SelectProps> = ({
@@ -35,6 +36,7 @@ export const Select: React.FC<SelectProps> = ({
   searchable,
   className = '',
   id,
+  'aria-label': ariaLabel,
 }) => {
   const generatedId = useId();
   const selectId = id || generatedId;
@@ -172,6 +174,7 @@ export const Select: React.FC<SelectProps> = ({
       <button
         id={selectId}
         type="button"
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => {
           if (!disabled) {

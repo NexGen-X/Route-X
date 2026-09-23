@@ -7,6 +7,16 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     chunkSizeWarningLimit: 600,
+    modulePreload: {
+      resolveDependencies(filename, deps, { hostType }) {
+        if (hostType === 'html') {
+          // Jangan preload vendor-charts (Recharts ~517KB) pada HTML awal / Login;
+          // pustaka grafik hanya dimuat ketika membuka Dashboard atau Observabilitas.
+          return deps.filter((dep) => !dep.includes('vendor-charts'));
+        }
+        return deps;
+      },
+    },
     rollupOptions: {
       output: {
         manualChunks: {

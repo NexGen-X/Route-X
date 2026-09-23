@@ -71,7 +71,11 @@ type ComboPipeline struct {
 	Strategy Strategy `json:"strategy"`
 	// Attempts adalah ANGGARAN TOTAL percobaan lintas seluruh model, bukan per model.
 	Attempts int `json:"attempts"`
-	// Models adalah daftar model_id terurut; urutannya adalah urutan fallback.
+	// Models adalah daftar model_id terurut. Urutannya adalah urutan fallback
+	// ketika Strategi tidak menggesernya: misalnya strategi priority mengurutkan
+	// kandidat gabungan per prioritas provider, sehingga provider model kedua
+	// yang berprioritas lebih kecil bisa didahulukan melebihi model pertama.
+	// Anggap urutan array sebagai preferensi, bukan jaminan absolut.
 	Models []string `json:"models"`
 }
 

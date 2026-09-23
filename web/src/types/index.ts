@@ -161,6 +161,20 @@ export interface EgressProbeResult {
   error?: string;
 }
 
+export interface ComboPipeline {
+  // Strategi mengurutkan kandidat gabungan. Hanya 4 strategi UI yang diterima
+  // constraint migrasi 0014; backend menolak nilai lain (termasuk weighted/capability
+  // yang valid di enum Go tapi tidak disuguhkan UI) dengan 400.
+  strategy: 'priority' | 'round_robin' | 'lowest_latency' | 'lowest_cost';
+  // Anggaran TOTAL percobaan lintas seluruh model, bukan per model. attempts:3 dengan
+  // tiga model hanya memicu maksimal 3 request upstream, lalu berhenti.
+  attempts: number;
+  // Daftar model_id terurut. Urutannya preferensi fallback — strategi priority bisa
+  // menggesernya karena mengurutkan per prioritas provider (lihat komentar backend
+  // ComboPipeline.Models). Maksimal 8, tanpa duplikat, tanpa elemen kosong.
+  models: string[];
+}
+
 export interface RoutingRule {
   id: string;
   name: string;
@@ -183,6 +197,13 @@ export interface RoutingRule {
     position: number;
     weight?: number;
   }[];
+  // Pipeline combo jsonb (migrasi 0014). null/undefined = Model Only (jalur lama).
+  // Diisi = Combo Model: klien memanggil satu pengenal stabil, gateway menjalankan
+  // resep multi-model dengan anggaran attempts di atas.
+  pipeline?: ComboPipeline | null;
+  // Pengenal virtual endpoint. Klien memanggil alias ini alih-alih nama model.
+  // Terisi WAJIB pipeline != null (backend menolak "alias yatim" dengan 400).
+  virtual_alias?: string | null;
 }
 
 export interface RateLimit {

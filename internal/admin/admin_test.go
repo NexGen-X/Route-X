@@ -32,6 +32,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
+	"github.com/NexGen-X/Route-X/internal/router"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 	"github.com/NexGen-X/Route-X/internal/worker"
@@ -104,6 +105,7 @@ type testEnv struct {
 	adminUser  identity.User
 	viewerUser identity.User
 	cipher     *security.Cipher
+	engine     *router.Engine
 }
 
 func setupTestEnv(t *testing.T) *testEnv {
@@ -248,6 +250,10 @@ func setupTestEnv(t *testing.T) *testEnv {
 		}
 	})
 
+	// ruleEngine adalah engine router gateway yang dipakai menguji invalidasi cache
+	// aturan setelah mutasi lewat API admin (lihat TestMutasiRoutingRuleInvalidasiCache).
+	ruleEngine := router.NewEngine(routingRepo, router.NewSelector(), logger)
+
 	handlers := NewHandlers(Config{
 		Pool:           pool,
 		AuthSvc:        authSvc,
@@ -269,6 +275,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		Dispatcher:     dispatcher,
 		Supervisor:     sup,
 		Cipher:         cipher,
+		Engine:         ruleEngine,
 		Version:        "0.1.0-test",
 		Commit:         "testcommit",
 		BuiltAt:        "2026-09-15T00:00:00Z",
@@ -281,6 +288,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		adminUser:  adminUser,
 		viewerUser: viewerUser,
 		cipher:     cipher,
+		engine:     ruleEngine,
 	}
 }
 

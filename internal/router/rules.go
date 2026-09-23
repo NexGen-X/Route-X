@@ -175,6 +175,99 @@ func parseComboPipeline(raw []byte) (*ComboPipeline, error) {
 	return &p, nil
 }
 
+// ComboPipelineDTO adalah resep combo dalam bentuk kontrak API admin (JSON).
+//
+// Sengaja tipe terpisah dari ComboPipeline mesin: strategi di sini string biasa dan hanya
+// menerima 4 nilai yang diterima constraint pipeline (migrasi 0014), sedangkan ComboPipeline
+// memakai enum Strategy yang mengenal 6. Bentuk mesin dihasilkan RuleFromRow dari jsonb;
+// bentuk API inilah satu-satunya yang dipakai admin handler, supaya perubahan salah satunya
+// tidak otomatis mengubah kontrak publik admin API.
+type ComboPipelineDTO struct {
+	Strategy string   `json:"strategy"`
+	Attempts int      `json:"attempts"`
+	Models   []string `json:"models"`
+}
+
+// pipelineStrategies adalah strategi yang diterima constraint
+// routing_rules_pipeline_strategy_valid (migrasi 0014). Hanya empat: resep combo hanya
+// bisa diisi dari UI yang menyuguhkan empat tombol ini, dan menerima lebih banyak di sini
+// berarti mengizinkan keadaan yang tidak bisa dibuat operator mana pun — lalu menolaknya
+// di database sebagai pelanggaran constraint, padahal penolakannya bisa lebih dini dan
+// lebih jelas dilakukan di sini.
+var pipelineStrategies = []string{
+	string(StrategyPriority),
+	string(StrategyRoundRobin),
+	string(StrategyLowestLatency),
+	string(StrategyLowestCost),
+}
+
+// Valid melaporkan kesalahan yang membuat resep tidak bisa disimpan ke kolom pipeline.
+//
+// Aturannya mengikuti constraint pipeline persis: strategi salah satu dari empat nilai UI,
+// attempts 1-20, models 1-8, tanpa model ganda maupun kosong. Memeriksa di sini, bukan
+// membiarkan database menolak: pelanggaran constraint baru terlihat sebagai error generik
+// setelah aturan dibuat, dan operator kehilangan seluruh isian formnya padahal sebabnya
+// satu field.
+func (p *ComboPipelineDTO) Valid() error {
+	if p == nil {
+		return fmt.Errorf("pipeline kosong")
+	}
+	if !slices.Contains(pipelineStrategies, p.Strategy) {
+		return fmt.Errorf("strategi pipeline %q tidak dikenal; yang diterima: %s",
+			p.Strategy, strings.Join(pipelineStrategies, ", "))
+	}
+	if p.Attempts < 1 || p.Attempts > 20 {
+		return fmt.Errorf("attempts pipeline %d di luar jangkauan 1-20", p.Attempts)
+	}
+	if n := len(p.Models); n < 1 || n > 8 {
+		return fmt.Errorf("jumlah model pipeline %d di luar jangkauan 1-8", n)
+	}
+	seen := make(map[string]bool, len(p.Models))
+	for i, m := range p.Models {
+		if strings.TrimSpace(m) == "" {
+			return fmt.Errorf("model ke-%d pipeline kosong", i+1)
+		}
+		if seen[m] {
+			return fmt.Errorf("model %q disebut dua kali dalam pipeline", m)
+		}
+		seen[m] = true
+	}
+	return nil
+}
+
+// ParseComboPipelineDTO mengurai jsonb pipeline menjadi bentuk API dan memvalidasinya.
+//
+// Dipakai admin handler untuk membaca isi body permintaan sekaligus untuk mengubah kolom
+// pipeline mentah menjadi DTO saat aturan dibaca kembali.
+func ParseComboPipelineDTO(raw []byte) (*ComboPipelineDTO, error) {
+	var p ComboPipelineDTO
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, fmt.Errorf("pipeline bukan JSON yang sah: %w", err)
+	}
+	if err := p.Valid(); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// Alias mengembalikan virtual model aturan ini: kolom virtual_alias bila terisi, jika
+// tidak, tag [combo:alias=...] di description.
+//
+// Urutan ini sengaja, dan membaliknya akan memutus lalu lintas produksi: aturan yang
+// dibuat sebelum kolom virtual_alias ada (migrasi 0014) masih memakai tag di description,
+// dan kompatibilitas itu wajib tetap berjalan sampai seluruh aturan dikonversi. Kolom
+// adalah sumber kebenaran untuk aturan baru; tag adalah sumber kebenaran untuk aturan lama
+// yang belum dikonversi.
+func (r *Rule) Alias() string {
+	if r == nil {
+		return ""
+	}
+	if r.VirtualAlias != "" {
+		return r.VirtualAlias
+	}
+	return ExtractComboAlias(r.Description)
+}
+
 // ExtractComboAlias membaca virtual model alias dari deskripsi aturan combo routing bila ada.
 func ExtractComboAlias(description string) string {
 	const prefix = "[combo:alias="
@@ -200,7 +293,7 @@ func (r *Rule) Matches(req Request) bool {
 	if r == nil {
 		return false
 	}
-	alias := ExtractComboAlias(r.Description)
+	alias := r.Alias()
 	explicitTargetMatch := req.ModelName != "" && (r.Name == req.ModelName || (alias != "" && alias == req.ModelName))
 	if !explicitTargetMatch && r.MatchModelID != "" && r.MatchModelID != req.ModelID {
 		return false
@@ -231,10 +324,12 @@ func (r *Rule) Matches(req Request) bool {
 // yang indeksnya memang dibuat untuk itu.
 func FirstMatch(rules []*Rule, req Request) *Rule {
 	// Bila permintaan meminta nama aturan atau alias combo secara spesifik,
-	// cari aturan yang cocok secara eksplisit terlebih dahulu.
+	// cari aturan yang cocok secara eksplisit terlebih dahulu. Alias yang dipakai adalah
+	// Alias() (kolom virtual_alias, lalu tag description), sehingga kedua jalur — aturan
+	// baru dan aturan produksi lama — diperlakukan sama di sini.
 	if req.ModelName != "" {
 		for _, r := range rules {
-			alias := ExtractComboAlias(r.Description)
+			alias := r.Alias()
 			if (r.Name == req.ModelName || (alias != "" && alias == req.ModelName)) && r.Matches(req) {
 				return r
 			}

@@ -29,6 +29,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/oauth"
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/responsecache"
+	"github.com/NexGen-X/Route-X/internal/router"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 	"github.com/NexGen-X/Route-X/internal/worker"
@@ -67,8 +68,10 @@ type Handlers struct {
 	cipher         *security.Cipher
 	responseCache  *responsecache.Engine
 	cliManager     *cliconfig.Manager
-	oauthRepo      *upstream.OAuthRepo
-	oauthClient    *oauth.GoogleOAuthClient
+	// engine router gateway; nil bila tidak di-injeksi (lihat Config.Engine).
+	engine      *router.Engine
+	oauthRepo   *upstream.OAuthRepo
+	oauthClient *oauth.GoogleOAuthClient
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	version string
 	commit  string
@@ -104,6 +107,10 @@ type Config struct {
 	Cipher         *security.Cipher
 	ResponseCache  *responsecache.Engine
 	CLIManager     *cliconfig.Manager
+	// Engine router gateway. Dipakai untuk membatalkan cache aturan aktif setelah
+	// mutasi lewat API admin, supaya perubahan (termasuk virtual_alias) segera efektif
+	// tanpa menunggu TTL 5 detik. Opsional: nil berarti tidak ada invalidasi instan.
+	Engine *router.Engine
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	Version string
 	Commit  string
@@ -151,6 +158,7 @@ func NewHandlers(cfg Config) *Handlers {
 		cipher:         cfg.Cipher,
 		responseCache:  cfg.ResponseCache,
 		cliManager:     cfg.CLIManager,
+		engine:         cfg.Engine,
 		oauthRepo:      cfg.OAuthRepo,
 		oauthClient:    cfg.OAuthClient,
 		version:        cfg.Version,
@@ -230,6 +238,17 @@ func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, reso
 			slog.String("error", err.Error()),
 		)
 	}
+}
+
+// invalidateRules membatalkan cache aturan routing gateway bila engine di-injeksi.
+// Dipanggil setelah mutasi aturan (create/update/delete/toggle) supaya perubahan
+// segera efektif — termasuk resolusi virtual_alias — tanpa menunggu TTL cache.
+// Best-effort: kegagalan invalidasi tidak membatalkan mutasi yang sudah COMMIT.
+func (h *Handlers) invalidateRules(ctx context.Context) {
+	if h.engine == nil {
+		return
+	}
+	h.engine.Invalidate()
 }
 
 // decodeJSON membaca request body JSON dengan batas ukuran aman maxAdminBodyBytes.

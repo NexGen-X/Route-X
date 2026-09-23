@@ -1,6 +1,10 @@
 package admin
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -17,6 +21,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/router"
 )
 
 func (h *Handlers) gatewayRoutes(r chi.Router) {
@@ -133,21 +138,23 @@ func (h *Handlers) getRoutingRule(w http.ResponseWriter, r *http.Request) {
 }
 
 type createRoutingRuleReq struct {
-	Name              string         `json:"name"`
-	Description       string         `json:"description"`
-	Strategy          string         `json:"strategy"`
-	Priority          int            `json:"priority"`
-	MatchModelID      *string        `json:"match_model_id"`
-	MatchAPIKeyID     *string        `json:"match_api_key_id"`
-	MatchCapabilities []string       `json:"match_capabilities"`
-	MaxAttempts       *int           `json:"max_attempts"`
-	BackoffMS         *int           `json:"backoff_ms"`
-	FailureThreshold  *int           `json:"failure_threshold"`
-	OpenDurationMS    *int           `json:"open_duration_ms"`
-	HalfOpenProbes    *int           `json:"half_open_probes"`
-	Enabled           *bool          `json:"enabled"`
-	ProviderIDs       []string       `json:"provider_ids"`
-	Weights           map[string]int `json:"weights"`
+	Name              string          `json:"name"`
+	Description       string          `json:"description"`
+	Strategy          string          `json:"strategy"`
+	Priority          int             `json:"priority"`
+	MatchModelID      *string         `json:"match_model_id"`
+	MatchAPIKeyID     *string         `json:"match_api_key_id"`
+	MatchCapabilities []string        `json:"match_capabilities"`
+	MaxAttempts       *int            `json:"max_attempts"`
+	BackoffMS         *int            `json:"backoff_ms"`
+	FailureThreshold  *int            `json:"failure_threshold"`
+	OpenDurationMS    *int            `json:"open_duration_ms"`
+	HalfOpenProbes    *int            `json:"half_open_probes"`
+	Enabled           *bool           `json:"enabled"`
+	ProviderIDs       []string        `json:"provider_ids"`
+	Weights           map[string]int  `json:"weights"`
+	Pipeline          json.RawMessage `json:"pipeline"`
+	VirtualAlias      *string         `json:"virtual_alias"`
 }
 
 func cleanUUID(s *string) *string {
@@ -158,11 +165,117 @@ func cleanUUID(s *string) *string {
 	return &trimmed
 }
 
+// literalNullJSON adalah representasi JSON null mentah, dipakai membandingkan field
+// pipeline mentah supaya "null eksplisit" bisa dibedakan dari "tidak disebut".
+var literalNullJSON = []byte("null")
+
+// permintaanPipeline mengubah field pipeline dari body permintaan menjadi jsonb siap
+// simpan beserta mode perubahannya.
+//
+// Pipeline adalah satu-satunya field di permintaan ini yang harus membedakan TIGA
+// keadaan: tidak disebut (biarkan resep yang sekarang), null eksplisit (hapus resep,
+// kembali ke jalur lama), dan objek (pasang resep). Pointer biasa hanya bisa
+// membedakan dua keadaan, sehingga update tidak bisa menghapus resep combo — dan itulah
+// jebakan yang membuat alias lama tak pernah bisa dilepas dari aturannya.
+//
+// Mengembalikan (diatur, data): diatur=false berarti biarkan; diatur=true dengan data nil
+// berarti hapus; diatur=true dengan data terisi berarti pasang.
+func permintaanPipeline(raw json.RawMessage) (diatur bool, data []byte, err error) {
+	if len(raw) == 0 {
+		return false, nil, nil
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), literalNullJSON) {
+		return true, nil, nil
+	}
+	p, err := router.ParseComboPipelineDTO(raw)
+	if err != nil {
+		return false, nil, err
+	}
+	// Disimpan ulang dalam bentuk kanonik: field asing yang tidak dikenal constraint
+	// maupun mesin dibuang, supaya jsonb di database hanya berisi apa yang dipakai.
+	out, mErr := json.Marshal(p)
+	if mErr != nil {
+		return false, nil, mErr
+	}
+	return true, out, nil
+}
+
+// aliasPermintaan menormalkan field virtual_alias dari body permintaan.
+//
+// Mengembalikan (diatur, nilai): diatur=false berarti field tidak disebut, biarkan; nilai
+// kosong berarti hapus alias (whitespace dianggap kosong karena alias adalah pengenal
+// publik, bukan teks bebas).
+func aliasPermintaan(v *string) (diatur bool, nilai string) {
+	if v == nil {
+		return false, ""
+	}
+	return true, strings.TrimSpace(*v)
+}
+
+// pastikanAliasBebas memastikan alias belum diduduki aturan lain.
+//
+// Pemeriksaan ini memberi pesan 409 yang menjelaskan aturan mana yang memakainya, sebelum
+// partial unique index routing_rules_virtual_alias_idx menolaknya sebagai pelanggaran
+// constraint generik. Unique index tetap menjadi pengaman terakhir untuk dua permintaan
+// yang berlomba — pemeriksaan ini tidak memakai kunci baris, dan itupun sudah cukup
+// karena operator admin adalah tunggal.
+func (h *Handlers) pastikanAliasBebas(ctx context.Context, alias, idSekarang string) error {
+	if alias == "" {
+		return nil
+	}
+	pemilik, err := h.routingRepo.FindByAlias(ctx, alias)
+	if errors.Is(err, repo.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		// Bukan kegagalan keunikan: jangan blokir penyimpanan hanya karena pemeriksaan
+		// tambahan ini tidak bisa dibaca. Unique index menangkalu ganda yang sebenarnya.
+		return nil
+	}
+	if pemilik.ID == idSekarang {
+		return nil
+	}
+	return fmt.Errorf("alias virtual %q sudah dipakai aturan %q", alias, pemilik.Name)
+}
+
+// tolakAliasYatim menolak alias yang disertai tanpa resep pipeline combo.
+//
+// Tanpa pipeline, aturan tidak punya apapun untuk di-failover-kan ke model lain, dan
+// aliasnya hanya menjebak klien yang memanggilnya: permintaan akan cocok dengan aturan
+// yang kondisi pencocokannya tidak pernah diminta siapa pun. Dulu alias yatim seperti ini
+// tertinggal diam-diam karena pendaftarannya adalah panggilan API terpisah yang
+// kegagalannya hanya dicatat sebagai peringatan.
+func tolakAliasYatim(alias string, pipeline []byte) error {
+	if alias == "" || len(pipeline) > 0 {
+		return nil
+	}
+	return fmt.Errorf("virtual_alias %q wajib disertai pipeline combo; kirim pipeline atau kosongkan virtual_alias", alias)
+}
+
 func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req createRoutingRuleReq
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+
+	// Pipeline diurai dan divalidasi SEBELUM transaksi. Objek yang cacat ditolak di
+	// sini, bukan oleh constraint database sesudah aturan dibuat — penolakan terlambat
+	// itu membiarkan operator menyimpan aturan tanpa sengaja dan kehilangan seluruh
+	// isian formnya.
+	_, pipeline, err := permintaanPipeline(req.Pipeline)
+	if err != nil {
+		httpx.BadRequest(w, r, "invalid_pipeline", err.Error())
+		return
+	}
+	_, alias := aliasPermintaan(req.VirtualAlias)
+	if err := tolakAliasYatim(alias, pipeline); err != nil {
+		httpx.BadRequest(w, r, "alias_tanpa_pipeline", err.Error())
+		return
+	}
+	if err := h.pastikanAliasBebas(ctx, alias, ""); err != nil {
+		httpx.BadRequest(w, r, "alias_conflict", err.Error())
 		return
 	}
 
@@ -181,7 +294,7 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rule *upstream.RoutingRule
-	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txRouting := upstream.NewRoutingRepo(q)
 		var err error
 		rule, err = txRouting.Create(ctx, upstream.CreateRoutingRuleParams{
@@ -199,6 +312,8 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 			HalfOpenProbes:    req.HalfOpenProbes,
 			Enabled:           req.Enabled,
 			CreatedBy:         actorID,
+			Pipeline:          pipeline,
+			VirtualAlias:      &alias,
 		})
 		if err != nil {
 			return err
@@ -224,7 +339,12 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeAudit(ctx, r, "create", "routing_rule", rule.ID, map[string]any{"name": rule.Name, "strategy": rule.Strategy})
+	h.writeAudit(ctx, r, "create", "routing_rule", rule.ID, map[string]any{
+		"name":          rule.Name,
+		"strategy":      rule.Strategy,
+		"virtual_alias": alias,
+	})
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusCreated, toRoutingRuleDTO(rule))
 }
 
@@ -235,6 +355,42 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	var req createRoutingRuleReq
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+
+	pipeDiatur, pipeline, err := permintaanPipeline(req.Pipeline)
+	if err != nil {
+		httpx.BadRequest(w, r, "invalid_pipeline", err.Error())
+		return
+	}
+	aliasDiatur, aliasBaru := aliasPermintaan(req.VirtualAlias)
+
+	// Aturan yang diubah bisa sudah punya alias dan resep combo sebelumnya, jadi
+	// permintaan sebagian ini harus digabung dengan keadaan sekarang. Tanpa ini, "biarkan
+	// alias" tak bisa dibedakan dari "hapus alias", dan aturan combo yang hanya diubah
+	// provider-nya akan kehilangan aliasnya diam-diam.
+	existing, err := h.routingRepo.Get(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "aturan routing")
+		return
+	}
+	pipeAkhir := existing.Pipeline
+	if pipeDiatur {
+		pipeAkhir = pipeline
+	}
+	aliasAkhir := ""
+	if existing.VirtualAlias != nil {
+		aliasAkhir = *existing.VirtualAlias
+	}
+	if aliasDiatur {
+		aliasAkhir = aliasBaru
+	}
+	if err := tolakAliasYatim(aliasAkhir, pipeAkhir); err != nil {
+		httpx.BadRequest(w, r, "alias_tanpa_pipeline", err.Error())
+		return
+	}
+	if err := h.pastikanAliasBebas(ctx, aliasAkhir, id); err != nil {
+		httpx.BadRequest(w, r, "alias_conflict", err.Error())
 		return
 	}
 
@@ -274,9 +430,23 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	p.OpenDurationMS = req.OpenDurationMS
 	p.HalfOpenProbes = req.HalfOpenProbes
 	p.Enabled = req.Enabled
+	if pipeDiatur {
+		if len(pipeline) == 0 {
+			p.Pipeline = upstream.Clear[[]byte]()
+		} else {
+			p.Pipeline = upstream.Set(pipeline)
+		}
+	}
+	if aliasDiatur {
+		if aliasBaru == "" {
+			p.VirtualAlias = upstream.Clear[string]()
+		} else {
+			p.VirtualAlias = upstream.Set(aliasBaru)
+		}
+	}
 
 	var rule *upstream.RoutingRule
-	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txRouting := upstream.NewRoutingRepo(q)
 		var err error
 		rule, err = txRouting.Update(ctx, id, p)
@@ -304,7 +474,11 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeAudit(ctx, r, "update", "routing_rule", id, map[string]any{"name": rule.Name})
+	h.writeAudit(ctx, r, "update", "routing_rule", id, map[string]any{
+		"name":          rule.Name,
+		"virtual_alias": aliasAkhir,
+	})
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
@@ -318,6 +492,7 @@ func (h *Handlers) deleteRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "routing_rule", id, nil)
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
@@ -340,6 +515,7 @@ func (h *Handlers) toggleRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "routing_rule", id, map[string]any{"enabled": req.Enabled})
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
@@ -363,6 +539,7 @@ func (h *Handlers) setRuleProviders(w http.ResponseWriter, r *http.Request) {
 
 	rule, _ := h.routingRepo.Get(ctx, id)
 	h.writeAudit(ctx, r, "set_providers", "routing_rule", id, map[string]any{"providers": req.ProviderIDs})
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 

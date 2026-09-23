@@ -160,6 +160,24 @@ func addOpt[T any](u *updateSet, column string, o Opt[T]) {
 	}
 }
 
+// addOptJSONB menambahkan kolom jsonb opsional dengan cast eksplisit.
+//
+// []byte tanpa anotasi dikirim pgx dengan OID bytea, dan PostgreSQL menolaknya saat
+// kolom tujuannya jsonb — cast di klausa SET adalah satu-satunya tempat memastikan biner
+// mentah selalu dianggap dokumen JSON, apa pun OID yang dikirim driver. NULL tidak butuh
+// cast: pgx mengirim NULL tanpa OID dan kolom jsonb menerimanya.
+func addOptJSONB(u *updateSet, column string, o Opt[[]byte]) {
+	if !o.Set {
+		return
+	}
+	if o.Value == nil {
+		u.add(column, nil)
+		return
+	}
+	u.args = append(u.args, *o.Value)
+	u.assigns = append(u.assigns, fmt.Sprintf("%s = $%d::jsonb", column, len(u.args)))
+}
+
 // empty melaporkan apakah tidak ada kolom yang diubah.
 func (u *updateSet) empty() bool { return len(u.assigns) == 0 }
 

@@ -53,6 +53,23 @@ describe('parsePipelineDariTag (kompatibilitas raute-x)', () => {
     expect(p).toEqual({ strategy: 'priority', attempts: 4, models: ['gpt-5', 'gemini-2-5-pro'] });
   });
 
+  it('membaca resep dari tag produksi yang TIDAK ditutup ] (regresi raute-x)', () => {
+    // Aturan raute-x sungguhan di produksi: tag pipeline berakhir "}]" lalu
+    // langsung diikuti teks biasa — tidak ada "]" penutup tag. Regex lama
+    // (/\[combo:pipeline=(\[.*?\])\]/) meminta "]" penutup, jadi gagal membuang
+    // seluruh JSON dan parsePipelineDariTag mengembalikan null. Akibatnya kartu
+    // menampilkan combo tapi rantai kosong, dan edit membuka resep kosong.
+    const p = parsePipelineDariTag(
+      '[combo:alias=raute-x] [combo:tier2=gemini-2.5-flash] [combo:pipeline=[{"tier":2,"model":"gemini-2.5-flash","providers":["70cdcf7a","b632034b"]}] Smart Tiered Cascade: hemat -> flagship',
+      'gpt-5',
+    );
+    expect(p).toEqual({
+      strategy: 'priority',
+      attempts: 4,
+      models: ['gpt-5', 'gemini-2.5-flash'],
+    });
+  });
+
   it('null bila tidak ada tag pipeline', () => {
     expect(parsePipelineDariTag('[model_only] passthrough langsung', 'gpt-5')).toBeNull();
     expect(parsePipelineDariTag(undefined, 'gpt-5')).toBeNull();

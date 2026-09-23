@@ -90,12 +90,16 @@ export function parsePipeline(rule: {
 // Format tag lama adalah array tier: [{"tier":2,"model":"x","providers":[...]}].
 // Tier 1 TIDAK ada di tag (hanya match_model_id), jadi model utama digabung dari
 // parameter terpisah. Mengembalikan null bila tidak ada tag.
+//
+// Catatan regex: tag produksi tidak ditutup dengan ']' — JSON resep berakhir "}]"
+// lalu langsung diikuti teks biasa. Akhiran resep ditandingai sampai "}" + "]"
+// dan ditahan di batas spasi/']'/akhir-string agar teks setelahnya tidak ikut.
 export function parsePipelineDariTag(
   description: string | undefined | null,
   modelUtama?: string | null,
 ): ComboPipeline | null {
   const desc = description || '';
-  const cocok = desc.match(/\[combo:pipeline=(\[.*?\])\]/);
+  const cocok = desc.match(/\[combo:pipeline=(\[[\s\S]*?\}\])(?=\s|\]|$)/);
   if (!cocok) return null;
 
   let tier: Array<{ tier: number; model: string }>;

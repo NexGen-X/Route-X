@@ -470,3 +470,61 @@ func errIsInvalidRef(err error) bool {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// TestMutasiRoutingRuleInvalidasiCache: setelah aturan combo disimpan (dan dihapus)
+// lewat API admin, resolusi engine gateway harus segera mencerminkan perubahan tanpa
+// menunggu TTL cache 5 detik. Membuktikan engine di-injeksikan ke handler dan
+// Invalidate() dipanggil pada setiap titik mutasi.
+func TestMutasiRoutingRuleInvalidasiCache(t *testing.T) {
+	env := setupTestEnv(t)
+	client := env.newClient(t)
+	client.login("superadmin@routex.internal", testPassword)
+
+	ctx := context.Background()
+	const alias = "cerdas-murah"
+
+	// match_model_id adalah UUID (FK ke models.id), jadi kita ambil UUID model gpt-5
+	// yang di-seed setupTestEnv. Pipeline models sendiri tidak punya FK, bebas.
+	var model string
+	if err := env.pool.QueryRow(ctx, "select id from models where model_id = 'gpt-5' limit 1").Scan(&model); err != nil {
+		t.Fatalf("cari UUID model gpt-5: %v", err)
+	}
+
+	// Panen cache engine dengan keadaan SEBELUM aturan dibuat. Tanpa langkah ini cache
+	// masih kosong, sehingga panggilan kedua membaca DB terlepas dari invalidasi dan
+	// test menjadi buta terhadap bug yang seharusnya dideteksi.
+	if target := env.engine.FindRuleTargetModelID(ctx, alias); target != "" {
+		t.Fatalf("alias %q seharusnya belum terdaftar, dapat %q", alias, target)
+	}
+
+	res, body := client.do(http.MethodPost, "/api/admin/gateway/routing-rules", map[string]any{
+		"name":           "Combo Invalidasi Cache",
+		"strategy":       "priority",
+		"match_model_id": model,
+		"virtual_alias":  alias,
+		"pipeline":       pipelineValid,
+	}, true)
+	if res.StatusCode != http.StatusCreated {
+		t.Fatalf("create aturan = %d, body %s", res.StatusCode, body)
+	}
+	var got routingRuleResp
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("urai respons create: %v", err)
+	}
+
+	// Invalidate dipanggil handler setelah COMMIT, jadi resolusi harus segera melihat
+	// alias baru. Tanpa invalidasi, cache 5 detik masih memegang keadaan lama; test ini
+	// selesai jauh dalam jendela 5 detik, jadi TTL belum kedaluwarsa.
+	if target := env.engine.FindRuleTargetModelID(ctx, alias); target != model {
+		t.Errorf("FindRuleTargetModelID(%q) = %q, mau %q (alias segera terlihat)", alias, target, model)
+	}
+
+	// Hapus aturan: alias harus segera lepas dari resolusi, bukan menunggu TTL.
+	res, body = client.do(http.MethodDelete, "/api/admin/gateway/routing-rules/"+got.ID, nil, true)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("delete aturan = %d, body %s", res.StatusCode, body)
+	}
+	if target := env.engine.FindRuleTargetModelID(ctx, alias); target != "" {
+		t.Errorf("FindRuleTargetModelID(%q) = %q setelah hapus, mau kosong (alias lepas)", alias, target)
+	}
+}

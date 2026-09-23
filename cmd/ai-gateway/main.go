@@ -468,17 +468,22 @@ func buildGatewaySurface(
 	factory := gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
 		gateway.WithCredentialUseMarker(creds))
 
+	// Engine router gateway. Satu instance untuk seluruh proses: dipakai handler
+	// gateway untuk resolusi aturan, dan di-injeksikan ke API admin agar mutasi
+	// aturan dapat membatalkan cache seketika (lihat admin.Handler.invalidateRules).
+	ruleEngine := router.NewEngine(upstream.NewRoutingRepo(db.Pool),
+		router.NewSelector(
+			router.WithLatencySource(index),
+			router.WithCostSource(pricer),
+		), logger)
+
 	handlers, err := gateway.NewHandlers(gateway.HandlersDeps{
 		Models:     models,
 		Lister:     models,
 		Candidates: providersRepo,
 		Factory:    factory,
-		Engine: router.NewEngine(upstream.NewRoutingRepo(db.Pool),
-			router.NewSelector(
-				router.WithLatencySource(index),
-				router.WithCostSource(pricer),
-			), logger),
-		Executor: gateway.NewExecutor(breaker, logger),
+		Engine:     ruleEngine,
+		Executor:   gateway.NewExecutor(breaker, logger),
 		// Pembatasan model dan provider per API key. Bukan opsional di produksi: tanpa ini
 		// setiap key boleh memakai setiap model.
 		Restrict: keyRepo,
@@ -582,6 +587,7 @@ func buildGatewaySurface(
 		Cipher:         cipher,
 		ResponseCache:  respCache,
 		CLIManager:     cliMgr,
+		Engine:         ruleEngine,
 		Version:        version,
 		Commit:         commit,
 		BuiltAt:        builtAt,

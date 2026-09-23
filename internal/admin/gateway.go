@@ -344,6 +344,7 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 		"strategy":      rule.Strategy,
 		"virtual_alias": alias,
 	})
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusCreated, toRoutingRuleDTO(rule))
 }
 
@@ -477,6 +478,7 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		"name":          rule.Name,
 		"virtual_alias": aliasAkhir,
 	})
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
@@ -490,6 +492,7 @@ func (h *Handlers) deleteRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "routing_rule", id, nil)
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
@@ -512,6 +515,7 @@ func (h *Handlers) toggleRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "routing_rule", id, map[string]any{"enabled": req.Enabled})
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
@@ -535,6 +539,7 @@ func (h *Handlers) setRuleProviders(w http.ResponseWriter, r *http.Request) {
 
 	rule, _ := h.routingRepo.Get(ctx, id)
 	h.writeAudit(ctx, r, "set_providers", "routing_rule", id, map[string]any{"providers": req.ProviderIDs})
+	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 

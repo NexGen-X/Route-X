@@ -5,6 +5,7 @@ import { Checkbox } from '../components/common/Checkbox';
 import { api, ApiError } from '../api/client';
 import type { SetupHintResponse } from '../types';
 import { ShieldCheck, AlertCircle, ArrowRight, Eye, EyeOff, Sparkles, Info } from 'lucide-react';
+import pkg from '../../package.json';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -181,7 +182,7 @@ export const Login: React.FC = () => {
             <ShieldCheck className="w-3.5 h-3.5 text-accent" />
             Argon2id + Sesi Mandiri
           </span>
-          <span className="font-mono">v1.0.0-prod</span>
+          <span className="font-mono">v{pkg.version}</span>
         </div>
       </div>
     </div>

@@ -14,7 +14,6 @@ import {
   ChevronRight,
   LogOut,
   Code2,
-  Cpu,
   Users,
   Webhook,
 } from 'lucide-react';
@@ -63,7 +62,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Penyedia AI & Perutean',
       items: [
         { name: 'Providers', path: '/upstreams/providers', icon: Server },
-        { name: 'Models & Pricing', path: '/upstreams/models', icon: Cpu },
         { name: 'Routing & Failover', path: '/gateway/routing', icon: GitFork },
         { name: 'CLI Integrations', path: '/cli-integrations', icon: Code2 },
         { name: 'Egress Pools', path: '/upstreams/egress', icon: Network },

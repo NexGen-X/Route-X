@@ -1805,18 +1805,19 @@ export const CredentialsTabChild: React.FC<any> = ({
                 <Globe className="w-3 h-3 text-accent" />
                 Jalur Keluar / Proxy Egress (Opsional)
               </label>
-              <select
+              <Select
                 value={inlineEgressPoolId}
-                onChange={(e) => setInlineEgressPoolId(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-white text-xs outline-none focus:border-accent"
-              >
-                <option value="">Ikuti Provider / Direct (Default)</option>
-                {egressPools.map((ep: any) => (
-                  <option key={ep.id} value={ep.id}>
-                    {ep.name} ({ep.kind.toUpperCase()})
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setInlineEgressPoolId(val)}
+                placeholder="Ikuti Provider / Direct (Default)"
+                options={[
+                  { value: '', label: 'Ikuti Provider / Direct (Default)', description: 'Mengikuti konfigurasi default provider atau direct outbound' },
+                  ...egressPools.map((ep: any) => ({
+                    value: ep.id,
+                    label: `${ep.name} (${ep.kind.toUpperCase()})`,
+                    description: `Protokol: ${ep.kind} · Region: ${ep.region || 'Default'}`,
+                  })),
+                ]}
+              />
             </div>
 
             <div className="flex items-center justify-between pt-1">
@@ -1964,23 +1965,27 @@ export const CredentialsTabChild: React.FC<any> = ({
                   </div>
 
                   {/* Selector Jalur Keluar (Egress Proxy) */}
-                  <div className="mt-2.5 pt-2 border-t border-border/40 flex items-center justify-between text-xs">
-                    <span className="text-text-muted text-[11px] flex items-center gap-1">
+                  <div className="mt-2.5 pt-2 border-t border-border/40 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 sm:gap-2">
+                    <span className="text-text-muted text-[11px] flex items-center gap-1 shrink-0">
                       <Globe className="w-3 h-3 text-accent" />
                       Jalur Keluar (Proxy):
                     </span>
-                    <select
-                      value={session.egress_pool_id || ''}
-                      onChange={(e) => handleUpdateAccountEgress(session.credential_id, e.target.value || null)}
-                      className="bg-bg-surface border border-border rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-accent"
-                    >
-                      <option value="">Ikuti Provider / Direct (Default)</option>
-                      {egressPools.map((ep: any) => (
-                        <option key={ep.id} value={ep.id}>
-                          {ep.name} ({ep.kind.toUpperCase()})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="w-full sm:w-56 shrink-0">
+                      <Select
+                        variant="compact"
+                        value={session.egress_pool_id || ''}
+                        onChange={(val) => handleUpdateAccountEgress(session.credential_id, val || null)}
+                        placeholder="Ikuti Provider / Direct (Default)"
+                        options={[
+                          { value: '', label: 'Ikuti Provider / Direct (Default)' },
+                          ...egressPools.map((ep: any) => ({
+                            value: ep.id,
+                            label: `${ep.name} (${ep.kind.toUpperCase()})`,
+                            description: `Protokol: ${ep.kind} · Region: ${ep.region || 'Default'}`,
+                          })),
+                        ]}
+                      />
+                    </div>
                   </div>
                 </div>
               );
@@ -2055,23 +2060,27 @@ export const CredentialsTabChild: React.FC<any> = ({
                   </button>
                 </div>
               </div>
-              <div className="pt-1.5 border-t border-border/40 flex items-center justify-between text-xs">
-                <span className="text-text-muted text-[11px] flex items-center gap-1">
+              <div className="pt-1.5 border-t border-border/40 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 sm:gap-2">
+                <span className="text-text-muted text-[11px] flex items-center gap-1 shrink-0">
                   <Globe className="w-3 h-3 text-accent" />
                   Jalur Keluar (Proxy):
                 </span>
-                <select
-                  value={cred.egress_pool_id || ''}
-                  onChange={(e) => handleUpdateAccountEgress(cred.id, e.target.value || null)}
-                  className="bg-bg-surface border border-border rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-accent"
-                >
-                  <option value="">Ikuti Provider / Direct (Default)</option>
-                  {egressPools.map((ep: any) => (
-                    <option key={ep.id} value={ep.id}>
-                      {ep.name} ({ep.kind.toUpperCase()})
-                    </option>
-                  ))}
-                </select>
+                <div className="w-full sm:w-56 shrink-0">
+                  <Select
+                    variant="compact"
+                    value={cred.egress_pool_id || ''}
+                    onChange={(val) => handleUpdateAccountEgress(cred.id, val || null)}
+                    placeholder="Ikuti Provider / Direct (Default)"
+                    options={[
+                      { value: '', label: 'Ikuti Provider / Direct (Default)' },
+                      ...egressPools.map((ep: any) => ({
+                        value: ep.id,
+                        label: `${ep.name} (${ep.kind.toUpperCase()})`,
+                        description: `Protokol: ${ep.kind} · Region: ${ep.region || 'Default'}`,
+                      })),
+                    ]}
+                  />
+                </div>
               </div>
             </div>
           ))}
@@ -2858,18 +2867,19 @@ export const CreateProviderModalChild: React.FC<CreateProviderModalChildProps> =
                 <Globe className="w-3.5 h-3.5 text-accent" />
                 Jalur Keluar (Egress Proxy) Opsional
               </label>
-              <select
+              <Select
                 value={selectedEgressPoolId}
-                onChange={(e) => setSelectedEgressPoolId(e.target.value)}
-                className="w-full px-3 py-2 bg-bg-surface border border-border rounded-lg text-white text-xs focus:outline-none focus:border-accent"
-              >
-                <option value="">Ikuti Provider / Direct (Default)</option>
-                {egressPools.map((ep: any) => (
-                  <option key={ep.id} value={ep.id}>
-                    {ep.name} ({ep.kind.toUpperCase()})
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setSelectedEgressPoolId(val)}
+                placeholder="Ikuti Provider / Direct (Default)"
+                options={[
+                  { value: '', label: 'Ikuti Provider / Direct (Default)', description: 'Koneksi langsung dari server atau default pool provider' },
+                  ...egressPools.map((ep: any) => ({
+                    value: ep.id,
+                    label: `${ep.name} (${ep.kind.toUpperCase()})`,
+                    description: `Protokol: ${ep.kind} · Region: ${ep.region || 'Default'}`,
+                  })),
+                ]}
+              />
               <p className="text-[10px] text-text-muted mt-1">
                 Opsional: Akun ini akan memiliki jalur keluar proxy sendiri yang terisolasi dari akun lainnya.
               </p>

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useId } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Check, Search, X } from 'lucide-react';
 
 export interface SelectOption {
@@ -21,6 +22,7 @@ export interface SelectProps {
   searchable?: boolean;
   className?: string;
   id?: string;
+  variant?: 'form' | 'compact';
   'aria-label'?: string;
 }
 
@@ -36,6 +38,7 @@ export const Select: React.FC<SelectProps> = ({
   searchable,
   className = '',
   id,
+  variant = 'form',
   'aria-label': ariaLabel,
 }) => {
   const generatedId = useId();
@@ -43,6 +46,13 @@ export const Select: React.FC<SelectProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 640;
+    }
+    return false;
+  });
+
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -76,8 +86,30 @@ export const Select: React.FC<SelectProps> = ({
     );
   });
 
-  // Tangani klik di luar untuk menutup menu
+  // Listener resize untuk mendeteksi mobile viewport (< 640px)
   useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 640);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Kunci scroll body saat bottom sheet mobile terbuka
+  useEffect(() => {
+    if (isOpen && isMobile) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen, isMobile]);
+
+  // Tangani klik di luar untuk menutup menu pada desktop
+  useEffect(() => {
+    if (!isOpen || isMobile) return;
+
     const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
@@ -85,15 +117,13 @@ export const Select: React.FC<SelectProps> = ({
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleOutsideClick);
-      document.addEventListener('touchstart', handleOutsideClick);
-    }
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('touchstart', handleOutsideClick);
     };
-  }, [isOpen]);
+  }, [isOpen, isMobile]);
 
   // Fokuskan input pencarian saat menu terbuka
   useEffect(() => {
@@ -162,10 +192,12 @@ export const Select: React.FC<SelectProps> = ({
     setSearchQuery('');
   };
 
+  const widthClass = className.includes('w-') ? '' : 'w-full';
+
   return (
-    <div className={`relative w-full text-left ${className}`} ref={containerRef} onKeyDown={handleKeyDown}>
+    <div className={`relative ${widthClass} text-left ${className}`} ref={containerRef} onKeyDown={handleKeyDown}>
       {label && (
-        <label htmlFor={selectId} className="block text-xs font-semibold text-text-secondary uppercase mb-1">
+        <label htmlFor={selectId} className={`block font-semibold text-text-secondary uppercase mb-1 ${variant === 'compact' ? 'text-[10px]' : 'text-xs'}`}>
           {label} {required && <span className="text-status-error">*</span>}
         </label>
       )}
@@ -183,9 +215,13 @@ export const Select: React.FC<SelectProps> = ({
           }
         }}
         aria-haspopup="listbox"
-        aria-controls={isOpen ? `${selectId}-listbox` : undefined}
+        aria-controls={isOpen ? (isMobile ? `${selectId}-mobile-listbox` : `${selectId}-listbox`) : undefined}
         aria-expanded={isOpen}
-        className={`w-full flex items-center justify-between gap-2 px-3 py-2 bg-bg-surface-2 border rounded-nav text-xs transition-all duration-150 text-left focus:outline-none focus:ring-1 focus:ring-accent ${
+        className={`w-full flex items-center justify-between gap-2 bg-bg-surface-2 border transition-all duration-150 text-left focus:outline-none focus:ring-1 focus:ring-accent ${
+          variant === 'compact'
+            ? 'px-2.5 py-1 text-[11px] rounded-nav'
+            : 'px-3 py-2 text-xs rounded-nav'
+        } ${
           error
             ? 'border-status-error text-status-error'
             : isOpen
@@ -201,7 +237,7 @@ export const Select: React.FC<SelectProps> = ({
         </div>
 
         <ChevronDown
-          className={`w-4 h-4 text-text-muted transition-transform duration-200 flex-shrink-0 ${
+          className={`${variant === 'compact' ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-text-muted transition-transform duration-200 flex-shrink-0 ${
             isOpen ? 'rotate-180 text-accent' : ''
           }`}
         />
@@ -209,8 +245,8 @@ export const Select: React.FC<SelectProps> = ({
 
       {error && <span className="text-[11px] text-status-error mt-1 block">{error}</span>}
 
-      {/* Floating Custom Dropdown List (100% In-App Dark Glassmorphism) */}
-      {isOpen && (
+      {/* Floating Custom Dropdown List untuk Desktop (>= 640px) */}
+      {isOpen && !isMobile && (
         <div
           className="absolute z-50 left-0 right-0 mt-1 bg-[#141416] border border-border/90 rounded-xl shadow-2xl backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-64"
           style={{ minWidth: '100%' }}
@@ -243,7 +279,7 @@ export const Select: React.FC<SelectProps> = ({
             </div>
           )}
 
-          {/* Opsi Listbox */}
+          {/* Opsi Listbox Desktop */}
           <div
             id={`${selectId}-listbox`}
             ref={listRef}
@@ -298,6 +334,138 @@ export const Select: React.FC<SelectProps> = ({
           </div>
         </div>
       )}
+
+      {/* Custom Bottom Sheet untuk Mobile (< 640px) via React Portal */}
+      {isOpen && isMobile && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-50 flex items-end justify-center select-none" role="dialog" aria-modal="true" aria-label={label || placeholder}>
+          {/* Dark blur backdrop */}
+          <div
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+            onClick={() => {
+              setIsOpen(false);
+              setSearchQuery('');
+            }}
+            aria-hidden="true"
+          />
+
+          {/* Bottom Sheet Container */}
+          <div className="relative w-full max-h-[85vh] bg-[#141416] border-t border-border rounded-t-2xl z-50 flex flex-col animate-in slide-in-from-bottom duration-200 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
+            {/* Drag Handle */}
+            <div className="w-12 h-1.5 bg-border rounded-full mx-auto my-3 shrink-0" />
+
+            {/* Header dengan judul & tombol tutup */}
+            <div className="flex items-center justify-between px-4 pb-3 border-b border-border/60">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm font-semibold text-white truncate">
+                  {label || placeholder || 'Pilih Opsi'}
+                </span>
+                {required && <span className="text-status-error text-xs">*</span>}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  setSearchQuery('');
+                }}
+                className="p-1 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer"
+                aria-label="Tutup"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Kolom Pencarian Cepat Mobile jika isSearchable */}
+            {isSearchable && (
+              <div className="p-3 border-b border-border/60 bg-bg-surface-2/40 flex items-center gap-2">
+                <Search className="w-4 h-4 text-text-muted flex-shrink-0" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setHighlightedIndex(0);
+                  }}
+                  placeholder="Ketik untuk memfilter..."
+                  className="w-full bg-transparent text-xs text-white placeholder:text-text-muted focus:outline-none font-sans"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="p-1 text-text-muted hover:text-white rounded"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Daftar Opsi Mobile */}
+            <div
+              id={`${selectId}-mobile-listbox`}
+              ref={listRef}
+              role="listbox"
+              tabIndex={-1}
+              className="overflow-y-auto px-2 py-2 space-y-1 divide-y divide-border/20 max-h-[60vh]"
+            >
+              {filteredOptions.length === 0 ? (
+                <div className="py-8 px-4 text-center text-xs text-text-muted">
+                  Tidak ada opsi yang cocok dengan "{searchQuery}"
+                </div>
+              ) : (
+                filteredOptions.map((opt, index) => {
+                  const isSelected = opt.value === value;
+
+                  return (
+                    <div
+                      key={opt.value || `mobile-empty-${index}`}
+                      id={`${selectId}-mobile-opt-${index}`}
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => handleSelect(opt.value, opt.disabled)}
+                      className={`flex items-center justify-between gap-3 px-3 py-3 rounded-xl text-xs cursor-pointer transition-colors duration-100 ${
+                        opt.disabled
+                          ? 'opacity-40 cursor-not-allowed text-text-muted'
+                          : isSelected
+                          ? 'bg-accent/15 text-white font-medium'
+                          : 'text-text-secondary hover:text-white hover:bg-bg-surface-2'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 truncate min-w-0 flex-1">
+                        {opt.icon && <span className="flex-shrink-0">{opt.icon}</span>}
+                        <div className="truncate">
+                          <div className={`truncate font-sans ${isSelected ? 'text-white font-semibold' : 'text-text-primary'}`}>
+                            {opt.label}
+                          </div>
+                          {opt.description && (
+                            <div className="text-[10px] text-text-muted font-mono truncate mt-0.5">
+                              {opt.description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Custom Route-X Radio Indicator (Accent Circle #BEF264) */}
+                      <div
+                        className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? 'border-accent bg-accent/20'
+                            : 'border-border bg-bg-surface'
+                        }`}
+                      >
+                        {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-accent" />}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
+

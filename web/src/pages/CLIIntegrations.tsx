@@ -803,18 +803,23 @@ export const CLIIntegrations: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto">
+          <div className="flex items-center gap-1.5 min-w-[170px] sm:min-w-[190px]">
             <Filter className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="bg-bg-surface-2 border border-border rounded px-2 py-1.5 text-xs text-white focus:border-accent focus:outline-none"
-            >
-              <option value="all">Semua Kategori</option>
-              {categories.filter(c => c !== 'all').map((cat) => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
+            <div className="flex-1">
+              <Select
+                variant="compact"
+                value={selectedCategory}
+                onChange={(val) => setSelectedCategory(val)}
+                options={[
+                  { value: 'all', label: 'Semua Kategori' },
+                  ...categories.filter(c => c !== 'all').map((cat) => ({
+                    value: cat,
+                    label: cat,
+                  })),
+                ]}
+                aria-label="Filter kategori alat CLI"
+              />
+            </div>
           </div>
         </div>
       </div>

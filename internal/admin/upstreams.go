@@ -72,6 +72,7 @@ func (h *Handlers) upstreamsRoutes(r chi.Router) {
 		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Post("/{id}/credentials", h.createCredential)
 		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Delete("/{id}/credentials/{cred_id}", h.deleteCredential)
 		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Post("/{id}/credentials/{cred_id}/toggle", h.toggleCredential)
+		pr.With(auth.RequirePermission(seed.PermCredentialsWrite)).Put("/{id}/credentials/{cred_id}/egress-pool", h.setCredentialEgressPool)
 
 		// Strategi Rotasi Kredensial Universal
 		pr.With(auth.RequirePermission(seed.PermProvidersWrite)).Post("/{id}/credential-strategy", h.setProviderCredentialStrategy)
@@ -991,9 +992,10 @@ func (h *Handlers) listCredentials(w http.ResponseWriter, r *http.Request) {
 }
 
 type createCredentialReq struct {
-	Label     string  `json:"label"`
-	APIKey    string  `json:"api_key"`
-	ExpiresAt *string `json:"expires_at"`
+	Label        string  `json:"label"`
+	APIKey       string  `json:"api_key"`
+	ExpiresAt    *string `json:"expires_at"`
+	EgressPoolID *string `json:"egress_pool_id"`
 }
 
 func (h *Handlers) createCredential(w http.ResponseWriter, r *http.Request) {
@@ -1026,6 +1028,11 @@ func (h *Handlers) createCredential(w http.ResponseWriter, r *http.Request) {
 		exp = &t
 	}
 
+	var poolID *string
+	if req.EgressPoolID != nil && *req.EgressPoolID != "" {
+		poolID = req.EgressPoolID
+	}
+
 	var actorID *string
 	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
 		actorID = &p.User.ID
@@ -1036,11 +1043,12 @@ func (h *Handlers) createCredential(w http.ResponseWriter, r *http.Request) {
 		txRepo := h.credentialRepo.WithQuerier(q)
 		var err error
 		cred, err = txRepo.Create(ctx, upstream.CreateCredentialParams{
-			ProviderID: providerID,
-			Label:      req.Label,
-			Secret:     security.Secret(req.APIKey),
-			ExpiresAt:  exp,
-			CreatedBy:  actorID,
+			ProviderID:   providerID,
+			Label:        req.Label,
+			Secret:       security.Secret(req.APIKey),
+			ExpiresAt:    exp,
+			EgressPoolID: poolID,
+			CreatedBy:    actorID,
 		})
 		if err != nil {
 			return err
@@ -1118,6 +1126,69 @@ func (h *Handlers) toggleCredential(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = h.respond(w, r, http.StatusOK, toCredentialMetaDTO(cred))
+}
+
+type setCredentialEgressPoolReq struct {
+	EgressPoolID *string `json:"egress_pool_id"`
+}
+
+func (h *Handlers) setCredentialEgressPool(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	providerID := chi.URLParam(r, "id")
+	credID := chi.URLParam(r, "cred_id")
+	if credID == "" {
+		credID = chi.URLParam(r, "credId")
+	}
+
+	if _, err := h.authorizeProviderAccess(ctx, providerID); err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
+
+	var req setCredentialEgressPoolReq
+	if err := decodeJSON(r, &req); err != nil {
+		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+
+	poolID := req.EgressPoolID
+	if poolID != nil && *poolID == "" {
+		poolID = nil
+	}
+
+	// Verifikasi kredensial terdaftar di bawah provider ini
+	cred, err := h.credentialRepo.Get(ctx, credID)
+	if err != nil {
+		mapRepoError(w, r, err, "kredensial")
+		return
+	}
+	if cred.ProviderID != providerID {
+		httpx.Forbidden(w, r, "Kredensial bukan milik provider ini")
+		return
+	}
+
+	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRepo := h.credentialRepo.WithQuerier(q)
+		if err := txRepo.SetCredentialEgressPool(ctx, credID, poolID); err != nil {
+			return err
+		}
+		return h.writeAuditTx(ctx, q, r, "update_egress_pool", "credential", credID, map[string]any{
+			"provider_id":    providerID,
+			"egress_pool_id": poolID,
+		})
+	})
+	if err != nil {
+		mapRepoError(w, r, err, "kredensial")
+		return
+	}
+
+	updated, err := h.credentialRepo.Get(ctx, credID)
+	if err != nil {
+		mapRepoError(w, r, err, "kredensial")
+		return
+	}
+
+	_ = h.respond(w, r, http.StatusOK, toCredentialMetaDTO(updated))
 }
 
 // -----------------------------------------------------------------------------

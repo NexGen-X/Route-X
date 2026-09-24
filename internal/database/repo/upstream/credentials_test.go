@@ -445,3 +445,101 @@ func TestCredentialLifecycleIntegration(t *testing.T) {
 		}
 	})
 }
+
+func TestCredentialEgressPoolIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("butuh PostgreSQL")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	pool := newTestPool(ctx, t)
+	cipher := testCipher(t, 0xEE)
+	credentials, err := NewCredentialRepo(pool, cipher)
+	if err != nil {
+		t.Fatalf("NewCredentialRepo: %v", err)
+	}
+	egress, err := NewEgressRepo(pool, cipher)
+	if err != nil {
+		t.Fatalf("NewEgressRepo: %v", err)
+	}
+	provider := seedProvider(ctx, t, pool, "provider-egress-pool-test")
+	admin := seedUser(ctx, t, pool)
+
+	ep1, err := egress.Create(ctx, CreateEgressParams{
+		Name:      "proxy-sg",
+		Kind:      EgressHTTP,
+		ProxyURL:  security.Secret("http://sg.proxy.test:8080"),
+		CreatedBy: &admin,
+	})
+	if err != nil {
+		t.Fatalf("egress.Create: %v", err)
+	}
+
+	ep2, err := egress.Create(ctx, CreateEgressParams{
+		Name:      "proxy-us",
+		Kind:      EgressHTTP,
+		ProxyURL:  security.Secret("http://us.proxy.test:8080"),
+		CreatedBy: &admin,
+	})
+	if err != nil {
+		t.Fatalf("egress.Create: %v", err)
+	}
+
+	// 1. Buat kredensial dengan EgressPoolID
+	credWithPool, err := credentials.Create(ctx, CreateCredentialParams{
+		ProviderID:   provider.ID,
+		Label:        "account-sg",
+		Secret:       security.Secret("secret-sg-account"),
+		EgressPoolID: &ep1.ID,
+		CreatedBy:    &admin,
+	})
+	if err != nil {
+		t.Fatalf("credentials.Create dengan egress pool: %v", err)
+	}
+	if credWithPool.EgressPoolID == nil || *credWithPool.EgressPoolID != ep1.ID {
+		t.Errorf("EgressPoolID = %v, ingin %v", credWithPool.EgressPoolID, ep1.ID)
+	}
+
+	// 2. Baca via Get
+	fetched, err := credentials.Get(ctx, credWithPool.ID)
+	if err != nil {
+		t.Fatalf("credentials.Get: %v", err)
+	}
+	if fetched.EgressPoolID == nil || *fetched.EgressPoolID != ep1.ID {
+		t.Errorf("Get EgressPoolID = %v, ingin %v", fetched.EgressPoolID, ep1.ID)
+	}
+
+	// 3. Active membaca EgressPoolID
+	active, err := credentials.Active(ctx, provider.ID)
+	if err != nil {
+		t.Fatalf("credentials.Active: %v", err)
+	}
+	if active.EgressPoolID == nil || *active.EgressPoolID != ep1.ID {
+		t.Errorf("Active EgressPoolID = %v, ingin %v", active.EgressPoolID, ep1.ID)
+	}
+
+	// 4. Ubah EgressPoolID ke ep2 via SetCredentialEgressPool
+	if err := credentials.SetCredentialEgressPool(ctx, credWithPool.ID, &ep2.ID); err != nil {
+		t.Fatalf("SetCredentialEgressPool: %v", err)
+	}
+	updated, err := credentials.Get(ctx, credWithPool.ID)
+	if err != nil {
+		t.Fatalf("credentials.Get setelah update: %v", err)
+	}
+	if updated.EgressPoolID == nil || *updated.EgressPoolID != ep2.ID {
+		t.Errorf("Updated EgressPoolID = %v, ingin %v", updated.EgressPoolID, ep2.ID)
+	}
+
+	// 5. Hapus EgressPoolID (set nil) via SetCredentialEgressPool
+	if err := credentials.SetCredentialEgressPool(ctx, credWithPool.ID, nil); err != nil {
+		t.Fatalf("SetCredentialEgressPool nil: %v", err)
+	}
+	cleared, err := credentials.Get(ctx, credWithPool.ID)
+	if err != nil {
+		t.Fatalf("credentials.Get setelah cleared: %v", err)
+	}
+	if cleared.EgressPoolID != nil {
+		t.Errorf("Cleared EgressPoolID = %v, ingin nil", cleared.EgressPoolID)
+	}
+}

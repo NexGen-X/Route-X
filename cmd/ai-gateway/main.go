@@ -541,7 +541,7 @@ func buildGatewaySurface(
 		return nil, nil, nil, err
 	}
 	googleOAuthClient := oauth.NewGoogleOAuthClient(nil)
-	oauthJob := worker.NewOAuthRefreshWorker(db.Pool, oauthRepo, creds, googleOAuthClient, logger)
+	oauthJob := worker.NewOAuthRefreshWorker(db.Pool, oauthRepo, creds, egress, googleOAuthClient, logger)
 	workerSup.Register(oauthJob, 10*time.Minute, 1*time.Minute)
 
 	workerSup.Start(ctx)

@@ -10,11 +10,13 @@ import (
 
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/security"
 )
 
 type exchangeOAuthCodeReq struct {
-	Code        string `json:"code"`
-	RedirectURI string `json:"redirect_uri"`
+	Code         string  `json:"code"`
+	RedirectURI  string  `json:"redirect_uri"`
+	EgressPoolID *string `json:"egress_pool_id"`
 }
 
 type refreshOAuthSessionReq struct {
@@ -52,8 +54,22 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Backend mengatur penukaran langsung ke Google Token Endpoint
-	tokenRes, err := h.oauthClient.ExchangeAuthCode(ctx, req.Code, req.RedirectURI, "", "")
+	var proxyURL security.Secret
+	var poolID *string
+	if req.EgressPoolID != nil && *req.EgressPoolID != "" {
+		poolID = req.EgressPoolID
+		if h.egressRepo != nil {
+			pURL, err := h.egressRepo.ProxyURL(ctx, *poolID)
+			if err != nil {
+				httpx.BadRequest(w, r, "invalid_egress_pool", "Gagal memuat URL proxy egress pool: "+err.Error())
+				return
+			}
+			proxyURL = pURL
+		}
+	}
+
+	// Backend mengatur penukaran langsung ke Google Token Endpoint (lewat proxy bila ditentukan)
+	tokenRes, err := h.oauthClient.ExchangeAuthCodeWithProxy(ctx, req.Code, req.RedirectURI, "", "", proxyURL)
 	if err != nil {
 		httpx.BadRequest(w, r, "oauth_exchange_failed", err.Error())
 		return
@@ -84,13 +100,17 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 			httpx.BadRequest(w, r, "credential_update_failed", "Gagal memperbarui kredensial provider: "+err.Error())
 			return
 		}
+		if poolID != nil {
+			_ = h.credentialRepo.SetCredentialEgressPool(ctx, credID, poolID)
+		}
 	} else {
 		// Buat kredensial baru di provider_credentials
 		credMeta, err := h.credentialRepo.Create(ctx, upstream.CreateCredentialParams{
-			ProviderID: providerID,
-			Label:      label,
-			Secret:     tokenRes.AccessToken,
-			ExpiresAt:  &expiresAt,
+			ProviderID:   providerID,
+			Label:        label,
+			Secret:       tokenRes.AccessToken,
+			ExpiresAt:    &expiresAt,
+			EgressPoolID: poolID,
 		})
 		if err != nil {
 			httpx.BadRequest(w, r, "credential_create_failed", "Gagal menyimpan kredensial provider: "+err.Error())
@@ -197,7 +217,18 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		res, err := h.oauthClient.RefreshAccessToken(ctx, activeSess.RefreshToken.Reveal(), activeSess.ClientID, "")
+		var proxyURL security.Secret
+		if activeSess.EgressPoolID != nil && *activeSess.EgressPoolID != "" && h.egressRepo != nil {
+			pURL, err := h.egressRepo.ProxyURL(ctx, *activeSess.EgressPoolID)
+			if err != nil {
+				h.logger.WarnContext(ctx, "gagal memuat proxy URL untuk refresh oauth manual",
+					"session_id", sessID, "egress_pool_id", *activeSess.EgressPoolID, "error", err)
+			} else {
+				proxyURL = pURL
+			}
+		}
+
+		res, err := h.oauthClient.RefreshAccessTokenWithProxy(ctx, activeSess.RefreshToken.Reveal(), activeSess.ClientID, "", proxyURL)
 		if err != nil {
 			errStr := err.Error()
 			_ = h.oauthRepo.UpdateRefreshStatus(ctx, sessID, &errStr)

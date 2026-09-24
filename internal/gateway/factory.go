@@ -265,6 +265,14 @@ func (f *Factory) ProviderForTarget(ctx context.Context, t ProviderTarget) (prov
 	if err != nil {
 		return nil, err
 	}
+
+	// Per-Account Egress Pool Override:
+	// Jika kredensial aktif yang terpilih memiliki egress pool khusus,
+	// gunakan egress pool milik akun tersebut (override milik provider).
+	if cred != nil && cred.EgressPoolID != nil && *cred.EgressPoolID != "" {
+		t.EgressPoolID = cred.EgressPoolID
+	}
+
 	proxy, err := f.proxyTarget(ctx, t)
 	if err != nil {
 		return nil, err

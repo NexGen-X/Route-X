@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -115,8 +116,38 @@ type googleTokenJSON struct {
 	ErrorDesc    string `json:"error_description"`
 }
 
+// httpClientForProxy membuat client HTTP khusus dengan proxy jika proxyURL disetel.
+func (c *GoogleOAuthClient) httpClientForProxy(proxyURL security.Secret) (*http.Client, error) {
+	if proxyURL.IsZero() {
+		return c.httpClient, nil
+	}
+	u, err := url.Parse(proxyURL.Reveal())
+	if err != nil {
+		return nil, fmt.Errorf("URL proxy tidak sah: %w", err)
+	}
+	tr := &http.Transport{
+		Proxy:               http.ProxyURL(u),
+		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+	return &http.Client{
+		Transport: tr,
+		Timeout:   30 * time.Second,
+	}, nil
+}
+
 // ExchangeAuthCode menukarkan kode otorisasi menjadi access token dan refresh token.
 func (c *GoogleOAuthClient) ExchangeAuthCode(ctx context.Context, code, redirectURI, clientID, clientSecret string) (*TokenResult, error) {
+	return c.ExchangeAuthCodeWithProxy(ctx, code, redirectURI, clientID, clientSecret, security.Secret(""))
+}
+
+// ExchangeAuthCodeWithProxy menukarkan kode otorisasi via proxy keluar jika disetel.
+func (c *GoogleOAuthClient) ExchangeAuthCodeWithProxy(
+	ctx context.Context,
+	code, redirectURI, clientID, clientSecret string,
+	proxyURL security.Secret,
+) (*TokenResult, error) {
 	code = ExtractCode(code)
 	if code == "" {
 		return nil, errors.New("kode otorisasi tidak boleh kosong")
@@ -149,7 +180,12 @@ func (c *GoogleOAuthClient) ExchangeAuthCode(ctx context.Context, code, redirect
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := c.httpClient.Do(req)
+	client, err := c.httpClientForProxy(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("menghubungi server oauth google: %w", err)
 	}
@@ -195,6 +231,15 @@ func (c *GoogleOAuthClient) ExchangeAuthCode(ctx context.Context, code, redirect
 
 // RefreshAccessToken memperbarui access token Google menggunakan refresh token yang ada.
 func (c *GoogleOAuthClient) RefreshAccessToken(ctx context.Context, refreshToken, clientID, clientSecret string) (*TokenResult, error) {
+	return c.RefreshAccessTokenWithProxy(ctx, refreshToken, clientID, clientSecret, security.Secret(""))
+}
+
+// RefreshAccessTokenWithProxy memperbarui access token Google via proxy keluar jika disetel.
+func (c *GoogleOAuthClient) RefreshAccessTokenWithProxy(
+	ctx context.Context,
+	refreshToken, clientID, clientSecret string,
+	proxyURL security.Secret,
+) (*TokenResult, error) {
 	if refreshToken == "" {
 		return nil, errors.New("refresh token tidak boleh kosong")
 	}
@@ -221,7 +266,12 @@ func (c *GoogleOAuthClient) RefreshAccessToken(ctx context.Context, refreshToken
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := c.httpClient.Do(req)
+	client, err := c.httpClientForProxy(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("menghubungi server oauth google: %w", err)
 	}

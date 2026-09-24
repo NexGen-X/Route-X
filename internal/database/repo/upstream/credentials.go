@@ -30,9 +30,10 @@ type CredentialMeta struct {
 	ExpiresAt    *time.Time
 	AuthFailures int
 
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	CreatedBy *string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	CreatedBy    *string
+	EgressPoolID *string
 }
 
 // ActiveCredential adalah kredensial yang sudah didekripsi, siap dipakai memanggil
@@ -41,10 +42,11 @@ type CredentialMeta struct {
 // Secret bertipe security.Secret supaya tidak bisa tercetak ke log karena kelalaian;
 // nilai aslinya hanya keluar lewat Reveal(), tepat di titik pemakaian.
 type ActiveCredential struct {
-	ID        string
-	Label     string
-	Secret    security.Secret
-	ExpiresAt *time.Time
+	ID           string
+	Label        string
+	Secret       security.Secret
+	ExpiresAt    *time.Time
+	EgressPoolID *string
 }
 
 // CredentialRepo adalah akses data kredensial provider.
@@ -79,7 +81,7 @@ func (r *CredentialRepo) ActiveKeyID() string { return r.cipher.KeyID() }
 const credentialColumns = `
 	id::text, provider_id::text, label, masked_hint, encryption_key_id,
 	enabled, priority, last_used_at, expires_at, auth_failures,
-	created_at, updated_at, created_by::text`
+	created_at, updated_at, created_by::text, egress_pool_id::text`
 
 // scanCredential membaca satu baris sesuai credentialColumns.
 func scanCredential(row pgxRow) (*CredentialMeta, error) {
@@ -87,7 +89,7 @@ func scanCredential(row pgxRow) (*CredentialMeta, error) {
 	err := row.Scan(
 		&c.ID, &c.ProviderID, &c.Label, &c.MaskedHint, &c.EncryptionKeyID,
 		&c.Enabled, &c.Priority, &c.LastUsedAt, &c.ExpiresAt, &c.AuthFailures,
-		&c.CreatedAt, &c.UpdatedAt, &c.CreatedBy,
+		&c.CreatedAt, &c.UpdatedAt, &c.CreatedBy, &c.EgressPoolID,
 	)
 	if err != nil {
 		return nil, err
@@ -106,8 +108,9 @@ type CreateCredentialParams struct {
 	// ExpiresAt opsional, dipakai mengingatkan rotasi sebelum kredensial mati.
 	ExpiresAt *time.Time
 	// Priority menentukan prioritas saat provider menggunakan strategi priority (makin kecil makin utama).
-	Priority  *int
-	CreatedBy *string
+	Priority     *int
+	EgressPoolID *string
+	CreatedBy    *string
 }
 
 // Create mengenkripsi kredensial lalu menyimpannya.
@@ -128,6 +131,9 @@ func (r *CredentialRepo) Create(ctx context.Context, p CreateCredentialParams) (
 	if err := refID(op, "created_by", p.CreatedBy); err != nil {
 		return nil, err
 	}
+	if err := refID(op, "egress_pool_id", p.EgressPoolID); err != nil {
+		return nil, err
+	}
 	if p.Secret.IsZero() {
 		return nil, fmt.Errorf("%s: %w: kredensial kosong", op, repo.ErrConstraint)
 	}
@@ -144,11 +150,11 @@ func (r *CredentialRepo) Create(ctx context.Context, p CreateCredentialParams) (
 	row := r.q.QueryRow(ctx, `
 		insert into provider_credentials (
 			id, provider_id, label, ciphertext, encryption_key_id, masked_hint,
-			expires_at, created_by, priority
-		) values ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9, 100))
+			expires_at, created_by, priority, egress_pool_id
+		) values ($1, $2, $3, $4, $5, $6, $7, $8, coalesce($9, 100), $10)
 		returning `+credentialColumns,
 		id, p.ProviderID, strOr(p.Label, DefaultCredentialLabel), ciphertext,
-		r.cipher.KeyID(), maskCredential(p.Secret), p.ExpiresAt, p.CreatedBy, p.Priority,
+		r.cipher.KeyID(), maskCredential(p.Secret), p.ExpiresAt, p.CreatedBy, p.Priority, p.EgressPoolID,
 	)
 
 	meta, err := scanCredential(row)
@@ -229,9 +235,10 @@ func (r *CredentialRepo) Active(ctx context.Context, providerID string) (*Active
 	var (
 		id, label, ciphertext string
 		expiresAt             *time.Time
+		egressPoolID          *string
 	)
 	err := r.q.QueryRow(ctx, `
-		select c.id::text, c.label, c.ciphertext, c.expires_at
+		select c.id::text, c.label, c.ciphertext, c.expires_at, c.egress_pool_id::text
 		from provider_credentials c
 		join providers p on p.id = c.provider_id
 		where c.provider_id = $1
@@ -249,7 +256,7 @@ func (r *CredentialRepo) Active(ctx context.Context, providerID string) (*Active
 		  end asc,
 		  c.last_used_at asc nulls first,
 		  c.created_at asc
-		limit 1`, providerID).Scan(&id, &label, &ciphertext, &expiresAt)
+		limit 1`, providerID).Scan(&id, &label, &ciphertext, &expiresAt, &egressPoolID)
 	if err != nil {
 		return nil, repo.Err(op, err)
 	}
@@ -258,7 +265,7 @@ func (r *CredentialRepo) Active(ctx context.Context, providerID string) (*Active
 	if err != nil {
 		return nil, fmt.Errorf("%s (kredensial %s): %w", op, id, err)
 	}
-	return &ActiveCredential{ID: id, Label: label, Secret: secret, ExpiresAt: expiresAt}, nil
+	return &ActiveCredential{ID: id, Label: label, Secret: secret, ExpiresAt: expiresAt, EgressPoolID: egressPoolID}, nil
 }
 
 // UpdateSecret memperbarui ciphertext kredensial (misalnya setelah auto-refresh token OAuth) dan mereset kegagalan autentikasi.
@@ -555,4 +562,26 @@ func (r *CredentialRepo) Reencrypt(ctx context.Context, old *security.Cipher, li
 		}
 	}
 	return rotated, nil
+}
+
+// SetCredentialEgressPool mengatur atau menghapus asosiasi jalur keluar (egress pool) pada kredensial.
+func (r *CredentialRepo) SetCredentialEgressPool(ctx context.Context, credID string, egressPoolID *string) error {
+	const op = "mengatur jalur keluar kredensial"
+	if !idOK(credID) {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	if err := refID(op, "egress_pool_id", egressPoolID); err != nil {
+		return err
+	}
+	tag, err := r.q.Exec(ctx, `
+		update provider_credentials
+		set egress_pool_id = $2, updated_at = now()
+		where id = $1`, credID, egressPoolID)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	return nil
 }

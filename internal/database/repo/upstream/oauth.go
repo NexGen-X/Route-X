@@ -26,6 +26,7 @@ type OAuthSessionMeta struct {
 	Enabled          bool       `json:"enabled"`
 	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
 	MaskedHint       string     `json:"masked_hint,omitempty"`
+	EgressPoolID     *string    `json:"egress_pool_id,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
@@ -39,6 +40,7 @@ type ActiveOAuthSession struct {
 	ClientID     string
 	RedirectURI  string
 	RefreshToken security.Secret
+	EgressPoolID *string
 }
 
 // UpsertOAuthSessionParams adalah masukan penyimpanan atau pembaruan sesi OAuth.
@@ -75,7 +77,7 @@ func (r *OAuthRepo) WithQuerier(q repo.Querier) *OAuthRepo {
 const oauthSessionJoinedColumns = `
 	s.id::text, s.provider_id::text, s.credential_id::text, s.account_email, s.account_name,
 	s.client_id, s.redirect_uri, s.scopes, s.last_refreshed_at, s.last_refresh_error,
-	s.enabled, c.expires_at, c.masked_hint, s.created_at, s.updated_at`
+	s.enabled, c.expires_at, c.masked_hint, s.created_at, s.updated_at, c.egress_pool_id::text`
 
 func scanOAuthSessionJoined(row pgxRow) (*OAuthSessionMeta, error) {
 	var m OAuthSessionMeta
@@ -83,7 +85,7 @@ func scanOAuthSessionJoined(row pgxRow) (*OAuthSessionMeta, error) {
 	err := row.Scan(
 		&m.ID, &m.ProviderID, &m.CredentialID, &m.AccountEmail, &m.AccountName,
 		&m.ClientID, &m.RedirectURI, &scopesRaw, &m.LastRefreshedAt, &m.LastRefreshError,
-		&m.Enabled, &m.ExpiresAt, &m.MaskedHint, &m.CreatedAt, &m.UpdatedAt,
+		&m.Enabled, &m.ExpiresAt, &m.MaskedHint, &m.CreatedAt, &m.UpdatedAt, &m.EgressPoolID,
 	)
 	if err != nil {
 		return nil, err
@@ -243,7 +245,8 @@ func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold tim
 
 	query := `
 		select s.id::text, s.provider_id::text, s.credential_id::text,
-		       s.account_email, s.client_id, s.redirect_uri, s.refresh_token_encrypted
+		       s.account_email, s.client_id, s.redirect_uri, s.refresh_token_encrypted,
+		       c.egress_pool_id::text
 		from provider_oauth_sessions s
 		join provider_credentials c on c.id = s.credential_id
 		where s.enabled
@@ -260,7 +263,8 @@ func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold tim
 	var out []*ActiveOAuthSession
 	for rows.Next() {
 		var id, provID, credID, email, clientID, redirectURI, ciphertext string
-		if err := rows.Scan(&id, &provID, &credID, &email, &clientID, &redirectURI, &ciphertext); err != nil {
+		var egressPoolID *string
+		if err := rows.Scan(&id, &provID, &credID, &email, &clientID, &redirectURI, &ciphertext, &egressPoolID); err != nil {
 			return nil, repo.Err(op, err)
 		}
 
@@ -278,6 +282,7 @@ func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold tim
 			ClientID:     clientID,
 			RedirectURI:  redirectURI,
 			RefreshToken: secret,
+			EgressPoolID: egressPoolID,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -294,10 +299,12 @@ func (r *OAuthRepo) GetActiveSession(ctx context.Context, sessionID string) (*Ac
 	}
 
 	var provID, credID, email, clientID, redirectURI, ciphertext string
+	var egressPoolID *string
 	err := r.q.QueryRow(ctx, `
-		select provider_id::text, credential_id::text, account_email, client_id, redirect_uri, refresh_token_encrypted
-		from provider_oauth_sessions
-		where id = $1`, sessionID).Scan(&provID, &credID, &email, &clientID, &redirectURI, &ciphertext)
+		select s.provider_id::text, s.credential_id::text, s.account_email, s.client_id, s.redirect_uri, s.refresh_token_encrypted, c.egress_pool_id::text
+		from provider_oauth_sessions s
+		join provider_credentials c on c.id = s.credential_id
+		where s.id = $1`, sessionID).Scan(&provID, &credID, &email, &clientID, &redirectURI, &ciphertext, &egressPoolID)
 	if err != nil {
 		return nil, repo.Err(op, err)
 	}
@@ -315,6 +322,7 @@ func (r *OAuthRepo) GetActiveSession(ctx context.Context, sessionID string) (*Ac
 		ClientID:     clientID,
 		RedirectURI:  redirectURI,
 		RefreshToken: secret,
+		EgressPoolID: egressPoolID,
 	}, nil
 }
 

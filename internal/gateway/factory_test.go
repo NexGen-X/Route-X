@@ -780,3 +780,71 @@ func TestFactoryBYOKSelaluKebijakanKetat(t *testing.T) {
 		t.Error("provider BYOK beregress pool diterima; harus ditolak")
 	}
 }
+
+// TestFactoryPerAccountEgressPoolOverride memastikan kredensial yang memiliki egress_pool_id
+// meng-override konfigurasi egress pool di tingkat provider.
+func TestFactoryPerAccountEgressPoolOverride(t *testing.T) {
+	srv := serverUji(t)
+	egress := &sumberEgress{url: security.Secret("http://127.0.0.1:8080")}
+
+	providerPoolID := "pool-provider"
+	accountPoolID := "pool-account"
+
+	creds := &sumberKredensial{
+		cred: &upstream.ActiveCredential{
+			ID:           "cred-with-pool",
+			Label:        "account-proxy",
+			Secret:       security.Secret(rahasiaUji),
+			EgressPoolID: &accountPoolID,
+		},
+	}
+
+	f := pabrikUji(t, creds, egress)
+
+	target := ProviderTarget{
+		ID:           "prov-1",
+		Name:         "prov-test",
+		Kind:         providers.KindOpenAI,
+		BaseURL:      srv.URL,
+		TimeoutMS:    5000,
+		EgressPoolID: &providerPoolID,
+	}
+
+	_, err := f.ProviderForTarget(context.Background(), target)
+	if err != nil {
+		t.Fatalf("ProviderForTarget gagal: %v", err)
+	}
+
+	diminta := egress.diminta()
+	if len(diminta) == 0 {
+		t.Fatal("egress tidak diminta")
+	}
+	if diminta[0] != accountPoolID {
+		t.Errorf("egress diminta = %q, ingin %q (override akun)", diminta[0], accountPoolID)
+	}
+
+	// Tes fallback saat kredensial tidak memiliki egress pool
+	credsTanpaPool := &sumberKredensial{
+		cred: &upstream.ActiveCredential{
+			ID:           "cred-without-pool",
+			Label:        "account-fallback",
+			Secret:       security.Secret(rahasiaUji),
+			EgressPoolID: nil,
+		},
+	}
+	egressFallback := &sumberEgress{url: security.Secret("http://127.0.0.1:8080")}
+	fFallback := pabrikUji(t, credsTanpaPool, egressFallback)
+
+	_, err = fFallback.ProviderForTarget(context.Background(), target)
+	if err != nil {
+		t.Fatalf("ProviderForTarget fallback gagal: %v", err)
+	}
+
+	dimintaFallback := egressFallback.diminta()
+	if len(dimintaFallback) == 0 {
+		t.Fatal("egress fallback tidak diminta")
+	}
+	if dimintaFallback[0] != providerPoolID {
+		t.Errorf("egress fallback diminta = %q, ingin %q (milik provider)", dimintaFallback[0], providerPoolID)
+	}
+}

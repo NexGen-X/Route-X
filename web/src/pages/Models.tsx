@@ -692,19 +692,23 @@ export const Models: React.FC = () => {
 
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-text-muted">Per halaman:</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setCurrentPage(1);
-                  }}
-                  className="bg-bg-surface-2 border border-border text-white text-xs rounded px-2 py-1 focus:outline-none focus:border-accent cursor-pointer"
-                >
-                  <option value={12}>12</option>
-                  <option value={24}>24</option>
-                  <option value={48}>48</option>
-                </select>
+                <span className="text-[11px] text-text-muted shrink-0">Per halaman:</span>
+                <div className="w-20 shrink-0">
+                  <Select
+                    variant="compact"
+                    value={String(pageSize)}
+                    onChange={(val) => {
+                      setPageSize(Number(val));
+                      setCurrentPage(1);
+                    }}
+                    options={[
+                      { value: '12', label: '12' },
+                      { value: '24', label: '24' },
+                      { value: '48', label: '48' },
+                    ]}
+                    aria-label="Jumlah model per halaman"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center gap-1">

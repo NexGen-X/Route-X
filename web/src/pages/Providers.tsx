@@ -67,11 +67,11 @@ export const matchExistingProvider = (
   preset: KnownProviderPreset | null,
   providersList: Provider[]
 ): Provider | null => {
-  if (!preset || !providersList || providersList.length === 0) return null;
+  if (!preset || !providersList || !Array.isArray(providersList) || providersList.length === 0) return null;
 
   // 1. Kecocokan persis pada name atau preset ID
   const byExactName = providersList.find(
-    (p) => p.name === preset.name || p.name === preset.id
+    (p) => p && (p.name === preset.name || (preset.id && p.name === preset.id))
   );
   if (byExactName) return byExactName;
 
@@ -79,20 +79,24 @@ export const matchExistingProvider = (
   const normPresetBase = (preset.baseUrl || '').trim().replace(/\/+$/, '');
   if (normPresetBase) {
     const byBaseUrl = providersList.find(
-      (p) => (p.base_url || '').trim().replace(/\/+$/, '') === normPresetBase
+      (p) => p && (p.base_url || '').trim().replace(/\/+$/, '') === normPresetBase
     );
     if (byBaseUrl) return byBaseUrl;
   }
 
   // 3. Kecocokan prefix nama provider
   const byPrefix = providersList.find(
-    (p) => p.name.startsWith(preset.name) || p.name.startsWith(preset.id)
+    (p) =>
+      p &&
+      typeof p.name === 'string' &&
+      ((preset.name && p.name.startsWith(preset.name)) ||
+        (preset.id && p.name.startsWith(preset.id)))
   );
   if (byPrefix) return byPrefix;
 
   // 4. Kecocokan dialect/kind untuk first-party LLM (bukan generic compatible/custom)
-  if (!['openai_compatible', 'custom'].includes(preset.kind)) {
-    const byKind = providersList.find((p) => p.kind === preset.kind);
+  if (preset.kind && !['openai_compatible', 'custom'].includes(preset.kind)) {
+    const byKind = providersList.find((p) => p && p.kind === preset.kind);
     if (byKind) return byKind;
   }
 

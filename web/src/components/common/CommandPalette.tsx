@@ -5,7 +5,6 @@ import {
   Terminal,
   Activity,
   Server,
-  Cpu,
   GitFork,
   Code2,
   KeyRound,
@@ -134,17 +133,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       icon: Server,
       action: () => {
         onNavigate('/upstreams/providers');
-        onClose();
-      },
-    },
-    {
-      id: 'nav-models',
-      title: 'Models & Pricing Catalog',
-      subtitle: 'Katalog model kanonik dan struktur penetapan harga moneter USD',
-      category: 'Navigasi',
-      icon: Cpu,
-      action: () => {
-        onNavigate('/upstreams/models');
         onClose();
       },
     },

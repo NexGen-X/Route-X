@@ -21,6 +21,12 @@ const queryClient = new QueryClient({
   },
 });
 
+// Tangani kegagalan pemuatan chunk dinamis Vite saat versi baru dideploy
+window.addEventListener('vite:preloadError', (event) => {
+  console.warn('[Vite] Gagal memuat chunk modul dinamis, memuat ulang halaman...', event);
+  window.location.reload();
+});
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

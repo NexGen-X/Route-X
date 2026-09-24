@@ -24,6 +24,7 @@ export interface KnownProviderPreset {
   authLoginLabel?: string;
   authInstructions: string;
   authFallbackHint?: string;
+  accountLabelPlaceholder?: string;
 }
 
 export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
@@ -41,6 +42,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     borderColor: 'rgba(16, 163, 127, 0.35)',
     apiKeyPlaceholder: 'sk-proj-... atau sk-...',
     apiKeyHelp: 'platform.openai.com/api-keys',
+    accountLabelPlaceholder: 'mis. OpenAI Tim Utama, Tier 4 Pro',
     defaultPriority: 100,
     defaultWeight: 100,
     highlightModels: ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1'],
@@ -64,6 +66,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     borderColor: 'rgba(217, 119, 6, 0.35)',
     apiKeyPlaceholder: 'sk-ant-api03-...',
     apiKeyHelp: 'console.anthropic.com/settings/keys',
+    accountLabelPlaceholder: 'mis. Claude Max Tier, Dev Key',
     defaultPriority: 100,
     defaultWeight: 100,
     highlightModels: ['claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku'],
@@ -87,6 +90,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     borderColor: 'rgba(59, 130, 246, 0.35)',
     apiKeyPlaceholder: 'AIzaSy...',
     apiKeyHelp: 'aistudio.google.com/app/apikey',
+    accountLabelPlaceholder: 'mis. Google AI Studio Pro',
     defaultPriority: 100,
     defaultWeight: 100,
     highlightModels: ['gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro'],
@@ -133,6 +137,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     borderColor: 'rgba(255, 107, 0, 0.35)',
     apiKeyPlaceholder: 'csk-...',
     apiKeyHelp: 'cloud.cerebras.ai/platform',
+    accountLabelPlaceholder: 'mis. Cerebras CS-3 Fast Cluster',
     defaultPriority: 98,
     defaultWeight: 100,
     highlightModels: ['llama-3.3-70b', 'llama-3.1-8b', 'deepseek-r1-distill-llama-70b'],
@@ -248,6 +253,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     borderColor: 'rgba(6, 182, 212, 0.35)',
     apiKeyPlaceholder: 'sk-...',
     apiKeyHelp: 'platform.deepseek.com/api_keys',
+    accountLabelPlaceholder: 'mis. DeepSeek Production Key',
     defaultPriority: 90,
     defaultWeight: 100,
     highlightModels: ['deepseek-chat', 'deepseek-reasoner'],

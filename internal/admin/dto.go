@@ -363,6 +363,7 @@ type CredentialMetaDTO struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
 	CreatedBy    *string    `json:"created_by"`
+	EgressPoolID *string    `json:"egress_pool_id"`
 }
 
 func (CredentialMetaDTO) adalahDTO() {}
@@ -1181,6 +1182,7 @@ func toCredentialMetaDTO(c *upstream.CredentialMeta) CredentialMetaDTO {
 		CreatedAt:    c.CreatedAt,
 		UpdatedAt:    c.UpdatedAt,
 		CreatedBy:    c.CreatedBy,
+		EgressPoolID: c.EgressPoolID,
 	}
 }
 

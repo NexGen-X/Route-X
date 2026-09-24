@@ -1181,6 +1181,7 @@ export const Providers: React.FC = () => {
                 selectedProvider={selectedProvider}
                 credentials={credentials}
                 oauthSessions={oauthSessions}
+                egressPools={egressPools}
                 handleToggleKey={handleToggleKey}
                 handleDeleteKey={handleDeleteKey}
                 loadProviderDetails={loadProviderDetails}
@@ -1388,6 +1389,7 @@ export const CredentialsTabChild: React.FC<any> = ({
   selectedProvider,
   credentials,
   oauthSessions = [],
+  egressPools = [],
   handleToggleKey,
   handleDeleteKey,
   loadProviderDetails,
@@ -1403,6 +1405,7 @@ export const CredentialsTabChild: React.FC<any> = ({
   const [authFallbackInput, setAuthFallbackInput] = useState('');
   const [authExtractedToken, setAuthExtractedToken] = useState('');
   const [authExtractionHint, setAuthExtractionHint] = useState('');
+  const [inlineEgressPoolId, setInlineEgressPoolId] = useState<string>('');
   const [showNewKeySecret, setShowNewKeySecret] = useState(false);
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [copiedTokenId, setCopiedTokenId] = useState<string | null>(null);
@@ -1451,12 +1454,24 @@ export const CredentialsTabChild: React.FC<any> = ({
     setAuthFallbackInput('');
     setAuthExtractedToken('');
     setAuthExtractionHint('');
+    setInlineEgressPoolId('');
     setNewKeyForm({
       label: isAntigravity
         ? 'Antigravity Session Token'
         : directCredentials.length === 0 ? 'Primary API Key' : `Akun Cadangan #${directCredentials.length + 1}`,
       api_key: '',
     });
+  };
+
+  const handleUpdateAccountEgress = async (credId: string, poolId: string | null) => {
+    if (!selectedProvider) return;
+    try {
+      await api.credentials.setEgressPool(selectedProvider.id, credId, poolId);
+      toast.success('Jalur keluar akun berhasil diperbarui');
+      await loadProviderDetails(selectedProvider.id);
+    } catch (err: any) {
+      toast.error('Gagal mengubah jalur keluar: ' + (err.message || err));
+    }
   };
 
   const handleStrategyChange = async (newStrategy: 'round_robin' | 'priority') => {
@@ -1536,10 +1551,15 @@ export const CredentialsTabChild: React.FC<any> = ({
       if (isAntigravity) {
         const oauthRes = await api.providers.oauthExchange(selectedProvider.id, {
           code: keySecret,
+          egress_pool_id: inlineEgressPoolId || undefined,
         });
         toast.success(`Akun Google (${oauthRes.account_email || 'Antigravity'}) berhasil dihubungkan ke pool! Auto-refresh aktif.`);
       } else {
-        await api.credentials.create(selectedProvider.id, { label: keyLabel, api_key: keySecret });
+        await api.credentials.create(selectedProvider.id, {
+          label: keyLabel,
+          api_key: keySecret,
+          egress_pool_id: inlineEgressPoolId || undefined,
+        });
         toast.success('Kredensial berhasil ditambahkan dengan enkripsi AES-256-GCM');
       }
       resetInlineForm();
@@ -1779,6 +1799,26 @@ export const CredentialsTabChild: React.FC<any> = ({
               </div>
             )}
 
+            {/* Opsi Jalur Keluar (Egress Proxy) */}
+            <div>
+              <label className="block text-[11px] font-medium text-text-secondary mb-1 flex items-center gap-1">
+                <Globe className="w-3 h-3 text-accent" />
+                Jalur Keluar / Proxy Egress (Opsional)
+              </label>
+              <select
+                value={inlineEgressPoolId}
+                onChange={(e) => setInlineEgressPoolId(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-bg-surface border border-border rounded-lg text-white text-xs outline-none focus:border-accent"
+              >
+                <option value="">Ikuti Provider / Direct (Default)</option>
+                {egressPools.map((ep: any) => (
+                  <option key={ep.id} value={ep.id}>
+                    {ep.name} ({ep.kind.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="flex items-center justify-between pt-1">
               <span className="text-[10px] text-text-muted flex items-center gap-1">
                 <Lock className="w-3 h-3 text-accent flex-shrink-0" /> Enkripsi AES-256-GCM
@@ -1922,6 +1962,26 @@ export const CredentialsTabChild: React.FC<any> = ({
                       </button>
                     </div>
                   </div>
+
+                  {/* Selector Jalur Keluar (Egress Proxy) */}
+                  <div className="mt-2.5 pt-2 border-t border-border/40 flex items-center justify-between text-xs">
+                    <span className="text-text-muted text-[11px] flex items-center gap-1">
+                      <Globe className="w-3 h-3 text-accent" />
+                      Jalur Keluar (Proxy):
+                    </span>
+                    <select
+                      value={session.egress_pool_id || ''}
+                      onChange={(e) => handleUpdateAccountEgress(session.credential_id, e.target.value || null)}
+                      className="bg-bg-surface border border-border rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-accent"
+                    >
+                      <option value="">Ikuti Provider / Direct (Default)</option>
+                      {egressPools.map((ep: any) => (
+                        <option key={ep.id} value={ep.id}>
+                          {ep.name} ({ep.kind.toUpperCase()})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               );
             })}
@@ -1943,55 +2003,75 @@ export const CredentialsTabChild: React.FC<any> = ({
           {directCredentials.map((cred: any, index: number) => (
             <div
               key={cred.id}
-              className={`px-2.5 py-2 rounded-xl border flex items-center justify-between gap-2 transition-all ${
+              className={`px-3 py-2 rounded-xl border flex flex-col gap-1.5 transition-all ${
                 cred.enabled
                   ? 'border-border bg-bg-surface-2/40'
                   : 'border-border/60 bg-bg-surface-2/15 opacity-70'
               }`}
             >
-              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cred.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
-                <span className="font-bold text-white text-xs truncate">{cred.label}</span>
-                {currentStrategy === 'priority' && (
-                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase shrink-0 ${
-                    index === 0 ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-bg-surface text-text-muted border border-border'
-                  }`}>
-                    {index === 0 ? 'Utama' : `Cadangan #${index}`}
-                  </span>
-                )}
-                <span className="text-[11px] text-text-muted font-mono truncate hidden sm:inline">{cred.masked_hint || 'sk-****'}</span>
-                <button
-                  type="button"
-                  onClick={() => void copyWithFeedback(cred.masked_hint || '', 'Masked key disalin', () => {
-                    setCopiedTokenId(cred.id);
-                    copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000));
-                  })}
-                  className="text-text-muted hover:text-white flex-shrink-0"
-                >
-                  {copiedTokenId === cred.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                </button>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cred.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
+                  <span className="font-bold text-white text-xs truncate">{cred.label}</span>
+                  {currentStrategy === 'priority' && (
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase shrink-0 ${
+                      index === 0 ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-bg-surface text-text-muted border border-border'
+                    }`}>
+                      {index === 0 ? 'Utama' : `Cadangan #${index}`}
+                    </span>
+                  )}
+                  <span className="text-[11px] text-text-muted font-mono truncate hidden sm:inline">{cred.masked_hint || 'sk-****'}</span>
+                  <button
+                    type="button"
+                    onClick={() => void copyWithFeedback(cred.masked_hint || '', 'Masked key disalin', () => {
+                      setCopiedTokenId(cred.id);
+                      copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000));
+                    })}
+                    className="text-text-muted hover:text-white flex-shrink-0"
+                  >
+                    {copiedTokenId === cred.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleKey(cred)}
+                    title={cred.enabled ? 'Alihkan ke Standby' : 'Aktifkan'}
+                    className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-[11px] ${
+                      cred.enabled
+                        ? 'text-amber-400 hover:bg-amber-500/10'
+                        : 'text-emerald-400 hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    <Power className="w-3.5 h-3.5" />
+                    <span className="text-[10px] hidden sm:inline">{cred.enabled ? 'Standby' : 'Aktif'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteKey(cred)}
+                    className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleToggleKey(cred)}
-                  title={cred.enabled ? 'Alihkan ke Standby' : 'Aktifkan'}
-                  className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-[11px] ${
-                    cred.enabled
-                      ? 'text-amber-400 hover:bg-amber-500/10'
-                      : 'text-emerald-400 hover:bg-emerald-500/10'
-                  }`}
+              <div className="pt-1.5 border-t border-border/40 flex items-center justify-between text-xs">
+                <span className="text-text-muted text-[11px] flex items-center gap-1">
+                  <Globe className="w-3 h-3 text-accent" />
+                  Jalur Keluar (Proxy):
+                </span>
+                <select
+                  value={cred.egress_pool_id || ''}
+                  onChange={(e) => handleUpdateAccountEgress(cred.id, e.target.value || null)}
+                  className="bg-bg-surface border border-border rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-accent"
                 >
-                  <Power className="w-3.5 h-3.5" />
-                  <span className="text-[10px] hidden sm:inline">{cred.enabled ? 'Standby' : 'Aktif'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteKey(cred)}
-                  className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                  <option value="">Ikuti Provider / Direct (Default)</option>
+                  {egressPools.map((ep: any) => (
+                    <option key={ep.id} value={ep.id}>
+                      {ep.name} ({ep.kind.toUpperCase()})
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           ))}
@@ -2332,6 +2412,7 @@ export const CreateProviderModalChild: React.FC<CreateProviderModalChildProps> =
           setSavingStep('Menukarkan token OAuth ke Google & memverifikasi identitas akun...');
           const oauthRes = await api.providers.oauthExchange(targetExistingProvider.id, {
             code: effectiveApiKey,
+            egress_pool_id: selectedEgressPoolId || undefined,
           });
           toast.success(`Akun Google (${oauthRes.account_email || 'Antigravity'}) berhasil ditambahkan ke pool! Auto-refresh aktif.`);
         } else {
@@ -2340,6 +2421,7 @@ export const CreateProviderModalChild: React.FC<CreateProviderModalChildProps> =
           await api.credentials.create(targetExistingProvider.id, {
             label: finalLabel,
             api_key: effectiveApiKey,
+            egress_pool_id: selectedEgressPoolId || undefined,
           });
           toast.success(`Kredensial "${finalLabel}" berhasil ditambahkan ke pool ${targetExistingProvider.display_name || targetExistingProvider.name}!`);
         }
@@ -2769,6 +2851,29 @@ export const CreateProviderModalChild: React.FC<CreateProviderModalChildProps> =
                 </div>
               </div>
             )}
+
+            {/* Jalur Keluar (Proxy) Opsional untuk Akun Tambahan */}
+            <div className="pt-2.5 border-t border-border/50">
+              <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-accent" />
+                Jalur Keluar (Egress Proxy) Opsional
+              </label>
+              <select
+                value={selectedEgressPoolId}
+                onChange={(e) => setSelectedEgressPoolId(e.target.value)}
+                className="w-full px-3 py-2 bg-bg-surface border border-border rounded-lg text-white text-xs focus:outline-none focus:border-accent"
+              >
+                <option value="">Ikuti Provider / Direct (Default)</option>
+                {egressPools.map((ep: any) => (
+                  <option key={ep.id} value={ep.id}>
+                    {ep.name} ({ep.kind.toUpperCase()})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-text-muted mt-1">
+                Opsional: Akun ini akan memiliki jalur keluar proxy sendiri yang terisolasi dari akun lainnya.
+              </p>
+            </div>
           </div>
         ) : (
           /* Form Standar Create New Provider */

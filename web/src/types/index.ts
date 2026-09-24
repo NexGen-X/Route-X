@@ -61,6 +61,7 @@ export interface Credential {
   priority?: number;
   weight: number;
   expires_at?: string;
+  egress_pool_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -79,6 +80,7 @@ export interface OAuthSession {
   enabled: boolean;
   expires_at?: string;
   masked_hint?: string;
+  egress_pool_id?: string | null;
   created_at: string;
   updated_at: string;
 }

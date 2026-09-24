@@ -10,6 +10,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/oauth"
+	"github.com/NexGen-X/Route-X/internal/security"
 )
 
 // OAuthRefreshWorker adalah background worker berkala yang memantau dan me-refresh
@@ -18,6 +19,7 @@ type OAuthRefreshWorker struct {
 	pool        *pgxpool.Pool
 	oauthRepo   *upstream.OAuthRepo
 	credRepo    *upstream.CredentialRepo
+	egressRepo  *upstream.EgressRepo
 	oauthClient *oauth.GoogleOAuthClient
 	logger      *slog.Logger
 	threshold   time.Duration
@@ -28,6 +30,7 @@ func NewOAuthRefreshWorker(
 	pool *pgxpool.Pool,
 	oauthRepo *upstream.OAuthRepo,
 	credRepo *upstream.CredentialRepo,
+	egressRepo *upstream.EgressRepo,
 	oauthClient *oauth.GoogleOAuthClient,
 	logger *slog.Logger,
 ) *OAuthRefreshWorker {
@@ -41,6 +44,7 @@ func NewOAuthRefreshWorker(
 		pool:        pool,
 		oauthRepo:   oauthRepo,
 		credRepo:    credRepo,
+		egressRepo:  egressRepo,
 		oauthClient: oauthClient,
 		logger:      logger,
 		threshold:   15 * time.Minute, // Refresh token yang tersisa <= 15 menit
@@ -73,7 +77,18 @@ func (w *OAuthRefreshWorker) Run(ctx context.Context) error {
 	w.logger.Info("menemukan sesi oauth yang perlu diperbarui", "count", len(sessions))
 
 	for _, sess := range sessions {
-		res, err := w.oauthClient.RefreshAccessToken(ctx, sess.RefreshToken.Reveal(), sess.ClientID, "")
+		var proxyURL security.Secret
+		if sess.EgressPoolID != nil && *sess.EgressPoolID != "" && w.egressRepo != nil {
+			pURL, err := w.egressRepo.ProxyURL(ctx, *sess.EgressPoolID)
+			if err != nil {
+				w.logger.Warn("gagal mengambil URL proxy untuk refresh sesi oauth",
+					"session_id", sess.ID, "egress_pool_id", *sess.EgressPoolID, "error", err)
+			} else {
+				proxyURL = pURL
+			}
+		}
+
+		res, err := w.oauthClient.RefreshAccessTokenWithProxy(ctx, sess.RefreshToken.Reveal(), sess.ClientID, "", proxyURL)
 		if err != nil {
 			errStr := err.Error()
 			_ = w.oauthRepo.UpdateRefreshStatus(ctx, sess.ID, &errStr)

@@ -258,7 +258,7 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ strategy }),
       }),
-    oauthExchange: (id: string, data: { code: string; redirect_uri?: string }) =>
+    oauthExchange: (id: string, data: { code: string; redirect_uri?: string; egress_pool_id?: string | null }) =>
       request<{ status: string; account_email: string; account_name?: string; expires_at: string; session: OAuthSession }>(
         `/api/admin/upstreams/providers/${encodeURIComponent(id)}/oauth/exchange`,
         {
@@ -294,11 +294,19 @@ export const api = {
   credentials: {
     list: (providerId: string) =>
       request<{ items: Credential[] }>(`/api/admin/upstreams/providers/${encodeURIComponent(providerId)}/credentials`),
-    create: (providerId: string, data: { label: string; api_key: string; expires_at?: string }) =>
+    create: (providerId: string, data: { label: string; api_key: string; expires_at?: string; egress_pool_id?: string | null }) =>
       request<Credential>(`/api/admin/upstreams/providers/${encodeURIComponent(providerId)}/credentials`, {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    setEgressPool: (providerId: string, id: string, egress_pool_id: string | null) =>
+      request<Credential>(
+        `/api/admin/upstreams/providers/${encodeURIComponent(providerId)}/credentials/${encodeURIComponent(id)}/egress-pool`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ egress_pool_id }),
+        }
+      ),
     delete: (providerId: string, id: string) =>
       request<void>(`/api/admin/upstreams/providers/${encodeURIComponent(providerId)}/credentials/${encodeURIComponent(id)}`, {
         method: 'DELETE',

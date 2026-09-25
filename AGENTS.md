@@ -30,15 +30,22 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 - Bahasa komentar/log di codebase ini: Indonesia. Ikuti gaya yang ada.
 - Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0010_drop_roles.sql`)
 - **Alur Kerja Git Wajib PR (PR-Only Policy)**: Dilarang keras melakukan komit atau push langsung ke branch `main`. Setiap perubahan wajib dibuat pada branch terisolasi (`feat/*`, `fix/*`, `chore/*`), didorong ke remote, diajukan melalui `gh pr create`, dipantau hingga status CI hijau (`gh pr checks <id> --watch`), dan digabungkan melalui `gh pr merge <id> --squash --delete-branch`.
-- **Standar Verifikasi Multi-Aspek & Protokol Anti-Halusinasi (Wajib Bukti Nyata)**:
+- **Standar Verifikasi Multi-Aspek & Protokol 7-Layer QA (Wajib Bukti Nyata)**:
   - Dilarang keras menyajikan hasil mentah, asumsi, atau klaim penyelesaian tugas hanya berdasarkan spekulasi kode atau mock lokal semata.
   - Setiap integrasi sistem luar (LLM provider, proxy tunnel, cloud gateway, API eksternal) wajib dibedah dan diverifikasi perilakunya secara nyata terhadap spesifikasi resmi dan wire protocol (uji curl/probe live) sebelum diimplementasikan.
   - Wajib membedakan secara tegas antara Forward Proxy (L4/L7 HTTP CONNECT tunnel) dengan Reverse Proxy (L7 BaseURL routing). Keduanya tidak boleh dicampuradukkan.
-  - Setiap penyetoran hasil pekerjaan wajib membuktikan 4 lapisan verifikasi menyeluruh:
-    1. *Wire Protocol*: Status HTTP nyata, payload mentah, header respons (`cf-ray`, `x-request-id`), streaming SSE vs non-streaming.
-    2. *Backend & DB Integrity*: `go test ./...` 100% PASS, audit baris PostgreSQL via SQL riil, verifikasi enkripsi AES-256-GCM pada data rahasia.
-    3. *Frontend & Contracts*: `npm run build` bebas error TypeScript, guard DTO `adalahDTO()`, validasi CSRF & Cookie.
-    4. *Live Ground-Truth End-to-End*: Roundtrip riil (klien -> gateway -> upstream -> klien), latensi terukur (ms), exit IP riil.
+  - Setiap penyetoran hasil pekerjaan wajib membuktikan **Protokol 7-Layer QA**:
+    1. **Layer 1: Frontend Type & Unit Tests** — Kompilasi `npm run build` bebas error TypeScript (0 errors) dan seluruh test suite lulus (`npm test`).
+    2. **Layer 2: Backend Concurrency & Races** — Audit konkurensi Go bebas data race (`go test -race ./...`).
+    3. **Layer 3: Theme Tokens, Design Hygiene, & Responsiveness** — Kepatuhan token warna Tailwind/CSS, UI bersih, dan responsif lintas ukuran viewport.
+    4. **Layer 4: Live Gateway Wire-Protocol Probe** — Uji probe live (`./scripts/probe_e2e_gateway.sh`) untuk rute completions non-streaming & SSE streaming serta headers protokol.
+    5. **Layer 5: Target Component Functional Integrity** — Integritas logika fungsional, state management, form handlers, dan edge cases pada komponen target.
+    6. **Layer 6: Security & Zero-Leakage Sanitization** — Penanganan kredensial aman (`security.Secret`), redaksi data sensitif tak diekspor, proteksi CSRF & token sanitization.
+    7. **Layer 7 (Wajib): Cross-Module Blast Radius & Data-Flow Integration** — Verifikasi alur data menyeluruh lintas modul (Database -> Backend API -> Routing Engine -> Web Pages/CLI Integrations/Observability) guna mencegah putusnya data flow pada komponen dependen.
+- **Aturan Wajib Operasional & Komunikasi**:
+  - **Zero-Hallucination & Empirical Proof**: Dilarang keras berasumsi atau mengklaim fungsionalitas berjalan tanpa bukti eksekusi riil (output terminal nyata, log status HTTP, DTO query aktual).
+  - **Pelaporan Kejanggalan di Luar Scope**: Jika menemukan kejanggalan, anomali, kode usang/rapuh, atau risiko regresi di luar cakupan tugas saat ini, agent WAJIB mencatat dan menyajikannya dalam seksi khusus *[TEMUAN DI LUAR SCOPE & KEJANGGALAN SISTEM]* pada laporan.
+  - **Konsultasi Antar-Agent**: Komunikasi antar-agent (coder, tester, reviewer, orchestrator) wajib menggunakan format baku, bertukar temuan empiris, dan tidak membuat asumsi sepihak tanpa validasi lintas peran.
 - Jangan commit secret; jangan ubah `go.mod` tanpa alasan.
 - MCP Resmi yang terpasang untuk repo ini:
   - `codebase-memory-mcp`: Knowledge Graph & AST indeks kode Go & TS (`search_graph`, `trace_path`, `get_code_snippet`)

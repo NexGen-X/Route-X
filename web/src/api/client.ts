@@ -651,8 +651,8 @@ export const api = {
 
   // System
   system: {
-    settings: () => request<{ items: { key: string; value: any; description?: string }[] }>('/api/admin/system/settings'),
-    updateSetting: (key: string, value: any, description?: string) => {
+    settings: () => request<{ items: { key: string; value: unknown; description?: string }[] }>('/api/admin/system/settings'),
+    updateSetting: (key: string, value: unknown, description?: string) => {
       let rawVal = value;
       if (typeof value === 'string') {
         const trimmed = value.trim();

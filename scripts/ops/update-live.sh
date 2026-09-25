@@ -55,7 +55,7 @@ fi
 
 # 3. Dapatkan versi dan hash git terbaru
 GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")"
-VERSION="$(git describe --tags --always 2>/dev/null || echo "v1.1.0-live")"
+VERSION="$(git describe --tags --always 2>/dev/null || echo "v1.2.1-live")"
 echo "🔨 [2/4] Mengompilasi biner baru (${VERSION} @ ${GIT_COMMIT})..."
 
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "${INSTALL_DIR}/ai-gateway.new" ./cmd/ai-gateway

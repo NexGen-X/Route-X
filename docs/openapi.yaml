@@ -6,7 +6,7 @@ info:
     enkripsi kredensial AES-256-GCM, perutean adaptif ber-failover otomatis, pemutus arus terdistribusi,
     pengawasan anggaran berpresisi finansial skala 8 desimal (upstream.USD), jejak audit menyeluruh,
     dan dashboard operasional tersemat.
-  version: 1.0.0
+  version: 1.2.1
   contact:
     name: Route-X Engineering Team
     email: admin@routex.internal
@@ -58,6 +58,42 @@ paths:
           $ref: '#/components/responses/403Forbidden'
         '429':
           $ref: '#/components/responses/429RateLimited'
+        '502':
+          $ref: '#/components/responses/502BadGateway'
+
+  /v1/messages:
+    post:
+      tags:
+        - Inferencing
+      summary: Eksekusi Native Anthropic Messages API
+      description: |
+        Protokol asli Anthropic Claude Messages API (Claude Code, Cursor, Cline, LibreChat).
+        Mendukung SSE streaming, multimodal images, tool/function calling.
+      operationId: createAnthropicMessage
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnthropicMessageRequest'
+      responses:
+        '200':
+          description: Berhasil memproses pesan Anthropic (atau stream text/event-stream)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicMessageResponse'
+            text/event-stream:
+              schema:
+                type: string
+                description: Aliran SSE Anthropic content_block_delta dan message_delta
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
         '502':
           $ref: '#/components/responses/502BadGateway'
 
@@ -458,6 +494,11 @@ components:
       scheme: bearer
       bearerFormat: API-Key
       description: Kunci API klien Route-X format `sk_live_<random>`.
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: Kunci API klien Route-X format `sk_live_<random>` via header `x-api-key` (standar Anthropic SDK).
     SessionCookie:
       type: apiKey
       in: cookie
@@ -470,6 +511,115 @@ components:
       description: Token proteksi CSRF double-submit token.
 
   schemas:
+    AnthropicMessageRequest:
+      type: object
+      required:
+        - model
+        - messages
+        - max_tokens
+      properties:
+        model:
+          type: string
+          description: ID model kanonik Anthropic Claude (misal claude-3-7-sonnet-20250219)
+          example: claude-3-7-sonnet-20250219
+        messages:
+          type: array
+          description: Daftar pesan percakapan berurutan (user / assistant)
+          items:
+            type: object
+            required:
+              - role
+              - content
+            properties:
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                description: Teks prompt atau array blok konten (teks, image, tool_result)
+                oneOf:
+                  - type: string
+                  - type: array
+                    items:
+                      type: object
+        max_tokens:
+          type: integer
+          description: Jumlah token maksimum yang diizinkan untuk dihasilkan
+          example: 4096
+        system:
+          type: string
+          description: Instruksi prompt sistem terpisah untuk model Claude
+          example: Anda adalah asisten rekayasa perangkat lunak Route-X.
+        stream:
+          type: boolean
+          default: false
+          description: Aktifkan streaming Server-Sent Events (SSE) protokol Anthropic
+        temperature:
+          type: number
+          nullable: true
+          example: 0.7
+        tools:
+          type: array
+          description: Definisi perkakas (function/tool calling)
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+              input_schema:
+                type: object
+
+    AnthropicMessageResponse:
+      type: object
+      required:
+        - id
+        - type
+        - role
+        - model
+        - content
+        - usage
+      properties:
+        id:
+          type: string
+          example: msg_01ABC123XYZ456
+        type:
+          type: string
+          example: message
+        role:
+          type: string
+          example: assistant
+        model:
+          type: string
+          example: claude-3-7-sonnet-20250219
+        content:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+                example: text
+              text:
+                type: string
+                example: Halo! Ada yang bisa saya bantu terkait Route-X?
+        stop_reason:
+          type: string
+          nullable: true
+          example: end_turn
+        stop_sequence:
+          type: string
+          nullable: true
+        usage:
+          type: object
+          properties:
+            input_tokens:
+              type: integer
+              example: 42
+            output_tokens:
+              type: integer
+              example: 128
+
     ChatCompletionRequest:
       type: object
       required:

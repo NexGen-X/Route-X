@@ -128,11 +128,11 @@ Calling diverse AI APIs directly creates vendor lock-in, unmanaged API key spraw
 Download and run the official static Linux amd64 binary directly (zero compilation needed):
 
 ```bash
-# 1. Download official v1.1.0 release tarball
-curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.1.0/routex-v1.1.0-linux-amd64.tar.gz
+# 1. Download official v1.2.1 release tarball
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.2.1/routex-v1.2.1-linux-amd64.tar.gz
 
 # 2. Extract binary
-tar -xzvf routex-v1.1.0-linux-amd64.tar.gz
+tar -xzvf routex-v1.2.1-linux-amd64.tar.gz
 
 # 3. Run database migrations & start gateway
 ./ai-gateway -migrate
@@ -176,7 +176,7 @@ cd Route-X
 cd web && npm install && npm run build && cd ..
 
 # 3. Compile Go Binary
-go build -ldflags "-X main.version=v1.1.0" -o ai-gateway ./cmd/ai-gateway
+go build -ldflags "-X main.version=v1.2.1" -o ai-gateway ./cmd/ai-gateway
 
 # 4. Run Database Migrations
 ./ai-gateway -migrate

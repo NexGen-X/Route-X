@@ -31,6 +31,8 @@ import { QueryError } from '../components/common/QueryError';
 
 export const Settings: React.FC = () => {
   const { toast, confirmModal } = useToast();
+  // Tab Navigasi: 'domain' | 'backup' | 'advanced'
+  const [activeTab, setActiveTab] = useState<'domain' | 'backup' | 'advanced'>('domain');
   // Runtime Settings state
   const [settings, setSettings] = useState<{ key: string; value: any; description?: string }[]>([]);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
@@ -307,7 +309,49 @@ export const Settings: React.FC = () => {
       {loadError && (
         <QueryError message={loadError} onRetry={() => void loadSettings()} />
       )}
+
+      {/* Tab Switcher Pills */}
+      <div className="flex border-b border-border/80 gap-1 mb-6">
+        <button
+          type="button"
+          onClick={() => setActiveTab('domain')}
+          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeTab === 'domain'
+              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
+              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+          }`}
+        >
+          <Globe className="w-4 h-4 text-accent" />
+          <span>Domain & HTTPS</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('backup')}
+          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeTab === 'backup'
+              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
+              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+          }`}
+        >
+          <Database className="w-4 h-4 text-accent" />
+          <span>Backup & Restore</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('advanced')}
+          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeTab === 'advanced'
+              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
+              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+          }`}
+        >
+          <Sliders className="w-4 h-4 text-accent" />
+          <span>Pengaturan Lanjutan</span>
+        </button>
+      </div>
+
       {/* 1. Pengaturan Domain & HTTPS Otomatis */}
+      {activeTab === 'domain' && (
       <Card className="p-6 border-accent/20 bg-bg-surface-2">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border">
           <div className="flex items-center gap-3">
@@ -497,8 +541,10 @@ export const Settings: React.FC = () => {
           </div>
         </form>
       </Card>
+      )}
 
       {/* 2. Pencadangan & Pemulihan Database (SQL Backup & Disaster Recovery) */}
+      {activeTab === 'backup' && (
       <Card className="p-6 border-accent/20 bg-bg-surface-2">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border">
           <div className="flex items-center gap-3">
@@ -734,8 +780,10 @@ export const Settings: React.FC = () => {
           </div>
         </div>
       </Card>
+      )}
 
-      {/* 3. Runtime Parameters Section */}
+      {/* 3. Runtime Parameters Section (Pengaturan Lanjutan) */}
+      {activeTab === 'advanced' && (
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-start md:items-center justify-between gap-4 pb-5 border-b border-border">
           <div className="flex items-start gap-3 min-w-0">
@@ -923,6 +971,7 @@ export const Settings: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
       {/* Modal Tambah Parameter Runtime */}
       <Modal

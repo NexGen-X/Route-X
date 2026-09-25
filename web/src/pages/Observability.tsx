@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { TimeSeriesPoint, BreakdownItem, Diagnostics } from '../types';
+import type { TimeSeriesPoint, BreakdownItem, Diagnostics, ObservabilitySummary } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
@@ -13,8 +13,9 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-import { RefreshCw, Database } from 'lucide-react';
+import { RefreshCw, Database, Activity, Coins, Clock } from 'lucide-react';
 import { QueryError } from '../components/common/QueryError';
+import { formatUSD } from '../utils/money';
 
 export const Observability: React.FC = () => {
   const [windowTime, setWindowTime] = useState('24h');
@@ -22,6 +23,7 @@ export const Observability: React.FC = () => {
   const [series, setSeries] = useState<TimeSeriesPoint[]>([]);
   const [breakdowns, setBreakdowns] = useState<BreakdownItem[]>([]);
   const [breakdownBy, setBreakdownBy] = useState<'provider' | 'model' | 'api_key'>('provider');
+  const [summary, setSummary] = useState<ObservabilitySummary | null>(null);
   const [diag, setDiag] = useState<Diagnostics | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -75,12 +77,14 @@ export const Observability: React.FC = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [sRes, bRes] = await Promise.all([
+      const [sRes, bRes, sumRes] = await Promise.all([
         api.observability.series(metric, windowTime),
         api.observability.breakdown(breakdownBy, windowTime),
+        api.observability.summary(windowTime).catch(() => null),
       ]);
       setSeries(sRes.points || []);
       setBreakdowns(bRes.items || []);
+      setSummary(sumRes);
       setLoadError(null);
 
       try {
@@ -97,6 +101,13 @@ export const Observability: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  const totalRequestsFromSeries = series.reduce((acc, p) => acc + (p.requests || 0), 0);
+  const totalCostFromSeries = series.reduce((acc, p) => acc + (Number(p.cost_usd) || 0), 0).toFixed(4);
+  const totalTokensFromSeries = series.reduce((acc, p) => acc + (p.tokens || 0), 0);
+  const avgLatencyFromSeries = series.length > 0 ? series.reduce((acc, p) => acc + (p.p50_latency_ms || 0), 0) / series.length : 0;
+  const p95LatencyFromSeries = series.length > 0 ? Math.max(...series.map((p) => p.p95_latency_ms || 0)) : 0;
+  const errorRate = summary?.error_rate ?? (totalRequestsFromSeries > 0 ? (series.reduce((acc, p) => acc + (p.errors || 0), 0) / totalRequestsFromSeries) * 100 : 0);
 
   useEffect(() => {
     loadData();
@@ -132,6 +143,64 @@ export const Observability: React.FC = () => {
       />
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
+
+      {/* 3 Kartu Ringkasan KPI Eksekutif */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* KPI 1: Total Permintaan */}
+        <Card className="border-border bg-bg-surface">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[11px] font-medium text-text-muted">Total Permintaan ({windowTime})</span>
+              <div className="text-2xl font-bold text-white tracking-tight">
+                {(summary?.total_requests ?? totalRequestsFromSeries).toLocaleString()}
+              </div>
+              <div className="text-[10px] text-text-secondary flex items-center gap-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${errorRate > 5 ? 'bg-red-400' : 'bg-emerald-400'}`} />
+                <span>Error Rate: {errorRate.toFixed(1)}%</span>
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
+              <Activity className="w-5 h-5" />
+            </div>
+          </div>
+        </Card>
+
+        {/* KPI 2: Estimasi Biaya USD */}
+        <Card className="border-border bg-bg-surface">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[11px] font-medium text-text-muted">Estimasi Biaya ({windowTime})</span>
+              <div className="text-2xl font-bold text-white tracking-tight">
+                {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}
+              </div>
+              <div className="text-[10px] text-text-secondary">
+                Total Token: {(summary?.total_tokens ?? totalTokensFromSeries).toLocaleString()}
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+              <Coins className="w-5 h-5" />
+            </div>
+          </div>
+        </Card>
+
+        {/* KPI 3: Rata-rata Latensi */}
+        <Card className="border-border bg-bg-surface">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[11px] font-medium text-text-muted">Rata-rata Latensi</span>
+              <div className="text-2xl font-bold text-white tracking-tight">
+                {(summary?.avg_latency_ms ?? avgLatencyFromSeries).toFixed(0)} ms
+              </div>
+              <div className="text-[10px] text-text-secondary">
+                P95 Latensi: {(summary?.p95_latency_ms ?? p95LatencyFromSeries).toFixed(0)} ms
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+              <Clock className="w-5 h-5" />
+            </div>
+          </div>
+        </Card>
+      </div>
 
       {/* Metric Selector & Main Time Series Chart */}
       <Card

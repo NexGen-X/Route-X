@@ -16,7 +16,6 @@ const Requests = React.lazy(() => import('./pages/Requests').then((m) => ({ defa
 const Providers = React.lazy(() => import('./pages/Providers').then((m) => ({ default: m.Providers })));
 const Egress = React.lazy(() => import('./pages/Egress').then((m) => ({ default: m.Egress })));
 const RoutingRules = React.lazy(() => import('./pages/RoutingRules').then((m) => ({ default: m.RoutingRules })));
-const RateLimits = React.lazy(() => import('./pages/RateLimits').then((m) => ({ default: m.RateLimits })));
 const Budgets = React.lazy(() => import('./pages/Budgets').then((m) => ({ default: m.Budgets })));
 const APIKeys = React.lazy(() => import('./pages/APIKeys').then((m) => ({ default: m.APIKeys })));
 const Webhooks = React.lazy(() => import('./pages/Webhooks').then((m) => ({ default: m.Webhooks })));
@@ -81,7 +80,10 @@ const Shell: React.FC = () => {
   }
 
   const getPageInfo = (): { title: string; subtitle: string; content: React.ReactNode } => {
-    switch (currentPath) {
+    const [pathname, searchStr] = currentPath.split('?');
+    const searchParams = new URLSearchParams(searchStr || '');
+
+    switch (pathname) {
       case '/':
         return {
           title: 'Dashboard',
@@ -140,17 +142,18 @@ const Shell: React.FC = () => {
         };
       case '/gateway/rate-limits':
       case '/rate-limits':
+        navigate('/gateway/budgets?tab=limits');
         return {
-          title: 'Rate Limits',
-          subtitle: 'Pembatasan laju kuota terdistribusi per-key, IP, atau model',
-          content: <RateLimits />,
+          title: 'Budgets & Rate Limits',
+          subtitle: 'Pagu anggaran USD dan pembatasan laju kuota terdistribusi',
+          content: <Budgets initialTab="limits" />,
         };
       case '/gateway/budgets':
       case '/budgets':
         return {
-          title: 'Budgets & Cost Limits',
-          subtitle: 'Alokasi pagu pengeluaran USD skala 8 desimal dan pencegahan pembengkakan biaya',
-          content: <Budgets />,
+          title: 'Budgets & Rate Limits',
+          subtitle: 'Pagu anggaran USD dan pembatasan laju kuota terdistribusi',
+          content: <Budgets initialTab={searchParams.get('tab') === 'limits' ? 'limits' : 'budgets'} />,
         };
       case '/gateway/breakers':
       case '/breakers':

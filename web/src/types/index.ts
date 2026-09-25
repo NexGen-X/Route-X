@@ -72,6 +72,7 @@ export interface OAuthSession {
   credential_id: string;
   account_email: string;
   account_name?: string;
+  avatar_url?: string;
   client_id: string;
   redirect_uri: string;
   scopes: string[];

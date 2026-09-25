@@ -594,9 +594,6 @@ export const Providers: React.FC = () => {
             <Server className="w-6 h-6 text-accent" />
             <span>Upstream Providers</span>
           </h2>
-          <p className="text-xs text-text-secondary mt-1">
-            Koneksi ke penyedia AI, manajemen kredensial terenkripsi AES-256-GCM, katalog model terhubung, dan perutean proxy.
-          </p>
         </div>
         <Button
           variant="primary"
@@ -619,9 +616,6 @@ export const Providers: React.FC = () => {
               <h4 className="text-xs font-semibold text-white">
                 Katalog Preset Provider
               </h4>
-              <p className="text-[11px] text-text-muted">
-                {KNOWN_PROVIDERS.length} preset resmi siap dihubungkan dengan 1-klik
-              </p>
             </div>
           </div>
           <Button
@@ -1031,25 +1025,6 @@ export const Providers: React.FC = () => {
               </span>
             </div>
           </div>
-        }
-        subtitle={
-          selectedProvider && (
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="font-mono text-[11px] text-text-secondary truncate flex-1 min-w-0">
-                {selectedProvider.base_url}
-              </span>
-              <Tooltip content="Salin Base URL" position="bottom">
-                <button
-                  type="button"
-                  onClick={() => void copyWithFeedback(selectedProvider.base_url, 'Base URL disalin')}
-                  className="p-1 rounded text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                  aria-label="Salin Base URL"
-                >
-                  <Copy className="w-3 h-3" />
-                </button>
-              </Tooltip>
-            </div>
-          )
         }
         headerExtra={
           selectedProvider && (
@@ -2532,22 +2507,11 @@ export const CreateProviderModalChild: React.FC<CreateProviderModalChildProps> =
     ? `Hubungkan ${selectedPreset.displayName}`
     : 'Tambah Provider AI Manual';
 
-  const modalSubtitle = isAddToPoolMode
-    ? `Kredensial baru akan digabungkan ke pool multi-account & rotasi otomatis (${
-        targetExistingProvider.credential_strategy === 'priority'
-          ? 'Priority Failover'
-          : 'Round Robin 50:50'
-      }).`
-    : selectedPreset
-    ? selectedPreset.description
-    : 'Daftarkan endpoint upstream LLM kustom (vLLM, Ollama, OpenRouter, atau server privat)';
-
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title={modalTitle}
-      subtitle={modalSubtitle}
       maxWidth="xl"
       footer={
         <>
@@ -3311,7 +3275,6 @@ export const AddModelModalChild: React.FC<any> = ({ isOpen, onClose, selectedPro
       isOpen={isOpen}
       onClose={onClose}
       title={`Tambah Model Manual — ${selectedProvider?.display_name || selectedProvider?.name}`}
-      subtitle="Daftarkan ID model khusus yang diterima oleh upstream Anda"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

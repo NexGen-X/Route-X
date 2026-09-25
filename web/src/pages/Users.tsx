@@ -153,7 +153,6 @@ export const UsersPage: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title={<span className="flex items-center gap-2"><Users className="w-6 h-6 text-accent" /> Pengguna Admin</span>}
-        description="Akun konsol, status akun, reset password paksa, dan pencabutan sesi. Akun sendiri dan admin aktif terakhir dilindungi backend."
         actions={
           <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)} icon={<Plus className="w-4 h-4" />} className="w-full sm:w-auto justify-center">
             Tambah Pengguna
@@ -249,7 +248,6 @@ export const UsersPage: React.FC = () => {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Tambah Pengguna Admin"
-        subtitle="Akun baru wajib ganti password saat login pertama"
         footer={
           <>
             <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
@@ -309,7 +307,6 @@ export const UsersPage: React.FC = () => {
         isOpen={detailUserId !== null}
         onClose={() => { setDetailUserId(null); setDetail(null); }}
         title="Kelola Pengguna Admin"
-        subtitle="Password, sesi, dan nama tampilan"
         maxWidth="lg"
         footer={
           <Button variant="ghost" onClick={() => { setDetailUserId(null); setDetail(null); }}>

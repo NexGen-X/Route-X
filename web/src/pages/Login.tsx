@@ -59,7 +59,6 @@ export const Login: React.FC = () => {
           </div>
           <div>
             <h2 className="text-xl font-bold text-text-primary tracking-tight">Route-X Gateway</h2>
-            <p className="text-xs text-text-secondary">Masuk ke Konsol Administrasi</p>
           </div>
         </div>
 

@@ -319,7 +319,6 @@ export const APIKeys: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Client API Keys"
-        description="Kunci otentikasi aman untuk menghubungkan Cursor, Cline, Open WebUI, atau aplikasi Anda ke Route-X Gateway dengan kontrol kuota mandiri."
         actions={
           <Button
             variant="primary"
@@ -466,7 +465,6 @@ export const APIKeys: React.FC = () => {
           isOpen={true}
           onClose={() => setCreatedRawKey(null)}
           title="Kunci API Berhasil Dibuat"
-          subtitle="Simpan kunci ini sekarang. Kunci tidak akan pernah ditampilkan lagi!"
           footer={
             <Button
               variant="primary"
@@ -509,7 +507,6 @@ export const APIKeys: React.FC = () => {
           setShowAdvanced(false);
         }}
         title="Buat Kunci API Klien Baru"
-        subtitle="Hasilkan token otentikasi format sk_live_..."
         footer={
           <>
             <Button
@@ -648,7 +645,6 @@ export const APIKeys: React.FC = () => {
         isOpen={isAllowedOpen}
         onClose={() => setIsAllowedOpen(false)}
         title={`Scope Hak Akses: ${selectedKey?.name || 'Kunci API'}`}
-        subtitle="Pilih model AI yang diizinkan untuk kunci ini (format: Provider / Model). Kosongkan semua untuk akses penuh tanpa batasan."
         footer={
           <>
             <Button variant="ghost" onClick={() => setIsAllowedOpen(false)}>

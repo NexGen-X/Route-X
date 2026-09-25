@@ -175,12 +175,6 @@ export const Egress: React.FC = () => {
             </span>
           </span>
         }
-        description={
-          <span>
-            Manajemen proxy keluar (SOCKS5 / HTTP / HTTPS) untuk merutekan panggilan upstream AI.
-            Semua URL proxy dan kredensial disimpan terenkripsi secara aman dengan <strong>AES-256-GCM</strong>.
-          </span>
-        }
         actions={
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={loadPools} isLoading={isLoading}>
@@ -401,7 +395,6 @@ export const Egress: React.FC = () => {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Tambah Egress Proxy Pool"
-        subtitle="URL proxy akan dienkripsi secara aman dengan AES-256-GCM"
         footer={
           <>
             <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
@@ -496,7 +489,6 @@ export const Egress: React.FC = () => {
         isOpen={!!editingPool}
         onClose={() => setEditingPool(null)}
         title="Edit Egress Proxy Pool"
-        subtitle="Perbarui konfigurasi proxy keluar atau lakukan rotasi kredensial"
         footer={
           <>
             <Button variant="ghost" onClick={() => setEditingPool(null)}>

@@ -288,7 +288,6 @@ export const Models: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Model Registry & Pricing"
-        description="Katalog model AI kanonik, pemetaan ke penyedia upstream, serta konfigurasi tarif biaya token."
         actions={
           <Button
             variant="primary"
@@ -746,7 +745,6 @@ export const Models: React.FC = () => {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Registrasi Model Kanonik"
-        subtitle="Tambahkan entri model baru ke dalam katalog Route-X"
         footer={
           <>
             <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
@@ -819,7 +817,6 @@ export const Models: React.FC = () => {
         isOpen={isPricingOpen}
         onClose={() => setIsPricingOpen(false)}
         title={`Konfigurasi Harga: ${selectedModel?.display_name || selectedModel?.model_id || 'Model'}`}
-        subtitle="Atur tarif token per 1M (USD) untuk model ini pada provider upstream terkait"
         footer={
           mappings.length > 0 ? (
             <>

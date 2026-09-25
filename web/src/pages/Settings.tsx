@@ -311,7 +311,7 @@ export const Settings: React.FC = () => {
       )}
 
       {/* Tab Switcher Pills */}
-      <div className="flex border-b border-border/80 gap-1 mb-6">
+      <div className="flex flex-wrap border-b border-border/80 gap-1 mb-6">
         <button
           type="button"
           onClick={() => setActiveTab('domain')}

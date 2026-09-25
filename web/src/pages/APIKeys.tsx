@@ -581,7 +581,7 @@ export const APIKeys: React.FC = () => {
                         key={amt}
                         type="button"
                         onClick={() => setMonthlyBudgetUsd(amt)}
-                        className={`px-2 py-0.5 rounded text-[10px] font-mono border transition-colors cursor-pointer ${
+                        className={`min-h-[36px] px-2.5 py-1 rounded-md text-xs font-mono border transition-colors cursor-pointer flex items-center justify-center ${
                           monthlyBudgetUsd === amt
                             ? 'bg-accent/15 border-accent text-accent font-semibold'
                             : 'bg-bg-surface-2 border-border text-text-secondary hover:text-white hover:border-text-muted'
@@ -594,7 +594,7 @@ export const APIKeys: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setMonthlyBudgetUsd('')}
-                        className="text-[10px] text-text-muted hover:text-rose-400 ml-auto cursor-pointer"
+                        className="min-h-[36px] px-2 py-1 text-xs text-text-muted hover:text-rose-400 ml-auto cursor-pointer flex items-center"
                       >
                         Hapus
                       </button>

@@ -249,7 +249,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
       />
 
       {/* Tab Switcher Pills */}
-      <div className="flex border-b border-border/80 gap-1">
+      <div className="flex flex-wrap border-b border-border/80 gap-1">
         <button
           type="button"
           onClick={() => setActiveTab('budgets')}
@@ -574,7 +574,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
                     period: 'monthly',
                   }))
                 }
-                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-emerald-500/50 hover:bg-emerald-500/10 text-center transition-all cursor-pointer group"
+                className="min-h-[44px] px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-emerald-500/50 hover:bg-emerald-500/10 text-center transition-all cursor-pointer group"
               >
                 <span className="block text-xs font-bold text-white group-hover:text-emerald-300">$10/bln</span>
                 <span className="block text-[10px] text-text-muted mt-0.5">Dev Hemat</span>
@@ -590,7 +590,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
                     period: 'monthly',
                   }))
                 }
-                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-sky-500/50 hover:bg-sky-500/10 text-center transition-all cursor-pointer group"
+                className="min-h-[44px] px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-sky-500/50 hover:bg-sky-500/10 text-center transition-all cursor-pointer group"
               >
                 <span className="block text-xs font-bold text-white group-hover:text-sky-300">$50/bln</span>
                 <span className="block text-[10px] text-text-muted mt-0.5">Tim Standar</span>
@@ -606,7 +606,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
                     period: 'monthly',
                   }))
                 }
-                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-purple-500/50 hover:bg-purple-500/10 text-center transition-all cursor-pointer group"
+                className="min-h-[44px] px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-purple-500/50 hover:bg-purple-500/10 text-center transition-all cursor-pointer group"
               >
                 <span className="block text-xs font-bold text-white group-hover:text-purple-300">$100/bln</span>
                 <span className="block text-[10px] text-text-muted mt-0.5">Power Dev</span>
@@ -622,7 +622,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
                     period: 'daily',
                   }))
                 }
-                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-amber-500/50 hover:bg-amber-500/10 text-center transition-all cursor-pointer group"
+                className="min-h-[44px] px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-amber-500/50 hover:bg-amber-500/10 text-center transition-all cursor-pointer group"
               >
                 <span className="block text-xs font-bold text-white group-hover:text-amber-300">$5/hari</span>
                 <span className="block text-[10px] text-text-muted mt-0.5">Uji Harian</span>
@@ -793,7 +793,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
                     requests_per_second: 5,
                   }))
                 }
-                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-emerald-500/50 hover:bg-emerald-500/10 text-center transition-all cursor-pointer group"
+                className="min-h-[44px] px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-emerald-500/50 hover:bg-emerald-500/10 text-center transition-all cursor-pointer group"
               >
                 <span className="block text-xs font-bold text-white group-hover:text-emerald-300">30 RPM</span>
                 <span className="block text-[10px] text-text-muted mt-0.5">Ringan</span>
@@ -808,7 +808,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
                     requests_per_second: 10,
                   }))
                 }
-                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-sky-500/50 hover:bg-sky-500/10 text-center transition-all cursor-pointer group"
+                className="min-h-[44px] px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-sky-500/50 hover:bg-sky-500/10 text-center transition-all cursor-pointer group"
               >
                 <span className="block text-xs font-bold text-white group-hover:text-sky-300">60 RPM</span>
                 <span className="block text-[10px] text-text-muted mt-0.5">Standar</span>
@@ -823,7 +823,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
                     requests_per_second: 20,
                   }))
                 }
-                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-purple-500/50 hover:bg-purple-500/10 text-center transition-all cursor-pointer group"
+                className="min-h-[44px] px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-purple-500/50 hover:bg-purple-500/10 text-center transition-all cursor-pointer group"
               >
                 <span className="block text-xs font-bold text-white group-hover:text-purple-300">120 RPM</span>
                 <span className="block text-[10px] text-text-muted mt-0.5">Tinggi</span>
@@ -838,7 +838,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
                     requests_per_second: 10,
                   }))
                 }
-                className="px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-amber-500/50 hover:bg-amber-500/10 text-center transition-all cursor-pointer group"
+                className="min-h-[44px] px-2 py-2 rounded-lg bg-bg-surface-2 border border-border hover:border-amber-500/50 hover:bg-amber-500/10 text-center transition-all cursor-pointer group"
               >
                 <span className="block text-xs font-bold text-white group-hover:text-amber-300">10 RPS</span>
                 <span className="block text-[10px] text-text-muted mt-0.5">Spike Guard</span>

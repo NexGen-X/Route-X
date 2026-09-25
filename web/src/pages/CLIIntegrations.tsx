@@ -31,6 +31,7 @@ import type { CLITool, CLIDetectedResponse, Model, RoutingRule, APIKey } from '.
 import { useToast } from '../context/ToastContext';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { QueryError } from '../components/common/QueryError';
+import { parsePipeline } from '../lib/rulePipeline';
 
 export const CLIIntegrations: React.FC = () => {
   const { toast } = useToast();
@@ -104,23 +105,38 @@ export const CLIIntegrations: React.FC = () => {
     return 'http://localhost:8080';
   }, []);
 
-  // Temukan aturan combo dinamis dari database (aturan dengan tag [combo:...] pada deskripsinya)
+  // Temukan aturan combo dinamis dari database (aturan dengan pipeline jsonb, virtual_alias, atau tag [combo:...])
   const dynamicComboOptions = useMemo(() => {
-    const comboRules = rules.filter((r) => (r.description || '').includes('[combo:'));
+    const comboRules = rules.filter((r) => {
+      if (parsePipeline(r) !== null) return true;
+      if (r.virtual_alias && r.virtual_alias.trim() !== '') return true;
+      return (r.description || '').includes('[combo:');
+    });
     if (comboRules.length === 0) {
       return [];
     }
     return comboRules.map((r) => {
-      const m = (r.description || '').match(/\[combo:alias=([^\]]+)\]/);
-      const alias = m ? m[1].trim() : r.name;
-      const cleanDesc = (r.description || '')
-        .replace(/\[combo:[^\]]+\]/g, '')
-        .replace(/\[routing\]/g, '')
-        .trim();
+      const pipe = parsePipeline(r);
+      const tagMatch = (r.description || '').match(/\[combo:alias=([^\]]+)\]/);
+      const alias = (r.virtual_alias && r.virtual_alias.trim()) || (tagMatch ? tagMatch[1].trim() : r.name);
+
+      let description = 'Smart Tiered Cascade Rule';
+      if (pipe && pipe.models && pipe.models.length > 0) {
+        description = `Combo (${pipe.strategy}): ${pipe.models.join(' -> ')}`;
+      } else {
+        const cleanDesc = (r.description || '')
+          .replace(/\[combo:[^\]]+\]/g, '')
+          .replace(/\[routing\]/g, '')
+          .trim();
+        if (cleanDesc) {
+          description = cleanDesc;
+        }
+      }
+
       return {
         value: alias,
         label: `${r.name} (${alias})`,
-        description: cleanDesc || 'Smart Tiered Cascade Rule',
+        description,
       };
     });
   }, [rules]);

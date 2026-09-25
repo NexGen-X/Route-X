@@ -119,7 +119,6 @@ export const RateLimits: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Rate Limits"
-        description="Pengendalian volume lalu lintas inferensi (Permintaan & Token per Menit) per Kunci API, IP, atau Global."
         actions={
           <Button
             variant="primary"
@@ -246,7 +245,6 @@ export const RateLimits: React.FC = () => {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Konfigurasi Rate Limit Baru"
-        subtitle="Terapkan pembatasan kuota laju pada tingkat Redis terdistribusi"
         footer={
           <>
             <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>

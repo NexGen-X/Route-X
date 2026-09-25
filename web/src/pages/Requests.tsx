@@ -188,7 +188,6 @@ export const Requests: React.FC = () => {
       {/* Header & Filter Bar */}
       <PageHeader
         title="Requests Inspector"
-        description="Penelusuran audit lalu lintas inferensi AI, detail payload request/response, dan urutan failover."
         actions={
           <>
             <button
@@ -451,7 +450,6 @@ export const Requests: React.FC = () => {
           isOpen={isInspectorOpen}
           onClose={() => setIsInspectorOpen(false)}
           title="Detail Request & Timeline Event"
-          subtitle={`ID: ${selectedReq.request_id}`}
           maxWidth="2xl"
           footer={
             <div className="flex items-center justify-between w-full">

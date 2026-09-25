@@ -218,11 +218,6 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
     <div className="space-y-6">
       <PageHeader
         title={activeTab === 'budgets' ? 'Batas Anggaran (Budgets & Cost Control)' : 'Batas Laju Trafik (Rate Limits)'}
-        description={
-          activeTab === 'budgets'
-            ? 'Kontrol batas pengeluaran biaya AI (Global, per Kunci API, atau per Model) dengan peringatan dini dan pemblokiran otomatis.'
-            : 'Pengendalian volume lalu lintas inferensi (Permintaan & Token per Menit) per Kunci API, IP, atau Global via Redis sliding-window.'
-        }
         actions={
           activeTab === 'budgets' ? (
             <Button
@@ -543,7 +538,6 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
         isOpen={isCreateBudgetOpen}
         onClose={() => setIsCreateBudgetOpen(false)}
         title="Alokasi Anggaran Moneter Baru"
-        subtitle="Batas biaya inferensi dihitung dari pemakaian token upstream"
         footer={
           <>
             <Button variant="ghost" onClick={() => setIsCreateBudgetOpen(false)}>
@@ -773,7 +767,6 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
         isOpen={isCreateLimitOpen}
         onClose={() => setIsCreateLimitOpen(false)}
         title="Tambah Aturan Rate Limit Baru"
-        subtitle="Tetapkan batas volume traffic berbasis sliding window terdistribusi Redis."
       >
         <form onSubmit={handleCreateLimit} className="space-y-4 text-xs">
           {/* Presets 1-Klik Rate Limit */}

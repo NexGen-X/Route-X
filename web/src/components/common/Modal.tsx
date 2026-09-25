@@ -90,7 +90,6 @@ export const Modal: React.FC<ModalProps> = ({
           <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-bg-surface-2/40">
             <div>
               <h2 id={titleId} className="text-base font-semibold text-text-primary">{title}</h2>
-              {subtitle && <p className="text-xs text-text-secondary mt-0.5">{subtitle}</p>}
             </div>
             <Tooltip content="Tutup (Esc)" position="left">
               <button

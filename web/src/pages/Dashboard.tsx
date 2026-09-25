@@ -242,10 +242,6 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             <h2 className="text-2xl font-bold tracking-tight text-white">
               Route-X Gateway Control
             </h2>
-            <p className="text-sm text-text-secondary max-w-2xl leading-relaxed">
-              Gateway AI modern untuk pengembang dan tim, dengan perutean cerdas multi-provider, failover instan, proteksi SSRF,
-              dan isolasi egress berkecepatan tinggi.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -319,9 +315,6 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
                   Panduan Cepat Memulai Route-X
                 </h3>
               </div>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Tiga langkah mudah untuk menghubungkan editor atau aplikasi Anda ke Route-X AI Gateway:
-              </p>
             </div>
             <button
               onClick={dismissOnboarding}
@@ -347,9 +340,6 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
               <h4 className="text-xs font-bold text-white group-hover:text-accent transition-colors">
                 Tambah Penyedia AI Upstream
               </h4>
-              <p className="text-[11px] text-text-secondary leading-relaxed">
-                Hubungkan API Key OpenAI, Anthropic, Gemini, DeepSeek, Groq, atau Ollama lokal Anda.
-              </p>
             </div>
 
             {/* Step 2 */}
@@ -366,9 +356,6 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
               <h4 className="text-xs font-bold text-white group-hover:text-accent transition-colors">
                 Terbitkan Kunci API Klien
               </h4>
-              <p className="text-[11px] text-text-secondary leading-relaxed">
-                Buat kunci API terenkripsi untuk mengamankan dan mengontrol akses dari aplikasi/editor Anda.
-              </p>
             </div>
 
             {/* Step 3 */}
@@ -385,9 +372,6 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
               <h4 className="text-xs font-bold text-white group-hover:text-accent transition-colors">
                 Sambungkan Editor atau CLI
               </h4>
-              <p className="text-[11px] text-text-secondary leading-relaxed">
-                Gunakan template 1-klik untuk Claude Code, Cursor, Aider, Open WebUI, atau pustaka SDK Anda.
-              </p>
             </div>
           </div>
 
@@ -1047,7 +1031,6 @@ export const Dashboard: React.FC<{ onNavigate: (path: string) => void }> = ({ on
             ? '💰 Resep: Hemat Biaya Inferensi Hingga 90%'
             : '🛡️ Resep: Anti-Downtime dengan Auto-Failover Multi-Provider'
         }
-        subtitle="Panduan ramah pemula langkah-demi-langkah tanpa konfigurasi rumit"
         maxWidth="2xl"
         footer={
           <div className="flex items-center justify-between w-full">

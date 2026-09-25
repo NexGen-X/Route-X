@@ -75,7 +75,6 @@ export const ChangePassword: React.FC = () => {
           </div>
           <div>
             <h2 className="text-xl font-bold text-text-primary tracking-tight">Perbarui Kata Sandi</h2>
-            <p className="text-xs text-text-secondary">Akun Anda memerlukan pergantian kata sandi pertama</p>
           </div>
         </div>
 

@@ -635,7 +635,6 @@ export const RoutingRules: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Routing Rules Engine"
-        description="Strategi perutean upstream cerdas (Prioritas, Biaya Terendah, Latensi Cepat, Bobot, Round-Robin) dengan failover otomatis."
         actions={
           <Button
             variant="primary"
@@ -1122,7 +1121,6 @@ export const RoutingRules: React.FC = () => {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Buat Aturan Perutean Cerdas (Routing Rule)"
-        subtitle="Konfigurasikan jalur eksekusi model: Passthrough langsung 1:1, Failover multi-provider, atau Cascade hemat biaya."
         maxWidth="3xl"
         footer={
           <div className="flex items-center justify-between gap-3 w-full">
@@ -1616,7 +1614,6 @@ export const RoutingRules: React.FC = () => {
           setEditingRule(null);
         }}
         title={`Edit Aturan: ${editingRule?.name || ''}`}
-        subtitle="Perbarui jalur eksekusi, strategi failover, provider pendukung, atau parameter sirkuit."
         maxWidth="3xl"
         footer={
           <div className="flex items-center justify-between gap-3 w-full">
@@ -2094,11 +2091,6 @@ export const RoutingRules: React.FC = () => {
         isOpen={isProvidersDrawerOpen}
         onClose={() => setIsProvidersDrawerOpen(false)}
         title="Edit Providers & Weights"
-        subtitle={
-          selectedRule?.match_model_id
-            ? `Aturan ini terhubung ke model: ${models.find(m => m.id === selectedRule.match_model_id || m.model_id === selectedRule.match_model_id)?.display_name || selectedRule.match_model_id}`
-            : "Pilih provider yang akan digunakan dalam aturan routing ini dan atur bobot (untuk mode weighted)."
-        }
         footer={
           <div className="flex items-center justify-between gap-3 w-full">
             <Button

@@ -172,7 +172,6 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
           <span>Auto-Deploy Cloud Proxy Relay</span>
         </div>
       }
-      subtitle="Pasang proxy keluar otomatis ke Cloudflare atau Deno tanpa koding manual."
     >
       {/* Jika Berhasil (Success View) */}
       {successResult ? (

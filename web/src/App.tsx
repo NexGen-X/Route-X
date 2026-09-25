@@ -79,7 +79,7 @@ const Shell: React.FC = () => {
     return <ChangePassword />;
   }
 
-  const getPageInfo = (): { title: string; subtitle: string; content: React.ReactNode } => {
+  const getPageInfo = (): { title: string; content: React.ReactNode } => {
     const [pathname, searchStr] = currentPath.split('?');
     const searchParams = new URLSearchParams(searchStr || '');
 
@@ -87,26 +87,22 @@ const Shell: React.FC = () => {
       case '/':
         return {
           title: 'Dashboard',
-          subtitle: 'Kesehatan runtime proxy inferensi — lalu lintas, pool kredensial, dan status upstream.',
           content: <Dashboard onNavigate={navigate} />,
         };
       case '/observability':
         return {
           title: 'Observabilitas & Telemetri',
-          subtitle: 'Deret waktu metrik, breakdown penggunaan, dan analitik latensi',
           content: <Observability />,
         };
       case '/requests':
         return {
           title: 'Requests Inspector',
-          subtitle: 'Penelusuran detail request, timeline event, dan raw payload',
           content: <Requests />,
         };
       case '/upstreams/providers':
       case '/providers':
         return {
           title: 'Upstream Providers',
-          subtitle: 'Koneksi provider AI, pemeriksaan kesehatan, dan kredensial',
           content: <Providers />,
         };
       case '/upstreams/models':
@@ -115,14 +111,12 @@ const Shell: React.FC = () => {
         navigate('/upstreams/providers');
         return {
           title: 'Upstream Providers',
-          subtitle: 'Koneksi provider AI, pemeriksaan kesehatan, dan kredensial',
           content: <Providers />,
         };
       case '/upstreams/egress':
       case '/egress':
         return {
           title: 'Egress Proxy Pools',
-          subtitle: 'Manajemen pool proxy keluar HTTP/HTTPS/SOCKS5',
           content: <Egress />,
         };
       case '/upstreams/routing':
@@ -130,14 +124,12 @@ const Shell: React.FC = () => {
       case '/routing':
         return {
           title: 'Routing Rules',
-          subtitle: 'Mesin aturan pemilihan provider dan kebijakan failover',
           content: <RoutingRules />,
         };
       case '/cli-integrations':
       case '/integrations':
         return {
           title: 'CLI Integrations & 3-Mode Configurator',
-          subtitle: 'Pemindai otomatis perkakas AI CLI di sistem host dan konfigurasi multi-mode terpadu',
           content: <CLIIntegrations />,
         };
       case '/gateway/rate-limits':
@@ -145,49 +137,42 @@ const Shell: React.FC = () => {
         navigate('/gateway/budgets?tab=limits');
         return {
           title: 'Budgets & Rate Limits',
-          subtitle: 'Pagu anggaran USD dan pembatasan laju kuota terdistribusi',
           content: <Budgets initialTab="limits" />,
         };
       case '/gateway/budgets':
       case '/budgets':
         return {
           title: 'Budgets & Rate Limits',
-          subtitle: 'Pagu anggaran USD dan pembatasan laju kuota terdistribusi',
           content: <Budgets initialTab={searchParams.get('tab') === 'limits' ? 'limits' : 'budgets'} />,
         };
       case '/gateway/breakers':
       case '/breakers':
         return {
           title: 'Routing & Failover',
-          subtitle: 'Mesin aturan pemilihan provider, kebijakan failover, dan pemutus sirkuit terdistribusi',
           content: <RoutingRules />,
         };
       case '/access/api-keys':
       case '/api-keys':
         return {
           title: 'Client API Keys',
-          subtitle: 'Kunci otentikasi klien untuk Cursor, Cline, Open WebUI, dan skrip personal',
           content: <APIKeys />,
         };
       case '/access/users':
       case '/users':
         return {
           title: 'Pengguna Admin',
-          subtitle: 'Akun konsol, status, dan sesi',
           content: <UsersPage />,
         };
       case '/webhooks':
       case '/system/webhooks':
         return {
           title: 'Webhooks',
-          subtitle: 'Pengiriman notifikasi event sistem ke endpoint HTTP eksternal',
           content: <Webhooks />,
         };
       case '/system/settings':
       case '/settings':
         return {
           title: 'Runtime Settings',
-          subtitle: 'Konfigurasi parameter gateway dinamis dan profil pemilik',
           content: <Settings />,
         };
       case '/system/jobs':
@@ -195,19 +180,17 @@ const Shell: React.FC = () => {
       case '/diagnostics':
         return {
           title: 'System Diagnostics & Workers',
-          subtitle: 'Status memori Go runtime, koneksi PostgreSQL, dan supervisor worker latar belakang',
           content: <Diagnostics />,
         };
       default:
         return {
           title: 'Dashboard',
-          subtitle: 'Ringkasan operasional lalu lintas inferensi',
           content: <Dashboard onNavigate={navigate} />,
         };
     }
   };
 
-  const { title, subtitle, content } = getPageInfo();
+  const { title, content } = getPageInfo();
 
   return (
     <div className="min-h-screen bg-bg-base flex">
@@ -220,7 +203,6 @@ const Shell: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0">
         <Header
           title={title}
-          subtitle={subtitle}
           onOpenMobileMenu={() => setIsMobileOpen(true)}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />

@@ -106,11 +106,6 @@ export const Drawer: React.FC<DrawerProps> = ({
                   {title}
                 </h2>
               </div>
-              {subtitle && (
-                <div className="text-xs text-text-secondary leading-relaxed">
-                  {subtitle}
-                </div>
-              )}
               {headerExtra && <div className="pt-0.5">{headerExtra}</div>}
             </div>
 

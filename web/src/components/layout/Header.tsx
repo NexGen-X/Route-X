@@ -33,7 +33,6 @@ export const Header: React.FC<HeaderProps> = ({
           <h1 className="text-base sm:text-lg font-bold text-text-primary tracking-tight truncate">
             {title}
           </h1>
-          {subtitle && <p className="text-xs text-text-secondary hidden sm:block truncate">{subtitle}</p>}
         </div>
       </div>
 

@@ -160,7 +160,6 @@ export const Webhooks: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Webhooks"
-        description="Pengiriman event asinkron ke HTTP endpoint eksternal untuk integrasi monitoring, alerting Slack/Discord, dan audit."
         actions={
           <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)} icon={<Plus className="w-4 h-4" />}>
             Buat Webhook
@@ -266,7 +265,6 @@ export const Webhooks: React.FC = () => {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Tambah Webhook"
-        subtitle="Kirim notifikasi HTTP saat ada event"
         footer={
           <>
             <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
@@ -353,7 +351,6 @@ export const Webhooks: React.FC = () => {
         isOpen={selectedWebhook !== null}
         onClose={() => setSelectedWebhook(null)}
         title="Webhook Deliveries"
-        subtitle={selectedWebhook?.name || ''}
         maxWidth="lg"
         footer={
           <Button variant="ghost" onClick={() => setSelectedWebhook(null)}>
@@ -394,7 +391,6 @@ export const Webhooks: React.FC = () => {
         isOpen={selectedDeliveryId !== null}
         onClose={() => setSelectedDeliveryId(null)}
         title="Delivery Details"
-        subtitle={`ID: ${selectedDeliveryId}`}
         maxWidth="lg"
         footer={
           <Button variant="ghost" onClick={() => setSelectedDeliveryId(null)}>

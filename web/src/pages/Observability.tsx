@@ -117,7 +117,6 @@ export const Observability: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Observabilitas & Telemetri"
-        description="Analisis metrik terperinci, latensi persentil, dan distribusi lalu lintas model & provider."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border">
@@ -205,7 +204,6 @@ export const Observability: React.FC = () => {
       {/* Metric Selector & Main Time Series Chart */}
       <Card
         title="Deret Waktu Telemetri"
-        subtitle={`Visualisasi metrik ${metric} pada rentang ${windowTime}`}
         action={
           <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full">
             {[
@@ -297,7 +295,6 @@ export const Observability: React.FC = () => {
         <Card
           className="lg:col-span-2"
           title="Komposisi Lalu Lintas"
-          subtitle="Distribusi volume permintaan dan pemakaian token"
           action={
             <div className="flex items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full">
               {(['provider', 'model', 'api_key'] as const).map((b) => (
@@ -351,7 +348,7 @@ export const Observability: React.FC = () => {
         </Card>
 
         {/* Live Pool & Diagnostics */}
-        <Card title="Live Server & Connection Pool" subtitle="Statistik koneksi pgxpool dan runtime Go">
+        <Card title="Live Server & Connection Pool">
           {isLoading && !diag && !diagnosticsError ? (
             <div className="space-y-4 animate-pulse">
               <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border h-16" />

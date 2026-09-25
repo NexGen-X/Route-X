@@ -476,7 +476,6 @@ export const CLIIntegrations: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Integrasi CLI & Editor AI"
-        description="Hubungkan editor kode dan perkakas terminal (Claude Code, OpenCode, Aider, dll.) langsung ke Route-X Gateway."
         actions={
           <Button
             variant="secondary"

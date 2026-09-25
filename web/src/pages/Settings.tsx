@@ -303,7 +303,6 @@ export const Settings: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="Pengaturan Sistem"
-        description="Konfigurasi domain publik HTTPS, pencadangan basis data, dan parameter operasional gateway."
       />
 
       {loadError && (
@@ -369,9 +368,6 @@ export const Settings: React.FC = () => {
                   </span>
                 )}
               </div>
-              <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-                Hubungkan nama domain kustom Anda (mis. Cloudflare atau DNS Registrar). Backend akan otomatis mengonfigurasi sertifikat TLS/HTTPS untuk panel dan endpoint API.
-              </p>
             </div>
           </div>
           <Button
@@ -560,9 +556,6 @@ export const Settings: React.FC = () => {
                   PostgreSQL Native
                 </span>
               </div>
-              <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-                Ekspor dan pemulihan komprehensif seluruh skema basis data, model, provider, aturan routing, dan kunci API dalam format SQL standar (<code className="text-text-muted font-mono">.sql</code> / <code className="text-text-muted font-mono">.sql.gz</code>).
-              </p>
             </div>
           </div>
           <Button
@@ -799,9 +792,6 @@ export const Settings: React.FC = () => {
                   Operasional Dinamis
                 </span>
               </div>
-              <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-                Setelan parameter operasional dinamis yang tersimpan di basis data tanpa perlu restart biner.
-              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 pt-1 sm:pt-0">
@@ -917,9 +907,6 @@ export const Settings: React.FC = () => {
                   <Lock className="w-4 h-4 text-sky-400" />
                   Setelan Terkelola Subsistem (Read-Only)
                 </h4>
-                <p className="text-[11px] text-text-secondary mt-0.5">
-                  Parameter ini dikelola otomatis oleh modul terkait (CLI Integrations & Domain). Perubahan dilakukan melalui menu khusus untuk menjamin integritas konfigurasi.
-                </p>
               </div>
               <Badge variant="info">
                 {settings.filter((s) => isReservedSetting(s.key)).length} Terkelola
@@ -978,7 +965,6 @@ export const Settings: React.FC = () => {
         isOpen={isCreateSettingOpen}
         onClose={() => setIsCreateSettingOpen(false)}
         title="Tambah Parameter Runtime"
-        subtitle="Tambahkan variabel operasional baru ke basis data Route-X."
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={() => setIsCreateSettingOpen(false)}>

@@ -131,7 +131,6 @@ export const Diagnostics: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title="System Diagnostics"
-        description="Status runtime Go, alokasi memori heap/stack, garbage collector, dan koneksi pgxpool."
         actions={
           <Button variant="secondary" size="sm" onClick={loadData} isLoading={isLoading} title="Muat ulang data diagnostik">
             <RefreshCw className="w-3.5 h-3.5" />
@@ -155,9 +154,6 @@ export const Diagnostics: React.FC = () => {
                   {cache?.enabled ? 'ACTIVE (< 2ms)' : 'DISABLED'}
                 </Badge>
               </div>
-              <p className="text-xs text-text-secondary mt-0.5">
-                Mengembalikan respons inferensi identik dalam &lt; 2ms tanpa biaya token ($0.00) ke upstream provider.
-              </p>
             </div>
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
@@ -265,7 +261,7 @@ export const Diagnostics: React.FC = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card title="Runtime & Versi" subtitle="Identifikasi biner dan uptime proses">
+        <Card title="Runtime & Versi">
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Versi Gateway</span>
@@ -288,7 +284,7 @@ export const Diagnostics: React.FC = () => {
           </div>
         </Card>
 
-        <Card title="Penggunaan Memori" subtitle="Statistik memori Go runtime">
+        <Card title="Penggunaan Memori">
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Memori Terpakai</span>
@@ -315,7 +311,7 @@ export const Diagnostics: React.FC = () => {
           </div>
         </Card>
 
-        <Card title="PostgreSQL Pool" subtitle="Koneksi terkelola pgxpool">
+        <Card title="PostgreSQL Pool">
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1 border-b border-border/40">
               <span className="text-text-muted">Total Koneksi</span>
@@ -346,9 +342,6 @@ export const Diagnostics: React.FC = () => {
               <Clock className="w-4 h-4 text-accent" />
               Supervisor Background Workers & Tasks
             </h3>
-            <p className="text-xs text-text-secondary mt-0.5">
-              Status eksekusi rutin latar belakang: health check provider, rollup penggunaan, dan retensi data.
-            </p>
           </div>
         </div>
 

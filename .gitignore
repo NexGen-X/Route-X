@@ -25,3 +25,9 @@ web/e2e/.auth-*.json
 
 # Artefak knowledge graph codebase-memory (cache yang dibangun ulang via re-index)
 .codebase-memory/
+
+# File scratch dan backup lokal
+NEXT_STEPS.md
+*.sql.backup
+routing_rules_backup_*.sql
+scripts/typesafe_jev.py

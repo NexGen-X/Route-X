@@ -46,18 +46,19 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
   - `redis`: Akses langsung inspeksi cache & sliding-window rate limit (localhost:6379)
   - `puppeteer`: Browser headless untuk validasi UI konsol web React (`web/`)
 
-## Prosedur Rilis & Patch v1.1.0 (Checklist Pra-Rilis)
-Sebelum mempublikasikan patch atau rilis `v1.1.0`, lakukan verifikasi berurutan berikut:
+## Prosedur Rilis & Patch Modern Route-X (v1.2.x Checklist Pra-Rilis)
+Sebelum mempublikasikan patch atau rilis `v1.2.x`, lakukan verifikasi berurutan berikut:
 1. **Audit Data Race**: Jalankan `go test -race ./...` (wajib 0 data race terdeteksi).
 2. **Formatting Go**: Jalankan `gofmt -l .` (wajib kosong/bersih).
-3. **Integritas Database**: Pastikan berkas migrasi `internal/database/migrations/` berurutan rapi dan tidak merusak skema produksi.
-4. **Build Frontend**: Jalankan `cd /root/Route-X/web && npm run build` (wajib kompilasi `tsc` dan `vite build` sukses tanpa error tipe).
-5. **Uji Probing Gateway E2E**: Jalankan `./scripts/probe_e2e_gateway.sh` untuk memvalidasi rute `/v1/chat/completions` (non-stream & SSE stream) serta `/v1/messages` Anthropic.
+3. **Integritas Database**: Pastikan berkas migrasi `internal/database/migrations/` berurutan rapi (saat ini 0001 sampai 0015) dan tidak merusak skema produksi.
+4. **Build Frontend**: Jalankan `cd /root/Route-X/web && npm run build && npm test` (wajib kompilasi `tsc`, `vite build`, dan unit test lolos tanpa error).
+5. **Uji Probing Gateway E2E**: Jalankan `./scripts/probe_e2e_gateway.sh` untuk memvalidasi rute `/v1/chat/completions` (non-stream & SSE stream) serta `/v1/messages` native Anthropic.
 6. **Validasi Observabilitas**: Jalankan `./scripts/check_metrics.sh` untuk memverifikasi endpoint `/metrics` tidak merekam kegagalan terselubung.
 7. **Sinkronisasi Versi**:
-   - Perbarui versi pada `web/package.json` menjadi `1.1.0`.
-   - Tambahkan catatan perubahan rilis pada `CHANGELOG.md` di bawah seksi `## [v1.1.0]`.
+   - Perbarui versi pada `web/package.json` sesuai target rilis (misal `1.2.1`).
+   - Tambahkan catatan perubahan rilis pada `CHANGELOG.md` di bawah seksi versi terkait.
+   - Perbarui badge versi di `README.md` dan fallback versi di `Makefile` serta skrip instalasi/operasional.
 8. **Git Tagging & Publikasi**:
-   - Lakukan commit perubahan: `git commit -m "release: v1.1.0 - feature release"`
-   - Buat tag git: `git tag -a v1.1.0 -m "Release v1.1.0"`
-   - Buat release via GitHub CLI: `gh release create v1.1.0 --title "v1.1.0" --notes-file ...`
+   - Lakukan commit perubahan: `git commit -m "release: v1.2.x - ..."`
+   - Buat tag git: `git tag -a v1.2.x -m "Release v1.2.x"`
+   - Buat release via GitHub CLI: `gh release create v1.2.x --title "v1.2.x" --notes-file ...`

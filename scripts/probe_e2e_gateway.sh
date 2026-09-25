@@ -63,7 +63,7 @@ done
 BASE_URL="${BASE_URL%/}"
 
 echo "=================================================================="
-echo -e "${COLOR_BOLD}Route-X — Pengujian Probing Gateway E2E (v1.1.0 Readiness)${COLOR_RESET}"
+echo -e "${COLOR_BOLD}Route-X — Pengujian Probing Gateway E2E (v1.2.1 Readiness)${COLOR_RESET}"
 echo "Target URL : ${BASE_URL}"
 echo "Model      : ${TEST_MODEL:-"(auto-detect /v1/models)"}"
 echo "=================================================================="

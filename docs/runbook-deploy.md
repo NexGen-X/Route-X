@@ -93,7 +93,7 @@ penyerang bisa menghabiskan jatah seluruh pengguna.
   /usr/local/bin/routex-backup.sh dump via su postgres ke
   /var/backups/routex/routex-TANGGAL.dump, retensi 14 hari.
   Verifikasi 2026-09-09: dump 255 KB, restore ke DB uji users=1,
-  provider_models=3, schema_migrations=9.
+  provider_models=3, schema_migrations=15.
 
   PENTING: password role postgres dibagi semua DB. Jangan ALTER USER
   routex untuk keperluan test/lokal tanpa mengembalikannya ke nilai

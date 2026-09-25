@@ -44,7 +44,7 @@ export const APIKeys: React.FC = () => {
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [monthlyBudgetUsd, setMonthlyBudgetUsd] = useState('');
-  const [showRateLimitAdvanced, setShowRateLimitAdvanced] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [newKey, setNewKey] = useState({
     name: '',
     rpm_limit: 120,
@@ -57,6 +57,13 @@ export const APIKeys: React.FC = () => {
   const [selectedScopeIds, setSelectedScopeIds] = useState<string[]>([]);
   const [scopeSearch, setScopeSearch] = useState('');
   const [isLoadingAllowed, setIsLoadingAllowed] = useState(false);
+
+  const openCreateModal = () => {
+    setNewKey({ name: '', rpm_limit: 120, tpm_limit: 100000 });
+    setMonthlyBudgetUsd('');
+    setShowAdvanced(false);
+    setIsCreateOpen(true);
+  };
 
   // Timer indikator salin; dibatalkan saat unmount agar tidak ada setState basi.
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,6 +172,7 @@ export const APIKeys: React.FC = () => {
       }
 
       setIsCreateOpen(false);
+      setShowAdvanced(false);
       setMonthlyBudgetUsd('');
       const rawKeyRevealed = (res as any)?.raw_key || (res as any)?.key?.raw_key || res.raw_key || null;
       setCreatedRawKey(rawKeyRevealed);
@@ -316,7 +324,7 @@ export const APIKeys: React.FC = () => {
           <Button
             variant="primary"
             size="sm"
-            onClick={() => setIsCreateOpen(true)}
+            onClick={openCreateModal}
             icon={<Plus className="w-4 h-4" />}
             className="w-full sm:w-auto justify-center"
           >
@@ -367,7 +375,7 @@ export const APIKeys: React.FC = () => {
             <Button
               variant="primary"
               size="sm"
-              onClick={() => setIsCreateOpen(true)}
+              onClick={openCreateModal}
               icon={<Plus className="w-4 h-4 text-black" />}
             >
               Buat Kunci API Pertama
@@ -496,12 +504,21 @@ export const APIKeys: React.FC = () => {
       {/* Modal Create Key */}
       <Modal
         isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
+        onClose={() => {
+          setIsCreateOpen(false);
+          setShowAdvanced(false);
+        }}
         title="Buat Kunci API Klien Baru"
         subtitle="Hasilkan token otentikasi format sk_live_..."
         footer={
           <>
-            <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setIsCreateOpen(false);
+                setShowAdvanced(false);
+              }}
+            >
               Batal
             </Button>
             <Button variant="primary" type="submit" form="create-api-key-form">
@@ -512,103 +529,113 @@ export const APIKeys: React.FC = () => {
       >
         <form id="create-api-key-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
-            <label htmlFor="api-key-name" className="block text-xs font-medium text-text-secondary mb-1.5">Nama Kunci *</label>
+            <label htmlFor="api-key-name" className="block text-xs font-medium text-text-secondary mb-1.5">
+              Nama Kunci *
+            </label>
             <input
               id="api-key-name"
               name="name"
               type="text"
               required
-              placeholder="Backend Production Key"
+              autoFocus
+              placeholder="Contoh: Cursor IDE, Backend Production, OpenWebUI"
               value={newKey.name}
               onChange={(e) => setNewKey({ ...newKey, name: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white placeholder:text-text-muted focus:outline-none focus:border-accent"
             />
-          </div>
-          <div>
-            <label htmlFor="api-key-budget" className="block text-xs font-medium text-text-secondary mb-1.5">
-              Pagu Anggaran Bulanan (USD, Opsional)
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted font-mono text-xs">$</span>
-              <input
-                id="api-key-budget"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="Contoh: 10.00 (Kosongkan jika tanpa batas anggaran)"
-                value={monthlyBudgetUsd}
-                onChange={(e) => setMonthlyBudgetUsd(e.target.value)}
-                className="w-full pl-7 pr-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent text-xs"
-              />
-            </div>
-            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-              <span className="text-[10px] text-text-muted font-medium">Pilihan Cepat:</span>
-              {['10.00', '25.00', '50.00', '100.00'].map((amt) => (
-                <button
-                  key={amt}
-                  type="button"
-                  onClick={() => setMonthlyBudgetUsd(amt)}
-                  className={`px-2 py-0.5 rounded text-[10px] font-mono border transition-colors cursor-pointer ${
-                    monthlyBudgetUsd === amt
-                      ? 'bg-accent/15 border-accent text-accent font-semibold'
-                      : 'bg-bg-surface-2 border-border text-text-secondary hover:text-white hover:border-text-muted'
-                  }`}
-                >
-                  ${parseFloat(amt)}
-                </button>
-              ))}
-              {monthlyBudgetUsd && (
-                <button
-                  type="button"
-                  onClick={() => setMonthlyBudgetUsd('')}
-                  className="text-[10px] text-text-muted hover:text-rose-400 ml-auto cursor-pointer"
-                >
-                  Hapus
-                </button>
-              )}
-            </div>
-            <p className="text-[11px] text-text-muted mt-1.5 leading-relaxed">
-              Otomatis membatasi pengeluaran per bulan untuk kunci ini tanpa perlu repot membuka menu Anggaran.
-            </p>
           </div>
 
           <div className="pt-2 border-t border-border/60">
             <button
               type="button"
-              onClick={() => setShowRateLimitAdvanced(!showRateLimitAdvanced)}
+              onClick={() => setShowAdvanced(!showAdvanced)}
               className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-accent font-medium transition-colors cursor-pointer"
             >
-              {showRateLimitAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent" /> : <ChevronDown className="w-3.5 h-3.5 text-accent" />}
-              <span>{showRateLimitAdvanced ? 'Sembunyikan Batas Kecepatan (RPM/TPM)' : '⚙️ Batasi Kecepatan Permintaan (RPM / TPM)'}</span>
+              {showAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent" /> : <ChevronDown className="w-3.5 h-3.5 text-accent" />}
+              <span>{showAdvanced ? 'Sembunyikan Pengaturan Lanjutan' : '⚙️ Pengaturan Lanjutan (Batas Anggaran & Kecepatan)'}</span>
             </button>
 
-            {showRateLimitAdvanced && (
-              <div className="grid grid-cols-2 gap-3 mt-2.5 p-3 rounded-xl border border-border/80 bg-bg-surface-2/40">
+            {showAdvanced && (
+              <div className="space-y-4 mt-3 p-3.5 rounded-xl border border-border/80 bg-bg-surface-2/40">
                 <div>
-                  <label htmlFor="api-key-rpm" className="block text-xs font-medium text-text-secondary mb-1">Batas Pesan / Menit (RPM)</label>
-                  <input
-                    id="api-key-rpm"
-                    name="rpm_limit"
-                    type="number"
-                    min={0}
-                    value={newKey.rpm_limit}
-                    onChange={(e) => setNewKey({ ...newKey, rpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
-                    className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
-                    placeholder="0 = Tanpa batas"
-                  />
+                  <label htmlFor="api-key-budget" className="block text-xs font-medium text-text-secondary mb-1.5">
+                    Pagu Anggaran Bulanan (USD, Opsional)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted font-mono text-xs">$</span>
+                    <input
+                      id="api-key-budget"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Contoh: 10.00 (Kosongkan jika tanpa batas anggaran)"
+                      value={monthlyBudgetUsd}
+                      onChange={(e) => setMonthlyBudgetUsd(e.target.value)}
+                      className="w-full pl-7 pr-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent text-xs"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                    <span className="text-[10px] text-text-muted font-medium">Pilihan Cepat:</span>
+                    {['10.00', '25.00', '50.00', '100.00'].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setMonthlyBudgetUsd(amt)}
+                        className={`min-h-[36px] px-2.5 py-1 rounded-md text-xs font-mono border transition-colors cursor-pointer flex items-center justify-center ${
+                          monthlyBudgetUsd === amt
+                            ? 'bg-accent/15 border-accent text-accent font-semibold'
+                            : 'bg-bg-surface-2 border-border text-text-secondary hover:text-white hover:border-text-muted'
+                        }`}
+                      >
+                        ${parseFloat(amt)}
+                      </button>
+                    ))}
+                    {monthlyBudgetUsd && (
+                      <button
+                        type="button"
+                        onClick={() => setMonthlyBudgetUsd('')}
+                        className="min-h-[36px] px-2 py-1 text-xs text-text-muted hover:text-rose-400 ml-auto cursor-pointer flex items-center"
+                      >
+                        Hapus
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-text-muted mt-1.5 leading-relaxed">
+                    Otomatis membatasi pengeluaran per bulan untuk kunci ini tanpa perlu repot membuka menu Anggaran.
+                  </p>
                 </div>
-                <div>
-                  <label htmlFor="api-key-tpm" className="block text-xs font-medium text-text-secondary mb-1">Batas Token / Menit (TPM)</label>
-                  <input
-                    id="api-key-tpm"
-                    name="tpm_limit"
-                    type="number"
-                    min={0}
-                    value={newKey.tpm_limit}
-                    onChange={(e) => setNewKey({ ...newKey, tpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
-                    className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
-                    placeholder="0 = Tanpa batas"
-                  />
+
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/40">
+                  <div>
+                    <label htmlFor="api-key-rpm" className="block text-xs font-medium text-text-secondary mb-1">
+                      Batas Pesan / Menit (RPM)
+                    </label>
+                    <input
+                      id="api-key-rpm"
+                      name="rpm_limit"
+                      type="number"
+                      min={0}
+                      value={newKey.rpm_limit}
+                      onChange={(e) => setNewKey({ ...newKey, rpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
+                      className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
+                      placeholder="0 = Tanpa batas"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="api-key-tpm" className="block text-xs font-medium text-text-secondary mb-1">
+                      Batas Token / Menit (TPM)
+                    </label>
+                    <input
+                      id="api-key-tpm"
+                      name="tpm_limit"
+                      type="number"
+                      min={0}
+                      value={newKey.tpm_limit}
+                      onChange={(e) => setNewKey({ ...newKey, tpm_limit: Math.max(0, parseInt(e.target.value) || 0) })}
+                      className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
+                      placeholder="0 = Tanpa batas"
+                    />
+                  </div>
                 </div>
               </div>
             )}

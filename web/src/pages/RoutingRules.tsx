@@ -38,7 +38,6 @@ export const RoutingRules: React.FC = () => {
   const [selectedRule, setSelectedRule] = useState<any>(null);
   const [ruleProviders, setRuleProviders] = useState<string[]>([]);
   const [ruleWeights, setRuleWeights] = useState<Record<string, number>>({});
-  const [showRetryAdvanced, setShowRetryAdvanced] = useState(false);
 
   // Edit Drawer States
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -1121,7 +1120,7 @@ export const RoutingRules: React.FC = () => {
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Buat Aturan Perutean Cerdas (Routing Rule)"
-        maxWidth="3xl"
+        maxWidth="2xl"
         footer={
           <div className="flex items-center justify-between gap-3 w-full">
             <Button
@@ -1191,33 +1190,6 @@ export const RoutingRules: React.FC = () => {
           </div>
 
           <form id="create-routing-rule-form" noValidate onSubmit={handleCreate} className="space-y-4">
-            {mode === 'model_only' && (
-              <div className="p-3 bg-sky-500/10 border border-sky-500/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
-                <Zap className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
-                <div className="text-text-secondary">
-                  <strong className="text-sky-300">Mode Model Only:</strong> Passthrough langsung 1-to-1 ke model dan provider tertentu tanpa overhead failover. Latensi paling instan (&lt; 2ms saat cache hit).
-                </div>
-              </div>
-            )}
-
-            {mode === 'routing' && (
-              <div className="p-3 bg-purple-500/10 border border-purple-500/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
-                <Shuffle className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                <div className="text-text-secondary">
-                  <strong className="text-purple-300">Mode Multi-Provider Routing:</strong> Distribusi lalu lintas atau failover cerdas antar beberapa provider upstream (Priority, Lowest Latency, Lowest Cost, Weighted, Round Robin).
-                </div>
-              </div>
-            )}
-
-            {mode === 'combo_routing' && (
-              <div className="p-3 bg-accent/10 border border-accent/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
-                <Layers className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-                <div className="text-text-secondary">
-                  <strong className="text-accent">Mode Combo Pipeline:</strong> Beberapa model digabung dalam satu resep failover. Permintaan dilayani model pertama; bila kuota habis (429), error upstream, atau konteks tidak muat, dialihkan otomatis ke model berikutnya dalam resep. Anggaran attempts membatasi TOTAL percobaan lintas seluruh model.
-                </div>
-              </div>
-            )}
-
             {mode === 'combo_routing' ? (
               <div className="bg-bg-surface-2/60 p-3.5 rounded-xl border border-border space-y-3">
                 <div className="flex items-center justify-between">
@@ -1229,9 +1201,6 @@ export const RoutingRules: React.FC = () => {
                   </div>
                   <Badge variant="lime">Virtual Endpoint</Badge>
                 </div>
-                <p className="text-[11px] text-text-muted leading-relaxed">
-                  Nama model virtual yang dipanggil langsung oleh aplikasi klien (Open WebUI, Python OpenAI SDK, curl) sekaligus menjadi nama aturan ini.
-                </p>
                 <div>
                   <input
                     type="text"
@@ -1241,20 +1210,15 @@ export const RoutingRules: React.FC = () => {
                       setVirtualAlias(val);
                       setNewRule((prev) => ({ ...prev, name: val }));
                     }}
-                    placeholder="misal: smart-combo, prod-gateway, cost-saver"
+                    placeholder="misal: smart-combo (otomatis)"
                     className="w-full px-3 py-2 bg-bg-surface border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
-                  <div className="mt-1.5 flex items-center justify-between text-[10px] flex-wrap gap-1">
-                    <span className="text-text-muted">
-                      Kosongkan untuk nama otomatis berdasarkan model tier.
-                    </span>
-                    {virtualAlias && (
-                      <span className="text-accent font-mono flex items-center gap-1">
-                        <Terminal className="w-3 h-3" />
-                        model: <code className="text-white font-bold bg-bg-surface px-1 py-0.5 rounded">{virtualAlias}</code>
-                      </span>
-                    )}
-                  </div>
+                  {virtualAlias && (
+                    <div className="mt-1.5 flex items-center text-[10px] text-accent font-mono gap-1">
+                      <Terminal className="w-3 h-3" />
+                      model: <code className="text-white font-bold bg-bg-surface px-1 py-0.5 rounded">{virtualAlias}</code>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1383,50 +1347,11 @@ export const RoutingRules: React.FC = () => {
                   />
                 </div>
 
-                <div className="pt-2 border-t border-border/60">
-                  <button
-                    type="button"
-                    onClick={() => setShowRetryAdvanced(!showRetryAdvanced)}
-                    className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-accent font-medium transition-colors cursor-pointer"
-                  >
-                    {showRetryAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent" /> : <ChevronDown className="w-3.5 h-3.5 text-accent" />}
-                    <span>{showRetryAdvanced ? 'Sembunyikan Toleransi Kegagalan & Retry' : '⚙️ Toleransi Kegagalan & Retry (Lanjutan)'}</span>
-                  </button>
-                  {showRetryAdvanced && (
-                    <div className="grid grid-cols-2 gap-3 mt-2.5 p-3 rounded-xl border border-border/80 bg-bg-surface-2/40">
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Maksimal Percobaan</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="10"
-                          value={newRule.max_attempts}
-                          onChange={(e) => setNewRule({ ...newRule, max_attempts: parseInt(e.target.value) || 3 })}
-                          className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-1">Jeda Backoff (ms)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          value={newRule.backoff_ms}
-                          onChange={(e) => setNewRule({ ...newRule, backoff_ms: parseInt(e.target.value) || 200 })}
-                          className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
                 {/* Provider Selection & Weights directly in Create */}
                 <div className="p-3 bg-bg-surface-2 border border-border rounded-xl space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
                     <div>
                       <h4 className="font-semibold text-white">Pilih Upstream Providers &amp; Bobot</h4>
-                      <p className="text-[11px] text-text-muted mt-0.5">
-                        Centang provider untuk membatasi failover. Kosongkan jika ingin berlaku ke semua provider pendukung.
-                      </p>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <Button
@@ -1519,37 +1444,10 @@ export const RoutingRules: React.FC = () => {
                   onAliasChange={setVirtualAlias}
                   models={models}
                 />
-
-                {/* Proteksi & Ketahanan Otomatis */}
-                <div className="p-3 bg-accent/5 border border-accent/20 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-accent font-semibold text-xs">
-                      <ShieldCheck className="w-4 h-4 text-accent" />
-                      <span>Proteksi &amp; Ketahanan Otomatis</span>
-                    </div>
-                    <Badge variant="lime">Aktif</Badge>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-text-secondary">
-                    <div className="flex items-start gap-2 bg-bg-surface/60 p-2.5 rounded-lg border border-border/40">
-                      <Zap className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="text-white block mb-0.5">Smart Context Window Bypass:</strong>
-                        Jika token prompt melebihi limit model pertama, gateway otomatis melompati ke model yang muat tanpa error 400.
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2 bg-bg-surface/60 p-2.5 rounded-lg border border-border/40">
-                      <ShieldCheck className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="text-white block mb-0.5">Multi-Error Failover:</strong>
-                        Kegagalan kuota/rate-limit (429), server error (5xx), atau timeout langsung memicu fallback mulus ke model berikutnya dalam resep.
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
 
-            {/* Pengaturan Lanjutan (Prioritas & Circuit Breaker) - Collapsible Accordion */}
+            {/* Pengaturan Lanjutan (Retry, Prioritas & Circuit Breaker) - Collapsible Accordion */}
             <div className="pt-2 border-t border-border/40">
               <button
                 type="button"
@@ -1558,7 +1456,7 @@ export const RoutingRules: React.FC = () => {
               >
                 <span className="flex items-center gap-1.5">
                   <RotateCcw className="w-3.5 h-3.5 text-text-muted" />
-                  Pengaturan Lanjutan (Prioritas Evaluasi &amp; Circuit Breaker)
+                  ⚙️ Pengaturan Lanjutan (Retry, Prioritas &amp; Circuit Breaker)
                 </span>
                 {showAdvanced ? (
                   <ChevronUp className="w-4 h-4 text-text-muted" />
@@ -1571,17 +1469,45 @@ export const RoutingRules: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1">
+                      Maksimal Percobaan
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={newRule.max_attempts}
+                      onChange={(e) =>
+                        setNewRule({ ...newRule, max_attempts: parseInt(e.target.value) || 3 })
+                      }
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">
+                      Jeda Backoff (ms)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={newRule.backoff_ms}
+                      onChange={(e) =>
+                        setNewRule({ ...newRule, backoff_ms: parseInt(e.target.value) || 200 })
+                      }
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">
                       Prioritas Evaluasi
                     </label>
                     <input
                       type="number"
                       value={newRule.priority}
-                      onChange={(e) => setNewRule({ ...newRule, priority: parseInt(e.target.value) || 100 })}
+                      onChange={(e) =>
+                        setNewRule({ ...newRule, priority: parseInt(e.target.value) || 100 })
+                      }
                       className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                     />
-                    <span className="text-[10px] text-text-muted mt-0.5 block">
-                      Angka lebih kecil dievaluasi lebih awal (bawaan: 100).
-                    </span>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1">
@@ -1595,9 +1521,6 @@ export const RoutingRules: React.FC = () => {
                       }
                       className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                     />
-                    <span className="text-[10px] text-text-muted mt-0.5 block">
-                      Jumlah kegagalan berturut sebelum isolasi otomatis.
-                    </span>
                   </div>
                 </div>
               )}
@@ -1614,7 +1537,7 @@ export const RoutingRules: React.FC = () => {
           setEditingRule(null);
         }}
         title={`Edit Aturan: ${editingRule?.name || ''}`}
-        maxWidth="3xl"
+        maxWidth="2xl"
         footer={
           <div className="flex items-center justify-between gap-3 w-full">
             <Button
@@ -1687,33 +1610,6 @@ export const RoutingRules: React.FC = () => {
           </div>
 
           <form id="edit-routing-rule-form" noValidate onSubmit={handleEditSave} className="space-y-4">
-            {editMode === 'model_only' && (
-              <div className="p-3 bg-sky-500/10 border border-sky-500/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
-                <Zap className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
-                <div className="text-text-secondary">
-                  <strong className="text-sky-300">Mode Model Only:</strong> Passthrough langsung 1-to-1 ke model dan provider tertentu tanpa overhead failover. Latensi paling instan (&lt; 2ms saat cache hit).
-                </div>
-              </div>
-            )}
-
-            {editMode === 'routing' && (
-              <div className="p-3 bg-purple-500/10 border border-purple-500/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
-                <Shuffle className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                <div className="text-text-secondary">
-                  <strong className="text-purple-300">Mode Multi-Provider Routing:</strong> Mendistribusikan lalu lintas atau failover antar beberapa provider upstream (Priority, Lowest Latency, Lowest Cost, Weighted, Round Robin).
-                </div>
-              </div>
-            )}
-
-            {editMode === 'combo_routing' && (
-              <div className="p-3 bg-accent/10 border border-accent/25 rounded-xl text-[11px] leading-relaxed flex items-start gap-2.5">
-                <Layers className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-                <div className="text-text-secondary">
-                  <strong className="text-accent">Mode Combo Pipeline:</strong> Beberapa model digabung dalam satu resep failover. Permintaan dilayani model pertama; bila kuota habis (429), error upstream, atau konteks tidak muat, dialihkan otomatis ke model berikutnya dalam resep. Anggaran attempts membatasi TOTAL percobaan lintas seluruh model.
-                </div>
-              </div>
-            )}
-
             {editMode === 'combo_routing' ? (
               <div className="bg-bg-surface-2/60 p-3.5 rounded-xl border border-border space-y-3">
                 <div className="flex items-center justify-between">
@@ -1725,9 +1621,6 @@ export const RoutingRules: React.FC = () => {
                   </div>
                   <Badge variant="lime">Virtual Endpoint</Badge>
                 </div>
-                <p className="text-[11px] text-text-muted leading-relaxed">
-                  Nama model virtual yang dipanggil langsung oleh aplikasi klien (Open WebUI, Python OpenAI SDK, curl) sekaligus menjadi nama aturan ini.
-                </p>
                 <div>
                   <input
                     type="text"
@@ -1737,20 +1630,15 @@ export const RoutingRules: React.FC = () => {
                       setEditVirtualAlias(val);
                       setEditRuleForm((prev) => ({ ...prev, name: val }));
                     }}
-                    placeholder="misal: smart-combo, prod-gateway, cost-saver"
+                    placeholder="misal: smart-combo (otomatis)"
                     className="w-full px-3 py-2 bg-bg-surface border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
-                  <div className="mt-1.5 flex items-center justify-between text-[10px] flex-wrap gap-1">
-                    <span className="text-text-muted">
-                      Kosongkan untuk nama otomatis berdasarkan model tier.
-                    </span>
-                    {editVirtualAlias && (
-                      <span className="text-accent font-mono flex items-center gap-1">
-                        <Terminal className="w-3 h-3" />
-                        model: <code className="text-white font-bold bg-bg-surface px-1 py-0.5 rounded">{editVirtualAlias}</code>
-                      </span>
-                    )}
-                  </div>
+                  {editVirtualAlias && (
+                    <div className="mt-1.5 flex items-center text-[10px] text-accent font-mono gap-1">
+                      <Terminal className="w-3 h-3" />
+                      model: <code className="text-white font-bold bg-bg-surface px-1 py-0.5 rounded">{editVirtualAlias}</code>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1876,38 +1764,11 @@ export const RoutingRules: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Maksimal Percobaan</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={editRuleForm.max_attempts}
-                      onChange={(e) => setEditRuleForm({ ...editRuleForm, max_attempts: parseInt(e.target.value) || 3 })}
-                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Jeda Backoff (ms)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={editRuleForm.backoff_ms}
-                      onChange={(e) => setEditRuleForm({ ...editRuleForm, backoff_ms: parseInt(e.target.value) || 200 })}
-                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
-                    />
-                  </div>
-                </div>
-
                 {/* Provider Selection & Weights directly in Edit */}
                 <div className="p-3 bg-bg-surface-2 border border-border rounded-xl space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
                     <div>
                       <h4 className="font-semibold text-white">Pilih Upstream Providers &amp; Bobot</h4>
-                      <p className="text-[11px] text-text-muted mt-0.5">
-                        Centang provider untuk membatasi failover. Kosongkan jika ingin berlaku ke semua provider pendukung.
-                      </p>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <Button
@@ -2000,37 +1861,10 @@ export const RoutingRules: React.FC = () => {
                   onAliasChange={setEditVirtualAlias}
                   models={models}
                 />
-
-                {/* Proteksi & Ketahanan Otomatis */}
-                <div className="p-3 bg-accent/5 border border-accent/20 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-accent font-semibold text-xs">
-                      <ShieldCheck className="w-4 h-4 text-accent" />
-                      <span>Proteksi &amp; Ketahanan Otomatis</span>
-                    </div>
-                    <Badge variant="lime">Aktif</Badge>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-text-secondary">
-                    <div className="flex items-start gap-2 bg-bg-surface/60 p-2.5 rounded-lg border border-border/40">
-                      <Zap className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="text-white block mb-0.5">Smart Context Window Bypass:</strong>
-                        Jika token prompt melebihi limit model pertama, gateway otomatis melompati ke model yang muat tanpa error 400.
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-2 bg-bg-surface/60 p-2.5 rounded-lg border border-border/40">
-                      <ShieldCheck className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="text-white block mb-0.5">Multi-Error Failover:</strong>
-                        Kegagalan kuota/rate-limit (429), server error (5xx), atau timeout langsung memicu fallback mulus ke model berikutnya dalam resep.
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
 
-            {/* Pengaturan Lanjutan (Prioritas & Circuit Breaker) - Collapsible Accordion */}
+            {/* Pengaturan Lanjutan (Retry, Prioritas & Circuit Breaker) - Collapsible Accordion */}
             <div className="pt-2 border-t border-border/40">
               <button
                 type="button"
@@ -2039,7 +1873,7 @@ export const RoutingRules: React.FC = () => {
               >
                 <span className="flex items-center gap-1.5">
                   <RotateCcw className="w-3.5 h-3.5 text-text-muted" />
-                  Pengaturan Lanjutan (Prioritas Evaluasi &amp; Circuit Breaker)
+                  ⚙️ Pengaturan Lanjutan (Retry, Prioritas &amp; Circuit Breaker)
                 </span>
                 {showEditAdvanced ? (
                   <ChevronUp className="w-4 h-4 text-text-muted" />
@@ -2052,17 +1886,45 @@ export const RoutingRules: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1">
+                      Maksimal Percobaan
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={editRuleForm.max_attempts}
+                      onChange={(e) =>
+                        setEditRuleForm({ ...editRuleForm, max_attempts: parseInt(e.target.value) || 3 })
+                      }
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">
+                      Jeda Backoff (ms)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editRuleForm.backoff_ms}
+                      onChange={(e) =>
+                        setEditRuleForm({ ...editRuleForm, backoff_ms: parseInt(e.target.value) || 200 })
+                      }
+                      className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">
                       Prioritas Evaluasi
                     </label>
                     <input
                       type="number"
                       value={editRuleForm.priority}
-                      onChange={(e) => setEditRuleForm({ ...editRuleForm, priority: parseInt(e.target.value) || 100 })}
+                      onChange={(e) =>
+                        setEditRuleForm({ ...editRuleForm, priority: parseInt(e.target.value) || 100 })
+                      }
                       className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                     />
-                    <span className="text-[10px] text-text-muted mt-0.5 block">
-                      Angka lebih kecil dievaluasi lebih awal (bawaan: 100).
-                    </span>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1">
@@ -2076,9 +1938,6 @@ export const RoutingRules: React.FC = () => {
                       }
                       className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                     />
-                    <span className="text-[10px] text-text-muted mt-0.5 block">
-                      Jumlah kegagalan berturut sebelum isolasi otomatis.
-                    </span>
                   </div>
                 </div>
               )}
@@ -2114,16 +1973,24 @@ export const RoutingRules: React.FC = () => {
         }
       >
         <form id="providers-routing-rule-form" noValidate onSubmit={handleSaveProviders} className="space-y-4 text-xs">
-          <div className="space-y-3">
+          <div className="space-y-2">
             {providers.map(p => {
               const targetM = models.find(m => m.id === selectedRule?.match_model_id || m.model_id === selectedRule?.match_model_id);
               const matchedUpstream = targetM?.providers?.find(mp => mp.provider_id === p.id);
+              const isChecked = ruleProviders.includes(p.id);
               return (
-                <div key={p.id} className="p-3 bg-bg-surface-2 border border-border rounded-lg flex flex-col gap-2">
+                <div
+                  key={p.id}
+                  className={`p-2.5 rounded-lg border transition-all ${
+                    isChecked
+                      ? 'bg-purple-500/10 border-purple-400/40 shadow-sm shadow-purple-500/5'
+                      : 'bg-bg-surface-1 border-border/70 hover:border-border'
+                  }`}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 font-semibold text-white cursor-pointer min-w-0">
                       <Checkbox
-                        checked={ruleProviders.includes(p.id)}
+                        checked={isChecked}
                         onChange={() => toggleProvider(p.id)}
                       />
                       <span className="truncate">{p.display_name || p.name}</span>
@@ -2131,25 +1998,25 @@ export const RoutingRules: React.FC = () => {
                     </div>
                     {targetM ? (
                       matchedUpstream ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
                           ✓ {matchedUpstream.upstream_model_name}
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-bg-surface-1 text-text-muted border border-border/60 flex-shrink-0">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-bg-surface-2 text-text-muted border border-border/60 shrink-0">
                           Model tidak tersedia
                         </span>
                       )
                     ) : null}
                   </div>
-                  {ruleProviders.includes(p.id) && (
-                    <div className="pl-6 flex items-center gap-2 mt-1">
-                      <label className="text-text-secondary">Bobot (Weight):</label>
+                  {isChecked && (
+                    <div className="pl-6 flex items-center gap-2 mt-2 pt-2 border-t border-border/40">
+                      <label className="text-[11px] text-text-secondary">Bobot (Weight):</label>
                       <input
                         type="number"
                         min="1"
                         value={ruleWeights[p.id] || 1}
                         onChange={(e) => updateWeight(p.id, parseInt(e.target.value) || 1)}
-                        className="w-24 px-2 py-1 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                        className="w-20 px-2 py-0.5 bg-bg-surface-2 border border-border rounded text-white text-xs font-mono focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
                       />
                     </div>
                   )}

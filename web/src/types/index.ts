@@ -200,6 +200,10 @@ export interface RoutingRule {
     position: number;
     weight?: number;
   }[];
+  // ID provider upstream yang dipetakan pada aturan (payload admin create/update)
+  provider_ids?: string[];
+  // Pemetaan bobot untuk load balancing multi-provider
+  weights?: Record<string, number>;
   // Pipeline combo jsonb (migrasi 0014). null/undefined = Model Only (jalur lama).
   // Diisi = Combo Model: klien memanggil satu pengenal stabil, gateway menjalankan
   // resep multi-model dengan anggaran attempts di atas.

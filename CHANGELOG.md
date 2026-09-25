@@ -4,6 +4,31 @@ Semua perubahan penting pada project Route-X didokumentasikan dalam berkas ini.
 
 Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) dan mematuhi [Semantic Versioning](https://semver.org/).
 
+## [v1.2.1] - 2026-09-24
+
+Rilis pembaruan antarmuka terpadu, isolasi jalur keluar per-akun, eliminasi selektor native mobile, serta penyederhanaan navigasi Route-X.
+
+### Added
+- **Universal Multi-Account & Multi-Credential Pooling (#50, #51)**:
+  - Deteksi cerdas preset terdaftar (`matchExistingProvider`): otomatis mengarahkan ke mode penambahan akun ke pool provider yang sudah ada tanpa menduplikasi entitas provider.
+  - Segregasi presisi antara Google Antigravity (`antigravity-deepmind`) dan Google Gemini (`google-gemini`) pada form kredensial OAuth.
+  - Dukungan multi-akun OAuth dan API Key dengan input nama akun deskriptif serta shortcut `+ Akun / Key` langsung dari kartu provider.
+- **Per-Account Egress Pool Isolation & Migrasi Skema (#52)**:
+  - Migration `0015_credential_egress_pool.sql`: menambahkan kolom `egress_pool_id` opsional pada tabel `provider_credentials`.
+  - Setiap akun atau kunci API kini dapat memiliki jalur keluar (proxy/direct) terisolasi secara independen.
+  - Runtime proxy gateway memprioritaskan egress credential jika dikonfigurasi, dengan fallback ke default provider egress pool.
+- **Universal Themed Picker UI/UX (#53)**:
+  - Komponen `Select.tsx` kustom terpadu dengan varian `form` dan `compact`.
+  - Mode responsif mobile (< 640px): Custom Bottom Sheet Route-X via React Portal dengan drag handle, blur backdrop, indikator radio `#BEF264`, safe-area insets, dan body scroll locking.
+  - Mode desktop (≥ 640px): Floating glassmorphism popover dengan navigasi keyboard lengkap.
+  - Menggantikan 100% elemen native HTML `<select>` di seluruh aplikasi, mengeliminasi picker bawaan Android/browser ungu/abu-abu.
+
+### Changed
+- **Streamline Navigasi Dashboard (#54)**:
+  - Menghapus menu redundan "Models & Pricing" dari Sidebar dan Command Palette (`Cmd+K`).
+  - Pengelolaan dan sinkronisasi model kini terpusat langsung di dalam Drawer masing-masing Provider.
+  - Rute warisan `/models` dan `/upstreams/models` dialihkan secara mulus (*graceful redirect*) ke halaman Providers tanpa broken route.
+
 ---
 
 ## [v1.2.0] - 2026-09-21

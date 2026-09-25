@@ -120,8 +120,9 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
         'Cloudflare Terhubung'
       );
       onSuccess();
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Gagal membuat Cloudflare AI Gateway. Pastikan token dan account ID benar.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(message || 'Gagal membuat Cloudflare AI Gateway. Pastikan token dan account ID benar.');
     } finally {
       setIsLoading(false);
     }
@@ -154,8 +155,9 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
       });
       toast.success('Script streaming relay berhasil di-deploy ke Deno.', 'Deno Terhubung');
       onSuccess();
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Gagal mendeploy ke Deno Deploy. Pastikan access token valid.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMsg(message || 'Gagal mendeploy ke Deno Deploy. Pastikan access token valid.');
     } finally {
       setIsLoading(false);
     }

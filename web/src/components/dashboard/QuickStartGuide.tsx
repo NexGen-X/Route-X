@@ -8,6 +8,8 @@ import {
   Copy,
   Check,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
@@ -23,6 +25,14 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) 
       return localStorage.getItem('routex_dismiss_onboarding') !== 'true';
     } catch {
       return true;
+    }
+  });
+
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('routex_quickstart_collapsed') === 'true';
+    } catch {
+      return false;
     }
   });
 
@@ -42,37 +52,93 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) 
     try {
       localStorage.setItem('routex_dismiss_onboarding', 'true');
     } catch {
-      // Ignore localStorage failure in restricted contexts
+      // Abaikan kegagalan localStorage pada restricted context
     }
+  };
+
+  const toggleCollapse = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('routex_quickstart_collapsed', String(next));
+      } catch {
+        // Abaikan kegagalan localStorage pada restricted context
+      }
+      return next;
+    });
   };
 
   if (!showOnboarding) {
     return null;
   }
 
-  return (
-    <>
-      <div className="bg-bg-surface border border-accent/20 rounded-card p-6 shadow-sm relative overflow-hidden">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent" />
-              <h3 className="text-sm font-bold text-white tracking-tight">
-                Panduan Cepat Memulai Route-X
-              </h3>
-            </div>
-          </div>
+  // Tampilan ciut (Collapsed Compact Bar setinggi 44px)
+  if (isCollapsed) {
+    return (
+      <div className="h-11 px-4 bg-bg-surface border border-border rounded-card flex items-center justify-between text-xs transition-all shadow-sm">
+        <div className="flex items-center gap-2 truncate">
+          <span className="text-white font-medium truncate">
+            🚀 Panduan Mulai Cepat (3 Langkah Integrasi)
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={toggleCollapse}
+            aria-label="Buka Panduan"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-white bg-bg-surface-2 hover:bg-bg-surface-3 border border-border rounded-nav transition-colors cursor-pointer"
+          >
+            <span>Buka Panduan</span>
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
           <button
             type="button"
             onClick={dismissOnboarding}
             aria-label="Tutup panduan"
             className="text-text-muted hover:text-white p-1 rounded-nav hover:bg-bg-surface-2 transition-colors cursor-pointer"
+            title="Tutup panduan secara permanen"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
+      </div>
+    );
+  }
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+  return (
+    <>
+      <div className="bg-bg-surface border border-border rounded-card p-5 sm:p-6 shadow-sm relative overflow-hidden transition-all">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-accent" />
+            <h3 className="text-sm font-semibold text-white tracking-tight">
+              Panduan Cepat Memulai Route-X
+            </h3>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={toggleCollapse}
+              aria-label="Ciutkan Panduan"
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-text-muted hover:text-white rounded-nav hover:bg-bg-surface-2 transition-colors cursor-pointer"
+              title="Ciutkan panduan untuk mengosongkan ruang layar"
+            >
+              <span>Ciutkan Panduan</span>
+              <ChevronUp className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={dismissOnboarding}
+              aria-label="Tutup panduan"
+              className="text-text-muted hover:text-white p-1 rounded-nav hover:bg-bg-surface-2 transition-colors cursor-pointer"
+              title="Tutup panduan secara permanen"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mt-5">
           {/* Step 1 */}
           <div
             role="button"
@@ -84,15 +150,15 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) 
               }
             }}
             onClick={() => onNavigate('/upstreams/providers')}
-            className="p-4 rounded-inner bg-bg-surface-2 border border-border/80 hover:border-accent/50 cursor-pointer transition-all space-y-2 group"
+            className="p-4 rounded-inner bg-bg-surface-2 border border-border hover:border-accent/40 cursor-pointer transition-all space-y-2 group"
           >
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent font-semibold">
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-bg-surface-3 text-text-secondary border border-border font-semibold">
                 Langkah 1
               </span>
               <Server className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
             </div>
-            <h4 className="text-xs font-bold text-white group-hover:text-accent transition-colors">
+            <h4 className="text-xs font-semibold text-white group-hover:text-accent transition-colors">
               Tambah Penyedia AI Upstream
             </h4>
           </div>
@@ -108,15 +174,15 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) 
               }
             }}
             onClick={() => onNavigate('/access/api-keys')}
-            className="p-4 rounded-inner bg-bg-surface-2 border border-border/80 hover:border-accent/50 cursor-pointer transition-all space-y-2 group"
+            className="p-4 rounded-inner bg-bg-surface-2 border border-border hover:border-accent/40 cursor-pointer transition-all space-y-2 group"
           >
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent font-semibold">
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-bg-surface-3 text-text-secondary border border-border font-semibold">
                 Langkah 2
               </span>
               <KeyRound className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
             </div>
-            <h4 className="text-xs font-bold text-white group-hover:text-accent transition-colors">
+            <h4 className="text-xs font-semibold text-white group-hover:text-accent transition-colors">
               Terbitkan Kunci API Klien
             </h4>
           </div>
@@ -132,24 +198,24 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) 
               }
             }}
             onClick={() => onNavigate('/cli-integrations')}
-            className="p-4 rounded-inner bg-bg-surface-2 border border-border/80 hover:border-accent/50 cursor-pointer transition-all space-y-2 group"
+            className="p-4 rounded-inner bg-bg-surface-2 border border-border hover:border-accent/40 cursor-pointer transition-all space-y-2 group"
           >
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent/10 text-accent font-semibold">
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-bg-surface-3 text-text-secondary border border-border font-semibold">
                 Langkah 3
               </span>
               <Terminal className="w-4 h-4 text-text-muted group-hover:text-accent transition-colors" />
             </div>
-            <h4 className="text-xs font-bold text-white group-hover:text-accent transition-colors">
+            <h4 className="text-xs font-semibold text-white group-hover:text-accent transition-colors">
               Sambungkan Editor atau CLI
             </h4>
           </div>
         </div>
 
         {/* Strip Resep Cepat 1-Klik untuk Pemula */}
-        <div className="mt-5 pt-4 border-t border-border/70">
+        <div className="mt-5 pt-4 border-t border-border">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 font-mono">
+            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-1.5 font-mono">
               <Sparkles className="w-3.5 h-3.5 text-accent" />
               Resep Cepat 1-Klik (Siap Pakai untuk Pemula)
             </span>
@@ -161,13 +227,13 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) 
             <button
               type="button"
               onClick={() => setSelectedRecipe('coding')}
-              className="p-3.5 rounded-inner bg-bg-surface-2/70 border border-border hover:border-sky-400/50 hover:bg-sky-500/5 transition-all text-left group cursor-pointer"
+              className="p-3.5 rounded-inner bg-bg-surface-2 border border-border hover:border-sky-500/40 hover:bg-sky-500/5 transition-all text-left group cursor-pointer"
             >
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-white group-hover:text-sky-300 transition-colors flex items-center gap-1.5">
                   🛠️ Coding Asisten
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/20 font-mono">
                   Cursor / Claude
                 </span>
               </div>
@@ -179,13 +245,13 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) 
             <button
               type="button"
               onClick={() => setSelectedRecipe('budget')}
-              className="p-3.5 rounded-inner bg-bg-surface-2/70 border border-border hover:border-emerald-400/50 hover:bg-emerald-500/5 transition-all text-left group cursor-pointer"
+              className="p-3.5 rounded-inner bg-bg-surface-2 border border-border hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all text-left group cursor-pointer"
             >
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-white group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
                   💰 Hemat Biaya 90%
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono">
                   DeepSeek / Groq
                 </span>
               </div>
@@ -197,13 +263,13 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) 
             <button
               type="button"
               onClick={() => setSelectedRecipe('uptime')}
-              className="p-3.5 rounded-inner bg-bg-surface-2/70 border border-border hover:border-purple-400/50 hover:bg-purple-500/5 transition-all text-left group cursor-pointer"
+              className="p-3.5 rounded-inner bg-bg-surface-2 border border-border hover:border-purple-500/40 hover:bg-purple-500/5 transition-all text-left group cursor-pointer"
             >
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-bold text-white group-hover:text-purple-300 transition-colors flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-white group-hover:text-purple-300 transition-colors flex items-center gap-1.5">
                   🛡️ Anti-Downtime
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300 font-mono">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-mono">
                   Auto Failover
                 </span>
               </div>

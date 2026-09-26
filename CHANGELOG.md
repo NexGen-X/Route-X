@@ -4,6 +4,53 @@ Semua perubahan penting pada project Route-X didokumentasikan dalam berkas ini.
 
 Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) dan mematuhi [Semantic Versioning](https://semver.org/).
 
+## [v1.3.1] - 2026-09-26
+
+Rilis pembaruan kualitas dan performa yang menghadirkan penguatan aksesibilitas WCAG 2.1 Level AA, remediasi menyeluruh sistem notifikasi & toast, implementasi benchmark suite resmi backend Go, audit integritas skema database PostgreSQL, dan audit kesiapan pengujian End-to-End (E2E) Playwright.
+
+### Added
+- **Benchmark Suite Resmi Backend Go (PR #78)**:
+  - Implementasi 12 benchmark mikro terverifikasi untuk mengukur performa hot-path komponen inti gateway Route-X pada arsitektur Intel Xeon Platinum 8259CL @ 2.50GHz:
+    - `BenchmarkRule_Matches`: 23.05 ns/op, 0 B/op, 0 allocs/op (~43.4M ops/sec).
+    - `BenchmarkDeterministicTieBreaker`: 35.13 ns/op, 0 B/op, 0 allocs/op (~28.4M ops/sec) via FNV-1a 64-bit jitter computation.
+    - `BenchmarkMemoryLimiter_Allow`: 87.08 ns/op, 0 B/op, 0 allocs/op (~11.5M ops/sec) in-memory token bucket limiter.
+    - `BenchmarkMemoryLimiter_AllowParallel`: 118.9 ns/op, 0 B/op, 0 allocs/op (~8.4M ops/sec) pada konkurensi multi-goroutine.
+    - `BenchmarkComboPipeline_Evaluate`: 132.9 ns/op, 32 B/op, 1 allocs/op (~7.5M ops/sec) untuk evaluasi cascade multi-model combo pipeline.
+    - `BenchmarkSelectCandidate_Priority`: 154.7 ns/op, 48 B/op, 1 allocs/op (~6.5M ops/sec) pada seleksi kandidat berjenjang.
+    - `BenchmarkFormatKey`: 69.80 ns/op, 16 B/op, 1 allocs/op (~14.3M ops/sec) formatting dan masking hint visual.
+    - `BenchmarkHash`: 557.1 ns/op, 176 B/op, 3 allocs/op cryptographic digest hashing kunci API.
+    - `BenchmarkSelectCandidate_RoundRobin`: 449.2 ns/op, 88 B/op, 4 allocs/op.
+    - `BenchmarkSelectCandidate_LowestLatency`: 624.4 ns/op, 48 B/op, 1 allocs/op.
+    - `BenchmarkSelectCandidate_LowestCost`: 640.9 ns/op, 48 B/op, 1 allocs/op.
+    - `BenchmarkSelectCandidate_Weighted`: 1,303 ns/op, 48 B/op, 1 allocs/op.
+- **Audit Integritas Skema Database SQL (FIND-DB-01 & FIND-DB-02)**:
+  - Validasi menyeluruh 15 berkas migrasi PostgreSQL native (`0001_initial_schema.sql` s.d. `0015_credential_egress_pool.sql`).
+  - Konfirmasi kepatuhan transaksi atomik migrasi, integritas foreign key cascade, dan audit performa indeks partisi waktu (`request_logs`).
+  - Pembakuan tata kelola Standar Operasional Prosedur (SOP) evolusi skema masa depan yang diuji coba pada migrasi `0016_expand_model_capabilities.sql`.
+- **Audit Kesiapan Pengujian End-to-End (E2E) Playwright**:
+  - Arsitektur deduplikasi autentikasi (`auth.setup.ts`): Setup login tepat 1x untuk Admin dan Viewer, menyimpan session reuse ke `.auth-admin.json` dan `.auth-viewer.json` guna melindungi rate limit login (20 request/IP per 15 menit).
+  - Verifikasi kesiapan lintas 5 peramban: Desktop Chromium, Desktop Firefox, Desktop Safari (WebKit), Mobile Chrome (Pixel 7), dan Mobile Safari (iPhone 14).
+  - Cakupan 7 file skenario pengujian komprehensif: `aksi-tulis.spec.ts` (CSRF & Origin mutation cleanup), `alur-inti.spec.ts`, `auth.setup.ts`, `dashboard-latensi.spec.ts`, `menyeluruh.spec.ts` (16 rute navigasi), `mobile-responsif.spec.ts` (drawer & 0 horizontal overflow), dan `sisa-kritis.spec.ts` (CRUD providers, egress, users, filter).
+
+### Changed
+- **Remediasi Menyeluruh Sistem Notifikasi & Toast (PR #76)**:
+  - Kenaikan z-index kontainer menjadi `z-[9999]` guna mencegah tumpang-tindih visual dengan Modal dan Drawer.
+  - Penambahan padding dinamis `top-[max(1rem,env(safe-area-inset-top))]` untuk mendukung perangkat berlayar poni / notch.
+  - Perbaikan animasi progress bar countdown yang macet di 100% menggunakan animasi CSS keyframe dari 100% ke 0% selama durasi toast.
+  - Implementasi interaksi Pause on Hover (`onMouseEnter` & `onMouseLeave`) untuk membekukan timer dan animasi progress bar secara mulus.
+  - Sentralisasi penanganan error tipe aman melalui utilitas `getErrorMessage(err: unknown, fallback?)` di `web/src/utils/error.ts` dengan 30 skenario unit test.
+  - Lokalisasi teknis dan pembersihan pola rapuh `(err.message || err)` pada halaman APIKeys, Diagnostics, Webhooks, Users, dan RuleProvidersDrawer.
+- **Penguatan Aksesibilitas WCAG 2.1 Level AA (PR #77 - FIND-FE-05)**:
+  - Integrasi `FocusTrap` dan WAI-ARIA Combobox pada Command Palette (`role="dialog"`, `aria-modal="true"`, `role="combobox"`, `aria-controls="command-palette-results"`, `role="listbox"`, `role="option"`, `aria-selected`).
+  - Standardisasi `aria-label` deskriptif pada seluruh tombol icon-only di seluruh aplikasi (ModelsTab, CredentialsTab, Providers, BudgetCard, Observability, CLIToolCard, CLIApiKeyToolbar).
+  - Perbaikan asosiasi `<label htmlFor>` dan `<input id>` eksplisit pada formulir (Webhooks, Users, CreateProviderModal, Select).
+  - Penambahan `aria-hidden="true"` pada seluruh ikon Lucide SVG dekoratif untuk mencegah polusi narasi screen reader.
+  - Implementasi WAI-ARIA landmark navigation `<nav aria-label="Navigasi Utama">`, `aria-current="page"`, `role="tablist"`, `role="tab"`, dan status `role="alert"` pada `PageErrorBoundary`.
+- **Penyempurnaan Dokumentasi Enterprise**:
+  - Perombakan total `README.md` dengan badge modern, matriks kinerja benchmark, diagram arsitektur Mermaid interaktif, dan panduan deployment komprehensif.
+
+---
+
 ## [v1.3.0] - 2026-09-26
 
 Rilis besar yang menghadirkan dekomposisi arsitektur modular pada seluruh halaman frontend, pencapaian Strict Typing 0 `any`, test suite komprehensif (137 tests passing), kodifikasi resmi tata kelola orkestrasi 13 sub-agent, serta optimasi backend router Go.

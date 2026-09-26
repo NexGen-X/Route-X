@@ -167,21 +167,23 @@ export const UsersPage: React.FC = () => {
       )}
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(3)].map((_, idx) => (
-            <Card key={idx} className="p-5 animate-pulse space-y-4">
-              <div className="space-y-1.5">
-                <div className="h-4 bg-bg-surface-2 rounded w-2/3" />
-                <div className="h-3 bg-bg-surface-2 rounded w-1/2" />
+        /* Loading skeleton — tabel minimalis (Item 4.2) */
+        <Card className="overflow-hidden">
+          <div className="animate-pulse divide-y divide-border">
+            {[...Array(3)].map((_, idx) => (
+              <div key={idx} className="flex items-center gap-4 px-4 py-3">
+                <div className="w-8 h-8 bg-bg-surface-2 rounded-full flex-shrink-0" />
+                <div className="flex-1 space-y-1.5 min-w-0">
+                  <div className="h-3.5 bg-bg-surface-2 rounded w-1/3" />
+                  <div className="h-3 bg-bg-surface-2 rounded w-1/2" />
+                </div>
+                <div className="h-5 bg-bg-surface-2 rounded w-14 flex-shrink-0" />
+                <div className="h-5 bg-bg-surface-2 rounded w-16 flex-shrink-0" />
+                <div className="h-7 bg-bg-surface-2 rounded w-20 flex-shrink-0" />
               </div>
-              <div className="h-6 bg-bg-surface-2 rounded w-1/3" />
-              <div className="pt-3 border-t border-border flex gap-2">
-                <div className="h-8 bg-bg-surface-2 rounded w-16" />
-                <div className="h-8 bg-bg-surface-2 rounded w-20" />
-              </div>
-            </Card>
-          ))}
-        </div>
+            ))}
+          </div>
+        </Card>
       ) : users.length === 0 ? (
         <Card className="p-10 text-center rounded-box bg-bg-surface-1 border border-border/60">
           <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mx-auto mb-3">
@@ -202,46 +204,112 @@ export const UsersPage: React.FC = () => {
           </Button>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {users.map((u) => (
-            <Card key={u.id} className="p-5 flex flex-col justify-between">
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h4 className="text-sm font-bold text-white truncate">{u.display_name}</h4>
-                    <span className="text-[11px] text-text-muted font-mono truncate block">{u.email}</span>
-                  </div>
-                  <Badge variant={statusVariant(u.status)}>{u.status}</Badge>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-1 items-center">
-                  <Badge variant="lime" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1">
-                    <Shield className="w-3 h-3" /> Admin
-                  </Badge>
-                </div>
-                {u.must_change_password && (
-                  <p className="mt-2 text-[11px] text-amber-300">Wajib ganti password saat login berikutnya.</p>
-                )}
-              </div>
-              <div className="mt-4 pt-3 border-t border-border flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" onClick={() => void openDetail(u.id)} icon={<UserCheck className="w-3.5 h-3.5" />}>
-                  Kelola
-                </Button>
-                {u.status === 'active' ? (
-                  <Button variant="secondary" size="sm" onClick={() => void handleStatus(u, 'disabled')}>
-                    Nonaktifkan
-                  </Button>
-                ) : (
-                  <Button variant="secondary" size="sm" onClick={() => void handleStatus(u, 'active')}>
-                    Aktifkan
-                  </Button>
-                )}
-                <Button variant="secondary" size="sm" onClick={() => void handleDelete(u)} icon={<Trash2 className="w-3.5 h-3.5" />}>
-                  Hapus
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
+        /* Tabel akun enterprise minimalis — Item 4.2 */
+        <Card className="overflow-hidden p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-bg-surface-2/60">
+                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide">
+                    Pengguna
+                  </th>
+                  <th className="px-3 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide hidden sm:table-cell">
+                    Role
+                  </th>
+                  <th className="px-3 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide">
+                    Status
+                  </th>
+                  <th className="px-3 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide hidden md:table-cell">
+                    Keterangan
+                  </th>
+                  <th className="px-4 py-3 text-right text-[11px] font-semibold text-text-muted uppercase tracking-wide">
+                    Aksi
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {users.map((u) => (
+                  <tr key={u.id} className="hover:bg-bg-surface-2/40 transition-colors">
+                    {/* Avatar + Nama + Email */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-full bg-accent/15 border border-accent/20 flex items-center justify-center flex-shrink-0">
+                          <span className="text-xs font-bold text-accent">
+                            {(u.display_name || u.email).charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-white truncate">{u.display_name}</p>
+                          <p className="text-[11px] text-text-muted font-mono truncate">{u.email}</p>
+                        </div>
+                      </div>
+                    </td>
+                    {/* Role */}
+                    <td className="px-3 py-3 hidden sm:table-cell">
+                      <Badge variant="lime" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1 w-fit">
+                        <Shield className="w-3 h-3" /> Admin
+                      </Badge>
+                    </td>
+                    {/* Status */}
+                    <td className="px-3 py-3">
+                      <Badge variant={statusVariant(u.status)}>{u.status}</Badge>
+                    </td>
+                    {/* Keterangan */}
+                    <td className="px-3 py-3 hidden md:table-cell">
+                      {u.must_change_password ? (
+                        <span className="text-[11px] text-amber-300">Wajib ganti password</span>
+                      ) : (
+                        <span className="text-[11px] text-text-muted">—</span>
+                      )}
+                    </td>
+                    {/* Aksi */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void openDetail(u.id)}
+                          icon={<UserCheck className="w-3.5 h-3.5" />}
+                          className="text-xs"
+                        >
+                          Kelola
+                        </Button>
+                        {u.status === 'active' ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void handleStatus(u, 'disabled')}
+                            className="text-xs hidden sm:inline-flex"
+                          >
+                            Nonaktifkan
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void handleStatus(u, 'active')}
+                            className="text-xs hidden sm:inline-flex"
+                          >
+                            Aktifkan
+                          </Button>
+                        )}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => void handleDelete(u)}
+                          icon={<Trash2 className="w-3.5 h-3.5 text-status-error/80" />}
+                          className="text-xs text-status-error/80 border-status-error/20 hover:bg-status-error/10 hover:text-status-error"
+                          title="Hapus pengguna"
+                          aria-label={`Hapus pengguna ${u.email}`}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       <Drawer

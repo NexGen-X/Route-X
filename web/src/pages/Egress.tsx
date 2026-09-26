@@ -98,14 +98,7 @@ export const Egress: React.FC = () => {
     <div className="space-y-6">
       {/* Header Halaman */}
       <PageHeader
-        title={
-          <span className="flex items-center gap-2.5">
-            Egress Proxy Pools
-            <span className="text-xs font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20">
-              Stealth Routing
-            </span>
-          </span>
-        }
+        title="Egress Proxy Pools"
         actions={
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={() => void loadPools()} isLoading={isLoading}>

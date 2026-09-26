@@ -1,9 +1,9 @@
 import React from 'react';
 import { ChevronRight } from 'lucide-react';
-import { Badge } from '../common/Badge';
+import { StatusDot } from '../common/StatusDot';
 import { formatUSD } from '../../utils/money';
 import type { RequestLog } from '../../types';
-import { getStatusBadgeLabel, getStatusBadgeVariant } from './utils';
+import { getHttpStatusDotVariant } from './utils';
 
 export interface RequestTableRowProps {
   request: RequestLog;
@@ -32,9 +32,10 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
     >
       <td className="py-3 px-4">
         <div className="flex items-center gap-2">
-          <Badge variant={getStatusBadgeVariant(request.status_code)}>
-            {getStatusBadgeLabel(request.status_code)}
-          </Badge>
+          <StatusDot
+            status={getHttpStatusDotVariant(request.status_code)}
+            label={String(request.status_code)}
+          />
           <span className="font-mono font-medium text-text-primary truncate max-w-[140px]">
             {request.request_id}
           </span>
@@ -55,7 +56,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
 
       <td className="py-3 px-4">
         <div className="font-mono text-text-primary">
-          {request.total_tokens != null ? request.total_tokens.toLocaleString() : '-'} tokens
+          {request.total_tokens != null ? `${request.total_tokens.toLocaleString()} tok` : '-'}
         </div>
         <div className="text-[11px] text-text-muted font-mono">
           {formatUSD(request.cost_usd, 6)}

@@ -93,9 +93,28 @@ export const RuleCard: React.FC<RuleCardProps> = ({
               </div>
             </div>
           </div>
-          <Badge variant={rule.enabled ? 'success' : 'neutral'}>
-            {rule.enabled ? 'active' : 'disabled'}
-          </Badge>
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge variant={rule.enabled ? 'success' : 'neutral'}>
+              {rule.enabled ? 'active' : 'disabled'}
+            </Badge>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={rule.enabled}
+              onClick={() => void onToggle(rule)}
+              title={rule.enabled ? 'Nonaktifkan aturan' : 'Aktifkan aturan'}
+              aria-label={rule.enabled ? 'Nonaktifkan aturan' : 'Aktifkan aturan'}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border border-border/80 transition-colors duration-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                rule.enabled ? 'bg-emerald-500/90' : 'bg-bg-surface-3'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-3.5 w-3.5 mt-[2px] ml-[2px] transform rounded-full bg-white shadow transition duration-200 ${
+                  rule.enabled ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
         </div>
 
         {cleanCustomDesc && !isAutoDesc && (
@@ -143,13 +162,13 @@ export const RuleCard: React.FC<RuleCardProps> = ({
 
         {/* 2. Mode COMBO ROUTING: Interactive Cascade Flow */}
         {ruleMode.mode === 'combo_routing' && (
-          <div className="p-2.5 rounded-lg bg-bg-surface-2/70 border border-accent/20 space-y-2 mt-3.5">
+          <div className="p-3 rounded-lg bg-bg-surface-1 border border-border/70 space-y-2 mt-3.5">
             {ruleMode.alias && (
-              <div className="flex items-center justify-between pb-1.5 border-b border-border/30">
+              <div className="flex items-center justify-between pb-1.5 border-b border-border/40">
                 <span className="text-[10px] text-text-muted flex items-center gap-1 font-sans">
-                  <Terminal className="w-3 h-3 text-accent" /> Virtual Endpoint:
+                  <Terminal className="w-3 h-3 text-text-secondary" /> Virtual Endpoint:
                 </span>
-                <code className="text-[11px] font-mono font-bold text-accent bg-surface px-1.5 py-0.5 rounded border border-accent/30">
+                <code className="text-[11px] font-mono font-semibold text-text-primary bg-bg-surface-2 px-1.5 py-0.5 rounded border border-border/60">
                   {ruleMode.alias}
                 </code>
               </div>
@@ -170,14 +189,8 @@ export const RuleCard: React.FC<RuleCardProps> = ({
                   const mObj = models.find((m) => m.model_id === modelId);
                   return (
                     <React.Fragment key={`${modelId}-${i}`}>
-                      {i > 0 && <ArrowRight className="w-3 h-3 text-text-muted" />}
-                      <span
-                        className={`px-2 py-0.5 rounded border font-semibold ${
-                          i === 0
-                            ? 'bg-accent/15 border-accent/30 text-accent'
-                            : 'bg-purple-500/15 border-purple-500/30 text-purple-300'
-                        }`}
-                      >
+                      {i > 0 && <ArrowRight className="w-3 h-3 text-text-muted/60 shrink-0" />}
+                      <span className="px-2 py-0.5 rounded border border-border/70 bg-bg-surface-2 font-mono text-[11px] text-text-primary font-medium">
                         {`T${i + 1}: ${mObj?.display_name || modelId}`}
                       </span>
                     </React.Fragment>
@@ -246,43 +259,36 @@ export const RuleCard: React.FC<RuleCardProps> = ({
         )}
       </div>
 
-      {/* Action Buttons: Responsive & Balanced Layout */}
-      <div className="mt-4 pt-3 border-t border-border/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5">
+      {/* Footer Kartu Aksi: Tombol Primer Edit & Opsi Sekunder Ergonomis */}
+      <div className="mt-4 pt-3 border-t border-border flex items-center justify-between gap-2">
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => onEdit(rule)}
+          icon={<Edit2 className="w-3.5 h-3.5" />}
+          className="text-xs"
+        >
+          Edit Aturan
+        </Button>
+        <div className="flex items-center gap-2">
           <Button
             variant="secondary"
             size="sm"
-            className="w-full sm:w-auto justify-center"
-            onClick={() => onEdit(rule)}
-            icon={<Edit2 className="w-3.5 h-3.5" />}
-          >
-            Edit Aturan
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="w-full sm:w-auto justify-center text-purple-300 border-purple-500/30 hover:bg-purple-500/10"
             onClick={() => onConfigureProviders(rule)}
             icon={<Server className="w-3.5 h-3.5" />}
+            className="text-xs"
+            title="Kelola Upstream Provider"
           >
             Providers
           </Button>
-        </div>
-        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5">
-          <Button
-            variant={rule.enabled ? 'danger' : 'secondary'}
-            size="sm"
-            className="w-full sm:w-auto justify-center"
-            onClick={() => onToggle(rule)}
-          >
-            {rule.enabled ? 'Nonaktifkan' : 'Aktifkan'}
-          </Button>
           <Button
             variant="secondary"
             size="sm"
-            className="w-full sm:w-auto justify-center text-status-error/80 border-status-error/20 hover:bg-status-error/10 hover:text-status-error"
-            onClick={() => onDelete(rule.id)}
-            icon={<Trash2 className="w-3.5 h-3.5" />}
+            onClick={() => void onDelete(rule.id)}
+            icon={<Trash2 className="w-3.5 h-3.5 text-status-error/80" />}
+            className="text-xs text-status-error/80 border-status-error/20 hover:bg-status-error/10 hover:text-status-error"
+            title="Hapus Aturan"
+            aria-label="Hapus aturan"
           >
             Hapus
           </Button>

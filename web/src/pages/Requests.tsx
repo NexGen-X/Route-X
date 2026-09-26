@@ -5,7 +5,7 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
 import { QueryError } from '../components/common/QueryError';
-import { RefreshCw, Radio, Activity } from 'lucide-react';
+import { RefreshCw, Activity } from 'lucide-react';
 import {
   RequestFilterBar,
   RequestTableSkeleton,
@@ -126,12 +126,14 @@ export const Requests: React.FC = () => {
               onClick={() => setIsLiveFeed(!isLiveFeed)}
               className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-inner text-xs font-semibold border transition-all ${
                 isLiveFeed
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/40 animate-pulse'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                   : 'bg-bg-surface-2 text-text-secondary border-border hover:text-white'
               }`}
             >
-              <Radio
-                className={`w-3.5 h-3.5 ${isLiveFeed ? 'text-emerald-400' : 'text-text-muted'}`}
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 transition-opacity ${
+                  isLiveFeed ? 'bg-emerald-400 ring-2 ring-emerald-400/20' : 'bg-text-muted/60'
+                }`}
               />
               <span>{isLiveFeed ? 'Live Polling Aktif' : 'Live Stream'}</span>
             </button>

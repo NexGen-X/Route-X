@@ -16,7 +16,11 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
 }) => {
   const pct = percentageOfDecimal(budget.spent_usd || '0', budget.max_spend_usd || '0');
   const threshold = budget.alert_threshold ?? budget.alert_threshold_pct ?? 80;
-  const isDanger = pct >= threshold;
+  const getProgressColor = (percent: number) => {
+    if (percent >= 95) return 'bg-rose-500';
+    if (percent >= 80) return 'bg-amber-400';
+    return 'bg-emerald-500/80';
+  };
 
   return (
     <Card className="p-5 flex flex-col justify-between" data-testid={`budget-card-${budget.id}`}>
@@ -35,7 +39,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
               </div>
             </div>
           </div>
-          <Badge variant={isDanger ? 'error' : 'success'}>
+          <Badge variant={pct >= 95 ? 'error' : pct >= 80 ? 'warn' : 'success'}>
             {pct}%
           </Badge>
         </div>
@@ -49,22 +53,21 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
           </div>
           <div className="w-full h-2 bg-bg-surface-2 rounded-full overflow-hidden">
             <div
-              className={`h-full transition-all duration-500 rounded-full ${
-                isDanger ? 'bg-status-error' : 'bg-accent'
-              }`}
+              className={`h-full transition-all duration-500 rounded-full ${getProgressColor(pct)}`}
               style={{ width: `${Math.min(pct, 100)}%` }}
             />
           </div>
         </div>
 
-        <div className="mt-4 space-y-1 text-xs text-text-muted">
-          <div className="flex justify-between py-1 border-b border-border/40">
-            <span>Ambang Peringatan</span>
-            <span className="font-mono text-text-primary">{threshold}%</span>
+        <div className="mt-3.5 flex items-center justify-between text-xs text-text-muted font-mono pt-2 border-t border-border/40">
+          <div className="flex items-center gap-1.5">
+            <span>Ambang:</span>
+            <span className="text-text-primary font-medium">{threshold}%</span>
           </div>
-          <div className="flex justify-between py-1">
-            <span>Aksi Pelanggaran</span>
-            <span className="font-mono text-accent uppercase">{budget.action || budget.action_on_exceed || 'block'}</span>
+          <span className="text-border">•</span>
+          <div className="flex items-center gap-1.5">
+            <span>Aksi:</span>
+            <span className="text-accent font-semibold uppercase">{budget.action || budget.action_on_exceed || 'block'}</span>
           </div>
         </div>
       </div>
@@ -89,7 +92,8 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
             variant="secondary"
             size="sm"
             onClick={() => void onReset(budget.id)}
-            icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
+            icon={<RotateCcw className="w-3 h-3 text-text-muted" aria-hidden="true" />}
+            className="text-xs text-text-secondary hover:text-white"
           >
             Reset Periode
           </Button>

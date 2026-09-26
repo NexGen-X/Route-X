@@ -6,6 +6,12 @@ import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
 import { Tooltip } from '../common/Tooltip';
 
+const formatTokensK = (val?: number | null): string => {
+  if (val == null) return '-';
+  if (val >= 1000) return `${Math.round(val / 1000)}k`;
+  return String(val);
+};
+
 export const ModelTableView: React.FC<ModelTableViewProps> = ({
   models,
   onOpenPricing,
@@ -62,21 +68,33 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
                   </div>
                 </td>
                 <td className="py-3 px-4 font-mono text-[11px] whitespace-nowrap">
-                  <div className="text-white">
-                    {m.context_window != null ? `${m.context_window.toLocaleString()} ctx` : '-'}
-                  </div>
-                  <div className="text-text-muted">
-                    {m.max_output_tokens != null ? `${m.max_output_tokens.toLocaleString()} out` : '-'}
-                  </div>
+                  <span className="text-white font-medium">{formatTokensK(m.context_window)}</span>
+                  <span className="text-text-muted mx-1">/</span>
+                  <span className="text-text-muted">{formatTokensK(m.max_output_tokens)}</span>
                 </td>
                 <td className="py-3 px-4">
-                  <div className="flex flex-wrap gap-1 max-w-[150px]">
+                  <div className="flex items-center gap-1">
                     {m.capabilities && m.capabilities.length > 0 ? (
-                      m.capabilities.map((c) => (
-                        <span key={c} className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-bg-surface-2 text-text-muted border border-border/50">
-                          {c}
-                        </span>
-                      ))
+                      <>
+                        {m.capabilities.slice(0, 2).map((c) => (
+                          <span
+                            key={c}
+                            className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-bg-surface-2 text-text-secondary border border-border/50"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                        {m.capabilities.length > 2 && (
+                          <Tooltip
+                            content={m.capabilities.slice(2).join(', ')}
+                            position="top"
+                          >
+                            <span className="px-1 py-0.5 text-[9px] font-mono rounded bg-bg-surface-3 text-text-muted border border-border/40 cursor-help">
+                              +{m.capabilities.length - 2}
+                            </span>
+                          </Tooltip>
+                        )}
+                      </>
                     ) : (
                       <span className="text-[11px] text-text-muted">-</span>
                     )}

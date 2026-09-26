@@ -1,5 +1,5 @@
 import React from 'react';
-import { Network, Play, Edit2, Trash2, Activity, AlertCircle } from 'lucide-react';
+import { Network, Play, Edit2, Trash2 } from 'lucide-react';
 import { Card } from '../common/Card';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
@@ -21,7 +21,7 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
   onDelete,
 }) => {
   return (
-    <Card className="p-5 flex flex-col justify-between border-border hover:border-accent/30 transition-all">
+    <Card className="p-5 flex flex-col justify-between border-border hover:border-border/80 transition-all">
       <div>
         {/* Header Kartu */}
         <div className="flex items-start justify-between">
@@ -45,56 +45,59 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
 
         {/* Detail Info & Status Kesehatan */}
         <div className="mt-4 space-y-2 text-xs">
-          <div className="flex justify-between py-1 border-b border-border/40">
+          <div className="flex justify-between py-1 border-b border-border/40 items-center">
             <span className="text-text-muted">Status Koneksi</span>
             {pool.last_health_status === 'healthy' ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
-                <Activity className="w-3 h-3 text-emerald-400" />
-                Terhubung ({pool.last_latency_ms || 0} ms)
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-emerald-400 select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <span>Terhubung ({pool.last_latency_ms || 0} ms)</span>
               </span>
             ) : pool.last_health_status === 'unhealthy' ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-400">
-                <AlertCircle className="w-3 h-3 text-red-400" />
-                Tidak Terhubung
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-rose-400 select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                <span>Tidak Terhubung</span>
               </span>
             ) : (
-              <span className="text-text-muted text-[11px]">Belum Diuji</span>
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-text-muted select-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0" />
+                <span>Belum Diuji</span>
+              </span>
             )}
           </div>
 
-          <div className="flex justify-between py-1 border-b border-border/40">
+          <div className="flex justify-between py-1 border-b border-border/40 items-center">
             <span className="text-text-muted">Target Proxy</span>
-            <span className="font-mono text-accent text-[11px] truncate max-w-[190px]">
+            <span className="font-mono text-accent text-[11px] truncate max-w-[200px]">
               {pool.masked_hint || '[ENCRYPTED AT REST]'}
             </span>
           </div>
 
-          <div className="flex justify-between py-1 border-b border-border/40">
+          <div className="flex justify-between py-1 border-b border-border/40 items-center">
             <span className="text-text-muted">Bobot Alokasi</span>
             <span className="font-mono text-white">{pool.weight}</span>
           </div>
         </div>
       </div>
 
-      <div className="mt-5 pt-3 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+      <div className="mt-5 pt-3 border-t border-border flex items-center justify-between gap-2">
         <Button
           variant="secondary"
           size="sm"
           onClick={() => onTestProbe(pool.id)}
           isLoading={isTesting}
           icon={<Play className="w-3.5 h-3.5 text-emerald-400" />}
-          className="w-full sm:w-auto justify-center text-xs text-white"
+          className="text-xs text-white"
         >
           Uji Ping
         </Button>
 
-        <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex items-center gap-2">
           <Button
             variant="secondary"
             size="sm"
             onClick={() => onEdit(pool)}
             icon={<Edit2 className="w-3.5 h-3.5" />}
-            className="w-full sm:w-auto justify-center text-xs"
+            className="text-xs"
           >
             Edit
           </Button>
@@ -103,7 +106,7 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
             size="sm"
             onClick={() => onDelete(pool.id, pool.name)}
             icon={<Trash2 className="w-3.5 h-3.5" />}
-            className="w-full sm:w-auto justify-center text-xs"
+            className="text-xs"
           >
             Hapus
           </Button>

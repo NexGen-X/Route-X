@@ -178,8 +178,8 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
     expect(screen.getByText('Dev Key Riset')).toBeInTheDocument();
 
     // Verifikasi metrik pemakaian spend USD
-    expect(screen.getByText('25 / 100')).toBeInTheDocument();
-    expect(screen.getByText('45 / 50')).toBeInTheDocument();
+    expect(screen.getByText('$25 / $100')).toBeInTheDocument();
+    expect(screen.getByText('$45 / $50')).toBeInTheDocument();
 
     // Verifikasi badge persentase
     expect(screen.getByText('25%')).toBeInTheDocument();

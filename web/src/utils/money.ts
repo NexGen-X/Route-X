@@ -18,7 +18,7 @@ export function formatUSD(value?: string | number | null, fractionDigits = 4): s
 
   let fraction = (rawFraction + '0'.repeat(digits)).slice(0, digits);
   fraction = fraction.replace(/0+$/, '');
-  return fraction.length > 0 ? `${sign}${groupedWhole}.${fraction}` : `${sign}${groupedWhole}`;
+  return fraction.length > 0 ? `$${sign}${groupedWhole}.${fraction}` : `$${sign}${groupedWhole}`;
 }
 
 export function percentageOfDecimal(spent: string, limit: string): number {

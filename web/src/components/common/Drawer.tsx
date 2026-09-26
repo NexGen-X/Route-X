@@ -5,19 +5,17 @@ import { Tooltip } from './Tooltip';
 
 // Kunci body bersama lintas Modal/Drawer agar lapisan bertumpuk tidak saling melepas kunci.
 function __acquireBodyLock(): void {
-  const g = window as any;
-  g.__routexBodyLockCount = (g.__routexBodyLockCount || 0) + 1;
-  if (g.__routexBodyLockCount === 1) {
-    g.__routexBodyLockPrevOverflow = document.body.style.overflow;
+  window.__routexBodyLockCount = (window.__routexBodyLockCount || 0) + 1;
+  if (window.__routexBodyLockCount === 1) {
+    window.__routexBodyLockPrevOverflow = document.body.style.overflow;
   }
   document.body.style.overflow = 'hidden';
 }
 
 function __releaseBodyLock(): void {
-  const g = window as any;
-  g.__routexBodyLockCount = Math.max(0, (g.__routexBodyLockCount || 1) - 1);
-  if (g.__routexBodyLockCount === 0) {
-    document.body.style.overflow = g.__routexBodyLockPrevOverflow ?? '';
+  window.__routexBodyLockCount = Math.max(0, (window.__routexBodyLockCount || 1) - 1);
+  if (window.__routexBodyLockCount === 0) {
+    document.body.style.overflow = window.__routexBodyLockPrevOverflow ?? '';
   }
 }
 

@@ -445,9 +445,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                             </span>
                           )}
                         </div>
-                        {item.subtitle && (
-                          <p className="text-[11px] text-text-muted truncate mt-0.5">{item.subtitle}</p>
-                        )}
+                        {/* subtitle data is retained for search filtering but not rendered (Item 4.1: zero-clutter palette) */}
                       </div>
                     </div>
 

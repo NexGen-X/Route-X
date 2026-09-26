@@ -94,9 +94,7 @@ export const RuleCard: React.FC<RuleCardProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Badge variant={rule.enabled ? 'success' : 'neutral'}>
-              {rule.enabled ? 'active' : 'disabled'}
-            </Badge>
+            {/* Badge status active/disabled dihapus (Item 4.4): toggle switch sudah cukup sebagai indikator status */}
             <button
               type="button"
               role="switch"

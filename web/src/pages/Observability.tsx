@@ -293,7 +293,7 @@ export const Observability: React.FC = () => {
                   }
                   stroke="#BEF264"
                   fill="#BEF264"
-                  fillOpacity={0.15}
+                  fillOpacity={0.12}
                   strokeWidth={2}
                 />
               </AreaChart>

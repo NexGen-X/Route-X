@@ -77,9 +77,10 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
     <div className="space-y-2.5 sm:space-y-3">
       <div className="flex items-center gap-1.5 sm:gap-2">
         <div className="relative flex-1 min-w-0">
-          <Search className="w-3.5 h-3.5 text-text-muted absolute left-2.5 top-2" />
+          <Search className="w-3.5 h-3.5 text-text-muted absolute left-2.5 top-2" aria-hidden="true" />
           <input
             type="text"
+            aria-label="Cari model upstream"
             placeholder="Cari model..."
             value={modelSearch}
             onChange={(e) => setModelSearch(e.target.value)}
@@ -94,7 +95,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
             aria-label="Tarik daftar model dari upstream"
             className="p-1.5 sm:p-2 rounded-lg bg-bg-surface-2 text-text-primary border border-border hover:bg-border/60 hover:text-white transition-colors cursor-pointer disabled:opacity-50 flex-shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           >
-            {syncingId === selectedProvider.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <DownloadCloud className="w-4 h-4" />}
+            {syncingId === selectedProvider.id ? <RefreshCw className="w-4 h-4 animate-spin" aria-hidden="true" /> : <DownloadCloud className="w-4 h-4" aria-hidden="true" />}
           </button>
         </Tooltip>
         <Tooltip content="Tambah model manual" position="top">
@@ -104,7 +105,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
             aria-label="Tambah model manual"
             className="p-1.5 sm:p-2 rounded-lg bg-accent text-black hover:bg-accent-hover transition-colors cursor-pointer flex-shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4" aria-hidden="true" />
           </button>
         </Tooltip>
       </div>
@@ -129,31 +130,34 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
                       setCopiedModelId(model.id);
                       copyTimersRef.current.push(setTimeout(() => setCopiedModelId(null), 2000));
                     })}
+                    aria-label={`Salin ID model ${model.upstream_model_name}`}
                     className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer flex-shrink-0"
                   >
-                    {copiedModelId === model.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedModelId === model.id ? <Check className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
                   </button>
                   <button
                     type="button"
                     onClick={() => handleTestModel(model)}
                     disabled={isTesting}
+                    aria-label={`Uji inferensi model ${model.upstream_model_name}`}
                     className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer disabled:opacity-50 flex-shrink-0"
                   >
-                    {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent" /> : <FlaskConical className="w-3.5 h-3.5 text-accent" />}
+                    {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent" aria-hidden="true" /> : <FlaskConical className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDeleteModel(model)}
+                    aria-label={`Hapus model ${model.upstream_model_name}`}
                     className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer flex-shrink-0"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 </div>
 
                 {testResult && (
                   <div className={`px-2 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 animate-in fade-in duration-150 ${testResult.ok ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'}`}>
                     <span className="flex items-center gap-1.5 min-w-0 font-bold truncate">
-                      {testResult.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />}
+                      {testResult.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" aria-hidden="true" /> : <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" aria-hidden="true" />}
                       <span className="truncate">{testResult.ok ? 'Uji ok' : 'Uji gagal'}{testResult.latency_ms > 0 && ` · ${testResult.latency_ms} ms`}</span>
                     </span>
                     <span className="opacity-70 font-mono flex-shrink-0 text-[10px]">{testResult.timestamp}</span>
@@ -165,11 +169,11 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
         </div>
       ) : (
         <div className="p-5 rounded-xl border border-dashed border-border text-center space-y-2">
-          <Bot className="w-8 h-8 text-text-muted mx-auto" />
+          <Bot className="w-8 h-8 text-text-muted mx-auto" aria-hidden="true" />
           <p className="text-xs text-text-secondary">{modelSearch ? 'Tidak ada model yang cocok dengan kata kunci.' : 'Belum ada model upstream yang terhubung.'}</p>
           <div className="pt-2 flex justify-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => handleSyncModels(selectedProvider)} icon={<DownloadCloud className="w-3.5 h-3.5" />}>Tarik Model Upstream</Button>
-            <Button variant="primary" size="sm" onClick={onOpenAddModelModal} icon={<Plus className="w-3.5 h-3.5" />}>Tambah Manual</Button>
+            <Button variant="secondary" size="sm" onClick={() => handleSyncModels(selectedProvider)} icon={<DownloadCloud className="w-3.5 h-3.5" aria-hidden="true" />}>Tarik Model Upstream</Button>
+            <Button variant="primary" size="sm" onClick={onOpenAddModelModal} icon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}>Tambah Manual</Button>
           </div>
         </div>
       )}

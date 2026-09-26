@@ -66,9 +66,9 @@ export class PageErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       const isChunk = this.isChunkLoadError(this.state.error);
       return (
-        <div className="p-8 rounded-card border border-rose-500/30 bg-rose-500/5 text-center my-6">
+        <div role="alert" aria-live="assertive" className="p-8 rounded-card border border-rose-500/30 bg-rose-500/5 text-center my-6">
           <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-3">
-            <AlertTriangle className="w-6 h-6" />
+            <AlertTriangle className="w-6 h-6" aria-hidden="true" />
           </div>
           <h3 className="text-base font-bold text-white mb-1">
             {isChunk ? 'Pembaruan Versi Terdeteksi' : `Gagal Memuat Halaman ${this.props.pageName}`}
@@ -79,6 +79,7 @@ export class PageErrorBoundary extends Component<Props, State> {
               : (this.state.error?.message || 'Terjadi kesalahan internal saat merender komponen ini.')}
           </p>
           <button
+            type="button"
             onClick={() => {
               if (isChunk) {
                 window.location.reload();
@@ -86,9 +87,9 @@ export class PageErrorBoundary extends Component<Props, State> {
                 this.setState({ hasError: false, error: null });
               }
             }}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-button bg-rose-500 hover:bg-rose-600 text-white transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-button bg-rose-500 hover:bg-rose-600 text-white transition-colors cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
             {isChunk ? 'Muat Ulang Versi Terbaru' : 'Coba Muat Ulang Halaman'}
           </button>
         </div>

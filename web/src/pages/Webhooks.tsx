@@ -218,8 +218,14 @@ export const Webhooks: React.FC = () => {
                   <p className="text-[11px] text-text-muted font-mono mt-1 break-all">{wh.url}</p>
                 </div>
                 <div onClick={(e) => e.stopPropagation()}>
-                  <button type="button" onClick={() => handleToggle(wh)} className="p-2 rounded-md text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center" title="Toggle Enabled">
-                    <Zap className={`w-4 h-4 ${wh.enabled ? 'text-green-400' : ''}`} />
+                  <button
+                    type="button"
+                    onClick={() => handleToggle(wh)}
+                    className="p-2 rounded-md text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
+                    title={wh.enabled ? 'Nonaktifkan webhook' : 'Aktifkan webhook'}
+                    aria-label={wh.enabled ? `Nonaktifkan webhook ${wh.name}` : `Aktifkan webhook ${wh.name}`}
+                  >
+                    <Zap className={`w-4 h-4 ${wh.enabled ? 'text-green-400' : ''}`} aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -279,8 +285,9 @@ export const Webhooks: React.FC = () => {
       >
         <form id="create-webhook-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama *</label>
+            <label htmlFor="wh-name" className="block text-xs font-medium text-text-secondary mb-1.5">Nama *</label>
             <input
+              id="wh-name"
               type="text"
               required
               value={newWebhook.name}
@@ -290,8 +297,9 @@ export const Webhooks: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">URL Endpoint *</label>
+            <label htmlFor="wh-url" className="block text-xs font-medium text-text-secondary mb-1.5">URL Endpoint *</label>
             <input
+              id="wh-url"
               type="url"
               required
               value={newWebhook.url}
@@ -302,26 +310,28 @@ export const Webhooks: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-medium text-text-secondary">Secret (Opsional)</label>
+              <label htmlFor="wh-secret" className="text-xs font-medium text-text-secondary">Secret (Opsional)</label>
               <button
                 type="button"
                 onClick={() => setShowSecret(!showSecret)}
+                aria-label={showSecret ? "Sembunyikan secret webhook" : "Tampilkan secret webhook"}
                 className="text-[11px] text-text-muted hover:text-white flex items-center gap-1 focus:outline-none cursor-pointer"
               >
                 {showSecret ? (
                   <>
-                    <EyeOff className="w-3 h-3" />
+                    <EyeOff className="w-3 h-3" aria-hidden="true" />
                     <span>Sembunyikan</span>
                   </>
                 ) : (
                   <>
-                    <Eye className="w-3 h-3" />
+                    <Eye className="w-3 h-3" aria-hidden="true" />
                     <span>Tampilkan</span>
                   </>
                 )}
               </button>
             </div>
             <input
+              id="wh-secret"
               type={showSecret ? 'text' : 'password'}
               value={newWebhook.secret}
               onChange={(e) => setNewWebhook({ ...newWebhook, secret: e.target.value })}

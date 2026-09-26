@@ -102,7 +102,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
         {/* Brand Header */}
         <div className="h-16 flex items-center px-4 border-b border-[#1C1C1C] justify-between">
-          <div className="flex items-center gap-3 overflow-hidden cursor-pointer" onClick={() => onNavigate('/')}>
+          <button
+            type="button"
+            className="flex items-center gap-3 overflow-hidden cursor-pointer text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded-lg"
+            onClick={() => onNavigate('/')}
+            aria-label="Route-X Beranda"
+          >
             <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-black font-extrabold text-base shadow-sm shadow-accent/20">
               RX
             </div>
@@ -112,11 +117,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="text-[10px] text-text-secondary font-mono tracking-wider">AI GATEWAY & RUNTIME</span>
               </div>
             )}
-          </div>
+          </button>
         </div>
 
         {/* Navigation List */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+        <nav aria-label="Navigasi Utama" className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
           {navGroups.map((group, gIdx) => (
             <div key={gIdx} className="space-y-1">
               {!isCollapsed && (
@@ -124,17 +129,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {group.title}
                 </div>
               )}
-              {isCollapsed && <div className="h-px bg-border my-2 mx-1" />}
+              {isCollapsed && <div className="h-px bg-border my-2 mx-1" aria-hidden="true" />}
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentPath === item.path;
                 const buttonContent = (
                   <button
+                    type="button"
                     onClick={() => {
                       onNavigate(item.path);
                       setIsMobileOpen(false);
                     }}
                     aria-label={item.name}
+                    aria-current={isActive ? 'page' : undefined}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-nav text-sm transition-all relative group cursor-pointer ${
                       isActive
                         ? 'bg-bg-surface-2 text-white font-medium border border-border shadow-inner'
@@ -142,9 +149,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     } ${isCollapsed ? 'justify-center px-0' : ''}`}
                   >
                     {isActive && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full" />
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full" aria-hidden="true" />
                     )}
                     <Icon
+                      aria-hidden="true"
                       className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${
                         isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'
                       }`}
@@ -165,7 +173,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               })}
             </div>
           ))}
-        </div>
+        </nav>
 
         {/* User profile & Collapser Footer */}
         <div className="p-3 border-t border-[#1C1C1C] bg-bg-surface-2/20 flex flex-col gap-2">

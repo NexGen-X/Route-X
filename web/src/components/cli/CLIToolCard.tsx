@@ -305,8 +305,9 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                   onClick={() => setShowKey(!showKey)}
                   className="absolute right-2 top-1.5 text-text-muted hover:text-white"
                   title={showKey ? 'Sembunyikan' : 'Tampilkan'}
+                  aria-label={showKey ? "Sembunyikan kunci API" : "Tampilkan kunci API"}
                 >
-                  {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {showKey ? <EyeOff className="w-3.5 h-3.5" aria-hidden="true" /> : <Eye className="w-3.5 h-3.5" aria-hidden="true" />}
                 </button>
               </div>
             </div>

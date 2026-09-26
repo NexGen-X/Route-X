@@ -261,8 +261,9 @@ export const UsersPage: React.FC = () => {
       >
         <form id="create-user-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Email *</label>
+            <label htmlFor="new-user-email" className="block text-xs font-medium text-text-secondary mb-1.5">Email *</label>
             <input
+              id="new-user-email"
               type="email"
               required
               value={newUser.email}
@@ -271,8 +272,9 @@ export const UsersPage: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Tampilan *</label>
+            <label htmlFor="new-user-name" className="block text-xs font-medium text-text-secondary mb-1.5">Nama Tampilan *</label>
             <input
+              id="new-user-name"
               type="text"
               required
               value={newUser.name}
@@ -281,9 +283,10 @@ export const UsersPage: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Password Awal *</label>
+            <label htmlFor="new-user-password" className="block text-xs font-medium text-text-secondary mb-1.5">Password Awal *</label>
             <div className="relative">
               <input
+                id="new-user-password"
                 type={showNewUserPassword ? 'text' : 'password'}
                 required
                 value={newUser.password}
@@ -293,10 +296,10 @@ export const UsersPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowNewUserPassword(!showNewUserPassword)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-1"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-1 cursor-pointer"
                 aria-label={showNewUserPassword ? 'Sembunyikan password' : 'Lihat password'}
               >
-                {showNewUserPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showNewUserPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
               </button>
             </div>
           </div>

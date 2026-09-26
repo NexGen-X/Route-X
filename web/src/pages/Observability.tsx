@@ -119,10 +119,13 @@ export const Observability: React.FC = () => {
         title="Observabilitas & Telemetri"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border">
+            <div className="flex items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border" role="group" aria-label="Pilihan rentang waktu telemetri">
               {['1h', '24h', '7d', '30d'].map((w) => (
                 <button
                   key={w}
+                  type="button"
+                  aria-pressed={windowTime === w}
+                  aria-label={`Rentang waktu ${w}`}
                   onClick={() => setWindowTime(w)}
                   className={`px-2.5 py-1 rounded-inner text-xs font-semibold transition-colors cursor-pointer ${
                     windowTime === w
@@ -134,8 +137,14 @@ export const Observability: React.FC = () => {
                 </button>
               ))}
             </div>
-            <Button variant="secondary" size="sm" onClick={loadData} isLoading={isLoading}>
-              <RefreshCw className="w-3.5 h-3.5" />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={loadData}
+              isLoading={isLoading}
+              aria-label="Segarkan data observabilitas"
+            >
+              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
             </Button>
           </div>
         }
@@ -205,7 +214,7 @@ export const Observability: React.FC = () => {
       <Card
         title="Deret Waktu Telemetri"
         action={
-          <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full">
+          <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full" role="group" aria-label="Pilihan metrik deret waktu">
             {[
               { key: 'requests', label: 'Requests' },
               { key: 'tokens', label: 'Tokens' },
@@ -214,6 +223,9 @@ export const Observability: React.FC = () => {
             ].map((m) => (
               <button
                 key={m.key}
+                type="button"
+                aria-pressed={metric === m.key}
+                aria-label={`Metrik ${m.label}`}
                 onClick={() => setMetric(m.key)}
                 className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium whitespace-nowrap text-center cursor-pointer ${
                   metric === m.key

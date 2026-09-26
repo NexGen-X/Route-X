@@ -588,6 +588,7 @@ export const Providers: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => handleOpenDrawer(p, 'settings')}
+                        aria-label={`Buka pengaturan provider ${p.display_name || p.name}`}
                         title={
                           isCustom
                             ? 'Klik icon custom provider ini untuk membuka drawer konfigurasi & kelola'
@@ -611,8 +612,9 @@ export const Providers: React.FC = () => {
                               ? 'border-purple-500/60 text-purple-300'
                               : 'border-border text-text-muted'
                           }`}
+                          aria-hidden="true"
                         >
-                          <Sliders className="w-2 h-2" />
+                          <Sliders className="w-2 h-2" aria-hidden="true" />
                         </span>
                       </button>
 
@@ -914,9 +916,13 @@ export const Providers: React.FC = () => {
               </div>
             )}
             {/* Navigasi Tab di Dalam Drawer */}
-            <div className="grid grid-cols-3 gap-1 p-1 bg-bg-surface-2/80 rounded-xl border border-border">
+            <div role="tablist" aria-label="Tab Konfigurasi Provider" className="grid grid-cols-3 gap-1 p-1 bg-bg-surface-2/80 rounded-xl border border-border">
               <button
                 type="button"
+                role="tab"
+                id="provider-tab-models"
+                aria-selected={drawerTab === 'models'}
+                aria-controls="provider-tabpanel-models"
                 onClick={() => setDrawerTab('models')}
                 className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'models'
@@ -924,7 +930,7 @@ export const Providers: React.FC = () => {
                     : 'text-text-secondary hover:text-white hover:bg-bg-surface/50'
                 }`}
               >
-                <Bot className="w-3.5 h-3.5 flex-shrink-0" />
+                <Bot className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
                 <span className="truncate">
                   <span className="sm:inline hidden">Model Upstream</span>
                   <span className="sm:hidden inline">Model</span>
@@ -940,6 +946,10 @@ export const Providers: React.FC = () => {
 
               <button
                 type="button"
+                role="tab"
+                id="provider-tab-credentials"
+                aria-selected={drawerTab === 'credentials'}
+                aria-controls="provider-tabpanel-credentials"
                 onClick={() => setDrawerTab('credentials')}
                 className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'credentials'
@@ -947,7 +957,7 @@ export const Providers: React.FC = () => {
                     : 'text-text-secondary hover:text-white hover:bg-bg-surface/50'
                 }`}
               >
-                <KeyRound className="w-3.5 h-3.5 flex-shrink-0" />
+                <KeyRound className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
                 <span className="truncate">
                   <span className="sm:inline hidden">API Keys</span>
                   <span className="sm:hidden inline">Keys</span>
@@ -963,6 +973,10 @@ export const Providers: React.FC = () => {
 
               <button
                 type="button"
+                role="tab"
+                id="provider-tab-settings"
+                aria-selected={drawerTab === 'settings'}
+                aria-controls="provider-tabpanel-settings"
                 onClick={() => setDrawerTab('settings')}
                 className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'settings'
@@ -970,7 +984,7 @@ export const Providers: React.FC = () => {
                     : 'text-text-secondary hover:text-white hover:bg-bg-surface/50'
                 }`}
               >
-                <Sliders className="w-3.5 h-3.5 flex-shrink-0" />
+                <Sliders className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
                 <span className="truncate">
                   <span className="sm:inline hidden">Pengaturan & Proxy</span>
                   <span className="sm:hidden inline">Setelan</span>

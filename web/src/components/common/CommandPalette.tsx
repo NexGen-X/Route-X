@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import FocusTrap from 'focus-trap-react';
 import {
   Search,
   LayoutDashboard,
@@ -54,6 +55,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
       setQuery('');
       setSelectedIndex(0);
       if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
@@ -61,6 +64,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         focusTimerRef.current = null;
         inputRef.current?.focus();
       }, 50);
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
     } else if (focusTimerRef.current) {
       clearTimeout(focusTimerRef.current);
       focusTimerRef.current = null;
@@ -353,104 +359,125 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4">
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
-        onClick={onClose}
-      />
+    <FocusTrap active={isOpen} focusTrapOptions={{ clickOutsideDeactivates: true, fallbackFocus: () => inputRef.current || document.body }}>
+      <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4">
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+          onClick={onClose}
+          aria-hidden="true"
+        />
 
-      {/* Palette Modal */}
-      <div className="relative w-full max-w-xl bg-bg-surface-1 border border-[#262626] rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150">
-        {/* Search Input Bar */}
-        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border bg-bg-surface-2/60">
-          <Search className="w-5 h-5 text-accent shrink-0" />
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder="Ketik perintah, nama halaman, atau perkakas CLI (mis. 'Antigravity', 'Cache')..."
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelectedIndex(0);
-            }}
-            className="flex-1 bg-transparent border-none text-sm text-white placeholder:text-text-muted focus:outline-none font-sans"
-          />
-          <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono text-text-muted bg-bg-surface-1 border border-border rounded">
-            ESC
-          </kbd>
-        </div>
+        {/* Palette Modal */}
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Palette Perintah Cepat"
+          className="relative w-full max-w-xl bg-bg-surface-1 border border-[#262626] rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150"
+        >
+          {/* Search Input Bar */}
+          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border bg-bg-surface-2/60">
+            <Search className="w-5 h-5 text-accent shrink-0" aria-hidden="true" />
+            <input
+              ref={inputRef}
+              type="text"
+              role="combobox"
+              aria-expanded={isOpen}
+              aria-controls="command-palette-results"
+              aria-autocomplete="list"
+              aria-label="Palette Perintah Cepat"
+              placeholder="Ketik perintah, nama halaman, atau perkakas CLI (mis. 'Antigravity', 'Cache')..."
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setSelectedIndex(0);
+              }}
+              className="flex-1 bg-transparent border-none text-sm text-white placeholder:text-text-muted focus:outline-none font-sans"
+            />
+            <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono text-text-muted bg-bg-surface-1 border border-border rounded" aria-hidden="true">
+              ESC
+            </kbd>
+          </div>
 
-        {/* Results List */}
-        <div ref={listRef} className="max-h-80 overflow-y-auto p-2 space-y-1">
-          {filteredItems.length === 0 ? (
-            <div className="py-8 text-center text-xs text-text-muted">
-              Tidak ada perintah atau perkakas yang cocok dengan "{query}".
-            </div>
-          ) : (
-            filteredItems.map((item, idx) => {
-              const Icon = item.icon;
-              const isSelected = idx === selectedIndex;
-              return (
-                <button
-                  key={item.id}
-                  onClick={item.action}
-                  onMouseEnter={() => setSelectedIndex(idx)}
-                  className={`w-full text-left px-3.5 py-2.5 rounded-xl flex items-center justify-between transition-colors ${
-                    isSelected
-                      ? 'bg-accent/15 text-white border border-accent/30'
-                      : 'text-text-secondary hover:bg-bg-surface-2 hover:text-white border border-transparent'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        isSelected ? 'bg-accent text-black font-bold' : 'bg-bg-surface-2 text-accent'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-semibold text-white truncate">{item.title}</span>
-                        {item.badge && (
-                          <span className="text-[10px] px-1.5 py-0.2 bg-accent/20 text-accent rounded font-mono font-semibold">
-                            {item.badge}
-                          </span>
+          {/* Results List */}
+          <div
+            id="command-palette-results"
+            role="listbox"
+            ref={listRef}
+            className="max-h-80 overflow-y-auto p-2 space-y-1"
+          >
+            {filteredItems.length === 0 ? (
+              <div className="py-8 text-center text-xs text-text-muted">
+                Tidak ada perintah atau perkakas yang cocok dengan "{query}".
+              </div>
+            ) : (
+              filteredItems.map((item, idx) => {
+                const Icon = item.icon;
+                const isSelected = idx === selectedIndex;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={item.action}
+                    onMouseEnter={() => setSelectedIndex(idx)}
+                    className={`w-full text-left px-3.5 py-2.5 rounded-xl flex items-center justify-between transition-colors ${
+                      isSelected
+                        ? 'bg-accent/15 text-white border border-accent/30'
+                        : 'text-text-secondary hover:bg-bg-surface-2 hover:text-white border border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                          isSelected ? 'bg-accent text-black font-bold' : 'bg-bg-surface-2 text-accent'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" aria-hidden="true" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-white truncate">{item.title}</span>
+                          {item.badge && (
+                            <span className="text-[10px] px-1.5 py-0.2 bg-accent/20 text-accent rounded font-mono font-semibold">
+                              {item.badge}
+                            </span>
+                          )}
+                        </div>
+                        {item.subtitle && (
+                          <p className="text-[11px] text-text-muted truncate mt-0.5">{item.subtitle}</p>
                         )}
                       </div>
-                      {item.subtitle && (
-                        <p className="text-[11px] text-text-muted truncate mt-0.5">{item.subtitle}</p>
-                      )}
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2 shrink-0 ml-2">
-                    <span className="text-[10px] text-text-muted uppercase font-mono px-1.5 py-0.5 rounded bg-bg-surface-2 hidden sm:inline-block">
-                      {item.category}
-                    </span>
-                    {isSelected && <ArrowRight className="w-3.5 h-3.5 text-accent" />}
-                  </div>
-                </button>
-              );
-            })
-          )}
-        </div>
-
-        {/* Footer info */}
-        <div className="px-4 py-2.5 bg-bg-surface-2/80 border-t border-border flex items-center justify-between text-[11px] text-text-muted">
-          <div className="flex items-center gap-3">
-            <span>
-              Gunakan <kbd className="px-1 py-0.5 bg-bg-surface-1 border border-border rounded text-[10px]">↑</kbd>{' '}
-              <kbd className="px-1 py-0.5 bg-bg-surface-1 border border-border rounded text-[10px]">↓</kbd> untuk memilih
-            </span>
-            <span>
-              <kbd className="px-1 py-0.5 bg-bg-surface-1 border border-border rounded text-[10px]">↵</kbd> untuk mengeksekusi
-            </span>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <span className="text-[10px] text-text-muted uppercase font-mono px-1.5 py-0.5 rounded bg-bg-surface-2 hidden sm:inline-block">
+                        {item.category}
+                      </span>
+                      {isSelected && <ArrowRight className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
-          <span className="font-mono text-accent font-semibold">Route-X FastNav</span>
+
+          {/* Footer info */}
+          <div className="px-4 py-2.5 bg-bg-surface-2/80 border-t border-border flex items-center justify-between text-[11px] text-text-muted">
+            <div className="flex items-center gap-3">
+              <span>
+                Gunakan <kbd className="px-1 py-0.5 bg-bg-surface-1 border border-border rounded text-[10px]" aria-hidden="true">↑</kbd>{' '}
+                <kbd className="px-1 py-0.5 bg-bg-surface-1 border border-border rounded text-[10px]" aria-hidden="true">↓</kbd> untuk memilih
+              </span>
+              <span>
+                <kbd className="px-1 py-0.5 bg-bg-surface-1 border border-border rounded text-[10px]" aria-hidden="true">↵</kbd> untuk mengeksekusi
+              </span>
+            </div>
+            <span className="font-mono text-accent font-semibold">Route-X FastNav</span>
+          </div>
         </div>
       </div>
-    </div>
+    </FocusTrap>
   );
 };

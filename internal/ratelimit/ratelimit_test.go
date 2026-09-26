@@ -320,3 +320,156 @@ func TestAmanDipakaiBersamaan(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestKonkurensiFailOpenDanInvalidate menguji ketahanan konkurensi (0 data race)
+// saat database/source mengalami gangguan dinamis (sukses dan error bergantian)
+// sementara puluhan goroutine memanggil Requests, Tokens, dan Invalidate secara serentak.
+func TestKonkurensiFailOpenDanInvalidate(t *testing.T) {
+	src := &sumber{rows: []*policy.RateLimit{
+		baris(policy.ScopeGlobal, "", func(r *policy.RateLimit) { r.RequestsPerSecond = pointer(200) }),
+		baris(policy.ScopeAPIKey, "key-concur", func(r *policy.RateLimit) { r.RequestsPerMinute = pointer(120) }),
+		baris(policy.ScopeUser, "user-concur", func(r *policy.RateLimit) { r.DailyRequestLimit = pointer(int64(5000)) }),
+	}}
+	// TTL sangat pendek untuk memaksa siklus reload dan double-checked locking bekerja terus menerus.
+	e := NewEngine(src, nil, WithTTL(time.Millisecond))
+
+	targets := []policy.Target{
+		{Scope: policy.ScopeGlobal},
+		{Scope: policy.ScopeAPIKey, ID: "key-concur"},
+		{Scope: policy.ScopeUser, ID: "user-concur"},
+		{Scope: policy.ScopeIP, ID: "192.168.1.1"},
+	}
+
+	stopCh := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Goroutine pembuat gejolak sumber data: berganti-ganti antara normal dan error (failover)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		flip := false
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-time.After(5 * time.Millisecond):
+				flip = !flip
+				if flip {
+					src.ganti(nil, errors.New("koneksi database terputus (simulasi failover)"))
+				} else {
+					src.ganti([]*policy.RateLimit{
+						baris(policy.ScopeGlobal, "", func(r *policy.RateLimit) { r.RequestsPerSecond = pointer(300) }),
+						baris(policy.ScopeAPIKey, "key-concur", func(r *policy.RateLimit) { r.RequestsPerMinute = pointer(150) }),
+					}, nil)
+				}
+			}
+		}
+	}()
+
+	// 32 goroutine pemanggil Requests dan Tokens secara simultan
+	const numWorkers = 32
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		workerID := i
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				reqScopes := e.Requests(context.Background(), targets, apikey.Limits{RPM: 50})
+				if len(reqScopes) == 0 {
+					t.Errorf("worker %d: Requests mengembalikan slice kosong padahal ada target aktif", workerID)
+				}
+				tokScopes := e.Tokens(context.Background(), targets, apikey.TokenLimits{TPM: 1000})
+				_ = tokScopes
+
+				if j%15 == 0 {
+					e.Invalidate()
+				}
+			}
+		}()
+	}
+
+	// Tunggu workers selesai lalu hentikan goroutine flipper
+	time.Sleep(50 * time.Millisecond)
+	close(stopCh)
+	wg.Wait()
+}
+
+// TestKonkurensiTargetMultiScope memastikan pemetaan multi-scope (Global, User, APIKey,
+// Provider, Model, IP) dievaluasi dengan benar dan aman dari balapan data saat diakses
+// bersamaan dengan keyLimits per goroutine.
+func TestKonkurensiTargetMultiScope(t *testing.T) {
+	src := &sumber{rows: []*policy.RateLimit{
+		baris(policy.ScopeGlobal, "", func(r *policy.RateLimit) { r.RequestsPerSecond = pointer(100) }),
+		baris(policy.ScopeAPIKey, "key-a", func(r *policy.RateLimit) { r.RequestsPerMinute = pointer(60) }),
+		baris(policy.ScopeUser, "user-a", func(r *policy.RateLimit) { r.RequestsPerMinute = pointer(120) }),
+		baris(policy.ScopeProvider, "prov-openai", func(r *policy.RateLimit) { r.RequestsPerSecond = pointer(50) }),
+		baris(policy.ScopeModel, "model-gpt4", func(r *policy.RateLimit) { r.RequestsPerMinute = pointer(30) }),
+		baris(policy.ScopeIP, "10.0.0.1", func(r *policy.RateLimit) { r.RequestsPerSecond = pointer(20) }),
+	}}
+	e := NewEngine(src, nil, WithTTL(5*time.Millisecond))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := 0; j < 50; j++ {
+				targets := []policy.Target{
+					{Scope: policy.ScopeGlobal},
+					{Scope: policy.ScopeAPIKey, ID: "key-a"},
+					{Scope: policy.ScopeUser, ID: "user-a"},
+					{Scope: policy.ScopeProvider, ID: "prov-openai"},
+					{Scope: policy.ScopeModel, ID: "model-gpt4"},
+					{Scope: policy.ScopeIP, ID: "10.0.0.1"},
+				}
+				res := e.Requests(context.Background(), targets, apikey.Limits{RPM: 99})
+				if len(res) < 5 {
+					t.Errorf("worker %d: jumlah scope terurai = %d, mau minimal 5", id, len(res))
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+}
+
+// TestFailOpenSaatContextDibatalkan memverifikasi bahwa saat konteks dibatalkan di tengah
+// pembacaan, mesin menangani error tanpa panic dan mempertahankan snapshot cache yang ada.
+func TestFailOpenSaatContextDibatalkan(t *testing.T) {
+	src := &sumber{rows: []*policy.RateLimit{
+		baris(policy.ScopeGlobal, "", func(r *policy.RateLimit) { r.RequestsPerSecond = pointer(10) }),
+	}}
+	e := NewEngine(src, nil, WithTTL(time.Nanosecond))
+
+	// Pembacaan pertama berhasil
+	got := e.Requests(context.Background(), []policy.Target{{Scope: policy.ScopeGlobal}}, apikey.Limits{})
+	if len(got) != 1 {
+		t.Fatalf("pembacaan awal gagal: %+v", got)
+	}
+
+	// Pembacaan kedua dengan context yang sudah dibatalkan
+	ctxBatal, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Harus fail-open dengan salinan lama dan tidak panic
+	gotBatal := e.Requests(ctxBatal, []policy.Target{{Scope: policy.ScopeGlobal}}, apikey.Limits{})
+	if len(gotBatal) != 1 || gotBatal[0].Limits.RPS != 10 {
+		t.Errorf("setelah context dibatalkan = %+v, mau salinan lama tetap dipakai (fail-open)", gotBatal)
+	}
+}
+
+// TestEngineNilReceiverAman memastikan seluruh public method Engine aman dipanggil
+// saat pointer Engine bernilai nil tanpa memicu nil-pointer dereference panic.
+func TestEngineNilReceiverAman(t *testing.T) {
+	var e *Engine
+	e.Invalidate()
+
+	reqs := e.Requests(context.Background(), []policy.Target{{Scope: policy.ScopeGlobal}}, apikey.Limits{RPM: 10})
+	if reqs != nil {
+		t.Errorf("Requests pada nil engine = %v, mau nil", reqs)
+	}
+
+	toks := e.Tokens(context.Background(), []policy.Target{{Scope: policy.ScopeGlobal}}, apikey.TokenLimits{TPM: 100})
+	if toks != nil {
+		t.Errorf("Tokens pada nil engine = %v, mau nil", toks)
+	}
+}

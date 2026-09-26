@@ -27,6 +27,45 @@
 // terbaca tidak boleh mematikan seluruh lalu lintas inference. Yang membuatnya bisa
 // dipertanggungjawabkan adalah metrik gagal-terbuka di internal/apikey — tanpa pemantauan
 // atas angka itu, gateway bisa berjalan berbulan-bulan tanpa batas laju tanpa ada yang tahu.
+//
+// # Kontrak Sinkronisasi Redis Multi-Replica dan Penanganan Failover
+//
+// Sistem pembatasan laju Route-X dirancang untuk beroperasi di atas topologi Redis tunggal
+// maupun multi-replica (Primary/Replica dengan Sentinel atau Cluster):
+//
+//  1. Pemisahan Tanggung Jawab (Separation of Concerns):
+//     Paket ini (internal/ratelimit) bertindak sebagai penyedia kebijakan (policy layer) lokal
+//     berbasis snapshot in-memory dengan TTL pendek (default 5s) yang bersumber dari database.
+//     Mesin penegakan jendela atomik terdistribusi berada di internal/apikey/limiter.go.
+//
+//  2. Integritas Operasi Multi-Replica:
+//     Seluruh operasi evaluasi dan kenaikan kuota (limiterScript) wajib dieksekusi pada
+//     Redis Primary/Master node karena melibatkan operasi penulisan (INCRBY dan PEXPIRE).
+//     Skrip Lua memastikan kenaikan counter dan pembaruan TTL berlangsung atomik tanpa celah
+//     interupsi, sehingga tidak ada kunci menggantung tanpa TTL (stale keys) saat jaringan goyah.
+//
+//  3. Jendela Waktu Tetap (Fixed Window) & Stateless Bootstrap:
+//     Identitas jendela penghitung di Redis dikunci ke waktu absolut epoch UTC (detik, menit,
+//     hari, bulan). Karena tidak bergantung pada urutan internal memori instance, saat terjadi
+//     failover replika ke master baru, master baru langsung dapat melayani evaluasi jendela tanpa
+//     perlu sinkronisasi state balik (stateless recovery).
+//
+//  4. Jaminan Zero-Panic saat Redis Offline / Failover:
+//     Ketika koneksi Redis terputus, timeout, atau mengembalikan error masa transisi (misalnya
+//     READONLY saat menulis ke replica sebelum promosi selesai), Limiter menangani seluruh error
+//     secara anggun tanpa pernah memicu panic (zero panic guarantee).
+//     - Default (RATE_LIMIT_FAIL_CLOSED=false): Request diloloskan (fail-open) dengan
+//     Decision{Allowed: true, Degraded: true}, metrik routex_rate_limit_failopen_total
+//     dinaikkan, dan log peringatan dicatat.
+//     - Fail-Closed (RATE_LIMIT_FAIL_CLOSED=true): Request ditolak dengan HTTP 429 Degraded
+//     secara aman.
+//
+//  5. Ketahanan Fail-Open Sisi Database:
+//     Bila database tidak dapat dijangkau saat snapshot TTL kedaluwarsa, Engine mempertahankan
+//     salinan kebijakan lama dan tidak memajukan waktu kedaluwarsa, sehingga percobaan ulang
+//     dapat langsung dilakukan pada request berikutnya tanpa menunggu TTL penuh berikutnya.
+//     Jika database belum pernah terbaca sejak awal, sistem meloloskan tanpa batas (fail-open)
+//     agar proses booting gateway tidak terhenti.
 package ratelimit
 
 import (
@@ -144,6 +183,9 @@ func NewEngine(source Source, logger *slog.Logger, opts ...EngineOption) *Engine
 // sekarang, bukan setelah TTL habis. Hanya berlaku pada instance ini — lintas instance
 // tetap menunggu TTL, dan tempat memperbaikinya adalah pub/sub Redis.
 func (e *Engine) Invalidate() {
+	if e == nil {
+		return
+	}
 	e.mu.Lock()
 	e.dimuat = time.Time{}
 	e.mu.Unlock()
@@ -160,6 +202,9 @@ func (e *Engine) Invalidate() {
 // Urutan hasilnya mengikuti urutan targets, karena urutan itu menentukan batas mana yang
 // dilaporkan lewat header X-RateLimit-* ketika lebih dari satu membatasi.
 func (e *Engine) Requests(ctx context.Context, targets []policy.Target, keyLimits apikey.Limits) []apikey.ScopeLimits {
+	if e == nil {
+		return nil
+	}
 	e.muat(ctx)
 
 	e.mu.RLock()
@@ -188,6 +233,9 @@ func (e *Engine) Requests(ctx context.Context, targets []policy.Target, keyLimit
 //
 // keyLimits berperan sama seperti di Requests: kolom di api_keys menang per field.
 func (e *Engine) Tokens(ctx context.Context, targets []policy.Target, keyLimits apikey.TokenLimits) []apikey.ScopeTokenLimits {
+	if e == nil {
+		return nil
+	}
 	e.muat(ctx)
 
 	e.mu.RLock()
@@ -235,7 +283,7 @@ func idUntuk(t policy.Target) string {
 //
 // Kegagalan pembacaan MEMPERTAHANKAN salinan lama dan hanya dicatat. Lihat catatan paket.
 func (e *Engine) muat(ctx context.Context) {
-	if e.source == nil {
+	if e == nil || e.source == nil {
 		return
 	}
 

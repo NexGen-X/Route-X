@@ -500,3 +500,81 @@ func TestUrutBobotAmanSaatAcakNol(t *testing.T) {
 		t.Error("kunci bernilai NaN")
 	}
 }
+
+// TestOrderWeightedTieBreakerAdilTanpaBiasAlfabet memastikan bahwa kandidat dengan
+// nilai kunci identik (bobot sama dan sumber acak konstan) tidak selamanya condong
+// ke urutan alfabetis ProviderName pertama ("alpha" selalu menang atas "zebra").
+// Jitter tie-breaker deterministik harus mendistribusikan giliran pertama secara adil.
+func TestOrderWeightedTieBreakerAdilTanpaBiasAlfabet(t *testing.T) {
+	// Sumber acak konstan: u identik (0.5), bobot identik (10), sehingga kunci -ln(u)/w
+	// bernilai persis sama untuk kedua kandidat.
+	s := NewSelector(WithRandFunc(func() float64 { return 0.5 }))
+	buat := func() []*upstream.RouteCandidate {
+		return []*upstream.RouteCandidate{
+			kandidat("alpha", 1, 10),
+			kandidat("zebra", 1, 10),
+		}
+	}
+
+	const iterasi = 1000
+	hitung := map[string]int{}
+	for i := 0; i < iterasi; i++ {
+		got := s.Order(Request{}, &Rule{Strategy: StrategyWeighted}, buat())
+		if len(got) != 2 {
+			t.Fatalf("iterasi %d: len = %d, mau 2", i, len(got))
+		}
+		hitung[got[0].ProviderName]++
+	}
+
+	// Tanpa tie-breaker jitter, "alpha" akan menang 1000 kali dari 1000 iterasi karena
+	// pembanding jatuh ke cmp.Compare(a.ProviderName, b.ProviderName).
+	// Dengan jitter tie-breaker deterministik, kedua kandidat harus saling bergantian
+	// dengan distribusi wajar (~50% masing-masing, batas toleransi 35% - 65%).
+	if hitung["zebra"] == 0 {
+		t.Fatalf("kandidat 'zebra' tidak pernah terpilih di posisi pertama (bias alfabet permanen): %+v", hitung)
+	}
+	porsiAlpha := float64(hitung["alpha"]) / float64(iterasi)
+	porsiZebra := float64(hitung["zebra"]) / float64(iterasi)
+
+	if porsiAlpha < 0.35 || porsiAlpha > 0.65 {
+		t.Errorf("distribusi 'alpha' = %.2f (hitung: %+v), mau seimbang (~0.50)", porsiAlpha, hitung)
+	}
+	if porsiZebra < 0.35 || porsiZebra > 0.65 {
+		t.Errorf("distribusi 'zebra' = %.2f (hitung: %+v), mau seimbang (~0.50)", porsiZebra, hitung)
+	}
+}
+
+// TestOrderWeightedTieBreakerBanyakKandidat memvalidasi bahwa tie-breaker jitter
+// mendistribusikan giliran secara merata di antara banyak kandidat dengan kunci identik.
+func TestOrderWeightedTieBreakerBanyakKandidat(t *testing.T) {
+	s := NewSelector(WithRandFunc(func() float64 { return 0.5 }))
+	buat := func() []*upstream.RouteCandidate {
+		return []*upstream.RouteCandidate{
+			kandidat("alpha", 1, 10),
+			kandidat("bravo", 1, 10),
+			kandidat("charlie", 1, 10),
+		}
+	}
+
+	const iterasi = 1200
+	hitung := map[string]int{}
+	for i := 0; i < iterasi; i++ {
+		got := s.Order(Request{}, &Rule{Strategy: StrategyWeighted}, buat())
+		if len(got) != 3 {
+			t.Fatalf("len = %d, mau 3", len(got))
+		}
+		hitung[got[0].ProviderName]++
+	}
+
+	for _, namaKandidat := range []string{"alpha", "bravo", "charlie"} {
+		if hitung[namaKandidat] == 0 {
+			t.Errorf("kandidat %s tidak pernah berada di posisi pertama: %+v", namaKandidat, hitung)
+		}
+		rasio := float64(hitung[namaKandidat]) / float64(iterasi)
+		// Rata-rata ideal adalah 1/3 (0.33). Toleransi 0.20 - 0.46 cukup lebar
+		// agar tidak rapuh secara statistik tetapi tegas menolak bias alfabetis.
+		if rasio < 0.20 || rasio > 0.46 {
+			t.Errorf("kandidat %s rasio = %.2f, mau seimbang di sekitar sepertiga (~0.33)", namaKandidat, rasio)
+		}
+	}
+}

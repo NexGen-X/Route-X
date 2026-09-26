@@ -1,7 +1,7 @@
 .PHONY: all build build-web build-go build-cli test test-coverage migrate live-update status logs help
 
 SHELL := /bin/bash
-VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo "v1.3.0")
+VERSION ?= $(shell git describe --tags --always 2>/dev/null || echo "v1.3.1")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 all: build

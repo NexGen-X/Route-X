@@ -31,6 +31,9 @@ type Selector struct {
 	// pantas dibayar dengan latensi setiap permintaan.
 	rr sync.Map // map[string]*atomic.Uint64
 
+	// jitter memasok salt tie-breaker untuk memutus seri saat kunci bobot identik.
+	jitter atomic.Uint64
+
 	// acak dipisah supaya test bisa menjadikan strategi weighted deterministik.
 	acak func() float64
 }
@@ -257,6 +260,25 @@ func rotasiKey(req Request, rule *Rule) string {
 	return rule.ID + "\x00" + req.ModelID
 }
 
+// hashTieBreak menghitung nilai jitter deterministik untuk memutus seri (tie-break)
+// antara kandidat dengan nilai kunci identik, menggunakan kombinasi ProviderModelID,
+// ProviderID, dan salt. FNV-1a 64-bit dipilih karena deterministik, cepat, dan tanpa alokasi.
+func hashTieBreak(salt uint64, pmID, pID string) uint64 {
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+	h := offset64 ^ salt
+	for i := 0; i < len(pmID); i++ {
+		h = (h ^ uint64(pmID[i])) * prime64
+	}
+	h = (h ^ ':') * prime64
+	for i := 0; i < len(pID); i++ {
+		h = (h ^ uint64(pID[i])) * prime64
+	}
+	return h
+}
+
 // urutBobot mengundi urutan sesuai bobot.
 //
 // Yang diundi adalah SELURUH permutasi, bukan pemenang tunggal, dan itu penting untuk
@@ -268,6 +290,11 @@ func rotasiKey(req Request, rule *Rule) string {
 // seragam, lalu diurutkan naik. Hasilnya sampel acak TANPA pengembalian yang peluangnya
 // tepat sebanding bobot pada setiap posisi — satu lintasan, tanpa pengundian berulang yang
 // harus membuang kandidat terpilih dan menghitung ulang total bobot.
+//
+// Bila dua kandidat menghasilkan nilai kunci identik (misalnya bobot sama dan generator acak
+// menghasilkan nilai identik), pemutus seri (tie-break) memakai deterministic tie-breaker
+// jitter berbasis kombinasi hash ProviderModelID, ProviderID, dan salt rotasi. Ini mencegah
+// bias alfabetis permanen di mana provider dengan nama berabjad awal selalu diprioritaskan.
 func (s *Selector) urutBobot(rule *Rule, cands []*upstream.RouteCandidate) {
 	// Bobot khusus aturan menimpa bobot provider; itu memang guna kolomnya.
 	timpa := map[string]int{}
@@ -279,7 +306,13 @@ func (s *Selector) urutBobot(rule *Rule, cands []*upstream.RouteCandidate) {
 		}
 	}
 
+	salt := s.jitter.Add(1)
+	if s.acak != nil {
+		salt ^= math.Float64bits(s.acak())
+	}
+
 	kunci := make(map[string]float64, len(cands))
+	tieBreak := make(map[string]uint64, len(cands))
 	for _, c := range cands {
 		w := c.Weight
 		if v, ok := timpa[c.ProviderID]; ok {
@@ -299,10 +332,14 @@ func (s *Selector) urutBobot(rule *Rule, cands []*upstream.RouteCandidate) {
 			u = math.SmallestNonzeroFloat64
 		}
 		kunci[c.ProviderModelID] = -math.Log(u) / float64(w)
+		tieBreak[c.ProviderModelID] = hashTieBreak(salt, c.ProviderModelID, c.ProviderID)
 	}
 
 	slices.SortStableFunc(cands, func(a, b *upstream.RouteCandidate) int {
 		if v := cmp.Compare(kunci[a.ProviderModelID], kunci[b.ProviderModelID]); v != 0 {
+			return v
+		}
+		if v := cmp.Compare(tieBreak[a.ProviderModelID], tieBreak[b.ProviderModelID]); v != 0 {
 			return v
 		}
 		return cmp.Compare(a.ProviderName, b.ProviderName)

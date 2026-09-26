@@ -27,6 +27,10 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 - Tidak ada `.env` di repo — baca `internal/config/config.go` untuk daftar env lengkap
 
 ## Aturan
+- **Pedoman Aturan & Tata Kelola Agen Resmi**:
+  - [Aturan Orkestrasi & Koordinasi Multi-Agent](file:///root/Route-X/.agents/rules/multi_agent_orchestration.md) — Tata kelola resmi koordinasi multi-agent, katalog 13 sub-agent Route-X, pipeline orkestrasi 4-tahap, format serah terima pesan 5-seksi (`send_message`), isolasi branch Git kerja vs koordinasi komunikasi aktif, dan zero-any TypeScript.
+  - [Aturan Pengembangan & Standar Kerja (routex-dev)](file:///root/Route-X/.agents/rules/routex-dev.md) — Konvensi Go & TS, zero-race, arsitektur single-admin, dan keamanan zero-trust.
+  - [Standar Verifikasi Multi-Aspek](file:///root/Route-X/.agents/rules/multi_aspect_verification.md) — 4 lapisan verifikasi empiris, wire protocol live probe, dan protokol anti-halusinasi.
 - Bahasa komentar/log di codebase ini: Indonesia. Ikuti gaya yang ada.
 - Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0010_drop_roles.sql`)
 - **Alur Kerja Git Wajib PR (PR-Only Policy)**: Dilarang keras melakukan komit atau push langsung ke branch `main`. Setiap perubahan wajib dibuat pada branch terisolasi (`feat/*`, `fix/*`, `chore/*`), didorong ke remote, diajukan melalui `gh pr create`, dipantau hingga status CI hijau (`gh pr checks <id> --watch`), dan digabungkan melalui `gh pr merge <id> --squash --delete-branch`.

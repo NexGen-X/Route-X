@@ -6,7 +6,7 @@
   <strong>High-Performance, Self-Hosted AI Gateway with OpenAI & Anthropic Dual-Protocol Ingestion, Dynamic Routing, Micro-Budget Governance, and Instant CLI Synchronization.</strong>
 </p>
 
-[![Release](https://img.shields.io/badge/Release-v1.2.1-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.2.1)
+[![Release](https://img.shields.io/badge/Release-v1.3.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.3.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
@@ -128,11 +128,11 @@ Calling diverse AI APIs directly creates vendor lock-in, unmanaged API key spraw
 Download and run the official static Linux amd64 binary directly (zero compilation needed):
 
 ```bash
-# 1. Download official v1.2.1 release tarball
-curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.2.1/routex-v1.2.1-linux-amd64.tar.gz
+# 1. Download official v1.3.0 release tarball
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.3.0/routex-v1.3.0-linux-amd64.tar.gz
 
 # 2. Extract binary
-tar -xzvf routex-v1.2.1-linux-amd64.tar.gz
+tar -xzvf routex-v1.3.0-linux-amd64.tar.gz
 
 # 3. Run database migrations & start gateway
 ./ai-gateway -migrate
@@ -176,7 +176,7 @@ cd Route-X
 cd web && npm install && npm run build && cd ..
 
 # 3. Compile Go Binary
-go build -ldflags "-X main.version=v1.2.1" -o ai-gateway ./cmd/ai-gateway
+go build -ldflags "-X main.version=v1.3.0" -o ai-gateway ./cmd/ai-gateway
 
 # 4. Run Database Migrations
 ./ai-gateway -migrate

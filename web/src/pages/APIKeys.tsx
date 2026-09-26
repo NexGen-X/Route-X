@@ -11,8 +11,9 @@ import { KeyRound, Plus, RotateCw, Trash2, Copy, Check, Search, ChevronDown, Che
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { getErrorMessage } from '../utils/error';
 import { Checkbox } from '../components/common/Checkbox';
-import type { Model } from '../types';
+import type { Model, APIKey } from '../types';
 
 interface ScopeOption {
   id: string; // unique key: `${providerId || 'none'}::${modelId}`
@@ -53,7 +54,7 @@ export const APIKeys: React.FC = () => {
   const [createdRawKey, setCreatedRawKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isAllowedOpen, setIsAllowedOpen] = useState(false);
-  const [selectedKey, setSelectedKey] = useState<any>(null);
+  const [selectedKey, setSelectedKey] = useState<APIKey | null>(null);
   const [selectedScopeIds, setSelectedScopeIds] = useState<string[]>([]);
   const [scopeSearch, setScopeSearch] = useState('');
   const [isLoadingAllowed, setIsLoadingAllowed] = useState(false);
@@ -153,7 +154,7 @@ export const APIKeys: React.FC = () => {
         provider_ids: [],
       });
 
-      const keyId = (res as any)?.key?.id || res.id;
+      const keyId = res.id;
       const budgetNum = Number(monthlyBudgetUsd);
       if (keyId && Number.isFinite(budgetNum) && budgetNum > 0) {
         try {
@@ -166,15 +167,15 @@ export const APIKeys: React.FC = () => {
             alert_threshold_pct: 80,
             action_on_exceed: 'block',
           });
-        } catch (bErr: any) {
-          toast.warn('Kunci dibuat, namun alokasi anggaran otomatis gagal: ' + (bErr.message || bErr));
+        } catch (bErr: unknown) {
+          toast.warn('Kunci dibuat, namun alokasi anggaran otomatis gagal: ' + getErrorMessage(bErr));
         }
       }
 
       setIsCreateOpen(false);
       setShowAdvanced(false);
       setMonthlyBudgetUsd('');
-      const rawKeyRevealed = (res as any)?.raw_key || (res as any)?.key?.raw_key || res.raw_key || null;
+      const rawKeyRevealed = res.raw_key || null;
       setCreatedRawKey(rawKeyRevealed);
       toast.success(
         budgetNum > 0
@@ -184,8 +185,8 @@ export const APIKeys: React.FC = () => {
       );
       queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
       queryClient.invalidateQueries({ queryKey: ['budgets'] });
-    } catch (err: any) {
-      toast.error('Gagal membuat API key: ' + (err.message || err));
+    } catch (err: unknown) {
+      toast.error('Gagal membuat API key: ' + getErrorMessage(err));
     }
   };
 
@@ -204,8 +205,8 @@ export const APIKeys: React.FC = () => {
       setCreatedRawKey(res.raw_key || null);
       toast.success('Kunci API berhasil diputar.', 'Kunci Diperbarui');
       queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
-    } catch (err: any) {
-      toast.error('Gagal rotasi key: ' + (err.message || err));
+    } catch (err: unknown) {
+      toast.error('Gagal rotasi key: ' + getErrorMessage(err));
     }
   };
 
@@ -223,8 +224,8 @@ export const APIKeys: React.FC = () => {
       await api.apiKeys.revoke(id);
       toast.success('Kunci API berhasil dicabut secara permanen.', 'Kunci Dicabut');
       queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
-    } catch (err: any) {
-      toast.error('Gagal mencabut key: ' + (err.message || err));
+    } catch (err: unknown) {
+      toast.error('Gagal mencabut key: ' + getErrorMessage(err));
     }
   };
 
@@ -238,13 +239,13 @@ export const APIKeys: React.FC = () => {
         copyTimerRef.current = null;
         setCopied(false);
       }, 2000);
-    } catch (err) {
-      toast.error('Gagal menyalin kunci API: ' + (err instanceof Error ? err.message : String(err)));
+    } catch (err: unknown) {
+      toast.error('Gagal menyalin kunci API: ' + getErrorMessage(err));
     }
   };
 
 
-  const handleOpenAllowed = async (k: any) => {
+  const handleOpenAllowed = async (k: APIKey) => {
     setSelectedKey(k);
     setIsAllowedOpen(true);
     setScopeSearch('');
@@ -304,8 +305,8 @@ export const APIKeys: React.FC = () => {
       toast.success('Scope Hak Akses Kunci API berhasil diperbarui.');
       setIsAllowedOpen(false);
       queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
-    } catch (err: any) {
-      toast.error('Gagal menyimpan allowed scope: ' + (err.message || err));
+    } catch (err: unknown) {
+      toast.error('Gagal menyimpan allowed scope: ' + getErrorMessage(err));
     }
   };
 
@@ -404,7 +405,7 @@ export const APIKeys: React.FC = () => {
               <div className="mt-4 space-y-2 text-xs">
                 <div className="flex justify-between py-1 border-b border-border/40">
                   <span className="text-text-muted">Batas RPM / TPM</span>
-                  <span className="font-mono text-white">{(k as any).rate_limit_rpm ?? k.rpm_limit ?? '∞'} RPM / {(k as any).rate_limit_tpm ?? k.tpm_limit ?? '∞'} TPM</span>
+                  <span className="font-mono text-white">{k.rate_limit_rpm ?? k.rpm_limit ?? '∞'} RPM / {k.rate_limit_tpm ?? k.tpm_limit ?? '∞'} TPM</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/40">
                   <span className="text-text-muted">Terakhir Digunakan</span>

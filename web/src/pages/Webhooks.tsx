@@ -12,6 +12,7 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Webhook as WebhookIcon, Plus, Trash2, Zap, Play, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { getErrorMessage } from '../utils/error';
 
 export const Webhooks: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -28,7 +29,7 @@ export const Webhooks: React.FC = () => {
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
 
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
-  const [deliveryDetails, setDeliveryDetails] = useState<any | null>(null);
+  const [deliveryDetails, setDeliveryDetails] = useState<WebhookDelivery | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
 
   const availableEvents = ["*","request.completed","request.failed","provider.unhealthy","provider.recovered","circuit.opened","circuit.closed","budget.threshold","budget.exceeded","ratelimit.exceeded","content.blocked","api_key.created","api_key.revoked","ban.created"];
@@ -39,8 +40,8 @@ export const Webhooks: React.FC = () => {
       const res = await api.webhooks.list();
       setWebhooks(res.items || []);
       setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load webhooks');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Gagal memuat daftar webhook.'));
     } finally {
       setLoading(false);
     }
@@ -54,26 +55,26 @@ export const Webhooks: React.FC = () => {
     e.preventDefault();
     try {
       if (!newWebhook.name || !newWebhook.url) {
-        toast.error('Name and URL are required.');
+        toast.error('Nama dan URL webhook wajib diisi.');
         return;
       }
       await api.webhooks.create(newWebhook);
-      toast.success('Webhook created successfully.');
+      toast.success('Webhook baru berhasil didaftarkan.');
       setIsCreateOpen(false);
       setNewWebhook({ name: '', url: '', events: [], secret: '', enabled: true });
       void loadWebhooks();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to create webhook');
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Gagal mendaftarkan webhook.'));
     }
   };
 
   const handleToggle = async (wh: Webhook) => {
     try {
       await api.webhooks.toggle(wh.id, !wh.enabled);
-      toast.success(`Webhook ${!wh.enabled ? 'enabled' : 'disabled'}.`);
+      toast.success(!wh.enabled ? 'Webhook diaktifkan.' : 'Webhook dinonaktifkan.');
       void loadWebhooks();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to toggle webhook');
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Gagal mengubah status webhook.'));
     }
   };
 
@@ -87,26 +88,26 @@ export const Webhooks: React.FC = () => {
     if (!ok) return;
     try {
       await api.webhooks.delete(wh.id);
-      toast.success('Webhook deleted.');
+      toast.success('Webhook berhasil dihapus.');
       void loadWebhooks();
       if (selectedWebhook?.id === wh.id) {
         setSelectedWebhook(null);
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete webhook');
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Gagal menghapus webhook.'));
     }
   };
 
   const handleTest = async (wh: Webhook) => {
     try {
       const res = await api.webhooks.test(wh.id);
-      toast.success(`Test event sent. Status: ${res.status}, Duration: ${res.duration_ms}ms`);
+      toast.success(`Uji coba webhook terkirim. Status: ${res.status}, Durasi: ${res.duration_ms}ms`);
       // Reload deliveries if currently viewing this webhook
       if (selectedWebhook?.id === wh.id) {
         loadDeliveries(wh.id);
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to test webhook');
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Gagal menguji webhook.'));
     }
   };
 
@@ -115,8 +116,8 @@ export const Webhooks: React.FC = () => {
     try {
       const res = await api.webhooks.getDeliveries(id);
       setDeliveries(res.items || []);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to load deliveries');
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Gagal memuat riwayat pengiriman.'));
     } finally {
       setDeliveriesLoading(false);
     }
@@ -133,8 +134,8 @@ export const Webhooks: React.FC = () => {
     try {
       const res = await api.webhooks.getDelivery(deliveryId.toString());
       setDeliveryDetails(res);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to load delivery details');
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Gagal memuat detail pengiriman.'));
     } finally {
       setDetailsLoading(false);
     }

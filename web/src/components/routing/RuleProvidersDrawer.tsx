@@ -5,6 +5,7 @@ import { Button } from '../common/Button';
 import { Checkbox } from '../common/Checkbox';
 import { useToast } from '../../context/ToastContext';
 import { api } from '../../api/client';
+import { getErrorMessage } from '../../utils/error';
 
 export interface RuleProvidersDrawerProps {
   isOpen: boolean;
@@ -60,11 +61,11 @@ export const RuleProvidersDrawer: React.FC<RuleProvidersDrawerProps> = ({
         provider_ids: ruleProviders,
         weights: ruleWeights,
       });
-      toast.success('Providers & weights berhasil diperbarui.');
+      toast.success('Penyedia & bobot aturan berhasil diperbarui.');
       onSuccess();
       onClose();
     } catch (err: unknown) {
-      toast.error('Gagal menyimpan providers: ' + (err instanceof Error ? err.message : String(err)));
+      toast.error('Gagal menyimpan providers: ' + getErrorMessage(err));
     } finally {
       setIsSubmitting(false);
     }

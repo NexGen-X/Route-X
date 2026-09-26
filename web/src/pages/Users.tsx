@@ -108,7 +108,7 @@ export const UsersPage: React.FC = () => {
 
   const handleForceReset = async (u: User) => {
     if (!resetPw || resetPw.userId !== u.id || !resetPw.temp.trim()) {
-      toast.error('Isi password sementara dulu.');
+      toast.error('Kata sandi sementara wajib diisi.');
       return;
     }
     if (resetPw.temp.trim().length < 8) {
@@ -344,7 +344,7 @@ export const UsersPage: React.FC = () => {
                   onClick={() => {
                     const name = renameName.trim();
                     if (!name || !detailUserId) {
-                      toast.error('Isi nama tampilan baru dulu.');
+                      toast.error('Nama tampilan baru wajib diisi.');
                       return;
                     }
                     void api.users.update(detailUserId, { name }).then(() => {

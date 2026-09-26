@@ -38,6 +38,15 @@ export default {
         sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
       },
+      keyframes: {
+        'toast-progress': {
+          from: { width: '100%' },
+          to: { width: '0%' },
+        },
+      },
+      animation: {
+        'toast-progress': 'toast-progress linear forwards',
+      },
     },
   },
   plugins: [],

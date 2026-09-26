@@ -9,6 +9,7 @@ import { RefreshCw, Clock, Play, Zap, Trash2, CheckCircle2 } from 'lucide-react'
 import { PageHeader } from '../components/common/PageHeader';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { getErrorMessage } from '../utils/error';
 
 export const Diagnostics: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -42,8 +43,8 @@ export const Diagnostics: React.FC = () => {
         setCache(null);
       }
       setLoadError(null);
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : String(err));
+    } catch (err: unknown) {
+      setLoadError(getErrorMessage(err));
     } finally {
       setIsLoading(false);
     }
@@ -57,10 +58,10 @@ export const Diagnostics: React.FC = () => {
     setTriggeringJob(name);
     try {
       const res = await api.system.triggerJob(name);
-      toast.success(res.message || 'Pekerjaan berhasil dipicu di latar belakang.', 'Worker Triggered');
+      toast.success(res.message || 'Pekerjaan berhasil dipicu di latar belakang.', 'Worker Dijalankan');
       loadData();
-    } catch (err: any) {
-      toast.error('Gagal memicu worker: ' + (err.message || err));
+    } catch (err: unknown) {
+      toast.error('Gagal memicu worker: ' + getErrorMessage(err));
     } finally {
       setTriggeringJob(null);
     }
@@ -79,10 +80,10 @@ export const Diagnostics: React.FC = () => {
     setFlushingCache(true);
     try {
       const res = await api.system.flushCache();
-      toast.success(res.message || 'Response cache berhasil dibersihkan.', 'Cache Flushed');
+      toast.success(res.message || 'Response cache berhasil dibersihkan.', 'Cache Dikosongkan');
       loadData();
-    } catch (err: any) {
-      toast.error('Gagal membersihkan cache: ' + (err.message || err));
+    } catch (err: unknown) {
+      toast.error('Gagal membersihkan cache: ' + getErrorMessage(err));
     } finally {
       setFlushingCache(false);
     }
@@ -94,8 +95,8 @@ export const Diagnostics: React.FC = () => {
       await api.system.updateCacheSettings(newEnabled, ttlMinutes * 60);
       toast.info(newEnabled ? 'Response caching diaktifkan (< 2ms)' : 'Response caching dinonaktifkan', 'Pengaturan Cache');
       loadData();
-    } catch (err: any) {
-      toast.error('Gagal memperbarui pengaturan cache: ' + (err.message || err));
+    } catch (err: unknown) {
+      toast.error('Gagal memperbarui pengaturan cache: ' + getErrorMessage(err));
     } finally {
       setUpdatingCache(false);
     }
@@ -109,8 +110,8 @@ export const Diagnostics: React.FC = () => {
       await api.system.updateCacheSettings(cache.enabled, ttl * 60);
       toast.success(`TTL Response cache berhasil diperbarui ke ${ttl} menit.`, 'TTL Tersimpan');
       loadData();
-    } catch (err: any) {
-      toast.error('Gagal menyimpan TTL: ' + (err.message || err));
+    } catch (err: unknown) {
+      toast.error('Gagal menyimpan TTL: ' + getErrorMessage(err));
     } finally {
       setUpdatingCache(false);
     }

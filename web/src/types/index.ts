@@ -359,6 +359,7 @@ export interface WebhookDelivery {
   id: number;
   webhook_id: string;
   event: string;
+  payload?: unknown;
   status: string;
   attempt_count: number;
   next_attempt_at: string;

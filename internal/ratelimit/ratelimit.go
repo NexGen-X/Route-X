@@ -388,3 +388,61 @@ func deref[T int | int64](v *T) T {
 	}
 	return *v
 }
+
+// MemoryLimiter adalah pembatas laju in-memory berbasis token bucket berkinerja tinggi.
+// Dirancang untuk evaluasi lokal di hot-path dengan overhead latensi sub-mikrodetik dan
+// bebas alokasi memori (0 allocs/op) pada jalur evaluasi Allow.
+type MemoryLimiter struct {
+	mu       sync.Mutex
+	rate     float64   // laju pengisian token per detik
+	capacity float64   // kapasitas tampung burst maksimum
+	tokens   float64   // jumlah token yang tersedia saat ini
+	last     time.Time // waktu evaluasi terakhir
+}
+
+// NewMemoryLimiter membuat pembatas laju token bucket baru di memori dengan laju
+// (rate token/detik) dan kapasitas burst maksimum.
+func NewMemoryLimiter(rate float64, burst int) *MemoryLimiter {
+	if rate <= 0 {
+		rate = 1
+	}
+	if burst <= 0 {
+		burst = 1
+	}
+	return &MemoryLimiter{
+		rate:     rate,
+		capacity: float64(burst),
+		tokens:   float64(burst),
+		last:     time.Now(),
+	}
+}
+
+// Allow mengevaluasi dan mengonsumsi 1 token dari ember jika kuota mencukupi.
+// Mengembalikan true jika request diizinkan, atau false jika kuota habis.
+// Operasi ini thread-safe dan 0 alokasi memori (0 B/op, 0 allocs/op).
+func (l *MemoryLimiter) Allow() bool {
+	return l.AllowN(time.Now(), 1.0)
+}
+
+// AllowN mengevaluasi dan mengonsumsi n token pada waktu now.
+func (l *MemoryLimiter) AllowN(now time.Time, n float64) bool {
+	if l == nil {
+		return true
+	}
+	l.mu.Lock()
+	elapsed := now.Sub(l.last).Seconds()
+	if elapsed > 0 {
+		l.tokens += elapsed * l.rate
+		if l.tokens > l.capacity {
+			l.tokens = l.capacity
+		}
+		l.last = now
+	}
+	if l.tokens >= n {
+		l.tokens -= n
+		l.mu.Unlock()
+		return true
+	}
+	l.mu.Unlock()
+	return false
+}

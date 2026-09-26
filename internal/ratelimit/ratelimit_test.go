@@ -473,3 +473,34 @@ func TestEngineNilReceiverAman(t *testing.T) {
 		t.Errorf("Tokens pada nil engine = %v, mau nil", toks)
 	}
 }
+
+// TestMemoryLimiter memvalidasi fungsionalitas token bucket: kapasitas awal,
+// konsumsi token, penolakan saat habis, pengisian ulang (refill), dan keamanan nil receiver.
+func TestMemoryLimiter(t *testing.T) {
+	// Limiter kapasitas 3 token, laju 10 token/detik
+	lim := NewMemoryLimiter(10, 3)
+
+	// 3 token pertama harus diizinkan
+	for i := 0; i < 3; i++ {
+		if !lim.Allow() {
+			t.Fatalf("token ke-%d seharusnya diizinkan", i+1)
+		}
+	}
+
+	// Token ke-4 harus ditolak karena bucket habis
+	if lim.Allow() {
+		t.Fatal("token ke-4 seharusnya ditolak saat bucket kosong")
+	}
+
+	// Simulasi waktu maju 200ms -> harus terisi ~2 token
+	now := time.Now().Add(200 * time.Millisecond)
+	if !lim.AllowN(now, 1.0) {
+		t.Fatal("seharusnya diizinkan setelah refill 200ms")
+	}
+
+	// Nil receiver aman
+	var nilLim *MemoryLimiter
+	if !nilLim.Allow() {
+		t.Fatal("nil receiver MemoryLimiter harus mengembalikan true (fail-open)")
+	}
+}

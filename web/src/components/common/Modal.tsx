@@ -42,6 +42,7 @@ export const Modal: React.FC<ModalProps> = ({
 }) => {
   const generatedTitleId = useId();
   const titleId = `modal-title-${generatedTitleId.replace(/:/g, '')}`;
+  const subtitleId = `modal-subtitle-${generatedTitleId.replace(/:/g, '')}`;
   // Kunci body bersama lintas Modal/Drawer; restore nilai overflow asli.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -77,7 +78,7 @@ export const Modal: React.FC<ModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={ariaDescribedBy}
+        aria-describedby={subtitle ? subtitleId : ariaDescribedBy}
         onClick={onClose}
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
       >
@@ -88,6 +89,7 @@ export const Modal: React.FC<ModalProps> = ({
           <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-bg-surface-2/40">
             <div>
               <h2 id={titleId} className="text-base font-semibold text-text-primary">{title}</h2>
+              {subtitle && <p id={subtitleId} className="text-xs text-text-secondary mt-1">{subtitle}</p>}
             </div>
             <Tooltip content="Tutup (Esc)" position="left">
               <button
@@ -96,7 +98,7 @@ export const Modal: React.FC<ModalProps> = ({
                 aria-label="Tutup modal"
                 className="text-text-muted hover:text-text-primary p-1 rounded-inner hover:bg-bg-surface-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5" aria-hidden="true" />
               </button>
             </Tooltip>
           </div>

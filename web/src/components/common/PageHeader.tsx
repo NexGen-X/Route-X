@@ -9,11 +9,12 @@ interface PageHeaderProps {
   actions?: React.ReactNode;
 }
 
-export const PageHeader: React.FC<PageHeaderProps> = ({ title, actions }) => {
+export const PageHeader: React.FC<PageHeaderProps> = ({ title, description, actions }) => {
   return (
     <div className="flex flex-col gap-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6 pb-1">
       <div className="min-w-0">
         <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">{title}</h2>
+        {description && <p className="text-xs text-text-muted mt-1">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap sm:flex-nowrap gap-2.5 sm:items-center shrink-0">{actions}</div>}
     </div>

@@ -638,12 +638,12 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <label className="block font-bold text-white text-xs">
+                    <label htmlFor="quick-api-key" className="block font-bold text-white text-xs">
                       Secret API Key *
                     </label>
                     {selectedPreset?.apiKeyHelp && (
                       <span className="text-[10px] text-accent font-mono flex items-center gap-1">
-                        <ExternalLink className="w-2.5 h-2.5" />
+                        <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
                         {selectedPreset.apiKeyHelp}
                       </span>
                     )}
@@ -651,6 +651,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
 
                   <div className="relative">
                     <input
+                      id="quick-api-key"
                       type={showApiKey ? 'text' : 'password'}
                       required
                       placeholder={selectedPreset?.apiKeyPlaceholder || 'sk-... atau Bearer Token'}
@@ -661,13 +662,14 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setShowApiKey(!showApiKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white"
+                      aria-label={showApiKey ? "Sembunyikan kunci API" : "Tampilkan kunci API"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white cursor-pointer"
                     >
-                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showApiKey ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
                     </button>
                   </div>
                   <p className="text-[11px] text-text-muted flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                    <Lock className="w-3.5 h-3.5 text-accent flex-shrink-0" aria-hidden="true" />
                     Dienkripsi amplop AES-256-GCM tingkat record PostgreSQL dengan AAD.
                   </p>
                 </div>

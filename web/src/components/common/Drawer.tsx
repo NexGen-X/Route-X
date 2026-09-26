@@ -28,6 +28,7 @@ interface DrawerProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
+  ariaDescribedBy?: string;
 }
 
 export const Drawer: React.FC<DrawerProps> = ({
@@ -39,10 +40,12 @@ export const Drawer: React.FC<DrawerProps> = ({
   children,
   footer,
   maxWidth = '2xl',
+  ariaDescribedBy,
 }) => {
   // ID unik untuk heading agar aria-labelledby selalu menunjuk target yang benar.
   const generatedTitleId = useId();
   const titleId = `drawer-title-${generatedTitleId.replace(/:/g, '')}`;
+  const subtitleId = `drawer-subtitle-${generatedTitleId.replace(/:/g, '')}`;
   // Kunci body bersama lintas Modal/Drawer; restore nilai overflow asli.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -79,6 +82,7 @@ export const Drawer: React.FC<DrawerProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
+      aria-describedby={subtitle ? subtitleId : ariaDescribedBy}
       className="fixed inset-0 z-50 overflow-hidden"
     >
       {/* Backdrop */}
@@ -104,6 +108,11 @@ export const Drawer: React.FC<DrawerProps> = ({
                   {title}
                 </h2>
               </div>
+              {subtitle && (
+                <p id={subtitleId} className="text-xs text-text-secondary mt-1">
+                  {subtitle}
+                </p>
+              )}
               {headerExtra && <div className="pt-0.5">{headerExtra}</div>}
             </div>
 

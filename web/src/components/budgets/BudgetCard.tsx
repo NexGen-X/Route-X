@@ -24,7 +24,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-              <Coins className="w-5 h-5" />
+              <Coins className="w-5 h-5" aria-hidden="true" />
             </div>
             <div>
               <h4 className="text-sm font-bold text-white leading-tight">{budget.name}</h4>
@@ -81,7 +81,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
           title={budget.enabled ? 'Klik untuk menonaktifkan anggaran' : 'Klik untuk mengaktifkan anggaran'}
           aria-label={budget.enabled ? 'Nonaktifkan anggaran' : 'Aktifkan anggaran'}
         >
-          <Power className="w-3 h-3" />
+          <Power className="w-3 h-3" aria-hidden="true" />
           <span>{budget.enabled ? 'Aktif' : 'Nonaktif'}</span>
         </button>
         <div className="flex items-center gap-1.5">
@@ -89,7 +89,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
             variant="secondary"
             size="sm"
             onClick={() => void onReset(budget.id)}
-            icon={<RotateCcw className="w-3.5 h-3.5" />}
+            icon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
           >
             Reset Periode
           </Button>
@@ -100,7 +100,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
               className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
               aria-label="Hapus anggaran"
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-4 h-4" aria-hidden="true" />
             </button>
           </Tooltip>
         </div>

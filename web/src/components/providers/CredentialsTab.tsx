@@ -428,8 +428,13 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                     onChange={(e) => setNewKeyForm({ ...newKeyForm, api_key: e.target.value })}
                     className="w-full px-2.5 py-1.5 pr-9 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs placeholder:text-text-muted outline-none focus:border-accent"
                   />
-                  <button type="button" onClick={() => setShowNewKeySecret(!showNewKeySecret)} className="absolute right-2 top-2 text-text-muted hover:text-white">
-                    {showNewKeySecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <button
+                    type="button"
+                    onClick={() => setShowNewKeySecret(!showNewKeySecret)}
+                    aria-label={showNewKeySecret ? "Sembunyikan API key" : "Tampilkan API key"}
+                    className="absolute right-2 top-2 text-text-muted hover:text-white"
+                  >
+                    {showNewKeySecret ? <EyeOff className="w-3.5 h-3.5" aria-hidden="true" /> : <Eye className="w-3.5 h-3.5" aria-hidden="true" />}
                   </button>
                 </div>
               </div>
@@ -606,13 +611,14 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                         type="button"
                         onClick={() => handleToggleOAuthSession(session)}
                         title={session.enabled ? 'Alihkan ke Standby (Nonaktifkan sementara tanpa menghapus)' : 'Aktifkan Akun'}
+                        aria-label={session.enabled ? "Nonaktifkan akun OAuth ke mode standby" : "Aktifkan akun OAuth"}
                         className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer flex items-center gap-1 ${
                           session.enabled
                             ? 'bg-bg-surface border-border text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/30'
                             : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
                         }`}
                       >
-                        <Power className="w-3.5 h-3.5" />
+                        <Power className="w-3.5 h-3.5" aria-hidden="true" />
                         <span className="text-[10px] font-medium hidden sm:inline">
                           {session.enabled ? 'Standby' : 'Aktifkan'}
                         </span>
@@ -623,18 +629,20 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                         onClick={() => handleRefreshOAuthSession(session.id)}
                         disabled={isRefreshing}
                         title="Refresh Access Token Sekarang via Google OAuth"
+                        aria-label="Segarkan access token OAuth sekarang"
                         className="p-1.5 rounded-lg border border-border bg-bg-surface text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer disabled:opacity-50"
                       >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-accent' : ''}`} />
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-accent' : ''}`} aria-hidden="true" />
                       </button>
 
                       <button
                         type="button"
                         onClick={() => handleDeleteOAuthSession(session)}
                         title="Hapus Akun dari Pool"
+                        aria-label="Hapus akun OAuth dari pool"
                         className="p-1.5 rounded-lg border border-border bg-bg-surface text-text-muted hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30 transition-colors cursor-pointer"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -642,7 +650,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                   {/* Selector Jalur Keluar (Egress Proxy) */}
                   <div className="mt-2.5 pt-2 border-t border-border/40 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 sm:gap-2">
                     <span className="text-text-muted text-[11px] flex items-center gap-1 shrink-0">
-                      <Globe className="w-3 h-3 text-accent" />
+                      <Globe className="w-3 h-3 text-accent" aria-hidden="true" />
                       Jalur Keluar (Proxy):
                     </span>
                     <div className="w-full sm:w-56 shrink-0">
@@ -707,9 +715,10 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                       setCopiedTokenId(cred.id);
                       copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000));
                     })}
+                    aria-label="Salin petunjuk token"
                     className="text-text-muted hover:text-white flex-shrink-0"
                   >
-                    {copiedTokenId === cred.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    {copiedTokenId === cred.id ? <Check className="w-3 h-3 text-emerald-400" aria-hidden="true" /> : <Copy className="w-3 h-3" aria-hidden="true" />}
                   </button>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -717,27 +726,29 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                     type="button"
                     onClick={() => handleToggleKey(cred)}
                     title={cred.enabled ? 'Alihkan ke Standby' : 'Aktifkan'}
+                    aria-label={cred.enabled ? "Nonaktifkan API key ke mode standby" : "Aktifkan API key"}
                     className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-[11px] ${
                       cred.enabled
                         ? 'text-amber-400 hover:bg-amber-500/10'
                         : 'text-emerald-400 hover:bg-emerald-500/10'
                     }`}
                   >
-                    <Power className="w-3.5 h-3.5" />
+                    <Power className="w-3.5 h-3.5" aria-hidden="true" />
                     <span className="text-[10px] hidden sm:inline">{cred.enabled ? 'Standby' : 'Aktif'}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDeleteKey(cred)}
+                    aria-label="Hapus API key"
                     className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 </div>
               </div>
               <div className="pt-1.5 border-t border-border/40 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 sm:gap-2">
                 <span className="text-text-muted text-[11px] flex items-center gap-1 shrink-0">
-                  <Globe className="w-3 h-3 text-accent" />
+                  <Globe className="w-3 h-3 text-accent" aria-hidden="true" />
                   Jalur Keluar (Proxy):
                 </span>
                 <div className="w-full sm:w-56 shrink-0">

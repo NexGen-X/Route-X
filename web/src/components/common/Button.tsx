@@ -17,6 +17,7 @@ export const Button: React.FC<ButtonProps> = ({
   icon,
   className = '',
   disabled,
+  type = 'button',
   ...props
 }) => {
   const base =
@@ -41,11 +42,13 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
+      type={type}
+      aria-busy={isLoading}
       className={cn(base, variants[variant], sizes[size], className)}
       disabled={disabled || isLoading}
       {...props}
     >
-      {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : icon}
+      {isLoading ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> : icon}
       {children}
     </button>
   );

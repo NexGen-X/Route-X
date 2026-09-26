@@ -75,8 +75,9 @@ export const CLIApiKeyToolbar: React.FC<CLIApiKeyToolbarProps> = ({
               onClick={() => setShowGlobalKey(!showGlobalKey)}
               className="absolute right-2 top-2 text-text-muted hover:text-white"
               title={showGlobalKey ? 'Sembunyikan' : 'Tampilkan'}
+              aria-label={showGlobalKey ? "Sembunyikan kunci API" : "Tampilkan kunci API"}
             >
-              {showGlobalKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {showGlobalKey ? <EyeOff className="w-3.5 h-3.5" aria-hidden="true" /> : <Eye className="w-3.5 h-3.5" aria-hidden="true" />}
             </button>
           </div>
           {userApiKey && (

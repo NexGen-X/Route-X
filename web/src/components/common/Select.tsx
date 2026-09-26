@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
+import FocusTrap from 'focus-trap-react';
 import { ChevronDown, Check, Search, X } from 'lucide-react';
 
 export interface SelectOption {
@@ -217,6 +218,9 @@ export const Select: React.FC<SelectProps> = ({
         aria-haspopup="listbox"
         aria-controls={isOpen ? (isMobile ? `${selectId}-mobile-listbox` : `${selectId}-listbox`) : undefined}
         aria-expanded={isOpen}
+        aria-invalid={!!error}
+        aria-describedby={error ? `${selectId}-error` : undefined}
+        aria-required={required}
         className={`w-full flex items-center justify-between gap-2 bg-bg-surface-2 border transition-all duration-150 text-left focus:outline-none focus:ring-1 focus:ring-accent ${
           variant === 'compact'
             ? 'px-2.5 py-1 text-[11px] rounded-nav'
@@ -237,13 +241,14 @@ export const Select: React.FC<SelectProps> = ({
         </div>
 
         <ChevronDown
+          aria-hidden="true"
           className={`${variant === 'compact' ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-text-muted transition-transform duration-200 flex-shrink-0 ${
             isOpen ? 'rotate-180 text-accent' : ''
           }`}
         />
       </button>
 
-      {error && <span className="text-[11px] text-status-error mt-1 block">{error}</span>}
+      {error && <span id={`${selectId}-error`} className="text-[11px] text-status-error mt-1 block">{error}</span>}
 
       {/* Floating Custom Dropdown List untuk Desktop (>= 640px) */}
       {isOpen && !isMobile && (
@@ -254,11 +259,12 @@ export const Select: React.FC<SelectProps> = ({
           {/* Kolom Pencarian Cepat Inline */}
           {isSearchable && (
             <div className="p-2 border-b border-border/60 bg-bg-surface-2/40 sticky top-0 z-10 flex items-center gap-1.5">
-              <Search className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
+              <Search className="w-3.5 h-3.5 text-text-muted flex-shrink-0" aria-hidden="true" />
               <input
                 aria-activedescendant={isOpen && highlightedIndex >= 0 ? `${selectId}-opt-${highlightedIndex}` : undefined}
                 ref={searchInputRef}
                 type="text"
+                aria-label="Cari opsi"
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -271,9 +277,10 @@ export const Select: React.FC<SelectProps> = ({
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
+                  aria-label="Hapus kata kunci pencarian"
                   className="p-0.5 text-text-muted hover:text-white rounded"
                 >
-                  <X className="w-3 h-3" />
+                  <X className="w-3 h-3" aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -314,7 +321,7 @@ export const Select: React.FC<SelectProps> = ({
                         : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/50'
                     }`}
                   >
-                    <div className="flex items-center gap-2 truncate min-w-0">
+                    <div className="flex items-center gap-2 truncate min-w-0 flex-1">
                       {opt.icon && <span className="flex-shrink-0">{opt.icon}</span>}
                       <div className="truncate">
                         <div className="truncate font-sans">{opt.label}</div>
@@ -326,7 +333,7 @@ export const Select: React.FC<SelectProps> = ({
                       </div>
                     </div>
 
-                    {isSelected && <Check className="w-3.5 h-3.5 text-accent flex-shrink-0" />}
+                    {isSelected && <Check className="w-3.5 h-3.5 text-accent flex-shrink-0" aria-hidden="true" />}
                   </div>
                 );
               })
@@ -337,132 +344,137 @@ export const Select: React.FC<SelectProps> = ({
 
       {/* Custom Bottom Sheet untuk Mobile (< 640px) via React Portal */}
       {isOpen && isMobile && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-50 flex items-end justify-center select-none" role="dialog" aria-modal="true" aria-label={label || placeholder}>
-          {/* Dark blur backdrop */}
-          <div
-            className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
-            onClick={() => {
-              setIsOpen(false);
-              setSearchQuery('');
-            }}
-            aria-hidden="true"
-          />
-
-          {/* Bottom Sheet Container */}
-          <div className="relative w-full max-h-[85vh] bg-[#141416] border-t border-border rounded-t-2xl z-50 flex flex-col animate-in slide-in-from-bottom duration-200 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
-            {/* Drag Handle */}
-            <div className="w-12 h-1.5 bg-border rounded-full mx-auto my-3 shrink-0" />
-
-            {/* Header dengan judul & tombol tutup */}
-            <div className="flex items-center justify-between px-4 pb-3 border-b border-border/60">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-semibold text-white truncate">
-                  {label || placeholder || 'Pilih Opsi'}
-                </span>
-                {required && <span className="text-status-error text-xs">*</span>}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsOpen(false);
-                  setSearchQuery('');
-                }}
-                className="p-1 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer"
-                aria-label="Tutup"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Kolom Pencarian Cepat Mobile jika isSearchable */}
-            {isSearchable && (
-              <div className="p-3 border-b border-border/60 bg-bg-surface-2/40 flex items-center gap-2">
-                <Search className="w-4 h-4 text-text-muted flex-shrink-0" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setHighlightedIndex(0);
-                  }}
-                  placeholder="Ketik untuk memfilter..."
-                  className="w-full bg-transparent text-xs text-white placeholder:text-text-muted focus:outline-none font-sans"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    className="p-1 text-text-muted hover:text-white rounded"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Daftar Opsi Mobile */}
+        <FocusTrap active={isOpen && isMobile} focusTrapOptions={{ clickOutsideDeactivates: true }}>
+          <div className="fixed inset-0 z-50 flex items-end justify-center select-none" role="dialog" aria-modal="true" aria-label={label || placeholder || 'Pilih opsi'}>
+            {/* Dark blur backdrop */}
             <div
-              id={`${selectId}-mobile-listbox`}
-              ref={listRef}
-              role="listbox"
-              tabIndex={-1}
-              className="overflow-y-auto px-2 py-2 space-y-1 divide-y divide-border/20 max-h-[60vh]"
-            >
-              {filteredOptions.length === 0 ? (
-                <div className="py-8 px-4 text-center text-xs text-text-muted">
-                  Tidak ada opsi yang cocok dengan "{searchQuery}"
+              className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+              onClick={() => {
+                setIsOpen(false);
+                setSearchQuery('');
+              }}
+              aria-hidden="true"
+            />
+
+            {/* Bottom Sheet Container */}
+            <div className="relative w-full max-h-[85vh] bg-[#141416] border-t border-border rounded-t-2xl z-50 flex flex-col animate-in slide-in-from-bottom duration-200 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
+              {/* Drag Handle */}
+              <div className="w-12 h-1.5 bg-border rounded-full mx-auto my-3 shrink-0" aria-hidden="true" />
+
+              {/* Header dengan judul & tombol tutup */}
+              <div className="flex items-center justify-between px-4 pb-3 border-b border-border/60">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-semibold text-white truncate">
+                    {label || placeholder || 'Pilih Opsi'}
+                  </span>
+                  {required && <span className="text-status-error text-xs">*</span>}
                 </div>
-              ) : (
-                filteredOptions.map((opt, index) => {
-                  const isSelected = opt.value === value;
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    setSearchQuery('');
+                  }}
+                  className="p-1 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer"
+                  aria-label="Tutup"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
 
-                  return (
-                    <div
-                      key={opt.value || `mobile-empty-${index}`}
-                      id={`${selectId}-mobile-opt-${index}`}
-                      role="option"
-                      aria-selected={isSelected}
-                      onClick={() => handleSelect(opt.value, opt.disabled)}
-                      className={`flex items-center justify-between gap-3 px-3 py-3 rounded-xl text-xs cursor-pointer transition-colors duration-100 ${
-                        opt.disabled
-                          ? 'opacity-40 cursor-not-allowed text-text-muted'
-                          : isSelected
-                          ? 'bg-accent/15 text-white font-medium'
-                          : 'text-text-secondary hover:text-white hover:bg-bg-surface-2'
-                      }`}
+              {/* Kolom Pencarian Cepat Mobile jika isSearchable */}
+              {isSearchable && (
+                <div className="p-3 border-b border-border/60 bg-bg-surface-2/40 flex items-center gap-2">
+                  <Search className="w-4 h-4 text-text-muted flex-shrink-0" aria-hidden="true" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    aria-label="Cari opsi"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setHighlightedIndex(0);
+                    }}
+                    placeholder="Ketik untuk memfilter..."
+                    className="w-full bg-transparent text-xs text-white placeholder:text-text-muted focus:outline-none font-sans"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      aria-label="Hapus kata kunci pencarian"
+                      className="p-1 text-text-muted hover:text-white rounded"
                     >
-                      <div className="flex items-center gap-3 truncate min-w-0 flex-1">
-                        {opt.icon && <span className="flex-shrink-0">{opt.icon}</span>}
-                        <div className="truncate">
-                          <div className={`truncate font-sans ${isSelected ? 'text-white font-semibold' : 'text-text-primary'}`}>
-                            {opt.label}
-                          </div>
-                          {opt.description && (
-                            <div className="text-[10px] text-text-muted font-mono truncate mt-0.5">
-                              {opt.description}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                      <X className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
+              )}
 
-                      {/* Custom Route-X Radio Indicator (Accent Circle #BEF264) */}
+              {/* Daftar Opsi Mobile */}
+              <div
+                id={`${selectId}-mobile-listbox`}
+                ref={listRef}
+                role="listbox"
+                tabIndex={-1}
+                className="overflow-y-auto px-2 py-2 space-y-1 divide-y divide-border/20 max-h-[60vh]"
+              >
+                {filteredOptions.length === 0 ? (
+                  <div className="py-8 px-4 text-center text-xs text-text-muted">
+                    Tidak ada opsi yang cocok dengan "{searchQuery}"
+                  </div>
+                ) : (
+                  filteredOptions.map((opt, index) => {
+                    const isSelected = opt.value === value;
+
+                    return (
                       <div
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
-                          isSelected
-                            ? 'border-accent bg-accent/20'
-                            : 'border-border bg-bg-surface'
+                        key={opt.value || `mobile-empty-${index}`}
+                        id={`${selectId}-mobile-opt-${index}`}
+                        role="option"
+                        aria-selected={isSelected}
+                        onClick={() => handleSelect(opt.value, opt.disabled)}
+                        className={`flex items-center justify-between gap-3 px-3 py-3 rounded-xl text-xs cursor-pointer transition-colors duration-100 ${
+                          opt.disabled
+                            ? 'opacity-40 cursor-not-allowed text-text-muted'
+                            : isSelected
+                            ? 'bg-accent/15 text-white font-medium'
+                            : 'text-text-secondary hover:text-white hover:bg-bg-surface-2'
                         }`}
                       >
-                        {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-accent" />}
+                        <div className="flex items-center gap-3 truncate min-w-0 flex-1">
+                          {opt.icon && <span className="flex-shrink-0">{opt.icon}</span>}
+                          <div className="truncate">
+                            <div className={`truncate font-sans ${isSelected ? 'text-white font-semibold' : 'text-text-primary'}`}>
+                              {opt.label}
+                            </div>
+                            {opt.description && (
+                              <div className="text-[10px] text-text-muted font-mono truncate mt-0.5">
+                                {opt.description}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Custom Route-X Radio Indicator (Accent Circle #BEF264) */}
+                        <div
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                            isSelected
+                              ? 'border-accent bg-accent/20'
+                              : 'border-border bg-bg-surface'
+                          }`}
+                          aria-hidden="true"
+                        >
+                          {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-accent" />}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })
-              )}
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
-        </div>,
+        </FocusTrap>,
         document.body
       )}
     </div>

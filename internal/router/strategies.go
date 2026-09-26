@@ -279,6 +279,12 @@ func hashTieBreak(salt uint64, pmID, pID string) uint64 {
 	return h
 }
 
+// DeterministicTieBreaker menghitung nilai jitter deterministik FNV-1a untuk memutus
+// seri antara kandidat dengan nilai bobot identik. Bebas alokasi memori (0 allocs).
+func DeterministicTieBreaker(salt uint64, pmID, pID string) uint64 {
+	return hashTieBreak(salt, pmID, pID)
+}
+
 // urutBobot mengundi urutan sesuai bobot.
 //
 // Yang diundi adalah SELURUH permutasi, bukan pemenang tunggal, dan itu penting untuk

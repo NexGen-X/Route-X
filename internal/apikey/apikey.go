@@ -30,6 +30,8 @@ package apikey
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -295,4 +297,39 @@ func WithPrincipal(ctx context.Context, p *Principal) context.Context {
 func PrincipalFrom(ctx context.Context) (*Principal, bool) {
 	p, ok := ctx.Value(principalCtxKey{}).(*Principal)
 	return p, ok && p != nil && p.Key != nil
+}
+
+// Hash menghitung digest SHA-256 heksadesimal dari kunci API mentah (format rx-... maupun format standar).
+// Menggunakan implementasi crypto/sha256 standard library berkinerja tinggi.
+func Hash(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
+}
+
+// FormatKey memformat kunci API menjadi representasi masking hint yang aman untuk audit log,
+// tampilan dashboard, dan telemetri tanpa membocorkan nilai rahasia.
+func FormatKey(key string) string {
+	if len(key) == 0 {
+		return "****"
+	}
+	var prefix string
+	switch {
+	case strings.HasPrefix(key, "rx-"):
+		prefix = "rx-"
+	case strings.HasPrefix(key, "sk_live_"):
+		prefix = "sk_live_"
+	case strings.HasPrefix(key, "sk_test_"):
+		prefix = "sk_test_"
+	default:
+		if idx := strings.LastIndex(key, "_"); idx > 0 && idx < len(key)-1 {
+			prefix = key[:idx+1]
+		}
+	}
+
+	body := strings.TrimPrefix(key, prefix)
+	const tailLen = 4
+	if len(body) <= tailLen {
+		return prefix + "****"
+	}
+	return prefix + "****" + body[len(body)-tailLen:]
 }

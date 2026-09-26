@@ -326,3 +326,34 @@ func TestPrincipalContext(t *testing.T) {
 		t.Errorf("PrincipalFrom = (%v, %v)", got, ok)
 	}
 }
+
+func TestHashAndFormatKey(t *testing.T) {
+	// Tes Hash SHA-256
+	h1 := Hash("rx-live-testkey-12345")
+	if len(h1) != 64 {
+		t.Fatalf("panjang hash SHA-256 = %d, mau 64", len(h1))
+	}
+	h2 := Hash("rx-live-testkey-12345")
+	if h1 != h2 {
+		t.Fatalf("hashing tidak deterministik: %s != %s", h1, h2)
+	}
+
+	// Tes FormatKey
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"", "****"},
+		{"rx-12345678", "rx-****5678"},
+		{"rx-12", "rx-****"},
+		{"sk_live_abcdef1234", "sk_live_****1234"},
+		{"sk_test_1234567890", "sk_test_****7890"},
+		{"custom_key_prefix_9876543210", "custom_key_prefix_****3210"},
+	}
+	for _, tc := range tests {
+		got := FormatKey(tc.in)
+		if got != tc.want {
+			t.Errorf("FormatKey(%q) = %q, mau %q", tc.in, got, tc.want)
+		}
+	}
+}

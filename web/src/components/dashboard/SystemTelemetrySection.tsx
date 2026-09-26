@@ -29,17 +29,11 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <h3 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
-            <Cpu className="w-4 h-4 text-accent" />
+          <Cpu className="w-4 h-4 text-accent" />
+          <h3 className="text-sm font-semibold text-white tracking-tight">
             Telemetri Runtime Gateway
           </h3>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-bg-surface-2 text-text-secondary border border-border font-mono">
-            polling 5 detik
-          </span>
         </div>
-        <span className="text-xs text-text-secondary hidden sm:inline">
-          Status alokasi memori, throughput jaringan, dan pool tunnel egress
-        </span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -48,7 +42,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-inner bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <div className="p-2 rounded-inner bg-bg-surface-2 text-text-secondary border border-border">
                   <Cpu className="w-4 h-4" />
                 </div>
                 <div>
@@ -69,9 +63,9 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
 
             {/* Progress bar host RAM */}
             <div className="mt-3">
-              <div className="flex items-center justify-between text-[10px] text-text-secondary mb-1 font-mono">
-                <span>{hostRAMPct.toFixed(1)}% dari host RAM</span>
-                <span>
+              <div className="flex items-center justify-between text-[10px] text-text-secondary mb-1.5 font-mono">
+                <span>{hostRAMPct.toFixed(1)}% host RAM</span>
+                <span className="text-text-muted">
                   {overview
                     ? `${formatBytes(overview.host_ram_used_bytes)} / ${formatBytes(overview.host_ram_total_bytes)}`
                     : '-'}
@@ -79,7 +73,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
               </div>
               <div className="w-full h-1.5 bg-bg-surface-3 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-accent rounded-full transition-all duration-500"
+                  className="h-full bg-emerald-400 rounded-full transition-all duration-500"
                   style={{ width: `${hostRAMPct}%` }}
                 />
               </div>
@@ -87,7 +81,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
           </div>
 
           {/* Breakdown rows */}
-          <div className="mt-4 pt-3 border-t border-border/60 space-y-1.5 text-xs">
+          <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-text-muted">RAM Kontainer</span>
               <span className="font-mono text-text-secondary">
@@ -102,7 +96,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             </div>
             <div className="flex items-center justify-between">
               <span className="text-text-muted">Siklus GC</span>
-              <span className="font-mono text-emerald-400 font-semibold">
+              <span className="font-mono text-text-secondary font-medium">
                 {overview?.num_gc ?? 0}
               </span>
             </div>
@@ -114,7 +108,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-inner bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                <div className="p-2 rounded-inner bg-bg-surface-2 text-text-secondary border border-border">
                   <Share2 className="w-4 h-4" />
                 </div>
                 <div>
@@ -122,7 +116,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
                   <span className="text-[10px] text-text-muted font-mono">Total Trafik Jaringan</span>
                 </div>
               </div>
-              <div className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-[10px] font-mono text-cyan-400 font-semibold">
+              <div className="px-2 py-0.5 rounded-full bg-bg-surface-2 border border-border text-[10px] font-mono text-text-secondary font-medium">
                 {(overview?.net_rate_mb_s ?? 0).toFixed(1)} MB/s
               </div>
             </div>
@@ -132,13 +126,13 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
                 {overview ? formatBytes(overview.net_total_bytes) : '-'}
               </div>
               <span className="text-[10px] text-text-muted font-mono block mt-0.5">
-                Sejak server boot
+                Sejak boot
               </span>
             </div>
           </div>
 
           {/* Breakdown rows with indicator bars */}
-          <div className="mt-4 pt-3 border-t border-border/60 space-y-2.5 text-xs">
+          <div className="mt-4 pt-3 border-t border-border space-y-2.5 text-xs">
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-text-muted flex items-center gap-1">
@@ -152,7 +146,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
               </div>
               <div className="w-full h-1 bg-bg-surface-3 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-cyan-400 rounded-full transition-all duration-500"
+                  className="h-full bg-cyan-400/80 rounded-full transition-all duration-500"
                   style={{
                     width: `${
                       overview?.net_total_bytes && overview.net_total_bytes > 0
@@ -182,7 +176,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
               </div>
               <div className="w-full h-1 bg-bg-surface-3 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-emerald-400 rounded-full transition-all duration-500"
+                  className="h-full bg-emerald-400/80 rounded-full transition-all duration-500"
                   style={{
                     width: `${
                       overview?.net_total_bytes && overview.net_total_bytes > 0
@@ -206,7 +200,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-inner bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <div className="p-2 rounded-inner bg-bg-surface-2 text-text-secondary border border-border">
                   <ShieldCheck className="w-4 h-4" />
                 </div>
                 <div>
@@ -216,7 +210,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
                   <span className="text-[10px] text-text-muted font-mono">Proxies</span>
                 </div>
               </div>
-              <div className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-400 font-semibold">
+              <div className="px-2 py-0.5 rounded-full bg-bg-surface-2 border border-border text-[10px] font-mono text-text-secondary font-medium">
                 {overview?.egress_active_mode || 'DIRECT'}
               </div>
             </div>
@@ -226,13 +220,13 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
                 {overview?.egress_total_routes ?? 0}
               </div>
               <span className="text-[10px] text-text-muted font-mono block mt-0.5">
-                Total jalur keluar terdaftar
+                Jalur keluar terdaftar
               </span>
             </div>
           </div>
 
           {/* Breakdown rows */}
-          <div className="mt-4 pt-3 border-t border-border/60 space-y-1.5 text-xs">
+          <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-text-muted">HTTP/SOCKS</span>
               <span className="font-mono text-text-secondary">
@@ -242,7 +236,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             <div className="flex items-center justify-between">
               <span className="text-text-muted">Status Tunnel</span>
               {(overview?.egress_total_routes ?? 0) > 0 ? (
-                <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1 font-semibold">
+                <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1 font-medium">
                   <CheckCircle2 className="w-3 h-3" /> Beroperasi
                 </span>
               ) : (
@@ -259,7 +253,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-inner bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <div className="p-2 rounded-inner bg-bg-surface-2 text-text-secondary border border-border">
                   <Clock className="w-4 h-4" />
                 </div>
                 <div>
@@ -282,15 +276,15 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
 
             {/* Progress bar Proxy CPU */}
             <div className="mt-3">
-              <div className="flex items-center justify-between text-[10px] text-text-secondary mb-1 font-mono">
+              <div className="flex items-center justify-between text-[10px] text-text-secondary mb-1.5 font-mono">
                 <span>Proxy CPU</span>
-                <span className="text-amber-400 font-bold">
+                <span className="text-text-primary font-medium">
                   {(overview?.proxy_cpu_pct ?? 0).toFixed(1)}%
                 </span>
               </div>
               <div className="w-full h-1.5 bg-bg-surface-3 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-amber-400 rounded-full transition-all duration-500"
+                  className="h-full bg-amber-400/80 rounded-full transition-all duration-500"
                   style={{ width: `${Math.min(100, overview?.proxy_cpu_pct || 0)}%` }}
                 />
               </div>
@@ -298,7 +292,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
           </div>
 
           {/* Breakdown rows */}
-          <div className="mt-4 pt-3 border-t border-border/60 space-y-1.5 text-xs">
+          <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-text-muted">Host CPU</span>
               <span className="font-mono text-text-secondary">
@@ -307,7 +301,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             </div>
             <div className="flex items-center justify-between">
               <span className="text-text-muted">Goroutines</span>
-              <span className="font-mono text-emerald-400 font-semibold">
+              <span className="font-mono text-text-secondary font-medium">
                 {overview?.num_goroutine ?? 0}
               </span>
             </div>

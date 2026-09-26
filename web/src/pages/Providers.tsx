@@ -19,10 +19,11 @@ import {
   KeyRound,
   Copy,
   Users,
-  RotateCcw,
-  AlertTriangle,
   Bot,
+  FlaskConical,
+  ArrowRight,
 } from 'lucide-react';
+import { StatusDot } from '../components/common/StatusDot';
 import {
   KNOWN_PROVIDERS,
   ProviderBrandIcon,
@@ -561,8 +562,6 @@ export const Providers: React.FC = () => {
       ) : providers.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {providers.map((p) => {
-            const isHealthy = p.last_health_status === 'healthy';
-            const isDegraded = p.last_health_status === 'degraded';
             const isCustom = isCustomProvider(p);
             const egress = egressPools.find((ep) => ep.id === p.egress_pool_id);
 
@@ -575,230 +574,154 @@ export const Providers: React.FC = () => {
             const totalAccounts = (pool.oauthSessions || []).length + directCreds.length;
             const activeAccounts = activeOAuth + activeDirect;
 
-            return (
-              <div
-                key={p.id}
-                className="bg-bg-surface border border-border hover:border-border/80 rounded-card p-5 transition-all flex flex-col justify-between shadow-sm group"
-              >
-                {/* Bagian Atas: Icon, Identitas & Status Kesehatan */}
-                <div className="space-y-3.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      {/* Icon Provider Interaktif: Klik untuk Buka Drawer */}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenDrawer(p, 'settings')}
-                        aria-label={`Buka pengaturan provider ${p.display_name || p.name}`}
-                        title={
-                          isCustom
-                            ? 'Klik icon custom provider ini untuk membuka drawer konfigurasi & kelola'
-                            : 'Klik icon provider untuk membuka drawer konfigurasi'
-                        }
-                        className={`relative w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-md ${
-                          isCustom
-                            ? 'bg-purple-950/50 border-2 border-purple-500/40 text-purple-300 hover:scale-110 hover:border-purple-300 hover:ring-2 hover:ring-purple-400/40'
-                            : 'bg-bg-surface-2 border border-border text-accent hover:scale-110 hover:border-accent hover:ring-2 hover:ring-accent/40'
-                        }`}
-                      >
-                        <ProviderBrandIcon
-                          providerIdOrKind={p.kind}
-                          name={p.name}
-                          className="w-5 h-5 sm:w-6 sm:h-6"
-                          isCustom={isCustom}
-                        />
-                        <span
-                          className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-bg-surface border flex items-center justify-center shadow-sm ${
+              const providerStatus: 'healthy' | 'degraded' | 'unhealthy' | 'disabled' | 'neutral' =
+                !p.enabled
+                  ? 'disabled'
+                  : p.last_health_status === 'healthy'
+                  ? 'healthy'
+                  : p.last_health_status === 'degraded'
+                  ? 'degraded'
+                  : p.last_health_status === 'unhealthy'
+                  ? 'unhealthy'
+                  : 'neutral';
+
+              return (
+                <div
+                  key={p.id}
+                  className="bg-bg-surface border border-border hover:border-border/80 rounded-card p-5 transition-all flex flex-col justify-between shadow-sm group"
+                >
+                  {/* Bagian Atas: Icon, Identitas & Status Dot */}
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Icon Provider Interaktif: Klik untuk Buka Drawer */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDrawer(p, 'settings')}
+                          aria-label={`Buka pengaturan provider ${p.display_name || p.name}`}
+                          title={
                             isCustom
-                              ? 'border-purple-500/60 text-purple-300'
-                              : 'border-border text-text-muted'
+                              ? 'Klik icon custom provider ini untuk membuka drawer konfigurasi & kelola'
+                              : 'Klik icon provider untuk membuka drawer konfigurasi'
+                          }
+                          className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-inner flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-sm ${
+                            isCustom
+                              ? 'bg-purple-950/50 border border-purple-500/40 text-purple-300 hover:scale-105'
+                              : 'bg-bg-surface-2 border border-border text-text-primary hover:border-accent/50 hover:scale-105'
                           }`}
-                          aria-hidden="true"
                         >
-                          <Sliders className="w-2 h-2" aria-hidden="true" />
-                        </span>
-                      </button>
+                          <ProviderBrandIcon
+                            providerIdOrKind={p.kind}
+                            name={p.name}
+                            className="w-5 h-5"
+                            isCustom={isCustom}
+                          />
+                          <span
+                            className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-bg-surface border flex items-center justify-center shadow-sm ${
+                              isCustom
+                                ? 'border-purple-500/60 text-purple-300'
+                                : 'border-border text-text-muted'
+                            }`}
+                            aria-hidden="true"
+                          >
+                            <Sliders className="w-2 h-2" aria-hidden="true" />
+                          </span>
+                        </button>
 
-                      <div className="space-y-0.5 truncate">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-white text-base truncate">
-                            {p.display_name || p.name}
-                          </h4>
-                          {isCustom && (
-                            <span className="px-1.5 py-0.2 text-[10px] font-mono rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 flex-shrink-0">
-                              Custom
-                            </span>
-                          )}
+                        <div className="space-y-0.5 truncate">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-semibold text-white text-sm sm:text-base truncate">
+                              {p.display_name || p.name}
+                            </h4>
+                            {isCustom && (
+                              <span className="px-1.5 py-0.2 text-[10px] font-mono rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 flex-shrink-0">
+                                Custom
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-text-muted font-mono block truncate">
+                            {p.kind}
+                          </span>
                         </div>
-                        <span className="text-xs text-text-muted font-mono block truncate">
-                          {p.kind}
-                        </span>
                       </div>
-                    </div>
 
-                    {/* Status Pill */}
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 ${
-                          isHealthy
-                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                            : isDegraded
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                            : 'bg-red-500/10 text-red-400 border-red-500/20'
-                        }`}
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            isHealthy ? 'bg-emerald-400 animate-pulse' : isDegraded ? 'bg-amber-400' : 'bg-red-400'
-                          }`}
+                      {/* Status Dot Minimalis */}
+                      <div className="flex items-center flex-shrink-0 pt-0.5">
+                        <StatusDot
+                          status={providerStatus}
+                          latencyMs={p.last_latency_ms}
                         />
-                        <span>
-                          {isHealthy
-                            ? `HEALTHY ${p.last_latency_ms ? `(${p.last_latency_ms} ms)` : ''}`
-                            : isDegraded
-                            ? `DEGRADED ${p.last_latency_ms ? `(${p.last_latency_ms} ms)` : ''}`
-                            : 'UNHEALTHY'}
-                        </span>
+                      </div>
+                    </div>
+
+                    {/* Base URL & Egress Proxy 1-Baris Ringkas */}
+                    <div className="flex items-center justify-between text-xs font-mono text-text-secondary bg-bg-surface-2/60 px-3 py-2 rounded-inner border border-border">
+                      <span className="truncate pr-2 font-mono">
+                        {p.base_url.replace(/^https?:\/\//, '')}
+                        <span className="text-border mx-1.5">·</span>
+                        <span className="text-text-muted">{egress ? egress.name : 'Direct Outbound'}</span>
                       </span>
+                      <Tooltip content="Salin Base URL" position="top">
+                        <button
+                          type="button"
+                          onClick={() => void copyWithFeedback(p.base_url, 'Base URL disalin ke clipboard')}
+                          aria-label="Salin Base URL"
+                          className="p-1 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
+                    </div>
+
+                    {/* Ringkasan Pool Kredensial Bersih */}
+                    <div className="px-3 py-2.5 rounded-inner bg-bg-surface-2/40 border border-border flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 truncate">
+                        <Users className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                        <span className="text-text-secondary font-medium truncate">
+                          {totalAccounts === 0
+                            ? 'Belum ada kredensial'
+                            : `${activeAccounts} Kredensial Aktif · ${
+                                p.credential_strategy === 'priority'
+                                  ? 'Priority Failover'
+                                  : 'Round Robin'
+                              }`}
+                        </span>
+                      </div>
+                      {totalAccounts === 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleQuickAddAccount(p)}
+                          className="text-[11px] text-accent hover:underline shrink-0 font-medium cursor-pointer"
+                        >
+                          + Tambah Key
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {/* Base URL */}
-                  <div className="p-2 rounded-lg bg-bg-base/70 border border-border/60 flex items-center justify-between text-xs font-mono text-text-secondary">
-                    <span className="truncate pr-2">{p.base_url}</span>
-                    <Tooltip content="Salin Base URL" position="top">
-                      <button
-                        type="button"
-                        onClick={() => void copyWithFeedback(p.base_url, 'Base URL disalin ke clipboard')}
-                        aria-label="Salin Base URL"
-                        className="p-2 -mr-1 rounded-md text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 min-w-[36px] min-h-[36px] flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
-                    </Tooltip>
-                  </div>
-
-                  {/* Jalur Proxy Egress */}
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-text-muted">Rute Proxy:</span>
-                    <span className="font-mono text-[11px] text-text-secondary flex items-center gap-1">
-                      <Globe className="w-3 h-3 text-accent" />
-                      <span>{egress ? egress.name : 'Direct Outbound'}</span>
-                    </span>
-                  </div>
-
-                  {/* POOL & MULTI-ACCOUNT SUMMARY ROW */}
-                  <div className="p-2.5 rounded-xl bg-bg-surface-2/50 border border-border/70 space-y-2 mt-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <Users className="w-3.5 h-3.5 text-accent shrink-0" />
-                        <span className="text-xs font-semibold text-white truncate">
-                          Pool Kredensial: {activeAccounts} / {totalAccounts} Aktif
-                        </span>
-                      </div>
-
-                      {/* Strategi Rotasi Badge */}
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-medium border flex items-center gap-1 shrink-0 ${
-                          p.credential_strategy === 'priority'
-                            ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                            : 'bg-accent/10 text-accent border-accent/20'
-                        }`}
-                        title={
-                          p.credential_strategy === 'priority'
-                            ? 'Priority Failover: Utama -> Cadangan'
-                            : 'Round Robin: Distribusi seimbang antar-akun (50:50)'
-                        }
-                      >
-                        {p.credential_strategy === 'priority' ? (
-                          <>
-                            <Sliders className="w-2.5 h-2.5" />
-                            <span>Priority</span>
-                          </>
-                        ) : (
-                          <>
-                            <RotateCcw className="w-2.5 h-2.5" />
-                            <span>Round Robin</span>
-                          </>
-                        )}
-                      </span>
-                    </div>
-
-                    {/* Preview Chip Akun Terdaftar */}
-                    {totalAccounts > 0 ? (
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* Tampilkan hingga 2 preview akun OAuth */}
-                        {(pool.oauthSessions || []).slice(0, 2).map((s: OAuthSession) => (
-                          <span
-                            key={s.id}
-                            className="px-2 py-0.5 rounded-md bg-bg-base/80 border border-border/80 text-[11px] text-text-secondary flex items-center gap-1 truncate max-w-[140px]"
-                            title={s.account_email}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
-                            <span className="truncate">{s.account_name || s.account_email}</span>
-                          </span>
-                        ))}
-
-                        {/* Tampilkan preview API Keys non-OAuth */}
-                        {directCreds.slice(0, 2).map((c: Credential) => (
-                          <span
-                            key={c.id}
-                            className="px-2 py-0.5 rounded-md bg-bg-base/80 border border-border/80 text-[11px] text-text-secondary flex items-center gap-1 truncate max-w-[140px]"
-                            title={c.label}
-                          >
-                            <KeyRound className="w-2.5 h-2.5 text-text-muted shrink-0" />
-                            <span className="truncate">{c.label}</span>
-                          </span>
-                        ))}
-
-                        {totalAccounts > 2 && (
-                          <span className="text-[10px] text-text-muted font-mono self-center">
-                            +{totalAccounts - 2} lainnya
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-amber-400/90 flex items-center gap-1.5">
-                        <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
-                        <span>Belum ada kredensial. Gateway tidak dapat meneruskan inferensi.</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Bagian Bawah: Tombol Buka Drawer, Tambah Akun & Probe Latensi */}
-                <div className="mt-4 pt-3 sm:mt-5 sm:pt-3.5 border-t border-border/60 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
+                  {/* Footer Kartu: 2 Tombol Aksi Bersih & Teratur */}
+                  <div className="mt-5 pt-3.5 border-t border-border flex items-center justify-between gap-3">
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => handleProbe(p)}
                       isLoading={probingId === p.id}
-                      icon={<Activity className="w-3.5 h-3.5" />}
+                      icon={<FlaskConical className="w-3.5 h-3.5" />}
                     >
-                      Probe
+                      Uji Latensi
                     </Button>
+
                     <Button
-                      variant="secondary"
+                      variant="primary"
                       size="sm"
-                      onClick={() => handleQuickAddAccount(p)}
-                      icon={<Plus className="w-3.5 h-3.5 text-accent" />}
-                      title={`Tambah akun atau kunci baru ke pool ${p.display_name || p.name}`}
+                      onClick={() => handleOpenDrawer(p, 'models')}
+                      icon={<ArrowRight className="w-3.5 h-3.5 text-black" />}
                     >
-                      + Akun / Key
+                      Kelola &amp; Akun &rarr;
                     </Button>
                   </div>
-
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => handleOpenDrawer(p, 'models')}
-                    icon={<Sliders className="w-3.5 h-3.5" />}
-                  >
-                    Kelola
-                  </Button>
                 </div>
-              </div>
-            );
+              );
           })}
         </div>
       ) : (

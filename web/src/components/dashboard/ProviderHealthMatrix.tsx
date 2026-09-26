@@ -1,7 +1,7 @@
 import React from 'react';
 import { Server } from 'lucide-react';
 import { Button } from '../common/Button';
-import { Badge } from '../common/Badge';
+import { StatusDot } from '../common/StatusDot';
 import { ProviderBrandIcon } from '../providers/ProviderIcons';
 import type { Provider } from '../../types';
 
@@ -28,7 +28,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
           size="sm"
           onClick={() => onNavigate('/upstreams/providers')}
           aria-label="Buka halaman kelola provider"
-          className="text-xs text-primary hover:underline whitespace-nowrap flex-shrink-0 p-0 h-auto"
+          className="text-xs text-text-secondary hover:text-white whitespace-nowrap flex-shrink-0 p-0 h-auto"
         >
           Kelola &rarr;
         </Button>
@@ -36,12 +36,12 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {providers.length === 0 ? (
-          <div className="col-span-full py-8 text-center text-xs text-text-muted bg-[#121316] border border-[#20242D] rounded-xl">
+          <div className="col-span-full py-8 text-center text-xs text-text-muted bg-bg-surface border border-border rounded-card">
             Belum ada provider upstream yang terdaftar.{' '}
             <button
               type="button"
               onClick={() => onNavigate('/upstreams/providers')}
-              className="text-primary hover:underline font-semibold"
+              className="text-accent hover:underline font-semibold cursor-pointer"
             >
               Tambahkan provider sekarang
             </button>
@@ -50,6 +50,14 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
           providers.map((p) => {
             const isHealthy = p.last_health_status === 'healthy';
             const isDegraded = p.last_health_status === 'degraded';
+            const statusKey = isHealthy
+              ? 'healthy'
+              : isDegraded
+              ? 'degraded'
+              : p.enabled
+              ? 'unhealthy'
+              : 'disabled';
+
             return (
               <div
                 key={p.id}
@@ -57,7 +65,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
               >
                 <div className="flex items-center justify-between gap-2.5 sm:gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-inner bg-bg-surface-2 border border-border flex items-center justify-center text-primary flex-shrink-0">
+                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-inner bg-bg-surface-2 border border-border flex items-center justify-center text-text-primary flex-shrink-0">
                       <ProviderBrandIcon
                         providerIdOrKind={p.kind}
                         name={p.name}
@@ -65,7 +73,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
                       />
                     </div>
                     <div className="min-w-0">
-                      <h4 className="text-sm font-semibold text-white group-hover:text-primary transition-colors truncate">
+                      <h4 className="text-sm font-semibold text-white group-hover:text-accent transition-colors truncate">
                         {p.display_name || p.name}
                       </h4>
                       <p className="text-[11px] text-text-muted font-mono capitalize truncate">
@@ -75,9 +83,10 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
                     </div>
                   </div>
                   <span className="flex-shrink-0">
-                    <Badge variant={isHealthy ? 'success' : isDegraded ? 'warn' : 'error'}>
-                      {p.last_health_status || (p.enabled ? 'unknown' : 'disabled')}
-                    </Badge>
+                    <StatusDot
+                      status={statusKey}
+                      label={p.last_health_status || (p.enabled ? 'unknown' : 'disabled')}
+                    />
                   </span>
                 </div>
               </div>

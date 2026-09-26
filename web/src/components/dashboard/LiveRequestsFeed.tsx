@@ -14,18 +14,18 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
   onNavigate,
 }) => {
   return (
-    <div className="bg-[#121316] border border-[#20242D] rounded-xl p-5 shadow-lg flex flex-col justify-between">
+    <div className="bg-bg-surface border border-border rounded-card p-5 shadow-sm flex flex-col justify-between">
       <div>
-        <div className="flex items-center justify-between pb-3 border-b border-[#1C2029]">
+        <div className="flex items-center justify-between pb-3 border-b border-border">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <h3 className="text-sm font-semibold text-white tracking-tight">Live Requests Feed</h3>
           </div>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => onNavigate('/requests')}
-            className="text-xs text-primary hover:text-primary-hover p-0 h-auto"
+            className="text-xs text-text-secondary hover:text-white p-0 h-auto"
           >
             Semua &rarr;
           </Button>
@@ -34,7 +34,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
         <div className="mt-3 space-y-2.5">
           {recentRequests.length === 0 ? (
             <div className="py-12 text-center text-xs text-text-muted space-y-2">
-              <Activity className="w-5 h-5 mx-auto text-[#2A2F3D]" />
+              <Activity className="w-5 h-5 mx-auto text-text-muted" />
               <p>Belum ada permintaan inferensi yang tercatat.</p>
               <Button
                 variant="secondary"
@@ -61,22 +61,22 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                     }
                   }}
                   onClick={() => onNavigate('/requests')}
-                  className="p-2.5 rounded-lg bg-[#181A20] border border-[#232732] hover:border-primary/40 hover:bg-[#1D2028] transition-all cursor-pointer group"
+                  className="p-2.5 rounded-inner bg-bg-surface-2 border border-border hover:border-border/80 hover:bg-bg-surface-3 transition-all cursor-pointer group"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium ${
                           isOk
                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                             : isErr
                             ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                            : 'bg-amber-500/10 text-amber-400'
+                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                         }`}
                       >
                         {req.status_code}
                       </span>
-                      <span className="text-xs font-mono font-semibold text-white truncate max-w-[140px] group-hover:text-primary transition-colors">
+                      <span className="text-xs font-mono font-medium text-white truncate max-w-[140px] group-hover:text-accent transition-colors">
                         {req.requested_model || req.model_id || 'unknown'}
                       </span>
                     </div>
@@ -89,14 +89,14 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                     <span className="text-text-muted flex items-center gap-1">
                       {req.provider_name || 'auto-routed'}
                       {req.is_stream && (
-                        <span className="text-[9px] px-1 rounded bg-[#252A36] text-primary">
+                        <span className="text-[9px] px-1 rounded bg-bg-surface-3 text-text-secondary font-medium">
                           SSE
                         </span>
                       )}
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="text-text-primary">{req.duration_ms}ms</span>
-                      <span className="text-text-muted">·</span>
+                      <span className="text-border">·</span>
                       <span className="text-text-muted">{req.total_tokens || 0} tok</span>
                     </div>
                   </div>
@@ -107,11 +107,11 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
         </div>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-[#1C2029]">
+      <div className="mt-4 pt-3 border-t border-border">
         <button
           type="button"
           onClick={() => onNavigate('/requests')}
-          className="w-full py-1.5 text-center text-xs text-text-secondary hover:text-white font-mono rounded bg-[#16181F] border border-[#262B37] hover:border-[#383E4F] transition-colors"
+          className="w-full py-1.5 text-center text-xs text-text-secondary hover:text-white font-mono rounded-nav bg-bg-surface-2 border border-border hover:border-border/80 transition-colors cursor-pointer"
         >
           Inspeksi Seluruh Jejak Audit Request &rarr;
         </button>

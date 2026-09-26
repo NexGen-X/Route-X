@@ -4,6 +4,37 @@ Semua perubahan penting pada project Route-X didokumentasikan dalam berkas ini.
 
 Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) dan mematuhi [Semantic Versioning](https://semver.org/).
 
+## [v1.3.0] - 2026-09-26
+
+Rilis besar yang menghadirkan dekomposisi arsitektur modular pada seluruh halaman frontend, pencapaian Strict Typing 0 `any`, test suite komprehensif (137 tests passing), kodifikasi resmi tata kelola orkestrasi 13 sub-agent, serta optimasi backend router Go.
+
+### Added
+- **Dekomposisi Arsitektur Modular Frontend (9 Halaman Monolitik)**:
+  - Dekomposisi struktural menyeluruh dari komponen monolitik menjadi sub-komponen modular, terisolasi, dan mudah dipelihara pada seluruh 9 halaman:
+    - **Providers**: Dekomposisi kartu provider, modal multi-akun/kredensial, dan drawer manajemen model.
+    - **RoutingRules**: Pemisahan visualizer graph perutean, modal form strategi, dan tabel aturan perutean.
+    - **CLIIntegrations**: Modularisasi runner probe latensi, kartu konfigurasi CLI tool, dan modal instruksi snippet.
+    - **Dashboard**: Ekstraksi metrik kartu ringkasan, grafik lalu lintas & biaya, quick recipes, serta feed aktivitas.
+    - **Egress**: Modularisasi kartu pool egress, modal form proksi SOCKS5/HTTP, dan tabel status kesehatan.
+    - **Requests**: Pemisahan visualizer waterfall latensi, inspector payload request/response, dan tabel log terpartisi.
+    - **Settings**: Dekomposisi formulir konfigurasi runtime, manajemen kunci enkripsi, dan visualizer domain/infrastruktur.
+    - **Budgets**: Pemisahan kartu ringkasan pagu pengeluaran, progress bar kuota mikro, dan modal template anggaran.
+    - **Models**: Dekomposisi tabel katalog model upstream, visualizer harga/token, dan modal sinkronisasi.
+- **Strict Typing 0 `any` Frontend & SDK Client**:
+  - Eliminasi total 100% tipe `any` di seluruh komponen, hooks, utilitas, dan antarmuka TypeScript frontend (`tsc -b` zero error).
+  - Standardisasi tipe data kontraktual pada SDK client `web/src/api/client.ts` dengan generic terdefinisi penuh, payload validation aman, dan deklarasi ambient window modal.
+- **Test Suite Komprehensif (137 Tests Passing Lintas 12 Test Files)**:
+  - Penambahan unit dan integration test suite berbasis Vitest dan React Testing Library dengan 137 pengujian passing 100% di 12 berkas tes.
+- **Kodifikasi Tata Kelola Multi-Agent Orchestration**:
+  - Kodifikasi resmi tata kelola orkestrasi koordinasi 13 sub-agent pada berkas `.agents/rules/multi_agent_orchestration.md` untuk standardisasi protokol handoff, bounded scope, pembagian peran, dan jaminan kualitas otomatis.
+
+### Changed
+- **Optimasi Backend Router Go & Audit Ratelimit**:
+  - Penggantian pseudorandom jitter dengan **FNV-1a deterministic hash tie-breaker** pada algoritma weighted routing untuk mencegah fluktuasi distribusi beban pada bobot berimbang.
+  - Audit sinkronisasi ratelimit Redis multi-replica: verifikasi konsistensi evaluasi token bucket sliding-window atomik pada lingkungan cluster dan multi-replica.
+
+---
+
 ## [v1.2.1] - 2026-09-24
 
 Rilis pembaruan antarmuka terpadu, isolasi jalur keluar per-akun, eliminasi selektor native mobile, serta penyederhanaan navigasi Route-X.

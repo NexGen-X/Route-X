@@ -625,5 +625,21 @@ export interface BackupStatusResponse {
   };
 }
 
+export interface ProviderHealthCheck {
+  id: number;
+  provider_id: string;
+  status: string;
+  latency_ms?: number | null;
+  status_code?: number | null;
+  error_kind?: string | null;
+  error_message?: string | null;
+  checked_at: string;
+  created_at: string;
+}
 
-
+declare global {
+  interface Window {
+    __routexBodyLockCount?: number;
+    __routexBodyLockPrevOverflow?: string;
+  }
+}

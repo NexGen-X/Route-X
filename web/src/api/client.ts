@@ -41,6 +41,7 @@ import type {
   DomainConfig,
   DomainUpdateRequest,
   BackupStatusResponse,
+  ProviderHealthCheck,
 } from '../types';
 
 export class ApiError extends Error {
@@ -105,7 +106,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     return {} as T;
   }
 
-  let data: any;
+  let data: unknown;
   const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     try {
@@ -118,8 +119,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   // Tangkap CSRF token jika dikembalikan di respons
-  if (data && typeof data === 'object' && typeof data.csrf_token === 'string') {
-    setCsrfToken(data.csrf_token);
+  if (data && typeof data === 'object' && 'csrf_token' in data) {
+    const csrfToken = (data as Record<string, unknown>).csrf_token;
+    if (typeof csrfToken === 'string') {
+      setCsrfToken(csrfToken);
+    }
   }
 
   if (!res.ok) {
@@ -132,12 +136,19 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ) {
       window.dispatchEvent(new CustomEvent('routex:unauthorized'));
     }
-    const errObj = data?.error || {};
+    const errObj = (data && typeof data === 'object' && 'error' in data && data.error && typeof data.error === 'object')
+      ? (data.error as Record<string, unknown>)
+      : undefined;
+    const errCode = typeof errObj?.code === 'string' ? errObj.code : 'unknown_error';
+    const errMsg = typeof errObj?.message === 'string'
+      ? errObj.message
+      : (typeof data === 'string' ? data : 'Terjadi kesalahan sistem.');
+    const errParam = typeof errObj?.param === 'string' ? errObj.param : undefined;
     throw new ApiError(
       res.status,
-      errObj.code || 'unknown_error',
-      errObj.message || (typeof data === 'string' ? data : 'Terjadi kesalahan sistem.'),
-      errObj.param
+      errCode,
+      errMsg,
+      errParam
     );
   }
 
@@ -178,12 +189,12 @@ export const api = {
       request<{ providers: { id: string; name: string; status: string; error?: string; checked_at?: string }[] }>(
         '/api/admin/observability/health'
       ),
-    liveMetrics: () => request<any>('/api/admin/observability/metrics/live'),
+    liveMetrics: () => request<Record<string, unknown>>('/api/admin/observability/metrics/live'),
   },
 
   // Requests
   requests: {
-    list: (params: Record<string, any>) => {
+    list: (params: Record<string, string | number | boolean | undefined | null>) => {
       const q = new URLSearchParams();
       Object.entries(params).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
@@ -228,7 +239,9 @@ export const api = {
         { method: 'POST' }
       ),
     healthChecks: (id: string) =>
-      request<{ items: any[] }>(`/api/admin/upstreams/providers/${encodeURIComponent(id)}/health-checks`),
+      request<{ items: ProviderHealthCheck[]; next_cursor?: string }>(
+        `/api/admin/upstreams/providers/${encodeURIComponent(id)}/health-checks`
+      ),
     syncModels: (id: string) =>
       request<{ count: number; models: string[]; message: string }>(
         `/api/admin/upstreams/providers/${encodeURIComponent(id)}/sync-models`,
@@ -542,8 +555,13 @@ export const api = {
 
   // Access Control
   apiKeys: {
-    list: (params?: Record<string, any>) => {
-      const q = new URLSearchParams(params || {});
+    list: (params?: Record<string, string | number | boolean | undefined | null>) => {
+      const q = new URLSearchParams();
+      if (params) {
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
+        });
+      }
       return request<{ items: APIKey[]; next_cursor?: string }>(`/api/admin/access/api-keys?${q.toString()}`);
     },
     get: (id: string) => request<APIKey>(`/api/admin/access/api-keys/${encodeURIComponent(id)}`),
@@ -579,8 +597,13 @@ export const api = {
   },
 
   users: {
-    list: (params?: Record<string, any>) => {
-      const q = new URLSearchParams(params || {});
+    list: (params?: Record<string, string | number | boolean | undefined | null>) => {
+      const q = new URLSearchParams();
+      if (params) {
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
+        });
+      }
       return request<{ items: User[]; next_cursor?: string }>(`/api/admin/access/users?${q.toString()}`);
     },
     get: (id: string) => request<UserDetail>(`/api/admin/access/users/${encodeURIComponent(id)}`),
@@ -676,8 +699,13 @@ export const api = {
     jobs: () => request<{ items: BackgroundJob[] }>('/api/admin/system/jobs'),
     triggerJob: (name: string) =>
       request<{ status: string; job: string; message: string }>(`/api/admin/system/jobs/${encodeURIComponent(name)}/run`, { method: 'POST' }),
-    auditLogs: (params?: Record<string, any>) => {
-      const q = new URLSearchParams(params || {});
+    auditLogs: (params?: Record<string, string | number | boolean | undefined | null>) => {
+      const q = new URLSearchParams();
+      if (params) {
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
+        });
+      }
       return request<{ items: AuditLogEntry[]; next_cursor?: string }>(`/api/admin/system/audit-logs?${q.toString()}`);
     },
     diagnostics: () => request<Diagnostics>('/api/admin/system/diagnostics'),

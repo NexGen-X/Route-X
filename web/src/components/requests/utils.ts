@@ -1,7 +1,15 @@
 import type { RequestLog, RequestPayload } from '../../types';
+import type { StatusDotVariant } from '../common/StatusDot';
 
 export type RequestTabFilter = 'all' | 'success' | 'errors';
 export type StatusBadgeVariant = 'success' | 'warn' | 'error' | 'neutral';
+
+export const getHttpStatusDotVariant = (code: number): StatusDotVariant => {
+  if (code >= 200 && code < 300) return 'healthy';
+  if (code >= 400 && code < 500) return 'degraded';
+  if (code >= 500) return 'unhealthy';
+  return 'neutral';
+};
 
 /**
  * `request_body`/`response_body` dikirim backend sebagai JSON mentah (json.RawMessage).

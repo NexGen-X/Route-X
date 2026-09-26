@@ -1,8 +1,8 @@
 import React from 'react';
 import { ChevronRight } from 'lucide-react';
-import { Badge } from '../common/Badge';
+import { StatusDot } from '../common/StatusDot';
 import type { RequestLog } from '../../types';
-import { getStatusBadgeLabel, getStatusBadgeVariant } from './utils';
+import { getHttpStatusDotVariant } from './utils';
 
 export interface RequestCardMobileProps {
   request: RequestLog;
@@ -31,9 +31,10 @@ export const RequestCardMobile: React.FC<RequestCardMobileProps> = ({
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          <Badge variant={getStatusBadgeVariant(request.status_code)}>
-            {getStatusBadgeLabel(request.status_code)}
-          </Badge>
+          <StatusDot
+            status={getHttpStatusDotVariant(request.status_code)}
+            label={String(request.status_code)}
+          />
           <span className="font-mono text-xs font-semibold text-white truncate max-w-[130px]">
             {request.requested_model || request.model_id || 'unknown'}
           </span>

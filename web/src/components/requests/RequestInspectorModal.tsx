@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { Modal } from '../common/Modal';
-import { Badge } from '../common/Badge';
+import { StatusDot } from '../common/StatusDot';
 import { Button } from '../common/Button';
 import { QueryError } from '../common/QueryError';
 import { useToast } from '../../context/ToastContext';
@@ -12,7 +12,7 @@ import {
   formatRawPayload,
   generateCurlCommand,
   getStatusBadgeLabel,
-  getStatusBadgeVariant,
+  getHttpStatusDotVariant,
 } from './utils';
 
 export interface RequestInspectorModalProps {
@@ -115,9 +115,10 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
           <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
             <span className="text-xs font-medium text-text-muted">Status HTTP</span>
             <div className="mt-1">
-              <Badge variant={getStatusBadgeVariant(request.status_code)}>
-                {getStatusBadgeLabel(request.status_code)}
-              </Badge>
+              <StatusDot
+                status={getHttpStatusDotVariant(request.status_code)}
+                label={getStatusBadgeLabel(request.status_code)}
+              />
             </div>
           </div>
           <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
@@ -127,7 +128,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
           <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
             <span className="text-xs font-medium text-text-muted">Total Token</span>
             <div className="mt-1 font-mono font-bold text-white">
-              {request.total_tokens != null ? request.total_tokens.toLocaleString() : '-'}
+              {request.total_tokens != null ? `${request.total_tokens.toLocaleString()} tok` : '-'}
             </div>
           </div>
           <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
@@ -243,13 +244,13 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
               )}
               <div>
                 <span className="text-text-muted block mb-1">Body Permintaan:</span>
-                <pre className="p-3 bg-black/60 rounded-inner border border-border font-mono text-[11px] overflow-x-auto max-h-40 whitespace-pre-wrap text-text-primary">
+                <pre className="p-3.5 bg-bg-surface-1 rounded-inner border border-border/80 font-mono text-[11px] overflow-x-auto max-h-48 whitespace-pre-wrap text-text-primary">
                   {formatRawPayload(payload.request_body)}
                 </pre>
               </div>
               <div>
                 <span className="text-text-muted block mb-1">Body Respons:</span>
-                <pre className="p-3 bg-black/60 rounded-inner border border-border font-mono text-[11px] overflow-x-auto max-h-40 whitespace-pre-wrap text-text-primary">
+                <pre className="p-3.5 bg-bg-surface-1 rounded-inner border border-border/80 font-mono text-[11px] overflow-x-auto max-h-48 whitespace-pre-wrap text-text-primary">
                   {formatRawPayload(payload.response_body)}
                 </pre>
               </div>

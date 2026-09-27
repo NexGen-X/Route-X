@@ -97,7 +97,7 @@ export const Drawer: React.FC<DrawerProps> = ({
           dalam body, bukan satu panel full-screen. */}
       <div className="fixed inset-0 flex items-end justify-center sm:items-center px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-6 pointer-events-none">
         <div
-          className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border border-border shadow-2xl flex flex-col h-auto max-h-[92dvh] sm:max-h-[85vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-2xl overflow-hidden`}
+          className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border border-border shadow-2xl flex flex-col h-auto max-h-[92dvh] sm:max-h-[85vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-card overflow-hidden`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Drawer Header: stabil, tidak ikut scroll */}

@@ -17,9 +17,10 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 
 export interface QuickStartGuideProps {
   onNavigate: (path: string) => void;
+  onDismiss?: () => void;
 }
 
-export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) => {
+export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, onDismiss }) => {
   const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
     try {
       return localStorage.getItem('routex_dismiss_onboarding') !== 'true';
@@ -54,6 +55,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate }) 
     } catch {
       // Abaikan kegagalan localStorage pada restricted context
     }
+    onDismiss?.();
   };
 
   const toggleCollapse = () => {

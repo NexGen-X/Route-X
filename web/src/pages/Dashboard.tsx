@@ -17,6 +17,7 @@ import {
   LiveRequestsFeed,
   ProviderHealthMatrix,
 } from '../components/dashboard';
+import { ChevronDown } from 'lucide-react';
 
 export interface DashboardProps {
   onNavigate: (path: string) => void;
@@ -35,6 +36,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
+  // QuickStart tersembunyi setelah di-dismiss (disimpan ke localStorage)
+  const [quickStartDismissed, setQuickStartDismissed] = useState<boolean>(
+    () => localStorage.getItem('routex-quickstart-dismissed') === '1'
+  );
+  // System Telemetry collapsible — tersembunyi secara default agar Dashboard lebih ringkas
+  const [telemetryExpanded, setTelemetryExpanded] = useState<boolean>(false);
 
   const loadData = async (showToast = false) => {
     if (showToast) setIsRefreshing(true);
@@ -97,6 +104,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     };
   }, [timeWindow, metricType]);
 
+  const handleDismissQuickStart = () => {
+    localStorage.setItem('routex-quickstart-dismissed', '1');
+    setQuickStartDismissed(true);
+  };
+
   const healthyProvidersCount = providers.filter((p) => p.last_health_status === 'healthy').length;
 
   return (
@@ -123,16 +135,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         onNavigate={onNavigate}
       />
 
-      {/* 2. ONBOARDING & QUICK-START GUIDE */}
-      <QuickStartGuide onNavigate={onNavigate} />
+      {/* 2. ONBOARDING & QUICK-START GUIDE — muncul hanya sampai di-dismiss */}
+      {!quickStartDismissed && (
+        <QuickStartGuide onNavigate={onNavigate} onDismiss={handleDismissQuickStart} />
+      )}
 
-      {/* 3. SYSTEM TELEMETRY — 4 LIVE RUNTIME CARDS */}
-      <SystemTelemetrySection overview={overview} />
-
-      {/* 4. INFERENCE PERFORMANCE METRICS RIBBON (4 CARDS) */}
+      {/* 3. INFERENCE PERFORMANCE METRICS RIBBON (4 CARDS) */}
       <PerformanceMetricsRibbon summary={summary} />
 
-      {/* 5. TRAFFIC CHART & RECENT REQUESTS FEED */}
+      {/* 4. TRAFFIC CHART & RECENT REQUESTS FEED */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <TrafficChart
           series={series}
@@ -144,8 +155,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         <LiveRequestsFeed recentRequests={recentRequests} onNavigate={onNavigate} />
       </div>
 
-      {/* 6. UPSTREAM PROVIDER HEALTH & STATUS MATRIX */}
+      {/* 5. UPSTREAM PROVIDER HEALTH & STATUS MATRIX */}
       <ProviderHealthMatrix providers={providers} onNavigate={onNavigate} />
+
+      {/* 6. SYSTEM TELEMETRY — collapsible, tersembunyi secara default */}
+      <div className="border border-border rounded-card overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setTelemetryExpanded((v) => !v)}
+          className="w-full flex items-center justify-between px-5 py-3 bg-bg-surface hover:bg-bg-surface-2 transition-colors text-left cursor-pointer"
+          aria-expanded={telemetryExpanded}
+        >
+          <span className="text-xs font-medium text-text-secondary">Runtime Telemetri Gateway</span>
+          <ChevronDown
+            className={`w-4 h-4 text-text-muted transition-transform duration-200 ${
+              telemetryExpanded ? 'rotate-180' : ''
+            }`}
+          />
+        </button>
+        {telemetryExpanded && (
+          <div className="p-5 border-t border-border bg-bg-surface">
+            <SystemTelemetrySection overview={overview} />
+          </div>
+        )}
+      </div>
     </div>
   );
 };

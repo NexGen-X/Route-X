@@ -20,7 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { principal } = useAuth();
 
   return (
-    <header className="h-16 border-b border-border bg-bg-base/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">
+    <header className="h-14 border-b border-border bg-bg-base/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">
       <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
         <button
           type="button"

@@ -280,11 +280,11 @@ export const RuleCard: React.FC<RuleCardProps> = ({
             Providers
           </Button>
           <Button
-            variant="secondary"
+            variant="danger"
             size="sm"
             onClick={() => void onDelete(rule.id)}
-            icon={<Trash2 className="w-3.5 h-3.5 text-status-error/80" />}
-            className="text-xs text-status-error/80 border-status-error/20 hover:bg-status-error/10 hover:text-status-error"
+            icon={<Trash2 className="w-3.5 h-3.5" />}
+            className="text-xs"
             title="Hapus Aturan"
             aria-label="Hapus aturan"
           >

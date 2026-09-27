@@ -203,10 +203,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center justify-between pt-1 px-1">
             {!isCollapsed && (
-              <div className="flex items-center gap-2 text-[11px] text-text-secondary px-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <div className="flex items-center gap-2 text-[11px] text-text-secondary">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
                 <span className="font-medium">Route-X Online</span>
               </div>
             )}
@@ -214,7 +214,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className="hidden lg:flex items-center justify-center w-8 h-8 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors ml-auto cursor-pointer"
+                className={`hidden lg:flex items-center justify-center w-8 h-8 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer ${isCollapsed ? 'mx-auto' : 'ml-auto'}`}
                 aria-label={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
               >
                 {isCollapsed ? <ChevronRight className="w-4 h-4" aria-hidden="true" /> : <ChevronLeft className="w-4 h-4" aria-hidden="true" />}

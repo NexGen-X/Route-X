@@ -14,11 +14,11 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
   onNavigate,
 }) => {
   return (
-    <div className="bg-bg-surface border border-border rounded-card p-5 shadow-sm flex flex-col justify-between">
+    <div className="bg-bg-surface border border-border rounded-card p-4 sm:p-5 shadow-sm flex flex-col justify-between">
       <div>
-        {/* Header — tanpa tombol duplikat "Semua →" */}
-        <div className="flex items-center gap-2 pb-3 border-b border-border">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        {/* Header — pulse dot + title, no separator line */}
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
           <h3 className="text-sm font-semibold text-white tracking-tight">Live Requests Feed</h3>
         </div>
 
@@ -52,7 +52,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                     }
                   }}
                   onClick={() => onNavigate('/requests')}
-                  className="p-2.5 rounded-inner bg-bg-surface-2 border border-border hover:border-[#2A2A2A] hover:bg-bg-surface-3 transition-all cursor-pointer group"
+                  className="p-2.5 rounded-inner bg-bg-surface-2 border border-border hover:border-border-hover hover:bg-bg-surface-3 transition-all cursor-pointer group"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
@@ -99,11 +99,11 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
       </div>
 
       {/* Footer — satu tombol navigasi saja */}
-      <div className="mt-4 pt-3 border-t border-border">
+      <div className="mt-3">
         <button
           type="button"
           onClick={() => onNavigate('/requests')}
-          className="w-full py-1.5 text-center text-xs text-text-secondary hover:text-white font-mono rounded-nav bg-bg-surface-2 border border-border hover:border-[#2A2A2A] transition-colors cursor-pointer"
+          className="w-full py-1.5 text-center text-xs text-text-muted hover:text-white font-mono rounded-nav bg-bg-surface-2 border border-border hover:border-border-hover transition-colors cursor-pointer"
         >
           Inspeksi Seluruh Jejak Audit Request →
         </button>

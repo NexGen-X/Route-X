@@ -38,7 +38,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Memory */}
-        <div className="bg-bg-surface border border-border rounded-card p-5 flex flex-col justify-between hover:border-[#2A2A2A] transition-all shadow-sm">
+        <div className="bg-bg-surface border border-border rounded-card p-4 flex flex-col justify-between hover:border-border-hover transition-all shadow-sm">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -56,7 +56,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             </div>
 
             <div className="mt-3">
-              <div className="text-2xl font-bold text-white font-mono tracking-tight">
+              <div className="text-lg font-bold text-white font-mono tracking-tight">
                 {overview ? formatBytes(overview.process_rss_bytes) : '-'}
               </div>
             </div>
@@ -104,7 +104,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
         </div>
 
         {/* Card 2: Network */}
-        <div className="bg-bg-surface border border-border rounded-card p-5 flex flex-col justify-between hover:border-[#2A2A2A] transition-all shadow-sm">
+        <div className="bg-bg-surface border border-border rounded-card p-4 flex flex-col justify-between hover:border-border-hover transition-all shadow-sm">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -122,7 +122,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             </div>
 
             <div className="mt-3">
-              <div className="text-2xl font-bold text-white font-mono tracking-tight">
+              <div className="text-lg font-bold text-white font-mono tracking-tight">
                 {overview ? formatBytes(overview.net_total_bytes) : '-'}
               </div>
               <span className="text-[11px] text-text-muted font-mono block mt-0.5">
@@ -196,7 +196,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
         </div>
 
         {/* Card 3: Egress Pool */}
-        <div className="bg-bg-surface border border-border rounded-card p-5 flex flex-col justify-between hover:border-[#2A2A2A] transition-all shadow-sm">
+        <div className="bg-bg-surface border border-border rounded-card p-4 flex flex-col justify-between hover:border-border-hover transition-all shadow-sm">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -216,7 +216,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             </div>
 
             <div className="mt-3">
-              <div className="text-2xl font-bold text-white font-mono tracking-tight">
+              <div className="text-lg font-bold text-white font-mono tracking-tight">
                 {overview?.egress_total_routes ?? 0}
               </div>
               <span className="text-[11px] text-text-muted font-mono block mt-0.5">
@@ -249,7 +249,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
         </div>
 
         {/* Card 4: Uptime & CPU */}
-        <div className="bg-bg-surface border border-border rounded-card p-5 flex flex-col justify-between hover:border-[#2A2A2A] transition-all shadow-sm">
+        <div className="bg-bg-surface border border-border rounded-card p-4 flex flex-col justify-between hover:border-border-hover transition-all shadow-sm">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -269,7 +269,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             </div>
 
             <div className="mt-3">
-              <div className="text-2xl font-bold text-white font-mono tracking-tight">
+              <div className="text-lg font-bold text-white font-mono tracking-tight">
                 {overview ? formatUptime(overview.uptime_seconds) : '-'}
               </div>
             </div>

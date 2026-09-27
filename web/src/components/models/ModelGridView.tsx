@@ -44,25 +44,25 @@ export const ModelGridView: React.FC<ModelGridViewProps> = ({
               </div>
             </div>
 
-            <div className="mt-4 space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-border/40">
+            <div className="mt-4 space-y-1.5 text-xs">
+              <div className="flex justify-between py-1">
                 <span className="text-text-muted">Keluarga Model</span>
                 <span className="font-semibold text-text-secondary">{getModelFamily(m)}</span>
               </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
+              <div className="flex justify-between py-1">
                 <span className="text-text-muted">Context Window</span>
                 <span className="font-mono text-white">
                   {m.context_window != null ? `${m.context_window.toLocaleString()} tokens` : '-'}
                 </span>
               </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
+              <div className="flex justify-between py-1">
                 <span className="text-text-muted">Max Output</span>
                 <span className="font-mono text-white">
                   {m.max_output_tokens != null ? `${m.max_output_tokens.toLocaleString()} tokens` : '-'}
                 </span>
               </div>
             </div>
-            <div className="mt-4 pt-3 border-t border-border/40">
+            <div className="mt-4 pt-3 border-t border-border/30">
               <div className="text-xs font-semibold text-text-muted mb-2 flex items-center justify-between">
                 <span>Penyedia Upstream ({m.providers?.length || 0})</span>
               </div>

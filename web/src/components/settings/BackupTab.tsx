@@ -36,7 +36,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-white">
+              <h2 className="text-sm font-semibold text-white">
                 Pencadangan & Pemulihan Database (SQL)
               </h2>
               <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">

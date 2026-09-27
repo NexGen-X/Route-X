@@ -76,7 +76,7 @@ export const CLIEnvBanner: React.FC<CLIEnvBannerProps> = ({
           </div>
 
           <div className="flex items-baseline gap-2 mb-1">
-            <h3 className="text-2xl font-extrabold text-white">{installedCount}</h3>
+            <h3 className="text-xl font-bold text-white">{installedCount}</h3>
             <span className="text-sm text-text-muted">dari {totalCount} Perkakas Terpasang</span>
           </div>
 

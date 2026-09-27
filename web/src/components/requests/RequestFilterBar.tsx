@@ -24,7 +24,7 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
   onSearchSubmit,
 }) => {
   return (
-    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-border">
+    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4">
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2">
         {TABS.map((tab) => (

@@ -13,6 +13,7 @@ export default {
         'bg-surface-3': '#181818',
         border: '#1F1F1F',
         'border-subtle': '#1C1C1C',
+        'border-hover': '#2A2A2A',
         'text-primary': '#F5F5F5',
         'text-secondary': '#A1A1AA',
         'text-muted': '#6B7280',

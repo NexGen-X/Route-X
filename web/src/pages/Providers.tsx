@@ -435,7 +435,7 @@ export const Providers: React.FC = () => {
       {/* ------------------------------------------------------------------- */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
+          <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2.5">
             <Server className="w-6 h-6 text-accent" />
             <span>Upstream Providers</span>
           </h2>
@@ -504,7 +504,7 @@ export const Providers: React.FC = () => {
         <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="text-xs font-medium text-text-muted">Total Provider</span>
-            <div className="text-xl font-bold text-white">{providers.length}</div>
+            <div className="text-lg font-bold text-white">{providers.length}</div>
           </div>
           <div className="w-8 h-8 rounded-lg bg-bg-surface-2 border border-border flex items-center justify-center text-accent">
             <Server className="w-4 h-4" />
@@ -514,7 +514,7 @@ export const Providers: React.FC = () => {
         <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="text-xs font-medium text-text-muted">Status Sehat</span>
-            <div className="text-xl font-bold text-emerald-400">
+            <div className="text-lg font-bold text-emerald-400">
               {healthyCount} / {providers.length}
             </div>
           </div>
@@ -526,7 +526,7 @@ export const Providers: React.FC = () => {
         <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="text-xs font-medium text-text-muted">Pool Egress</span>
-            <div className="text-xl font-bold text-white">{egressPools.length}</div>
+            <div className="text-lg font-bold text-white">{egressPools.length}</div>
           </div>
           <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
             <Globe className="w-4 h-4" />

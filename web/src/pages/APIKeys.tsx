@@ -402,18 +402,18 @@ export const APIKeys: React.FC = () => {
                 </Badge>
               </div>
 
-              <div className="mt-4 space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-border/40">
+              <div className="mt-4 space-y-1.5 text-xs">
+                <div className="flex justify-between py-1">
                   <span className="text-text-muted">Batas RPM / TPM</span>
                   <span className="font-mono text-white">{k.rate_limit_rpm ?? k.rpm_limit ?? '∞'} RPM / {k.rate_limit_tpm ?? k.tpm_limit ?? '∞'} TPM</span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-border/40">
+                <div className="flex justify-between py-1">
                   <span className="text-text-muted">Terakhir Digunakan</span>
                   <span className="font-mono text-text-secondary">
                     {k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : 'Belum pernah'}
                   </span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-border/40 items-center">
+                <div className="flex justify-between py-1 items-center">
                   <span className="text-text-muted">Allowed Scope</span>
                   <span className="font-mono text-xs">
                     {(k.allowed_models && k.allowed_models.length > 0) ? (

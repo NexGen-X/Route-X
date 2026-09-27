@@ -61,7 +61,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
             return (
               <div
                 key={p.id}
-                className="bg-bg-surface border border-border rounded-card p-4 hover:border-[#2A2A2A] transition-all flex flex-col justify-between shadow-sm group"
+                className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all flex flex-col justify-between shadow-sm group"
               >
                 <div className="flex items-center justify-between gap-2.5 sm:gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">

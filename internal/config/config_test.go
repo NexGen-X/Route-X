@@ -56,7 +56,7 @@ func TestLoadDefaults(t *testing.T) {
 		{"MaxRequestBytes", cfg.MaxRequestBytes, int64(10 << 20)},
 		{"UpstreamTimeout", cfg.UpstreamTimeout, 120 * time.Second},
 		{"ShutdownGrace", cfg.ShutdownGrace, 25 * time.Second},
-		{"WriteTimeout nol untuk SSE", cfg.WriteTimeout, time.Duration(0)},
+		{"WriteTimeout default 5 menit", cfg.WriteTimeout, 5 * time.Minute},
 		{"RequestLogRetentionDays", cfg.RequestLogRetentionDays, 30},
 		{"Addr", cfg.Addr(), ":8080"},
 	}

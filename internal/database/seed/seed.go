@@ -121,8 +121,10 @@ func seedInitialAdmin(ctx context.Context, q repo.Querier, cfg *config.Config, l
 	adminPassword := cfg.InitialAdminPassword
 	if adminPassword.IsZero() {
 		// AUDIT FIX: password default yang hardcoded dihapus (publik di repositori).
-		// Admin awal hanya dibuat bila INITIAL_ADMIN_PASSWORD disediakan lewat env.
-		return false, fmt.Errorf("INITIAL_ADMIN_PASSWORD wajib diset untuk seeding admin awal (password default sudah dihapus demi keamanan)")
+		// Tanpa INITIAL_ADMIN_PASSWORD, pembuatan admin awal DILEWATI — bukan dibuat
+		// dengan kredensial publik, dan bukan error: banyak pemanggil (test, tooling)
+		// hanya butuh katalog, bukan admin.
+		return false, nil
 	}
 
 	_, err = users.Create(ctx, identity.NewUser{

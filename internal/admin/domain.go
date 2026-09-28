@@ -80,14 +80,40 @@ type StoredDomainConfig struct {
 }
 
 // detectServerIP mendeteksi IP publik server atau fallback ke interface lokal non-loopback.
+//
+// AUDIT FIX: mutex tidak lagi ditahan selama probe HTTP keluar. Sebelumnya seluruh
+// caller seri di belakang round-trip jaringan 2 detik (blackhole ipify = antrean
+// handler domain terblokir). Kini: cek cache cepat di bawah lock, probe jaringan
+// tanpa lock, lalu tulis kembali hasilnya di bawah lock (single-flight de facto:
+// caller bersamaan memprobe paralel tapi tidak saling menunggu antrean).
 func detectServerIP() string {
 	serverIPMu.Lock()
-	defer serverIPMu.Unlock()
-
 	if serverIPCache != "" && time.Since(serverIPCacheTime) < 15*time.Minute {
-		return serverIPCache
+		cached := serverIPCache
+		serverIPMu.Unlock()
+		return cached
 	}
+	serverIPMu.Unlock()
 
+	ip := probeServerIP()
+
+	serverIPMu.Lock()
+	if ip != "" {
+		serverIPCache = ip
+		serverIPCacheTime = time.Now()
+	} else if serverIPCache != "" {
+		// Probe gagal: pertahankan nilai cache lama daripada mengosongkannya.
+		ip = serverIPCache
+	}
+	serverIPMu.Unlock()
+	if ip != "" {
+		return ip
+	}
+	return "127.0.0.1"
+}
+
+// probeServerIP menjalankan deteksi IP: ipify dulu, lalu fallback interface host.
+func probeServerIP() string {
 	// 1. Coba deteksi via ipify dengan batas waktu ketat 2 detik.
 	// Transport memakai GuardedDialContext agar alamat hasil resolusi diperiksa
 	// terhadap kebijakan SSRF, dan pengalihan ditolak: respons ipify tidak lain
@@ -110,8 +136,6 @@ func detectServerIP() string {
 		if err == nil {
 			ip := strings.TrimSpace(string(body))
 			if net.ParseIP(ip) != nil {
-				serverIPCache = ip
-				serverIPCacheTime = time.Now()
 				return ip
 			}
 		}
@@ -123,15 +147,13 @@ func detectServerIP() string {
 		for _, addr := range addrs {
 			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 				if ipnet.IP.To4() != nil {
-					serverIPCache = ipnet.IP.String()
-					serverIPCacheTime = time.Now()
-					return serverIPCache
+					return ipnet.IP.String()
 				}
 			}
 		}
 	}
 
-	return "127.0.0.1"
+	return ""
 }
 
 // getDomainConfigFromDB membaca konfigurasi domain tersimpan.

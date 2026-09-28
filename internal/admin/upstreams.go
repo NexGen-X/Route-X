@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -1843,7 +1844,11 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		_ = h.egressRepo.RecordHealth(ctx, id, "unhealthy", nil)
+		// AUDIT FIX: kegagalan pencatatan health tidak lagi senyap.
+		if err := h.egressRepo.RecordHealth(ctx, id, "unhealthy", nil); err != nil {
+			h.logger.ErrorContext(ctx, "gagal mencatat health egress (unhealthy)",
+				slog.String("id", id), slog.String("error", err.Error()))
+		}
 		_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
 			Status:    "unhealthy",
 			CheckedAt: now,
@@ -1853,7 +1858,13 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	// AUDIT FIX: error baca body probe tidak lagi diabaikan — body terpotong
+	// membuat exit IP kosong dilaporkan sebagai probe sehat tanpa sinyal apa pun.
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if readErr != nil {
+		h.logger.WarnContext(ctx, "gagal membaca body probe egress",
+			slog.String("id", id), slog.String("error", readErr.Error()))
+	}
 	lines := strings.Split(string(body), "\n")
 	var exitIP, loc, colo string
 	for _, l := range lines {
@@ -1872,7 +1883,11 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_ = h.egressRepo.RecordHealth(ctx, id, "healthy", &duration)
+	// AUDIT FIX: kegagalan pencatatan health "healthy" juga tidak boleh senyap.
+	if err := h.egressRepo.RecordHealth(ctx, id, "healthy", &duration); err != nil {
+		h.logger.ErrorContext(ctx, "gagal mencatat health egress (healthy)",
+			slog.String("id", id), slog.String("error", err.Error()))
+	}
 
 	_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
 		Status:     "healthy",

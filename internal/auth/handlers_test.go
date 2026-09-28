@@ -686,7 +686,8 @@ func TestSetupHintEndpoint(t *testing.T) {
 	e := newEnv(t)
 	c := e.newClient(t)
 
-	// Database baru yang telah di-seed memiliki admin default dengan MustChangePassword = true
+	// AUDIT FIX: tanpa INITIAL_ADMIN_PASSWORD, seed tidak membuat admin default —
+	// setup-hint harus melapor bahwa tidak ada admin default (tanpa kebocoran apa pun).
 	res := c.do(http.MethodGet, "/setup-hint", nil)
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, mau 200", res.StatusCode)
@@ -704,36 +705,15 @@ func TestSetupHintEndpoint(t *testing.T) {
 		t.Fatalf("decode JSON: %v", err)
 	}
 	if !hint.HasDefaultAdmin {
-		t.Error("HasDefaultAdmin = false padahal admin default aktif dan must_change_password")
+		t.Error("HasDefaultAdmin = false; tanpa admin default seharusnya tetap false (tidak ada admin dibuat)")
 	}
-	if hint.DefaultEmail != "admin@routex.local" {
-		t.Errorf("DefaultEmail = %q", hint.DefaultEmail)
+	if hint.DefaultEmail != "" {
+		t.Errorf("DefaultEmail = %q, mau kosong", hint.DefaultEmail)
 	}
 	if bytes.Contains(body, []byte("default_password")) {
 		t.Errorf("body setup hint masih mengandung key default_password: %s", body)
 	}
 	if bytes.Contains(body, []byte("RouteX#Initial2026!")) {
 		t.Errorf("body setup hint membocorkan password default: %s", body)
-	}
-
-	u, err := e.users.GetByEmail(e.ctx, "admin@routex.local")
-	if err != nil {
-		t.Fatalf("GetByEmail admin: %v", err)
-	}
-
-	// Ganti password
-	if err := e.users.ChangePassword(e.ctx, u.ID, security.Secret("sandi-baru-yang-kuat-1234"), false); err != nil {
-		t.Fatalf("ChangePassword: %v", err)
-	}
-
-	res = c.do(http.MethodGet, "/setup-hint", nil)
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, mau 200", res.StatusCode)
-	}
-	if err := json.NewDecoder(res.Body).Decode(&hint); err != nil {
-		t.Fatalf("decode JSON: %v", err)
-	}
-	if hint.HasDefaultAdmin {
-		t.Error("HasDefaultAdmin = true padahal password sudah diubah")
 	}
 }

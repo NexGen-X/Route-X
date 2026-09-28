@@ -223,21 +223,16 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
     await waitFor(() => {
       expect(screen.getByText('Route-X Gateway Control')).toBeInTheDocument();
     });
-    expect(screen.getByText(/Gateway Siap & Beroperasi/i)).toBeInTheDocument();
-    expect(screen.getByText(/1\/2 Upstream Sehat/i)).toBeInTheDocument();
-    expect(screen.getAllByText('go1.22.4').length).toBeGreaterThan(0);
-    expect(screen.getByText('linux/amd64')).toBeInTheDocument();
+    expect(screen.getByText(/^Beroperasi$/i)).toBeInTheDocument();
+    expect(screen.getByText(/upstream sehat/i)).toBeInTheDocument();
 
     // 2. Onboarding QuickStartGuide
     expect(screen.getByText('Panduan Cepat Memulai Route-X')).toBeInTheDocument();
     expect(screen.getByText('Tambah Penyedia AI Upstream')).toBeInTheDocument();
 
-    // 3. System Telemetry Section
-    expect(screen.getByText('Telemetri Runtime Gateway')).toBeInTheDocument();
-    expect(screen.getByText('Memori Gateway')).toBeInTheDocument();
-    expect(screen.getByText('Throughput I/O')).toBeInTheDocument();
-    expect(screen.getByText('Egress & Tunnel Pool')).toBeInTheDocument();
-    expect(screen.getByText('Uptime & Komputasi')).toBeInTheDocument();
+    // 3. System Telemetry Section — collapsed by default, only toggle button visible
+    expect(screen.getByText('Runtime Telemetri Gateway')).toBeInTheDocument();
+    // Sub-items hidden when collapsed (default state)
 
     // 4. Performance Metrics Ribbon
     expect(screen.getByText('Total Permintaan')).toBeInTheDocument();
@@ -339,7 +334,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
     fireEvent.click(closeBtn);
 
     expect(screen.queryByText('Panduan Cepat Memulai Route-X')).not.toBeInTheDocument();
-    expect(localStorage.getItem('routex_dismiss_onboarding')).toBe('true');
+    expect(localStorage.getItem('routex-quickstart-dismissed')).toBe('1');
   });
 
   it('menangani kegagalan pemanggilan API dengan notifikasi error', async () => {

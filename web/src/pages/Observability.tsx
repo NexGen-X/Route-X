@@ -159,7 +159,7 @@ export const Observability: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[11px] font-medium text-text-muted">Total Permintaan ({windowTime})</span>
-              <div className="text-2xl font-bold text-white tracking-tight">
+              <div className="text-xl font-bold text-white tracking-tight">
                 {(summary?.total_requests ?? totalRequestsFromSeries).toLocaleString()}
               </div>
               <div className="text-[10px] text-text-secondary flex items-center gap-1.5">
@@ -178,7 +178,7 @@ export const Observability: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[11px] font-medium text-text-muted">Estimasi Biaya ({windowTime})</span>
-              <div className="text-2xl font-bold text-white tracking-tight">
+              <div className="text-xl font-bold text-white tracking-tight">
                 {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}
               </div>
               <div className="text-[10px] text-text-secondary">
@@ -196,7 +196,7 @@ export const Observability: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <span className="text-[11px] font-medium text-text-muted">Rata-rata Latensi</span>
-              <div className="text-2xl font-bold text-white tracking-tight">
+              <div className="text-xl font-bold text-white tracking-tight">
                 {(summary?.avg_latency_ms ?? avgLatencyFromSeries).toFixed(0)} ms
               </div>
               <div className="text-[10px] text-text-secondary">

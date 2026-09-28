@@ -339,7 +339,7 @@ export const Diagnostics: React.FC = () => {
       <div className="pt-6 border-t border-border/40">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
               <Clock className="w-4 h-4 text-accent" />
               Supervisor Background Workers & Tasks
             </h3>

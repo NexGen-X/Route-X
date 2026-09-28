@@ -94,7 +94,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
               }
               className={`px-2 sm:px-3 py-1 sm:py-1.5 min-h-[28px] sm:min-h-[30px] rounded-md capitalize transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-accent cursor-pointer ${
                 metricType === m
-                  ? 'bg-zinc-200 text-black font-semibold shadow'
+                  ? 'bg-white/90 text-bg-base font-semibold shadow'
                   : 'text-text-muted hover:text-white'
               }`}
             >
@@ -125,7 +125,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
         </div>
       </div>
 
-      <div className="h-56 sm:h-64 w-full pt-1 sm:pt-2">
+      <div className="h-52 sm:h-60 w-full pt-1 sm:pt-2">
         {series.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-xs text-text-muted space-y-2">
             <Activity className="w-6 h-6 text-text-muted" />

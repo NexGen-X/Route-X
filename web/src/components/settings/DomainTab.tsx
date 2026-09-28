@@ -44,7 +44,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-white">
+              <h2 className="text-sm font-semibold text-white">
                 Domain Publik & Otomatis HTTPS (SSL)
               </h2>
               {domainConfig?.status === 'active' && (

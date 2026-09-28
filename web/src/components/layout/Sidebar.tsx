@@ -96,12 +96,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed lg:static top-0 left-0 bottom-0 z-50 flex flex-col bg-bg-sidebar border-r border-[#1C1C1C] transition-all duration-300 select-none ${
+        className={`fixed lg:static top-0 left-0 bottom-0 z-50 flex flex-col bg-bg-sidebar border-r border-border-subtle transition-all duration-300 select-none ${
           isCollapsed ? 'w-[70px]' : 'w-[260px]'
         } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
       >
         {/* Brand Header */}
-        <div className="h-16 flex items-center px-4 border-b border-[#1C1C1C] justify-between">
+        <div className="h-14 flex items-center px-4 border-b border-border-subtle justify-between">
           <button
             type="button"
             className="flex items-center gap-3 overflow-hidden cursor-pointer text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded-lg"
@@ -176,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* User profile & Collapser Footer */}
-        <div className="p-3 border-t border-[#1C1C1C] bg-bg-surface-2/20 flex flex-col gap-2">
+        <div className="p-3 border-t border-border-subtle bg-bg-surface-2/20 flex flex-col gap-2">
           {!isCollapsed && user && (
             <div className="flex items-center justify-between px-2 py-1.5 rounded-inner bg-bg-surface-2/40 border border-border/40">
               <div className="flex items-center gap-2.5 truncate">
@@ -203,10 +203,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center justify-between pt-1 px-1">
             {!isCollapsed && (
-              <div className="flex items-center gap-2 text-[11px] text-text-secondary px-1">
-                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <div className="flex items-center gap-2 text-[11px] text-text-secondary">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
                 <span className="font-medium">Route-X Online</span>
               </div>
             )}
@@ -214,7 +214,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className="hidden lg:flex items-center justify-center w-8 h-8 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors ml-auto cursor-pointer"
+                className={`hidden lg:flex items-center justify-center w-8 h-8 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer ${isCollapsed ? 'mx-auto' : 'ml-auto'}`}
                 aria-label={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
               >
                 {isCollapsed ? <ChevronRight className="w-4 h-4" aria-hidden="true" /> : <ChevronLeft className="w-4 h-4" aria-hidden="true" />}

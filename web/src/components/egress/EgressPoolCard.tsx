@@ -44,8 +44,8 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
         </div>
 
         {/* Detail Info & Status Kesehatan */}
-        <div className="mt-4 space-y-2 text-xs">
-          <div className="flex justify-between py-1 border-b border-border/40 items-center">
+        <div className="mt-4 space-y-1.5 text-xs">
+          <div className="flex justify-between py-1 items-center">
             <span className="text-text-muted">Status Koneksi</span>
             {pool.last_health_status === 'healthy' ? (
               <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-emerald-400 select-none">
@@ -65,14 +65,14 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
             )}
           </div>
 
-          <div className="flex justify-between py-1 border-b border-border/40 items-center">
+          <div className="flex justify-between py-1 items-center">
             <span className="text-text-muted">Target Proxy</span>
             <span className="font-mono text-accent text-[11px] truncate max-w-[200px]">
               {pool.masked_hint || '[ENCRYPTED AT REST]'}
             </span>
           </div>
 
-          <div className="flex justify-between py-1 border-b border-border/40 items-center">
+          <div className="flex justify-between py-1 items-center">
             <span className="text-text-muted">Bobot Alokasi</span>
             <span className="font-mono text-white">{pool.weight}</span>
           </div>

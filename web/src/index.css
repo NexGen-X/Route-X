@@ -253,15 +253,15 @@ input[type="datetime-local"] {
 /* 7. Comfortable Table Density & Visual Rhythm                               */
 /* -------------------------------------------------------------------------- */
 table th {
-  padding-top: 0.875rem;
-  padding-bottom: 0.875rem;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
   font-weight: 600;
   letter-spacing: 0.025em;
 }
 
 table td {
-  padding-top: 1rem;
-  padding-bottom: 1rem;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
   vertical-align: middle;
 }
 

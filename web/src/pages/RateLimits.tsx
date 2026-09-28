@@ -198,20 +198,20 @@ export const RateLimits: React.FC = () => {
                 </Badge>
               </div>
 
-              <div className="mt-4 space-y-2 text-xs">
-                <div className="flex justify-between py-1 border-b border-border/40">
+              <div className="mt-4 space-y-1.5 text-xs">
+                <div className="flex justify-between py-1">
                   <span className="text-text-muted">Requests Per Minute (RPM)</span>
                   <span className="font-mono text-white font-semibold">
                     {l.requests_per_minute ? `${l.requests_per_minute.toLocaleString()} req/m` : '-'}
                   </span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-border/40">
+                <div className="flex justify-between py-1">
                   <span className="text-text-muted">Tokens Per Minute (TPM)</span>
                   <span className="font-mono text-accent">
                     {l.tokens_per_minute ? `${l.tokens_per_minute.toLocaleString()} tok/m` : '-'}
                   </span>
                 </div>
-                <div className="flex justify-between py-1 border-b border-border/40">
+                <div className="flex justify-between py-1">
                   <span className="text-text-muted">Requests Per Second (RPS)</span>
                   <span className="font-mono text-text-secondary">
                     {l.requests_per_second ? `${l.requests_per_second} req/s` : '-'}

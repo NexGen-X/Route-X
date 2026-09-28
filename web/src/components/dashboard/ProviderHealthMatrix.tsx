@@ -34,7 +34,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         {providers.length === 0 ? (
           <div className="col-span-full py-8 text-center text-xs text-text-muted bg-bg-surface border border-border rounded-card">
             Belum ada provider upstream yang terdaftar.{' '}
@@ -61,7 +61,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
             return (
               <div
                 key={p.id}
-                className="bg-bg-surface border border-border rounded-card p-4 hover:border-border/80 transition-all flex flex-col justify-between shadow-sm group"
+                className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all flex flex-col justify-between shadow-sm group"
               >
                 <div className="flex items-center justify-between gap-2.5 sm:gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">

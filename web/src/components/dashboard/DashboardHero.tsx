@@ -26,38 +26,60 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   onNavigate,
 }) => {
   return (
-    <div className="bg-bg-surface border border-border rounded-card p-5 sm:p-6 shadow-sm">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 sm:gap-6">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2.5">
+    <div className="bg-bg-surface border border-border rounded-card px-5 py-3.5 shadow-sm">
+      {/* Baris utama — semua dalam satu flex row */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-between">
+        {/* Kiri: status + judul + info strip */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
+          <span
+            role="status"
+            aria-live="polite"
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border shrink-0 ${
+              loadError
+                ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+            }`}
+          >
             <span
-              role="status"
-              aria-live="polite"
-              className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                loadError
-                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-              }`}
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400'}`}
-              />
-              {loadError ? 'Gateway Tidak Tersedia' : 'Gateway Siap & Beroperasi'}
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-bg-surface-2 border border-border text-text-secondary">
-              {healthyProvidersCount}/{totalProvidersCount} Upstream Sehat
-            </span>
-          </div>
+              className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400 animate-pulse'}`}
+            />
+            {loadError ? 'Gateway Tidak Tersedia' : 'Beroperasi'}
+          </span>
 
-          <h2 className="text-2xl font-bold tracking-tight text-white">Route-X Gateway Control</h2>
+          <h2 className="text-sm font-bold tracking-tight text-white shrink-0">
+            Route-X Gateway Control
+          </h2>
+
+          <span className="hidden sm:inline text-border">·</span>
+
+          {/* Info strip — font mono kecil, hanya tampil di sm+ */}
+          <div className="hidden sm:flex items-center gap-x-4 text-xs font-mono text-text-muted">
+            <span>
+              <span className="text-text-secondary font-medium">{healthyProvidersCount}/{totalProvidersCount}</span> upstream sehat
+            </span>
+            <span className="text-border">·</span>
+            <span>
+              <span className="text-text-secondary font-medium">{overview?.in_flight_requests ?? 0}</span> in-flight
+            </span>
+            {overview?.uptime_seconds !== undefined && (
+              <>
+                <span className="text-border">·</span>
+                <span>uptime <span className="text-text-secondary font-medium">{formatUptime(overview.uptime_seconds)}</span></span>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-inner bg-bg-surface-2 border border-border text-xs font-mono text-text-primary">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span className="font-semibold text-white">{overview?.in_flight_requests ?? 0}</span>
-            <span className="text-text-muted">in-flight</span>
-          </div>
+        {/* Kanan: action buttons */}
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => onNavigate('/cli-integrations')}
+            className="hidden md:flex items-center gap-1 text-xs text-text-muted hover:text-accent transition-colors font-mono cursor-pointer"
+            aria-label="Buka Integrasi CLI"
+          >
+            <Terminal className="w-3.5 h-3.5" /> CLI →
+          </button>
 
           <Button
             variant="secondary"
@@ -79,38 +101,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
           </Button>
         </div>
       </div>
-
-      {/* Quick Cluster Info Pill Strip */}
-      <div className="mt-5 pt-4 border-t border-border flex flex-wrap items-center justify-between gap-4 text-xs font-mono text-text-secondary">
-        <div className="flex flex-wrap items-center gap-4 sm:gap-6">
-          <div className="flex items-center gap-1.5">
-            <span className="text-text-muted">Runtime:</span>
-            <span className="text-text-primary font-medium">{overview?.go_version || '-'}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-text-muted">OS/Arch:</span>
-            <span className="text-text-primary font-medium">{overview?.os_arch || '-'}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-text-muted">Goroutines:</span>
-            <span className="text-text-primary font-medium">{overview?.num_goroutine ?? 0}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-text-muted">Uptime:</span>
-            <span className="text-text-primary font-medium">
-              {overview ? formatUptime(overview.uptime_seconds) : '-'}
-            </span>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onNavigate('/cli-integrations')}
-          className="text-xs text-accent hover:underline flex items-center gap-1 transition-colors cursor-pointer"
-        >
-          <Terminal className="w-3.5 h-3.5" /> Integrasi CLI &amp; SDK &rarr;
-        </button>
-      </div>
     </div>
   );
 };
+

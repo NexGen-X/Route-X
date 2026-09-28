@@ -29,18 +29,18 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
   const managedSettings = settings.filter((s) => isReservedSetting(s.key));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-start md:items-center justify-between gap-4 pb-5 border-b border-border">
+    <div className="space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-start md:items-center justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0 mt-0.5">
-            <Sliders className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0 mt-0.5">
+            <Sliders className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
+              <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">
                 Runtime Parameters
               </h2>
-              <span className="inline-flex items-center text-[10px] sm:text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">
+              <span className="inline-flex items-center text-[10px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">
                 Operasional Dinamis
               </span>
             </div>
@@ -52,7 +52,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
             size="sm"
             onClick={onRefresh}
             isLoading={isLoading}
-            icon={<RefreshCw className="w-4 h-4" />}
+            icon={<RefreshCw className="w-3.5 h-3.5" />}
             title="Segarkan Parameter Runtime"
             className="flex-1 sm:flex-initial justify-center"
           >
@@ -62,7 +62,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
             variant="primary"
             size="sm"
             onClick={onOpenCreateModal}
-            icon={<Plus className="w-4 h-4" />}
+            icon={<Plus className="w-3.5 h-3.5" />}
             className="flex-1 sm:flex-initial justify-center"
           >
             Tambah Parameter
@@ -125,7 +125,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
+              <div className="mt-3 flex items-center justify-between">
                 <Button
                   variant="secondary"
                   size="sm"
@@ -189,7 +189,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
                     </pre>
                   </div>
 
-                  <div className="pt-2 border-t border-border/40 flex items-center justify-end">
+                  <div className="pt-2 flex items-center justify-end">
                     {isCLI ? (
                       <a href="#/cli">
                         <Button variant="secondary" size="sm" icon={<ExternalLink className="w-3.5 h-3.5" />}>

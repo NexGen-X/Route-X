@@ -59,8 +59,8 @@ const Shell: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-bg-base flex flex-col items-center justify-center">
-        <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center font-extrabold text-black text-xl mb-4 shadow-lg shadow-accent/20 animate-pulse">
+      <div className="min-h-screen bg-bg-base flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center font-extrabold text-black text-lg shadow-lg shadow-accent/20">
           RX
         </div>
         <p className="text-xs text-text-muted font-mono flex items-center gap-2">
@@ -206,7 +206,7 @@ const Shell: React.FC = () => {
           onOpenMobileMenu={() => setIsMobileOpen(true)}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />
-        <main className="flex-1 p-3.5 sm:p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
+        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
           <PageErrorBoundary key={currentPath} pageName={title}>
             <React.Suspense
               fallback={

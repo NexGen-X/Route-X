@@ -210,22 +210,22 @@ export const RuleCard: React.FC<RuleCardProps> = ({
 
         {/* 3. Mode ROUTING (Multi-Provider Failover) Detail Table */}
         {ruleMode.mode === 'routing' && (
-          <div className="mt-3.5 space-y-2 text-xs">
-            <div className="flex justify-between py-1 border-b border-border/40">
+          <div className="mt-3.5 space-y-1.5 text-xs">
+            <div className="flex justify-between py-1">
               <span className="text-text-muted">Target Model</span>
               <span className="font-mono text-white truncate max-w-[180px]">
                 {modelDisplayName}
               </span>
             </div>
-            <div className="flex justify-between py-1 border-b border-border/40">
+            <div className="flex justify-between py-1">
               <span className="text-text-muted">Strategi</span>
               <span className="font-semibold text-white uppercase font-mono">{rule.strategy}</span>
             </div>
-            <div className="flex justify-between py-1 border-b border-border/40">
+            <div className="flex justify-between py-1">
               <span className="text-text-muted">Maksimal Percobaan</span>
               <span className="font-mono text-white">{rule.max_attempts} percobaan</span>
             </div>
-            <div className="flex justify-between py-1 border-b border-border/40">
+            <div className="flex justify-between py-1">
               <span className="text-text-muted">Jeda Backoff</span>
               <span className="font-mono text-white">{rule.backoff_ms} ms</span>
             </div>
@@ -280,11 +280,11 @@ export const RuleCard: React.FC<RuleCardProps> = ({
             Providers
           </Button>
           <Button
-            variant="secondary"
+            variant="danger"
             size="sm"
             onClick={() => void onDelete(rule.id)}
-            icon={<Trash2 className="w-3.5 h-3.5 text-status-error/80" />}
-            className="text-xs text-status-error/80 border-status-error/20 hover:bg-status-error/10 hover:text-status-error"
+            icon={<Trash2 className="w-3.5 h-3.5" />}
+            className="text-xs"
             title="Hapus Aturan"
             aria-label="Hapus aturan"
           >

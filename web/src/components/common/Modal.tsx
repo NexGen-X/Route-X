@@ -86,10 +86,10 @@ export const Modal: React.FC<ModalProps> = ({
           className={`w-full ${maxW} bg-bg-surface border border-border rounded-card shadow-2xl flex flex-col max-h-[90vh] overflow-hidden cursor-default`}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-bg-surface-2/40">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/50 bg-bg-surface-2/30">
             <div>
-              <h2 id={titleId} className="text-base font-semibold text-text-primary">{title}</h2>
-              {subtitle && <p id={subtitleId} className="text-xs text-text-secondary mt-1">{subtitle}</p>}
+              <h2 id={titleId} className="text-sm font-semibold text-text-primary">{title}</h2>
+              {subtitle && <p id={subtitleId} className="text-xs text-text-muted mt-0.5">{subtitle}</p>}
             </div>
             <Tooltip content="Tutup (Esc)" position="left">
               <button
@@ -98,13 +98,13 @@ export const Modal: React.FC<ModalProps> = ({
                 aria-label="Tutup modal"
                 className="text-text-muted hover:text-text-primary p-1 rounded-inner hover:bg-bg-surface-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer"
               >
-                <X className="w-5 h-5" aria-hidden="true" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </Tooltip>
           </div>
           <div className="p-5 overflow-y-auto flex-1 scrollbar-thin">{children}</div>
           {footer && (
-            <div className="px-5 py-4 border-t border-border bg-bg-surface-2/60 flex-shrink-0">
+            <div className="px-5 py-3.5 border-t border-border/50 bg-bg-surface-2/40 flex-shrink-0">
               {footer}
             </div>
           )}

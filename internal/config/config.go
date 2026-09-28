@@ -233,7 +233,10 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 		UpstreamAllowedPrivateAddrs: r.privateAddrs("UPSTREAM_ALLOWED_PRIVATE_ADDRS"),
 		ShutdownGrace:               r.duration("SHUTDOWN_GRACE", 25*time.Second),
 		ReadTimeout:                 r.duration("READ_TIMEOUT", 30*time.Second),
-		WriteTimeout:                r.duration("WRITE_TIMEOUT", 0), // 0 = tanpa batas, wajib untuk SSE
+		// AUDIT FIX: default WriteTimeout tidak lagi 0 (tanpa batas — vektor
+		// slow-loris pada rute non-SSE). Nilai 0 TETAP bisa dipilih eksplisit
+		// lewat env WRITE_TIMEOUT=0 bila deployment memanggil untuk SSE panjang.
+		WriteTimeout: r.duration("WRITE_TIMEOUT", 5*time.Minute),
 
 		RequestLogRetentionDays:  r.intRange("REQUEST_LOG_RETENTION_DAYS", 30, 1, 3650),
 		RequestBodyRetentionDays: r.intRange("REQUEST_BODY_RETENTION_DAYS", 7, 1, 3650),

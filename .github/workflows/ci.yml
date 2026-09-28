@@ -38,6 +38,13 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Build
         run: go build ./...
+      # AUDIT FIX: pemindaian kerentanan dependensi Go terhadap Go vulnerability
+      # database. Tidak ada CVE yang dikenali pada audit awal, namun CI belum pernah
+      # menegakkannya; langkah ini mencegah regresi diam-diam (tidak mengubah go.mod).
+      - name: Govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
       - name: Vet
         run: go vet ./...
       - name: Test

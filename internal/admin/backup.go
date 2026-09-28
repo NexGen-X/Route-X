@@ -99,6 +99,39 @@ func cleanConnStringAndSchema(rawConn string) (string, string) {
 	return u.String(), schema
 }
 
+// pgToolEnv menyusun environment untuk pg_dump/psql agar kredensial database
+// TIDAK lewat argv proses (AUDIT FIX: sebelumnya conn string utuh — termasuk
+// password — tampil di /proc/<pid>/cmdline dan terbaca pengguna host lain).
+// Kredensial dikirim via PGPASSWORD/PGHOST/PGPORT/PGUSER/PGDATABASE, dan nama
+// basis data dirujuk tanpa URI di argv.
+func pgToolEnv(connStr string) ([]string, string, error) {
+	u, err := url.Parse(connStr)
+	if err != nil {
+		return nil, "", fmt.Errorf("memarsing connection string: %w", err)
+	}
+	env := os.Environ()
+	dbName := strings.TrimPrefix(u.Path, "/")
+	if pw, ok := u.User.Password(); ok {
+		env = append(env, "PGPASSWORD="+pw)
+	}
+	if ui := u.User.Username(); ui != "" {
+		env = append(env, "PGUSER="+ui)
+	}
+	if host := u.Hostname(); host != "" {
+		env = append(env, "PGHOST="+host)
+	}
+	if p := u.Port(); p != "" {
+		env = append(env, "PGPORT="+p)
+	}
+	if dbName == "" {
+		return nil, "", fmt.Errorf("nama basis data tidak ada pada connection string")
+	}
+	if ssl := u.Query().Get("sslmode"); ssl != "" {
+		env = append(env, "PGSSLMODE="+ssl)
+	}
+	return env, dbName, nil
+}
+
 // exportDatabaseSQL mengalirkan dump SQL database terkompresi (.sql.gz) atau teks polos (.sql) langsung ke klien.
 func (h *Handlers) exportDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -114,7 +147,14 @@ func (h *Handlers) exportDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 	if schema != "" {
 		baseArgs = append(baseArgs, "-n", schema)
 	}
-	baseArgs = append(baseArgs, connStr)
+	// AUDIT FIX: kredensial via environment (PGPASSWORD dkk.), bukan URI di argv.
+	env, dbName, envErr := pgToolEnv(connStr)
+	if envErr != nil {
+		h.logger.ErrorContext(ctx, "gagal menyiapkan environment pg_dump", slog.Any("err", envErr))
+		httpx.InternalError(w, r)
+		return
+	}
+	baseArgs = append(baseArgs, dbName)
 
 	if format == "sql" {
 		fileName := fmt.Sprintf("routex_backup_%s.sql", timestamp)
@@ -123,6 +163,7 @@ func (h *Handlers) exportDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 
 		cmd := exec.CommandContext(ctx, "pg_dump", baseArgs...)
+		cmd.Env = env
 		cmd.Stdout = w
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
@@ -138,6 +179,7 @@ func (h *Handlers) exportDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 
 		cmd := exec.CommandContext(ctx, "pg_dump", baseArgs...)
+		cmd.Env = env
 		gw := gzip.NewWriter(w)
 		cmd.Stdout = gw
 		var stderr bytes.Buffer
@@ -202,14 +244,24 @@ func (h *Handlers) restoreDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	connStr, schema := cleanConnStringAndSchema(h.pool.Config().ConnString())
+	// AUDIT FIX: kredensial via environment, bukan URI di argv; search_path dikirim
+	// via PGOPTIONS (bukan -c hasil fmt.Sprintf) sehingga tidak ada lagi pola
+	// penyusunan perintah dari string.
 	psqlArgs := []string{"-v", "ON_ERROR_STOP=1"}
-	if schema != "" {
-		psqlArgs = append(psqlArgs, "-c", fmt.Sprintf("SET search_path TO %s;", schema))
+	env, dbName, envErr := pgToolEnv(connStr)
+	if envErr != nil {
+		h.logger.ErrorContext(ctx, "gagal menyiapkan environment psql", slog.Any("err", envErr))
+		httpx.BadRequest(w, r, "restore_failed", "Konfigurasi database tidak valid.")
+		return
 	}
-	psqlArgs = append(psqlArgs, connStr)
+	if schema != "" {
+		env = append(env, "PGOPTIONS=-c search_path="+schema)
+	}
+	psqlArgs = append(psqlArgs, dbName)
 
 	// Eksekusi psql dengan ON_ERROR_STOP=1
 	cmd := exec.CommandContext(ctx, "psql", psqlArgs...)
+	cmd.Env = env
 	cmd.Stdin = sqlReader
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

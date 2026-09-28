@@ -257,8 +257,16 @@ func (e *Engine) Stats(ctx context.Context) (Stats, error) {
 	hitsKey := cache.Key(cache.NamespaceResponseCache, "stats", "hits")
 	missesKey := cache.Key(cache.NamespaceResponseCache, "stats", "misses")
 
-	hits, _ := client.Get(ctx, hitsKey).Int64()
-	misses, _ := client.Get(ctx, missesKey).Int64()
+	// AUDIT FIX: kegagalan baca counter tidak lagi ditelan diam-diam — nilai nol
+	// palsu membuat dashboard menampilkan statistik kosong tanpa petunjuk penyebab.
+	hits, err := client.Get(ctx, hitsKey).Int64()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		e.logger.WarnContext(ctx, "gagal membaca counter hits response cache", "error", err)
+	}
+	misses, err := client.Get(ctx, missesKey).Int64()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		e.logger.WarnContext(ctx, "gagal membaca counter misses response cache", "error", err)
+	}
 	s.Hits = hits
 	s.Misses = misses
 
@@ -268,6 +276,8 @@ func (e *Engine) Stats(ctx context.Context) (Stats, error) {
 	for {
 		keys, next, err := client.Scan(ctx, cursor, pattern, 200).Result()
 		if err != nil {
+			// AUDIT FIX: log kegagalan SCAN; TotalEntries bisa jadi under-count.
+			e.logger.WarnContext(ctx, "gagal scan kunci entry response cache", "error", err)
 			break
 		}
 		count += int64(len(keys))
@@ -286,5 +296,9 @@ func (e *Engine) recordStat(ctx context.Context, metric string) {
 		return
 	}
 	key := cache.Key(cache.NamespaceResponseCache, "stats", metric)
-	_ = e.redis.Client().Incr(ctx, key).Err()
+	if err := e.redis.Client().Incr(ctx, key).Err(); err != nil {
+		// AUDIT FIX: gagal Incr tidak lagi senyap; hit/miss statistic bisa meleset
+		// tanpa jejak. Warning sekali per kejadian cukup — jangan banjiri log.
+		e.logger.WarnContext(ctx, "gagal menaikkan counter response cache", "metric", metric, "error", err)
+	}
 }

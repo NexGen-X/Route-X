@@ -327,17 +327,9 @@ func TestPrincipalContext(t *testing.T) {
 	}
 }
 
-func TestHashAndFormatKey(t *testing.T) {
-	// Tes Hash SHA-256
-	h1 := Hash("rx-live-testkey-12345")
-	if len(h1) != 64 {
-		t.Fatalf("panjang hash SHA-256 = %d, mau 64", len(h1))
-	}
-	h2 := Hash("rx-live-testkey-12345")
-	if h1 != h2 {
-		t.Fatalf("hashing tidak deterministik: %s != %s", h1, h2)
-	}
-
+// TestFormatKey menguji masking hint; pemeriksaan Hash SHA-256 dihapus bersama
+// fungsi Hash pada remediasi audit (hashing resmi kini di internal/security).
+func TestFormatKey(t *testing.T) {
 	// Tes FormatKey
 	tests := []struct {
 		in   string

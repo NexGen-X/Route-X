@@ -89,6 +89,15 @@ type Verdict struct {
 }
 
 // aturan adalah satu penyaring yang sudah siap dievaluasi.
+
+// evalSema membatasi jumlah evaluasi regex panjang yang berjalan paralel pada
+// jalur anggaran waktu (AUDIT FIX: sebelumnya satu goroutine per permintaan tanpa
+// batas, sehingga beban tinggi bisa menumbuhkan konsumsi CPU/memori tanpa
+// backpressure). Kapasitas 64 evalusi paralel sudah jauh melampaui kebutuhan
+// gateway satu proses; nilai nol/positif apa pun aman terhadap deadlock karena
+// pencocokan RE2 pasti berakhir dan pengiriman hasil memakai buffer kapasitas satu.
+var evalSema = make(chan struct{}, 64)
+
 type aturan struct {
 	row *policy.ContentFilter
 	// re terisi untuk pola berbentuk regex yang berhasil dikompilasi.
@@ -296,8 +305,21 @@ func (e *Engine) cocok(ctx context.Context, a aturan, teks string) (cocok, habis
 	// menghentikan pencocokan yang sedang berjalan. Ia dibiarkan selesai sendiri, dan itu
 	// aman justru karena RE2 linear — pencocokannya pasti berakhir, dan buffer berkapasitas
 	// satu membuat pengirimannya tidak pernah menggantung setelah pembacanya pergi.
+	// AUDIT FIX: evaluasi panjang kini lewat semaphore berbobot agar jumlah goroutine
+	// pencocokan yang berjalan paralel terbatas (backpressure), bukan tumbuh tanpa batas.
+	select {
+	case evalSema <- struct{}{}:
+	default:
+		// Semua slot penuh: evaluasi langsung di goroutine pemanggil tanpa penjaga
+		// anggaran — RE2 linear menjamin selesai; melambat lebih baik daripada
+		// menumbuhkan antrean tanpa batas.
+		return jalankan(), false
+	}
 	hasil := make(chan bool, 1)
-	go func() { hasil <- jalankan() }()
+	go func() {
+		defer func() { <-evalSema }()
+		hasil <- jalankan()
+	}()
 
 	timer := time.NewTimer(anggaran)
 	defer timer.Stop()

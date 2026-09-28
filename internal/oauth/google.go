@@ -30,6 +30,10 @@ const (
 
 // GetDefaultAntigravityClientSecret mengembalikan client secret resmi Antigravity.
 // Prioritas mengambil dari env ANTIGRAVITY_CLIENT_SECRET jika diatur, atau fallback ke default payload.
+// maxTokenResponseBytes membatasi ukuran respons endpoint token OAuth (respons
+// token Google berukuran ratusan byte; 1 MiB sudah sangat longgar).
+const maxTokenResponseBytes = 1 << 20
+
 func GetDefaultAntigravityClientSecret() string {
 	if s := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLIENT_SECRET")); s != "" {
 		return s
@@ -191,7 +195,9 @@ func (c *GoogleOAuthClient) ExchangeAuthCodeWithProxy(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	// AUDIT FIX: baca respons dengan batas ukuran agar endpoint/proxy yang bermasalah
+	// tidak bisa menguras memori (menyamai pola io.LimitReader di internal/providers).
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("membaca respons token google: %w", err)
 	}
@@ -277,7 +283,8 @@ func (c *GoogleOAuthClient) RefreshAccessTokenWithProxy(
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	// AUDIT FIX: batas ukuran respons, sama seperti pembacaan token di atas.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTokenResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("membaca respons refresh token: %w", err)
 	}

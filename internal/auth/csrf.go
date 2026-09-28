@@ -246,11 +246,11 @@ func (c *CSRF) checkOrigin(r *http.Request) string {
 		return ""
 	}
 
-	if fwdHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); fwdHost != "" {
-		if strings.EqualFold(u.Host, fwdHost) {
-			return ""
-		}
-	}
+	// AUDIT FIX: kecocokan dengan X-Forwarded-Host tidak lagi loloskan origin check
+	// dengan sendirinya. Header itu dikendalikan klien kecuali proxy tepi menimpanya,
+	// sehingga memperlakukannya sebagai bukti origin melemahkan lapisan kedua CSRF.
+	// Origin yang benar tetap terverifikasi lewat r.Host, c.origin (PUBLIC_URL), atau
+	// cookie referensi yang sudah terikat sesi di bawah.
 
 	if c.origin != "" {
 		if uOrig, err := url.Parse(c.origin); err == nil && uOrig.Host != "" {

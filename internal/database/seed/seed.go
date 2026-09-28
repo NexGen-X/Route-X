@@ -19,7 +19,6 @@ import (
 	"github.com/NexGen-X/Route-X/internal/config"
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
-	"github.com/NexGen-X/Route-X/internal/security"
 )
 
 // Nama peran bawaan. Keempatnya ditandai is_system sehingga tidak bisa dihapus dari
@@ -121,7 +120,9 @@ func seedInitialAdmin(ctx context.Context, q repo.Querier, cfg *config.Config, l
 	}
 	adminPassword := cfg.InitialAdminPassword
 	if adminPassword.IsZero() {
-		adminPassword = security.Secret("RouteX#Initial2026!")
+		// AUDIT FIX: password default yang hardcoded dihapus (publik di repositori).
+		// Admin awal hanya dibuat bila INITIAL_ADMIN_PASSWORD disediakan lewat env.
+		return false, fmt.Errorf("INITIAL_ADMIN_PASSWORD wajib diset untuk seeding admin awal (password default sudah dihapus demi keamanan)")
 	}
 
 	_, err = users.Create(ctx, identity.NewUser{

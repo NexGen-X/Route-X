@@ -149,33 +149,17 @@ func TestRunIsIdempotent(t *testing.T) {
 	}
 }
 
-// Tanpa kredensial admin di environment, seed membuat admin dengan kredensial bawaan.
+// Tanpa kredensial admin di environment, seed menolak membuat admin (password
+// default yang hardcoded telah dihapus demi keamanan — audit fix).
 func TestRunWithoutAdminCredentials(t *testing.T) {
 	ctx, pool, logger := testEnv(t)
 
 	res, err := Run(ctx, pool, &config.Config{}, logger)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	if err == nil {
+		t.Fatal("Run sukses tanpa INITIAL_ADMIN_PASSWORD; harusnya ditolak")
 	}
-	if !res.AdminCreated {
-		t.Error("AdminCreated = false dengan kredensial default")
-	}
-
-	users := identity.NewUsers(pool)
-	admin, err := users.GetByEmail(ctx, "admin@routex.local")
-	if err != nil {
-		t.Fatalf("admin default tidak ada: %v", err)
-	}
-	if !admin.MustChangePassword {
-		t.Error("MustChangePassword = false; password default harus dipaksa diganti")
-	}
-
-	ok, err := security.VerifyPassword("RouteX#Initial2026!", admin.PasswordHash.Reveal())
-	if err != nil {
-		t.Fatalf("VerifyPassword: %v", err)
-	}
-	if !ok.Match {
-		t.Error("password admin default tidak cocok")
+	if res.AdminCreated {
+		t.Error("AdminCreated = true padahal seeding harusnya gagal")
 	}
 }
 

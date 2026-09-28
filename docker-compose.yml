@@ -21,7 +21,7 @@ services:
       - APP_ENV=production
       - PORT=8080
       - PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
-      - DATABASE_URL=postgres://routex:${POSTGRES_PASSWORD}@db:5432/routex_prod?sslmode=prefer
+      - DATABASE_URL=postgres://routex:${POSTGRES_PASSWORD}@db:5432/routex_prod?sslmode=require
       - REDIS_URL=redis://redis:6379/0
       - SESSION_SECRET=${SESSION_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
@@ -29,7 +29,7 @@ services:
       - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@example.com}
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
       - METRICS_TOKEN=${METRICS_TOKEN}
-      - TRUSTED_PROXIES=0.0.0.0/0
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       # Loopback & subnet privat lokal diizinkan agar egress pool generik
       # (http/https/socks5) di host/container yang sama tetap dapat dipakai.
       - UPSTREAM_ALLOWED_PRIVATE_ADDRS=127.0.0.1,::1,127.0.0.0/8,172.16.0.0/12

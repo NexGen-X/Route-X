@@ -16,8 +16,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o ai-gateway ./cmd/ai-ga
 
 FROM alpine:latest
 WORKDIR /opt/routex
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata && addgroup -S routex && adduser -S -G routex routex
 COPY --from=backend-builder /app/ai-gateway .
+RUN chown -R routex:routex /opt/routex
+USER routex
 ENV PORT=8080
 EXPOSE 8080
 CMD ["./ai-gateway"]

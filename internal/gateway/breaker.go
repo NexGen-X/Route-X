@@ -698,11 +698,16 @@ func (b *Breaker) Record(ctx context.Context, providerID, model string, sukses b
 			slog.Int64("sisa_open_ms", openRemaining.Milliseconds()),
 		)
 
+		// AUDIT FIX: isClosed dan wg.Add harus atomik terhadap Close(); sebelumnya
+		// Add bisa terjadi setelah Wait melihat counter nol (WaitGroup misuse / panic).
 		b.mu.RLock()
 		listener := b.onStateChange
-		b.mu.RUnlock()
-		if listener != nil && !b.isClosed.Load() {
+		closed := b.isClosed.Load()
+		if listener != nil && !closed {
 			b.wg.Add(1)
+		}
+		b.mu.RUnlock()
+		if listener != nil && !closed {
 			go func() {
 				defer b.wg.Done()
 				defer func() {
@@ -727,7 +732,11 @@ func (b *Breaker) Close(ctx context.Context) error {
 	if b == nil {
 		return nil
 	}
+	// AUDIT FIX: set isClosed di bawah lock yang sama dengan Add pada jalur listener
+	// agar tidak ada goroutine ditambahkan setelah Wait dimulai.
+	b.mu.Lock()
 	b.isClosed.Store(true)
+	b.mu.Unlock()
 
 	done := make(chan struct{})
 	go func() {

@@ -38,18 +38,16 @@ export const CLIIntegrations: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [mainTab, setMainTab] = useState<'installed' | 'all'>('installed');
 
-  // Kunci API global pengguna untuk menghasilkan skrip terminal siap pakai
+  // Kunci API global pengguna untuk menghasilkan skrip terminal siap pakai.
+  // AUDIT FIX: kunci tidak lagi dipulihkan dari localStorage/sessionStorage —
+  // salinan rahasia di web storage dapat dipanen XSS tab yang sama. Kunci kini
+  // selalu mulai kosong setiap muat halaman; sisa legacy di kedua storage dibersihkan.
   const [userApiKey, setUserApiKey] = useState<string>(() => {
     try {
-      const legacy = localStorage.getItem('routex_cli_apikey');
-      if (legacy !== null) {
-        sessionStorage.setItem('routex_cli_apikey', legacy);
-        localStorage.removeItem('routex_cli_apikey');
-      }
-      return sessionStorage.getItem('routex_cli_apikey') || '';
-    } catch {
-      return '';
-    }
+      localStorage.removeItem('routex_cli_apikey');
+      sessionStorage.removeItem('routex_cli_apikey');
+    } catch {}
+    return '';
   });
   const [showGlobalKey, setShowGlobalKey] = useState(false);
 

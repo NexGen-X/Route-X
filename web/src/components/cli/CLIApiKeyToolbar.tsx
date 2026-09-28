@@ -24,8 +24,13 @@ export const CLIApiKeyToolbar: React.FC<CLIApiKeyToolbarProps> = ({
 
   const handleKeyChange = (val: string) => {
     setUserApiKey(val);
+    // AUDIT FIX: kunci API CLI tidak lagi menetap di web storage lintas muat
+    // ulang. sessionStorage bertahan setelah reload, sehingga mangkuk XSS
+    // apa pun di tab yang sama bisa membacanya diam-diam. Nilai kini hanya
+    // hidup di state React: teks skrip tetap tersalin, namun tidak ada
+    // salinan rahasia di storage yang bisa dipanen nanti.
     try {
-      sessionStorage.setItem('routex_cli_apikey', val);
+      sessionStorage.removeItem('routex_cli_apikey');
     } catch {}
   };
 

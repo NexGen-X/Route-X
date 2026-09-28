@@ -620,16 +620,16 @@ func TestLoginUserPrincipal(t *testing.T) {
 func TestSetupHint(t *testing.T) {
 	e := newEnv(t)
 
-	// Database baru yang telah di-seed memiliki admin default dengan MustChangePassword = true
+	// AUDIT FIX: admin default tidak lagi dibuat otomatis tanpa INITIAL_ADMIN_PASSWORD.
+	// Tanpa admin, SetupHint tidak boleh mengklaim ada admin default (HasDefaultAdmin
+	// tetap false) — memastikan endpoint publik ini tidak pernah mengarahkan siapa pun
+	// ke kredensial yang ditanam kode.
 	hint, err := e.svc.SetupHint(e.ctx)
 	if err != nil {
 		t.Fatalf("SetupHint: %v", err)
 	}
-	if !hint.HasDefaultAdmin {
-		t.Error("HasDefaultAdmin = false padahal admin default ada dan must_change_password")
-	}
-	if hint.DefaultEmail != "admin@routex.local" {
-		t.Errorf("DefaultEmail = %q", hint.DefaultEmail)
+	if hint.HasDefaultAdmin {
+		t.Error("HasDefaultAdmin = true padahal tanpa INITIAL_ADMIN_PASSWORD tidak ada admin yang dibuat")
 	}
 	// H1: respons TIDAK boleh mengandung password default dalam bentuk apa pun.
 	// Struct sudah tidak memiliki field DefaultPassword, dan pemeriksaan ini
@@ -641,24 +641,6 @@ func TestSetupHint(t *testing.T) {
 		t.Errorf("respons setup hint masih mengandung key default_password: %s", raw)
 	} else if bytes.Contains(raw, []byte("RouteX#Initial2026!")) {
 		t.Errorf("respons setup hint membocorkan password default: %s", raw)
-	}
-
-	u, err := e.users.GetByEmail(e.ctx, "admin@routex.local")
-	if err != nil {
-		t.Fatalf("GetByEmail admin default: %v", err)
-	}
-
-	// Ganti password sehingga MustChangePassword = false
-	if err := e.users.ChangePassword(e.ctx, u.ID, security.Secret("sandi-baru-yang-sangat-kuat-123"), false); err != nil {
-		t.Fatalf("ChangePassword: %v", err)
-	}
-
-	hint, err = e.svc.SetupHint(e.ctx)
-	if err != nil {
-		t.Fatalf("SetupHint kedua: %v", err)
-	}
-	if hint.HasDefaultAdmin {
-		t.Error("HasDefaultAdmin = true padahal password sudah diganti")
 	}
 }
 

@@ -200,9 +200,13 @@ func Migrate(ctx context.Context, db *DB, logger *slog.Logger) (applied int, err
 	// AUDIT FIX: guard versi — migrasi 0007 memakai UNIQUE NULLS NOT DISTINCT yang
 	// hanya tersedia di PostgreSQL 15+. Gagal cepat dengan pesan jelas daripada
 	// rantai migrasi patah di tengah pada PG 13/14.
-	var serverVersion int
-	if err := conn.QueryRow(ctx, "SHOW server_version_num").Scan(&serverVersion); err != nil {
+	var serverVersionText string
+	if err := conn.QueryRow(ctx, "SHOW server_version_num").Scan(&serverVersionText); err != nil {
 		return 0, fmt.Errorf("membaca versi PostgreSQL: %w", err)
+	}
+	serverVersion, parseErr := strconv.Atoi(serverVersionText)
+	if parseErr != nil {
+		return 0, fmt.Errorf("membaca versi PostgreSQL: %w", parseErr)
 	}
 	if serverVersion < 150000 {
 		return 0, fmt.Errorf("Route-X butuh PostgreSQL 15+ (terdeteksi %d); naikkan server sebelum migrasi", serverVersion)

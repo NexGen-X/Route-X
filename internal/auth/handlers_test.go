@@ -704,8 +704,8 @@ func TestSetupHintEndpoint(t *testing.T) {
 	if err := json.Unmarshal(body, &hint); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
-	if !hint.HasDefaultAdmin {
-		t.Error("HasDefaultAdmin = false; tanpa admin default seharusnya tetap false (tidak ada admin dibuat)")
+	if hint.HasDefaultAdmin {
+		t.Error("HasDefaultAdmin = true; tanpa INITIAL_ADMIN_PASSWORD tidak boleh ada admin default")
 	}
 	if hint.DefaultEmail != "" {
 		t.Errorf("DefaultEmail = %q, mau kosong", hint.DefaultEmail)

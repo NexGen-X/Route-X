@@ -1,16 +1,17 @@
 import React from 'react';
 import { Activity, Zap, Coins, Clock } from 'lucide-react';
-import type { ObservabilitySummary } from '../../types';
 import { formatUSD } from '../../utils/money';
+import { useObservabilitySummary, TimeWindow } from './hooks';
 
 export interface PerformanceMetricsRibbonProps {
-  summary: ObservabilitySummary | null;
+  timeWindow: TimeWindow;
 }
 
-export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> = ({ summary }) => {
+export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> = ({ timeWindow }) => {
+  const { data: summary } = useObservabilitySummary(timeWindow);
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-      {/* Metric 1: Total Requests */}
       <div className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all shadow-sm flex flex-col justify-between">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-medium text-text-muted truncate">
@@ -40,7 +41,6 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
         </div>
       </div>
 
-      {/* Metric 2: Total Tokens */}
       <div className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all shadow-sm flex flex-col justify-between">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-medium text-text-muted truncate">Total Token</span>
@@ -61,7 +61,6 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
         </div>
       </div>
 
-      {/* Metric 3: Estimated Cost */}
       <div className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all shadow-sm flex flex-col justify-between">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-medium text-text-muted truncate">
@@ -81,7 +80,6 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
         </div>
       </div>
 
-      {/* Metric 4: P95 Latency */}
       <div className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all shadow-sm flex flex-col justify-between">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-medium text-text-muted truncate">Latensi P95</span>

@@ -1,14 +1,10 @@
 import React from 'react';
 import { RefreshCw, ArrowUpRight, Terminal } from 'lucide-react';
 import { Button } from '../common/Button';
-import type { SystemOverview } from '../../types';
 import { formatUptime } from './utils';
+import { useSystemOverview, useProvidersList } from './hooks';
 
 export interface DashboardHeroProps {
-  loadError: string | null;
-  healthyProvidersCount: number;
-  totalProvidersCount: number;
-  overview: SystemOverview | null;
   isLoading: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
@@ -16,20 +12,22 @@ export interface DashboardHeroProps {
 }
 
 export const DashboardHero: React.FC<DashboardHeroProps> = ({
-  loadError,
-  healthyProvidersCount,
-  totalProvidersCount,
-  overview,
   isLoading,
   isRefreshing,
   onRefresh,
   onNavigate,
 }) => {
+  const { data: overview, error: overviewError } = useSystemOverview();
+  const { data: providersList } = useProvidersList();
+
+  const loadError = overviewError ? String(overviewError) : null;
+  const providers = providersList?.items || [];
+  const healthyProvidersCount = providers.filter((p) => p.last_health_status === 'healthy').length;
+  const totalProvidersCount = providers.length;
+
   return (
     <div className="bg-bg-surface border border-border rounded-card px-5 py-3.5 shadow-sm">
-      {/* Baris utama — semua dalam satu flex row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-between">
-        {/* Kiri: status + judul + info strip */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
           <span
             role="status"
@@ -52,7 +50,6 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
 
           <span className="hidden sm:inline text-border">·</span>
 
-          {/* Info strip — font mono kecil, hanya tampil di sm+ */}
           <div className="hidden sm:flex items-center gap-x-4 text-xs font-mono text-text-muted">
             <span>
               <span className="text-text-secondary font-medium">{healthyProvidersCount}/{totalProvidersCount}</span> upstream sehat
@@ -70,7 +67,6 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
           </div>
         </div>
 
-        {/* Kanan: action buttons */}
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
@@ -104,4 +100,3 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
     </div>
   );
 };
-

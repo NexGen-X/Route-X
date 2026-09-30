@@ -1,22 +1,22 @@
 import React from 'react';
 import { Activity } from 'lucide-react';
 import { Button } from '../common/Button';
-import type { RequestLog } from '../../types';
 import { formatTimeAgo } from './utils';
+import { useRecentRequests } from './hooks';
 
 export interface LiveRequestsFeedProps {
-  recentRequests: RequestLog[];
   onNavigate: (path: string) => void;
 }
 
 export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
-  recentRequests,
   onNavigate,
 }) => {
+  const { data: reqRes } = useRecentRequests();
+  const recentRequests = reqRes?.items || [];
+
   return (
     <div className="bg-bg-surface border border-border rounded-card p-4 sm:p-5 shadow-sm flex flex-col justify-between">
       <div>
-        {/* Header — pulse dot + title, no separator line */}
         <div className="flex items-center gap-2 mb-3">
           <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
           <h3 className="text-sm font-semibold text-white tracking-tight">Live Requests Feed</h3>
@@ -98,7 +98,6 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
         </div>
       </div>
 
-      {/* Footer — satu tombol navigasi saja */}
       <div className="mt-3">
         <button
           type="button"

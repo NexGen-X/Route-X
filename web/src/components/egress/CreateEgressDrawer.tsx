@@ -1,3 +1,4 @@
+import { validateProxyUrl } from "./ssrf_validator";
 import React, { useState, useEffect } from 'react';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
@@ -47,6 +48,12 @@ export const CreateEgressDrawer: React.FC<CreateEgressDrawerProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const ssrfError = validateProxyUrl(formData.proxy_url);
+    if (ssrfError) {
+      toast.error(ssrfError, "URL Proxy Ditolak");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       await api.egress.create(formData);

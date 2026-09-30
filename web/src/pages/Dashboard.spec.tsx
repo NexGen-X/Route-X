@@ -342,7 +342,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
   });
 
   it('menangani kegagalan pemanggilan API dengan notifikasi error', async () => {
-    mockSummaryFn.mockRejectedValueOnce(new Error('Network timeout gateway'));
+    mockOverviewFn.mockRejectedValueOnce(new Error('Network timeout gateway'));
 
     renderWithProviders(<Dashboard onNavigate={mockNavigate} />);
 

@@ -55,6 +55,8 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://routex:test_secret_pw@127.0.0.1:5432/routex_test?sslmode=disable
         run: go test -race ./internal/security/ -run TestSecretLeakLint -count=1
+      - name: Fuzz SSE Parser
+        run: go test -fuzz=FuzzSSEReader -fuzztime=30s ./internal/providers/
 
   web:
     runs-on: ubuntu-latest

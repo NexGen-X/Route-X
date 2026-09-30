@@ -418,3 +418,24 @@ func TestNewHTTPClientRejectsBadProxy(t *testing.T) {
 		t.Errorf("pesan error membocorkan kredensial proxy: %v", err)
 	}
 }
+
+func FuzzSSEReader(f *testing.F) {
+	f.Add([]byte("data: hello\n\n"))
+	f.Add([]byte("event: custom\ndata: world\n\n"))
+	f.Add([]byte(": keepalive\n\ndata: 1\n\n"))
+	f.Add([]byte("data: \n\n"))
+	f.Add([]byte("data: {\"usage\":{\"total_tokens\":42}}\n"))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		r := NewSSEReader(strings.NewReader(string(data)))
+		for {
+			ev, err := r.Next()
+			if err != nil {
+				break
+			}
+			_ = ev.Event
+			_ = ev.Data
+			_ = ev.Raw
+		}
+	})
+}

@@ -368,3 +368,39 @@ type DialContextFunc func(ctx context.Context, network, address string) (net.Con
 func GuardedDialContext(policy SSRFPolicy, base *net.Dialer) DialContextFunc {
 	return NewSSRFDialer(policy, base).DialContext
 }
+
+// ValidateProxyURL memeriksa URL proxy egress sebelum disimpan.
+// Berbeda dengan ValidateBaseURL, URL proxy lazim memiliki kredensial dan
+// menggunakan skema seperti socks5.
+func ValidateProxyURL(raw string, policy SSRFPolicy) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidBaseURL, err)
+	}
+	switch u.Scheme {
+	case "https", "http", "socks5", "socks5h":
+	default:
+		return fmt.Errorf("%w: %q", ErrBlockedScheme, u.Scheme)
+	}
+
+	if u.Host == "" {
+		return fmt.Errorf("%w: tidak ada host", ErrInvalidBaseURL)
+	}
+
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("%w: host kosong", ErrInvalidBaseURL)
+	}
+	host = strings.TrimSuffix(host, ".")
+
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return CheckAddr(addr, policy)
+	}
+	if tampakNumerik(host) {
+		return fmt.Errorf("%w: %q bukan alamat IP yang sah", ErrBlockedAddress, host)
+	}
+	if isObviousLocalName(host) && !policy.allowsLoopbackName() {
+		return fmt.Errorf("%w: %q menunjuk ke mesin ini", ErrBlockedAddress, host)
+	}
+	return nil
+}

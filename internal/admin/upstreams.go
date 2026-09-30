@@ -1652,6 +1652,11 @@ func (h *Handlers) createEgressPool(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
 	}
+	if err := security.ValidateProxyURL(req.ProxyURL, h.ssrfPolicy()); err != nil {
+		httpx.BadRequest(w, r, "invalid_proxy_url", err.Error())
+		return
+	}
+
 	if req.ProxyURL == "" {
 		httpx.BadRequest(w, r, "missing_proxy_url", "proxy_url wajib diisi")
 		return
@@ -1693,6 +1698,13 @@ func (h *Handlers) updateEgressPool(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
+	}
+
+	if req.ProxyURL != "" {
+		if err := security.ValidateProxyURL(req.ProxyURL, h.ssrfPolicy()); err != nil {
+			httpx.BadRequest(w, r, "invalid_proxy_url", err.Error())
+			return
+		}
 	}
 
 	var params upstream.UpdateEgressParams

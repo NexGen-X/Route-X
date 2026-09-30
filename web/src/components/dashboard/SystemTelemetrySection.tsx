@@ -1,3 +1,4 @@
+import { useSystemOverview } from "./hooks";
 import React from 'react';
 import {
   Cpu,
@@ -9,14 +10,11 @@ import {
   ArrowUp,
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
-import type { SystemOverview } from '../../types';
 import { formatBytes, formatUptime } from './utils';
 
-export interface SystemTelemetrySectionProps {
-  overview: SystemOverview | null;
-}
 
-export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ overview }) => {
+export const SystemTelemetrySection: React.FC = () => {
+  const { data: overview } = useSystemOverview();
   const hostRAMPct =
     overview?.host_ram_total_bytes && overview.host_ram_total_bytes > 0
       ? Math.min(

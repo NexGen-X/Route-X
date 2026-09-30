@@ -3,17 +3,18 @@ import { Server } from 'lucide-react';
 import { Button } from '../common/Button';
 import { StatusDot } from '../common/StatusDot';
 import { ProviderBrandIcon } from '../providers/ProviderIcons';
-import type { Provider } from '../../types';
+import { useProvidersList } from './hooks';
 
 export interface ProviderHealthMatrixProps {
-  providers: Provider[];
   onNavigate: (path: string) => void;
 }
 
 export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
-  providers,
   onNavigate,
 }) => {
+  const { data: providersList } = useProvidersList();
+  const providers = providersList?.items || [];
+
   return (
     <div className="space-y-3 sm:space-y-4">
       <div className="flex flex-row items-center justify-between gap-3">

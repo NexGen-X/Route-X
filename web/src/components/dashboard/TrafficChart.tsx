@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -10,18 +10,16 @@ import {
 } from 'recharts';
 import { BarChart3, Activity } from 'lucide-react';
 import type { TimeSeriesPoint } from '../../types';
+import { useObservabilitySeries, TimeWindow, MetricType } from './hooks';
 
 export interface TrafficChartProps {
-  series: TimeSeriesPoint[];
-  metricType: 'requests' | 'latency' | 'tokens';
-  setMetricType: (m: 'requests' | 'latency' | 'tokens') => void;
-  timeWindow: '1h' | '6h' | '24h' | '7d';
-  setTimeWindow: (w: '1h' | '6h' | '24h' | '7d') => void;
+  timeWindow: TimeWindow;
+  setTimeWindow: (w: TimeWindow) => void;
 }
 
 interface MemoizedChartInnerProps {
   series: TimeSeriesPoint[];
-  metricType: 'requests' | 'latency' | 'tokens';
+  metricType: MetricType;
 }
 
 const MemoizedChartInner = React.memo<MemoizedChartInnerProps>(({ series, metricType }) => (
@@ -61,12 +59,13 @@ const MemoizedChartInner = React.memo<MemoizedChartInnerProps>(({ series, metric
 MemoizedChartInner.displayName = 'MemoizedChartInner';
 
 export const TrafficChart: React.FC<TrafficChartProps> = ({
-  series,
-  metricType,
-  setMetricType,
   timeWindow,
   setTimeWindow,
 }) => {
+  const [metricType, setMetricType] = useState<MetricType>('requests');
+  const { data } = useObservabilitySeries(metricType, timeWindow);
+  const series = data?.points || [];
+
   return (
     <div className="lg:col-span-2 bg-bg-surface border border-border rounded-card p-4 sm:p-5 shadow-sm flex flex-col justify-between">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 mb-3 sm:mb-4">
@@ -82,12 +81,11 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
           aria-label="Pilih jenis metrik dan rentang waktu grafik"
           className="flex items-center overflow-x-auto max-w-full bg-bg-surface-2 p-0.5 sm:p-1 rounded-nav border border-border text-[11px] sm:text-xs font-mono scrollbar-none"
         >
-          {/* Metric switcher */}
           {(['requests', 'tokens', 'latency'] as const).map((m) => (
             <button
               key={m}
               type="button"
-              onClick={() => setMetricType(m)}
+              onClick={() => setMetricType(m as MetricType)}
               aria-pressed={metricType === m}
               aria-label={
                 m === 'requests' ? 'Jumlah request' : m === 'tokens' ? 'Jumlah token' : 'Latensi'
@@ -105,12 +103,11 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
             aria-hidden="true"
             className="w-px self-stretch my-1 mx-0.5 sm:mx-1 bg-border"
           />
-          {/* Window switcher */}
           {(['1h', '6h', '24h', '7d'] as const).map((w) => (
             <button
               key={w}
               type="button"
-              onClick={() => setTimeWindow(w)}
+              onClick={() => setTimeWindow(w as TimeWindow)}
               aria-pressed={timeWindow === w}
               aria-label={`Rentang waktu ${w}`}
               className={`px-2 sm:px-2.5 py-1 sm:py-1.5 min-h-[28px] sm:min-h-[30px] rounded-md transition-all focus:outline-none focus-visible:ring-1 focus-visible:ring-accent cursor-pointer ${

@@ -392,10 +392,9 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           >
             <div className="flex items-center gap-3">
               <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center shadow-sm"
+                className="w-9 h-9 rounded-lg flex items-center justify-center shadow-sm text-bg-base"
                 style={{
                   backgroundColor: selectedPreset.color,
-                  color: '#000',
                 }}
               >
                 <ProviderBrandIcon providerIdOrKind={selectedPreset.id} className="w-5 h-5 text-white" />

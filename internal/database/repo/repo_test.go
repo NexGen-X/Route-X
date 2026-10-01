@@ -3,6 +3,7 @@ package repo
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -180,21 +181,44 @@ func testPool(t *testing.T) (context.Context, *pgxpool.Pool) {
 	}
 
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, dsn)
+	admin, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		t.Skipf("tidak bisa terhubung ke Postgres: %v", err)
 	}
+	schema := "test_repo_" + fmt.Sprintf("%d", time.Now().UnixNano())
+	if _, err := admin.Exec(ctx, "create schema "+schema); err != nil {
+		admin.Close()
+		t.Fatalf("membuat schema: %v", err)
+	}
+	t.Cleanup(func() {
+		defer admin.Close()
+		dropCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if _, err := admin.Exec(dropCtx, "drop schema "+schema+" cascade"); err != nil {
+			t.Errorf("membersihkan schema %s: %v", schema, err)
+		}
+	})
+
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	testDSN := dsn + sep + "search_path=" + schema
+
+	pool, err := pgxpool.New(ctx, testDSN)
+	if err != nil {
+		t.Fatalf("membuat pool test: %v", err)
+	}
 	t.Cleanup(pool.Close)
 
-	// Tabel sementara terikat sesi, jadi ia hilang sendiri saat koneksi dilepas dan
-	// tidak pernah menyentuh skema aplikasi. Pool dibatasi satu koneksi agar seluruh
-	// query test memakai sesi yang sama, syarat agar tabel temp terlihat.
+	// Pool dibatasi satu koneksi agar seluruh query test memakai sesi yang sama
 	pool.Config().MaxConns = 1
-	if _, err := pool.Exec(ctx, `create temp table if not exists tx_probe (n int primary key)`); err != nil {
+	if _, err := pool.Exec(ctx, `create table if not exists tx_probe (n int primary key)`); err != nil {
 		t.Skipf("tidak bisa membuat tabel uji: %v", err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `drop table if exists tx_probe`) })
 	return ctx, pool
+
 }
 
 func TestInTxCommitsOnSuccess(t *testing.T) {

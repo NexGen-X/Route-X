@@ -292,3 +292,10 @@ Untuk mencegah *technical debt*, seluruh sub-agen dilarang keras mengusulkan pol
 - **Backend**: Wajib menggunakan Go 1.25+ dengan *range-over-func iterators* dan *built-in mux* terbaru, tanpa pustaka routing pihak ketiga usang.
 - **AI**: Harus mengeksploitasi fitur *Structured Outputs* dan pola komunikasi *Realtime WebRTC* modern.
 Agen yang tertangkap menggunakan pola usang (seperti *class components* React, palet warna kaku, atau *goroutine leaks* konvensional) akan langsung ditolak pada tahap *Code Review*.
+
+### 6.6. Distribusi Akses MCP (Model Context Protocol) Server
+Sistem harus mendistribusikan alat *server* MCP sesuai yurisdiksi spesialisasi masing-masing agen (`enable_mcp_tools: true`):
+- **Puppeteer MCP (Live Browser):** Hanya diberikan kepada `ui_ux_auditor` dan `qa_audit_engineer` untuk melakukan inspeksi visual render (*screenshot*), navigasi halaman otomatis, dan klik elemen secara langsung.
+- **Postgres MCP (Database):** Diberikan kepada `database_migration_specialist` dan `finops_cost_analyst` untuk mengeksekusi kueri SQL, menganalisis skema tabel `route-x`, dan memvalidasi tipe data langsung di *database*.
+- **Codebase-Memory MCP (Knowledge Graph):** Diberikan kepada `routex_planner`, `routex_coder`, dan Arsitek Sistem untuk melakukan *indexing* repositori, menelusuri graf kebergantungan (*dependency graph*), dan mengelola catatan ADR (*Architecture Decision Records*).
+Agen dilarang keras memegang akses MCP yang berada di luar konteks spesialisasinya demi keamanan data.

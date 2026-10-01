@@ -102,6 +102,66 @@ Repositori Route-X mengklasifikasikan keahlian rekayasa ke dalam 13 sub-agent de
 - **Input**: Branch kerja siap rilis, sertifikasi sign-off dari QA Auditor, dan ringkasan komparatif perubahan.
 - **Output**: Pull Request GitHub resmi, verifikasi remote CI checks hijau, commit merge squash di `main`, pembersihan branch lokal & remote, serta laporan konfirmasi rilis ke Lead Orchestrator.
 
+### 2.14. `security_penetration_tester`
+- **Peran**: Red Team / SecOps Spesialis yang mengaudit keamanan Gateway. Berfokus pada pencegahan kebocoran API Key, validasi serangan SSRF pada proksi, dan DoS (Denial of Service) via eksploitasi buffer streaming.
+- **Input**: Endpoint API Route-X, skema proxy hulu, dan skrip injeksi.
+- **Output**: Laporan kerentanan sistem, skrip eksploitasi otomatis (PoC), dan rekomendasi patching keamanan.
+
+### 2.15. `database_migration_specialist`
+- **Peran**: Database Architect / DBA yang mengelola migrasi skema PostgreSQL tanpa waktu henti (zero-downtime). Bertanggung jawab atas optimasi kueri kompleks, pembuatan indeks (B-Tree/JSONB), dan partisi tabel historis.
+- **Input**: Skema database saat ini (`internal/database/migrations/`), metrik kinerja kueri, dan rancangan fitur baru.
+- **Output**: Skrip migrasi `.sql` yang aman, perbaikan performa kueri ORM/SQL, dan audit integritas referensial.
+
+### 2.16. `finops_cost_analyst`
+- **Peran**: Pengelola Anggaran AI (FinOps) yang melacak konsumsi token, memonitor batas anggaran (Budgets), dan merekomendasikan rute alternatif untuk efisiensi biaya.
+- **Input**: Log telemetri pemakaian token, konfigurasi Budgets, dan daftar harga hulu (pricing).
+- **Output**: Laporan anomali tagihan, rekomendasi pembaharuan bobot/prioritas fallback, dan optimasi biaya token.
+
+### 2.17. `docs_and_api_writer`
+- **Peran**: Technical Writer Ops yang bertugas memelihara kelengkapan OpenAPI/Swagger, changelog, dan README.md dalam Bahasa Indonesia Teknis yang presisi.
+- **Input**: Source code Go (handlers), spesifikasi DTO baru, dan catatan rilis dari QA/Release.
+- **Output**: Spesifikasi Swagger terbarui, dokumentasi integrasi CLI, dan catatan rilis teknis.
+
+### 2.18. `semantic_cache_specialist`
+- **Peran**: AI Caching Engineer yang bertugas merancang integrasi Redis dan pencarian kesamaan semantik (Semantic Similarity Search/Vector Cache) untuk memangkas duplikasi pemanggilan LLM.
+- **Input**: Arsitektur cache Gateway, dokumentasi pgvector/Redis, dan metrik hit-ratio.
+- **Output**: Implementasi cache berbasis semantic/embedding, logika invalidasi cerdas, dan efisiensi latensi.
+
+### 2.19. `prompt_guard_auditor`
+- **Peran**: AI Safety & DLP (Data Loss Prevention) Specialist. Bertugas memfilter PII (Personally Identifiable Information) dan menangkal injeksi prompt sebelum payload dikirim ke hulu.
+- **Input**: Payload JSON masuk, kamus filter DLP, dan pola serangan prompt injection.
+- **Output**: Middleware filter keamanan berlapis, sistem log anomali prompt, dan sanitasi payload.
+
+### 2.20. `load_test_engineer`
+- **Peran**: Stress & Chaos Testing Engineer yang menghajar endpoint Gateway secara brutal menggunakan K6/Vegeta untuk menemukan titik batas, memory leak, dan kemacetan Goroutine.
+- **Input**: Endpoint operasional (Gateway/Telemetry), skrip pengujian beban, dan target TPS (Transactions Per Second).
+- **Output**: Laporan profil CPU/Memori (pprof), bottleneck bandwidth, dan konfigurasi tuning GC (Garbage Collector) di Go.
+
+### 2.21. `protocol_translator_specialist`
+- **Peran**: Spesialis penerjemah skema lintas-provider. Bertanggung jawab melacak perubahan skema payload API upstream (OpenAI, Anthropic, Gemini, Llama) dan memelihara struct mapping dua arah di Go.
+- **Input**: Payload klien dan spesifikasi dokumentasi resmi upstream terbaru.
+- **Output**: Fungsi parser dan translasi skema JSON on-the-fly yang mulus tanpa data loss.
+
+### 2.22. `telemetry_and_otel_architect`
+- **Peran**: Pakar Observability & OpenTelemetry (OTel). Menanamkan sensor pelacakan (spans/traces) untuk mendiagnosis latensi di seluruh lifecycle permintaan, dari penerimaan klien hingga respons hulu.
+- **Input**: Sistem logging eksisting, konfigurasi Prometheus/Jaeger, dan jalur bottleneck latensi.
+- **Output**: Instrumentasi OTel yang presisi, dasbor Grafana terintegrasi, dan topologi trace terdistribusi.
+
+### 2.23. `billing_and_metering_engineer`
+- **Peran**: Pakar Finansial Gateway. Bertanggung jawab atas kalkulasi fraksional hitungan token, implementasi rate limiting berlapis, dan sinkronisasi chargeback tanpa bug pembulatan.
+- **Input**: Log streaming SSE, skema harga per provider, dan struktur organisasi akun/API Key.
+- **Output**: Sistem penghitung token real-time yang akurat, integrasi API penagihan, dan modul pemblokiran over-budget otomatis.
+
+### 2.24. `realtime_stream_specialist`
+- **Peran**: Pakar protokol WebSockets, WebRTC, dan gRPC. Menangani proxying komunikasi suara/video real-time dua arah (seperti OpenAI Realtime API) yang melampaui kemampuan HTTP standar.
+- **Input**: Spesifikasi Realtime API hulu, arsitektur proxy L4/L7, dan buffer streaming.
+- **Output**: Handler proxy WebSocket, penanganan latensi audio/video, dan koneksi persisten berkinerja tinggi.
+
+### 2.25. `edge_deployment_architect`
+- **Peran**: WebAssembly (WASM) & Edge Cloud Specialist. Berfokus memodifikasi dan mem-build inti router Go menjadi format biner super ringan untuk didistribusikan ke Edge Nodes (Fly.io/Cloudflare Workers).
+- **Input**: Arsitektur routing Go, dependensi sistem, dan infrastruktur Cloudflare/Fly.io.
+- **Output**: Biner WASM/Edge yang teroptimasi, pipeline deployment ke ratusan titik edge, dan pengurangan latensi jaringan global.
+
 ---
 
 ## 3. Pipeline Orkestrasi 4-Tahap Route-X

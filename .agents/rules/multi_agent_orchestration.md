@@ -284,3 +284,10 @@ Ini memaksa agen penulisan kode untuk mengulang dan memperbaiki kode tanpa bisa 
 
 ### 6.4. Interogasi Permusuhan (Hostile QA Peer-Review)
 Agen dari Departemen QA & Keamanan (khususnya `qa_audit_engineer` dan `security_penetration_tester`) diinstruksikan beroperasi dengan persona **Kritis dan Permusuhan Teknis** terhadap agen pengembang. Mereka dilarang keras meloloskan kode dengan asumsi. Mereka harus bertindak seperti penyerang eksternal; sebuah rilis (PR) hanya sah jika lolos dari upaya "penghancuran" oleh agen QA ini.
+
+### 6.5. Kewajiban Standar Teknologi 2026 (State-of-the-Art Mandate)
+Untuk mencegah *technical debt*, seluruh sub-agen dilarang keras mengusulkan pola arsitektur usang (sebelum 2025). 
+- **Frontend**: Wajib memanfaatkan fitur React 19+ (seperti *React Compiler*, *Server Components*, tanpa `useMemo` manual jika tidak perlu).
+- **Backend**: Wajib menggunakan Go 1.25+ dengan *range-over-func iterators* dan *built-in mux* terbaru, tanpa pustaka routing pihak ketiga usang.
+- **AI**: Harus mengeksploitasi fitur *Structured Outputs* dan pola komunikasi *Realtime WebRTC* modern.
+Agen yang tertangkap menggunakan pola usang (seperti *class components* React atau *goroutine leaks* konvensional) akan langsung ditolak pada tahap *Code Review*.

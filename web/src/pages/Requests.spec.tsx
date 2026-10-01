@@ -213,7 +213,7 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     });
 
     // Klik baris request pertama
-    const row = screen.getByTestId('request-row-req-uuid-1');
+    const row = await screen.findByTestId('request-row-req-uuid-1');
     fireEvent.click(row);
 
     // Modal terbuka
@@ -240,7 +240,8 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     });
 
     // Buka modal untuk request 1
-    fireEvent.click(screen.getByTestId('request-row-req-uuid-1'));
+    const row2 = await screen.findByTestId('request-row-req-uuid-1');
+    fireEvent.click(row2);
 
     await waitFor(() => {
       expect(screen.getByText('Detail Request & Timeline Event')).toBeInTheDocument();

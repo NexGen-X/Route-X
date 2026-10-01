@@ -62,7 +62,14 @@ export const ComboBuilder: React.FC<ComboBuilderProps> = ({
 
   const modelOptions = models
     .filter((m) => m.enabled)
-    .map((m) => ({ value: m.model_id, label: m.display_name, description: m.model_id }));
+    .map((m) => {
+      const familyStr = m.family ? m.family.toUpperCase() : 'CUSTOM';
+      return {
+        value: m.model_id,
+        label: `${familyStr} / ${m.model_id}`,
+        description: m.display_name,
+      };
+    });
 
   // Model yang sudah dipilih di entri lain tidak boleh dipilih lagi — mencegah
   // duplikat di UI sebelum validasi menolaknya. Constraint backend juga menolak

@@ -254,10 +254,14 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                     <Select
                       value={config.target}
                       onChange={(val) => onTargetChange(tool.id, val)}
-                      options={models.map((m) => ({
-                        value: m.model_id,
-                        label: `${m.display_name || m.model_id} (${m.family || 'universal'})`,
-                      }))}
+                      options={models.map((m) => {
+                        const familyStr = m.family ? m.family.toUpperCase() : 'CUSTOM';
+                        return {
+                          value: m.model_id,
+                          label: `${familyStr} / ${m.model_id}`,
+                          description: m.display_name,
+                        };
+                      })}
                     />
                   ) : (
                     <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400">

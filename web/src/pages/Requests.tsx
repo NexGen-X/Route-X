@@ -1,16 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { RequestLog, RequestEvent, RequestPayload } from '../types';
-import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
 import { QueryError } from '../components/common/QueryError';
 import { RefreshCw, Activity } from 'lucide-react';
 import {
   RequestFilterBar,
-  RequestTableSkeleton,
-  RequestTableRow,
-  RequestCardMobile,
+  RequestListSkeleton,
+  RequestItem,
   RequestInspectorModal,
   type RequestTabFilter,
 } from '../components/requests';
@@ -154,21 +152,23 @@ export const Requests: React.FC = () => {
         <QueryError message={loadError} onRetry={() => void loadRequests()} />
       )}
 
-      <Card>
+      <div className="space-y-4">
         {/* Filter Chips & Search Bar */}
-        <RequestFilterBar
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          search={search}
-          onSearchChange={setSearch}
-          onSearchSubmit={() => void loadRequests()}
-        />
+        <div className="p-4 bg-bg-surface/40 backdrop-blur-md rounded-2xl border border-border/10">
+          <RequestFilterBar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            search={search}
+            onSearchChange={setSearch}
+            onSearchSubmit={() => void loadRequests()}
+          />
+        </div>
 
-        {/* Requests List: Card List on Mobile, Table on Desktop */}
+        {/* Requests List */}
         {isLoading ? (
-          <RequestTableSkeleton />
+          <RequestListSkeleton />
         ) : requests.length === 0 ? (
-          <div className="py-12 px-4 text-center space-y-3">
+          <div className="py-12 px-4 text-center space-y-3 bg-bg-surface/40 backdrop-blur-md rounded-2xl border border-border/10">
             <Activity className="w-8 h-8 mx-auto text-text-muted/40" />
             <div className="text-sm font-semibold text-white">
               Tidak ada catatan permintaan
@@ -178,47 +178,19 @@ export const Requests: React.FC = () => {
             </p>
           </div>
         ) : (
-          <>
-            {/* Mobile Card List (sm:hidden) */}
-            <div className="sm:hidden divide-y divide-border/60">
-              {requests.map((r) => (
-                <RequestCardMobile
-                  key={r.id || r.request_id}
-                  request={r}
-                  onInspect={handleInspect}
-                />
-              ))}
-            </div>
-
-            {/* Desktop Table (hidden sm:block) */}
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border text-text-muted font-medium text-xs bg-bg-surface-2/40">
-                    <th className="py-3 px-4 font-semibold">Status &amp; Request ID</th>
-                    <th className="py-3 px-4 font-semibold">Model &amp; Provider</th>
-                    <th className="py-3 px-4 font-semibold">Token &amp; Cost</th>
-                    <th className="py-3 px-4 font-semibold">Durasi &amp; TTFT</th>
-                    <th className="py-3 px-4 font-semibold">Waktu &amp; Klien</th>
-                    <th className="py-3 px-4 text-right">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {requests.map((r) => (
-                    <RequestTableRow
-                      key={r.id || r.request_id}
-                      request={r}
-                      onInspect={handleInspect}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <div className="flex flex-col gap-3">
+            {requests.map((r) => (
+              <RequestItem
+                key={r.id || r.request_id}
+                request={r}
+                onInspect={handleInspect}
+              />
+            ))}
+          </div>
         )}
 
         {nextCursor && (
-          <div className="p-4 border-t border-border flex justify-center">
+          <div className="flex justify-center pt-4 pb-8">
             <Button
               variant="secondary"
               size="sm"
@@ -229,7 +201,7 @@ export const Requests: React.FC = () => {
             </Button>
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Inspector Modal */}
       <RequestInspectorModal

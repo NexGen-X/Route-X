@@ -45,7 +45,7 @@ export const RequestItem: React.FC<RequestItemProps> = ({ request, onInspect }) 
       </div>
 
       {/* Grid Metadata */}
-      <div className="grid grid-cols-2 gap-2 mb-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 mb-2">
         {/* Model */}
         <div className="flex flex-col bg-white/[0.03] rounded-lg p-2">
           <span className="text-[10px] text-white/50 uppercase tracking-wider mb-0.5">Model</span>

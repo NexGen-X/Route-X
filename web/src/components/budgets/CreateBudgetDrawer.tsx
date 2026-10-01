@@ -62,7 +62,7 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
             <Sparkles className="w-3.5 h-3.5" />
             Preset 1-Klik Anggaran
           </span>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
             <button
               type="button"
               onClick={() =>
@@ -141,7 +141,7 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
             className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
           />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <Select
             label="Cakupan (Scope)"
             value={formData.scope}
@@ -228,7 +228,7 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Batas Maksimal (USD) *</label>
             <input

@@ -95,7 +95,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
           {customSettings.map((s) => (
             <div key={s.key} className="p-5 flex flex-col justify-between rounded-2xl bg-bg-surface/40 backdrop-blur-md border border-white/5 shadow-lg shadow-black/10 transition-all hover:bg-bg-surface/60 group">
               <div>
@@ -169,7 +169,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
             </Badge>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
             {managedSettings.map((s) => {
               const isCLI = s.key.startsWith('cli:config:');
               return (

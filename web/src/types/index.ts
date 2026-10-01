@@ -477,7 +477,7 @@ export interface AuditLogEntry {
   ip?: string;
   user_agent?: string;
   request_id?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface DiagnosticsMemory {

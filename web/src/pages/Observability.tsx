@@ -51,7 +51,7 @@ export const Observability: React.FC = () => {
     return String(val);
   };
 
-  const formatTooltipValue = (value: any) => {
+  const formatTooltipValue = (value: number) => {
     const num = Number(value);
     if (!Number.isFinite(num)) return value;
     if (metric === 'cost') return [`$${num.toFixed(4)}`, 'Biaya USD'];
@@ -153,7 +153,7 @@ export const Observability: React.FC = () => {
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 
       {/* 3 Kartu Ringkasan KPI Eksekutif */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1: Total Permintaan */}
         <Card className="border-border bg-bg-surface">
           <div className="flex items-center justify-between">
@@ -214,7 +214,7 @@ export const Observability: React.FC = () => {
       <Card
         title="Deret Waktu Telemetri"
         action={
-          <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full" role="group" aria-label="Pilihan metrik deret waktu">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full" role="group" aria-label="Pilihan metrik deret waktu">
             {[
               { key: 'requests', label: 'Requests' },
               { key: 'tokens', label: 'Tokens' },
@@ -242,7 +242,7 @@ export const Observability: React.FC = () => {
         <div className="h-72 w-full pt-4">
           {isLoading && series.length === 0 ? (
             <div className="h-full flex items-center justify-center">
-              <div className="animate-pulse flex flex-col items-center gap-2.5 text-text-muted text-xs">
+              <div className="animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%] flex flex-col items-center gap-2.5 text-text-muted text-xs">
                 <RefreshCw className="w-5 h-5 animate-spin text-accent" />
                 <span>Memuat data telemetri...</span>
               </div>
@@ -303,7 +303,7 @@ export const Observability: React.FC = () => {
       </Card>
 
       {/* Breakdown Composition & Runtime Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card
           className="lg:col-span-2"
           title="Komposisi Lalu Lintas"
@@ -325,7 +325,7 @@ export const Observability: React.FC = () => {
         >
           <div className="space-y-3 mt-2">
             {isLoading && breakdowns.length === 0 ? (
-              <div className="space-y-3 py-2 animate-pulse">
+              <div className="space-y-3 py-2 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]">
                 {[1, 2, 3].map((i) => (
                   <div key={i} className="space-y-1.5">
                     <div className="flex justify-between">
@@ -362,7 +362,7 @@ export const Observability: React.FC = () => {
         {/* Live Pool & Diagnostics */}
         <Card title="Live Server & Connection Pool">
           {isLoading && !diag && !diagnosticsError ? (
-            <div className="space-y-4 animate-pulse">
+            <div className="space-y-4 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]">
               <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border h-16" />
               <div className="space-y-2 text-xs pt-1">
                 <div className="h-4 bg-bg-surface-2 rounded w-full" />

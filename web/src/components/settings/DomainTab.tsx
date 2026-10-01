@@ -94,7 +94,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
       )}
 
       {/* Main Content Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Left Column: Form */}
         <div className="lg:col-span-7 space-y-6">
           <form noValidate onSubmit={onSaveDomain} className="p-6 rounded-2xl bg-bg-surface/40 backdrop-blur-md border border-white/5 shadow-lg shadow-black/10 space-y-6">

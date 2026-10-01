@@ -39,7 +39,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
             }`}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400 animate-pulse'}`}
+              className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]'}`}
             />
             {loadError ? 'Gateway Tidak Tersedia' : 'Beroperasi'}
           </span>

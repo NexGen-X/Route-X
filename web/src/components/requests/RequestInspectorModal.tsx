@@ -111,7 +111,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
         {error && <QueryError message={error} onRetry={onRetry} />}
 
         {/* Quick Metrics Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
             <span className="text-xs font-medium text-text-muted">Status HTTP</span>
             <div className="mt-1">

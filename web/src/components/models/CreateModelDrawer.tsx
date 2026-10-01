@@ -134,7 +134,7 @@ export const CreateModelDrawer: React.FC<CreateModelDrawerProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="context_window">
               Context Window

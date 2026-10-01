@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { CommandPalette } from '../common/CommandPalette';
-import { LayoutDashboard, Server, KeyRound, Sliders } from 'lucide-react';
+import { LayoutDashboard, Activity, Route, KeyRound, Sliders } from 'lucide-react';
 
 interface LayoutProps {
   title: string;
@@ -27,13 +27,14 @@ export const Layout: React.FC<LayoutProps> = ({ title, currentPath, onNavigate, 
 
   const bottomNavItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { name: 'Providers', path: '/upstreams/providers', icon: Server },
-    { name: 'API Keys', path: '/access/api-keys', icon: KeyRound },
+    { name: 'Requests', path: '/analytics/requests', icon: Activity },
+    { name: 'Routing', path: '/routing/rules', icon: Route },
+    { name: 'Keys', path: '/access/api-keys', icon: KeyRound },
     { name: 'Settings', path: '/system/settings', icon: Sliders },
   ];
 
   return (
-    <div className="min-h-screen bg-bg-base flex pb-16 md:pb-0">
+    <div className="min-h-[100dvh] bg-bg-base flex pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
       {/* Sidebar is hidden on < md screens */}
       <div className="hidden md:flex">
         <Sidebar currentPath={currentPath} onNavigate={onNavigate} isMobileOpen={false} setIsMobileOpen={() => {}} />
@@ -52,7 +53,7 @@ export const Layout: React.FC<LayoutProps> = ({ title, currentPath, onNavigate, 
       </div>
 
       {/* Mobile Bottom Navigation (Visible only on < md) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-bg-base/80 backdrop-blur-xl border-t border-border z-40 flex items-center justify-around px-2 pb-safe">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-bg-base/80 backdrop-blur-xl border-t border-border z-40 flex items-center justify-around px-2 pb-[env(safe-area-inset-bottom)]">
         {bottomNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPath === item.path || (item.path !== '/' && currentPath.startsWith(item.path));

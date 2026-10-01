@@ -131,9 +131,9 @@ export const Egress: React.FC = () => {
 
       {/* Grid Kartu Egress Pool */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="p-6 space-y-4 animate-pulse bg-bg-surface/40 backdrop-blur-md shadow-lg rounded-2xl border border-white/5 transition-all">
+            <div key={i} className="p-6 space-y-4 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%] bg-bg-surface/40 backdrop-blur-md shadow-lg rounded-2xl border border-white/5 transition-all">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-bg-surface-2/60" />
                 <div className="space-y-1.5 flex-1">
@@ -168,7 +168,7 @@ export const Egress: React.FC = () => {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {pools.map((p) => (
             <EgressPoolCard
               key={p.id}

@@ -59,7 +59,7 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
             <Sparkles className="w-3.5 h-3.5" />
             Preset 1-Klik Kecepatan
           </span>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
             <button
               type="button"
               onClick={() =>
@@ -182,7 +182,7 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
               Req / Menit (RPM)

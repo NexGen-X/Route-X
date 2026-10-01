@@ -61,7 +61,7 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]" />
                     Semua Beroperasi Normal
                   </span>
                 )}
@@ -106,7 +106,7 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
             </div>
 
             {/* 3 Telemetry Chips */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 w-full md:w-auto flex-shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border/40">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 w-full md:w-auto flex-shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-border/40">
               <div className="px-3 py-1.5 rounded-lg bg-bg-surface-1 border border-border/60 text-center">
                 <span className="text-[10px] text-text-muted block font-sans">Provider Dipantau</span>
                 <span className="text-xs font-bold font-mono text-white">
@@ -128,7 +128,7 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
             {breakers.map((b, idx) => {
               const provObj = providers.find((p) => p.id === b.provider_id);
               const providerName = provObj?.display_name || provObj?.name || b.provider_id;

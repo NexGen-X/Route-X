@@ -26,15 +26,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refresh = useCallback(async () => {
     try {
-      const res: any = await api.auth.me();
+      const res: unknown = await api.auth.me();
       if (!mountedRef.current) return;
       if (res) {
-        const p: Principal = res.principal || res;
+        const p: Principal = (res as Record<string, unknown>).principal as Principal || (res as Principal);
         if (!p.session_id && p.session?.id) {
           p.session_id = p.session.id;
         }
-        if ((res as any).csrf_token) {
-          setCsrfToken((res as any).csrf_token);
+        if ((res as Record<string, unknown>).csrf_token) {
+          setCsrfToken((res as Record<string, unknown>).csrf_token as string);
         }
         setPrincipal(p);
         refreshRetriedRef.current = false;
@@ -44,7 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (err) {
       if (!mountedRef.current) return;
       // Hanya 401 yang berarti sesi benar-benar mati -> logout.
-      const status = err instanceof ApiError ? err.status : (err as any)?.status;
+      const status = err instanceof ApiError ? err.status : (err as Record<string, unknown>)?.status;
       if (status === 401) {
         setPrincipal(null);
       } else if (!refreshRetriedRef.current) {
@@ -83,13 +83,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [refresh]);
 
   const login = async (email: string, pass: string, keep = false) => {
-    const res: any = await api.auth.login({ email, password: pass, keep_signed_in: keep });
-    const p: Principal = res.principal || res;
+    const res: unknown = await api.auth.login({ email, password: pass, keep_signed_in: keep });
+    const p: Principal = (res as Record<string, unknown>).principal as Principal || (res as Principal);
     if (!p.session_id && p.session?.id) {
       p.session_id = p.session.id;
     }
-    if ((res as any).csrf_token) {
-      setCsrfToken((res as any).csrf_token);
+    if ((res as Record<string, unknown>).csrf_token) {
+      setCsrfToken((res as Record<string, unknown>).csrf_token as string);
     }
     setPrincipal(p);
   };

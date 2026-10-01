@@ -37,7 +37,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         {providers.length === 0 ? (
-          <div className="col-span-full py-8 text-center text-xs text-text-muted bg-bg-surface border border-border rounded-card">
+          <div className="col-span-full py-8 text-center text-xs text-text-muted bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg">
             Belum ada provider upstream yang terdaftar.{' '}
             <button
               type="button"
@@ -62,11 +62,11 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
             return (
               <div
                 key={p.id}
-                className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all flex flex-col justify-between shadow-sm group"
+                className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 hover:ring-white/20 transition-all flex flex-col justify-between  group"
               >
                 <div className="flex items-center justify-between gap-2.5 sm:gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-inner bg-bg-surface-2 border border-border flex items-center justify-center text-text-primary flex-shrink-0">
+                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent flex items-center justify-center text-text-primary flex-shrink-0">
                       <ProviderBrandIcon
                         providerIdOrKind={p.kind}
                         name={p.name}

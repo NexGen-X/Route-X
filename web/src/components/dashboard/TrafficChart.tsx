@@ -31,17 +31,20 @@ const MemoizedChartInner = React.memo<MemoizedChartInnerProps>(({ series, metric
           <stop offset="95%" stopColor="#BEF264" stopOpacity={0.0} />
         </linearGradient>
       </defs>
-      <CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" vertical={false} />
+      <CartesianGrid stroke="rgba(255,255,255,0.03)" vertical={false} />
       <XAxis dataKey="timestamp" stroke="#6B7280" fontSize={11} tickLine={false} />
       <YAxis stroke="#6B7280" fontSize={11} tickLine={false} />
       <Tooltip
+        cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1, strokeDasharray: '3 3' }}
         contentStyle={{
-          backgroundColor: '#141414',
-          borderColor: '#1F1F1F',
-          borderRadius: '10px',
+          backgroundColor: 'rgba(20, 20, 20, 0.7)',
+          borderColor: 'rgba(255, 255, 255, 0.05)',
+          borderRadius: '12px',
           fontSize: '12px',
           color: '#F5F5F5',
-          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+          boxShadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
         }}
       />
       <Area
@@ -67,7 +70,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
   const series = data?.points || [];
 
   return (
-    <div className="lg:col-span-2 bg-bg-surface border border-border rounded-card p-4 sm:p-5 shadow-sm flex flex-col justify-between">
+    <div className="lg:col-span-2 bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 sm:p-5  flex flex-col justify-between">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 mb-3 sm:mb-4">
         <div className="flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-accent flex-shrink-0" />
@@ -79,7 +82,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
         <div
           role="group"
           aria-label="Pilih jenis metrik dan rentang waktu grafik"
-          className="flex items-center overflow-x-auto max-w-full bg-bg-surface-2 p-0.5 sm:p-1 rounded-nav border border-border text-[11px] sm:text-xs font-mono scrollbar-none"
+          className="flex items-center overflow-x-auto max-w-full bg-bg-surface-2/60 backdrop-blur-sm p-0.5 sm:p-1 rounded-nav ring-1 ring-white/5 border-transparent text-[11px] sm:text-xs font-mono scrollbar-none"
         >
           {(['requests', 'tokens', 'latency'] as const).map((m) => (
             <button

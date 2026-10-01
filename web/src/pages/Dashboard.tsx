@@ -71,11 +71,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
       <ProviderHealthMatrix onNavigate={onNavigate} />
 
-      <div className="border border-border rounded-card overflow-hidden">
+      <div className="bg-bg-surface/40 backdrop-blur-md shadow-lg ring-1 ring-white/5 rounded-2xl overflow-hidden">
         <button
           type="button"
           onClick={() => setTelemetryExpanded((v) => !v)}
-          className="w-full flex items-center justify-between px-5 py-3 bg-bg-surface hover:bg-bg-surface-2 transition-colors text-left cursor-pointer"
+          className="w-full flex items-center justify-between px-5 py-3 bg-bg-surface hover:bg-bg-surface-2/60 backdrop-blur-sm transition-colors text-left cursor-pointer"
           aria-expanded={telemetryExpanded}
         >
           <span className="text-xs font-medium text-text-secondary">Runtime Telemetri Gateway</span>
@@ -86,7 +86,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           />
         </button>
         {telemetryExpanded && (
-          <div className="p-5 border-t border-border bg-bg-surface">
+          <div className="p-5 border-t border-white/5 bg-transparent">
             <SystemTelemetrySection />
           </div>
         )}

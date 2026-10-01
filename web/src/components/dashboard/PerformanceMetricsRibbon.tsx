@@ -12,12 +12,12 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-      <div className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all shadow-sm flex flex-col justify-between">
+      <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 hover:ring-white/20 transition-all  flex flex-col justify-between">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-medium text-text-muted truncate">
             Total Permintaan
           </span>
-          <div className="p-1.5 rounded-inner bg-bg-surface-2 border border-border shrink-0">
+          <div className="p-1.5 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent shrink-0">
             <Activity className="w-3.5 h-3.5 text-accent" />
           </div>
         </div>
@@ -41,10 +41,10 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
         </div>
       </div>
 
-      <div className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all shadow-sm flex flex-col justify-between">
+      <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 hover:ring-white/20 transition-all  flex flex-col justify-between">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-medium text-text-muted truncate">Total Token</span>
-          <div className="p-1.5 rounded-inner bg-bg-surface-2 border border-border shrink-0">
+          <div className="p-1.5 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent shrink-0">
             <Zap className="w-3.5 h-3.5 text-status-success" />
           </div>
         </div>
@@ -61,12 +61,12 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
         </div>
       </div>
 
-      <div className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all shadow-sm flex flex-col justify-between">
+      <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 hover:ring-white/20 transition-all  flex flex-col justify-between">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-medium text-text-muted truncate">
             Estimasi Biaya
           </span>
-          <div className="p-1.5 rounded-inner bg-bg-surface-2 border border-border shrink-0">
+          <div className="p-1.5 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent shrink-0">
             <Coins className="w-3.5 h-3.5 text-status-warn" />
           </div>
         </div>
@@ -80,10 +80,10 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
         </div>
       </div>
 
-      <div className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all shadow-sm flex flex-col justify-between">
+      <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 hover:ring-white/20 transition-all  flex flex-col justify-between">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-medium text-text-muted truncate">Latensi P95</span>
-          <div className="p-1.5 rounded-inner bg-bg-surface-2 border border-border shrink-0">
+          <div className="p-1.5 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent shrink-0">
             <Clock className="w-3.5 h-3.5 text-status-info" />
           </div>
         </div>

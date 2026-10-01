@@ -15,7 +15,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
   const recentRequests = reqRes?.items || [];
 
   return (
-    <div className="bg-bg-surface border border-border rounded-card p-4 sm:p-5 shadow-sm flex flex-col justify-between">
+    <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 sm:p-5  flex flex-col justify-between">
       <div>
         <div className="flex items-center gap-2 mb-3">
           <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
@@ -52,7 +52,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                     }
                   }}
                   onClick={() => onNavigate('/requests')}
-                  className="p-2.5 rounded-inner bg-bg-surface-2 border border-border hover:border-border-hover hover:bg-bg-surface-3 transition-all cursor-pointer group"
+                  className="p-2.5 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent hover:ring-white/20 hover:bg-bg-surface-3 transition-all cursor-pointer group"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
@@ -102,7 +102,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
         <button
           type="button"
           onClick={() => onNavigate('/requests')}
-          className="w-full py-1.5 text-center text-xs text-text-muted hover:text-white font-mono rounded-nav bg-bg-surface-2 border border-border hover:border-border-hover transition-colors cursor-pointer"
+          className="w-full py-1.5 text-center text-xs text-text-muted hover:text-white font-mono rounded-nav bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent hover:ring-white/20 transition-colors cursor-pointer"
         >
           Inspeksi Seluruh Jejak Audit Request →
         </button>

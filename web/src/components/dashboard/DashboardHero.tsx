@@ -26,7 +26,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   const totalProvidersCount = providers.length;
 
   return (
-    <div className="bg-bg-surface border border-border rounded-card px-5 py-3.5 shadow-sm">
+    <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg px-5 py-3.5 ">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-between">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
           <span

@@ -36,11 +36,11 @@ export const SystemTelemetrySection: React.FC = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Memory */}
-        <div className="bg-bg-surface border border-border rounded-card p-4 flex flex-col justify-between hover:border-border-hover transition-all shadow-sm">
+        <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 flex flex-col justify-between hover:ring-white/20 transition-all ">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-inner bg-bg-surface-2 text-text-secondary border border-border">
+                <div className="p-2 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm text-text-secondary ring-1 ring-white/5 border-transparent">
                   <Cpu className="w-4 h-4" />
                 </div>
                 <div>
@@ -79,7 +79,7 @@ export const SystemTelemetrySection: React.FC = () => {
           </div>
 
           {/* Breakdown rows */}
-          <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-xs">
+          <div className="mt-4 pt-3 border-t border-white/5 space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-text-muted">RAM Kontainer</span>
               <span className="font-mono text-text-secondary">
@@ -102,11 +102,11 @@ export const SystemTelemetrySection: React.FC = () => {
         </div>
 
         {/* Card 2: Network */}
-        <div className="bg-bg-surface border border-border rounded-card p-4 flex flex-col justify-between hover:border-border-hover transition-all shadow-sm">
+        <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 flex flex-col justify-between hover:ring-white/20 transition-all ">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-inner bg-bg-surface-2 text-text-secondary border border-border">
+                <div className="p-2 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm text-text-secondary ring-1 ring-white/5 border-transparent">
                   <Share2 className="w-4 h-4" />
                 </div>
                 <div>
@@ -114,7 +114,7 @@ export const SystemTelemetrySection: React.FC = () => {
                   <span className="text-[11px] text-text-muted font-mono">Total Trafik Jaringan</span>
                 </div>
               </div>
-              <div className="px-2 py-0.5 rounded-full bg-bg-surface-2 border border-border text-[11px] font-mono text-text-secondary font-medium">
+              <div className="px-2 py-0.5 rounded-full bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent text-[11px] font-mono text-text-secondary font-medium">
                 {(overview?.net_rate_mb_s ?? 0).toFixed(1)} MB/s
               </div>
             </div>
@@ -130,7 +130,7 @@ export const SystemTelemetrySection: React.FC = () => {
           </div>
 
           {/* Breakdown rows with indicator bars */}
-          <div className="mt-4 pt-3 border-t border-border space-y-2.5 text-xs">
+          <div className="mt-4 pt-3 border-t border-white/5 space-y-2.5 text-xs">
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-text-muted flex items-center gap-1">
@@ -194,11 +194,11 @@ export const SystemTelemetrySection: React.FC = () => {
         </div>
 
         {/* Card 3: Egress Pool */}
-        <div className="bg-bg-surface border border-border rounded-card p-4 flex flex-col justify-between hover:border-border-hover transition-all shadow-sm">
+        <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 flex flex-col justify-between hover:ring-white/20 transition-all ">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-inner bg-bg-surface-2 text-text-secondary border border-border">
+                <div className="p-2 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm text-text-secondary ring-1 ring-white/5 border-transparent">
                   <ShieldCheck className="w-4 h-4" />
                 </div>
                 <div>
@@ -208,7 +208,7 @@ export const SystemTelemetrySection: React.FC = () => {
                   <span className="text-[11px] text-text-muted font-mono">Proxies</span>
                 </div>
               </div>
-              <div className="px-2 py-0.5 rounded-full bg-bg-surface-2 border border-border text-[11px] font-mono text-text-secondary font-medium">
+              <div className="px-2 py-0.5 rounded-full bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent text-[11px] font-mono text-text-secondary font-medium">
                 {overview?.egress_active_mode || 'DIRECT'}
               </div>
             </div>
@@ -224,7 +224,7 @@ export const SystemTelemetrySection: React.FC = () => {
           </div>
 
           {/* Breakdown rows */}
-          <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-xs">
+          <div className="mt-4 pt-3 border-t border-white/5 space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-text-muted">HTTP/SOCKS</span>
               <span className="font-mono text-text-secondary">
@@ -247,11 +247,11 @@ export const SystemTelemetrySection: React.FC = () => {
         </div>
 
         {/* Card 4: Uptime & CPU */}
-        <div className="bg-bg-surface border border-border rounded-card p-4 flex flex-col justify-between hover:border-border-hover transition-all shadow-sm">
+        <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 flex flex-col justify-between hover:ring-white/20 transition-all ">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-inner bg-bg-surface-2 text-text-secondary border border-border">
+                <div className="p-2 rounded-xl bg-bg-surface-2/60 backdrop-blur-sm text-text-secondary ring-1 ring-white/5 border-transparent">
                   <Clock className="w-4 h-4" />
                 </div>
                 <div>
@@ -290,7 +290,7 @@ export const SystemTelemetrySection: React.FC = () => {
           </div>
 
           {/* Breakdown rows */}
-          <div className="mt-4 pt-3 border-t border-border space-y-1.5 text-xs">
+          <div className="mt-4 pt-3 border-t border-white/5 space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-text-muted">Host CPU</span>
               <span className="font-mono text-text-secondary">

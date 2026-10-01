@@ -205,10 +205,14 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
                 onChange={(val) => setFormData({ ...formData, scope_id: val })}
                 options={[
                   { value: '', label: '-- Pilih Model --' },
-                  ...models.map((m) => ({
-                    value: m.model_id,
-                    label: `${m.display_name || m.model_id} (${m.model_id})`,
-                  })),
+                  ...models.map((m) => {
+                    const familyStr = m.family ? m.family.toUpperCase() : 'CUSTOM';
+                    return {
+                      value: m.model_id,
+                      label: `${familyStr} / ${m.model_id}`,
+                      description: m.display_name,
+                    };
+                  }),
                 ]}
               />
             ) : (

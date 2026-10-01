@@ -210,9 +210,9 @@ describe('RoutingRules — form combo (create)', () => {
     // Isi dua model. Slot pertama belum ada sebelum "Tambah Model" diklik karena
     // resep baru dimulai kosong (pipelineKosong).
     fireEvent.click(screen.getByLabelText('Tambah Model'));
-    await pilihModel('Model urutan 1', 'GPT-5');
+    await pilihModel('Model urutan 1', 'CUSTOM / gpt-5');
     fireEvent.click(screen.getByLabelText('Tambah Model'));
-    await pilihModel('Model urutan 2', 'Gemini 2.5 Flash');
+    await pilihModel('Model urutan 2', 'CUSTOM / gemini-2.5-flash');
 
     // Alias.
     fireEvent.change(screen.getByLabelText('Virtual Endpoint (Alias)'), {
@@ -336,8 +336,8 @@ describe('RoutingRules — form combo (edit, perbaikan K2)', () => {
     await waitFor(() => expect(screen.getByTestId('combo-builder')).toBeInTheDocument());
 
     // ComboBuilder memuat kedua model dari tag (Tier 1 = match_model_id).
-    expect(screen.getByLabelText('Model urutan 1')).toHaveTextContent('GPT-5');
-    expect(screen.getByLabelText('Model urutan 2')).toHaveTextContent('Gemini 2.5 Flash');
+    expect(screen.getByLabelText('Model urutan 1')).toHaveTextContent('CUSTOM / gpt-5');
+    expect(screen.getByLabelText('Model urutan 2')).toHaveTextContent('CUSTOM / gemini-2.5-flash');
     expect(screen.getByLabelText('Virtual Endpoint (Alias)')).toHaveValue('raute-x');
 
     fireEvent.click(screen.getByRole('button', { name: /Simpan Perubahan/i }));

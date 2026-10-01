@@ -286,14 +286,11 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
                   const provNames = m.providers
                     ?.map((p) => p.display_name || p.provider_name)
                     .join(', ');
+                  const familyStr = m.family ? m.family.toUpperCase() : 'CUSTOM';
                   return {
                     value: m.id,
-                    label: `${m.display_name} (${m.model_id})`,
-                    description: provNames
-                      ? `Tersedia di: ${provNames}`
-                      : m.family
-                      ? `Keluarga: ${m.family}`
-                      : undefined,
+                    label: `${familyStr} / ${m.model_id}`,
+                    description: m.display_name + (provNames ? ` (Tersedia di: ${provNames})` : ''),
                   };
                 })}
               />

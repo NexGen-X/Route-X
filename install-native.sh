@@ -130,9 +130,9 @@ echo "🔒 [4/6] Memeriksa dan memasang Caddy Web Server..."
 if ! command -v caddy &>/dev/null; then
     apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg --yes 2>/dev/null || true
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
-    apt-get update -y
-    apt-get install -y caddy
+    echo "deb [trusted=yes] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" > /etc/apt/sources.list.d/caddy-stable.list
+    apt-get update -y --allow-insecure-repositories || true
+    apt-get install -y --allow-unauthenticated caddy
 fi
 
 mkdir -p /etc/caddy

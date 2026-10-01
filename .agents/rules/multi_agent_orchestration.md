@@ -263,3 +263,31 @@ Langkah konkret berikutnya yang disarankan untuk orchestrator atau sub-agent pen
 - **Larangan Spekulasi**: Agen dilarang keras mengklaim fungsionalitas berjalan normal, test lulus, atau tipe data aman hanya berdasarkan analisa teoretis kode atau asumsi mental.
 - **Kewajiban Eksekusi Nyata**: Setiap klaim verifikasi wajib didukung oleh eksekusi perintah terminal secara langsung dengan menyajikan ringkasan output nyata (jumlah test yang lulus, status exit code 0, log deteksi race).
 - **Integritas Penyelidikan**: Jika terjadi kegagalan atau kejanggalan, agen wajib melaporkan kondisi faktual apa adanya tanpa memanipulasi artefak atau mengabaikan peringatan sistem.
+
+---
+
+## 6. Amandemen Keamanan & Pagar Pembatas Agen (Programmatic Guardrails)
+
+Untuk menjamin kepatuhan mutlak ke-25 sub-agen, aturan sistemik berikut diberlakukan secara fisik di level infrastruktur agen:
+
+### 6.1. Tool-Level RBAC (Role-Based Access Control)
+Hak akses agen (`enable_write_tools`) dicabut sesuai perannya. Agen tipe pemikir (seperti `routex_planner` atau `ui_ux_auditor`) **dilarang keras** memiliki hak mengeksekusi terminal atau menulis berkas secara mandiri, memastikan mereka murni sebagai entitas penasihat.
+
+### 6.2. Karantina Sandbox (Isolated Workspace)
+Setiap penugasan *Coder* dan *Red Team* **wajib** diluncurkan pada parameter `Workspace: 'branch'`. Setiap modifikasi agen akan berada di dalam kloning terisolasi. Kesalahan fatal (seperti penghapusan direktori) tidak akan menyentuh repositori lokal utama.
+
+### 6.3. Jebakan Pre-Commit Hooks
+Sistem CI/CD lokal akan diperkeras dengan pengait (hooks) Git fisik. Skrip akan secara otomatis membatalkan eksekusi `git commit` dari sub-agen apabila:
+- Terdeteksi tipe `any` pada ekstensi `.ts` atau `.tsx`.
+- Laporan `go test` atau `vitest` gagal.
+Ini memaksa agen penulisan kode untuk mengulang dan memperbaiki kode tanpa bisa berhalusinasi "melewati" tahap ini.
+
+### 6.4. Interogasi Permusuhan (Hostile QA Peer-Review)
+Agen dari Departemen QA & Keamanan (khususnya `qa_audit_engineer` dan `security_penetration_tester`) diinstruksikan beroperasi dengan persona **Kritis dan Permusuhan Teknis** terhadap agen pengembang. Mereka dilarang keras meloloskan kode dengan asumsi. Mereka harus bertindak seperti penyerang eksternal; sebuah rilis (PR) hanya sah jika lolos dari upaya "penghancuran" oleh agen QA ini.
+
+### 6.5. Kewajiban Standar Teknologi 2026 (State-of-the-Art Mandate)
+Untuk mencegah *technical debt*, seluruh sub-agen dilarang keras mengusulkan pola arsitektur usang (sebelum 2025). 
+- **Frontend**: Wajib memanfaatkan fitur React 19+ (seperti *React Compiler*, *Server Components*, tanpa `useMemo` manual jika tidak perlu).
+- **Backend**: Wajib menggunakan Go 1.25+ dengan *range-over-func iterators* dan *built-in mux* terbaru, tanpa pustaka routing pihak ketiga usang.
+- **AI**: Harus mengeksploitasi fitur *Structured Outputs* dan pola komunikasi *Realtime WebRTC* modern.
+Agen yang tertangkap menggunakan pola usang (seperti *class components* React atau *goroutine leaks* konvensional) akan langsung ditolak pada tahap *Code Review*.

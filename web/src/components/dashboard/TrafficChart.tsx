@@ -23,7 +23,7 @@ interface MemoizedChartInnerProps {
 }
 
 const MemoizedChartInner = React.memo<MemoizedChartInnerProps>(({ series, metricType }) => (
-  <ResponsiveContainer width="100%" height="100%">
+  <ResponsiveContainer width="100%" aspect={2}>
     <AreaChart data={series}>
       <defs>
         <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
@@ -70,7 +70,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
   const series = data?.points || [];
 
   return (
-    <div className="lg:col-span-2 bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 sm:p-5  flex flex-col justify-between">
+    <div className="lg:col-span-2 bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 sm:p-5 flex flex-col justify-between min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 mb-3 sm:mb-4">
         <div className="flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-accent flex-shrink-0" />
@@ -125,7 +125,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
         </div>
       </div>
 
-      <div className="h-52 sm:h-60 w-full pt-1 sm:pt-2">
+      <div className="w-full min-w-0 pt-2 min-h-[16rem]">
         {series.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-xs text-text-muted space-y-2">
             <Activity className="w-6 h-6 text-text-muted" />

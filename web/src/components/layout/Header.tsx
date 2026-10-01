@@ -20,18 +20,18 @@ export const Header: React.FC<HeaderProps> = ({
   const { principal } = useAuth();
 
   return (
-    <header className="h-20 sm:h-16 pt-2 sm:pt-0 bg-bg-base/60 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
+    <header className="h-24 sm:h-16 pt-6 sm:pt-0 bg-bg-base/60 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
       <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
         <button
           type="button"
           onClick={onOpenMobileMenu}
-          className="lg:hidden p-3 text-text-secondary hover:text-white rounded-nav hover:bg-bg-surface-2 shrink-0 cursor-pointer"
+          className="lg:hidden p-4 sm:p-3 text-text-secondary hover:text-white rounded-nav hover:bg-bg-surface-2 shrink-0 cursor-pointer"
           aria-label="Buka menu navigasi"
         >
-          <Menu className="w-6 h-6" aria-hidden="true" />
+          <Menu className="w-7 h-7 sm:w-6 sm:h-6" aria-hidden="true" />
         </button>
         <div className="min-w-0">
-          <h1 className="text-sm sm:text-base font-semibold text-text-primary tracking-tight truncate">
+          <h1 className="text-lg sm:text-base font-bold text-text-primary tracking-tight truncate">
             {title}
           </h1>
         </div>

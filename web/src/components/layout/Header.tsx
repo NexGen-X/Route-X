@@ -20,15 +20,15 @@ export const Header: React.FC<HeaderProps> = ({
   const { principal } = useAuth();
 
   return (
-    <header className="h-16 bg-bg-base/60 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
+    <header className="h-20 sm:h-16 pt-2 sm:pt-0 bg-bg-base/60 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
       <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
         <button
           type="button"
           onClick={onOpenMobileMenu}
-          className="lg:hidden p-1.5 sm:p-2 text-text-secondary hover:text-white rounded-nav hover:bg-bg-surface-2 shrink-0 cursor-pointer"
+          className="lg:hidden p-3 text-text-secondary hover:text-white rounded-nav hover:bg-bg-surface-2 shrink-0 cursor-pointer"
           aria-label="Buka menu navigasi"
         >
-          <Menu className="w-5 h-5" aria-hidden="true" />
+          <Menu className="w-6 h-6" aria-hidden="true" />
         </button>
         <div className="min-w-0">
           <h1 className="text-sm sm:text-base font-semibold text-text-primary tracking-tight truncate">
@@ -44,10 +44,10 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={onOpenCommandPalette}
-                className="sm:hidden p-2 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-text-secondary hover:text-white transition-all shadow-sm cursor-pointer"
+                className="sm:hidden p-3 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-text-secondary hover:text-white transition-all shadow-sm cursor-pointer"
                 aria-label="Buka Command Palette"
               >
-                <Search className="w-4 h-4 text-text-muted" aria-hidden="true" />
+                <Search className="w-5 h-5 text-text-muted" aria-hidden="true" />
               </button>
             </Tooltip>
             <button

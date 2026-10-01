@@ -11,6 +11,8 @@ export default {
         'bg-surface-1': 'var(--bg-surface-1)',
         'bg-surface-2': 'var(--bg-surface-2)',
         'bg-surface-3': 'var(--bg-surface-3)',
+        'glass-bg': 'var(--glass-bg)',
+        'glass-border': 'var(--glass-border)',
         border: 'var(--border)',
         'border-subtle': 'var(--border-subtle)',
         'border-hover': 'var(--border-hover)',

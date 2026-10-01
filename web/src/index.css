@@ -4,17 +4,20 @@
 
 @layer base {
   :root {
-    --bg-base: #030303;
+    --bg-base: #000000;
     --bg-surface: #0a0a0a;
     --bg-surface-1: #0f0f0f;
     --bg-surface-2: #141414;
     --bg-surface-3: #1c1c1c;
     
+    --glass-bg: rgba(10, 10, 10, 0.4);
+    --glass-border: rgba(255, 255, 255, 0.08);
+
     --border: rgba(255, 255, 255, 0.08);
     --border-subtle: rgba(255, 255, 255, 0.04);
     --border-hover: rgba(255, 255, 255, 0.15);
     
-    --text-primary: #fdfdfd;
+    --text-primary: #ffffff;
     --text-secondary: #a1a1aa;
     --text-muted: #71717a;
     

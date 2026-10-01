@@ -199,7 +199,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                 <label className="text-xs font-medium text-text-secondary block mb-1.5">
                   Mode Konfigurasi:
                 </label>
-                <div className="grid grid-cols-3 gap-1 p-1 bg-bg-surface-2 rounded-nav border border-border">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-1 p-1 bg-bg-surface-2 rounded-nav border border-border">
                   <button
                     type="button"
                     onClick={() => onModeChange(tool.id, 'model_only')}

@@ -80,7 +80,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
       )}
 
       {/* Ringkasan Status Database */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-bg-surface/40 backdrop-blur-md p-4 rounded-2xl border border-white/5 shadow-lg shadow-black/10 flex flex-col">
           <span className="text-text-muted text-[11px] font-medium uppercase tracking-wider mb-2">Basis Data</span>
           <span className="font-mono text-white text-sm font-semibold truncate">
@@ -122,7 +122,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
       </div>
 
       {/* Dua Kolom Aksi Ekspor vs Pemulihan */}
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Kolom Kiri: Ekspor Cadangan SQL */}
         <div className="flex flex-col justify-between p-6 rounded-2xl bg-bg-surface/40 backdrop-blur-md border border-white/5 shadow-lg shadow-black/10">
           <div className="space-y-4">
@@ -138,7 +138,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
 
             <div className="pt-2">
               <label className="block text-[11px] font-semibold text-text-muted mb-3 uppercase tracking-wider">Pilih Format Berkas:</label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 <button
                   type="button"
                   onClick={() => setExportFormat('sql.gz')}

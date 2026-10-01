@@ -165,7 +165,7 @@ export const EditEgressDrawer: React.FC<EditEgressDrawerProps> = ({
             className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white font-mono placeholder:text-text-muted/50 focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
           />
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-2">Bobot Alokasi</label>
             <input

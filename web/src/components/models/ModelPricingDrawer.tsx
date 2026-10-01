@@ -90,7 +90,7 @@ export const ModelPricingDrawer: React.FC<ModelPricingDrawerProps> = ({
             })}
           />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="input_per_1m_usd">
                 Input / 1M Token (USD) *

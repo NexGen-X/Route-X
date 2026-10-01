@@ -238,9 +238,9 @@ export const Models: React.FC = () => {
       />
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="models-loading-skeleton">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="models-loading-skeleton">
           {[...Array(6)].map((_, idx) => (
-            <Card key={idx} className="p-5 animate-pulse space-y-4">
+            <Card key={idx} className="p-5 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%] space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
                 <div className="space-y-1.5 flex-1">

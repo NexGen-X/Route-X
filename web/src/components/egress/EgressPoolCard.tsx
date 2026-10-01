@@ -49,7 +49,7 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
             <span className="text-xs text-text-muted">Status Koneksi</span>
             {pool.last_health_status === 'healthy' ? (
               <span className="inline-flex items-center gap-1.5 font-mono text-xs font-medium text-emerald-400 select-none">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)] animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]" />
                 <span>Terhubung ({pool.last_latency_ms || 0} ms)</span>
               </span>
             ) : pool.last_health_status === 'unhealthy' ? (

@@ -18,7 +18,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
     <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 sm:p-5  flex flex-col justify-between">
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-status-success animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]" />
           <h3 className="text-sm font-semibold text-white tracking-tight">Live Requests Feed</h3>
         </div>
 

@@ -140,7 +140,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mt-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5 mt-5">
           {/* Step 1 */}
           <div
             role="button"
@@ -225,7 +225,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
               Pilih skenario penggunaan Anda
             </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <button
               type="button"
               onClick={() => setSelectedRecipe('coding')}
@@ -326,7 +326,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
 
               <div className="space-y-2">
                 <h4 className="font-semibold text-white">1. Parameter Sambungan Gateway</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-[11px]">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 font-mono text-[11px]">
                   <div className="p-2.5 rounded-lg bg-bg-surface-2/60 backdrop-blur-sm ring-1 ring-white/5 border-transparent">
                     <span className="text-text-muted block text-[10px]">OpenAI Endpoint:</span>
                     <span className="text-accent">http://localhost:8080/v1</span>

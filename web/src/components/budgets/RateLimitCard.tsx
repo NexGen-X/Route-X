@@ -28,7 +28,7 @@ export const RateLimitCard: React.FC<RateLimitCardProps> = ({
           <Badge variant="info">Aktif</Badge>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 gap-2 p-3 bg-bg-surface-2 rounded-lg border border-border/50 text-center">
+        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 p-3 bg-bg-surface-2 rounded-lg border border-border/50 text-center">
           <div>
             <span className="block text-[10px] text-text-muted uppercase">Req / Mnt</span>
             <span className="font-mono text-sm font-bold text-white mt-0.5 block">

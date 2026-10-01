@@ -50,9 +50,14 @@ export default {
           from: { width: '100%' },
           to: { width: '0%' },
         },
+        shimmer: {
+          '0%': { backgroundPosition: '200% 0' },
+          '100%': { backgroundPosition: '-200% 0' },
+        },
       },
       animation: {
         'toast-progress': 'toast-progress linear forwards',
+        'shimmer': 'shimmer 1.5s infinite linear',
       },
       boxShadow: {
         'glow-accent': '0 0 20px -5px var(--accent)',

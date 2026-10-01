@@ -303,7 +303,7 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
           <label className="block text-xs font-medium text-text-secondary mb-1.5">
             Pilih Mode Routing
           </label>
-          <div className="grid grid-cols-2 gap-1.5 p-1 bg-bg-surface-2 border border-border rounded-xl">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-1.5 p-1 bg-bg-surface-2 border border-border rounded-xl">
             <button
               type="button"
               onClick={() => setEditMode('model_only')}
@@ -340,7 +340,7 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
         </div>
 
         <form id="edit-routing-rule-form" noValidate onSubmit={handleEditSave} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1">
                 Nama Aturan
@@ -451,7 +451,7 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
             </button>
 
             {showEditAdvanced && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-3">
                 <div>
                   <label className="block text-xs font-medium text-text-secondary mb-1">
                     Maksimal Percobaan

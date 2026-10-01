@@ -24,13 +24,13 @@ export const Badge: React.FC<BadgeProps> = ({
   };
 
   const sizes = {
-    sm: 'text-[11px] px-2 py-0.5',
+    sm: 'text-[11px] px-3 py-1 md:px-2 md:py-0.5',
     md: 'text-xs px-2.5 py-1',
   };
 
   return (
     <span
-      className={cn('inline-flex items-center gap-1 font-medium rounded-chip tracking-wide', variants[variant], sizes[size], className)}
+      className={cn('inline-flex items-center gap-1 font-medium rounded-full tracking-wide', variants[variant], sizes[size], className)}
     >
       {children}
     </span>

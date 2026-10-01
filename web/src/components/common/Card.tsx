@@ -17,16 +17,16 @@ export const Card: React.FC<CardProps> = ({
   action,
 }) => {
   return (
-    <div className={cn('bg-bg-surface border border-border rounded-card overflow-hidden shadow-sm transition-all', className)}>
+    <div className={cn('bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-card overflow-hidden shadow-sm transition-all', className)}>
       {(title || action) && (
-        <div className="px-5 py-3.5 border-b border-border/50 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <div className="min-w-0">
-            {title && <h3 className="text-sm font-semibold text-text-primary tracking-tight">{title}</h3>}
+        <div className="px-5 py-3.5 border-b border-border/50 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 hover:-translate-y-0.5 hover:shadow-xl">
+          <div className="min-w-0 hover:-translate-y-0.5 hover:shadow-xl">
+            {title && <h3 className="text-sm font-semibold text-text-primary tracking-tight hover:-translate-y-0.5 hover:shadow-xl">{title}</h3>}
           </div>
-          {action && <div className="shrink-0 max-w-full overflow-x-auto">{action}</div>}
+          {action && <div className="shrink-0 max-w-full overflow-x-auto hover:-translate-y-0.5 hover:shadow-xl">{action}</div>}
         </div>
       )}
-      <div className="p-5">{children}</div>
+      <div className="p-5 hover:-translate-y-0.5 hover:shadow-xl">{children}</div>
     </div>
   );
 };

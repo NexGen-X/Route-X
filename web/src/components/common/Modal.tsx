@@ -83,7 +83,7 @@ export const Modal: React.FC<ModalProps> = ({
         className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
       >
         <div
-          className={`w-full ${maxW} bg-bg-surface border border-border rounded-card shadow-2xl flex flex-col max-h-[90vh] overflow-hidden cursor-default`}
+          className={`w-full ${maxW} bg-bg-surface border border-border  shadow-2xl flex flex-col max-h-[90vh] overflow-hidden cursor-default`}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/50 bg-bg-surface-2/30">
@@ -96,7 +96,7 @@ export const Modal: React.FC<ModalProps> = ({
                 type="button"
                 onClick={onClose}
                 aria-label="Tutup modal"
-                className="text-text-muted hover:text-text-primary p-1 rounded-inner hover:bg-bg-surface-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer"
+                className="text-text-muted hover:text-text-primary p-1  hover:bg-bg-surface-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer"
               >
                 <X className="w-4 h-4" aria-hidden="true" />
               </button>

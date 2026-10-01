@@ -35,7 +35,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {providers.length === 0 ? (
           <div className="col-span-full py-8 text-center text-xs text-text-muted bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg">
             Belum ada provider upstream yang terdaftar.{' '}

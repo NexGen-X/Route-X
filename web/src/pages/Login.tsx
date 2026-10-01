@@ -39,7 +39,7 @@ export const Login: React.FC = () => {
     try {
       await login(email.trim(), password, keepSignedIn);
       window.location.hash = '#/';
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {

@@ -169,9 +169,9 @@ export const Webhooks: React.FC = () => {
       />
 
       {loading && webhooks.length === 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1, 2].map((i) => (
-            <Card key={i} className="p-5 space-y-4 animate-pulse">
+            <Card key={i} className="p-5 space-y-4 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]">
               <div className="space-y-2">
                 <div className="h-4 bg-bg-surface-2 rounded w-1/3" />
                 <div className="h-3 bg-bg-surface-2 rounded w-2/3" />
@@ -206,7 +206,7 @@ export const Webhooks: React.FC = () => {
           </div>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {webhooks.map((wh) => (
             <div
               key={wh.id}
@@ -441,7 +441,7 @@ export const Webhooks: React.FC = () => {
             <p className="text-center text-text-muted py-4">Memuat detail...</p>
           ) : deliveryDetails ? (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-bg-surface-2 p-3 rounded-nav border border-border">
                   <span className="block text-xs font-medium text-text-secondary mb-1">Status</span>
                   <Badge variant={deliveryDetails.status === 'success' ? 'success' : deliveryDetails.status === 'failed' ? 'error' : 'warn'}>{deliveryDetails.status}</Badge>

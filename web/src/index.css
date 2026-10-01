@@ -3,15 +3,49 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg-base: #030303;
+    --bg-surface: #0a0a0a;
+    --bg-surface-1: #0f0f0f;
+    --bg-surface-2: #141414;
+    --bg-surface-3: #1c1c1c;
+    
+    --border: rgba(255, 255, 255, 0.08);
+    --border-subtle: rgba(255, 255, 255, 0.04);
+    --border-hover: rgba(255, 255, 255, 0.15);
+    
+    --text-primary: #fdfdfd;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    
+    --accent: #d9f99d;
+    --accent-hover: #bef264;
+    --accent-bg: rgba(217, 249, 157, 0.06);
+
+    --radius-card: 16px;
+    --radius-inner: 12px;
+    --radius-nav: 10px;
+    --radius-chip: 9999px;
+
+    --ease-fluid: cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-spring: linear(
+      0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.281 6.7%, 0.432 8.9%, 0.658 12.2%,
+      0.806 14.8%, 0.908 17.6%, 0.966 19.8%, 0.999 22.2%, 1.018 24.8%, 1.026 27.8%,
+      1.023 31%, 1.006 36.4%, 0.996 42.4%, 0.998 48.9%, 1.001 56%, 1
+    );
+  }
+
   body {
-    background-color: #0A0A0A;
-    color: #F5F5F5;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /* Universal Selection Color */
   ::selection {
-    background-color: #A3E635;
-    color: #0A0A0A;
+    background-color: var(--accent);
+    color: var(--bg-base);
   }
 }
 

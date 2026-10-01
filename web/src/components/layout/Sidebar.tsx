@@ -96,12 +96,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed lg:static top-0 left-0 bottom-0 z-50 flex flex-col bg-bg-sidebar border-r border-border-subtle transition-all duration-300 select-none ${
+        className={`fixed lg:static top-0 left-0 bottom-0 z-50 flex flex-col bg-bg-sidebar transition-all duration-500 ease-spring select-none shadow-[1px_0_24px_rgba(0,0,0,0.4)] lg:shadow-none ${
           isCollapsed ? 'w-[70px]' : 'w-[260px]'
         } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
       >
         {/* Brand Header */}
-        <div className="h-14 flex items-center px-4 border-b border-border-subtle justify-between">
+        <div className="h-16 flex items-center px-4 justify-between">
           <button
             type="button"
             className="flex items-center gap-3 overflow-hidden cursor-pointer text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded-lg"
@@ -142,10 +142,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     aria-label={item.name}
                     aria-current={isActive ? 'page' : undefined}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-nav text-sm transition-all relative group cursor-pointer ${
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-nav text-sm transition-all duration-300 ease-fluid relative group cursor-pointer ${
                       isActive
-                        ? 'bg-bg-surface-2 text-white font-medium border border-border shadow-inner'
-                        : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/60'
+                        ? 'bg-bg-surface-3 text-white font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] border-transparent'
+                        : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/40 border-transparent'
                     } ${isCollapsed ? 'justify-center px-0' : ''}`}
                   >
                     {isActive && (
@@ -176,9 +176,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* User profile & Collapser Footer */}
-        <div className="p-3 border-t border-border-subtle bg-bg-surface-2/20 flex flex-col gap-2">
+        <div className="p-3 bg-bg-surface-2/10 flex flex-col gap-2 mt-auto pb-4">
           {!isCollapsed && user && (
-            <div className="flex items-center justify-between px-2 py-1.5 rounded-inner bg-bg-surface-2/40 border border-border/40">
+            <div className="flex items-center justify-between px-2 py-2 rounded-inner bg-bg-surface-2/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
               <div className="flex items-center gap-2.5 truncate">
                 <div className="w-7 h-7 rounded-full bg-accent/20 border border-accent/40 text-accent flex items-center justify-center font-bold text-xs flex-shrink-0">
                   {user.display_name.charAt(0).toUpperCase()}

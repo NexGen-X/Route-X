@@ -5,22 +5,22 @@ export default {
   theme: {
     extend: {
       colors: {
-        'bg-base': '#0A0A0A',
-        'bg-sidebar': '#0C0C0C',
-        'bg-surface': '#101010',
-        'bg-surface-1': '#121212',
-        'bg-surface-2': '#141414',
-        'bg-surface-3': '#181818',
-        border: '#1F1F1F',
-        'border-subtle': '#1C1C1C',
-        'border-hover': '#2A2A2A',
-        'text-primary': '#F5F5F5',
-        'text-secondary': '#A1A1AA',
-        'text-muted': '#6B7280',
+        'bg-base': 'var(--bg-base)',
+        'bg-sidebar': 'var(--bg-surface)',
+        'bg-surface': 'var(--bg-surface)',
+        'bg-surface-1': 'var(--bg-surface-1)',
+        'bg-surface-2': 'var(--bg-surface-2)',
+        'bg-surface-3': 'var(--bg-surface-3)',
+        border: 'var(--border)',
+        'border-subtle': 'var(--border-subtle)',
+        'border-hover': 'var(--border-hover)',
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-muted': 'var(--text-muted)',
         accent: {
-          DEFAULT: '#BEF264',
-          bg: 'rgba(190, 242, 100, 0.10)',
-          hover: '#a3e635',
+          DEFAULT: 'var(--accent)',
+          bg: 'var(--accent-bg)',
+          hover: 'var(--accent-hover)',
         },
         status: {
           success: '#4ADE80',
@@ -30,14 +30,18 @@ export default {
         },
       },
       borderRadius: {
-        card: '14px',
-        inner: '12px',
-        nav: '10px',
-        chip: '9999px',
+        card: 'var(--radius-card)',
+        inner: 'var(--radius-inner)',
+        nav: 'var(--radius-nav)',
+        chip: 'var(--radius-chip)',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+      },
+      transitionTimingFunction: {
+        fluid: 'var(--ease-fluid)',
+        spring: 'var(--ease-spring)',
       },
       keyframes: {
         'toast-progress': {
@@ -47,6 +51,10 @@ export default {
       },
       animation: {
         'toast-progress': 'toast-progress linear forwards',
+      },
+      boxShadow: {
+        'glow-accent': '0 0 20px -5px var(--accent)',
+        'glass-panel': 'inset 0 1px 0 0 rgba(255,255,255,0.05), 0 8px 32px -4px rgba(0,0,0,0.5)',
       },
     },
   },

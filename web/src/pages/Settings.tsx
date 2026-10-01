@@ -288,41 +288,41 @@ export const Settings: React.FC = () => {
       )}
 
       {/* Tab Switcher Pills */}
-      <div className="flex flex-wrap border-b border-border/80 gap-1 mb-6">
+      <div className="flex flex-wrap p-1.5 gap-1 mb-8 rounded-2xl bg-bg-surface/40 backdrop-blur-md border border-white/5 w-fit shadow-lg shadow-black/10">
         <button
           type="button"
           onClick={() => setActiveTab('domain')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+          className={`px-5 py-2.5 text-xs font-semibold rounded-xl transition-all duration-300 flex items-center gap-2.5 cursor-pointer ${
             activeTab === 'domain'
-              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
-              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+              ? 'bg-accent/15 text-accent shadow-sm border border-accent/20'
+              : 'text-text-muted hover:text-white hover:bg-white/5 border border-transparent'
           }`}
         >
-          <Globe className="w-4 h-4 text-accent" />
+          <Globe className={`w-4 h-4 ${activeTab === 'domain' ? 'text-accent' : ''}`} />
           <span>Domain & HTTPS</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('backup')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+          className={`px-5 py-2.5 text-xs font-semibold rounded-xl transition-all duration-300 flex items-center gap-2.5 cursor-pointer ${
             activeTab === 'backup'
-              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
-              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+              ? 'bg-accent/15 text-accent shadow-sm border border-accent/20'
+              : 'text-text-muted hover:text-white hover:bg-white/5 border border-transparent'
           }`}
         >
-          <Database className="w-4 h-4 text-accent" />
+          <Database className={`w-4 h-4 ${activeTab === 'backup' ? 'text-accent' : ''}`} />
           <span>Backup & Restore</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('advanced')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+          className={`px-5 py-2.5 text-xs font-semibold rounded-xl transition-all duration-300 flex items-center gap-2.5 cursor-pointer ${
             activeTab === 'advanced'
-              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
-              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+              ? 'bg-accent/15 text-accent shadow-sm border border-accent/20'
+              : 'text-text-muted hover:text-white hover:bg-white/5 border border-transparent'
           }`}
         >
-          <Sliders className="w-4 h-4 text-accent" />
+          <Sliders className={`w-4 h-4 ${activeTab === 'advanced' ? 'text-accent' : ''}`} />
           <span>Pengaturan Lanjutan</span>
         </button>
       </div>

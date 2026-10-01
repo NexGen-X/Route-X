@@ -22,6 +22,7 @@ export const RequestItem: React.FC<RequestItemProps> = ({ request, onInspect }) 
     <div
       role="button"
       tabIndex={0}
+      data-testid={`request-row-${request.request_id}`}
       onKeyDown={handleKeyDown}
       onClick={() => onInspect(request)}
       className="group relative flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-bg-surface/40 backdrop-blur-md rounded-2xl border border-transparent hover:border-border/50 hover:bg-bg-surface hover:shadow-xl hover:shadow-black/20 hover:-translate-y-0.5 transition-all duration-300 cursor-pointer overflow-hidden"

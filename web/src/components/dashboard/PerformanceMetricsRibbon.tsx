@@ -11,7 +11,7 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
   const { data: summary } = useObservabilitySummary(timeWindow);
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
       <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg p-4 hover:ring-white/20 transition-all  flex flex-col justify-between">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-medium text-text-muted truncate">

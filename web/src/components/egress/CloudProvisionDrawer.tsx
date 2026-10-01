@@ -293,7 +293,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
                   placeholder="Contoh: 8f3a92b04c8172948e9102cba8471..."
                   value={cfAccountId}
                   onChange={(e) => setCfAccountId(e.target.value)}
-                  className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                  className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white font-mono focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
                 />
                 <span className="text-[11px] text-text-muted mt-1 block">
                   Dapat disalin dari URL dashboard Cloudflare (setelah dash.cloudflare.com/...).
@@ -322,7 +322,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
                     placeholder="Token dengan izin 'AI Gateway: Edit'"
                     value={cfApiToken}
                     onChange={(e) => setCfApiToken(e.target.value)}
-                    className="w-full px-3 py-2 pr-10 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2.5 pr-10 bg-white/5 border border-white/10 rounded-xl text-white font-mono focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
                   />
                   <button
                     type="button"
@@ -344,7 +344,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
                     placeholder="routex-ai-gateway"
                     value={cfGatewayId}
                     onChange={(e) => setCfGatewayId(e.target.value)}
-                    className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
                   />
                 </div>
                 <div>
@@ -356,7 +356,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
                     placeholder="☁️ Cloudflare AI Gateway"
                     value={cfPoolName}
                     onChange={(e) => setCfPoolName(e.target.value)}
-                    className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
                   />
                 </div>
               </div>
@@ -430,7 +430,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
                     placeholder="ddp_xxxxxxxxxxxxxxxxxxxxxxxx"
                     value={denoToken}
                     onChange={(e) => setDenoToken(e.target.value)}
-                    className="w-full px-3 py-2 pr-10 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2.5 pr-10 bg-white/5 border border-white/10 rounded-xl text-white font-mono focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
                   />
                   <button
                     type="button"
@@ -452,7 +452,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
                     placeholder="routex-relay-xxxx"
                     value={denoProjectName}
                     onChange={(e) => setDenoProjectName(e.target.value)}
-                    className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white font-mono focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
                   />
                   <span className="text-[10px] text-text-muted mt-1 block">
                     Domain akhir: {denoProjectName || 'project'}.deno.dev
@@ -467,7 +467,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
                     placeholder="🦕 Deno Relay"
                     value={denoPoolName}
                     onChange={(e) => setDenoPoolName(e.target.value)}
-                    className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+                    className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
                   />
                 </div>
               </div>

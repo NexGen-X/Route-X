@@ -4,9 +4,12 @@ import {
   StatusBar,
   StyleSheet,
   View,
+  Text,
+  TouchableOpacity,
   Modal,
   Alert,
 } from 'react-native';
+import { registerRootComponent } from 'expo';
 import { colors } from './src/theme/colors';
 import { TopHeader } from './src/components/TopHeader';
 import { BottomNav, TabKey } from './src/components/BottomNav';
@@ -28,7 +31,47 @@ export type ScreenId =
   | 'dashboard'
   | 'logs';
 
-export default function App(): React.JSX.Element {
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error?: Error;
+}
+
+class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Route-X App Error caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <SafeAreaView style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Route-X AI Gateway</Text>
+          <Text style={styles.errorMessage}>
+            {this.state.error?.message || 'Terjadi kesalahan saat memuat antarmuka.'}
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => this.setState({ hasError: false })}
+          >
+            <Text style={styles.retryButtonText}>Muat Ulang Antarmuka</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function MainApp(): React.JSX.Element {
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('home');
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -150,6 +193,16 @@ export default function App(): React.JSX.Element {
   );
 }
 
+export default function App(): React.JSX.Element {
+  return (
+    <AppErrorBoundary>
+      <MainApp />
+    </AppErrorBoundary>
+  );
+}
+
+registerRootComponent(App);
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -161,5 +214,38 @@ const styles = StyleSheet.create({
   },
   screenWrapper: {
     flex: 1,
+  },
+  errorContainer: {
+    flex: 1,
+    backgroundColor: colors.bgCanvas,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.accentPrimary,
+    marginBottom: 12,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  retryButton: {
+    backgroundColor: colors.bgElevated,
+    borderColor: colors.accentPrimary,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  retryButtonText: {
+    color: colors.accentPrimary,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

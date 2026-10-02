@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { CommandPalette } from '../common/CommandPalette';
-import { LayoutDashboard, Activity, Route, KeyRound, Sliders } from 'lucide-react';
 
 interface LayoutProps {
   title: string;
@@ -12,6 +11,7 @@ interface LayoutProps {
 }
 
 export const Layout: React.FC<LayoutProps> = ({ title, currentPath, onNavigate, children }) => {
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -25,50 +25,26 @@ export const Layout: React.FC<LayoutProps> = ({ title, currentPath, onNavigate, 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const bottomNavItems = [
-    { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-    { name: 'Requests', path: '/analytics/requests', icon: Activity },
-    { name: 'Routing', path: '/routing/rules', icon: Route },
-    { name: 'Keys', path: '/access/api-keys', icon: KeyRound },
-    { name: 'Settings', path: '/system/settings', icon: Sliders },
-  ];
-
   return (
-    <div className="min-h-[100dvh] bg-bg-base flex pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
-      {/* Sidebar is hidden on < md screens */}
-      <div className="hidden md:flex">
-        <Sidebar currentPath={currentPath} onNavigate={onNavigate} isMobileOpen={false} setIsMobileOpen={() => {}} />
-      </div>
+    <div className="min-h-screen bg-bg-base flex">
+      <Sidebar
+        currentPath={currentPath}
+        onNavigate={onNavigate}
+        isMobileOpen={isMobileSidebarOpen}
+        setIsMobileOpen={setIsMobileSidebarOpen}
+      />
 
       <div className="flex-1 flex flex-col min-w-0">
         <Header 
           title={title} 
-          onOpenMobileMenu={() => {}}
+          onOpenMobileMenu={() => setIsMobileSidebarOpen(true)}
           onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         />
         
-        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto overflow-x-hidden">
           {children}
         </main>
       </div>
-
-      {/* Mobile Bottom Navigation (Visible only on < md) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-bg-base/80 backdrop-blur-xl border-t border-border z-40 flex items-center justify-around px-2 pb-[env(safe-area-inset-bottom)]">
-        {bottomNavItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = currentPath === item.path || (item.path !== '/' && currentPath.startsWith(item.path));
-          return (
-            <button
-              key={item.path}
-              onClick={() => onNavigate(item.path)}
-              className={`flex flex-col items-center justify-center w-full h-full p-2 space-y-1 ${isActive ? 'text-accent' : 'text-text-secondary hover:text-white'}`}
-            >
-              <Icon className="w-6 h-6" />
-              <span className="text-[10px] font-medium">{item.name}</span>
-            </button>
-          );
-        })}
-      </nav>
 
       <CommandPalette 
         isOpen={isCommandPaletteOpen}

@@ -4,39 +4,34 @@
 
 @layer base {
   :root {
-    --bg-base: #000000;
-    --bg-surface: #0a0a0a;
-    --bg-surface-1: #0f0f0f;
-    --bg-surface-2: #141414;
-    --bg-surface-3: #1c1c1c;
+    --bg-base: #09090b;
+    --bg-surface: #111113;
+    --bg-surface-1: #161619;
+    --bg-surface-2: #1e1e22;
+    --bg-surface-3: #27272a;
     
-    --glass-bg: rgba(10, 10, 10, 0.4);
+    --glass-bg: rgba(17, 17, 19, 0.6);
     --glass-border: rgba(255, 255, 255, 0.08);
 
     --border: rgba(255, 255, 255, 0.08);
     --border-subtle: rgba(255, 255, 255, 0.04);
     --border-hover: rgba(255, 255, 255, 0.15);
     
-    --text-primary: #ffffff;
+    --text-primary: #f4f4f5;
     --text-secondary: #a1a1aa;
     --text-muted: #71717a;
     
-    /* Obsidian Noir accent: Lime Neon */
-    --accent: #a3e635;
-    --accent-hover: #bef264;
-    --accent-bg: rgba(163, 230, 53, 0.1);
+    /* Deep Enterprise Accent */
+    --accent: #bef264;
+    --accent-hover: #a3e635;
+    --accent-bg: rgba(190, 242, 100, 0.08);
     
-    --surface-glow: 0 0 40px rgba(163, 230, 53, 0.05);
+    --surface-glow: 0 0 32px rgba(190, 242, 100, 0.05);
 
-    --radius-card: 16px;
-    --radius-inner: 12px;
-    --radius-nav: 10px;
+    --radius-card: 12px;
+    --radius-inner: 8px;
+    --radius-nav: 8px;
     --radius-chip: 9999px;
-
-    /* Fluid typography via clamp */
-    --font-size-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
-    --font-size-lg: clamp(1.125rem, 1.05rem + 0.375vw, 1.375rem);
-    --font-size-xl: clamp(1.25rem, 1.15rem + 0.5vw, 1.5rem);
 
     --ease-fluid: cubic-bezier(0.32, 0.72, 0, 1);
     --ease-spring: linear(
@@ -49,7 +44,6 @@
   body {
     background-color: var(--bg-base);
     color: var(--text-primary);
-    font-size: var(--font-size-base);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100dvh;

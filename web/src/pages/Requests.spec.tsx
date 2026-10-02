@@ -327,8 +327,8 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
       expect(mockListFn).toHaveBeenCalled();
     });
 
-    const mobileCard = screen.getByTestId('request-row-req-uuid-2');
-    fireEvent.keyDown(mobileCard, { key: 'Enter', code: 'Enter' });
+    const row = await screen.findByTestId('request-row-req-uuid-2');
+    fireEvent.keyDown(row, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
       expect(screen.getByText('Detail Request & Timeline Event')).toBeInTheDocument();

@@ -7,8 +7,8 @@ import { QueryError } from '../components/common/QueryError';
 import { RefreshCw, Activity } from 'lucide-react';
 import {
   RequestFilterBar,
-  RequestListSkeleton,
-  RequestItem,
+  RequestTableSkeleton,
+  RequestTableRow,
   RequestInspectorModal,
   type RequestTabFilter,
 } from '../components/requests';
@@ -154,7 +154,7 @@ export const Requests: React.FC = () => {
 
       <div className="space-y-4">
         {/* Filter Chips & Search Bar */}
-        <div className="p-4 bg-bg-surface/40 backdrop-blur-md rounded-2xl border border-border/10">
+        <div className="p-3 sm:p-4 bg-bg-surface border border-border rounded-card">
           <RequestFilterBar
             activeTab={activeTab}
             onTabChange={setActiveTab}
@@ -164,13 +164,13 @@ export const Requests: React.FC = () => {
           />
         </div>
 
-        {/* Requests List */}
+        {/* Requests Table */}
         {isLoading ? (
-          <RequestListSkeleton />
+          <RequestTableSkeleton />
         ) : requests.length === 0 ? (
-          <div className="py-12 px-4 text-center space-y-3 bg-bg-surface/40 backdrop-blur-md rounded-2xl border border-border/10">
+          <div className="py-12 px-4 text-center space-y-3 bg-bg-surface border border-border rounded-card">
             <Activity className="w-8 h-8 mx-auto text-text-muted/40" />
-            <div className="text-sm font-semibold text-white">
+            <div className="text-sm font-semibold text-text-primary">
               Tidak ada catatan permintaan
             </div>
             <p className="text-xs text-text-muted max-w-sm mx-auto">
@@ -178,14 +178,32 @@ export const Requests: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3">
-            {requests.map((r) => (
-              <RequestItem
-                key={r.id || r.request_id}
-                request={r}
-                onInspect={handleInspect}
-              />
-            ))}
+          <div className="bg-bg-surface border border-border rounded-card overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs whitespace-nowrap">
+                <thead>
+                  <tr className="border-b border-border bg-bg-surface-1 text-text-muted font-medium text-xs">
+                    <th className="py-2.5 px-4 font-semibold">Timestamp</th>
+                    <th className="py-2.5 px-4 font-semibold">Method</th>
+                    <th className="py-2.5 px-4 font-semibold">Path</th>
+                    <th className="py-2.5 px-4 font-semibold">Status</th>
+                    <th className="py-2.5 px-4 font-semibold">Model</th>
+                    <th className="py-2.5 px-4 font-semibold">Latency</th>
+                    <th className="py-2.5 px-4 font-semibold">Cost</th>
+                    <th className="py-2.5 px-4 text-right font-semibold">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/60">
+                  {requests.map((r) => (
+                    <RequestTableRow
+                      key={r.id || r.request_id}
+                      request={r}
+                      onInspect={handleInspect}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 

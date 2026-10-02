@@ -50,8 +50,8 @@ const MENU_GROUPS: MenuGroup[] = [
     items: [
       { id: 'm-providers', label: 'Providers', icon: Cpu, screenTarget: 'providers', badge: '6 Aktif' },
       { id: 'm-routing', label: 'Routing & Failover', icon: GitFork, screenTarget: 'routing' },
-      { id: 'm-cli', label: 'CLI Integrations', icon: Terminal },
-      { id: 'm-egress', label: 'Egress Pools', icon: Network },
+      { id: 'm-cli', label: 'CLI Integrations', icon: Terminal, screenTarget: 'cli' },
+      { id: 'm-egress', label: 'Egress Pools', icon: Network, screenTarget: 'egress', badge: '4 Pool' },
     ],
   },
   {
@@ -59,15 +59,15 @@ const MENU_GROUPS: MenuGroup[] = [
     items: [
       { id: 'm-keys', label: 'API Keys', icon: KeyRound, screenTarget: 'apikeys', badge: '4' },
       { id: 'm-users', label: 'Users', icon: Users, screenTarget: 'users' },
-      { id: 'm-budgets', label: 'Budgets & Limits', icon: PieChart },
+      { id: 'm-budgets', label: 'Budgets & Limits', icon: PieChart, screenTarget: 'budgets', badge: '$1.2K' },
     ],
   },
   {
     title: 'Sistem & Pengaturan',
     items: [
-      { id: 'm-webhooks', label: 'Webhooks', icon: Webhook },
-      { id: 'm-settings', label: 'Settings', icon: Settings },
-      { id: 'm-diagnostics', label: 'Diagnostics', icon: Activity },
+      { id: 'm-webhooks', label: 'Webhooks', icon: Webhook, screenTarget: 'webhooks' },
+      { id: 'm-settings', label: 'Settings', icon: Settings, screenTarget: 'settings' },
+      { id: 'm-diagnostics', label: 'Diagnostics', icon: Activity, screenTarget: 'diagnostics', badge: '99.9%' },
     ],
   },
 ];

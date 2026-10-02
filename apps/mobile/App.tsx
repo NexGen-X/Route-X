@@ -21,6 +21,12 @@ import { ApiKeysScreen } from './src/screens/ApiKeysScreen';
 import { UsersScreen } from './src/screens/UsersScreen';
 import { DashboardScreen } from './src/screens/DashboardScreen';
 import { LogsScreen } from './src/screens/LogsScreen';
+import { EgressScreen } from './src/screens/EgressScreen';
+import { BudgetsScreen } from './src/screens/BudgetsScreen';
+import { CliScreen } from './src/screens/CliScreen';
+import { DiagnosticsScreen } from './src/screens/DiagnosticsScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
+import { WebhooksScreen } from './src/screens/WebhooksScreen';
 
 export type ScreenId =
   | 'home'
@@ -29,7 +35,13 @@ export type ScreenId =
   | 'apikeys'
   | 'users'
   | 'dashboard'
-  | 'logs';
+  | 'logs'
+  | 'egress'
+  | 'budgets'
+  | 'cli'
+  | 'diagnostics'
+  | 'settings'
+  | 'webhooks';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -111,6 +123,24 @@ function MainApp(): React.JSX.Element {
         setCurrentScreen('logs');
         setActiveTab('logs');
         break;
+      case 'egress':
+        setCurrentScreen('egress');
+        break;
+      case 'budgets':
+        setCurrentScreen('budgets');
+        break;
+      case 'cli':
+        setCurrentScreen('cli');
+        break;
+      case 'diagnostics':
+        setCurrentScreen('diagnostics');
+        break;
+      case 'settings':
+        setCurrentScreen('settings');
+        break;
+      case 'webhooks':
+        setCurrentScreen('webhooks');
+        break;
       case 'home':
       default:
         setCurrentScreen('home');
@@ -138,6 +168,18 @@ function MainApp(): React.JSX.Element {
         return <DashboardScreen onBack={handleBackToHome} />;
       case 'logs':
         return <LogsScreen onBack={handleBackToHome} />;
+      case 'egress':
+        return <EgressScreen onBack={handleBackToHome} />;
+      case 'budgets':
+        return <BudgetsScreen onBack={handleBackToHome} />;
+      case 'cli':
+        return <CliScreen onBack={handleBackToHome} />;
+      case 'diagnostics':
+        return <DiagnosticsScreen onBack={handleBackToHome} />;
+      case 'settings':
+        return <SettingsScreen onBack={handleBackToHome} />;
+      case 'webhooks':
+        return <WebhooksScreen onBack={handleBackToHome} />;
       case 'home':
       default:
         return (
@@ -171,7 +213,7 @@ function MainApp(): React.JSX.Element {
         />
       </View>
 
-      {/* Menu Drawer Modal (Layar 2) */}
+      {/* Menu Drawer Modal */}
       <Modal
         visible={drawerVisible}
         animationType="slide"

@@ -26,25 +26,25 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   const totalProvidersCount = providers.length;
 
   return (
-    <div className="bg-bg-surface/40 backdrop-blur-md ring-1 ring-white/5 rounded-2xl shadow-lg px-5 py-3.5 ">
+    <div className="bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl shadow-sm px-5 py-3.5">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-between">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
           <span
             role="status"
             aria-live="polite"
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border shrink-0 ${
+            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border shrink-0 ${
               loadError
                 ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
                 : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
             }`}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]'}`}
+              className={`w-1.5 h-1.5 rounded-full ${loadError ? 'bg-rose-400' : 'bg-emerald-400 animate-pulse'}`}
             />
             {loadError ? 'Gateway Tidak Tersedia' : 'Beroperasi'}
           </span>
 
-          <h2 className="text-sm font-bold tracking-tight text-white shrink-0">
+          <h2 className="text-sm font-semibold tracking-tight text-white shrink-0">
             Route-X Gateway Control
           </h2>
 

@@ -21,7 +21,7 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const base =
-    'inline-flex items-center justify-center gap-1.5 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed select-none rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-base';
+    'inline-flex items-center justify-center gap-1.5 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed select-none rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-base';
 
   const variants = {
     primary:
@@ -36,8 +36,8 @@ export const Button: React.FC<ButtonProps> = ({
 
   const sizes = {
     sm: 'text-xs px-2.5 py-1.5',
-    md: 'text-sm px-3.5 py-2',
-    lg: 'text-base px-5 py-2.5',
+    md: 'text-xs sm:text-sm px-3.5 py-2',
+    lg: 'text-sm sm:text-base px-5 py-2.5',
   };
 
   return (
@@ -48,7 +48,7 @@ export const Button: React.FC<ButtonProps> = ({
       disabled={disabled || isLoading}
       {...props}
     >
-      {isLoading ? <Loader2 className="w-4 h-4 animate-spin min-h-[48px] active:scale-[0.97] hover:shadow-[var(--surface-glow)]" aria-hidden="true" /> : icon}
+      {isLoading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" aria-hidden="true" /> : icon}
       {children}
     </button>
   );

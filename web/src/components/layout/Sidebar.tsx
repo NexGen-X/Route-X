@@ -49,6 +49,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { user, principal, logout } = useAuth();
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isMobileOpen) {
+        setIsMobileOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileOpen, setIsMobileOpen]);
+
   const navGroups: NavGroup[] = [
     {
       title: 'Ringkasan & Aktivitas',
@@ -90,31 +100,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Mobile backdrop */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setIsMobileOpen(false)}
+          aria-hidden="true"
         />
       )}
 
       <aside
-        className={`fixed lg:static top-0 left-0 bottom-0 z-50 flex flex-col bg-bg-sidebar transition-all duration-500 ease-spring select-none shadow-[1px_0_24px_rgba(0,0,0,0.4)] lg:shadow-none ${
-          isCollapsed ? 'w-[70px]' : 'w-[260px]'
-        } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+        className={`fixed lg:sticky top-0 left-0 bottom-0 h-screen z-50 flex flex-col bg-bg-surface border-r border-border transition-all duration-300 select-none ${
+          isCollapsed ? 'w-[68px]' : 'w-64'
+        } ${isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}`}
       >
         {/* Brand Header */}
-        <div className="h-16 flex items-center px-4 justify-between">
+        <div className={`h-14 flex items-center px-4 border-b border-border ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}>
           <button
             type="button"
             className="flex items-center gap-3 overflow-hidden cursor-pointer text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded-lg"
-            onClick={() => onNavigate('/')}
+            onClick={() => {
+              onNavigate('/');
+              setIsMobileOpen(false);
+            }}
             aria-label="Route-X Beranda"
           >
-            <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-black font-extrabold text-base shadow-sm shadow-accent/20">
+            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0 text-black font-extrabold text-sm shadow-sm shadow-accent/20">
               RX
             </div>
             {!isCollapsed && (
               <div className="flex flex-col truncate">
-                <span className="font-bold tracking-tight text-white text-base leading-tight">Route-X</span>
-                <span className="text-[10px] text-text-secondary font-mono tracking-wider">AI GATEWAY & RUNTIME</span>
+                <span className="font-bold tracking-tight text-text-primary text-sm leading-tight">Route-X</span>
+                <span className="text-[10px] text-text-muted font-mono tracking-wider">AI GATEWAY & RUNTIME</span>
               </div>
             )}
           </button>
@@ -142,19 +156,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     aria-label={item.name}
                     aria-current={isActive ? 'page' : undefined}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-nav text-sm transition-all duration-300 ease-fluid relative group cursor-pointer ${
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-inner text-xs font-medium transition-colors relative group cursor-pointer ${
                       isActive
-                        ? 'bg-bg-surface-3 text-white font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] border-transparent'
-                        : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/40 border-transparent'
+                        ? 'bg-accent/10 text-text-primary font-semibold border border-accent/20'
+                        : 'text-text-secondary hover:text-text-primary hover:bg-bg-surface-2 border border-transparent'
                     } ${isCollapsed ? 'justify-center px-0' : ''}`}
                   >
                     {isActive && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full" aria-hidden="true" />
+                      <span className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-3.5 bg-accent rounded-full" aria-hidden="true" />
                     )}
                     <Icon
                       aria-hidden="true"
                       className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${
-                        isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'
+                        isActive ? 'text-accent' : 'text-text-muted group-hover:text-text-secondary'
                       }`}
                     />
                     {!isCollapsed && <span className="truncate">{item.name}</span>}
@@ -176,15 +190,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* User profile & Collapser Footer */}
-        <div className="p-3 bg-bg-surface-2/10 flex flex-col gap-2 mt-auto pb-4">
+        <div className="p-3 border-t border-border flex flex-col gap-2 mt-auto">
           {!isCollapsed && user && (
-            <div className="flex items-center justify-between px-2 py-2 rounded-inner bg-bg-surface-2/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-              <div className="flex items-center gap-2.5 truncate">
-                <div className="w-7 h-7 rounded-full bg-accent/20 border border-accent/40 text-accent flex items-center justify-center font-bold text-xs flex-shrink-0">
+            <div className="flex items-center justify-between px-2.5 py-2 rounded-inner bg-bg-surface-2 border border-border">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-6 h-6 rounded-full bg-accent/20 border border-accent/40 text-accent flex items-center justify-center font-bold text-[10px] flex-shrink-0">
                   {user.display_name.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex flex-col truncate">
-                  <span className="text-xs font-semibold text-text-primary truncate">{user.display_name}</span>
+                <div className="flex flex-col min-w-0 truncate">
+                  <span className="text-xs font-medium text-text-primary truncate">{user.display_name}</span>
                   <span className="text-[10px] text-text-muted truncate font-mono">
                     {principal?.roles[0] || 'User'}
                   </span>
@@ -195,9 +209,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   type="button"
                   onClick={logout}
                   aria-label="Keluar dari akun"
-                  className="p-1.5 text-text-muted hover:text-status-error hover:bg-status-error/10 rounded-inner transition-colors cursor-pointer"
+                  className="p-1 text-text-muted hover:text-status-error hover:bg-status-error/10 rounded transition-colors cursor-pointer"
                 >
-                  <LogOut className="w-4 h-4" aria-hidden="true" />
+                  <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
               </Tooltip>
             </div>
@@ -206,18 +220,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex items-center justify-between pt-1 px-1">
             {!isCollapsed && (
               <div className="flex items-center gap-2 text-[11px] text-text-secondary">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
-                <span className="font-medium">Route-X Online</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse" />
+                <span className="font-mono text-[10px] text-text-muted">Route-X Ready</span>
               </div>
             )}
             <Tooltip content={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'} position="right">
               <button
                 type="button"
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className={`hidden lg:flex items-center justify-center w-8 h-8 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer ${isCollapsed ? 'mx-auto' : 'ml-auto'}`}
+                className={`hidden lg:flex items-center justify-center w-7 h-7 rounded-inner text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer ${isCollapsed ? 'mx-auto' : 'ml-auto'}`}
                 aria-label={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
               >
-                {isCollapsed ? <ChevronRight className="w-4 h-4" aria-hidden="true" /> : <ChevronLeft className="w-4 h-4" aria-hidden="true" />}
+                {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />}
               </button>
             </Tooltip>
           </div>

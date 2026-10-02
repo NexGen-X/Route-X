@@ -372,6 +372,8 @@ export interface WebhookDelivery {
 export interface RequestLog {
   id: string;
   request_id: string;
+  method?: string;
+  path?: string;
   provider_id?: string;
   provider_name?: string;
   model_id?: string;

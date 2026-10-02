@@ -24,17 +24,17 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
   onSearchSubmit,
 }) => {
   return (
-    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
       {/* Filter Tabs */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => onTabChange(tab.id)}
-            className={`px-3 py-1.5 rounded-chip text-xs font-semibold transition-all ${
+            className={`px-3 py-1.5 rounded-inner text-xs font-medium transition-all ${
               activeTab === tab.id
-                ? 'bg-accent/10 text-accent border border-accent/30 shadow-sm'
+                ? 'bg-accent/10 text-accent border border-accent/30 shadow-sm font-semibold'
                 : 'bg-bg-surface-2 text-text-secondary border border-border hover:text-white'
             }`}
           >

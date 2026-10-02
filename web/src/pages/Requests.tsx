@@ -122,15 +122,15 @@ export const Requests: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsLiveFeed(!isLiveFeed)}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-inner text-xs font-semibold border transition-all ${
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150 ${
                 isLiveFeed
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                  : 'bg-bg-surface-2 text-text-secondary border-border hover:text-white'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                  : 'bg-white/[0.03] text-zinc-300 border-white/[0.08] hover:text-white'
               }`}
             >
               <span
                 className={`w-2 h-2 rounded-full shrink-0 transition-opacity ${
-                  isLiveFeed ? 'bg-emerald-400 ring-2 ring-emerald-400/20' : 'bg-text-muted/60'
+                  isLiveFeed ? 'bg-emerald-400 ring-2 ring-emerald-400/20 animate-pulse' : 'bg-zinc-500'
                 }`}
               />
               <span>{isLiveFeed ? 'Live Polling Aktif' : 'Live Stream'}</span>
@@ -154,7 +154,7 @@ export const Requests: React.FC = () => {
 
       <div className="space-y-4">
         {/* Filter Chips & Search Bar */}
-        <div className="p-3 sm:p-4 bg-bg-surface border border-border rounded-card">
+        <div className="p-3 sm:p-4 bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl shadow-sm">
           <RequestFilterBar
             activeTab={activeTab}
             onTabChange={setActiveTab}
@@ -168,21 +168,21 @@ export const Requests: React.FC = () => {
         {isLoading ? (
           <RequestTableSkeleton />
         ) : requests.length === 0 ? (
-          <div className="py-12 px-4 text-center space-y-3 bg-bg-surface border border-border rounded-card">
-            <Activity className="w-8 h-8 mx-auto text-text-muted/40" />
-            <div className="text-sm font-semibold text-text-primary">
+          <div className="py-12 px-4 text-center space-y-3 bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl shadow-sm">
+            <Activity className="w-8 h-8 mx-auto text-zinc-600" />
+            <div className="text-sm font-semibold text-white">
               Tidak ada catatan permintaan
             </div>
-            <p className="text-xs text-text-muted max-w-sm mx-auto">
+            <p className="text-xs text-zinc-400 max-w-sm mx-auto">
               Belum ada permintaan inferensi yang cocok dengan kriteria filter atau kata kunci pencarian.
             </p>
           </div>
         ) : (
-          <div className="bg-bg-surface border border-border rounded-card overflow-hidden shadow-sm">
+          <div className="bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead>
-                  <tr className="border-b border-border bg-bg-surface-1 text-text-muted font-medium text-xs">
+                  <tr className="border-b border-white/[0.06] bg-white/[0.02] text-zinc-400 font-medium text-xs">
                     <th className="py-2.5 px-4 font-semibold">Timestamp</th>
                     <th className="py-2.5 px-4 font-semibold">Method</th>
                     <th className="py-2.5 px-4 font-semibold">Path</th>
@@ -193,7 +193,7 @@ export const Requests: React.FC = () => {
                     <th className="py-2.5 px-4 text-right font-semibold">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/60">
+                <tbody className="divide-y divide-white/[0.04]">
                   {requests.map((r) => (
                     <RequestTableRow
                       key={r.id || r.request_id}

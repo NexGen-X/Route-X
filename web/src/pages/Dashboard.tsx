@@ -71,22 +71,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
       <ProviderHealthMatrix onNavigate={onNavigate} />
 
-      <div className="bg-bg-surface/40 backdrop-blur-md shadow-lg ring-1 ring-white/5 rounded-2xl overflow-hidden">
+      <div className="bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl overflow-hidden shadow-sm">
         <button
           type="button"
           onClick={() => setTelemetryExpanded((v) => !v)}
-          className="w-full flex items-center justify-between px-5 py-3 bg-bg-surface hover:bg-bg-surface-2/60 backdrop-blur-sm transition-colors text-left cursor-pointer"
+          className="w-full flex items-center justify-between px-5 py-3 bg-white/[0.02] hover:bg-white/[0.05] transition-colors text-left cursor-pointer"
           aria-expanded={telemetryExpanded}
         >
-          <span className="text-xs font-medium text-text-secondary">Runtime Telemetri Gateway</span>
+          <span className="text-xs font-medium text-zinc-300">Runtime Telemetri Gateway</span>
           <ChevronDown
-            className={`w-4 h-4 text-text-muted transition-transform duration-200 ${
+            className={`w-4 h-4 text-zinc-500 transition-transform duration-200 ${
               telemetryExpanded ? 'rotate-180' : ''
             }`}
           />
         </button>
         {telemetryExpanded && (
-          <div className="p-5 border-t border-white/5 bg-transparent">
+          <div className="p-5 border-t border-white/[0.06] bg-transparent">
             <SystemTelemetrySection />
           </div>
         )}

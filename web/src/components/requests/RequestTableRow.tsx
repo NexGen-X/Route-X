@@ -46,28 +46,28 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onClick={() => onInspect(request)}
-      className="hover:bg-bg-surface-2/60 cursor-pointer transition-colors group select-none text-xs"
+      className="border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer transition-colors group select-none text-xs"
       data-testid={`request-row-${request.request_id}`}
     >
       {/* 1. Timestamp & Request ID */}
-      <td className="py-2.5 px-4 font-mono text-text-primary whitespace-nowrap">
+      <td className="py-2.5 px-4 font-mono text-zinc-200 whitespace-nowrap">
         <div>{formattedTime}</div>
-        <div className="text-[10px] text-text-muted truncate max-w-[120px]" title={request.request_id}>
+        <div className="text-[10px] text-zinc-500 truncate max-w-[120px]" title={request.request_id}>
           {request.request_id}
         </div>
       </td>
 
       {/* 2. Method */}
       <td className="py-2.5 px-4 whitespace-nowrap">
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium uppercase tracking-wider bg-sky-500/10 text-sky-400 border border-sky-500/20">
           {method}
         </span>
       </td>
 
       {/* 3. Path & Type */}
       <td className="py-2.5 px-4 whitespace-nowrap">
-        <div className="font-mono text-text-primary text-xs">{path}</div>
-        <div className="text-[10px] text-text-muted font-mono">
+        <div className="font-mono text-zinc-200 text-xs">{path}</div>
+        <div className="text-[10px] text-zinc-500 font-mono">
           {request.is_stream ? 'Stream (SSE)' : 'Unary HTTP'}
         </div>
       </td>
@@ -75,7 +75,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
       {/* 4. Status Badge */}
       <td className="py-2.5 px-4 whitespace-nowrap">
         <span
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-inner text-[11px] font-mono font-semibold border ${getStatusBadgeClass(
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium border ${getStatusBadgeClass(
             request.status_code
           )}`}
         >
@@ -94,11 +94,11 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
 
       {/* 5. Model & Upstream */}
       <td className="py-2.5 px-4 whitespace-nowrap">
-        <div className="font-medium text-text-primary truncate max-w-[180px]" title={modelName}>
+        <div className="font-medium text-white truncate max-w-[180px]" title={modelName}>
           {modelName}
         </div>
         {providerName && (
-          <div className="text-[10px] text-text-muted truncate max-w-[180px]" title={providerName}>
+          <div className="text-[10px] text-zinc-500 truncate max-w-[180px]" title={providerName}>
             {providerName}
           </div>
         )}
@@ -106,17 +106,17 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
 
       {/* 6. Latency & TTFT */}
       <td className="py-2.5 px-4 whitespace-nowrap font-mono">
-        <div className="text-text-primary">{request.duration_ms} ms</div>
+        <div className="text-zinc-200">{request.duration_ms} ms</div>
         {request.ttft_ms ? (
-          <div className="text-[10px] text-text-muted">TTFT: {request.ttft_ms} ms</div>
+          <div className="text-[10px] text-zinc-500">TTFT: {request.ttft_ms} ms</div>
         ) : null}
       </td>
 
       {/* 7. Cost & Tokens */}
       <td className="py-2.5 px-4 whitespace-nowrap font-mono">
-        <div className="text-text-primary">{formatUSD(request.cost_usd, 6)}</div>
+        <div className="text-zinc-200">{formatUSD(request.cost_usd, 6)}</div>
         {request.total_tokens != null && (
-          <div className="text-[10px] text-text-muted">
+          <div className="text-[10px] text-zinc-500">
             {request.total_tokens.toLocaleString()} tok
           </div>
         )}
@@ -124,7 +124,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
 
       {/* 8. Inspect Action */}
       <td className="py-2.5 px-4 text-right whitespace-nowrap">
-        <div className="inline-flex items-center gap-1 text-[11px] text-text-muted group-hover:text-accent transition-colors font-medium">
+        <div className="inline-flex items-center gap-1 text-[11px] text-zinc-500 group-hover:text-accent transition-colors font-medium">
           <span>Detail</span>
           <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
         </div>

@@ -373,7 +373,8 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
       expect(mockListFn).toHaveBeenCalled();
     });
 
-    fireEvent.click(screen.getByTestId('request-row-req-uuid-1'));
+    const row = await screen.findByTestId('request-row-req-uuid-1');
+    fireEvent.click(row);
 
     await waitFor(() => {
       expect(screen.getByText('Detail Request & Timeline Event')).toBeInTheDocument();

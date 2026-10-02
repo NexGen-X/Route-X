@@ -1,7 +1,9 @@
 import React from 'react';
 import { ChevronRight } from 'lucide-react';
+import { StatusDot } from '../common/StatusDot';
 import { formatUSD } from '../../utils/money';
 import type { RequestLog } from '../../types';
+import { getHttpStatusDotVariant } from './utils';
 
 export interface RequestTableRowProps {
   request: RequestLog;
@@ -19,115 +21,66 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
     }
   };
 
-  const getStatusBadgeClass = (code: number) => {
-    if (code >= 200 && code < 300) {
-      return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-    }
-    if (code >= 400 && code < 500) {
-      return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-    }
-    return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-  };
-
-  const formattedTime = new Date(request.created_at).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-
-  const method = request.method || 'POST';
-  const path = request.path || '/v1/chat/completions';
-  const modelName = request.requested_model || request.model_id || '-';
-  const providerName = request.provider_name || request.provider_id;
-
   return (
     <tr
       role="button"
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onClick={() => onInspect(request)}
-      className="border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer transition-colors group select-none text-xs"
+      className="hover:bg-bg-surface-2/60 cursor-pointer transition-colors group"
       data-testid={`request-row-${request.request_id}`}
     >
-      {/* 1. Timestamp & Request ID */}
-      <td className="py-2.5 px-4 font-mono text-zinc-200 whitespace-nowrap">
-        <div>{formattedTime}</div>
-        <div className="text-[10px] text-zinc-500 truncate max-w-[120px]" title={request.request_id}>
-          {request.request_id}
+      <td className="py-3 px-4">
+        <div className="flex items-center gap-2">
+          <StatusDot
+            status={getHttpStatusDotVariant(request.status_code)}
+            label={String(request.status_code)}
+          />
+          <span className="font-mono font-medium text-text-primary truncate max-w-[140px]">
+            {request.request_id}
+          </span>
         </div>
-      </td>
-
-      {/* 2. Method */}
-      <td className="py-2.5 px-4 whitespace-nowrap">
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium uppercase tracking-wider bg-sky-500/10 text-sky-400 border border-sky-500/20">
-          {method}
-        </span>
-      </td>
-
-      {/* 3. Path & Type */}
-      <td className="py-2.5 px-4 whitespace-nowrap">
-        <div className="font-mono text-zinc-200 text-xs">{path}</div>
-        <div className="text-[10px] text-zinc-500 font-mono">
+        <div className="text-[11px] text-text-muted font-mono mt-0.5">
           {request.is_stream ? 'Stream (SSE)' : 'Unary HTTP'}
         </div>
       </td>
 
-      {/* 4. Status Badge */}
-      <td className="py-2.5 px-4 whitespace-nowrap">
-        <span
-          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium border ${getStatusBadgeClass(
-            request.status_code
-          )}`}
-        >
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${
-              request.status_code < 300
-                ? 'bg-emerald-400'
-                : request.status_code < 500
-                ? 'bg-amber-400'
-                : 'bg-rose-400'
-            }`}
-          />
-          {request.status_code}
+      <td className="py-3 px-4">
+        <div className="font-semibold text-text-primary">
+          {request.requested_model || request.model_id || '-'}
+        </div>
+        <div className="text-[11px] text-text-muted font-mono">
+          {request.provider_name || request.provider_id || '-'}
+        </div>
+      </td>
+
+      <td className="py-3 px-4">
+        <div className="font-mono text-text-primary">
+          {request.total_tokens != null ? `${request.total_tokens.toLocaleString()} tok` : '-'}
+        </div>
+        <div className="text-[11px] text-text-muted font-mono">
+          {formatUSD(request.cost_usd, 6)}
+        </div>
+      </td>
+
+      <td className="py-3 px-4">
+        <div className="font-mono text-text-primary">{request.duration_ms} ms</div>
+        <div className="text-[11px] text-text-muted font-mono">
+          {request.ttft_ms ? `TTFT: ${request.ttft_ms} ms` : '-'}
+        </div>
+      </td>
+
+      <td className="py-3 px-4">
+        <div className="text-text-primary">
+          {new Date(request.created_at).toLocaleTimeString()}
+        </div>
+        <div className="text-[11px] text-text-muted font-mono">{request.client_ip || '-'}</div>
+      </td>
+
+      <td className="py-3 px-4 text-right">
+        <span className="inline-flex items-center gap-1 text-accent opacity-0 group-hover:opacity-100 transition-opacity font-medium">
+          Detail <ChevronRight className="w-3.5 h-3.5" />
         </span>
-      </td>
-
-      {/* 5. Model & Upstream */}
-      <td className="py-2.5 px-4 whitespace-nowrap">
-        <div className="font-medium text-white truncate max-w-[180px]" title={modelName}>
-          {modelName}
-        </div>
-        {providerName && (
-          <div className="text-[10px] text-zinc-500 truncate max-w-[180px]" title={providerName}>
-            {providerName}
-          </div>
-        )}
-      </td>
-
-      {/* 6. Latency & TTFT */}
-      <td className="py-2.5 px-4 whitespace-nowrap font-mono">
-        <div className="text-zinc-200">{request.duration_ms} ms</div>
-        {request.ttft_ms ? (
-          <div className="text-[10px] text-zinc-500">TTFT: {request.ttft_ms} ms</div>
-        ) : null}
-      </td>
-
-      {/* 7. Cost & Tokens */}
-      <td className="py-2.5 px-4 whitespace-nowrap font-mono">
-        <div className="text-zinc-200">{formatUSD(request.cost_usd, 6)}</div>
-        {request.total_tokens != null && (
-          <div className="text-[10px] text-zinc-500">
-            {request.total_tokens.toLocaleString()} tok
-          </div>
-        )}
-      </td>
-
-      {/* 8. Inspect Action */}
-      <td className="py-2.5 px-4 text-right whitespace-nowrap">
-        <div className="inline-flex items-center gap-1 text-[11px] text-zinc-500 group-hover:text-accent transition-colors font-medium">
-          <span>Detail</span>
-          <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-        </div>
       </td>
     </tr>
   );

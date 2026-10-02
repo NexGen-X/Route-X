@@ -199,7 +199,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                 <label className="text-xs font-medium text-text-secondary block mb-1.5">
                   Mode Konfigurasi:
                 </label>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-1 p-1 bg-bg-surface-2 rounded-nav border border-border">
+                <div className="grid grid-cols-3 gap-1 p-1 bg-bg-surface-2 rounded-nav border border-border">
                   <button
                     type="button"
                     onClick={() => onModeChange(tool.id, 'model_only')}
@@ -254,14 +254,10 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                     <Select
                       value={config.target}
                       onChange={(val) => onTargetChange(tool.id, val)}
-                      options={models.map((m) => {
-                        const familyStr = m.family ? m.family.toUpperCase() : 'CUSTOM';
-                        return {
-                          value: m.model_id,
-                          label: `${familyStr} / ${m.model_id}`,
-                          description: m.display_name,
-                        };
-                      })}
+                      options={models.map((m) => ({
+                        value: m.model_id,
+                        label: `${m.display_name || m.model_id} (${m.family || 'universal'})`,
+                      }))}
                     />
                   ) : (
                     <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400">

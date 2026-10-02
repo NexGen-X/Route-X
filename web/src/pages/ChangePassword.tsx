@@ -55,7 +55,7 @@ export const ChangePassword: React.FC = () => {
         redirectTimerRef.current = null;
         window.location.hash = '#/';
       }, 1500);
-    } catch (err: unknown) {
+    } catch (err: any) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {

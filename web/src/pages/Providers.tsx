@@ -474,7 +474,7 @@ export const Providers: React.FC = () => {
         </div>
 
         {isCatalogExpanded && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2.5 mt-4 pt-4 border-t border-border/60">
+          <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 mt-4 pt-4 border-t border-border/60">
             {KNOWN_PROVIDERS.map((preset) => (
               <button
                 key={preset.id}
@@ -500,7 +500,7 @@ export const Providers: React.FC = () => {
       {/* ------------------------------------------------------------------- */}
       {/* 2. STATS SUMMARY BAR                                                */}
       {/* ------------------------------------------------------------------- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="text-xs font-medium text-text-muted">Total Provider</span>
@@ -560,7 +560,7 @@ export const Providers: React.FC = () => {
           <span role="status" aria-live="polite">Memuat daftar provider...</span>
         </Card>
       ) : providers.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {providers.map((p) => {
             const isCustom = isCustomProvider(p);
             const egress = egressPools.find((ep) => ep.id === p.egress_pool_id);
@@ -808,7 +808,7 @@ export const Providers: React.FC = () => {
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${
                     selectedProvider.last_health_status === 'healthy'
-                      ? 'bg-emerald-400 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]'
+                      ? 'bg-emerald-400 animate-pulse'
                       : 'bg-red-400'
                   }`}
                 />
@@ -839,7 +839,7 @@ export const Providers: React.FC = () => {
               </div>
             )}
             {/* Navigasi Tab di Dalam Drawer */}
-            <div role="tablist" aria-label="Tab Konfigurasi Provider" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-1 p-1 bg-bg-surface-2/80 rounded-xl border border-border">
+            <div role="tablist" aria-label="Tab Konfigurasi Provider" className="grid grid-cols-3 gap-1 p-1 bg-bg-surface-2/80 rounded-xl border border-border">
               <button
                 type="button"
                 role="tab"

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { Sidebar } from './components/layout/Sidebar';
+import { Header } from './components/layout/Header';
 import { Login } from './pages/Login';
 import { ChangePassword } from './pages/ChangePassword';
 import { PageErrorBoundary } from './components/common/PageErrorBoundary';
-import { Layout } from './components/layout/Layout';
+import { CommandPalette } from './components/common/CommandPalette';
 import { Loader2 } from 'lucide-react';
 
 // Code-splitting dinamis via React.lazy() untuk memperkecil ukuran bundle awal dan mempercepat FCP
@@ -20,13 +22,14 @@ const Webhooks = React.lazy(() => import('./pages/Webhooks').then((m) => ({ defa
 const Settings = React.lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const Diagnostics = React.lazy(() => import('./pages/Diagnostics').then((m) => ({ default: m.Diagnostics })));
 const CLIIntegrations = React.lazy(() => import('./pages/CLIIntegrations').then((m) => ({ default: m.CLIIntegrations })));
-
 // Halaman identitas: daftar akun admin dan status sesi.
 const UsersPage = React.lazy(() => import('./pages/Users').then((m) => ({ default: m.UsersPage })));
 
 const Shell: React.FC = () => {
   const { principal, user, isLoading } = useAuth();
   const [currentPath, setCurrentPath] = useState('/');
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     const handleHash = () => {
@@ -36,6 +39,17 @@ const Shell: React.FC = () => {
     window.addEventListener('hashchange', handleHash);
     handleHash();
     return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const navigate = (path: string) => {
@@ -93,6 +107,7 @@ const Shell: React.FC = () => {
         };
       case '/upstreams/models':
       case '/models':
+        // Redirect otomatis ke Upstream Providers agar lebih simpel
         navigate('/upstreams/providers');
         return {
           title: 'Upstream Providers',
@@ -178,20 +193,40 @@ const Shell: React.FC = () => {
   const { title, content } = getPageInfo();
 
   return (
-    <Layout title={title} currentPath={currentPath} onNavigate={navigate}>
-      <PageErrorBoundary key={currentPath} pageName={title}>
-        <React.Suspense
-          fallback={
-            <div className="flex flex-col items-center justify-center py-24 text-text-muted">
-              <Loader2 className="w-7 h-7 animate-spin text-accent mb-2" />
-              <span className="text-xs font-mono">Memuat modul {title}...</span>
-            </div>
-          }
-        >
-          {content}
-        </React.Suspense>
-      </PageErrorBoundary>
-    </Layout>
+    <div className="min-h-screen bg-bg-base flex">
+      <Sidebar
+        currentPath={currentPath}
+        onNavigate={navigate}
+        isMobileOpen={isMobileOpen}
+        setIsMobileOpen={setIsMobileOpen}
+      />
+      <div className="flex-1 flex flex-col min-w-0">
+        <Header
+          title={title}
+          onOpenMobileMenu={() => setIsMobileOpen(true)}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+        />
+        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
+          <PageErrorBoundary key={currentPath} pageName={title}>
+            <React.Suspense
+              fallback={
+                <div className="flex flex-col items-center justify-center py-24 text-text-muted">
+                  <Loader2 className="w-7 h-7 animate-spin text-accent mb-2" />
+                  <span className="text-xs font-mono">Memuat modul {title}...</span>
+                </div>
+              }
+            >
+              {content}
+            </React.Suspense>
+          </PageErrorBoundary>
+        </main>
+      </div>
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onNavigate={navigate}
+      />
+    </div>
   );
 };
 

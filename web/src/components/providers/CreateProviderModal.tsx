@@ -392,9 +392,10 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           >
             <div className="flex items-center gap-3">
               <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center shadow-sm text-bg-base"
+                className="w-9 h-9 rounded-lg flex items-center justify-center shadow-sm"
                 style={{
                   backgroundColor: selectedPreset.color,
+                  color: '#000',
                 }}
               >
                 <ProviderBrandIcon providerIdOrKind={selectedPreset.id} className="w-5 h-5 text-white" />
@@ -472,7 +473,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           <>
             {!selectedPreset ? (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Unik *</label>
                     <input
@@ -497,7 +498,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="col-span-1">
                     <Select
                       label="Kind"
@@ -1019,7 +1020,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
             </button>
             {showAdvanced && (
               <div className="mt-2.5 p-3.5 rounded-xl border border-border/80 bg-bg-surface-2/40 space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Unik *</label>
                     <input
@@ -1083,7 +1084,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
         )}
 
         {isSaving && savingStep && (
-          <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]">
+          <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2 animate-pulse">
             <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" /><span>{savingStep}</span>
           </div>
         )}

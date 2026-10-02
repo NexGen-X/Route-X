@@ -372,8 +372,6 @@ export interface WebhookDelivery {
 export interface RequestLog {
   id: string;
   request_id: string;
-  method?: string;
-  path?: string;
   provider_id?: string;
   provider_name?: string;
   model_id?: string;
@@ -479,7 +477,7 @@ export interface AuditLogEntry {
   ip?: string;
   user_agent?: string;
   request_id?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, any>;
 }
 
 export interface DiagnosticsMemory {

@@ -179,7 +179,7 @@ export const Diagnostics: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
           <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
             <span className="text-[11px] text-text-muted block">Rasio Hit Cache</span>
             <span className="text-xl font-bold font-mono text-emerald-400 mt-1 block">
@@ -248,9 +248,9 @@ export const Diagnostics: React.FC = () => {
       </div>
 
       {isLoading && !diag ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
-            <Card key={i} className="p-5 space-y-4 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]">
+            <Card key={i} className="p-5 space-y-4 animate-pulse">
               <div className="h-4 bg-bg-surface-2 rounded w-1/2" />
               <div className="space-y-2 pt-2">
                 <div className="h-3 bg-bg-surface-2 rounded w-full" />
@@ -261,7 +261,7 @@ export const Diagnostics: React.FC = () => {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card title="Runtime & Versi">
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1 border-b border-border/40">
@@ -346,10 +346,10 @@ export const Diagnostics: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {isLoading && jobs.length === 0 ? (
             [1, 2, 3].map((i) => (
-              <Card key={i} className="p-4 space-y-3 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]">
+              <Card key={i} className="p-4 space-y-3 animate-pulse">
                 <div className="flex justify-between">
                   <div className="h-4 bg-bg-surface-2 rounded w-1/2" />
                   <div className="h-5 bg-bg-surface-2 rounded w-12" />

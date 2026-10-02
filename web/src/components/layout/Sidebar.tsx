@@ -49,16 +49,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const { user, principal, logout } = useAuth();
 
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isMobileOpen) {
-        setIsMobileOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isMobileOpen, setIsMobileOpen]);
-
   const navGroups: NavGroup[] = [
     {
       title: 'Ringkasan & Aktivitas',
@@ -100,35 +90,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Mobile backdrop */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setIsMobileOpen(false)}
-          aria-hidden="true"
         />
       )}
 
       <aside
-        className={`fixed lg:sticky top-0 left-0 bottom-0 h-screen z-50 flex flex-col bg-bg-surface/40 backdrop-blur-md border-r border-white/[0.06] transition-all duration-300 select-none ${
-          isCollapsed ? 'w-[68px]' : 'w-64'
-        } ${isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'}`}
+        className={`fixed lg:static top-0 left-0 bottom-0 z-50 flex flex-col bg-bg-sidebar border-r border-border-subtle transition-all duration-300 select-none ${
+          isCollapsed ? 'w-[70px]' : 'w-[260px]'
+        } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
       >
         {/* Brand Header */}
-        <div className={`h-14 flex items-center px-4 border-b border-white/[0.06] ${isCollapsed ? 'justify-center px-0' : 'justify-between'}`}>
+        <div className="h-14 flex items-center px-4 border-b border-border-subtle justify-between">
           <button
             type="button"
             className="flex items-center gap-3 overflow-hidden cursor-pointer text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent rounded-lg"
-            onClick={() => {
-              onNavigate('/');
-              setIsMobileOpen(false);
-            }}
+            onClick={() => onNavigate('/')}
             aria-label="Route-X Beranda"
           >
-            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0 text-black font-extrabold text-sm shadow-[0_0_12px_rgba(190,242,100,0.2)]">
+            <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-black font-extrabold text-base shadow-sm shadow-accent/20">
               RX
             </div>
             {!isCollapsed && (
               <div className="flex flex-col truncate">
-                <span className="font-bold tracking-tight text-white text-sm leading-tight">Route-X</span>
-                <span className="text-[10px] text-zinc-500 font-mono tracking-wider">AI GATEWAY & RUNTIME</span>
+                <span className="font-bold tracking-tight text-white text-base leading-tight">Route-X</span>
+                <span className="text-[10px] text-text-secondary font-mono tracking-wider">AI GATEWAY & RUNTIME</span>
               </div>
             )}
           </button>
@@ -139,11 +125,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {navGroups.map((group, gIdx) => (
             <div key={gIdx} className="space-y-1">
               {!isCollapsed && (
-                <div className="text-[10px] font-medium tracking-wider text-zinc-500 uppercase px-3 py-1">
+                <div className="px-3 pb-1.5 text-[11px] font-semibold tracking-wider text-text-muted uppercase">
                   {group.title}
                 </div>
               )}
-              {isCollapsed && <div className="h-px bg-white/[0.06] my-2 mx-1" aria-hidden="true" />}
+              {isCollapsed && <div className="h-px bg-border my-2 mx-1" aria-hidden="true" />}
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentPath === item.path;
@@ -156,19 +142,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     aria-label={item.name}
                     aria-current={isActive ? 'page' : undefined}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition-all duration-150 relative group cursor-pointer ${
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-nav text-sm transition-all relative group cursor-pointer ${
                       isActive
-                        ? 'bg-white/[0.05] text-white font-medium border border-white/[0.06]'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] border border-transparent'
+                        ? 'bg-bg-surface-2 text-white font-medium border border-border shadow-inner'
+                        : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/60'
                     } ${isCollapsed ? 'justify-center px-0' : ''}`}
                   >
                     {isActive && (
-                      <span className="absolute left-1.5 top-1/2 -translate-y-1/2 w-0.5 h-3.5 bg-accent rounded-full shadow-[0_0_8px_rgba(190,242,100,0.6)]" aria-hidden="true" />
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full" aria-hidden="true" />
                     )}
                     <Icon
                       aria-hidden="true"
                       className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${
-                        isActive ? 'text-accent' : 'text-zinc-500 group-hover:text-zinc-300'
+                        isActive ? 'text-accent' : 'text-text-secondary group-hover:text-text-primary'
                       }`}
                     />
                     {!isCollapsed && <span className="truncate">{item.name}</span>}
@@ -190,16 +176,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* User profile & Collapser Footer */}
-        <div className="p-3 border-t border-white/[0.06] flex flex-col gap-2 mt-auto">
+        <div className="p-3 border-t border-border-subtle bg-bg-surface-2/20 flex flex-col gap-2">
           {!isCollapsed && user && (
-            <div className="flex items-center justify-between px-2.5 py-2 rounded-lg bg-white/[0.02] border border-white/[0.06]">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-6 h-6 rounded-full bg-accent/20 border border-accent/40 text-accent flex items-center justify-center font-bold text-[10px] flex-shrink-0">
+            <div className="flex items-center justify-between px-2 py-1.5 rounded-inner bg-bg-surface-2/40 border border-border/40">
+              <div className="flex items-center gap-2.5 truncate">
+                <div className="w-7 h-7 rounded-full bg-accent/20 border border-accent/40 text-accent flex items-center justify-center font-bold text-xs flex-shrink-0">
                   {user.display_name.charAt(0).toUpperCase()}
                 </div>
-                <div className="flex flex-col min-w-0 truncate">
-                  <span className="text-xs font-medium text-white truncate">{user.display_name}</span>
-                  <span className="text-[10px] text-zinc-500 truncate font-mono">
+                <div className="flex flex-col truncate">
+                  <span className="text-xs font-semibold text-text-primary truncate">{user.display_name}</span>
+                  <span className="text-[10px] text-text-muted truncate font-mono">
                     {principal?.roles[0] || 'User'}
                   </span>
                 </div>
@@ -209,9 +195,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   type="button"
                   onClick={logout}
                   aria-label="Keluar dari akun"
-                  className="p-1 text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors cursor-pointer"
+                  className="p-1.5 text-text-muted hover:text-status-error hover:bg-status-error/10 rounded-inner transition-colors cursor-pointer"
                 >
-                  <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
+                  <LogOut className="w-4 h-4" aria-hidden="true" />
                 </button>
               </Tooltip>
             </div>
@@ -219,19 +205,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div className="flex items-center justify-between pt-1 px-1">
             {!isCollapsed && (
-              <div className="flex items-center gap-2 text-[11px] text-zinc-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse" />
-                <span className="font-mono text-[10px] text-zinc-500">Route-X Ready</span>
+              <div className="flex items-center gap-2 text-[11px] text-text-secondary">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
+                <span className="font-medium">Route-X Online</span>
               </div>
             )}
             <Tooltip content={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'} position="right">
               <button
                 type="button"
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className={`hidden lg:flex items-center justify-center w-7 h-7 rounded-lg text-zinc-500 hover:text-white hover:bg-white/[0.04] transition-colors cursor-pointer ${isCollapsed ? 'mx-auto' : 'ml-auto'}`}
+                className={`hidden lg:flex items-center justify-center w-8 h-8 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer ${isCollapsed ? 'mx-auto' : 'ml-auto'}`}
                 aria-label={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}
               >
-                {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" /> : <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />}
+                {isCollapsed ? <ChevronRight className="w-4 h-4" aria-hidden="true" /> : <ChevronLeft className="w-4 h-4" aria-hidden="true" />}
               </button>
             </Tooltip>
           </div>

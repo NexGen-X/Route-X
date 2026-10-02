@@ -240,8 +240,8 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     });
 
     // Buka modal untuk request 1
-    const row2 = await screen.findByTestId('request-row-req-uuid-1');
-    fireEvent.click(row2);
+    const row = await screen.findByTestId('request-row-req-uuid-1');
+    fireEvent.click(row);
 
     await waitFor(() => {
       expect(screen.getByText('Detail Request & Timeline Event')).toBeInTheDocument();
@@ -327,8 +327,8 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
       expect(mockListFn).toHaveBeenCalled();
     });
 
-    const row = await screen.findByTestId('request-row-req-uuid-2');
-    fireEvent.keyDown(row, { key: 'Enter', code: 'Enter' });
+    const mobileCard = await screen.findByTestId('request-card-mobile-req-uuid-2');
+    fireEvent.keyDown(mobileCard, { key: 'Enter', code: 'Enter' });
 
     await waitFor(() => {
       expect(screen.getByText('Detail Request & Timeline Event')).toBeInTheDocument();

@@ -281,9 +281,9 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
       {activeTab === 'budgets' && (
         <>
           {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="budgets-loading-skeleton">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="budgets-loading-skeleton">
               {[1, 2, 3].map((i) => (
-                <Card key={i} className="p-5 space-y-4 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]">
+                <Card key={i} className="p-5 space-y-4 animate-pulse">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
                     <div className="space-y-1.5 flex-1">
@@ -346,7 +346,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
               </div>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="budgets-grid">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="budgets-grid">
               {budgets.map((b) => (
                 <BudgetCard
                   key={b.id}
@@ -366,9 +366,9 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
       {activeTab === 'limits' && (
         <>
           {isLoading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="limits-loading-skeleton">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="limits-loading-skeleton">
               {[1, 2, 3].map((i) => (
-                <Card key={i} className="p-5 space-y-4 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]">
+                <Card key={i} className="p-5 space-y-4 animate-pulse">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
                     <div className="space-y-1.5 flex-1">
@@ -411,7 +411,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
               </div>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="limits-grid">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="limits-grid">
               {limits.map((l) => (
                 <RateLimitCard
                   key={l.id}

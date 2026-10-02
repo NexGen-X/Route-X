@@ -124,10 +124,10 @@ describe('Settings — Pengujian Halaman Modular & Terisolasi', () => {
     // Verifikasi info panel dan endpoint live
     expect(screen.getByText('https://ai.routex.io')).toBeInTheDocument();
     expect(screen.getByText('https://ai.routex.io/v1')).toBeInTheDocument();
-    expect(screen.getByText('Aktif & Terlindungi')).toBeInTheDocument();
+    expect(screen.getByText('Terverifikasi')).toBeInTheDocument();
 
     // Verifikasi tombol submit & lepas domain
-    expect(screen.getByRole('button', { name: /Perbarui & Verifikasi/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Perbarui & Verifikasi Domain/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Lepas Domain/i })).toBeInTheDocument();
   });
 
@@ -186,7 +186,7 @@ describe('Settings — Pengujian Halaman Modular & Terisolasi', () => {
     expect(screen.getByText('Setelan Terkelola Subsistem (Read-Only)')).toBeInTheDocument();
     expect(screen.getByText('cli:config:version')).toBeInTheDocument();
     expect(screen.getByText('system:instance_id')).toBeInTheDocument();
-    expect(screen.getByText('CLI Subsystem Config')).toBeInTheDocument();
+    expect(screen.getByText('CLI Integrations')).toBeInTheDocument();
   });
 
   it('membuka modal Tambah Setting dan submit setting baru', async () => {
@@ -204,7 +204,7 @@ describe('Settings — Pengujian Halaman Modular & Terisolasi', () => {
     });
 
     // Klik tombol Tambah Parameter
-    const addBtns = screen.getAllByRole('button', { name: /^Tambah$/i });
+    const addBtns = screen.getAllByRole('button', { name: /Tambah Parameter/i });
     fireEvent.click(addBtns[0]);
 
     // Modal terbuka

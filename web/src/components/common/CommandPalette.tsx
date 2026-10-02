@@ -373,7 +373,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           role="dialog"
           aria-modal="true"
           aria-label="Palette Perintah Cepat"
-          className="relative w-full max-w-xl bg-bg-surface-1 border border-border-hover rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150"
+          className="relative w-full max-w-xl bg-bg-surface-1 border border-[#262626] rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150"
         >
           {/* Search Input Bar */}
           <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border bg-bg-surface-2/60">

@@ -135,9 +135,9 @@ export const RateLimits: React.FC = () => {
       {loadError && <QueryError message={loadError} onRetry={() => void loadLimits()} />}
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
-            <Card key={i} className="p-5 space-y-4 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%]">
+            <Card key={i} className="p-5 space-y-4 animate-pulse">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
                 <div className="space-y-1.5 flex-1">
@@ -175,7 +175,7 @@ export const RateLimits: React.FC = () => {
           </div>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {limits.map((l) => (
             <Card key={l.id} className="p-5 flex flex-col justify-between">
             <div>
@@ -257,7 +257,7 @@ export const RateLimits: React.FC = () => {
         }
       >
         <form id="create-rate-limit-form" noValidate onSubmit={handleCreate} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Select
               label="Cakupan (Scope)"
               value={newLimit.scope}
@@ -322,7 +322,7 @@ export const RateLimits: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5" />
               Template Proteksi Cepat (Rekomendasi Pemakaian)
             </span>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() =>
@@ -371,7 +371,7 @@ export const RateLimits: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">Req / Menit (RPM)</label>
               <input

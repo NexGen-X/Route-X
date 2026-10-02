@@ -1,4 +1,3 @@
-import { validateProxyUrl } from "./ssrf_validator";
 import React, { useState, useEffect } from 'react';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
@@ -48,12 +47,6 @@ export const CreateEgressDrawer: React.FC<CreateEgressDrawerProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const ssrfError = validateProxyUrl(formData.proxy_url);
-    if (ssrfError) {
-      toast.error(ssrfError, "URL Proxy Ditolak");
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       await api.egress.create(formData);
@@ -93,14 +86,14 @@ export const CreateEgressDrawer: React.FC<CreateEgressDrawerProps> = ({
     >
       <form id="create-egress-form" noValidate onSubmit={handleSubmit} className="space-y-4 text-xs">
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-2">Nama Pool *</label>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Pool *</label>
           <input
             type="text"
             required
             placeholder="residential-sg-1 atau my-proxy"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
+            className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
           />
         </div>
         <Select
@@ -114,21 +107,21 @@ export const CreateEgressDrawer: React.FC<CreateEgressDrawerProps> = ({
           ]}
         />
         <div>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-medium text-text-secondary">Proxy URL Lengkap *</label>
             <button
               type="button"
               onClick={() => setShowProxyUrl(!showProxyUrl)}
-              className="text-[11px] text-text-muted hover:text-white flex items-center gap-1 focus:outline-none cursor-pointer transition-colors"
+              className="text-[11px] text-text-muted hover:text-white flex items-center gap-1 focus:outline-none cursor-pointer"
             >
               {showProxyUrl ? (
                 <>
-                  <EyeOff className="w-3.5 h-3.5" />
+                  <EyeOff className="w-3 h-3" />
                   <span>Sembunyikan</span>
                 </>
               ) : (
                 <>
-                  <Eye className="w-3.5 h-3.5" />
+                  <Eye className="w-3 h-3" />
                   <span>Tampilkan</span>
                 </>
               )}
@@ -140,29 +133,29 @@ export const CreateEgressDrawer: React.FC<CreateEgressDrawerProps> = ({
             placeholder="socks5://user:pass@host:1080"
             value={formData.proxy_url}
             onChange={(e) => setFormData({ ...formData, proxy_url: e.target.value })}
-            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white font-mono focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
+            className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
           />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-2">Bobot Alokasi</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Bobot Alokasi</label>
             <input
               type="number"
               min="1"
               max="1000"
               value={formData.weight}
               onChange={(e) => setFormData({ ...formData, weight: parseInt(e.target.value) || 100 })}
-              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-2">Wilayah (Region)</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Wilayah (Region)</label>
             <input
               type="text"
               placeholder="auto / ap-southeast-1"
               value={formData.region}
               onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
         </div>

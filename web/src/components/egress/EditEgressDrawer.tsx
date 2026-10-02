@@ -1,4 +1,3 @@
-import { validateProxyUrl } from "./ssrf_validator";
 import React, { useState, useEffect } from 'react';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
@@ -64,14 +63,6 @@ export const EditEgressDrawer: React.FC<EditEgressDrawerProps> = ({
     e.preventDefault();
     if (!pool) return;
 
-    if (editForm.proxy_url.trim()) {
-      const ssrfError = validateProxyUrl(editForm.proxy_url.trim());
-      if (ssrfError) {
-        toast.error(ssrfError, "URL Proxy Ditolak");
-        return;
-      }
-    }
-
     setIsSubmitting(true);
     try {
       const payload: Partial<EgressPool> & { proxy_url?: string } = {
@@ -115,13 +106,13 @@ export const EditEgressDrawer: React.FC<EditEgressDrawerProps> = ({
     >
       <form id="edit-egress-form" noValidate onSubmit={handleSubmit} className="space-y-4 text-xs">
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-2">Nama Pool *</label>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Pool *</label>
           <input
             type="text"
             required
             value={editForm.name}
             onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
+            className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
           />
         </div>
         <Select
@@ -135,23 +126,23 @@ export const EditEgressDrawer: React.FC<EditEgressDrawerProps> = ({
           ]}
         />
         <div>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-medium text-text-secondary">
               Ganti Proxy URL (Rotasi Sandi)
             </label>
             <button
               type="button"
               onClick={() => setShowProxyUrl(!showProxyUrl)}
-              className="text-[11px] text-text-muted hover:text-white flex items-center gap-1 focus:outline-none cursor-pointer transition-colors"
+              className="text-[11px] text-text-muted hover:text-white flex items-center gap-1 focus:outline-none cursor-pointer"
             >
               {showProxyUrl ? (
                 <>
-                  <EyeOff className="w-3.5 h-3.5" />
+                  <EyeOff className="w-3 h-3" />
                   <span>Sembunyikan</span>
                 </>
               ) : (
                 <>
-                  <Eye className="w-3.5 h-3.5" />
+                  <Eye className="w-3 h-3" />
                   <span>Tampilkan</span>
                 </>
               )}
@@ -162,28 +153,28 @@ export const EditEgressDrawer: React.FC<EditEgressDrawerProps> = ({
             placeholder="Kosongkan jika tidak ingin mengubah URL proxy saat ini"
             value={editForm.proxy_url}
             onChange={(e) => setEditForm({ ...editForm, proxy_url: e.target.value })}
-            className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white font-mono placeholder:text-text-muted/50 focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
+            className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono placeholder:text-text-muted focus:outline-none focus:border-accent"
           />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-2">Bobot Alokasi</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Bobot Alokasi</label>
             <input
               type="number"
               min="1"
               max="1000"
               value={editForm.weight}
               onChange={(e) => setEditForm({ ...editForm, weight: parseInt(e.target.value) || 100 })}
-              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-2">Wilayah (Region)</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5">Wilayah (Region)</label>
             <input
               type="text"
               value={editForm.region}
               onChange={(e) => setEditForm({ ...editForm, region: e.target.value })}
-              className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-accent focus:bg-white/10 transition-all shadow-inner"
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
             />
           </div>
         </div>

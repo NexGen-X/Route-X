@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { EgressPool } from '../types';
+import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
 import { Network, Plus, RefreshCw, Zap } from 'lucide-react';
@@ -131,30 +132,30 @@ export const Egress: React.FC = () => {
 
       {/* Grid Kartu Egress Pool */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="p-6 space-y-4 animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%] bg-bg-surface/40 backdrop-blur-md shadow-lg rounded-2xl border border-white/5 transition-all">
+            <Card key={i} className="p-5 space-y-4 animate-pulse">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-bg-surface-2/60" />
+                <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
                 <div className="space-y-1.5 flex-1">
-                  <div className="h-4 bg-bg-surface-2/60 rounded w-1/2" />
-                  <div className="h-3 bg-bg-surface-2/60 rounded w-1/3" />
+                  <div className="h-4 bg-bg-surface-2 rounded w-1/2" />
+                  <div className="h-3 bg-bg-surface-2 rounded w-1/3" />
                 </div>
               </div>
-              <div className="space-y-2 mt-2">
-                <div className="h-3 bg-bg-surface-2/60 rounded w-3/4" />
-                <div className="h-3 bg-bg-surface-2/60 rounded w-1/2" />
+              <div className="space-y-2">
+                <div className="h-3 bg-bg-surface-2 rounded w-3/4" />
+                <div className="h-3 bg-bg-surface-2 rounded w-1/2" />
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       ) : pools.length === 0 ? (
-        <div className="p-16 text-center bg-bg-surface/40 backdrop-blur-md shadow-lg rounded-2xl border border-white/5 flex flex-col items-center justify-center transition-all">
-          <div className="w-14 h-14 rounded-full bg-accent/10 text-accent flex items-center justify-center mx-auto mb-5 ring-1 ring-accent/30 shadow-[0_0_15px_rgba(var(--color-accent),0.2)]">
-            <Network className="w-7 h-7" />
+        <Card className="p-12 text-center">
+          <div className="w-12 h-12 rounded-full bg-accent/10 text-accent flex items-center justify-center mx-auto mb-4">
+            <Network className="w-6 h-6" />
           </div>
-          <h3 className="text-lg font-semibold text-white tracking-wide">Belum Ada Egress Proxy Pool</h3>
-          <p className="text-sm text-text-secondary mt-2 max-w-md mx-auto leading-relaxed">
+          <h3 className="text-base font-bold text-white">Belum Ada Egress Proxy Pool</h3>
+          <p className="text-xs text-text-secondary mt-1 max-w-md mx-auto">
             Tambahkan proxy keluar (seperti BrightData, Smartproxy, atau VPS) untuk menyembunyikan IP gateway atau bypass pemblokiran wilayah AI.
           </p>
           <Button
@@ -162,13 +163,13 @@ export const Egress: React.FC = () => {
             size="sm"
             onClick={() => setIsCreateOpen(true)}
             icon={<Plus className="w-4 h-4" />}
-            className="mt-6 hover:shadow-lg hover:shadow-accent/20 transition-all duration-300"
+            className="mt-4"
           >
             Tambah Egress Pool Sekarang
           </Button>
-        </div>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {pools.map((p) => (
             <EgressPoolCard
               key={p.id}

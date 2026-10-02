@@ -39,7 +39,7 @@ export const Login: React.FC = () => {
     try {
       await login(email.trim(), password, keepSignedIn);
       window.location.hash = '#/';
-    } catch (err: unknown) {
+    } catch (err: any) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -51,37 +51,36 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-bg-base">
-      <div className="w-full max-w-md bg-bg-surface/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl shadow-2xl p-6 sm:p-8 flex flex-col relative z-10">
-        <div className="flex items-center gap-3.5 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center font-extrabold text-black text-sm shadow-[0_0_16px_rgba(190,242,100,0.25)]">
+    <div className="min-h-screen flex items-center justify-center bg-bg-base p-4">
+      <div className="w-full max-w-md bg-bg-surface border border-border rounded-card shadow-2xl p-6 sm:p-8 flex flex-col">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center font-extrabold text-black text-lg shadow-md shadow-accent/20">
             RX
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white tracking-tight">Route-X Gateway</h2>
-            <p className="text-xs text-zinc-500 font-mono">Enterprise AI Proxy</p>
+            <h2 className="text-xl font-bold text-text-primary tracking-tight">Route-X Gateway</h2>
           </div>
         </div>
 
         {setupHint?.has_default_admin && (
-          <div className="mb-6 p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+          <div className="mb-6 p-4 rounded-xl bg-accent/5 border border-accent/20 space-y-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-accent font-medium text-xs">
+              <div className="flex items-center gap-2 text-accent font-semibold text-xs">
                 <Sparkles className="w-4 h-4" />
                 <span>Instalasi Baru (First-Run)</span>
               </div>
-              <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-white/[0.04] text-zinc-400 border border-white/[0.08]">
+              <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
                 Setup Awal
               </span>
             </div>
-            <p className="text-xs text-zinc-400 leading-relaxed">
+            <p className="text-xs text-text-secondary leading-relaxed">
               Akun admin pertama masih memakai kata sandi awal dan wajib diganti setelah login.
               Masuk dengan alamat email di bawah ini, lalu ambil kata sandi awal dari sumber tepercaya
-              Anda (keluaran instalasi, berkas <code className="px-1 py-0.5 rounded bg-black/40 text-accent font-mono">.env</code>,
-              atau perintah <code className="px-1 py-0.5 rounded bg-black/40 text-accent font-mono">routex-rotate</code>).
+              Anda (keluaran instalasi, berkas <code className="px-1 py-0.5 rounded bg-bg-base text-accent font-mono">.env</code>,
+              atau perintah <code className="px-1 py-0.5 rounded bg-bg-base text-accent font-mono">routex-rotate</code>).
             </p>
-            <div className="bg-black/30 rounded-lg p-2.5 border border-white/[0.06] space-y-1 font-mono text-xs">
-              <div className="flex justify-between text-zinc-400 text-[11px]">
+            <div className="bg-bg-base/80 rounded-lg p-2.5 border border-border space-y-1 font-mono text-xs">
+              <div className="flex justify-between text-text-muted text-[11px]">
                 <span>Email:</span>
                 <button
                   type="button"
@@ -93,7 +92,7 @@ export const Login: React.FC = () => {
                 </button>
               </div>
             </div>
-            <div className="flex items-start gap-2 text-[11px] text-zinc-500 leading-relaxed">
+            <div className="flex items-start gap-2 text-[11px] text-text-muted leading-relaxed">
               <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-accent" />
               <span>
                 Alamat email saja yang ditampilkan di sini. Kata sandi tidak pernah dikirim oleh
@@ -104,7 +103,7 @@ export const Login: React.FC = () => {
         )}
 
         {error && (
-          <div id="login-error" role="alert" aria-live="assertive" className="mb-5 p-3.5 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-start gap-2.5 text-rose-400 text-xs">
+          <div id="login-error" role="alert" aria-live="assertive" className="mb-5 p-3.5 rounded-inner bg-status-error/10 border border-status-error/20 flex items-start gap-2.5 text-status-error text-xs">
             <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
@@ -112,7 +111,7 @@ export const Login: React.FC = () => {
 
         <form noValidate onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="login-email" className="block text-xs font-medium text-zinc-300 mb-1.5">
+            <label htmlFor="login-email" className="block text-xs font-medium text-text-secondary mb-1.5">
               Alamat Email
             </label>
             <input
@@ -125,12 +124,12 @@ export const Login: React.FC = () => {
               required
               aria-describedby={error ? 'login-error' : undefined}
               placeholder="admin@routex.local"
-              className="w-full px-3.5 py-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-accent/80 focus:ring-1 focus:ring-accent/80 transition-all"
+              className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
             />
           </div>
 
           <div>
-            <label htmlFor="login-password" className="block text-xs font-medium text-zinc-300 mb-1.5">
+            <label htmlFor="login-password" className="block text-xs font-medium text-text-secondary mb-1.5">
               Kata Sandi
             </label>
             <div className="relative">
@@ -144,12 +143,12 @@ export const Login: React.FC = () => {
                 required
                 aria-describedby={error ? 'login-error' : undefined}
                 placeholder="••••••••••••"
-                className="w-full px-3.5 py-2.5 pr-10 bg-white/[0.03] border border-white/[0.08] rounded-lg text-sm text-white placeholder:text-zinc-500 focus:outline-none focus:border-accent/80 focus:ring-1 focus:ring-accent/80 transition-all"
+                className="w-full px-3.5 py-2.5 pr-10 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white p-2 min-w-[36px] min-h-[36px] flex items-center justify-center transition-colors cursor-pointer rounded-lg"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2 min-w-[36px] min-h-[36px] flex items-center justify-center transition-colors cursor-pointer rounded-nav"
                 aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -177,7 +176,7 @@ export const Login: React.FC = () => {
           </Button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-zinc-500">
+        <div className="mt-8 pt-6 border-t border-border/60 flex items-center justify-between text-[11px] text-text-muted">
           <span className="flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 text-accent" />
             Argon2id + Sesi Mandiri

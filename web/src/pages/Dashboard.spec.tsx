@@ -1,7 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Dashboard } from './Dashboard';
 import type {
   ObservabilitySummary,
@@ -10,9 +9,6 @@ import type {
   SystemOverview,
   RequestLog,
 } from '../types';
-
-const createTestQueryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
-const renderWithProviders = (ui: React.ReactElement) => render(<QueryClientProvider client={createTestQueryClient()}>{ui}</QueryClientProvider>);
 
 // Mock focus-trap-react untuk jsdom
 vi.mock('focus-trap-react', () => ({
@@ -221,7 +217,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
   });
 
   it('merender seluruh segmen halaman Dashboard secara lengkap', async () => {
-    renderWithProviders(<Dashboard onNavigate={mockNavigate} />);
+    render(<Dashboard onNavigate={mockNavigate} />);
 
     // 1. DashboardHero
     await waitFor(() => {
@@ -260,13 +256,16 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
   });
 
   it('menangani tombol Segarkan (Refresh) dan memicu pembaruan data telemetri', async () => {
-    renderWithProviders(<Dashboard onNavigate={mockNavigate} />);
+    render(<Dashboard onNavigate={mockNavigate} />);
 
     await waitFor(() => {
       expect(screen.getByText('Route-X Gateway Control')).toBeInTheDocument();
     });
 
     const refreshBtn = screen.getByRole('button', { name: /segarkan/i });
+    await waitFor(() => {
+      expect(refreshBtn).not.toBeDisabled();
+    });
     fireEvent.click(refreshBtn);
 
     await waitFor(() => {
@@ -278,7 +277,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
   });
 
   it('mendukung pergantian metrik dan rentang waktu grafik lalu lintas', async () => {
-    renderWithProviders(<Dashboard onNavigate={mockNavigate} />);
+    render(<Dashboard onNavigate={mockNavigate} />);
 
     await waitFor(() => {
       expect(screen.getByText('Volume & Dinamika Lalu Lintas')).toBeInTheDocument();
@@ -302,7 +301,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
   });
 
   it('menampilkan modal resep 1-klik dan merespons aksi navigasi resep', async () => {
-    renderWithProviders(<Dashboard onNavigate={mockNavigate} />);
+    render(<Dashboard onNavigate={mockNavigate} />);
 
     await waitFor(() => {
       expect(screen.getByText('Panduan Cepat Memulai Route-X')).toBeInTheDocument();
@@ -328,7 +327,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
   });
 
   it('dapat menutup panduan onboarding cepat secara permanen', async () => {
-    renderWithProviders(<Dashboard onNavigate={mockNavigate} />);
+    render(<Dashboard onNavigate={mockNavigate} />);
 
     await waitFor(() => {
       expect(screen.getByText('Panduan Cepat Memulai Route-X')).toBeInTheDocument();
@@ -342,9 +341,9 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
   });
 
   it('menangani kegagalan pemanggilan API dengan notifikasi error', async () => {
-    mockOverviewFn.mockRejectedValueOnce(new Error('Network timeout gateway'));
+    mockSummaryFn.mockRejectedValueOnce(new Error('Network timeout gateway'));
 
-    renderWithProviders(<Dashboard onNavigate={mockNavigate} />);
+    render(<Dashboard onNavigate={mockNavigate} />);
 
     await waitFor(() => {
       expect(screen.getByText(/Gateway Tidak Tersedia/i)).toBeInTheDocument();

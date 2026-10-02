@@ -169,7 +169,7 @@ export const UsersPage: React.FC = () => {
       {isLoading ? (
         /* Loading skeleton — tabel minimalis (Item 4.2) */
         <Card className="overflow-hidden">
-          <div className="animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-bg-surface-2 via-bg-surface-3 to-bg-surface-2 bg-[length:400%_100%] divide-y divide-border">
+          <div className="animate-pulse divide-y divide-border">
             {[...Array(3)].map((_, idx) => (
               <div key={idx} className="flex items-center gap-4 px-4 py-3">
                 <div className="w-8 h-8 bg-bg-surface-2 rounded-full flex-shrink-0" />

@@ -3,18 +3,17 @@ import { Server } from 'lucide-react';
 import { Button } from '../common/Button';
 import { StatusDot } from '../common/StatusDot';
 import { ProviderBrandIcon } from '../providers/ProviderIcons';
-import { useProvidersList } from './hooks';
+import type { Provider } from '../../types';
 
 export interface ProviderHealthMatrixProps {
+  providers: Provider[];
   onNavigate: (path: string) => void;
 }
 
 export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
+  providers,
   onNavigate,
 }) => {
-  const { data: providersList } = useProvidersList();
-  const providers = providersList?.items || [];
-
   return (
     <div className="space-y-3 sm:space-y-4">
       <div className="flex flex-row items-center justify-between gap-3">
@@ -35,9 +34,9 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         {providers.length === 0 ? (
-          <div className="col-span-full py-8 text-center text-xs text-zinc-400 bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl shadow-sm">
+          <div className="col-span-full py-8 text-center text-xs text-text-muted bg-bg-surface border border-border rounded-card">
             Belum ada provider upstream yang terdaftar.{' '}
             <button
               type="button"
@@ -62,11 +61,11 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
             return (
               <div
                 key={p.id}
-                className="bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] hover:border-white/[0.12] rounded-xl p-4 transition-all duration-200 flex flex-col justify-between shadow-sm group"
+                className="bg-bg-surface border border-border rounded-card p-4 hover:border-border-hover transition-all flex flex-col justify-between shadow-sm group"
               >
                 <div className="flex items-center justify-between gap-2.5 sm:gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-white/[0.03] border border-white/[0.06] flex items-center justify-center text-zinc-200 flex-shrink-0">
+                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-inner bg-bg-surface-2 border border-border flex items-center justify-center text-text-primary flex-shrink-0">
                       <ProviderBrandIcon
                         providerIdOrKind={p.kind}
                         name={p.name}
@@ -77,7 +76,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
                       <h4 className="text-sm font-semibold text-white group-hover:text-accent transition-colors truncate">
                         {p.display_name || p.name}
                       </h4>
-                      <p className="text-[11px] text-zinc-500 font-mono capitalize truncate">
+                      <p className="text-[11px] text-text-muted font-mono capitalize truncate">
                         {p.kind}
                         {p.last_latency_ms ? ` · ${p.last_latency_ms} ms` : ''}
                       </p>

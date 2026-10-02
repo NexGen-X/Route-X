@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { RequestLog, RequestEvent, RequestPayload } from '../types';
+import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
 import { QueryError } from '../components/common/QueryError';
@@ -9,6 +10,7 @@ import {
   RequestFilterBar,
   RequestTableSkeleton,
   RequestTableRow,
+  RequestCardMobile,
   RequestInspectorModal,
   type RequestTabFilter,
 } from '../components/requests';
@@ -122,15 +124,15 @@ export const Requests: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsLiveFeed(!isLiveFeed)}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150 ${
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-inner text-xs font-semibold border transition-all ${
                 isLiveFeed
-                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                  : 'bg-white/[0.03] text-zinc-300 border-white/[0.08] hover:text-white'
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                  : 'bg-bg-surface-2 text-text-secondary border-border hover:text-white'
               }`}
             >
               <span
                 className={`w-2 h-2 rounded-full shrink-0 transition-opacity ${
-                  isLiveFeed ? 'bg-emerald-400 ring-2 ring-emerald-400/20 animate-pulse' : 'bg-zinc-500'
+                  isLiveFeed ? 'bg-emerald-400 ring-2 ring-emerald-400/20' : 'bg-text-muted/60'
                 }`}
               />
               <span>{isLiveFeed ? 'Live Polling Aktif' : 'Live Stream'}</span>
@@ -152,48 +154,56 @@ export const Requests: React.FC = () => {
         <QueryError message={loadError} onRetry={() => void loadRequests()} />
       )}
 
-      <div className="space-y-4">
+      <Card>
         {/* Filter Chips & Search Bar */}
-        <div className="p-3 sm:p-4 bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl shadow-sm">
-          <RequestFilterBar
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-            search={search}
-            onSearchChange={setSearch}
-            onSearchSubmit={() => void loadRequests()}
-          />
-        </div>
+        <RequestFilterBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          search={search}
+          onSearchChange={setSearch}
+          onSearchSubmit={() => void loadRequests()}
+        />
 
-        {/* Requests Table */}
+        {/* Requests List: Card List on Mobile, Table on Desktop */}
         {isLoading ? (
           <RequestTableSkeleton />
         ) : requests.length === 0 ? (
-          <div className="py-12 px-4 text-center space-y-3 bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl shadow-sm">
-            <Activity className="w-8 h-8 mx-auto text-zinc-600" />
+          <div className="py-12 px-4 text-center space-y-3">
+            <Activity className="w-8 h-8 mx-auto text-text-muted/40" />
             <div className="text-sm font-semibold text-white">
               Tidak ada catatan permintaan
             </div>
-            <p className="text-xs text-zinc-400 max-w-sm mx-auto">
+            <p className="text-xs text-text-muted max-w-sm mx-auto">
               Belum ada permintaan inferensi yang cocok dengan kriteria filter atau kata kunci pencarian.
             </p>
           </div>
         ) : (
-          <div className="bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs whitespace-nowrap">
+          <>
+            {/* Mobile Card List (sm:hidden) */}
+            <div className="sm:hidden divide-y divide-border/60">
+              {requests.map((r) => (
+                <RequestCardMobile
+                  key={r.id || r.request_id}
+                  request={r}
+                  onInspect={handleInspect}
+                />
+              ))}
+            </div>
+
+            {/* Desktop Table (hidden sm:block) */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-white/[0.06] bg-white/[0.02] text-zinc-400 font-medium text-xs">
-                    <th className="py-2.5 px-4 font-semibold">Timestamp</th>
-                    <th className="py-2.5 px-4 font-semibold">Method</th>
-                    <th className="py-2.5 px-4 font-semibold">Path</th>
-                    <th className="py-2.5 px-4 font-semibold">Status</th>
-                    <th className="py-2.5 px-4 font-semibold">Model</th>
-                    <th className="py-2.5 px-4 font-semibold">Latency</th>
-                    <th className="py-2.5 px-4 font-semibold">Cost</th>
-                    <th className="py-2.5 px-4 text-right font-semibold">Aksi</th>
+                  <tr className="border-b border-border text-text-muted font-medium text-xs bg-bg-surface-2/40">
+                    <th className="py-3 px-4 font-semibold">Status &amp; Request ID</th>
+                    <th className="py-3 px-4 font-semibold">Model &amp; Provider</th>
+                    <th className="py-3 px-4 font-semibold">Token &amp; Cost</th>
+                    <th className="py-3 px-4 font-semibold">Durasi &amp; TTFT</th>
+                    <th className="py-3 px-4 font-semibold">Waktu &amp; Klien</th>
+                    <th className="py-3 px-4 text-right">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/[0.04]">
+                <tbody className="divide-y divide-border/60">
                   {requests.map((r) => (
                     <RequestTableRow
                       key={r.id || r.request_id}
@@ -204,11 +214,11 @@ export const Requests: React.FC = () => {
                 </tbody>
               </table>
             </div>
-          </div>
+          </>
         )}
 
         {nextCursor && (
-          <div className="flex justify-center pt-4 pb-8">
+          <div className="p-4 border-t border-border flex justify-center">
             <Button
               variant="secondary"
               size="sm"
@@ -219,7 +229,7 @@ export const Requests: React.FC = () => {
             </Button>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Inspector Modal */}
       <RequestInspectorModal

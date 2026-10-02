@@ -24,18 +24,18 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
   onSearchSubmit,
 }) => {
   return (
-    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4">
       {/* Filter Tabs */}
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
         {TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => onTabChange(tab.id)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 cursor-pointer ${
+            className={`px-3 py-1.5 rounded-chip text-xs font-semibold transition-all ${
               activeTab === tab.id
-                ? 'bg-white/10 text-white border border-white/[0.08] shadow-sm font-semibold'
-                : 'bg-white/[0.02] text-zinc-400 border border-white/[0.06] hover:text-white hover:bg-white/[0.04]'
+                ? 'bg-accent/10 text-accent border border-accent/30 shadow-sm'
+                : 'bg-bg-surface-2 text-text-secondary border border-border hover:text-white'
             }`}
           >
             {tab.label}
@@ -45,14 +45,14 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
 
       {/* Search Input Bar */}
       <div className="relative w-full md:w-72">
-        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
         <input
           type="text"
           placeholder="Cari ID request, model, IP..."
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && onSearchSubmit?.()}
-          className="w-full pl-8 pr-3 py-1.5 bg-white/[0.02] border border-white/[0.06] rounded-lg text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-white/[0.15] transition-colors"
+          className="w-full pl-9 pr-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-xs text-text-primary focus:outline-none focus:border-accent"
         />
       </div>
     </div>

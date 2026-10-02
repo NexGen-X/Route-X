@@ -1,10 +1,14 @@
 import React from 'react';
 import { RefreshCw, ArrowUpRight, Terminal } from 'lucide-react';
 import { Button } from '../common/Button';
+import type { SystemOverview } from '../../types';
 import { formatUptime } from './utils';
-import { useSystemOverview, useProvidersList } from './hooks';
 
 export interface DashboardHeroProps {
+  loadError: string | null;
+  healthyProvidersCount: number;
+  totalProvidersCount: number;
+  overview: SystemOverview | null;
   isLoading: boolean;
   isRefreshing: boolean;
   onRefresh: () => void;
@@ -12,27 +16,25 @@ export interface DashboardHeroProps {
 }
 
 export const DashboardHero: React.FC<DashboardHeroProps> = ({
+  loadError,
+  healthyProvidersCount,
+  totalProvidersCount,
+  overview,
   isLoading,
   isRefreshing,
   onRefresh,
   onNavigate,
 }) => {
-  const { data: overview, error: overviewError } = useSystemOverview();
-  const { data: providersList } = useProvidersList();
-
-  const loadError = overviewError ? String(overviewError) : null;
-  const providers = providersList?.items || [];
-  const healthyProvidersCount = providers.filter((p) => p.last_health_status === 'healthy').length;
-  const totalProvidersCount = providers.length;
-
   return (
-    <div className="bg-bg-surface/50 backdrop-blur-sm border border-white/[0.06] rounded-xl shadow-sm px-5 py-3.5">
+    <div className="bg-bg-surface border border-border rounded-card px-5 py-3.5 shadow-sm">
+      {/* Baris utama — semua dalam satu flex row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 justify-between">
+        {/* Kiri: status + judul + info strip */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
           <span
             role="status"
             aria-live="polite"
-            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border shrink-0 ${
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border shrink-0 ${
               loadError
                 ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
                 : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
@@ -44,12 +46,13 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
             {loadError ? 'Gateway Tidak Tersedia' : 'Beroperasi'}
           </span>
 
-          <h2 className="text-sm font-semibold tracking-tight text-white shrink-0">
+          <h2 className="text-sm font-bold tracking-tight text-white shrink-0">
             Route-X Gateway Control
           </h2>
 
           <span className="hidden sm:inline text-border">·</span>
 
+          {/* Info strip — font mono kecil, hanya tampil di sm+ */}
           <div className="hidden sm:flex items-center gap-x-4 text-xs font-mono text-text-muted">
             <span>
               <span className="text-text-secondary font-medium">{healthyProvidersCount}/{totalProvidersCount}</span> upstream sehat
@@ -67,6 +70,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
           </div>
         </div>
 
+        {/* Kanan: action buttons */}
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
@@ -100,3 +104,4 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
     </div>
   );
 };
+

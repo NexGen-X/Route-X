@@ -13,7 +13,7 @@ export const ModelGridView: React.FC<ModelGridViewProps> = ({
   onDeleteModel,
 }) => {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 md:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="models-grid">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="models-grid">
       {models.map((m) => (
         <Card key={m.id} className="p-5 flex flex-col justify-between" data-testid={`model-card-${m.model_id}`}>
           <div>

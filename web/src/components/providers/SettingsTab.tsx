@@ -76,7 +76,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     <div className="space-y-4">
       {isManualProvider && (
         <form noValidate onSubmit={handleSaveConfig} className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Tampilan</label>
               <input
@@ -124,7 +124,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       <div>
         <label className="block text-xs font-medium text-text-secondary mb-2">Jalur Egress Outbound</label>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 lg:grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           <div
             onClick={() => handleSelectProxyPreset(null, 'Direct Outbound (Tanpa Proxy)')}
             className={`px-2.5 py-2 rounded-lg border cursor-pointer transition-all flex items-center justify-between gap-2 ${

@@ -277,8 +277,10 @@ export class RouteXApiClient {
         };
       }
 
+      const cookieHeader = res.headers.get('set-cookie') || '';
+      const match = cookieHeader.match(/(?:__Host-)?routex_session=([^;]+)/);
       const data = await res.json();
-      this.sessionToken = data.session_token || '';
+      this.sessionToken = match ? match[1] : (data.session_token || '');
       this.csrfToken = data.csrf_token || '';
 
       const user: AuthUser = {

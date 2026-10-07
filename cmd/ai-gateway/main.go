@@ -230,6 +230,7 @@ func buildRouter(
 		httpx.RealIP(trusted),
 		httpx.AccessLog(logger),
 		httpx.Recover(logger),
+		httpx.CORS(nil),
 		httpx.SecurityHeaders(cfg),
 		httpx.MaxBytes(cfg.MaxRequestBytes),
 		httpx.MetricsRecorder(metrics),

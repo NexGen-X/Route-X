@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/config"
@@ -122,12 +123,21 @@ func (c *Cookies) ClearCSRF(w http.ResponseWriter) {
 	http.SetCookie(w, c.cookie(c.CSRFName(), "", false, -1))
 }
 
-// SessionToken membaca token sesi dari request. Secret kosong berarti tidak ada cookie.
+// SessionToken membaca token sesi dari request. Secret kosong berarti tidak ada cookie atau token.
 //
-// Hanya nama yang sesuai environment yang dibaca. Menerima kedua nama sekaligus akan
-// membuat cookie non-Secure yang tertinggal dari masa development tetap diterima di
-// produksi, dan itu persis kelonggaran yang prefiks "__Host-" ada untuk menutup.
+// Mendukung header Authorization: Bearer <token> dan X-Session-Token: <token> untuk
+// aplikasi native mobile companion APK & CLI, serta cookie sesi browser.
 func (c *Cookies) SessionToken(r *http.Request) security.Secret {
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if token != "" {
+			return security.Secret(token)
+		}
+	}
+	if token := r.Header.Get("X-Session-Token"); token != "" {
+		return security.Secret(token)
+	}
+
 	ck, err := r.Cookie(c.SessionName())
 	if err != nil || ck.Value == "" {
 		return ""

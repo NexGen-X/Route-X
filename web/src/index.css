@@ -4,14 +4,14 @@
 
 @layer base {
   body {
-    background-color: #0A0A0A;
-    color: #F5F5F5;
+    background-color: #0B0F17;
+    color: #F8FAFC;
   }
 
   /* Universal Selection Color */
   ::selection {
-    background-color: #A3E635;
-    color: #0A0A0A;
+    background-color: #3B82F6;
+    color: #FFFFFF;
   }
 }
 
@@ -22,7 +22,7 @@
 /* Firefox & W3C Standard */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #1F1F1F #0C0C0C;
+  scrollbar-color: #1E293B #080C14;
 }
 
 /* WebKit & Blink (Chrome, Safari, Edge, Android Chrome, iOS Safari) */
@@ -32,16 +32,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #0C0C0C;
+  background: #080C14;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1F1F1F;
+  background: #1E293B;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2D2D2D;
+  background: #2E3D59;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -91,9 +91,9 @@ input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 40px #141416 inset !important;
-  -webkit-text-fill-color: #F5F5F5 !important;
-  caret-color: #A3E635 !important;
+  -webkit-box-shadow: 0 0 0 40px #0F1523 inset !important;
+  -webkit-text-fill-color: #F8FAFC !important;
+  caret-color: #3B82F6 !important;
   transition: background-color 5000s ease-in-out 0s;
 }
 
@@ -109,9 +109,9 @@ input[type="checkbox"] {
   height: 1rem;
   min-width: 1rem;
   min-height: 1rem;
-  border: 1px solid #27272A;
+  border: 1px solid #1E293B;
   border-radius: 0.25rem;
-  background-color: #141416;
+  background-color: #0F1523;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -121,19 +121,19 @@ input[type="checkbox"] {
 }
 
 input[type="checkbox"]:hover:not(:disabled) {
-  border-color: #A3E635;
-  box-shadow: 0 0 8px rgba(163, 230, 53, 0.2);
+  border-color: #3B82F6;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
 }
 
 input[type="checkbox"]:focus-visible {
-  border-color: #A3E635;
-  box-shadow: 0 0 0 2px #0A0A0A, 0 0 0 4px #A3E635;
+  border-color: #3B82F6;
+  box-shadow: 0 0 0 2px #0B0F17, 0 0 0 4px #3B82F6;
 }
 
 input[type="checkbox"]:checked {
-  background-color: #A3E635;
-  border-color: #A3E635;
-  box-shadow: 0 0 10px rgba(163, 230, 53, 0.3);
+  background-color: #3B82F6;
+  border-color: #3B82F6;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.35);
 }
 
 input[type="checkbox"]:checked::before {
@@ -141,7 +141,7 @@ input[type="checkbox"]:checked::before {
   width: 0.55rem;
   height: 0.55rem;
   clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
-  background-color: #0A0A0A;
+  background-color: #FFFFFF;
 }
 
 input[type="checkbox"]:disabled {
@@ -161,9 +161,9 @@ input[type="radio"] {
   height: 1rem;
   min-width: 1rem;
   min-height: 1rem;
-  border: 1px solid #27272A;
+  border: 1px solid #1E293B;
   border-radius: 9999px;
-  background-color: #141416;
+  background-color: #0F1523;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -173,17 +173,17 @@ input[type="radio"] {
 }
 
 input[type="radio"]:hover:not(:disabled) {
-  border-color: #A3E635;
-  box-shadow: 0 0 8px rgba(163, 230, 53, 0.2);
+  border-color: #3B82F6;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
 }
 
 input[type="radio"]:focus-visible {
-  border-color: #A3E635;
-  box-shadow: 0 0 0 2px #0A0A0A, 0 0 0 4px #A3E635;
+  border-color: #3B82F6;
+  box-shadow: 0 0 0 2px #0B0F17, 0 0 0 4px #3B82F6;
 }
 
 input[type="radio"]:checked {
-  border-color: #A3E635;
+  border-color: #3B82F6;
 }
 
 input[type="radio"]:checked::before {
@@ -191,7 +191,7 @@ input[type="radio"]:checked::before {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 9999px;
-  background-color: #A3E635;
+  background-color: #3B82F6;
 }
 
 input[type="radio"]:disabled {
@@ -206,7 +206,7 @@ input[type="radio"]:disabled {
 /* Custom panel scrollbar untuk Drawer, Modal, dan dropdown */
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #262626 transparent;
+  scrollbar-color: #1E293B transparent;
 }
 
 .scrollbar-thin::-webkit-scrollbar {
@@ -219,12 +219,12 @@ input[type="radio"]:disabled {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #262626;
+  background: #1E293B;
   border-radius: 9999px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #3F3F46;
+  background: #2E3D59;
 }
 
 /* Batasi resize textarea hanya secara vertikal agar tidak merusak layout grid */
@@ -238,8 +238,8 @@ select {
 }
 
 select option {
-  background-color: #141416;
-  color: #F5F5F5;
+  background-color: #0F1523;
+  color: #F8FAFC;
 }
 
 /* Normalisasi Date / Time picker dialog native */

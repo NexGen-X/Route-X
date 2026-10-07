@@ -384,25 +384,25 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
-			if origin != "" {
-				allowed := "*"
-				if len(origins) > 0 {
-					allowed = ""
-					for _, o := range origins {
-						if o == "*" || o == origin {
-							allowed = origin
-							break
-						}
+			allowed := "*"
+			if len(origins) > 0 && origin != "" {
+				allowed = ""
+				for _, o := range origins {
+					if o == "*" || o == origin {
+						allowed = origin
+						break
 					}
 				}
+			} else if origin != "" {
+				allowed = origin
+			}
 
-				if allowed != "" {
-					w.Header().Set("Access-Control-Allow-Origin", allowed)
-					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-					w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, OpenAI-Organization, OpenAI-Beta, User-Agent")
-					w.Header().Set("Access-Control-Expose-Headers", "X-Request-Id")
-					w.Header().Set("Access-Control-Max-Age", "86400")
-				}
+			if allowed != "" {
+				w.Header().Set("Access-Control-Allow-Origin", allowed)
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD")
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, X-Session-Token, X-CSRF-Token, OpenAI-Organization, OpenAI-Beta, User-Agent, Accept")
+				w.Header().Set("Access-Control-Expose-Headers", "X-Request-Id, X-Session-Token, X-CSRF-Token")
+				w.Header().Set("Access-Control-Max-Age", "86400")
 			}
 
 			if r.Method == http.MethodOptions {

@@ -275,11 +275,11 @@ export const Observability: React.FC = () => {
                   formatter={formatTooltipValue}
                   labelFormatter={formatTooltipLabel}
                   contentStyle={{
-                    backgroundColor: '#101010',
-                    borderColor: '#1F1F1F',
+                    backgroundColor: '#0F1523',
+                    borderColor: '#1E293B',
                     borderRadius: '8px',
                     fontSize: '12px',
-                    color: '#F5F5F5',
+                    color: '#F8FAFC',
                   }}
                 />
                 <Area
@@ -291,8 +291,8 @@ export const Observability: React.FC = () => {
                       ? 'p95_latency_ms'
                       : metric
                   }
-                  stroke="#BEF264"
-                  fill="#BEF264"
+                  stroke="#3B82F6"
+                  fill="#3B82F6"
                   fillOpacity={0.12}
                   strokeWidth={2}
                 />

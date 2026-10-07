@@ -20,7 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { principal } = useAuth();
 
   return (
-    <header className="h-14 border-b border-border/60 bg-bg-base/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30">
+    <header className="h-14 border-b border-border/70 bg-bg-base/75 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 transition-all">
       <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
         <button
           type="button"
@@ -53,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onOpenCommandPalette}
-              className="hidden sm:inline-flex items-center gap-2.5 px-3 py-1.5 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-xs text-text-secondary hover:text-white transition-all shadow-sm group cursor-pointer"
+              className="hidden sm:inline-flex items-center gap-2.5 px-3 py-1.5 rounded-inner bg-bg-surface-2/80 hover:bg-bg-surface-2 border border-border/80 hover:border-accent/40 text-xs text-text-secondary hover:text-white transition-all shadow-sm group cursor-pointer"
               aria-label="Buka Command Palette (Ctrl+K atau ⌘K)"
             >
               <Search className="w-3.5 h-3.5 text-text-muted group-hover:text-accent transition-colors" aria-hidden="true" />

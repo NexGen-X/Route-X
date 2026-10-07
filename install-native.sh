@@ -142,17 +142,48 @@ mkdir -p /etc/caddy
 if [ ! -f /etc/caddy/Caddyfile ] || grep -q "127.0.0.1:8080" /etc/caddy/Caddyfile 2>/dev/null; then
     # Belum ada Caddyfile, atau berisi blok Route-X versi lama: tulis ulang.
     cat << EOF > /etc/caddy/Caddyfile
+{
+    auto_https disable_redirects
+}
+
+http://${ROUTEX_HOST}, :80 {
+    encode zstd gzip
+
+    @apk path /routex.apk
+    handle @apk {
+        root * /usr/share/caddy
+        file_server
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:8080 {
+            header_up X-Real-Ip {remote_host}
+            transport http {
+                keepalive 300s
+                keepalive_idle_conns 250
+            }
+        }
+    }
+}
+
 # Route-X Gateway — host publik: ${ROUTEX_HOST}
 ${ROUTEX_HOST} {
 ${CADDY_TLS_LINE}
     encode zstd gzip
 
-    reverse_proxy 127.0.0.1:8080 {
-        header_up X-Real-Ip {remote_host}
+    @apk path /routex.apk
+    handle @apk {
+        root * /usr/share/caddy
+        file_server
+    }
 
-        transport http {
-            keepalive 300s
-            keepalive_idle_conns 250
+    handle {
+        reverse_proxy 127.0.0.1:8080 {
+            header_up X-Real-Ip {remote_host}
+            transport http {
+                keepalive 300s
+                keepalive_idle_conns 250
+            }
         }
     }
 }

@@ -152,6 +152,13 @@ func (c *CSRF) Protect() func(http.Handler) http.Handler {
 				return
 			}
 
+			// Klien non-browser (Mobile APK, CLI, SDK) yang menggunakan header Authorization
+			// Bearer atau X-Session-Token kebal dari eksploitasi CSRF lintas situs browser.
+			if r.Header.Get("Authorization") != "" || r.Header.Get("X-Session-Token") != "" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			principal, ok := PrincipalFrom(r.Context())
 			if !ok {
 				observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelError,

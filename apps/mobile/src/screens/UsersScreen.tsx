@@ -6,9 +6,10 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
+  Modal,
   Alert,
 } from 'react-native';
-import { MoreHorizontal, Mail, Shield } from 'lucide-react-native';
+import { MoreHorizontal, Mail, Shield, UserPlus } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { TopHeader } from '../components/TopHeader';
 import { api } from '../api/client';
@@ -26,13 +27,65 @@ export const UsersScreen: React.FC<UsersScreenProps> = ({ onBack }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
 
+  // Modal Tambah User
+  const [modalVisible, setModalVisible] = useState(false);
+  const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
+  const [userRole, setUserRole] = useState<UserItem['role']>('Developer');
+
   useEffect(() => {
     loadUsers();
   }, []);
 
   const loadUsers = async () => {
     const list = await api.getUsers();
-    setUsers(list);
+    setUsers([...list]);
+  };
+
+  const handleAddUser = async () => {
+    if (!userName.trim() || !userEmail.trim()) {
+      Alert.alert('Validasi Galat', 'Nama dan alamat email pengguna wajib diisi.');
+      return;
+    }
+    await api.addUser(userName, userEmail, userRole);
+    setModalVisible(false);
+    setUserName('');
+    setUserEmail('');
+    Alert.alert('Sukses', `Pengguna "${userName}" (${userRole}) berhasil ditambahkan.`);
+    loadUsers();
+  };
+
+  const handleUserMenu = (user: UserItem) => {
+    Alert.alert(
+      user.name,
+      `Pilih tindakan untuk akun ${user.email}:`,
+      [
+        {
+          text: 'Ubah Role Akses',
+          onPress: () => {
+            const nextRoles: Record<UserItem['role'], UserItem['role']> = {
+              Admin: 'Operator',
+              Operator: 'Developer',
+              Developer: 'User',
+              User: 'Admin',
+            };
+            user.role = nextRoles[user.role];
+            setUsers([...users]);
+            Alert.alert('Role Diperbarui', `Role ${user.name} diubah menjadi ${user.role}.`);
+          },
+        },
+        {
+          text: 'Hapus Pengguna',
+          style: 'destructive',
+          onPress: async () => {
+            await api.deleteUser(user.id);
+            loadUsers();
+            Alert.alert('Pengguna Dihapus', `Akun ${user.name} telah dihapus.`);
+          },
+        },
+        { text: 'Batal', style: 'cancel' },
+      ]
+    );
   };
 
   const filteredUsers = users.filter((u) => {
@@ -61,12 +114,10 @@ export const UsersScreen: React.FC<UsersScreenProps> = ({ onBack }) => {
     <View style={styles.container}>
       <TopHeader
         mode="subscreen"
-        title="Users"
+        title="Users & RBAC"
         onBack={onBack}
         onSearch={() => setShowSearch(!showSearch)}
-        onAdd={() =>
-          Alert.alert('Undang User Baru', 'Kirim undangan akses RBAC ke email rekan tim.')
-        }
+        onAdd={() => setModalVisible(true)}
       />
 
       {showSearch && (
@@ -121,6 +172,13 @@ export const UsersScreen: React.FC<UsersScreenProps> = ({ onBack }) => {
           <Text style={styles.listSubtitle}>
             {filteredUsers.length} Pengguna Terdaftar
           </Text>
+          <TouchableOpacity
+            style={styles.addUserTopBtn}
+            onPress={() => setModalVisible(true)}
+          >
+            <UserPlus size={13} color={colors.accentPrimary} />
+            <Text style={styles.addUserTopBtnText}>Tambah User</Text>
+          </TouchableOpacity>
         </View>
 
         {filteredUsers.map((user) => {
@@ -178,12 +236,7 @@ export const UsersScreen: React.FC<UsersScreenProps> = ({ onBack }) => {
 
               <TouchableOpacity
                 style={styles.actionBtn}
-                onPress={() =>
-                  Alert.alert(
-                    user.name,
-                    `Role: ${user.role}\nEmail: ${user.email}\nStatus: Aktif`
-                  )
-                }
+                onPress={() => handleUserMenu(user)}
                 accessibilityLabel="Detail User"
               >
                 <MoreHorizontal size={18} color={colors.textSecondary} />
@@ -192,6 +245,77 @@ export const UsersScreen: React.FC<UsersScreenProps> = ({ onBack }) => {
           );
         })}
       </ScrollView>
+
+      {/* Modal Tambah Pengguna Baru */}
+      <Modal
+        visible={modalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Tambah Pengguna Baru</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Text style={styles.closeBtn}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>Nama Lengkap</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Contoh: Rian Anggara"
+              placeholderTextColor={colors.textMuted}
+              value={userName}
+              onChangeText={setUserName}
+            />
+
+            <Text style={styles.inputLabel}>Alamat Email</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="rian@routex.ai"
+              placeholderTextColor={colors.textMuted}
+              value={userEmail}
+              onChangeText={setUserEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+
+            <Text style={styles.inputLabel}>Peran (Role RBAC)</Text>
+            <View style={styles.roleChipsRow}>
+              {(['Admin', 'Operator', 'Developer', 'User'] as const).map((r) => (
+                <TouchableOpacity
+                  key={r}
+                  style={[styles.roleChip, userRole === r && styles.roleChipActive]}
+                  onPress={() => setUserRole(r)}
+                >
+                  <Text
+                    style={[styles.roleChipText, userRole === r && styles.roleChipTextActive]}
+                  >
+                    {r}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.cancelBtnText}>Batal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={handleAddUser}
+              >
+                <Text style={styles.submitBtnText}>Simpan Pengguna</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -257,12 +381,31 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   listHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
   },
   listSubtitle: {
     fontSize: 13,
     fontWeight: '600',
     color: colors.textSecondary,
+  },
+  addUserTopBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.accentGreenSubtle,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.accentGreenBorder,
+  },
+  addUserTopBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.accentPrimary,
   },
   userCard: {
     flexDirection: 'row',
@@ -354,5 +497,105 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     padding: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    backgroundColor: colors.bgSurface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  closeBtn: {
+    fontSize: 18,
+    color: colors.textSecondary,
+    fontWeight: 'bold',
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  textInput: {
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.textPrimary,
+    fontSize: 14,
+  },
+  roleChipsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginVertical: 4,
+  },
+  roleChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: colors.bgElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  roleChipActive: {
+    backgroundColor: colors.accentGreenSubtle,
+    borderColor: colors.accentPrimary,
+  },
+  roleChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  roleChipTextActive: {
+    color: colors.accentPrimary,
+    fontWeight: '700',
+  },
+  modalActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 20,
+  },
+  cancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: colors.bgElevated,
+  },
+  cancelBtnText: {
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  submitBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: colors.accentPrimary,
+  },
+  submitBtnText: {
+    color: '#0A0B0D',
+    fontWeight: '700',
   },
 });

@@ -6,7 +6,7 @@ info:
     enkripsi kredensial AES-256-GCM, perutean adaptif ber-failover otomatis, pemutus arus terdistribusi,
     pengawasan anggaran berpresisi finansial skala 8 desimal (upstream.USD), jejak audit menyeluruh,
     dan dashboard operasional tersemat.
-  version: 1.2.1
+  version: 1.4.0
   contact:
     name: Route-X Engineering Team
     email: admin@routex.internal

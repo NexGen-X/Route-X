@@ -9,11 +9,11 @@ Dokumentasi ini memandu pengembang dalam mengintegrasikan aplikasi dengan **Rout
 Setelah gateway dinyalakan, buka konsol web di peramban:
 `http://localhost:8080/login` (atau domain produksi Anda).
 
-- **Instalasi Baru (First-Run)**: Tampilan login dilengkapi kartu bantuan **"SETUP AWAL"** dengan tombol **"Gunakan Kredensial Default (1-Klik)"**.
+- **Instalasi Baru (First-Run)**: Tampilan login dilengkapi kartu bantuan **"SETUP AWAL"** dengan tombol pintasan untuk mengisi alamat email admin secara otomatis.
 - **Kredensial Bawaan**:
   - Email: `admin@routex.local`
-  - Password: `RouteX#Initial2026!`
-- **Pengalihan Wajib**: Pada login pertama, Anda akan langsung diarahkan untuk membuat kata sandi baru. Setelah kata sandi diperbarui, kartu bantuan setup akan dinonaktifkan secara permanen.
+  - Password: `RouteX#Initial2026!` (atau nilai `INITIAL_ADMIN_PASSWORD` pada lingkungan produksi / output instalasi).
+- **Pengalihan Wajib**: Pada login pertama, Anda akan langsung diarahkan untuk membuat kata sandi baru. Setelah kata sandi diperbarui, kartu bantuan setup akan dinonaktifkan secara otomatis.
 
 ---
 

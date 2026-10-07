@@ -32,7 +32,7 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
   - [Aturan Pengembangan & Standar Kerja (routex-dev)](file:///root/Route-X/.agents/rules/routex-dev.md) — Konvensi Go & TS, zero-race, arsitektur single-admin, dan keamanan zero-trust.
   - [Standar Verifikasi Multi-Aspek](file:///root/Route-X/.agents/rules/multi_aspect_verification.md) — 4 lapisan verifikasi empiris, wire protocol live probe, dan protokol anti-halusinasi.
 - Bahasa komentar/log di codebase ini: Indonesia. Ikuti gaya yang ada.
-- Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0010_drop_roles.sql`)
+- Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0015_credential_egress_pool.sql`)
 - **Alur Kerja Git Wajib PR (PR-Only Policy)**: Dilarang keras melakukan komit atau push langsung ke branch `main`. Setiap perubahan wajib dibuat pada branch terisolasi (`feat/*`, `fix/*`, `chore/*`), didorong ke remote, diajukan melalui `gh pr create`, dipantau hingga status CI hijau (`gh pr checks <id> --watch`), dan digabungkan melalui `gh pr merge <id> --squash --delete-branch`.
 - **Standar Verifikasi Multi-Aspek & Protokol 7-Layer QA (Wajib Bukti Nyata)**:
   - Dilarang keras menyajikan hasil mentah, asumsi, atau klaim penyelesaian tugas hanya berdasarkan spekulasi kode atau mock lokal semata.
@@ -57,8 +57,8 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
   - `redis`: Akses langsung inspeksi cache & sliding-window rate limit (localhost:6379)
   - `puppeteer`: Browser headless untuk validasi UI konsol web React (`web/`)
 
-## Prosedur Rilis & Patch Modern Route-X (v1.2.x Checklist Pra-Rilis)
-Sebelum mempublikasikan patch atau rilis `v1.2.x`, lakukan verifikasi berurutan berikut:
+## Prosedur Rilis & Patch Modern Route-X (v1.4.x Checklist Pra-Rilis)
+Sebelum mempublikasikan patch atau rilis `v1.4.x`, lakukan verifikasi berurutan berikut:
 1. **Audit Data Race**: Jalankan `go test -race ./...` (wajib 0 data race terdeteksi).
 2. **Formatting Go**: Jalankan `gofmt -l .` (wajib kosong/bersih).
 3. **Integritas Database**: Pastikan berkas migrasi `internal/database/migrations/` berurutan rapi (saat ini 0001 sampai 0015) dan tidak merusak skema produksi.
@@ -66,10 +66,10 @@ Sebelum mempublikasikan patch atau rilis `v1.2.x`, lakukan verifikasi berurutan 
 5. **Uji Probing Gateway E2E**: Jalankan `./scripts/probe_e2e_gateway.sh` untuk memvalidasi rute `/v1/chat/completions` (non-stream & SSE stream) serta `/v1/messages` native Anthropic.
 6. **Validasi Observabilitas**: Jalankan `./scripts/check_metrics.sh` untuk memverifikasi endpoint `/metrics` tidak merekam kegagalan terselubung.
 7. **Sinkronisasi Versi**:
-   - Perbarui versi pada `web/package.json` sesuai target rilis (misal `1.2.1`).
+   - Perbarui versi pada `web/package.json` dan `apps/mobile/package.json` sesuai target rilis (misal `1.4.0`).
    - Tambahkan catatan perubahan rilis pada `CHANGELOG.md` di bawah seksi versi terkait.
    - Perbarui badge versi di `README.md` dan fallback versi di `Makefile` serta skrip instalasi/operasional.
 8. **Git Tagging & Publikasi**:
-   - Lakukan commit perubahan: `git commit -m "release: v1.2.x - ..."`
-   - Buat tag git: `git tag -a v1.2.x -m "Release v1.2.x"`
-   - Buat release via GitHub CLI: `gh release create v1.2.x --title "v1.2.x" --notes-file ...`
+   - Lakukan commit perubahan: `git commit -m "release: v1.4.x - ..."`
+   - Buat tag git: `git tag -a v1.4.x -m "Release v1.4.x"`
+   - Buat release via GitHub CLI: `gh release create v1.4.x --title "v1.4.x" --notes-file ...`

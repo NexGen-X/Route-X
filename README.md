@@ -7,7 +7,7 @@
 </p>
 
 [![Release](https://img.shields.io/badge/Release-v1.4.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.4.0)
-[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
+[![Go Version](https://img.shields.io/badge/Go-1.27.1+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql)](https://postgresql.org)
@@ -231,7 +231,7 @@ bash deploy.sh
 ```
 
 ### Option D: Build from Source
-Requirements: **Go 1.24+**, **Node.js 20+**, **PostgreSQL 16**, **Redis 7**.
+Requirements: **Go 1.27.1+**, **Node.js 20+**, **PostgreSQL 16**, **Redis 7**.
 
 ```bash
 # 1. Clone repository

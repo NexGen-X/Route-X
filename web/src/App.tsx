@@ -60,7 +60,7 @@ const Shell: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-bg-base flex flex-col items-center justify-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center font-extrabold text-black text-lg shadow-lg shadow-accent/20">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-extrabold text-white text-lg shadow-lg shadow-blue-500/25 ring-1 ring-white/10">
           RX
         </div>
         <p className="text-xs text-text-muted font-mono flex items-center gap-2">

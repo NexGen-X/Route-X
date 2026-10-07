@@ -29,27 +29,27 @@ const MemoizedChartInner = React.memo<MemoizedChartInnerProps>(({ series, metric
     <AreaChart data={series}>
       <defs>
         <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="5%" stopColor="#BEF264" stopOpacity={0.12} />
-          <stop offset="95%" stopColor="#BEF264" stopOpacity={0.0} />
+          <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.20} />
+          <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.0} />
         </linearGradient>
       </defs>
-      <CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" vertical={false} />
-      <XAxis dataKey="timestamp" stroke="#6B7280" fontSize={11} tickLine={false} />
-      <YAxis stroke="#6B7280" fontSize={11} tickLine={false} />
+      <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" vertical={false} />
+      <XAxis dataKey="timestamp" stroke="#64748B" fontSize={11} tickLine={false} />
+      <YAxis stroke="#64748B" fontSize={11} tickLine={false} />
       <Tooltip
         contentStyle={{
-          backgroundColor: '#141414',
-          borderColor: '#1F1F1F',
+          backgroundColor: '#0F1523',
+          borderColor: '#1E293B',
           borderRadius: '10px',
           fontSize: '12px',
-          color: '#F5F5F5',
+          color: '#F8FAFC',
           boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
         }}
       />
       <Area
         type="monotone"
         dataKey={metricType === 'latency' ? 'p95_latency_ms' : metricType}
-        stroke="#BEF264"
+        stroke="#3B82F6"
         fillOpacity={1}
         fill="url(#chartGradient)"
         strokeWidth={1.5}

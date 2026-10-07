@@ -1,16 +1,16 @@
 export const colors = {
-  // Latar Belakang & Kanvas (AMOLED Dark)
-  bgCanvas: '#0A0B0D',
-  bgSurface: '#14171D',
-  bgElevated: '#1C2029',
-  border: '#212631',
-  borderSubtle: '#212631',
+  // Latar Belakang & Kanvas (Obsidian Deep Dark)
+  bgCanvas: '#0B0F17',
+  bgSurface: '#0F1523',
+  bgElevated: '#182238',
+  border: '#1E293B',
+  borderSubtle: '#151F32',
 
-  // Aksen Route-X
-  accentPrimary: '#22C55E', // Green-500
-  accentLime: '#A3E635',    // Lime-400
-  accentGreenSubtle: 'rgba(34, 197, 94, 0.12)',
-  accentGreenBorder: 'rgba(34, 197, 94, 0.35)',
+  // Aksen Route-X (DeepSeek / Hermes Celestial Blue)
+  accentPrimary: '#3B82F6', // Blue-500
+  accentLime: '#60A5FA',    // Sky-400
+  accentGreenSubtle: 'rgba(59, 130, 246, 0.12)',
+  accentGreenBorder: 'rgba(59, 130, 246, 0.35)',
 
   // Tipografi
   textPrimary: '#FFFFFF',
@@ -28,6 +28,12 @@ export const colors = {
   avatarOperator: '#3B82F6', // Biru
   avatarDev: '#A855F7',      // Ungu
   avatarUser: '#06B6D4',     // Cyan
+
+  // Aliases kustom
+  bgBase: '#0A0B0D',
+  bgCard: '#14171D',
+  danger: '#EF4444',
+  warning: '#EAB308',
 } as const;
 
 export type ColorKeys = keyof typeof colors;

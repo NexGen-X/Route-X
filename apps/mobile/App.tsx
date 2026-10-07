@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
   StatusBar,
@@ -8,9 +8,12 @@ import {
   TouchableOpacity,
   Modal,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { registerRootComponent } from 'expo';
 import { colors } from './src/theme/colors';
+import { api } from './src/api/client';
+import { LoginScreen } from './src/screens/LoginScreen';
 import { TopHeader } from './src/components/TopHeader';
 import { BottomNav, TabKey } from './src/components/BottomNav';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -27,6 +30,10 @@ import { CliScreen } from './src/screens/CliScreen';
 import { DiagnosticsScreen } from './src/screens/DiagnosticsScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { WebhooksScreen } from './src/screens/WebhooksScreen';
+import { ModelsScreen } from './src/screens/ModelsScreen';
+import { RateLimitsScreen } from './src/screens/RateLimitsScreen';
+import { RoutingRulesScreen } from './src/screens/RoutingRulesScreen';
+import { ProfileSecurityScreen } from './src/screens/ProfileSecurityScreen';
 
 export type ScreenId =
   | 'home'
@@ -41,7 +48,11 @@ export type ScreenId =
   | 'cli'
   | 'diagnostics'
   | 'settings'
-  | 'webhooks';
+  | 'webhooks'
+  | 'models'
+  | 'ratelimits'
+  | 'rules'
+  | 'security';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -87,6 +98,29 @@ function MainApp(): React.JSX.Element {
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('home');
   const [activeTab, setActiveTab] = useState<TabKey>('home');
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    // Otomatis verifikasi dan login default admin saat startup untuk integrasi langsung
+    api.login('admin@routex.local', 'admin')
+      .then((res) => {
+        if (res.success) {
+          setIsAuthenticated(true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setCheckingAuth(false);
+      });
+  }, []);
+
+  const handleLogout = async () => {
+    await api.logout();
+    setIsAuthenticated(false);
+    setDrawerVisible(false);
+    setCurrentScreen('home');
+  };
 
   const handleTabChange = (tab: TabKey) => {
     setActiveTab(tab);
@@ -141,6 +175,18 @@ function MainApp(): React.JSX.Element {
       case 'webhooks':
         setCurrentScreen('webhooks');
         break;
+      case 'models':
+        setCurrentScreen('models');
+        break;
+      case 'ratelimits':
+        setCurrentScreen('ratelimits');
+        break;
+      case 'rules':
+        setCurrentScreen('rules');
+        break;
+      case 'security':
+        setCurrentScreen('security');
+        break;
       case 'home':
       default:
         setCurrentScreen('home');
@@ -180,6 +226,14 @@ function MainApp(): React.JSX.Element {
         return <SettingsScreen onBack={handleBackToHome} />;
       case 'webhooks':
         return <WebhooksScreen onBack={handleBackToHome} />;
+      case 'models':
+        return <ModelsScreen onBack={handleBackToHome} />;
+      case 'ratelimits':
+        return <RateLimitsScreen onBack={handleBackToHome} />;
+      case 'rules':
+        return <RoutingRulesScreen onBack={handleBackToHome} />;
+      case 'security':
+        return <ProfileSecurityScreen onBack={handleBackToHome} />;
       case 'home':
       default:
         return (
@@ -196,6 +250,24 @@ function MainApp(): React.JSX.Element {
         );
     }
   };
+
+  if (checkingAuth) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.accentPrimary} />
+        <Text style={styles.loadingText}>Menghubungkan ke Route-X Gateway...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.bgBase} />
+        <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -228,6 +300,7 @@ function MainApp(): React.JSX.Element {
               handleNavigate(screenId);
               setDrawerVisible(false);
             }}
+            onLogout={handleLogout}
           />
         </SafeAreaView>
       </Modal>
@@ -289,5 +362,17 @@ const styles = StyleSheet.create({
     color: colors.accentPrimary,
     fontSize: 14,
     fontWeight: '700',
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.bgBase,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

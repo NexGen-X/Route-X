@@ -136,6 +136,8 @@ type PrincipalResponse struct {
 	// MustChangePassword menyalin nilai di User supaya dashboard tidak perlu menggali ke
 	// dalam objek pengguna hanya untuk memutuskan pengalihan halaman.
 	MustChangePassword bool `json:"must_change_password"`
+	// SessionToken mengembalikan token sesi mentah untuk klien native mobile / CLI
+	SessionToken string `json:"session_token,omitempty"`
 }
 
 // StatusResponse adalah balasan ringkas untuk aksi yang tidak mengembalikan data.
@@ -188,7 +190,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.cookies.SetSession(w, res.Token)
-	h.writeprincipal(w, r, res.Principal, http.StatusOK)
+	h.writeprincipalWithToken(w, r, res.Principal, res.Token.Reveal(), http.StatusOK)
 }
 
 // SetupHint menangani GET /setup-hint: memberi tahu halaman login apakah akun admin
@@ -310,6 +312,10 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 // writeprincipal menerbitkan token CSRF baru, memasangnya sebagai cookie, lalu membalas
 // principal.
 func (h *Handlers) writeprincipal(w http.ResponseWriter, r *http.Request, p *Principal, status int) {
+	h.writeprincipalWithToken(w, r, p, "", status)
+}
+
+func (h *Handlers) writeprincipalWithToken(w http.ResponseWriter, r *http.Request, p *Principal, sessionToken string, status int) {
 	token := h.csrf.Issue(p.SessionID)
 	h.cookies.SetCSRF(w, token)
 
@@ -320,6 +326,7 @@ func (h *Handlers) writeprincipal(w http.ResponseWriter, r *http.Request, p *Pri
 		Session:            p.Session,
 		CSRFToken:          token,
 		MustChangePassword: p.MustChangePassword(),
+		SessionToken:       sessionToken,
 	})
 }
 

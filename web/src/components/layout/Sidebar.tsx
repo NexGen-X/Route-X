@@ -108,7 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => onNavigate('/')}
             aria-label="Route-X Beranda"
           >
-            <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-black font-extrabold text-base shadow-sm shadow-accent/20">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center flex-shrink-0 text-white font-extrabold text-sm shadow-md shadow-blue-500/25 ring-1 ring-white/10">
               RX
             </div>
             {!isCollapsed && (
@@ -144,12 +144,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     aria-current={isActive ? 'page' : undefined}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-nav text-sm transition-all relative group cursor-pointer ${
                       isActive
-                        ? 'bg-bg-surface-2 text-white font-medium border border-border shadow-inner'
+                        ? 'bg-accent/10 text-white font-medium border border-accent/25 shadow-sm'
                         : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/60'
                     } ${isCollapsed ? 'justify-center px-0' : ''}`}
                   >
                     {isActive && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full" aria-hidden="true" />
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-accent rounded-r-full shadow-[0_0_8px_rgba(59,130,246,0.6)]" aria-hidden="true" />
                     )}
                     <Icon
                       aria-hidden="true"

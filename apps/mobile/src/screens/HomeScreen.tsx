@@ -8,7 +8,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { Clock, ArrowUpRight, ShieldCheck, Zap } from 'lucide-react-native';
+import { Clock, ArrowUpRight, ShieldCheck, Zap, Layers, Sliders, Network, Lock } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { MetricCard } from '../components/MetricCard';
 import { api } from '../api/client';
@@ -145,6 +145,62 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onNavigateToScreen }) =>
           </View>
         </View>
       )}
+
+      {/* Modul Akses Cepat */}
+      <View style={styles.quickAccessSection}>
+        <Text style={styles.quickAccessTitle}>AKSES CEPAT MODUL GATEWAY</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickAccessScroll}>
+          <TouchableOpacity
+            style={styles.quickChip}
+            onPress={() => onNavigateToScreen && onNavigateToScreen('models')}
+          >
+            <View style={[styles.quickChipIcon, { backgroundColor: 'rgba(56, 189, 248, 0.15)' }]}>
+              <Layers size={14} color={colors.accentPrimary} />
+            </View>
+            <Text style={styles.quickChipText}>Model AI</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickChip}
+            onPress={() => onNavigateToScreen && onNavigateToScreen('rules')}
+          >
+            <View style={[styles.quickChipIcon, { backgroundColor: 'rgba(163, 230, 53, 0.15)' }]}>
+              <Sliders size={14} color={colors.accentLime} />
+            </View>
+            <Text style={styles.quickChipText}>Aturan Rute</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickChip}
+            onPress={() => onNavigateToScreen && onNavigateToScreen('ratelimits')}
+          >
+            <View style={[styles.quickChipIcon, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+              <ShieldCheck size={14} color={colors.warning} />
+            </View>
+            <Text style={styles.quickChipText}>Batas Laju</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickChip}
+            onPress={() => onNavigateToScreen && onNavigateToScreen('egress')}
+          >
+            <View style={[styles.quickChipIcon, { backgroundColor: 'rgba(147, 51, 234, 0.15)' }]}>
+              <Network size={14} color="#A855F7" />
+            </View>
+            <Text style={styles.quickChipText}>Egress Pool</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.quickChip}
+            onPress={() => onNavigateToScreen && onNavigateToScreen('security')}
+          >
+            <View style={[styles.quickChipIcon, { backgroundColor: 'rgba(56, 189, 248, 0.15)' }]}>
+              <Lock size={14} color={colors.accentPrimary} />
+            </View>
+            <Text style={styles.quickChipText}>Keamanan</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
 
       {/* Aktivitas Terbaru Section */}
       <View style={styles.sectionHeader}>
@@ -405,5 +461,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textMuted,
     fontWeight: '500',
+  },
+  quickAccessSection: {
+    marginBottom: 20,
+  },
+  quickAccessTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textMuted,
+    letterSpacing: 0.8,
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  quickAccessScroll: {
+    gap: 10,
+  },
+  quickChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bgSurface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  quickChipIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textPrimary,
   },
 });

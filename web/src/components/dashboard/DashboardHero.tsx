@@ -95,7 +95,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
             variant="primary"
             size="sm"
             onClick={() => onNavigate('/requests')}
-            icon={<ArrowUpRight className="w-3.5 h-3.5 text-black" />}
+            icon={<ArrowUpRight className="w-3.5 h-3.5 text-white" />}
           >
             Request Log
           </Button>

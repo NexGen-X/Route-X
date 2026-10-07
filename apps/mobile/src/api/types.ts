@@ -128,3 +128,68 @@ export interface GatewaySettings {
   cacheResponses: boolean;
   corsOrigins: string;
 }
+
+export interface ModelCatalogItem {
+  id: string;
+  name: string;
+  alias: string;
+  provider: string;
+  contextWindow: string;
+  inputCostPer1K: number;
+  outputCostPer1K: number;
+  category: 'Reasoning' | 'Chat & Multimodal' | 'Coding' | 'Fast Embeddings';
+  isVisionSupported: boolean;
+  active: boolean;
+  fallbackModel: string;
+}
+
+export interface RateLimitTierItem {
+  id: string;
+  name: string;
+  description: string;
+  requestsPerMinute: number;
+  tokensPerMinute: number;
+  maxConcurrent: number;
+  algorithm: 'Token Bucket' | 'Sliding Window' | 'Fixed Window';
+  activeKeys: number;
+  isDefault: boolean;
+}
+
+export interface CustomRoutingRuleItem {
+  id: string;
+  name: string;
+  conditionDescription: string;
+  targetProvider: string;
+  targetModel: string;
+  fallbackProvider: string;
+  priority: number;
+  active: boolean;
+  matchType: 'Header' | 'Prompt Length' | 'User Role' | 'Latency';
+}
+
+export interface SecurityProfile {
+  adminName: string;
+  email: string;
+  role: string;
+  mfaEnabled: boolean;
+  biometricAppLock: boolean;
+  activeSessionsCount: number;
+  lastLoginIp: string;
+  lastLoginTime: string;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  status: string;
+  roles: string[];
+}
+
+export interface LoginResult {
+  success: boolean;
+  user?: AuthUser;
+  token?: string;
+  error?: string;
+}
+

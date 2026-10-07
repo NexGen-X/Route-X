@@ -56,6 +56,12 @@ done
 
 BASE_URL="${BASE_URL%/}"
 
+# Fallback: jika METRICS_TOKEN tidak diatur dan berkas lingkungan produksi tersedia,
+# baca token secara otomatis untuk kenyamanan diagnostik operator lokal.
+if [[ -z "$METRICS_TOKEN" && -f "/etc/routex/routex.env" ]]; then
+  METRICS_TOKEN=$(grep -E '^METRICS_TOKEN=' /etc/routex/routex.env 2>/dev/null | cut -d '=' -f 2- | tr -d '"' | tr -d "'" || true)
+fi
+
 fetch_and_parse() {
   local auth_header=""
   if [[ -n "$METRICS_TOKEN" ]]; then

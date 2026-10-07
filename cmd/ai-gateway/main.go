@@ -55,7 +55,7 @@ import (
 
 // Diisi saat build lewat -ldflags. Lihat target build di Makefile.
 var (
-	version = "v1.2.0"
+	version = "v1.4.0"
 	commit  = "none"
 	builtAt = "unknown"
 )

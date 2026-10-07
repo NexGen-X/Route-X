@@ -28,7 +28,7 @@ var ScalarJS []byte
 // Handler mengembalikan http.Handler untuk menyajikan dokumentasi interaktif pada /docs.
 //
 // Keputusan menggunakan antarmuka interaktif Scalar berbasis tema gelap (dark theme)
-// diambil agar selaras dengan bahasa visual Route-X (#0A0A0A, #101010, aksen lime #BEF264),
+// diambil agar selaras dengan bahasa visual Route-X (estetika DeepSeek & Hermes, dark palette #0B0F17, aksen biru #3B82F6),
 // sekaligus mendukung penjelajahan skema OpenAPI 3.1 secara lengkap dan pengujian langsung (try-it-out).
 func Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func Handler() http.Handler {
 }
 
 // scalarHTML menyajikan antarmuka visual dokumentasi interaktif Scalar.
-// Konfigurasi tema diselaraskan dengan design tokens Route-X (dark mode, warna aksen #BEF264).
+// Konfigurasi tema diselaraskan dengan design tokens Route-X (estetika DeepSeek/Hermes, aksen #3B82F6).
 // Script dimuat secara lokal dari /docs/scalar.standalone.js agar mematuhi CSP script-src 'self'.
 const scalarHTML = `<!doctype html>
 <html lang="id">
@@ -72,11 +72,11 @@ const scalarHTML = `<!doctype html>
     <title>Route-X — Dokumentasi API Gateway</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23BEF264'><circle cx='12' cy='12' r='10'/><path d='M8 12h8M12 8l4 4-4 4' stroke='%230A0A0A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233B82F6'><circle cx='12' cy='12' r='10'/><path d='M8 12h8M12 8l4 4-4 4' stroke='%230B0F17' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>" />
     <style>
       body {
         margin: 0;
-        background-color: #0A0A0A;
+        background-color: #0B0F17;
         font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
@@ -84,7 +84,7 @@ const scalarHTML = `<!doctype html>
       /* App-controlled scrollbar untuk Firefox & WebKit */
       * {
         scrollbar-width: thin;
-        scrollbar-color: #1F1F1F #0C0C0C;
+        scrollbar-color: #1F2937 #0B0F17;
         -webkit-tap-highlight-color: transparent;
       }
       ::-webkit-scrollbar {
@@ -92,33 +92,33 @@ const scalarHTML = `<!doctype html>
         height: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: #0C0C0C;
+        background: #0B0F17;
       }
       ::-webkit-scrollbar-thumb {
-        background: #1F1F1F;
+        background: #1F2937;
         border-radius: 3px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #2D2D2D;
+        background: #374151;
       }
       ::selection {
-        background-color: #BEF264;
-        color: #0A0A0A;
+        background-color: #3B82F6;
+        color: #FFFFFF;
       }
       input::-ms-reveal,
       input::-ms-clear {
         display: none !important;
       }
-      /* Custom styling untuk penyesuaian tema Route-X */
+      /* Custom styling untuk penyesuaian tema Route-X DeepSeek/Hermes */
       :root {
-        --scalar-color-1: #F5F5F5;
-        --scalar-color-2: #A1A1AA;
+        --scalar-color-1: #F9FAFB;
+        --scalar-color-2: #9CA3AF;
         --scalar-color-3: #6B7280;
-        --scalar-color-accent: #BEF264;
-        --scalar-background-1: #0A0A0A;
-        --scalar-background-2: #101010;
-        --scalar-background-3: #141414;
-        --scalar-border-color: #1F1F1F;
+        --scalar-color-accent: #3B82F6;
+        --scalar-background-1: #0B0F17;
+        --scalar-background-2: #111827;
+        --scalar-background-3: #1F2937;
+        --scalar-border-color: #1F2937;
         --scalar-font-code: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       }
     </style>
@@ -131,10 +131,10 @@ const scalarHTML = `<!doctype html>
     </script>
     <script src="/docs/scalar.standalone.js"></script>
     <noscript>
-      <div style="padding: 2rem; color: #F5F5F5; background: #101010; margin: 2rem; border-radius: 8px;">
+      <div style="padding: 2rem; color: #F9FAFB; background: #111827; margin: 2rem; border-radius: 8px;">
         <h2>Route-X API Reference</h2>
         <p>JavaScript diperlukan untuk menampilkan dokumentasi interaktif.</p>
-        <p>Anda dapat mengunduh spesifikasi mentah di: <a href="/docs/openapi.yaml" style="color: #BEF264;">/docs/openapi.yaml</a></p>
+        <p>Anda dapat mengunduh spesifikasi mentah di: <a href="/docs/openapi.yaml" style="color: #3B82F6;">/docs/openapi.yaml</a></p>
       </div>
     </noscript>
   </body>

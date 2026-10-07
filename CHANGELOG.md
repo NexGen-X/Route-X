@@ -4,6 +4,33 @@ Semua perubahan penting pada project Route-X didokumentasikan dalam berkas ini.
 
 Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) dan mematuhi [Semantic Versioning](https://semver.org/).
 
+## [v1.4.0] - 2026-10-07
+
+Rilis besar yang menghadirkan Redesain Total UI/UX berestetika DeepSeek & Hermes, spatial UI pada inspeksi permintaan (Requests), penguatan sanitasi token zero-leakage, touch target optimal untuk perangkat seluler, pembersihan repo hygiene, serta sinkronisasi dokumentasi lintas aspek.
+
+### Added
+- **Total UI/UX Redesign — DeepSeek & Hermes Aesthetic (PR #122)**:
+  - Transformasi visual komprehensif pada 15+ halaman web dan mobile companion app mengadopsi estetika DeepSeek & Hermes: tipografi presisi, aksen biru/indigo sleek (`#3B82F6`), kartu berkontur subtle, dan transisi mulus.
+  - Redesain halaman login elegan dengan kartu setup onboarding aman dan pemisahan kredensial.
+  - Optimasi touch targets mobile (≥44px) dan safe-area insets responsif lintas perangkat genggam.
+- **Spatial UI & Waterfall Inspector pada Halaman Requests (PR #108)**:
+  - Antarmuka spatial logs dengan visualisasi latensi waterfall per-tahap (DNS, TCP, TLS, TTFT, Total).
+  - Virtual scrolling performa tinggi untuk puluhan ribu log permintaan tanpa degradasi frame rate.
+- **Arsitektur UI/UX Obsidian Noir SOTA (PR #116)**:
+  - Standardisasi sistem navigasi Drawer dan TopBar mobile responsif serta eliminasi scroll horizontal pada seluruh breakpoint.
+
+### Changed
+- **Penyelarasan Dokumentasi & Repo Hygiene**:
+  - Penyelarasan nomor versi rilis `v1.4.0` secara konsisten pada backend Go (`cmd/ai-gateway`), spesifikasi OpenAPI 3.1 (`docs/openapi.yaml`), dashboard frontend (`web/package.json`), aplikasi mobile (`apps/mobile/package.json`), probe diagnostic (`probe_e2e_gateway.sh`), `Makefile`, dan `README.md`.
+  - Pembaruan tema antarmuka interaktif Scalar pada `/docs` (`docs/embed.go`) menyelaraskan warna aksen dan palet tema dengan estetika DeepSeek.
+  - Perbaikan referensi batas migrasi SQL di `AGENTS.md` (diperbarui hingga migrasi ke-15 `0015_credential_egress_pool.sql`).
+  - Pembersihan berkas skrip scratch lama dari pohon Git (`redesign.py`, `fix_types.py`, `scratch_hash.go`, `scratch/refactor.js`).
+
+### Security
+- **Penegakan Zero-Leakage Session Token**:
+  - Penghapusan token sesi dari body respon JSON `/login` dan `/logout`; autentikasi murni dikelola melalui cookie aman berkategori `__Host-` (`HttpOnly`, `Secure`, `SameSite=Lax`).
+  - Endpoint `/api/auth/setup-hint` diamankan untuk hanya mengekspos alamat email awal tanpa pernah membocorkan kata sandi awal secara publik ke browser.
+
 ## [v1.3.1] - 2026-09-26
 
 Rilis pembaruan kualitas dan performa yang menghadirkan penguatan aksesibilitas WCAG 2.1 Level AA, remediasi menyeluruh sistem notifikasi & toast, implementasi benchmark suite resmi backend Go, audit integritas skema database PostgreSQL, dan audit kesiapan pengujian End-to-End (E2E) Playwright.

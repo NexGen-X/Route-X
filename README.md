@@ -6,7 +6,7 @@
   <strong>Enterprise-grade, ultra-low-latency AI Gateway with native dual-protocol ingestion (OpenAI & Anthropic), intelligent multi-model combo routing, sub-microsecond zero-allocation hot-path, micro-budget financial governance, and instant developer CLI synchronization.</strong>
 </p>
 
-[![Release](https://img.shields.io/badge/Release-v1.3.1-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.3.1)
+[![Release](https://img.shields.io/badge/Release-v1.4.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.4.0)
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
@@ -195,11 +195,11 @@ Official benchmark results executed on dedicated **Intel(R) Xeon(R) Platinum 825
 Download and run the official static Linux binary with zero build steps:
 
 ```bash
-# 1. Download official v1.3.1 release
-curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.3.1/routex-v1.3.1-linux-amd64.tar.gz
+# 1. Download official v1.4.0 release
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.4.0/routex-v1.4.0-linux-amd64.tar.gz
 
 # 2. Extract archive
-tar -xzvf routex-v1.3.1-linux-amd64.tar.gz
+tar -xzvf routex-v1.4.0-linux-amd64.tar.gz
 
 # 3. Apply schema migrations & run gateway
 ./ai-gateway -migrate
@@ -249,13 +249,13 @@ make build
 ---
 
 ## 🔐 First-Run Onboarding
-
+ 
 Navigate to `http://localhost:8080/login` (or your domain `https://your-domain.com/login`):
 
 - **Default Email**: `admin@routex.local`
-- **Default Password**: `RouteX#Initial2026!`
-- *💡 Click **"1-Klik Autofill"** on the initial setup card to populate credentials.*
-- *🔒 Forced password rotation is strictly enforced upon first authentication. Once updated, the setup helper is permanently disabled.*
+- **Default Password**: `RouteX#Initial2026!` (atau nilai konfigurasi `INITIAL_ADMIN_PASSWORD`)
+- *💡 Klik tombol **"Email Admin"** pada kartu bantuan setup awal untuk mengisi alamat email otomatis (kata sandi tidak pernah dikirim lewat API demi integritas zero-trust).*
+- *🔒 Penggantian kata sandi wajib diselesaikan saat autentikasi pertama. Setelah diperbarui, kartu bantuan setup otomatis dinonaktifkan permanen.*
 
 ---
 

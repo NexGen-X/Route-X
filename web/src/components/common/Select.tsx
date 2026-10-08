@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 import FocusTrap from 'focus-trap-react';
 import { ChevronDown, Check, Search, X } from 'lucide-react';
+import { cn } from '../../utils/cn';
 
 export interface SelectOption {
   value: string;
@@ -57,11 +58,8 @@ export const Select: React.FC<SelectProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  // Timer fokus input pencarian; disimpan agar bisa dibatalkan bila menu
-  // ditutup atau komponen unmount sebelum 50ms berlalu.
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Batalkan timer fokus yang tersisa saat unmount.
   useEffect(() => {
     return () => {
       if (focusTimerRef.current) {
@@ -71,12 +69,9 @@ export const Select: React.FC<SelectProps> = ({
     };
   }, []);
 
-  // Aktifkan pencarian jika eksplisit atau jumlah opsi > 5
   const isSearchable = searchable ?? options.length > 5;
-
   const selectedOption = options.find((opt) => opt.value === value);
 
-  // Filter opsi berdasarkan query pencarian
   const filteredOptions = options.filter((opt) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -87,7 +82,6 @@ export const Select: React.FC<SelectProps> = ({
     );
   });
 
-  // Listener resize untuk mendeteksi mobile viewport (< 640px)
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 640);
@@ -96,7 +90,6 @@ export const Select: React.FC<SelectProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Kunci scroll body saat bottom sheet mobile terbuka
   useEffect(() => {
     if (isOpen && isMobile) {
       const originalOverflow = document.body.style.overflow;
@@ -107,7 +100,6 @@ export const Select: React.FC<SelectProps> = ({
     }
   }, [isOpen, isMobile]);
 
-  // Tangani klik di luar untuk menutup menu pada desktop
   useEffect(() => {
     if (!isOpen || isMobile) return;
 
@@ -126,7 +118,6 @@ export const Select: React.FC<SelectProps> = ({
     };
   }, [isOpen, isMobile]);
 
-  // Fokuskan input pencarian saat menu terbuka
   useEffect(() => {
     if (isOpen && isSearchable && searchInputRef.current) {
       if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
@@ -144,7 +135,6 @@ export const Select: React.FC<SelectProps> = ({
     }
   }, [isOpen, isSearchable]);
 
-  // Navigasi keyboard
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (disabled) return;
 
@@ -196,9 +186,9 @@ export const Select: React.FC<SelectProps> = ({
   const widthClass = className.includes('w-') ? '' : 'w-full';
 
   return (
-    <div className={`relative ${widthClass} text-left ${className}`} ref={containerRef} onKeyDown={handleKeyDown}>
+    <div className={cn('relative text-left', widthClass, className)} ref={containerRef} onKeyDown={handleKeyDown}>
       {label && (
-        <label htmlFor={selectId} className={`block font-semibold text-text-secondary uppercase mb-1 ${variant === 'compact' ? 'text-[10px]' : 'text-xs'}`}>
+        <label htmlFor={selectId} className={cn('block font-semibold text-text-secondary uppercase mb-1', variant === 'compact' ? 'text-[10px]' : 'text-xs')}>
           {label} {required && <span className="text-status-error">*</span>}
         </label>
       )}
@@ -221,30 +211,33 @@ export const Select: React.FC<SelectProps> = ({
         aria-invalid={!!error}
         aria-describedby={error ? `${selectId}-error` : undefined}
         aria-required={required}
-        className={`w-full flex items-center justify-between gap-2 bg-bg-surface-2 border transition-all duration-150 text-left focus:outline-none focus:ring-1 focus:ring-accent ${
+        className={cn(
+          'w-full flex items-center justify-between gap-2 bg-bg-surface-1/90 border transition-all duration-150 text-left focus:outline-none focus:ring-2 focus:ring-accent/30',
           variant === 'compact'
-            ? 'px-2.5 py-1 text-[11px] rounded-nav'
-            : 'px-3 py-2 text-xs rounded-nav'
-        } ${
+            ? 'px-2.5 py-1 text-[11px] rounded-nav min-h-[32px]'
+            : 'px-3 py-2 text-xs rounded-nav min-h-[44px] sm:min-h-[38px]',
           error
-            ? 'border-status-error text-status-error'
+            ? 'border-status-error text-status-error focus:ring-status-error/30'
             : isOpen
-            ? 'border-accent ring-1 ring-accent text-white shadow-sm'
-            : 'border-border text-white hover:border-border-hover'
-        } ${disabled ? 'opacity-50 cursor-not-allowed bg-bg-surface' : 'cursor-pointer'}`}
+            ? 'border-accent ring-2 ring-accent/30 text-white shadow-sm'
+            : 'border-white/[0.08] text-white hover:border-white/[0.18]',
+          disabled ? 'opacity-50 cursor-not-allowed bg-bg-surface' : 'cursor-pointer'
+        )}
       >
         <div className="flex items-center gap-2 truncate min-w-0 flex-1">
           {selectedOption?.icon && <span className="flex-shrink-0">{selectedOption.icon}</span>}
-          <span className={`truncate ${selectedOption ? 'text-white font-medium' : 'text-text-muted font-normal'}`}>
+          <span className={cn('truncate', selectedOption ? 'text-white font-medium' : 'text-text-muted font-normal')}>
             {selectedOption ? selectedOption.label : placeholder}
           </span>
         </div>
 
         <ChevronDown
           aria-hidden="true"
-          className={`${variant === 'compact' ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-text-muted transition-transform duration-200 flex-shrink-0 ${
+          className={cn(
+            variant === 'compact' ? 'w-3.5 h-3.5' : 'w-4 h-4',
+            'text-text-muted transition-transform duration-200 flex-shrink-0',
             isOpen ? 'rotate-180 text-accent' : ''
-          }`}
+          )}
         />
       </button>
 
@@ -253,12 +246,12 @@ export const Select: React.FC<SelectProps> = ({
       {/* Floating Custom Dropdown List untuk Desktop (>= 640px) */}
       {isOpen && !isMobile && (
         <div
-          className="absolute z-50 left-0 right-0 mt-1 bg-[#141416] border border-border/90 rounded-xl shadow-2xl backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-64"
+          className="absolute z-50 left-0 right-0 mt-1.5 bg-bg-surface/98 border border-white/[0.1] rounded-xl shadow-surface-elevated backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-64"
           style={{ minWidth: '100%' }}
         >
           {/* Kolom Pencarian Cepat Inline */}
           {isSearchable && (
-            <div className="p-2 border-b border-border/60 bg-bg-surface-2/40 sticky top-0 z-10 flex items-center gap-1.5">
+            <div className="p-2 border-b border-white/[0.06] bg-bg-surface-2/40 sticky top-0 z-10 flex items-center gap-1.5">
               <Search className="w-3.5 h-3.5 text-text-muted flex-shrink-0" aria-hidden="true" />
               <input
                 aria-activedescendant={isOpen && highlightedIndex >= 0 ? `${selectId}-opt-${highlightedIndex}` : undefined}
@@ -278,7 +271,7 @@ export const Select: React.FC<SelectProps> = ({
                   type="button"
                   onClick={() => setSearchQuery('')}
                   aria-label="Hapus kata kunci pencarian"
-                  className="p-0.5 text-text-muted hover:text-white rounded"
+                  className="p-1 text-text-muted hover:text-white rounded cursor-pointer"
                 >
                   <X className="w-3 h-3" aria-hidden="true" />
                 </button>
@@ -292,7 +285,7 @@ export const Select: React.FC<SelectProps> = ({
             ref={listRef}
             role="listbox"
             tabIndex={-1}
-            className="overflow-y-auto p-1 divide-y divide-border/20 space-y-0.5"
+            className="overflow-y-auto p-1 divide-y divide-white/[0.04] space-y-0.5 scrollbar-thin"
           >
             {filteredOptions.length === 0 ? (
               <div className="py-4 px-3 text-center text-xs text-text-muted">
@@ -311,15 +304,16 @@ export const Select: React.FC<SelectProps> = ({
                     aria-selected={isSelected}
                     onClick={() => handleSelect(opt.value, opt.disabled)}
                     onMouseEnter={() => setHighlightedIndex(index)}
-                    className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors duration-100 ${
+                    className={cn(
+                      'flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs cursor-pointer transition-colors duration-100',
                       opt.disabled
                         ? 'opacity-40 cursor-not-allowed text-text-muted'
                         : isSelected
                         ? 'bg-accent/15 text-accent font-semibold border-l-2 border-accent'
                         : isHighlighted
                         ? 'bg-bg-surface-2 text-white'
-                        : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/50'
-                    }`}
+                        : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/60'
+                    )}
                   >
                     <div className="flex items-center gap-2 truncate min-w-0 flex-1">
                       {opt.icon && <span className="flex-shrink-0">{opt.icon}</span>}
@@ -348,7 +342,7 @@ export const Select: React.FC<SelectProps> = ({
           <div className="fixed inset-0 z-50 flex items-end justify-center select-none" role="dialog" aria-modal="true" aria-label={label || placeholder || 'Pilih opsi'}>
             {/* Dark blur backdrop */}
             <div
-              className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+              className="fixed inset-0 bg-black/60 backdrop-blur-xl transition-opacity"
               onClick={() => {
                 setIsOpen(false);
                 setSearchQuery('');
@@ -357,12 +351,12 @@ export const Select: React.FC<SelectProps> = ({
             />
 
             {/* Bottom Sheet Container */}
-            <div className="relative w-full max-h-[85vh] bg-[#141416] border-t border-border rounded-t-2xl z-50 flex flex-col animate-in slide-in-from-bottom duration-200 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
+            <div className="relative w-full max-h-[85vh] bg-bg-surface/98 border-t border-white/[0.1] rounded-t-2xl z-50 flex flex-col animate-in slide-in-from-bottom duration-200 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-surface-elevated backdrop-blur-xl">
               {/* Drag Handle */}
-              <div className="w-12 h-1.5 bg-border rounded-full mx-auto my-3 shrink-0" aria-hidden="true" />
+              <div className="w-12 h-1 bg-white/[0.2] rounded-full mx-auto my-3 shrink-0" aria-hidden="true" />
 
               {/* Header dengan judul & tombol tutup */}
-              <div className="flex items-center justify-between px-4 pb-3 border-b border-border/60">
+              <div className="flex items-center justify-between px-4 pb-3 border-b border-white/[0.06]">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-sm font-semibold text-white truncate">
                     {label || placeholder || 'Pilih Opsi'}
@@ -375,7 +369,7 @@ export const Select: React.FC<SelectProps> = ({
                     setIsOpen(false);
                     setSearchQuery('');
                   }}
-                  className="p-1 rounded-lg text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer"
+                  className="p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center rounded-lg text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer"
                   aria-label="Tutup"
                 >
                   <X className="w-4 h-4" aria-hidden="true" />
@@ -384,7 +378,7 @@ export const Select: React.FC<SelectProps> = ({
 
               {/* Kolom Pencarian Cepat Mobile jika isSearchable */}
               {isSearchable && (
-                <div className="p-3 border-b border-border/60 bg-bg-surface-2/40 flex items-center gap-2">
+                <div className="p-3 border-b border-white/[0.06] bg-bg-surface-2/40 flex items-center gap-2">
                   <Search className="w-4 h-4 text-text-muted flex-shrink-0" aria-hidden="true" />
                   <input
                     ref={searchInputRef}
@@ -403,7 +397,7 @@ export const Select: React.FC<SelectProps> = ({
                       type="button"
                       onClick={() => setSearchQuery('')}
                       aria-label="Hapus kata kunci pencarian"
-                      className="p-1 text-text-muted hover:text-white rounded"
+                      className="p-2 min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-text-muted hover:text-white rounded cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
@@ -417,7 +411,7 @@ export const Select: React.FC<SelectProps> = ({
                 ref={listRef}
                 role="listbox"
                 tabIndex={-1}
-                className="overflow-y-auto px-2 py-2 space-y-1 divide-y divide-border/20 max-h-[60vh]"
+                className="overflow-y-auto px-2 py-2 space-y-1 divide-y divide-white/[0.04] max-h-[60vh] scrollbar-thin"
               >
                 {filteredOptions.length === 0 ? (
                   <div className="py-8 px-4 text-center text-xs text-text-muted">
@@ -434,18 +428,19 @@ export const Select: React.FC<SelectProps> = ({
                         role="option"
                         aria-selected={isSelected}
                         onClick={() => handleSelect(opt.value, opt.disabled)}
-                        className={`flex items-center justify-between gap-3 px-3 py-3 rounded-xl text-xs cursor-pointer transition-colors duration-100 ${
+                        className={cn(
+                          'flex items-center justify-between gap-3 px-3 py-3 rounded-xl text-xs cursor-pointer transition-colors duration-100 min-h-[44px]',
                           opt.disabled
                             ? 'opacity-40 cursor-not-allowed text-text-muted'
                             : isSelected
                             ? 'bg-accent/15 text-white font-medium'
                             : 'text-text-secondary hover:text-white hover:bg-bg-surface-2'
-                        }`}
+                        )}
                       >
                         <div className="flex items-center gap-3 truncate min-w-0 flex-1">
                           {opt.icon && <span className="flex-shrink-0">{opt.icon}</span>}
                           <div className="truncate">
-                            <div className={`truncate font-sans ${isSelected ? 'text-white font-semibold' : 'text-text-primary'}`}>
+                            <div className={cn('truncate font-sans', isSelected ? 'text-white font-semibold' : 'text-text-primary')}>
                               {opt.label}
                             </div>
                             {opt.description && (
@@ -456,13 +451,14 @@ export const Select: React.FC<SelectProps> = ({
                           </div>
                         </div>
 
-                        {/* Custom Route-X Radio Indicator (Accent Circle #BEF264) */}
+                        {/* Route-X Radio Indicator */}
                         <div
-                          className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                          className={cn(
+                            'w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-colors',
                             isSelected
                               ? 'border-accent bg-accent/20'
-                              : 'border-border bg-bg-surface'
-                          }`}
+                              : 'border-white/[0.15] bg-bg-surface'
+                          )}
                           aria-hidden="true"
                         >
                           {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-accent" />}
@@ -480,4 +476,3 @@ export const Select: React.FC<SelectProps> = ({
     </div>
   );
 };
-

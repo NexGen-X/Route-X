@@ -25,8 +25,10 @@ import {
   XCircle,
   Users,
   RotateCcw,
+  Sparkles,
 } from 'lucide-react';
 import {
+  KNOWN_PROVIDERS,
   ProviderBrandIcon,
   type KnownProviderPreset,
 } from './ProviderIcons';
@@ -54,7 +56,7 @@ export interface CreateProviderModalProps {
 export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
   isOpen,
   onClose,
-  selectedPreset,
+  selectedPreset: initialPreset,
   providers = [],
   egressPools = [],
   loadData,
@@ -63,11 +65,14 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
   api,
   targetProviderOverride,
 }) => {
+  const [currentPreset, setCurrentPreset] = useState<KnownProviderPreset | null>(initialPreset);
+  const [showPresetPicker, setShowPresetPicker] = useState<boolean>(false);
+
   const [modalMode, setModalMode] = useState<'add_to_pool' | 'create_new'>('create_new');
   const [targetExistingProvider, setTargetExistingProvider] = useState<Provider | null>(null);
   const [accountLabel, setAccountLabel] = useState('');
 
-  const [authTab, setAuthTab] = useState<'authlogin' | 'apikey'>('apikey');
+  const [authTab, setAuthTab] = useState<'apikey' | 'oauth'>('apikey');
   const [quickApiKey, setQuickApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [authFallbackInput, setAuthFallbackInput] = useState('');
@@ -91,6 +96,56 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
     egress_pool_id: undefined as string | undefined,
   });
 
+  const setupPreset = (preset: KnownProviderPreset | null) => {
+    setCurrentPreset(preset);
+    if (preset) {
+      const matched = targetProviderOverride || matchExistingProvider(preset, providers);
+      if (matched) {
+        setTargetExistingProvider(matched);
+        setModalMode('add_to_pool');
+        const isOauth = preset.authLoginType === 'oauth_fallback' || matched.kind === 'google';
+        setAuthTab(isOauth ? 'oauth' : 'apikey');
+        setAccountLabel(
+          isOauth
+            ? ''
+            : preset.accountLabelPlaceholder
+            ? ''
+            : 'Akun Tambahan'
+        );
+      } else {
+        setTargetExistingProvider(null);
+        setModalMode('create_new');
+        setAuthTab(preset.authLoginType === 'oauth_fallback' ? 'oauth' : 'apikey');
+        setAccountLabel('Akun Utama');
+        setNewProv({
+          name: preset.name,
+          display_name: preset.displayName,
+          kind: preset.kind,
+          base_url: preset.baseUrl,
+          priority: preset.defaultPriority,
+          weight: preset.defaultWeight,
+          timeout_ms: 30000,
+          egress_pool_id: undefined,
+        });
+      }
+    } else {
+      setTargetExistingProvider(null);
+      setModalMode('create_new');
+      setAuthTab('apikey');
+      setAccountLabel('Primary Key');
+      setNewProv({
+        name: 'custom-provider',
+        display_name: 'Custom Provider',
+        kind: 'openai_compatible',
+        base_url: 'https://api.openai-proxy.local/v1',
+        priority: 100,
+        weight: 100,
+        timeout_ms: 30000,
+        egress_pool_id: undefined,
+      });
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       setQuickApiKey('');
@@ -102,61 +157,10 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
       setSocketPingStatus(null);
       setIsSaving(false);
       setSavingStep('');
-
-      const matched = targetProviderOverride || matchExistingProvider(selectedPreset, providers);
-
-      if (matched) {
-        setTargetExistingProvider(matched);
-        setModalMode('add_to_pool');
-        setSyncAfterSave(true);
-        setShowAdvanced(false);
-
-        const isOauth = selectedPreset?.authLoginType === 'oauth_fallback' || matched.kind === 'google';
-        setAuthTab(isOauth ? 'authlogin' : 'apikey');
-        setAccountLabel(
-          isOauth
-            ? ''
-            : selectedPreset?.accountLabelPlaceholder
-            ? ''
-            : 'Akun Tambahan'
-        );
-      } else if (selectedPreset) {
-        setTargetExistingProvider(null);
-        setModalMode('create_new');
-        setSyncAfterSave(true);
-        setShowAdvanced(false);
-        setAuthTab(selectedPreset.authLoginType ? 'authlogin' : 'apikey');
-        setAccountLabel('Akun Utama');
-        setNewProv({
-          name: selectedPreset.name,
-          display_name: selectedPreset.displayName,
-          kind: selectedPreset.kind,
-          base_url: selectedPreset.baseUrl,
-          priority: selectedPreset.defaultPriority,
-          weight: selectedPreset.defaultWeight,
-          timeout_ms: 30000,
-          egress_pool_id: undefined,
-        });
-      } else {
-        setTargetExistingProvider(null);
-        setModalMode('create_new');
-        setSyncAfterSave(false);
-        setShowAdvanced(true);
-        setAuthTab('apikey');
-        setAccountLabel('Primary Key');
-        setNewProv({
-          name: 'custom-provider',
-          display_name: 'Custom Provider',
-          kind: 'openai_compatible',
-          base_url: 'https://api.openai-proxy.local/v1',
-          priority: 100,
-          weight: 100,
-          timeout_ms: 30000,
-          egress_pool_id: undefined,
-        });
-      }
+      setShowPresetPicker(!initialPreset);
+      setupPreset(initialPreset);
     }
-  }, [isOpen, selectedPreset, providers, targetProviderOverride]);
+  }, [isOpen, initialPreset, providers, targetProviderOverride]);
 
   const handleFallbackInputChange = (val: string) => {
     setAuthFallbackInput(val);
@@ -187,18 +191,18 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
 
   const switchToCreateNew = () => {
     setModalMode('create_new');
-    if (selectedPreset) {
+    if (currentPreset) {
       const existingCount = (providers || []).filter(
-        (p) => p.kind === selectedPreset.kind || p.name === selectedPreset.name || p.name.startsWith(selectedPreset.name + '-')
+        (p) => p.kind === currentPreset.kind || p.name === currentPreset.name || p.name.startsWith(currentPreset.name + '-')
       ).length;
-      const uniqueName = existingCount > 0 ? `${selectedPreset.name}-${existingCount + 1}` : selectedPreset.name;
+      const uniqueName = existingCount > 0 ? `${currentPreset.name}-${existingCount + 1}` : currentPreset.name;
       setNewProv({
         name: uniqueName,
-        display_name: selectedPreset.displayName,
-        kind: selectedPreset.kind,
-        base_url: selectedPreset.baseUrl,
-        priority: selectedPreset.defaultPriority,
-        weight: selectedPreset.defaultWeight,
+        display_name: currentPreset.displayName,
+        kind: currentPreset.kind,
+        base_url: currentPreset.baseUrl,
+        priority: currentPreset.defaultPriority,
+        weight: currentPreset.defaultWeight,
         timeout_ms: 30000,
         egress_pool_id: undefined,
       });
@@ -209,12 +213,12 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
   const switchAddToPool = () => {
     if (targetExistingProvider) {
       setModalMode('add_to_pool');
-      const isOauth = selectedPreset?.authLoginType === 'oauth_fallback' || targetExistingProvider.kind === 'google';
-      setAuthTab(isOauth ? 'authlogin' : 'apikey');
+      const isOauth = currentPreset?.authLoginType === 'oauth_fallback' || targetExistingProvider.kind === 'google';
+      setAuthTab(isOauth ? 'oauth' : 'apikey');
       setAccountLabel(
         isOauth
           ? ''
-          : selectedPreset?.accountLabelPlaceholder
+          : currentPreset?.accountLabelPlaceholder
           ? ''
           : 'Akun Tambahan'
       );
@@ -237,7 +241,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           return;
         }
 
-        const isOauth = selectedPreset?.authLoginType === 'oauth_fallback' || targetExistingProvider.kind === 'google';
+        const isOauth = authTab === 'oauth' || currentPreset?.authLoginType === 'oauth_fallback' || targetExistingProvider.kind === 'google';
 
         if (isOauth) {
           setSavingStep('Menukarkan token OAuth ke Google & memverifikasi identitas akun...');
@@ -290,7 +294,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
         });
 
         if (effectiveApiKey) {
-          if (selectedPreset?.authLoginType === 'oauth_fallback' || selectedPreset?.id === 'antigravity') {
+          if (authTab === 'oauth' || currentPreset?.authLoginType === 'oauth_fallback' || currentPreset?.id === 'antigravity') {
             setSavingStep('Menukarkan token OAuth ke Google & mengaktifkan auto-refresh worker...');
             try {
               const oauthRes = await api.providers.oauthExchange(created.id, {
@@ -304,7 +308,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           } else {
             setSavingStep('Menyimpan dan mengenkripsi Kredensial (AES-256-GCM)...');
             try {
-              const finalLabel = accountLabel.trim() || (authTab === 'authlogin' ? 'Auth Login Credential' : 'Primary API Key');
+              const finalLabel = accountLabel.trim() || 'Primary API Key';
               await api.credentials.create(created.id, {
                 label: finalLabel,
                 api_key: effectiveApiKey,
@@ -317,7 +321,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
         }
 
         let pulledCount = 0;
-        if (syncAfterSave && (effectiveApiKey || selectedPreset?.authLoginType === 'local_socket')) {
+        if (syncAfterSave && (effectiveApiKey || currentPreset?.authLoginType === 'local_socket')) {
           setSavingStep('Melakukan discovery & menarik model upstream...');
           try {
             const syncRes = await api.providers.syncModels(created.id);
@@ -352,9 +356,14 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
 
   const modalTitle = isAddToPoolMode
     ? `Hubungkan Akun ke Pool ${targetExistingProvider.display_name || targetExistingProvider.name}`
-    : selectedPreset
-    ? `Hubungkan ${selectedPreset.displayName}`
+    : currentPreset
+    ? `Hubungkan ${currentPreset.displayName}`
     : 'Tambah Provider AI Manual';
+
+  // Quick preset cards for 1-click selection inside modal
+  const popularPresets = KNOWN_PROVIDERS.filter((p) =>
+    ['openai', 'anthropic', 'google', 'deepseek', 'groq', 'ollama', 'antigravity'].includes(p.id)
+  );
 
   return (
     <Modal
@@ -364,7 +373,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
       maxWidth="xl"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} className="min-h-[44px] sm:min-h-[38px]">
             Batal
           </Button>
           <Button
@@ -372,47 +381,124 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
             variant="primary"
             form="create-provider-form"
             isLoading={isSaving}
-            icon={isAddToPoolMode ? <Plus className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+            icon={isAddToPoolMode ? <Plus className="w-4 h-4" aria-hidden="true" /> : <Check className="w-4 h-4" aria-hidden="true" />}
             title={isAddToPoolMode ? 'Tambahkan akun ke pool provider' : 'Simpan provider baru ke database'}
+            className="min-h-[44px] sm:min-h-[38px] font-semibold"
           >
-            {isAddToPoolMode ? 'Tambahkan ke Pool' : 'Daftarkan'}
+            {isAddToPoolMode ? 'Tambahkan ke Pool' : 'Daftarkan Provider'}
           </Button>
         </>
       }
     >
       <form id="create-provider-form" noValidate onSubmit={handleSubmit} className="space-y-4 text-xs">
+        {/* 1-KLIK PRESET CARDS SELECTOR */}
+        <div className="rounded-xl border border-border/80 bg-bg-surface-2/40 p-3 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-text-secondary flex items-center gap-1.5 uppercase tracking-wide">
+              <Sparkles className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              Pilih Preset Resmi 1-Klik
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowPresetPicker(!showPresetPicker)}
+              className="text-[11px] text-accent hover:underline cursor-pointer flex items-center gap-1"
+              aria-label={showPresetPicker ? 'Sembunyikan preset' : 'Lihat semua preset'}
+            >
+              <span>{showPresetPicker ? 'Kecilkan' : 'Lihat Preset'}</span>
+              {showPresetPicker ? <ChevronUp className="w-3 h-3" aria-hidden="true" /> : <ChevronDown className="w-3 h-3" aria-hidden="true" />}
+            </button>
+          </div>
+
+          {/* Quick preset chips bar */}
+          <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
+            {popularPresets.map((preset) => {
+              const isSelected = currentPreset?.id === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => setupPreset(preset)}
+                  className={`p-2 rounded-lg border flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer min-h-[50px] ${
+                    isSelected
+                      ? 'bg-accent/15 border-accent text-white shadow-sm ring-1 ring-accent'
+                      : 'bg-bg-surface border-border/70 text-text-muted hover:border-accent/50 hover:text-white'
+                  }`}
+                  aria-label={`Pilih preset ${preset.displayName}`}
+                >
+                  <ProviderBrandIcon providerIdOrKind={preset.kind} name={preset.name} className="w-4 h-4 shrink-0" />
+                  <span className="text-[10px] font-medium leading-tight truncate w-full">{preset.displayName}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {showPresetPicker && (
+            <div className="pt-2 border-t border-border/50 grid grid-cols-2 sm:grid-cols-4 gap-1.5 max-h-36 overflow-y-auto scrollbar-thin">
+              {KNOWN_PROVIDERS.filter((p) => !popularPresets.some((pop) => pop.id === p.id)).map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => setupPreset(preset)}
+                  className={`p-1.5 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                    currentPreset?.id === preset.id
+                      ? 'bg-accent/15 border-accent text-white'
+                      : 'bg-bg-surface border-border/60 text-text-secondary hover:text-white hover:border-border'
+                  }`}
+                  aria-label={`Pilih preset ${preset.displayName}`}
+                >
+                  <ProviderBrandIcon providerIdOrKind={preset.kind} name={preset.name} className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-[11px] font-medium truncate">{preset.displayName}</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setupPreset(null)}
+                className={`p-1.5 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                  currentPreset === null
+                    ? 'bg-purple-950/40 border-purple-500 text-purple-200'
+                    : 'bg-bg-surface border-border/60 text-text-muted hover:text-white'
+                }`}
+                aria-label="Pilih Custom Manual Provider"
+              >
+                <Server className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                <span className="text-[11px] font-medium truncate">Custom Manual</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Preset Brand Banner */}
-        {selectedPreset && (
+        {currentPreset && (
           <div
-            className="p-3 rounded-xl border flex items-center justify-between gap-3"
+            className="p-3 rounded-xl border flex items-center justify-between gap-3 shadow-inner"
             style={{
-              backgroundColor: selectedPreset.bgColor,
-              borderColor: selectedPreset.borderColor,
+              backgroundColor: currentPreset.bgColor,
+              borderColor: currentPreset.borderColor,
             }}
           >
             <div className="flex items-center gap-3">
               <div
                 className="w-9 h-9 rounded-lg flex items-center justify-center shadow-sm"
                 style={{
-                  backgroundColor: selectedPreset.color,
+                  backgroundColor: currentPreset.color,
                   color: '#000',
                 }}
               >
-                <ProviderBrandIcon providerIdOrKind={selectedPreset.id} className="w-5 h-5 text-white" />
+                <ProviderBrandIcon providerIdOrKind={currentPreset.id} className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h4 className="font-bold text-white text-sm">{selectedPreset.displayName}</h4>
+                <h4 className="font-bold text-white text-sm">{currentPreset.displayName}</h4>
                 <span className="text-[11px] text-text-secondary font-mono">
-                  Dialek: {selectedPreset.kind} • {selectedPreset.tag}
+                  Dialek: {currentPreset.kind} • {currentPreset.tag}
                 </span>
               </div>
             </div>
 
-            {selectedPreset.highlightModels && selectedPreset.highlightModels.length > 0 && (
+            {currentPreset.highlightModels && currentPreset.highlightModels.length > 0 && (
               <div className="hidden sm:block text-right">
                 <span className="text-[10px] text-text-muted block font-mono uppercase">Highlight Model:</span>
                 <span className="text-[11px] font-mono text-white font-semibold">
-                  {selectedPreset.highlightModels.slice(0, 2).join(', ')}
+                  {currentPreset.highlightModels.slice(0, 2).join(', ')}
                 </span>
               </div>
             )}
@@ -424,7 +510,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           <div className="p-3.5 rounded-xl border border-accent/40 bg-accent/10 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
-                <Users className="w-4 h-4 text-accent shrink-0" />
+                <Users className="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
                 <span className="font-bold text-white text-xs truncate">
                   Provider "{targetExistingProvider.display_name || targetExistingProvider.name}" Sudah Terdaftar
                 </span>
@@ -432,8 +518,9 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
               <button
                 type="button"
                 onClick={switchToCreateNew}
-                className="text-[11px] text-accent hover:underline font-medium shrink-0 cursor-pointer"
+                className="text-[11px] text-accent hover:underline font-medium shrink-0 cursor-pointer min-h-[32px] flex items-center"
                 title="Buat entitas provider baru terpisah di luar pool ini"
+                aria-label="Buat entitas provider baru terpisah"
               >
                 + Buat Provider Baru Terpisah
               </button>
@@ -460,9 +547,10 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
             <button
               type="button"
               onClick={switchAddToPool}
-              className="text-accent hover:underline font-semibold flex items-center gap-1 shrink-0 cursor-pointer"
+              className="text-accent hover:underline font-semibold flex items-center gap-1 shrink-0 cursor-pointer min-h-[32px]"
+              aria-label="Gabungkan ke pool provider yang sudah ada"
             >
-              <RotateCcw className="w-3 h-3" />
+              <RotateCcw className="w-3 h-3" aria-hidden="true" />
               Gabungkan ke Pool Saja
             </button>
           </div>
@@ -471,12 +559,13 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
         {/* FIELD REGISTRASI LENGKAP: Hanya tampil jika mode create_new */}
         {!isAddToPoolMode && (
           <>
-            {!selectedPreset ? (
+            {!currentPreset ? (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Unik *</label>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="provider-unique-id">ID Unik *</label>
                     <input
+                      id="provider-unique-id"
                       type="text"
                       required
                       placeholder="nama-provider-unik"
@@ -486,8 +575,9 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Tampilan *</label>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="provider-display-name">Nama Tampilan *</label>
                     <input
+                      id="provider-display-name"
                       type="text"
                       required
                       placeholder="Nama Provider"
@@ -514,8 +604,9 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Base URL *</label>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="provider-base-url">Base URL *</label>
                     <input
+                      id="provider-base-url"
                       type="text"
                       required
                       value={newProv.base_url}
@@ -527,11 +618,12 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
               </>
             ) : (
               <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Label di Route-X</label>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="provider-preset-label">Nama Label di Route-X</label>
                 <input
+                  id="provider-preset-label"
                   type="text"
                   required
-                  placeholder={selectedPreset.displayName}
+                  placeholder={currentPreset.displayName}
                   value={newProv.display_name}
                   onChange={(e) => setNewProv({ ...newProv, display_name: e.target.value })}
                   className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white text-xs focus:outline-none focus:border-accent"
@@ -541,462 +633,244 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           </>
         )}
 
-        {/* INPUT AKUN & KREDENSIAL: KONDISI ADD_TO_POOL VS CREATE_NEW */}
-        {isAddToPoolMode ? (
-          /* Form Ringkas Add to Pool */
-          <div className="rounded-xl border border-border bg-bg-surface-2/60 p-3.5 space-y-3">
-            {/* Opsi A: OAuth (Google Antigravity / Google Kind) */}
-            {(selectedPreset?.authLoginType === 'oauth_fallback' || targetExistingProvider.kind === 'google') ? (
-              <div className="space-y-3">
-                <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-xs text-text-secondary flex items-start gap-2">
-                  <Shield className="w-4 h-4 text-accent shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-semibold text-white block">OAuth Multi-Account Auto-Refresh</span>
-                    <span className="text-[11px] text-text-muted">
-                      Identitas Nama & Email Akun Google akan dideteksi dan diverifikasi secara otomatis oleh Route-X melalui token exchange.
-                    </span>
-                  </div>
-                </div>
+        {/* TAB AUTENTIKASI: API KEY VS GOOGLE OAUTH */}
+        <div className="rounded-xl border border-border bg-bg-surface-2/60 p-3.5 space-y-3">
+          <div role="tablist" aria-label="Metode Autentikasi" className="flex border-b border-border/80 gap-2 pb-2 text-xs">
+            <button
+              type="button"
+              role="tab"
+              id="auth-tab-apikey"
+              aria-selected={authTab === 'apikey'}
+              aria-controls="auth-tabpanel-apikey"
+              onClick={() => setAuthTab('apikey')}
+              className={`pb-1 font-medium transition-colors flex items-center gap-1.5 min-h-[38px] px-2 rounded-t cursor-pointer ${
+                authTab === 'apikey'
+                  ? 'border-b-2 border-accent text-accent font-bold bg-accent/5'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5" aria-hidden="true" />
+              API Key &amp; Token
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="auth-tab-oauth"
+              aria-selected={authTab === 'oauth'}
+              aria-controls="auth-tabpanel-oauth"
+              onClick={() => setAuthTab('oauth')}
+              className={`pb-1 font-medium transition-colors flex items-center gap-1.5 min-h-[38px] px-2 rounded-t cursor-pointer ${
+                authTab === 'oauth'
+                  ? 'border-b-2 border-accent text-accent font-bold bg-accent/5'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+              Google OAuth / Antigravity
+            </button>
+          </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-start gap-2.5 text-xs text-text-secondary">
-                    <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
-                      1
-                    </span>
-                    <div>
-                      <p className="font-semibold text-white">Buka Halaman Otorisasi Google</p>
-                      <p className="text-[11px] text-text-muted mt-0.5">
-                        {selectedPreset?.authInstructions || 'Login dengan akun Google yang ingin ditambahkan ke pool.'}
-                      </p>
-                      {selectedPreset?.authLoginUrl && (
-                        <a
-                          href={selectedPreset.authLoginUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg bg-accent text-black font-semibold text-xs hover:opacity-90 transition-opacity"
-                        >
-                          <span>{selectedPreset.authLoginLabel || 'Login Akun Google'}</span>
-                          <ArrowUpRight className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-2.5 text-xs text-text-secondary pt-2 border-t border-border/50">
-                    <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
-                      2
-                    </span>
-                    <div className="flex-1 space-y-1.5">
-                      <label className="block font-semibold text-white">
-                        Salin URL Redirect / Kode Otorisasi:
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={authFallbackInput}
-                        onChange={(e) => handleFallbackInputChange(e.target.value)}
-                        placeholder="Tempel seluruh URL redirect (misal: http://localhost:4567/?code=4/0A...) atau kode otorisasi di sini..."
-                        className="w-full px-3 py-2 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
-                      />
-                      {authExtractedToken && (
-                        <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
-                          <Check className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span>
-                            Kode Otorisasi Terdeteksi ({authExtractionHint}):{' '}
-                            <strong className="text-white">
-                              {authExtractedToken.length > 25
-                                ? `${authExtractedToken.slice(0, 12)}...${authExtractedToken.slice(-6)}`
-                                : authExtractedToken}
-                            </strong>
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+          {/* TAB 1: API KEY */}
+          {authTab === 'apikey' && (
+            <div id="auth-tabpanel-apikey" role="tabpanel" aria-labelledby="auth-tab-apikey" className="space-y-3 pt-1">
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="provider-account-label">
+                  Nama Akun / Label Kredensial *
+                </label>
+                <input
+                  id="provider-account-label"
+                  type="text"
+                  required
+                  placeholder={
+                    currentPreset?.accountLabelPlaceholder || 'mis. Akun Tim Kantor, Key Cadangan, Akun Tier-2'
+                  }
+                  value={accountLabel}
+                  onChange={(e) => setAccountLabel(e.target.value)}
+                  className="w-full px-3 py-2 bg-bg-surface border border-border rounded-nav text-white text-xs focus:outline-none focus:border-accent"
+                />
+                <p className="text-[10px] text-text-muted mt-1">
+                  Beri nama deskriptif untuk membedakan akun ini dalam rotasi pool Route-X.
+                </p>
               </div>
-            ) : (
-              /* Opsi B: API Key / Token Standar */
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1.5">
-                    Nama Akun / Label Kredensial *
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="quick-api-key" className="block font-bold text-white text-xs">
+                    Secret API Key *
                   </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder={
-                      selectedPreset?.accountLabelPlaceholder || 'mis. Akun Tim Kantor, Key Cadangan, Akun Tier-2'
-                    }
-                    value={accountLabel}
-                    onChange={(e) => setAccountLabel(e.target.value)}
-                    className="w-full px-3 py-2 bg-bg-surface border border-border rounded-nav text-white text-xs focus:outline-none focus:border-accent"
-                  />
-                  <p className="text-[10px] text-text-muted mt-1">
-                    Beri nama deskriptif untuk membedakan akun ini dalam rotasi pool Route-X.
-                  </p>
+                  {currentPreset?.apiKeyHelp && (
+                    <span className="text-[10px] text-accent font-mono flex items-center gap-1">
+                      <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
+                      {currentPreset.apiKeyHelp}
+                    </span>
+                  )}
                 </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="quick-api-key" className="block font-bold text-white text-xs">
-                      Secret API Key *
-                    </label>
-                    {selectedPreset?.apiKeyHelp && (
-                      <span className="text-[10px] text-accent font-mono flex items-center gap-1">
-                        <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
-                        {selectedPreset.apiKeyHelp}
+                <div className="relative">
+                  <input
+                    id="quick-api-key"
+                    type={showApiKey ? 'text' : 'password'}
+                    required
+                    placeholder={currentPreset?.apiKeyPlaceholder || 'sk-... atau Bearer Token'}
+                    value={quickApiKey}
+                    onChange={(e) => setQuickApiKey(e.target.value)}
+                    className="w-full px-3 py-2 pr-10 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    aria-label={showApiKey ? "Sembunyikan kunci API" : "Tampilkan kunci API"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+                  >
+                    {showApiKey ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-text-muted flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-accent flex-shrink-0" aria-hidden="true" />
+                  Dienkripsi amplop AES-256-GCM tingkat record PostgreSQL dengan AAD.
+                </p>
+              </div>
+
+              {/* Local Socket Zero-Config Hint */}
+              {(currentPreset?.authLoginType === 'local_socket' || (!currentPreset && (newProv.base_url.includes('localhost') || newProv.base_url.includes('127.0.0.1')))) && (
+                <div className="pt-2 border-t border-border/50 space-y-2">
+                  <div className="flex items-center gap-2 text-white font-semibold text-xs">
+                    <Server className="w-4 h-4 text-accent" aria-hidden="true" />
+                    <span>Socket Server Lokal (Zero-Config)</span>
+                  </div>
+                  <p className="text-[11px] text-text-muted">
+                    {currentPreset?.authInstructions ||
+                      'Provider lokal tidak memerlukan API key eksternal. Pastikan server lokal aktif di port yang sesuai.'}
+                  </p>
+                  <div className="pt-1 flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleTestSocket}
+                      isLoading={socketPingStatus?.testing}
+                      icon={<Activity className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
+                      className="min-h-[38px] text-xs"
+                      aria-label="Uji respons socket server lokal"
+                    >
+                      Uji Respons Socket ({newProv.base_url})
+                    </Button>
+                    {socketPingStatus && !socketPingStatus.testing && (
+                      <span
+                        className={`text-xs font-mono font-semibold flex items-center gap-1 ${
+                          socketPingStatus.ok ? 'text-emerald-400' : 'text-red-400'
+                        }`}
+                      >
+                        {socketPingStatus.ok ? <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" /> : <XCircle className="w-3.5 h-3.5" aria-hidden="true" />}
+                        {socketPingStatus.ok
+                          ? `Tersambung (${socketPingStatus.latency} ms)`
+                          : 'Gagal tersambung ke socket'}
                       </span>
                     )}
                   </div>
-
-                  <div className="relative">
-                    <input
-                      id="quick-api-key"
-                      type={showApiKey ? 'text' : 'password'}
-                      required
-                      placeholder={selectedPreset?.apiKeyPlaceholder || 'sk-... atau Bearer Token'}
-                      value={quickApiKey}
-                      onChange={(e) => setQuickApiKey(e.target.value)}
-                      className="w-full px-3 py-2 pr-10 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      aria-label={showApiKey ? "Sembunyikan kunci API" : "Tampilkan kunci API"}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white cursor-pointer"
-                    >
-                      {showApiKey ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-text-muted flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-accent flex-shrink-0" aria-hidden="true" />
-                    Dienkripsi amplop AES-256-GCM tingkat record PostgreSQL dengan AAD.
-                  </p>
                 </div>
-              </div>
-            )}
-
-            {/* Jalur Keluar (Proxy) Opsional untuk Akun Tambahan */}
-            <div className="pt-2.5 border-t border-border/50">
-              <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-accent" />
-                Jalur Keluar (Egress Proxy) Opsional
-              </label>
-              <Select
-                value={selectedEgressPoolId}
-                onChange={(val) => setSelectedEgressPoolId(val)}
-                placeholder="Ikuti Provider / Direct (Default)"
-                options={[
-                  { value: '', label: 'Ikuti Provider / Direct (Default)', description: 'Koneksi langsung dari server atau default pool provider' },
-                  ...egressPools.map((ep) => ({
-                    value: ep.id,
-                    label: `${ep.name} (${ep.kind.toUpperCase()})`,
-                    description: `Protokol: ${ep.kind} · Region: ${ep.region || 'Default'}`,
-                  })),
-                ]}
-              />
-              <p className="text-[10px] text-text-muted mt-1">
-                Opsional: Akun ini akan memiliki jalur keluar proxy sendiri yang terisolasi dari akun lainnya.
-              </p>
+              )}
             </div>
-          </div>
-        ) : (
-          /* Form Standar Create New Provider */
-          <div className="rounded-xl border border-border bg-bg-surface-2/60 p-3.5 space-y-3">
-            {/* Dual-Auth Tab Switcher: Hanya untuk Provider Resmi NON-Antigravity */}
-            {selectedPreset?.id !== 'antigravity' && selectedPreset !== null && (
-              <div className="flex border-b border-border/80 gap-3 pb-2 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setAuthTab('authlogin')}
-                  className={`pb-1 font-medium transition-colors flex items-center gap-1.5 ${
-                    authTab === 'authlogin'
-                      ? 'border-b-2 border-accent text-accent font-bold'
-                      : 'text-text-muted hover:text-white'
-                  }`}
-                >
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                  1. Auth Login & Otorisasi Terpandu
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAuthTab('apikey')}
-                  className={`pb-1 font-medium transition-colors flex items-center gap-1.5 ${
-                    authTab === 'apikey'
-                      ? 'border-b-2 border-accent text-accent font-bold'
-                      : 'text-text-muted hover:text-white'
-                  }`}
-                >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  2. Input API Key Manual
-                </button>
-              </div>
-            )}
+          )}
 
-            {/* Banner Khusus Google Antigravity */}
-            {selectedPreset?.id === 'antigravity' && (
+          {/* TAB 2: GOOGLE OAUTH */}
+          {authTab === 'oauth' && (
+            <div id="auth-tabpanel-oauth" role="tabpanel" aria-labelledby="auth-tab-oauth" className="space-y-3 pt-1">
               <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-xs text-text-secondary flex items-start gap-2">
-                <Shield className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+                <Shield className="w-4 h-4 text-accent shrink-0 mt-0.5" aria-hidden="true" />
                 <div>
-                  <span className="font-semibold text-white block">OAuth Token Exchange Engine</span>
+                  <span className="font-semibold text-white block">OAuth Multi-Account Auto-Refresh</span>
                   <span className="text-[11px] text-text-muted">
-                    Google Antigravity menggunakan autentikasi akun Google terdaftar dengan multi-account pooling & auto-refresh token otomatis. Cukup login dan salin seluruh URL redirect/callback (atau kode otorisasi) ke kolom di bawah. Tanpa perlu mengisi Client ID/Secret manual.
+                    Identitas Nama &amp; Email Akun Google akan dideteksi dan diverifikasi secara otomatis oleh Route-X melalui token exchange. Tanpa konfigurasi manual Client ID / Secret.
                   </span>
                 </div>
               </div>
-            )}
 
-            {/* TAB 1: AUTH LOGIN TERPANDU */}
-            {authTab === 'authlogin' && (
-              <div className="space-y-3 pt-1">
-                {/* Alur A: Redirect Callback URL Copying */}
-                {selectedPreset?.authLoginType === 'oauth_fallback' && (
-                  <div className="space-y-3">
-                    <div className="flex items-start gap-2.5 text-xs text-text-secondary">
-                      <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
-                        1
-                      </span>
-                      <div>
-                        <p className="font-semibold text-white">Buka Halaman Otorisasi Resmi</p>
-                        <p className="text-[11px] text-text-muted mt-0.5">
-                          {selectedPreset.authInstructions}
-                        </p>
-                        {selectedPreset.authLoginUrl && (
-                          <a
-                            href={selectedPreset.authLoginUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg bg-accent text-black font-semibold text-xs hover:opacity-90 transition-opacity"
-                          >
-                            <span>{selectedPreset.authLoginLabel || 'Buka Halaman Otorisasi'}</span>
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-2.5 text-xs text-text-secondary pt-2 border-t border-border/50">
-                      <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
-                        2
-                      </span>
-                      <div className="flex-1 space-y-1.5">
-                        <label className="block font-semibold text-white">
-                          Salin URL Callback / Redirect atau Token Fallback:
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={authFallbackInput}
-                          onChange={(e) => handleFallbackInputChange(e.target.value)}
-                          placeholder="Tempel seluruh URL redirect (misal: http://localhost:54321/callback?code=xxx atau token) di sini..."
-                          className="w-full px-3 py-2 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
-                        />
-                        {authExtractedToken && (
-                          <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
-                            <Check className="w-3.5 h-3.5 flex-shrink-0" />
-                            <span>
-                              Token/Kode Otorisasi Terdeteksi ({authExtractionHint}):{' '}
-                              <strong className="text-white">
-                                {authExtractedToken.length > 25
-                                  ? `${authExtractedToken.slice(0, 12)}...${authExtractedToken.slice(-6)}`
-                                  : authExtractedToken}
-                              </strong>
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Alur B: Console Token Portal */}
-                {selectedPreset?.authLoginType === 'console_token' && (
-                  <div className="space-y-3">
-                    <div className="flex items-start gap-2.5 text-xs text-text-secondary">
-                      <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
-                        1
-                      </span>
-                      <div>
-                        <p className="font-semibold text-white">Ambil Token dari Konsol Resmi</p>
-                        <p className="text-[11px] text-text-muted mt-0.5">
-                          {selectedPreset.authInstructions}
-                        </p>
-                        {selectedPreset.authLoginUrl && (
-                          <a
-                            href={selectedPreset.authLoginUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg bg-accent text-black font-semibold text-xs hover:opacity-90 transition-opacity"
-                          >
-                            <span>{selectedPreset.authLoginLabel || 'Buka Konsol Provider'}</span>
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-start gap-2.5 text-xs text-text-secondary pt-2 border-t border-border/50">
-                      <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
-                        2
-                      </span>
-                      <div className="flex-1 space-y-1.5">
-                        <label className="block font-semibold text-white">
-                          Tempelkan Token atau URL Redirect yang Anda Peroleh:
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showApiKey ? 'text' : 'password'}
-                            placeholder={selectedPreset.authFallbackHint || 'Tempel token di sini...'}
-                            value={authFallbackInput}
-                            onChange={(e) => handleFallbackInputChange(e.target.value)}
-                            className="w-full px-3 py-2 pr-10 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowApiKey(!showApiKey)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white"
-                          >
-                            {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                          </button>
-                        </div>
-                        {authExtractedToken && (
-                          <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
-                            <Check className="w-3.5 h-3.5 flex-shrink-0" />
-                            <span>
-                              Token Terdeteksi ({authExtractionHint}):{' '}
-                              <strong className="text-white">
-                                {authExtractedToken.length > 25
-                                  ? `${authExtractedToken.slice(0, 12)}...${authExtractedToken.slice(-6)}`
-                                  : authExtractedToken}
-                              </strong>
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Alur C: Local Socket Zero-Config */}
-                {(selectedPreset?.authLoginType === 'local_socket' || (!selectedPreset && (newProv.base_url.includes('localhost') || newProv.base_url.includes('127.0.0.1')))) && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-white font-semibold text-xs">
-                      <Server className="w-4 h-4 text-accent" />
-                      <span>Socket Server Lokal (Zero-Config)</span>
-                    </div>
-                    <p className="text-[11px] text-text-muted">
-                      {selectedPreset?.authInstructions ||
-                        'Provider lokal tidak memerlukan API key eksternal. Pastikan server lokal aktif di port yang sesuai.'}
+              <div className="space-y-3">
+                <div className="flex items-start gap-2.5 text-xs text-text-secondary">
+                  <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
+                    1
+                  </span>
+                  <div>
+                    <p className="font-semibold text-white">Buka Halaman Otorisasi Google</p>
+                    <p className="text-[11px] text-text-muted mt-0.5">
+                      {currentPreset?.authInstructions ||
+                        'Klik tombol untuk membuka halaman persetujuan otorisasi Google di tab browser baru.'}
                     </p>
-                    <div className="pt-2 flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleTestSocket}
-                        isLoading={socketPingStatus?.testing}
-                        icon={<Activity className="w-3.5 h-3.5 text-accent" />}
-                      >
-                        Uji Respons Socket ({newProv.base_url})
-                      </Button>
-                      {socketPingStatus && !socketPingStatus.testing && (
-                        <span
-                          className={`text-xs font-mono font-semibold flex items-center gap-1 ${
-                            socketPingStatus.ok ? 'text-emerald-400' : 'text-red-400'
-                          }`}
-                        >
-                          {socketPingStatus.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                          {socketPingStatus.ok
-                            ? `Tersambung (${socketPingStatus.latency} ms)`
-                            : 'Gagal tersambung ke socket'}
-                        </span>
-                      )}
-                    </div>
+                    <a
+                      href={
+                        currentPreset?.authLoginUrl ||
+                        'https://accounts.google.com/o/oauth2/v2/auth?client_id=1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com&redirect_uri=http://localhost:4567&response_type=code&scope=https://www.googleapis.com/auth/cloud-platform%20https://www.googleapis.com/auth/userinfo.email%20https://www.googleapis.com/auth/userinfo.profile%20openid&access_type=offline&prompt=consent'
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 mt-2 px-3 py-2 rounded-lg bg-accent text-black font-semibold text-xs hover:opacity-90 transition-opacity min-h-[38px]"
+                      aria-label="Login dengan Akun Google Otorisasi"
+                    >
+                      <span>{currentPreset?.authLoginLabel || 'Login dengan Akun Google'}</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
+                    </a>
                   </div>
-                )}
+                </div>
 
-                {/* Alur D: Custom Manual Provider Default */}
-                {!selectedPreset && !(newProv.base_url.includes('localhost') || newProv.base_url.includes('127.0.0.1')) && (
-                  <div className="space-y-2">
-                    <p className="text-[11px] text-text-muted">
-                      Jika Anda memiliki URL redirect callback OAuth atau token sementara dari server upstream, tempelkan di bawah. Sistem akan mengekstrak kode atau token secara otomatis.
-                    </p>
+                <div className="flex items-start gap-2.5 text-xs text-text-secondary pt-2 border-t border-border/50">
+                  <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
+                    2
+                  </span>
+                  <div className="flex-1 space-y-1.5">
+                    <label className="block font-semibold text-white" htmlFor="oauth-fallback-input">
+                      Salin URL Redirect / Kode Otorisasi:
+                    </label>
                     <textarea
+                      id="oauth-fallback-input"
                       rows={2}
                       value={authFallbackInput}
                       onChange={(e) => handleFallbackInputChange(e.target.value)}
-                      placeholder="Tempel seluruh URL redirect atau token di sini..."
+                      placeholder="Tempel seluruh URL redirect (misal: http://localhost:4567/?code=4/0A...) atau kode otorisasi di sini..."
                       className="w-full px-3 py-2 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
                     />
                     {authExtractedToken && (
                       <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-mono text-emerald-400 flex items-center gap-1.5">
-                        <Check className="w-3.5 h-3.5 flex-shrink-0" />
+                        <Check className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
                         <span>
-                          Token Terdeteksi ({authExtractionHint}):{' '}
-                          <strong className="text-white">{authExtractedToken}</strong>
+                          Kode Otorisasi Terdeteksi ({authExtractionHint}):{' '}
+                          <strong className="text-white">
+                            {authExtractedToken.length > 25
+                              ? `${authExtractedToken.slice(0, 12)}...${authExtractedToken.slice(-6)}`
+                              : authExtractedToken}
+                          </strong>
                         </span>
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* TAB 2: INPUT MANUAL API KEY */}
-            {authTab === 'apikey' && (
-              <div className="space-y-2.5 pt-1">
-                <div>
-                  <label className="block text-xs font-medium text-text-secondary mb-1">
-                    Nama Akun / Label Kredensial
-                  </label>
-                  <input
-                    type="text"
-                    placeholder={selectedPreset?.accountLabelPlaceholder || 'mis. Akun Utama, Primary API Key'}
-                    value={accountLabel}
-                    onChange={(e) => setAccountLabel(e.target.value)}
-                    className="w-full px-3 py-2 bg-bg-surface border border-border rounded-lg text-white text-xs focus:outline-none focus:border-accent"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="block font-bold text-white text-xs">
-                      API Key / Secret Token
-                    </label>
-                    {selectedPreset?.apiKeyHelp && (
-                      <span className="text-[10px] text-accent font-mono flex items-center gap-1">
-                        <ExternalLink className="w-2.5 h-2.5" />
-                        {selectedPreset.apiKeyHelp}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="relative">
-                    <input
-                      type={showApiKey ? 'text' : 'password'}
-                      placeholder={selectedPreset?.apiKeyPlaceholder || 'sk-... atau Bearer Token'}
-                      value={quickApiKey}
-                      onChange={(e) => setQuickApiKey(e.target.value)}
-                      className="w-full px-3 py-2 pr-10 bg-bg-surface border border-border rounded-lg text-white font-mono text-xs focus:border-accent focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-white"
-                    >
-                      {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-text-muted flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                    Dienkripsi amplop AES-256-GCM tingkat record PostgreSQL dengan AAD.
-                  </p>
                 </div>
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Jalur Keluar (Egress Proxy) */}
+          <div className="pt-2.5 border-t border-border/50">
+            <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              Jalur Keluar (Egress Proxy) Opsional
+            </label>
+            <Select
+              value={selectedEgressPoolId}
+              onChange={(val) => setSelectedEgressPoolId(val)}
+              placeholder="Ikuti Provider / Direct Outbound (Default)"
+              options={[
+                { value: '', label: 'Ikuti Provider / Direct (Default)', description: 'Koneksi langsung dari server atau default pool provider' },
+                ...egressPools.map((ep) => ({
+                  value: ep.id,
+                  label: `${ep.name} (${ep.kind.toUpperCase()})`,
+                  description: `Protokol: ${ep.kind} · Region: ${ep.region || 'Default'}`,
+                })),
+              ]}
+            />
           </div>
-        )}
+        </div>
 
-        {(effectiveApiKey || selectedPreset?.authLoginType === 'local_socket') && (
+        {(effectiveApiKey || currentPreset?.authLoginType === 'local_socket') && (
           <div className="pt-1">
             <Checkbox
               id="syncModelsToggle"
@@ -1008,22 +882,24 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
         )}
 
         {/* Pengaturan Lanjutan: Hanya di mode create_new */}
-        {!isAddToPoolMode && selectedPreset && (
+        {!isAddToPoolMode && currentPreset && (
           <div className="pt-2 border-t border-border/60">
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-accent font-medium transition-colors py-1 cursor-pointer"
+              className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-accent font-medium transition-colors py-1 cursor-pointer min-h-[36px]"
+              aria-label={showAdvanced ? 'Sembunyikan Pengaturan Lanjutan' : 'Tampilkan Pengaturan Lanjutan'}
             >
-              {showAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent" /> : <ChevronDown className="w-3.5 h-3.5 text-accent" />}
+              {showAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
               <span>{showAdvanced ? 'Sembunyikan Pengaturan Lanjutan' : '⚙️ Pengaturan Lanjutan (ID Unik, Base URL, Egress Proxy)'}</span>
             </button>
             {showAdvanced && (
               <div className="mt-2.5 p-3.5 rounded-xl border border-border/80 bg-bg-surface-2/40 space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1.5">ID Unik *</label>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="adv-provider-name">ID Unik *</label>
                     <input
+                      id="adv-provider-name"
                       type="text"
                       required
                       placeholder="nama-provider-unik"
@@ -1033,8 +909,9 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-text-secondary mb-1.5">Base URL *</label>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="adv-provider-baseurl">Base URL *</label>
                     <input
+                      id="adv-provider-baseurl"
                       type="text"
                       required
                       value={newProv.base_url}
@@ -1043,49 +920,15 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                     />
                   </div>
                 </div>
-                <div>
-                  <Select
-                    label="Jalur Egress Outbound (Opsional)"
-                    value={selectedEgressPoolId}
-                    onChange={(val) => setSelectedEgressPoolId(val)}
-                    placeholder="Direct Outbound (Tanpa Proxy)"
-                    options={[
-                      { value: '', label: 'Direct Outbound (Tanpa Proxy)', description: 'Koneksi langsung dari server tanpa melalui proxy' },
-                      ...egressPools.map((pool) => ({
-                        value: pool.id,
-                        label: `${pool.name} (${pool.kind})`,
-                        description: `Protokol: ${pool.kind} · Region: ${pool.region || 'Default'}`,
-                      })),
-                    ]}
-                  />
-                </div>
               </div>
             )}
           </div>
         )}
 
-        {!isAddToPoolMode && !selectedPreset && (
-          <div>
-            <Select
-              label="Jalur Egress Outbound"
-              value={selectedEgressPoolId}
-              onChange={(val) => setSelectedEgressPoolId(val)}
-              placeholder="Direct Outbound (Tanpa Proxy)"
-              options={[
-                { value: '', label: 'Direct Outbound (Tanpa Proxy)', description: 'Koneksi langsung dari server tanpa melalui proxy' },
-                ...egressPools.map((pool) => ({
-                  value: pool.id,
-                  label: `${pool.name} (${pool.kind})`,
-                  description: `Protokol: ${pool.kind} · Region: ${pool.region || 'Default'}`,
-                })),
-              ]}
-            />
-          </div>
-        )}
-
         {isSaving && savingStep && (
-          <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2 animate-pulse">
-            <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" /><span>{savingStep}</span>
+          <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2 animate-pulse" role="status">
+            <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" aria-hidden="true" />
+            <span>{savingStep}</span>
           </div>
         )}
       </form>

@@ -17,7 +17,7 @@ import {
   LiveRequestsFeed,
   ProviderHealthMatrix,
 } from '../components/dashboard';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Cpu } from 'lucide-react';
 
 export interface DashboardProps {
   onNavigate: (path: string) => void;
@@ -66,7 +66,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       if (showToast) {
         toast.success('Metrik telemetri dashboard berhasil disegarkan');
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to load dashboard data:', err);
       const errMsg = err instanceof Error ? err.message : String(err);
       setLoadError(errMsg);
@@ -89,7 +89,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       setOverview(overRes);
       setRecentRequests(reqRes.items || []);
       setPollError(null);
-    } catch (err) {
+    } catch (err: unknown) {
       setPollError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -117,9 +117,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         <div
           role="status"
           aria-live="polite"
-          className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg p-3"
+          className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 flex items-center gap-2"
         >
-          Pembaruan live gagal: {pollError}. Data terakhir tetap ditampilkan.
+          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" aria-hidden="true" />
+          <span>Pembaruan live gagal: {pollError}. Data terakhir tetap ditampilkan.</span>
         </div>
       )}
 
@@ -159,22 +160,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       <ProviderHealthMatrix providers={providers} onNavigate={onNavigate} />
 
       {/* 6. SYSTEM TELEMETRY — collapsible, tersembunyi secara default */}
-      <div className="border border-border rounded-card overflow-hidden">
+      <div className="border border-border/80 rounded-card overflow-hidden bg-bg-surface shadow-sm transition-all">
         <button
           type="button"
           onClick={() => setTelemetryExpanded((v) => !v)}
-          className="w-full flex items-center justify-between px-5 py-3 bg-bg-surface hover:bg-bg-surface-2 transition-colors text-left cursor-pointer"
+          className="w-full flex items-center justify-between px-5 py-3.5 bg-bg-surface hover:bg-bg-surface-2 transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           aria-expanded={telemetryExpanded}
+          aria-label="Tampilkan atau sembunyikan runtime telemetri gateway"
         >
-          <span className="text-xs font-medium text-text-secondary">Runtime Telemetri Gateway</span>
+          <div className="flex items-center gap-2.5">
+            <Cpu className="w-4 h-4 text-blue-400" aria-hidden="true" />
+            <span className="text-xs font-semibold text-text-secondary">
+              Runtime Telemetri Gateway
+            </span>
+          </div>
           <ChevronDown
             className={`w-4 h-4 text-text-muted transition-transform duration-200 ${
               telemetryExpanded ? 'rotate-180' : ''
             }`}
+            aria-hidden="true"
           />
         </button>
         {telemetryExpanded && (
-          <div className="p-5 border-t border-border bg-bg-surface">
+          <div className="p-5 border-t border-border/70 bg-bg-surface-1/40">
             <SystemTelemetrySection overview={overview} />
           </div>
         )}

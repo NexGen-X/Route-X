@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { cn } from '../../utils/cn';
 
 export interface TooltipProps {
   content: React.ReactNode;
@@ -35,15 +36,15 @@ export const Tooltip: React.FC<TooltipProps> = ({
   }, []);
 
   const positionClasses = {
-    top: 'bottom-full left-1/2 -translate-x-1/2 mb-1.5',
-    bottom: 'top-full left-1/2 -translate-x-1/2 mt-1.5',
-    left: 'right-full top-1/2 -translate-y-1/2 mr-1.5',
-    right: 'left-full top-1/2 -translate-y-1/2 ml-1.5',
+    top: 'bottom-full left-1/2 -translate-x-1/2 mb-2',
+    bottom: 'top-full left-1/2 -translate-x-1/2 mt-2',
+    left: 'right-full top-1/2 -translate-y-1/2 mr-2',
+    right: 'left-full top-1/2 -translate-y-1/2 ml-2',
   };
 
   return (
     <div
-      className={`relative inline-flex ${className}`}
+      className={cn('relative inline-flex', className)}
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocus={show}
@@ -53,7 +54,10 @@ export const Tooltip: React.FC<TooltipProps> = ({
       {isVisible && content && (
         <div
           role="tooltip"
-          className={`absolute z-50 ${positionClasses[position]} px-2.5 py-1 text-[11px] font-medium text-white bg-[#18181B] border border-border/80 rounded-lg shadow-2xl backdrop-blur-md whitespace-nowrap pointer-events-none animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1.5`}
+          className={cn(
+            'absolute z-50 px-2.5 py-1 text-[11px] font-medium text-text-primary bg-bg-surface-1/95 border border-white/[0.1] rounded-inner shadow-surface-elevated backdrop-blur-xl whitespace-nowrap pointer-events-none animate-in fade-in zoom-in-95 duration-150 flex items-center gap-1.5 select-none',
+            positionClasses[position]
+          )}
         >
           {content}
         </div>

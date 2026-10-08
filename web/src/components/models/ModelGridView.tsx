@@ -15,12 +15,12 @@ export const ModelGridView: React.FC<ModelGridViewProps> = ({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="models-grid">
       {models.map((m) => (
-        <Card key={m.id} className="p-5 flex flex-col justify-between" data-testid={`model-card-${m.model_id}`}>
+        <Card key={m.id} className="p-5 flex flex-col justify-between hover:border-border-hover transition-all" data-testid={`model-card-${m.model_id}`}>
           <div>
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center">
-                  <Cpu className="w-5 h-5" />
+                  <Cpu className="w-5 h-5" aria-hidden="true" />
                 </div>
                 <div>
                   <h4 className="text-sm font-bold text-white">{m.display_name}</h4>
@@ -35,10 +35,10 @@ export const ModelGridView: React.FC<ModelGridViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onDeleteModel(m.id, m.display_name)}
-                    className="p-1.5 h-8 w-8 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 cursor-pointer"
+                    className="p-1.5 h-8 w-8 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 cursor-pointer min-h-[36px] min-w-[36px]"
                     aria-label={`Hapus model ${m.display_name}`}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </Tooltip>
               </div>
@@ -71,7 +71,7 @@ export const ModelGridView: React.FC<ModelGridViewProps> = ({
                   m.providers.map((p) => (
                     <Tooltip key={p.provider_id} content={`Upstream model: ${p.upstream_model_name}`}>
                       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/25 text-purple-300 text-[11px] font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400" aria-hidden="true" />
                         <span className="font-semibold text-white">{p.display_name || p.provider_name}</span>
                         {p.upstream_model_name !== m.model_id && (
                           <span className="text-[10px] text-text-muted font-mono">({p.upstream_model_name})</span>
@@ -98,8 +98,9 @@ export const ModelGridView: React.FC<ModelGridViewProps> = ({
               variant="secondary"
               size="sm"
               onClick={() => onOpenPricing(m)}
-              icon={<DollarSign className="w-3.5 h-3.5" />}
+              icon={<DollarSign className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
               aria-label={`Konfigurasi harga untuk ${m.display_name}`}
+              className="min-h-[36px]"
             >
               Harga
             </Button>

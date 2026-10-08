@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
 import { Select } from '../common/Select';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Gauge, Activity, Zap } from 'lucide-react';
 import type { CreateRateLimitDrawerProps, RateLimitFormData } from './types';
 
 const INITIAL_LIMIT_STATE: RateLimitFormData = {
@@ -43,10 +43,10 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
       title="Tambah Aturan Rate Limit Baru"
       footer={
         <>
-          <Button variant="ghost" type="button" onClick={onClose}>
+          <Button variant="ghost" type="button" onClick={onClose} className="min-h-[44px] sm:min-h-[36px]">
             Batal
           </Button>
-          <Button variant="primary" type="submit" form="create-rate-limit-form">
+          <Button variant="primary" type="submit" form="create-rate-limit-form" className="min-h-[44px] sm:min-h-[36px]">
             Simpan Limit
           </Button>
         </>
@@ -54,10 +54,10 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
     >
       <form id="create-rate-limit-form" onSubmit={handleSubmit} className="space-y-4 text-xs">
         {/* Presets 1-Klik Rate Limit */}
-        <div className="p-3 rounded-xl bg-accent/5 border border-accent/20 space-y-2">
+        <div className="p-3.5 rounded-xl bg-accent/5 border border-accent/20 space-y-2.5">
           <span className="text-[11px] font-semibold text-accent flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
-            Preset 1-Klik Kecepatan
+            <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Preset 1-Klik Kecepatan &amp; Pembatasan</span>
           </span>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
@@ -123,6 +123,7 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
           </div>
         </div>
 
+        {/* Scope Dropdown */}
         <div>
           <Select
             label="Cakupan Pembatasan (Scope) *"
@@ -136,6 +137,7 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
           />
         </div>
 
+        {/* Target Kunci API */}
         {formData.scope === 'api_key' && (
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
@@ -160,12 +162,13 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
                 placeholder="Masukkan UUID Kunci API..."
                 value={formData.scope_id}
                 onChange={(e) => setFormData({ ...formData, scope_id: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             )}
           </div>
         )}
 
+        {/* Target IP */}
         {formData.scope === 'ip' && (
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
@@ -177,15 +180,17 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
               placeholder="misal: 192.168.1.50 atau 2001:db8::1"
               value={formData.scope_id}
               onChange={(e) => setFormData({ ...formData, scope_id: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+              className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
             />
           </div>
         )}
 
+        {/* Nilai Batas Laju RPM / TPM / RPS */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              Req / Menit (RPM)
+            <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1">
+              <Gauge className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              <span>Req / Menit (RPM)</span>
             </label>
             <input
               type="number"
@@ -194,12 +199,13 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
               onChange={(e) =>
                 setFormData({ ...formData, requests_per_minute: parseInt(e.target.value, 10) || 0 })
               }
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+              className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              Token / Menit (TPM)
+            <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1">
+              <Activity className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
+              <span>Token / Menit (TPM)</span>
             </label>
             <input
               type="number"
@@ -208,12 +214,13 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
               onChange={(e) =>
                 setFormData({ ...formData, tokens_per_minute: parseInt(e.target.value, 10) || 0 })
               }
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+              className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              Req / Detik (Burst RPS)
+            <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
+              <span>Req / Detik (Burst RPS)</span>
             </label>
             <input
               type="number"
@@ -222,7 +229,7 @@ export const CreateRateLimitDrawer: React.FC<CreateRateLimitDrawerProps> = ({
               onChange={(e) =>
                 setFormData({ ...formData, requests_per_second: parseInt(e.target.value, 10) || 0 })
               }
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+              className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
             />
           </div>
         </div>

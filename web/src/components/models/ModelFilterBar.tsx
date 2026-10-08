@@ -17,25 +17,25 @@ export const ModelFilterBar: React.FC<ModelFilterBarProps> = ({
   return (
     <div className="space-y-3">
       {/* Toolbar Pencarian & View Mode */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-bg-surface-1 p-3 rounded-xl border border-border">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-bg-surface-1 p-3 rounded-xl border border-border shadow-xs">
         <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true" />
           <input
             type="text"
             aria-label="Cari model"
             placeholder="Cari model berdasarkan nama, slug, provider, atau family (mis. deepseek, claude, tknharbor)..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="w-full pl-9 pr-9 py-2 bg-bg-surface-2 border border-border rounded-lg text-xs text-white placeholder:text-text-muted focus:outline-none focus:border-accent"
+            className="w-full pl-9 pr-9 py-2.5 bg-bg-surface-2 border border-border rounded-lg text-xs text-white placeholder:text-text-muted focus:outline-none focus:border-accent min-h-[42px]"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-text-muted hover:text-white rounded-md cursor-pointer transition-colors"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-text-muted hover:text-white rounded-md cursor-pointer transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
               aria-label="Hapus pencarian"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           )}
         </div>
@@ -46,11 +46,11 @@ export const ModelFilterBar: React.FC<ModelFilterBarProps> = ({
           </span>
 
           {/* View Switcher */}
-          <div className="flex items-center bg-bg-surface-2 p-0.5 rounded-lg border border-border" role="group" aria-label="Pilihan tampilan model">
+          <div className="flex items-center bg-bg-surface-2 p-1 rounded-lg border border-border" role="group" aria-label="Pilihan tampilan model">
             <button
               type="button"
               onClick={() => onViewModeChange('table')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md cursor-pointer transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer transition-all min-h-[36px] ${
                 viewMode === 'table'
                   ? 'bg-accent text-white shadow-sm font-semibold'
                   : 'text-text-muted hover:text-white'
@@ -59,13 +59,13 @@ export const ModelFilterBar: React.FC<ModelFilterBarProps> = ({
               aria-label="Tampilan Tabel"
               aria-pressed={viewMode === 'table'}
             >
-              <Table className="w-3.5 h-3.5" />
+              <Table className="w-3.5 h-3.5" aria-hidden="true" />
               <span className="hidden sm:inline">Tabel</span>
             </button>
             <button
               type="button"
               onClick={() => onViewModeChange('grid')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md cursor-pointer transition-all ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md cursor-pointer transition-all min-h-[36px] ${
                 viewMode === 'grid'
                   ? 'bg-accent text-white shadow-sm font-semibold'
                   : 'text-text-muted hover:text-white'
@@ -74,7 +74,7 @@ export const ModelFilterBar: React.FC<ModelFilterBarProps> = ({
               aria-label="Tampilan Grid"
               aria-pressed={viewMode === 'grid'}
             >
-              <LayoutGrid className="w-3.5 h-3.5" />
+              <LayoutGrid className="w-3.5 h-3.5" aria-hidden="true" />
               <span className="hidden sm:inline">Kartu</span>
             </button>
           </div>
@@ -85,7 +85,7 @@ export const ModelFilterBar: React.FC<ModelFilterBarProps> = ({
       {availableFamilies.length > 2 && (
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar" role="region" aria-label="Filter keluarga model">
           <div className="flex items-center gap-1 text-text-muted mr-1 shrink-0">
-            <Layers className="w-3.5 h-3.5" />
+            <Layers className="w-3.5 h-3.5" aria-hidden="true" />
             <span className="text-[11px] font-semibold uppercase tracking-wider">Keluarga:</span>
           </div>
           {availableFamilies.map((fam) => {
@@ -98,7 +98,7 @@ export const ModelFilterBar: React.FC<ModelFilterBarProps> = ({
                 type="button"
                 data-testid={`family-chip-${fam.toLowerCase()}`}
                 onClick={() => onSelectFamily(fam)}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium shrink-0 cursor-pointer transition-colors ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shrink-0 cursor-pointer transition-colors min-h-[36px] ${
                   isSelected
                     ? 'bg-accent text-white shadow-sm'
                     : 'bg-bg-surface-1 border border-border text-text-muted hover:text-white hover:bg-bg-surface-2'

@@ -683,7 +683,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
           {oauthSessions.length > 0 && (
             <div className="flex items-center justify-between text-xs px-0.5 pt-2">
               <span className="font-semibold text-white flex items-center gap-1.5">
-                <KeyRound className="w-3.5 h-3.5 text-accent" />
+                <KeyRound className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
                 API Key Reguler ({directCredentials.length} Kunci · {directCredentials.filter((c) => c.enabled).length} Aktif)
               </span>
             </div>
@@ -716,7 +716,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                       copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000));
                     })}
                     aria-label="Salin petunjuk token"
-                    className="text-text-muted hover:text-white flex-shrink-0"
+                    className="text-text-muted hover:text-white flex-shrink-0 min-h-[32px] min-w-[32px] flex items-center justify-center cursor-pointer"
                   >
                     {copiedTokenId === cred.id ? <Check className="w-3 h-3 text-emerald-400" aria-hidden="true" /> : <Copy className="w-3 h-3" aria-hidden="true" />}
                   </button>
@@ -727,7 +727,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                     onClick={() => handleToggleKey(cred)}
                     title={cred.enabled ? 'Alihkan ke Standby' : 'Aktifkan'}
                     aria-label={cred.enabled ? "Nonaktifkan API key ke mode standby" : "Aktifkan API key"}
-                    className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-[11px] ${
+                    className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-[11px] min-h-[36px] ${
                       cred.enabled
                         ? 'text-amber-400 hover:bg-amber-500/10'
                         : 'text-emerald-400 hover:bg-emerald-500/10'
@@ -740,7 +740,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                     type="button"
                     onClick={() => handleDeleteKey(cred)}
                     aria-label="Hapus API key"
-                    className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                    className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
                   >
                     <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
@@ -776,7 +776,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
       {/* Empty State */}
       {directCredentials.length === 0 && oauthSessions.length === 0 && !isAddingKeyInline && (
         <div className="p-5 rounded-xl border border-dashed border-border text-center space-y-2">
-          <KeyRound className="w-8 h-8 text-text-muted mx-auto" />
+          <KeyRound className="w-8 h-8 text-text-muted mx-auto" aria-hidden="true" />
           <p className="text-xs text-text-secondary">
             {isAntigravity
               ? 'Belum ada akun Google Antigravity yang terhubung ke pool.'
@@ -786,7 +786,8 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
             variant="primary"
             size="sm"
             onClick={() => setIsAddingKeyInline(true)}
-            icon={<Plus className="w-3.5 h-3.5" />}
+            icon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}
+            className="min-h-[44px] sm:min-h-[38px]"
           >
             {isAntigravity ? 'Hubungkan Akun Google Pertama' : 'Tambah API Key Pertama'}
           </Button>

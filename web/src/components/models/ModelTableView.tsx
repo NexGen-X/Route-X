@@ -23,7 +23,7 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
         <table className="w-full text-left text-xs" data-testid="models-table">
           <thead>
             <tr className="border-b border-border text-text-muted font-semibold text-xs bg-bg-surface-2/40">
-              <th className="py-3 px-4">Model & ID</th>
+              <th className="py-3 px-4">Model &amp; ID</th>
               <th className="py-3 px-4">Keluarga</th>
               <th className="py-3 px-4">Penyedia Upstream</th>
               <th className="py-3 px-4">Konteks / Output</th>
@@ -34,11 +34,11 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
           </thead>
           <tbody className="divide-y divide-border/60">
             {models.map((m) => (
-              <tr key={m.id} className="hover:bg-bg-surface-2/40 transition-colors" data-testid={`model-row-${m.model_id}`}>
+              <tr key={m.id} className="hover:bg-bg-surface-2/40 transition-colors group" data-testid={`model-row-${m.model_id}`}>
                 <td className="py-3 px-4">
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                      <Cpu className="w-4 h-4" />
+                      <Cpu className="w-4 h-4" aria-hidden="true" />
                     </div>
                     <div className="min-w-0">
                       <div className="font-semibold text-white truncate max-w-[200px]">{m.display_name}</div>
@@ -57,7 +57,7 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
                       m.providers.map((p) => (
                         <Tooltip key={p.provider_id} content={`Upstream: ${p.upstream_model_name}`}>
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[10px] font-medium">
-                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-400" aria-hidden="true" />
                             <span>{p.display_name || p.provider_name}</span>
                           </span>
                         </Tooltip>
@@ -69,7 +69,7 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
                 </td>
                 <td className="py-3 px-4 font-mono text-[11px] whitespace-nowrap">
                   <span className="text-white font-medium">{formatTokensK(m.context_window)}</span>
-                  <span className="text-text-muted mx-1">/</span>
+                  <span className="text-text-muted mx-1" aria-hidden="true">/</span>
                   <span className="text-text-muted">{formatTokensK(m.max_output_tokens)}</span>
                 </td>
                 <td className="py-3 px-4">
@@ -111,8 +111,8 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
                       variant="secondary"
                       size="sm"
                       onClick={() => onOpenPricing(m)}
-                      icon={<DollarSign className="w-3.5 h-3.5" />}
-                      className="h-7 px-2.5 text-xs"
+                      icon={<DollarSign className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
+                      className="h-8 px-2.5 text-xs min-h-[34px]"
                       aria-label={`Konfigurasi harga untuk ${m.display_name}`}
                     >
                       Harga
@@ -121,10 +121,10 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
                       <button
                         type="button"
                         onClick={() => onDeleteModel(m.id, m.display_name)}
-                        className="p-1.5 h-7 w-7 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 cursor-pointer"
+                        className="p-1.5 h-8 w-8 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 cursor-pointer min-h-[34px] min-w-[34px]"
                         aria-label={`Hapus model ${m.display_name}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </Tooltip>
                   </div>

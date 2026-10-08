@@ -22,11 +22,11 @@ export const Checkbox: React.FC<CheckboxProps> = ({
   return (
     <label
       htmlFor={inputId}
-      className={`inline-flex items-start gap-2.5 select-none cursor-pointer ${
+      className={`inline-flex items-center min-h-[36px] py-1 gap-2.5 select-none cursor-pointer ${
         disabled ? 'opacity-40 cursor-not-allowed' : ''
       } ${className}`}
     >
-      <div className="relative flex items-center justify-center shrink-0 mt-0.5">
+      <div className="relative flex items-center justify-center shrink-0">
         <input
           type="checkbox"
           id={inputId}
@@ -43,7 +43,7 @@ export const Checkbox: React.FC<CheckboxProps> = ({
               : 'bg-bg-surface-2 border-border/80 hover:border-accent/60'
           } peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-bg-base`}
         >
-          {checked && <Check className="w-3 h-3 stroke-[3]" />}
+          {checked && <Check className="w-3 h-3 stroke-[3]" aria-hidden="true" />}
         </div>
       </div>
       {(label || description) && (

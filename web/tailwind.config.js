@@ -18,11 +18,11 @@ export default {
         'text-secondary': '#94A3B8',
         'text-muted': '#64748B',
         accent: {
-          DEFAULT: '#3B82F6',
-          bg: 'rgba(59, 130, 246, 0.12)',
-          hover: '#2563EB',
-          glow: 'rgba(59, 130, 246, 0.25)',
-          subtle: 'rgba(59, 130, 246, 0.08)',
+          DEFAULT: '#2563EB',
+          bg: 'rgba(37, 99, 235, 0.12)',
+          hover: '#1D4ED8',
+          glow: 'rgba(37, 99, 235, 0.25)',
+          subtle: 'rgba(37, 99, 235, 0.08)',
         },
         status: {
           success: '#10B981',

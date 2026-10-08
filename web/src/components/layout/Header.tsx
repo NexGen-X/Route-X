@@ -25,7 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onOpenMobileMenu}
-          className="lg:hidden p-1.5 sm:p-2 text-text-secondary hover:text-white rounded-nav hover:bg-bg-surface-2 shrink-0 cursor-pointer"
+          className="lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center p-2 text-text-secondary hover:text-white rounded-nav hover:bg-bg-surface-2 shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           aria-label="Buka menu navigasi"
         >
           <Menu className="w-5 h-5" aria-hidden="true" />
@@ -44,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={onOpenCommandPalette}
-                className="sm:hidden p-2 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-text-secondary hover:text-white transition-all shadow-sm cursor-pointer"
+                className="sm:hidden min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-text-secondary hover:text-white transition-all shadow-sm cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 aria-label="Buka Command Palette"
               >
                 <Search className="w-4 h-4 text-text-muted" aria-hidden="true" />

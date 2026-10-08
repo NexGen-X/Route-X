@@ -39,7 +39,7 @@ export const Login: React.FC = () => {
     try {
       await login(email.trim(), password, keepSignedIn);
       window.location.hash = '#/';
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -51,7 +51,7 @@ export const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-bg-base p-4">
+    <main role="main" className="min-h-screen flex items-center justify-center bg-bg-base p-4">
       <div className="w-full max-w-md bg-bg-surface border border-border rounded-card shadow-2xl p-6 sm:p-8 flex flex-col">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-extrabold text-white text-lg shadow-md shadow-blue-500/25 ring-1 ring-white/10">
@@ -66,7 +66,7 @@ export const Login: React.FC = () => {
           <div className="mb-6 p-4 rounded-xl bg-accent/5 border border-accent/20 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-accent font-semibold text-xs">
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="w-4 h-4" aria-hidden="true" />
                 <span>Instalasi Baru (First-Run)</span>
               </div>
               <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">
@@ -93,7 +93,7 @@ export const Login: React.FC = () => {
               </div>
             </div>
             <div className="flex items-start gap-2 text-[11px] text-text-muted leading-relaxed">
-              <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-accent" />
+              <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-accent" aria-hidden="true" />
               <span>
                 Alamat email saja yang ditampilkan di sini. Kata sandi tidak pernah dikirim oleh
                 endpoint ini demi keamanan instance Anda.
@@ -104,7 +104,7 @@ export const Login: React.FC = () => {
 
         {error && (
           <div id="login-error" role="alert" aria-live="assertive" className="mb-5 p-3.5 rounded-inner bg-status-error/10 border border-status-error/20 flex items-start gap-2.5 text-status-error text-xs">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
             <span>{error}</span>
           </div>
         )}
@@ -124,7 +124,7 @@ export const Login: React.FC = () => {
               required
               aria-describedby={error ? 'login-error' : undefined}
               placeholder="admin@routex.local"
-              className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              className="w-full min-h-[44px] px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
             />
           </div>
 
@@ -143,15 +143,15 @@ export const Login: React.FC = () => {
                 required
                 aria-describedby={error ? 'login-error' : undefined}
                 placeholder="••••••••••••"
-                className="w-full px-3.5 py-2.5 pr-10 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+                className="w-full min-h-[44px] px-3.5 py-2.5 pr-12 bg-bg-surface-2 border border-border rounded-nav text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2 min-w-[36px] min-h-[36px] flex items-center justify-center transition-colors cursor-pointer rounded-nav"
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors cursor-pointer rounded-nav focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
               </button>
             </div>
           </div>
@@ -169,21 +169,21 @@ export const Login: React.FC = () => {
             variant="primary"
             size="lg"
             isLoading={isLoading}
-            className="w-full mt-2"
-            icon={<ArrowRight className="w-4 h-4" />}
+            className="w-full mt-2 min-h-[44px]"
+            icon={<ArrowRight className="w-4 h-4" aria-hidden="true" />}
           >
             Masuk ke Konsol
           </Button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-border/60 flex items-center justify-between text-[11px] text-text-muted">
+        <div className="mt-8 pt-6 border-t border-border/60 flex items-center justify-between text-[11px] text-text-secondary">
           <span className="flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-accent" />
+            <ShieldCheck className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
             Argon2id + Sesi Mandiri
           </span>
           <span className="font-mono">v{pkg.version}</span>
         </div>
       </div>
-    </div>
+    </main>
   );
 };

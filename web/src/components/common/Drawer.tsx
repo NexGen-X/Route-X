@@ -3,6 +3,13 @@ import FocusTrap from 'focus-trap-react';
 import { X } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 
+declare global {
+  interface Window {
+    __routexBodyLockCount?: number;
+    __routexBodyLockPrevOverflow?: string;
+  }
+}
+
 // Kunci body bersama lintas Modal/Drawer agar lapisan bertumpuk tidak saling melepas kunci.
 function __acquireBodyLock(): void {
   window.__routexBodyLockCount = (window.__routexBodyLockCount || 0) + 1;
@@ -19,7 +26,7 @@ function __releaseBodyLock(): void {
   }
 }
 
-interface DrawerProps {
+export interface DrawerProps {
   isOpen: boolean;
   onClose: () => void;
   title: React.ReactNode;
@@ -46,6 +53,7 @@ export const Drawer: React.FC<DrawerProps> = ({
   const generatedTitleId = useId();
   const titleId = `drawer-title-${generatedTitleId.replace(/:/g, '')}`;
   const subtitleId = `drawer-subtitle-${generatedTitleId.replace(/:/g, '')}`;
+
   // Kunci body bersama lintas Modal/Drawer; restore nilai overflow asli.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -78,70 +86,67 @@ export const Drawer: React.FC<DrawerProps> = ({
 
   return (
     <FocusTrap active={isOpen} focusTrapOptions={{ clickOutsideDeactivates: true }}>
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      aria-describedby={subtitle ? subtitleId : ariaDescribedBy}
-      className="fixed inset-0 z-50 overflow-hidden"
-    >
-      {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
-        onClick={onClose}
-      />
-
-      {/* Sheet dinamis: mobile bottom-sheet mengambang (ada jeda dari tepi
-          viewport + safe-area), desktop dialog tengah. Tinggi mengikuti
-          konten (h-auto) dengan batas max agar daftar panjang scroll di
-          dalam body, bukan satu panel full-screen. */}
-      <div className="fixed inset-0 flex items-end justify-center sm:items-center px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-6 pointer-events-none">
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={subtitle ? subtitleId : ariaDescribedBy}
+        className="fixed inset-0 z-50 overflow-hidden"
+      >
+        {/* Backdrop */}
         <div
-          className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border border-border shadow-2xl flex flex-col h-auto max-h-[92dvh] sm:max-h-[85vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-card overflow-hidden`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Drawer Header: stabil, tidak ikut scroll */}
-          <div className="flex items-start justify-between px-3 py-3 sm:px-5 sm:py-4 border-b border-border/50 bg-bg-surface-2/40 flex-shrink-0">
-            <div className="space-y-1 flex-1 min-w-0 pr-3 sm:pr-4">
-              <div className="flex items-center gap-3">
-                <h2 id={titleId} className="text-sm font-semibold text-white tracking-tight truncate">
-                  {title}
-                </h2>
+          className="fixed inset-0 bg-black/60 backdrop-blur-xl transition-opacity animate-in fade-in duration-200"
+          onClick={onClose}
+        />
+
+        {/* Sheet dinamis: mobile bottom-sheet mengambang dengan safe-area, desktop dialog tengah */}
+        <div className="fixed inset-0 flex items-end justify-center sm:items-center px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-6 pointer-events-none">
+          <div
+            className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface/95 border border-white/[0.08] shadow-surface-elevated flex flex-col h-auto max-h-[92dvh] sm:max-h-[88vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-card overflow-hidden backdrop-blur-xl`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Drawer Header */}
+            <div className="flex items-start justify-between px-4 py-3.5 sm:px-6 sm:py-4 border-b border-white/[0.06] bg-bg-surface-1/50 flex-shrink-0">
+              <div className="space-y-1 flex-1 min-w-0 pr-3 sm:pr-4">
+                <div className="flex items-center gap-3">
+                  <h2 id={titleId} className="text-sm sm:text-base font-semibold text-white tracking-tight truncate">
+                    {title}
+                  </h2>
+                </div>
+                {subtitle && (
+                  <p id={subtitleId} className="text-xs text-text-muted mt-0.5 leading-relaxed">
+                    {subtitle}
+                  </p>
+                )}
+                {headerExtra && <div className="pt-0.5">{headerExtra}</div>}
               </div>
-              {subtitle && (
-                <p id={subtitleId} className="text-xs text-text-muted mt-0.5">
-                  {subtitle}
-                </p>
-              )}
-              {headerExtra && <div className="pt-0.5">{headerExtra}</div>}
+
+              <Tooltip content="Tutup Panel (Esc)" position="left">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Tutup panel"
+                  className="text-text-muted hover:text-white p-2 rounded-xl hover:bg-bg-surface-2/80 border border-transparent hover:border-white/[0.08] transition-all flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                >
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </Tooltip>
             </div>
 
-            <Tooltip content="Tutup Panel (Esc)" position="left">
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Tutup panel"
-                className="text-text-muted hover:text-white p-1.5 rounded-xl hover:bg-bg-surface border border-transparent hover:border-border/50 transition-all flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                <X className="w-4 h-4" aria-hidden="true" />
-              </button>
-            </Tooltip>
-          </div>
-
-          {/* Drawer Body */}
-          <div className="p-3 pb-4 sm:p-5 overflow-y-auto overscroll-contain min-h-0 flex-1 space-y-3 sm:space-y-5 scrollbar-thin">
-            {children}
-          </div>
-
-          {/* Drawer Footer */}
-          {footer && (
-            <div className="px-3 py-3 sm:px-5 sm:py-3.5 border-t border-border/50 bg-bg-surface-2/60 backdrop-blur-sm flex-shrink-0">
-              {footer}
+            {/* Drawer Body */}
+            <div className="p-4 pb-5 sm:p-6 overflow-y-auto overscroll-contain min-h-0 flex-1 space-y-4 sm:space-y-5 scrollbar-thin">
+              {children}
             </div>
-          )}
+
+            {/* Drawer Footer (Sticky) */}
+            {footer && (
+              <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-t border-white/[0.06] bg-bg-surface-1/80 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10">
+                {footer}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
     </FocusTrap>
   );
 };

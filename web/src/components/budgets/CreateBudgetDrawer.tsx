@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
 import { Select } from '../common/Select';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, DollarSign, ShieldAlert } from 'lucide-react';
 import type { BudgetFormData, CreateBudgetDrawerProps } from './types';
 
 const INITIAL_FORM_STATE: BudgetFormData = {
@@ -46,21 +46,21 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
       title="Alokasi Anggaran Moneter Baru"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} className="min-h-[44px] sm:min-h-[36px]">
             Batal
           </Button>
-          <Button variant="primary" type="submit" form="create-budget-form">
+          <Button variant="primary" type="submit" form="create-budget-form" className="min-h-[44px] sm:min-h-[36px]">
             Simpan Anggaran
           </Button>
         </>
       }
     >
       <form id="create-budget-form" noValidate onSubmit={handleSubmit} className="space-y-4 text-xs">
-        {/* Quick Presets Khusus Developer / Pemakaian Pribadi */}
-        <div className="p-3 rounded-xl bg-accent/5 border border-accent/20 space-y-2">
+        {/* Quick Presets Khusus Developer / Tim */}
+        <div className="p-3.5 rounded-xl bg-accent/5 border border-accent/20 space-y-2.5">
           <span className="text-[11px] font-semibold text-accent flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
-            Preset 1-Klik Anggaran
+            <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>Preset 1-Klik Anggaran Moneter</span>
           </span>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
@@ -130,17 +130,22 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
           </div>
         </div>
 
+        {/* Input Nama Anggaran */}
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1.5">Nama Anggaran *</label>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">
+            Nama Anggaran *
+          </label>
           <input
             type="text"
             required
             placeholder="Budget Bulanan Tim Internal"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+            className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white placeholder:text-text-muted/50 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 transition-colors"
           />
         </div>
+
+        {/* Cakupan & Periode */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Select
             label="Cakupan (Scope)"
@@ -153,7 +158,7 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
             ]}
           />
           <Select
-            label="Periode"
+            label="Periode Reset"
             value={formData.period}
             onChange={(val) => setFormData({ ...formData, period: val })}
             options={[
@@ -164,6 +169,7 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
           />
         </div>
 
+        {/* Pilihan Target Scope jika API Key */}
         {formData.scope === 'api_key' && (
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
@@ -188,12 +194,13 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
                 placeholder="Masukkan UUID Kunci API..."
                 value={formData.scope_id}
                 onChange={(e) => setFormData({ ...formData, scope_id: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             )}
           </div>
         )}
 
+        {/* Pilihan Target Scope jika Model */}
         {formData.scope === 'model' && (
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">
@@ -218,15 +225,19 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
                 placeholder="Masukkan Slug Model (contoh: gpt-4o)..."
                 value={formData.scope_id}
                 onChange={(e) => setFormData({ ...formData, scope_id: e.target.value })}
-                className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+                className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
               />
             )}
           </div>
         )}
 
+        {/* Batas Maksimal & Ambang Peringatan */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Batas Maksimal (USD) *</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1">
+              <DollarSign className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              <span>Batas Maksimal (USD) *</span>
+            </label>
             <input
               type="number"
               step="0.01"
@@ -234,11 +245,14 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
               required
               value={formData.max_spend_usd}
               onChange={(e) => setFormData({ ...formData, max_spend_usd: e.target.value })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+              className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">Ambang Peringatan (%) *</label>
+            <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1">
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
+              <span>Ambang Peringatan (%) *</span>
+            </label>
             <input
               type="number"
               min={1}
@@ -249,11 +263,12 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
                 const v = parseInt(e.target.value, 10);
                 setFormData({ ...formData, alert_threshold: Number.isNaN(v) ? 80 : v });
               }}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
+              className="w-full min-h-[44px] sm:min-h-[38px] px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
             />
           </div>
         </div>
 
+        {/* Tindakan Pelanggaran */}
         <div>
           <Select
             label="Tindakan Pelanggaran"

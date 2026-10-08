@@ -7,11 +7,13 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Plus, Layers } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
-import { CircuitBreakersPanel } from '../components/routing/CircuitBreakersPanel';
-import { RuleCard } from '../components/routing/RuleCard';
-import { CreateRuleDrawer } from '../components/routing/CreateRuleDrawer';
-import { EditRuleDrawer } from '../components/routing/EditRuleDrawer';
-import { RuleProvidersDrawer } from '../components/routing/RuleProvidersDrawer';
+import {
+  CircuitBreakersPanel,
+  RuleCard,
+  CreateRuleDrawer,
+  EditRuleDrawer,
+  RuleProvidersDrawer,
+} from '../components/routing';
 
 export const RoutingRules: React.FC = () => {
   const { toast, confirmModal } = useToast();

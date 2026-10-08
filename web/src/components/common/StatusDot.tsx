@@ -14,49 +14,92 @@ export interface StatusDotProps {
   label?: string;
   latencyMs?: number;
   className?: string;
+  ping?: boolean;
 }
 
-const STATUS_COLORS: Record<StatusDotVariant, string> = {
-  healthy: 'bg-emerald-400',
-  active: 'bg-emerald-400',
-  degraded: 'bg-amber-400',
-  unhealthy: 'bg-rose-400',
-  disabled: 'bg-zinc-500',
-  neutral: 'bg-zinc-400',
-};
-
-const DEFAULT_LABELS: Partial<Record<StatusDotVariant, string>> = {
-  healthy: 'Sehat',
-  active: 'Aktif',
-  degraded: 'Terdegradasi',
-  unhealthy: 'Terganggu',
-  disabled: 'Nonaktif',
-  neutral: 'Netral',
+const STATUS_CONFIG: Record<
+  StatusDotVariant,
+  { dot: string; ping?: string; label: string; glow: string }
+> = {
+  healthy: {
+    dot: 'bg-emerald-400',
+    ping: 'bg-emerald-400',
+    glow: 'shadow-[0_0_8px_rgba(52,211,153,0.8)]',
+    label: 'Sehat',
+  },
+  active: {
+    dot: 'bg-emerald-400',
+    ping: 'bg-emerald-400',
+    glow: 'shadow-[0_0_8px_rgba(52,211,153,0.8)]',
+    label: 'Aktif',
+  },
+  degraded: {
+    dot: 'bg-amber-400',
+    ping: 'bg-amber-400',
+    glow: 'shadow-[0_0_8px_rgba(251,191,36,0.8)]',
+    label: 'Terdegradasi',
+  },
+  unhealthy: {
+    dot: 'bg-rose-400',
+    ping: 'bg-rose-400',
+    glow: 'shadow-[0_0_8px_rgba(251,113,133,0.8)]',
+    label: 'Terganggu',
+  },
+  disabled: {
+    dot: 'bg-zinc-600',
+    glow: '',
+    label: 'Nonaktif',
+  },
+  neutral: {
+    dot: 'bg-zinc-400',
+    glow: '',
+    label: 'Netral',
+  },
 };
 
 /**
  * Komponen StatusDot bergaya Linear/Vercel-grade untuk menggantikan badge tebal.
- * Menampilkan bulatan halus 6px dengan warna status semantik, label ringkas, dan latensi monospaced.
+ * Menampilkan bulatan halus dengan animasi ping glow mikro, label semantik, dan latensi monospaced.
  */
 export const StatusDot: React.FC<StatusDotProps> = ({
   status,
   label,
   latencyMs,
   className = '',
+  ping,
 }) => {
-  const dotColorClass = STATUS_COLORS[status] || STATUS_COLORS.neutral;
-  const displayLabel = label ?? DEFAULT_LABELS[status];
+  const config = STATUS_CONFIG[status] || STATUS_CONFIG.neutral;
+  const displayLabel = label ?? config.label;
+  const shouldPing = ping ?? (status === 'healthy' || status === 'active');
 
   return (
     <div
       className={cn(
-        'inline-flex items-center gap-1.5 text-xs text-text-secondary font-mono select-none',
+        'inline-flex items-center gap-2 text-xs text-text-secondary select-none',
         className
       )}
     >
-      <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', dotColorClass)} />
+      <span className="relative flex h-2 w-2 items-center justify-center shrink-0">
+        {shouldPing && config.ping && (
+          <span
+            className={cn(
+              'absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping-subtle',
+              config.ping
+            )}
+            aria-hidden="true"
+          />
+        )}
+        <span
+          className={cn(
+            'relative inline-flex h-1.5 w-1.5 rounded-full shrink-0',
+            config.dot,
+            config.glow
+          )}
+          aria-hidden="true"
+        />
+      </span>
       {displayLabel && (
-        <span className="text-xs text-text-secondary font-medium tracking-tight">
+        <span className="text-xs text-text-secondary font-medium tracking-tight font-sans">
           {displayLabel}
         </span>
       )}

@@ -4,8 +4,11 @@
 
 @layer base {
   body {
-    background-color: #0B0F17;
+    background-color: #080B11;
     color: #F8FAFC;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /* Universal Selection Color */
@@ -22,7 +25,7 @@
 /* Firefox & W3C Standard */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #1E293B #080C14;
+  scrollbar-color: #1E293B #06080E;
 }
 
 /* WebKit & Blink (Chrome, Safari, Edge, Android Chrome, iOS Safari) */
@@ -32,16 +35,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #080C14;
+  background: #06080E;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #1E293B;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2E3D59;
+  background: #2C3E5F;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -91,7 +94,7 @@ input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 40px #0F1523 inset !important;
+  -webkit-box-shadow: 0 0 0 40px #0D121F inset !important;
   -webkit-text-fill-color: #F8FAFC !important;
   caret-color: #3B82F6 !important;
   transition: background-color 5000s ease-in-out 0s;
@@ -111,7 +114,7 @@ input[type="checkbox"] {
   min-height: 1rem;
   border: 1px solid #1E293B;
   border-radius: 0.25rem;
-  background-color: #0F1523;
+  background-color: #0D121F;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -127,7 +130,7 @@ input[type="checkbox"]:hover:not(:disabled) {
 
 input[type="checkbox"]:focus-visible {
   border-color: #3B82F6;
-  box-shadow: 0 0 0 2px #0B0F17, 0 0 0 4px #3B82F6;
+  box-shadow: 0 0 0 2px #080B11, 0 0 0 4px #3B82F6;
 }
 
 input[type="checkbox"]:checked {
@@ -163,7 +166,7 @@ input[type="radio"] {
   min-height: 1rem;
   border: 1px solid #1E293B;
   border-radius: 9999px;
-  background-color: #0F1523;
+  background-color: #0D121F;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -179,7 +182,7 @@ input[type="radio"]:hover:not(:disabled) {
 
 input[type="radio"]:focus-visible {
   border-color: #3B82F6;
-  box-shadow: 0 0 0 2px #0B0F17, 0 0 0 4px #3B82F6;
+  box-shadow: 0 0 0 2px #080B11, 0 0 0 4px #3B82F6;
 }
 
 input[type="radio"]:checked {
@@ -203,15 +206,15 @@ input[type="radio"]:disabled {
 /* 6. In-App Utility Classes & Form Controls Normalization                   */
 /* -------------------------------------------------------------------------- */
 
-/* Custom panel scrollbar untuk Drawer, Modal, dan dropdown */
+/* Custom panel scrollbar ramping modern untuk Drawer, Modal, dan dropdown */
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #1E293B transparent;
+  scrollbar-color: #1F2C47 transparent;
 }
 
 .scrollbar-thin::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
@@ -219,12 +222,54 @@ input[type="radio"]:disabled {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #1E293B;
+  background: #1F2C47;
   border-radius: 9999px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #2E3D59;
+  background: #2C3E5F;
+}
+
+/* Sembunyikan scrollbar sepenuhnya bila diperlukan */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Glassmorphic Surfaces SOTA 2026 */
+.glass-surface {
+  background: rgba(13, 18, 31, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-surface-subtle {
+  background: rgba(17, 24, 39, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Styling Dark Form Controls Bersih */
+.input-dark {
+  background-color: rgba(13, 18, 31, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #F8FAFC;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.input-dark:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.input-dark:focus {
+  border-color: #3B82F6;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
 }
 
 /* Batasi resize textarea hanya secara vertikal agar tidak merusak layout grid */
@@ -238,7 +283,7 @@ select {
 }
 
 select option {
-  background-color: #0F1523;
+  background-color: #0D121F;
   color: #F8FAFC;
 }
 
@@ -276,4 +321,3 @@ table td {
     width: 0%;
   }
 }
-

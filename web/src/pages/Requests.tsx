@@ -20,6 +20,9 @@ export const Requests: React.FC = () => {
   const [nextCursor, setNextCursor] = useState<string | undefined>();
   const [activeTab, setActiveTab] = useState<RequestTabFilter>('all');
   const [search, setSearch] = useState('');
+  const [providerFilter, setProviderFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [timeRangeFilter, setTimeRangeFilter] = useState('');
   const [selectedReq, setSelectedReq] = useState<RequestLog | null>(null);
   const [reqEvents, setReqEvents] = useState<RequestEvent[]>([]);
   const [reqPayload, setReqPayload] = useState<RequestPayload | null>(null);
@@ -35,7 +38,6 @@ export const Requests: React.FC = () => {
   const listReqRef = useRef(0);
 
   // Debounce pencarian: mengetik tidak langsung menembak API, tunggu 400ms diam.
-  // Efek saat mount dilewati karena pemuatan awal sudah ditangani efek activeTab.
   const searchFirstRef = useRef(true);
   useEffect(() => {
     if (searchFirstRef.current) {
@@ -57,6 +59,9 @@ export const Requests: React.FC = () => {
       if (activeTab === 'errors') params.status_class = 'error';
       if (activeTab === 'success') params.status_class = '2xx';
       if (search) params.search = search;
+      if (providerFilter) params.provider = providerFilter;
+      if (statusFilter) params.status_code = statusFilter;
+      if (timeRangeFilter) params.time_range = timeRangeFilter;
 
       const res = await api.requests.list(params);
       if (listReqRef.current !== reqId) return;
@@ -77,7 +82,7 @@ export const Requests: React.FC = () => {
 
   useEffect(() => {
     void loadRequests();
-  }, [activeTab]);
+  }, [activeTab, providerFilter, statusFilter, timeRangeFilter]);
 
   useEffect(() => {
     if (!isLiveFeed) return;
@@ -85,7 +90,7 @@ export const Requests: React.FC = () => {
       void loadRequests(undefined, true);
     }, 4000);
     return () => clearInterval(interval);
-  }, [isLiveFeed, activeTab, search]);
+  }, [isLiveFeed, activeTab, search, providerFilter, statusFilter, timeRangeFilter]);
 
   const handleInspect = async (req: RequestLog) => {
     const reqId = ++inspectorReqRef.current;
@@ -114,6 +119,14 @@ export const Requests: React.FC = () => {
     }
   };
 
+  const handleResetFilters = () => {
+    setActiveTab('all');
+    setSearch('');
+    setProviderFilter('');
+    setStatusFilter('');
+    setTimeRangeFilter('');
+  };
+
   return (
     <div className="space-y-6">
       {/* Header & Filter Bar */}
@@ -124,7 +137,7 @@ export const Requests: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsLiveFeed(!isLiveFeed)}
-              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-inner text-xs font-semibold border transition-all ${
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-inner text-xs font-semibold border transition-all cursor-pointer min-h-[44px] sm:min-h-[36px] ${
                 isLiveFeed
                   ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                   : 'bg-bg-surface-2 text-text-secondary border-border hover:text-white'
@@ -142,7 +155,7 @@ export const Requests: React.FC = () => {
               size="sm"
               onClick={() => void loadRequests()}
               isLoading={isLoading}
-              icon={<RefreshCw className="w-3.5 h-3.5" />}
+              icon={<RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
             >
               Segarkan
             </Button>
@@ -162,6 +175,13 @@ export const Requests: React.FC = () => {
           search={search}
           onSearchChange={setSearch}
           onSearchSubmit={() => void loadRequests()}
+          providerFilter={providerFilter}
+          onProviderFilterChange={setProviderFilter}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          timeRangeFilter={timeRangeFilter}
+          onTimeRangeFilterChange={setTimeRangeFilter}
+          onResetFilters={handleResetFilters}
         />
 
         {/* Requests List: Card List on Mobile, Table on Desktop */}
@@ -169,7 +189,7 @@ export const Requests: React.FC = () => {
           <RequestTableSkeleton />
         ) : requests.length === 0 ? (
           <div className="py-12 px-4 text-center space-y-3">
-            <Activity className="w-8 h-8 mx-auto text-text-muted/40" />
+            <Activity className="w-8 h-8 mx-auto text-text-muted/40" aria-hidden="true" />
             <div className="text-sm font-semibold text-white">
               Tidak ada catatan permintaan
             </div>

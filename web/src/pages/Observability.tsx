@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import type { TimeSeriesPoint, BreakdownItem, Diagnostics, ObservabilitySummary } from '../types';
+import type { TimeSeriesPoint, BreakdownItem, Diagnostics, ObservabilitySummary, ResponseCacheStats } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
@@ -13,7 +13,17 @@ import {
   Tooltip,
   CartesianGrid,
 } from 'recharts';
-import { RefreshCw, Database, Activity, Coins, Clock } from 'lucide-react';
+import {
+  RefreshCw,
+  Database,
+  Activity,
+  Coins,
+  Zap,
+  TrendingUp,
+  AlertTriangle,
+  Flame,
+  CheckCircle2,
+} from 'lucide-react';
 import { QueryError } from '../components/common/QueryError';
 import { formatUSD } from '../utils/money';
 
@@ -25,9 +35,14 @@ export const Observability: React.FC = () => {
   const [breakdownBy, setBreakdownBy] = useState<'provider' | 'model' | 'api_key'>('provider');
   const [summary, setSummary] = useState<ObservabilitySummary | null>(null);
   const [diag, setDiag] = useState<Diagnostics | null>(null);
+  const [cacheStats, setCacheStats] = useState<ResponseCacheStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+
+  // Live test ping
+  const [isTestingLive, setIsTestingLive] = useState(false);
+  const [liveTestLatency, setLiveTestLatency] = useState<number | null>(null);
 
   const formatXAxis = (tickItem: string) => {
     try {
@@ -46,17 +61,21 @@ export const Observability: React.FC = () => {
   const formatYAxis = (val: number) => {
     if (metric === 'cost') return `$${val}`;
     if (metric === 'latency') return `${val}ms`;
+    if (metric === 'error_rate') return `${val}%`;
+    if (metric === 'throughput') return `${val}/s`;
     if (val >= 1000000) return `${(val / 1000000).toFixed(1)}M`;
     if (val >= 1000) return `${(val / 1000).toFixed(0)}k`;
     return String(val);
   };
 
-  const formatTooltipValue = (value: any) => {
+  const formatTooltipValue = (value: unknown): [string, string] | string => {
     const num = Number(value);
-    if (!Number.isFinite(num)) return value;
+    if (!Number.isFinite(num)) return String(value ?? '');
     if (metric === 'cost') return [`$${num.toFixed(4)}`, 'Biaya USD'];
     if (metric === 'latency') return [`${num.toFixed(1)} ms`, 'Latensi P95'];
     if (metric === 'tokens') return [`${num.toLocaleString()}`, 'Total Token'];
+    if (metric === 'throughput') return [`${num.toFixed(2)} req/dtk`, 'Throughput'];
+    if (metric === 'error_rate') return [`${num.toFixed(2)}%`, 'Tingkat Kesalahan'];
     return [`${num.toLocaleString()} reqs`, 'Permintaan'];
   };
 
@@ -77,40 +96,76 @@ export const Observability: React.FC = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [sRes, bRes, sumRes] = await Promise.all([
-        api.observability.series(metric, windowTime),
+      const metricQuery = (metric === 'throughput' || metric === 'error_rate') ? 'requests' : metric;
+      const [sRes, bRes, sumRes, cRes] = await Promise.all([
+        api.observability.series(metricQuery, windowTime),
         api.observability.breakdown(breakdownBy, windowTime),
         api.observability.summary(windowTime).catch(() => null),
+        api.system.cacheStats().catch(() => null),
       ]);
       setSeries(sRes.points || []);
       setBreakdowns(bRes.items || []);
       setSummary(sumRes);
+      setCacheStats(cRes);
       setLoadError(null);
 
       try {
         const dRes = await api.system.diagnostics();
         setDiag(dRes);
         setDiagnosticsError(null);
-      } catch (err) {
+      } catch (err: unknown) {
         setDiag(null);
         setDiagnosticsError(err instanceof Error ? err.message : String(err));
       }
-    } catch (err) {
+    } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleTestLive = async () => {
+    setIsTestingLive(true);
+    const start = performance.now();
+    try {
+      await api.system.diagnostics();
+      const end = performance.now();
+      setLiveTestLatency(Math.round(end - start));
+    } catch {
+      setLiveTestLatency(null);
+    } finally {
+      setIsTestingLive(false);
+    }
+  };
+
   const totalRequestsFromSeries = series.reduce((acc, p) => acc + (p.requests || 0), 0);
   const totalCostFromSeries = series.reduce((acc, p) => acc + (Number(p.cost_usd) || 0), 0).toFixed(4);
   const totalTokensFromSeries = series.reduce((acc, p) => acc + (p.tokens || 0), 0);
-  const avgLatencyFromSeries = series.length > 0 ? series.reduce((acc, p) => acc + (p.p50_latency_ms || 0), 0) / series.length : 0;
-  const p95LatencyFromSeries = series.length > 0 ? Math.max(...series.map((p) => p.p95_latency_ms || 0)) : 0;
   const errorRate = summary?.error_rate ?? (totalRequestsFromSeries > 0 ? (series.reduce((acc, p) => acc + (p.errors || 0), 0) / totalRequestsFromSeries) * 100 : 0);
 
+  // Perhitungan Throughput rata-rata (req/s)
+  const windowSeconds = windowTime === '1h' ? 3600 : windowTime === '24h' ? 86400 : windowTime === '7d' ? 604800 : 2592000;
+  const avgThroughputRps = (summary?.total_requests ?? totalRequestsFromSeries) / windowSeconds;
+
+  // Cache Hit calculations
+  const totalCacheReqs = (cacheStats?.hits ?? 0) + (cacheStats?.misses ?? 0);
+  const cacheHitRatio = totalCacheReqs > 0 ? (((cacheStats?.hits ?? 0) / totalCacheReqs) * 100).toFixed(1) : '0.0';
+
+  // Data series yang diperkaya untuk Recharts (mendukung throughput & error rate dinamis)
+  const chartData = series.map((p) => {
+    const reqs = p.requests || 0;
+    const errs = p.errors || 0;
+    const intervalSec = windowTime === '1h' ? 60 : windowTime === '24h' ? 900 : 3600;
+    return {
+      ...p,
+      cost_usd: Number(p.cost_usd ?? 0),
+      throughput: Number((reqs / intervalSec).toFixed(3)),
+      error_rate: reqs > 0 ? Number(((errs / reqs) * 100).toFixed(2)) : 0,
+    };
+  });
+
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [windowTime, metric, breakdownBy]);
 
   return (
@@ -127,9 +182,9 @@ export const Observability: React.FC = () => {
                   aria-pressed={windowTime === w}
                   aria-label={`Rentang waktu ${w}`}
                   onClick={() => setWindowTime(w)}
-                  className={`px-2.5 py-1 rounded-inner text-xs font-semibold transition-colors cursor-pointer ${
+                  className={`min-h-[44px] sm:min-h-[32px] px-3 py-1 rounded-inner text-xs font-semibold transition-colors cursor-pointer ${
                     windowTime === w
-                      ? 'bg-accent text-black font-bold shadow-sm'
+                      ? 'bg-accent text-white font-bold shadow-sm shadow-blue-500/20'
                       : 'text-text-secondary hover:text-white'
                   }`}
                 >
@@ -140,11 +195,22 @@ export const Observability: React.FC = () => {
             <Button
               variant="secondary"
               size="sm"
-              onClick={loadData}
+              onClick={() => void loadData()}
               isLoading={isLoading}
               aria-label="Segarkan data observabilitas"
+              icon={<RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
             >
-              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+              Segarkan
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void handleTestLive()}
+              isLoading={isTestingLive}
+              aria-label="Uji latensi live gateway"
+              icon={<Zap className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />}
+            >
+              {liveTestLatency !== null ? `Live: ${liveTestLatency}ms` : 'Test Live'}
             </Button>
           </div>
         }
@@ -152,59 +218,90 @@ export const Observability: React.FC = () => {
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 
-      {/* 3 Kartu Ringkasan KPI Eksekutif */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* KPI 1: Total Permintaan */}
+      {/* 4 Kartu KPI Analitik Utama: Throughput, Error Rate, Token Consumption, dan Cache Hit */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* KPI 1: Throughput & Total Permintaan */}
         <Card className="border-border bg-bg-surface">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[11px] font-medium text-text-muted">Total Permintaan ({windowTime})</span>
-              <div className="text-xl font-bold text-white tracking-tight">
+              <span className="text-[11px] font-medium text-text-muted">Throughput &amp; Permintaan ({windowTime})</span>
+              <div className="text-xl font-bold text-white tracking-tight font-mono">
                 {(summary?.total_requests ?? totalRequestsFromSeries).toLocaleString()}
               </div>
-              <div className="text-[10px] text-text-secondary flex items-center gap-1.5">
-                <span className={`w-1.5 h-1.5 rounded-full ${errorRate > 5 ? 'bg-red-400' : 'bg-emerald-400'}`} />
-                <span>Error Rate: {errorRate.toFixed(1)}%</span>
+              <div className="text-[10px] text-text-secondary flex items-center gap-1.5 font-mono">
+                <TrendingUp className="w-3 h-3 text-sky-400" aria-hidden="true" />
+                <span>Rata-rata: {avgThroughputRps.toFixed(2)} req/dtk</span>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
-              <Activity className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-blue-400">
+              <Activity className="w-5 h-5" aria-hidden="true" />
             </div>
           </div>
         </Card>
 
-        {/* KPI 2: Estimasi Biaya USD */}
+        {/* KPI 2: Error Rate & Kegagalan */}
         <Card className="border-border bg-bg-surface">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[11px] font-medium text-text-muted">Estimasi Biaya ({windowTime})</span>
-              <div className="text-xl font-bold text-white tracking-tight">
-                {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}
+              <span className="text-[11px] font-medium text-text-muted">Tingkat Kesalahan (Error Rate)</span>
+              <div className="text-xl font-bold tracking-tight font-mono flex items-center gap-2">
+                <span className={errorRate > 5 ? 'text-rose-400' : 'text-emerald-400'}>
+                  {errorRate.toFixed(2)}%
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                  errorRate > 5 ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                }`}>
+                  {errorRate > 5 ? 'Degraded' : 'Nominal'}
+                </span>
               </div>
-              <div className="text-[10px] text-text-secondary">
-                Total Token: {(summary?.total_tokens ?? totalTokensFromSeries).toLocaleString()}
+              <div className="text-[10px] text-text-secondary flex items-center gap-1 font-mono">
+                <AlertTriangle className="w-3 h-3 text-amber-400" aria-hidden="true" />
+                <span>{summary?.error_requests ?? series.reduce((acc, p) => acc + (p.errors || 0), 0)} gagal</span>
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
+              <Flame className="w-5 h-5" aria-hidden="true" />
+            </div>
+          </div>
+        </Card>
+
+        {/* KPI 3: Token Consumption & Biaya USD */}
+        <Card className="border-border bg-bg-surface">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[11px] font-medium text-text-muted">Konsumsi Token &amp; Biaya</span>
+              <div className="text-xl font-bold text-white tracking-tight font-mono">
+                {(summary?.total_tokens ?? totalTokensFromSeries).toLocaleString()} tok
+              </div>
+              <div className="text-[10px] text-accent flex items-center gap-1 font-mono">
+                <Coins className="w-3 h-3" aria-hidden="true" />
+                <span>Estimasi: {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}</span>
               </div>
             </div>
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <Coins className="w-5 h-5" />
+              <Coins className="w-5 h-5" aria-hidden="true" />
             </div>
           </div>
         </Card>
 
-        {/* KPI 3: Rata-rata Latensi */}
+        {/* KPI 4: Status Cache Hit & Redis Offloading */}
         <Card className="border-border bg-bg-surface">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <span className="text-[11px] font-medium text-text-muted">Rata-rata Latensi</span>
-              <div className="text-xl font-bold text-white tracking-tight">
-                {(summary?.avg_latency_ms ?? avgLatencyFromSeries).toFixed(0)} ms
+              <span className="text-[11px] font-medium text-text-muted">Status Response Cache Hit</span>
+              <div className="text-xl font-bold tracking-tight font-mono text-emerald-400 flex items-center gap-2">
+                <span>{cacheHitRatio}%</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+                  &lt; 2ms
+                </span>
               </div>
-              <div className="text-[10px] text-text-secondary">
-                P95 Latensi: {(summary?.p95_latency_ms ?? p95LatencyFromSeries).toFixed(0)} ms
+              <div className="text-[10px] text-text-secondary flex items-center gap-1 font-mono">
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" aria-hidden="true" />
+                <span>{cacheStats?.hits ?? 0} hits / {cacheStats?.total_entries ?? 0} entri</span>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-              <Clock className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+              <Zap className="w-5 h-5" aria-hidden="true" />
             </div>
           </div>
         </Card>
@@ -212,12 +309,14 @@ export const Observability: React.FC = () => {
 
       {/* Metric Selector & Main Time Series Chart */}
       <Card
-        title="Deret Waktu Telemetri"
+        title="Deret Waktu Telemetri & Analitik"
         action={
-          <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full" role="group" aria-label="Pilihan metrik deret waktu">
+          <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full" role="group" aria-label="Pilihan metrik deret waktu">
             {[
               { key: 'requests', label: 'Requests' },
+              { key: 'throughput', label: 'Throughput' },
               { key: 'tokens', label: 'Tokens' },
+              { key: 'error_rate', label: 'Error Rate' },
               { key: 'cost', label: 'Cost USD' },
               { key: 'latency', label: 'Latency P95' },
             ].map((m) => (
@@ -227,9 +326,9 @@ export const Observability: React.FC = () => {
                 aria-pressed={metric === m.key}
                 aria-label={`Metrik ${m.label}`}
                 onClick={() => setMetric(m.key)}
-                className={`px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium whitespace-nowrap text-center cursor-pointer ${
+                className={`min-h-[44px] sm:min-h-[30px] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium whitespace-nowrap text-center cursor-pointer ${
                   metric === m.key
-                    ? 'bg-bg-surface text-accent font-semibold shadow-sm'
+                    ? 'bg-accent/20 text-blue-400 border border-accent/40 font-semibold shadow-sm'
                     : 'text-text-muted hover:text-text-primary'
                 }`}
               >
@@ -243,7 +342,7 @@ export const Observability: React.FC = () => {
           {isLoading && series.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <div className="animate-pulse flex flex-col items-center gap-2.5 text-text-muted text-xs">
-                <RefreshCw className="w-5 h-5 animate-spin text-accent" />
+                <RefreshCw className="w-5 h-5 animate-spin text-accent" aria-hidden="true" />
                 <span>Memuat data telemetri...</span>
               </div>
             </div>
@@ -253,20 +352,17 @@ export const Observability: React.FC = () => {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              {/* TrafficPointDTO.cost_usd dikirim backend sebagai string presisi desimal
-                  (internal/admin/dto.go:137); recharts hanya bisa memplot angka, jadi
-                  konversi ke number per titik sebelum masuk chart. */}
-              <AreaChart data={series.map((p) => ({ ...p, cost_usd: Number(p.cost_usd ?? 0) }))}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" />
+              <AreaChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1F293D" />
                 <XAxis
                   dataKey="timestamp"
-                  stroke="#6B7280"
+                  stroke="#64748B"
                   fontSize={11}
                   tickLine={false}
                   tickFormatter={formatXAxis}
                 />
                 <YAxis
-                  stroke="#6B7280"
+                  stroke="#64748B"
                   fontSize={11}
                   tickLine={false}
                   tickFormatter={formatYAxis}
@@ -289,11 +385,27 @@ export const Observability: React.FC = () => {
                       ? 'cost_usd'
                       : metric === 'latency'
                       ? 'p95_latency_ms'
+                      : metric === 'throughput'
+                      ? 'throughput'
+                      : metric === 'error_rate'
+                      ? 'error_rate'
                       : metric
                   }
-                  stroke="#3B82F6"
-                  fill="#3B82F6"
-                  fillOpacity={0.12}
+                  stroke={
+                    metric === 'error_rate'
+                      ? '#F43F5E'
+                      : metric === 'cost'
+                      ? '#10B981'
+                      : '#3B82F6'
+                  }
+                  fill={
+                    metric === 'error_rate'
+                      ? '#F43F5E'
+                      : metric === 'cost'
+                      ? '#10B981'
+                      : '#3B82F6'
+                  }
+                  fillOpacity={0.15}
                   strokeWidth={2}
                 />
               </AreaChart>
@@ -302,7 +414,7 @@ export const Observability: React.FC = () => {
         </div>
       </Card>
 
-      {/* Breakdown Composition & Runtime Stats */}
+      {/* Breakdown Komposisi & Runtime Server */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card
           className="lg:col-span-2"
@@ -312,9 +424,12 @@ export const Observability: React.FC = () => {
               {(['provider', 'model', 'api_key'] as const).map((b) => (
                 <button
                   key={b}
+                  type="button"
                   onClick={() => setBreakdownBy(b)}
-                  className={`px-2 py-0.5 text-xs rounded-inner uppercase font-mono whitespace-nowrap text-center ${
-                    breakdownBy === b ? 'bg-accent text-black font-bold' : 'text-text-muted hover:text-white'
+                  className={`min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 text-xs rounded-inner uppercase font-mono whitespace-nowrap text-center cursor-pointer transition-colors ${
+                    breakdownBy === b
+                      ? 'bg-accent text-white font-bold'
+                      : 'text-text-muted hover:text-white'
                   }`}
                 >
                   {b.replace('_', ' ')}
@@ -374,42 +489,42 @@ export const Observability: React.FC = () => {
           ) : diagnosticsError ? (
             <QueryError message={diagnosticsError} onRetry={() => void loadData()} />
           ) : (
-          <div className="space-y-4">
-            <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border">
-              <div className="flex items-center justify-between text-xs mb-1">
-                <span className="text-text-secondary flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-accent" />
-                  PostgreSQL Pool
-                </span>
-                <span className="font-mono font-bold text-accent">
-                  {diag?.db_pool?.total_conns ?? 0} / {diag?.db_pool?.max_conns ?? 0}
-                </span>
+            <div className="space-y-4">
+              <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-text-secondary flex items-center gap-1.5">
+                    <Database className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+                    PostgreSQL Pool
+                  </span>
+                  <span className="font-mono font-bold text-accent">
+                    {diag?.db_pool?.total_conns ?? 0} / {diag?.db_pool?.max_conns ?? 0}
+                  </span>
+                </div>
+                <div className="text-[11px] text-text-muted font-mono flex justify-between">
+                  <span>Idle: {diag?.db_pool?.idle_conns ?? 0}</span>
+                  <span>Acquired: {diag?.db_pool?.acquired_conns ?? 0}</span>
+                </div>
               </div>
-              <div className="text-[11px] text-text-muted font-mono flex justify-between">
-                <span>Idle: {diag?.db_pool?.idle_conns ?? 0}</span>
-                <span>Acquired: {diag?.db_pool?.acquired_conns ?? 0}</span>
-              </div>
-            </div>
 
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Versi Gateway</span>
-                <span className="font-mono font-semibold text-white">{diag?.version || 'tidak tersedia'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Go Runtime</span>
-                <span className="font-mono text-text-secondary">{diag?.go_version || 'tidak tersedia'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Goroutines</span>
-                <span className="font-mono text-text-secondary">{diag?.num_goroutine ?? 0}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-text-muted">Memory In-Use</span>
-                <span className="font-mono text-accent">{diag?.memory_allocated_mb ?? 0} MB</span>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between py-1 border-b border-border/40">
+                  <span className="text-text-muted">Versi Gateway</span>
+                  <span className="font-mono font-semibold text-white">{diag?.version || 'tidak tersedia'}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-border/40">
+                  <span className="text-text-muted">Go Runtime</span>
+                  <span className="font-mono text-text-secondary">{diag?.go_version || 'tidak tersedia'}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-border/40">
+                  <span className="text-text-muted">Goroutines</span>
+                  <span className="font-mono text-text-secondary">{diag?.num_goroutine ?? 0}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-text-muted">Memory In-Use</span>
+                  <span className="font-mono text-accent">{diag?.memory_allocated_mb ?? 0} MB</span>
+                </div>
               </div>
             </div>
-          </div>
           )}
         </Card>
       </div>

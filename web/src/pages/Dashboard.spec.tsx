@@ -235,8 +235,10 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
     // Sub-items hidden when collapsed (default state)
 
     // 4. Performance Metrics Ribbon
-    expect(screen.getByText('Total Permintaan')).toBeInTheDocument();
-    expect(screen.getByText('1,250')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Total Permintaan')).toBeInTheDocument();
+      expect(screen.getByText('1,250')).toBeInTheDocument();
+    });
     expect(screen.getByText('Total Token')).toBeInTheDocument();
     expect(screen.getByText('450.0k')).toBeInTheDocument();
     expect(screen.getByText('Estimasi Biaya')).toBeInTheDocument();

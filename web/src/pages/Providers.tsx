@@ -17,13 +17,8 @@ import {
   Sparkles,
   Shield,
   KeyRound,
-  Copy,
-  Users,
   Bot,
-  FlaskConical,
-  ArrowRight,
 } from 'lucide-react';
-import { StatusDot } from '../components/common/StatusDot';
 import {
   KNOWN_PROVIDERS,
   ProviderBrandIcon,
@@ -38,6 +33,7 @@ import { CredentialsTab, type CredentialsTabProps } from '../components/provider
 import { SettingsTab, type SettingsTabProps } from '../components/providers/SettingsTab';
 import { CreateProviderModal, type CreateProviderModalProps } from '../components/providers/CreateProviderModal';
 import { AddModelModal, type AddModelModalProps } from '../components/providers/AddModelModal';
+import { ProviderCard, type ProviderCardProps } from '../components/providers/ProviderCard';
 import type { ModelTestResult } from '../components/providers/types';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
@@ -49,6 +45,7 @@ export { CredentialsTab as CredentialsTabChild };
 export { SettingsTab as SettingsTabChild };
 export { CreateProviderModal as CreateProviderModalChild };
 export { AddModelModal as AddModelModalChild };
+export { ProviderCard as ProviderCardChild };
 export type {
   ModelTestResult,
   ModelsTabProps,
@@ -56,6 +53,7 @@ export type {
   SettingsTabProps,
   CreateProviderModalProps,
   AddModelModalProps,
+  ProviderCardProps,
 };
 
 export const Providers: React.FC = () => {
@@ -564,164 +562,22 @@ export const Providers: React.FC = () => {
           {providers.map((p) => {
             const isCustom = isCustomProvider(p);
             const egress = egressPools.find((ep) => ep.id === p.egress_pool_id);
-
             const pool = poolsSummary[p.id] || { credentials: [], oauthSessions: [] };
-            const directCreds = (pool.credentials || []).filter(
-              (c: Credential) => !c.label.startsWith('oauth:') && !(pool.oauthSessions || []).some((s: OAuthSession) => s.credential_id === c.id)
+
+            return (
+              <ProviderCard
+                key={p.id}
+                provider={p}
+                egressPool={egress}
+                poolSummary={pool}
+                isCustom={isCustom}
+                onOpenDrawer={handleOpenDrawer}
+                onProbe={handleProbe}
+                onQuickAddAccount={handleQuickAddAccount}
+                onCopyBaseUrl={(url) => void copyWithFeedback(url, 'Base URL disalin ke clipboard')}
+                isProbing={probingId === p.id}
+              />
             );
-            const activeOAuth = (pool.oauthSessions || []).filter((s: OAuthSession) => s.enabled).length;
-            const activeDirect = directCreds.filter((c: Credential) => c.enabled).length;
-            const totalAccounts = (pool.oauthSessions || []).length + directCreds.length;
-            const activeAccounts = activeOAuth + activeDirect;
-
-              const providerStatus: 'healthy' | 'degraded' | 'unhealthy' | 'disabled' | 'neutral' =
-                !p.enabled
-                  ? 'disabled'
-                  : p.last_health_status === 'healthy'
-                  ? 'healthy'
-                  : p.last_health_status === 'degraded'
-                  ? 'degraded'
-                  : p.last_health_status === 'unhealthy'
-                  ? 'unhealthy'
-                  : 'neutral';
-
-              return (
-                <div
-                  key={p.id}
-                  className="bg-bg-surface border border-border hover:border-border/80 rounded-card p-5 transition-all flex flex-col justify-between shadow-sm group"
-                >
-                  {/* Bagian Atas: Icon, Identitas & Status Dot */}
-                  <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        {/* Icon Provider Interaktif: Klik untuk Buka Drawer */}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenDrawer(p, 'settings')}
-                          aria-label={`Buka pengaturan provider ${p.display_name || p.name}`}
-                          title={
-                            isCustom
-                              ? 'Klik icon custom provider ini untuk membuka drawer konfigurasi & kelola'
-                              : 'Klik icon provider untuk membuka drawer konfigurasi'
-                          }
-                          className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-inner flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-sm ${
-                            isCustom
-                              ? 'bg-purple-950/50 border border-purple-500/40 text-purple-300 hover:scale-105'
-                              : 'bg-bg-surface-2 border border-border text-text-primary hover:border-accent/50 hover:scale-105'
-                          }`}
-                        >
-                          <ProviderBrandIcon
-                            providerIdOrKind={p.kind}
-                            name={p.name}
-                            className="w-5 h-5"
-                            isCustom={isCustom}
-                          />
-                          <span
-                            className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-bg-surface border flex items-center justify-center shadow-sm ${
-                              isCustom
-                                ? 'border-purple-500/60 text-purple-300'
-                                : 'border-border text-text-muted'
-                            }`}
-                            aria-hidden="true"
-                          >
-                            <Sliders className="w-2 h-2" aria-hidden="true" />
-                          </span>
-                        </button>
-
-                        <div className="space-y-0.5 truncate">
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-semibold text-white text-sm sm:text-base truncate">
-                              {p.display_name || p.name}
-                            </h4>
-                            {isCustom && (
-                              <span className="px-1.5 py-0.2 text-[10px] font-mono rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 flex-shrink-0">
-                                Custom
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-xs text-text-muted font-mono block truncate">
-                            {p.kind}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Status Dot Minimalis */}
-                      <div className="flex items-center flex-shrink-0 pt-0.5">
-                        <StatusDot
-                          status={providerStatus}
-                          latencyMs={p.last_latency_ms}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Base URL & Egress Proxy 1-Baris Ringkas */}
-                    <div className="flex items-center justify-between text-xs font-mono text-text-secondary bg-bg-surface-2/60 px-3 py-2 rounded-inner border border-border">
-                      <span className="truncate pr-2 font-mono">
-                        {p.base_url.replace(/^https?:\/\//, '')}
-                        <span className="text-border mx-1.5">·</span>
-                        <span className="text-text-muted">{egress ? egress.name : 'Direct Outbound'}</span>
-                      </span>
-                      <Tooltip content="Salin Base URL" position="top">
-                        <button
-                          type="button"
-                          onClick={() => void copyWithFeedback(p.base_url, 'Base URL disalin ke clipboard')}
-                          aria-label="Salin Base URL"
-                          className="p-1 rounded-nav text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      </Tooltip>
-                    </div>
-
-                    {/* Ringkasan Pool Kredensial Bersih */}
-                    <div className="px-3 py-2.5 rounded-inner bg-bg-surface-2/40 border border-border flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2 truncate">
-                        <Users className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                        <span className="text-text-secondary font-medium truncate">
-                          {totalAccounts === 0
-                            ? 'Belum ada kredensial'
-                            : `${activeAccounts} Kredensial Aktif · ${
-                                p.credential_strategy === 'priority'
-                                  ? 'Priority Failover'
-                                  : 'Round Robin'
-                              }`}
-                        </span>
-                      </div>
-                      {totalAccounts === 0 && (
-                        <button
-                          type="button"
-                          onClick={() => handleQuickAddAccount(p)}
-                          className="text-[11px] text-accent hover:underline shrink-0 font-medium cursor-pointer"
-                        >
-                          + Tambah Key
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Footer Kartu: 2 Tombol Aksi Bersih & Teratur */}
-                  <div className="mt-5 pt-3.5 border-t border-border flex items-center justify-between gap-3">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleProbe(p)}
-                      isLoading={probingId === p.id}
-                      icon={<FlaskConical className="w-3.5 h-3.5" />}
-                    >
-                      Uji Latensi
-                    </Button>
-
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => handleOpenDrawer(p, 'models')}
-                      icon={<ArrowRight className="w-3.5 h-3.5 text-black" />}
-                    >
-                      Kelola &amp; Akun &rarr;
-                    </Button>
-                  </div>
-                </div>
-              );
           })}
         </div>
       ) : (

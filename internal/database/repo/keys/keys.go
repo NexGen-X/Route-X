@@ -370,11 +370,42 @@ func isUUID(s string) bool {
 
 // replaceAllowed mengganti seluruh daftar putih model dan provider satu key.
 // Mendukung input berupa UUID langsung maupun model_id slug atau provider name.
+// Menggunakan batch query ANY($1::text[]) untuk mengeliminasi N+1 round-trip ke basis data.
 func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, providerIDs []string) error {
 	if _, err := r.q.Exec(ctx, `delete from api_key_allowed_models where api_key_id = $1`, keyID); err != nil {
 		return repo.Err("menghapus daftar putih model", err)
 	}
 	if len(modelIDs) > 0 {
+		var modelSlugs []string
+		for _, raw := range modelIDs {
+			raw = strings.TrimSpace(raw)
+			if raw == "" || isUUID(raw) {
+				continue
+			}
+			modelSlugs = append(modelSlugs, raw)
+		}
+
+		modelMap := make(map[string]string, len(modelSlugs))
+		if len(modelSlugs) > 0 {
+			rows, err := r.q.Query(ctx, `select model_id, id::text from models where model_id = any($1::text[])`, modelSlugs)
+			if err != nil {
+				return repo.Err("mencari daftar putih model", err)
+			}
+			for rows.Next() {
+				var slug, id string
+				if err := rows.Scan(&slug, &id); err != nil {
+					rows.Close()
+					return repo.Err("memindai daftar putih model", err)
+				}
+				modelMap[slug] = id
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return repo.Err("iterasi daftar putih model", err)
+			}
+			rows.Close()
+		}
+
 		resolvedModelIDs := make([]string, 0, len(modelIDs))
 		for _, raw := range modelIDs {
 			raw = strings.TrimSpace(raw)
@@ -383,14 +414,10 @@ func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, provi
 			}
 			if isUUID(raw) {
 				resolvedModelIDs = append(resolvedModelIDs, raw)
+			} else if id, ok := modelMap[raw]; ok {
+				resolvedModelIDs = append(resolvedModelIDs, id)
 			} else {
-				var id string
-				err := r.q.QueryRow(ctx, `select id::text from models where model_id = $1`, raw).Scan(&id)
-				if err == nil {
-					resolvedModelIDs = append(resolvedModelIDs, id)
-				} else {
-					resolvedModelIDs = append(resolvedModelIDs, raw)
-				}
+				resolvedModelIDs = append(resolvedModelIDs, raw)
 			}
 		}
 
@@ -408,6 +435,36 @@ func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, provi
 		return repo.Err("menghapus daftar putih provider", err)
 	}
 	if len(providerIDs) > 0 {
+		var providerNames []string
+		for _, raw := range providerIDs {
+			raw = strings.TrimSpace(raw)
+			if raw == "" || isUUID(raw) {
+				continue
+			}
+			providerNames = append(providerNames, raw)
+		}
+
+		providerMap := make(map[string]string, len(providerNames))
+		if len(providerNames) > 0 {
+			rows, err := r.q.Query(ctx, `select name, id::text from providers where name = any($1::text[])`, providerNames)
+			if err != nil {
+				return repo.Err("mencari daftar putih provider", err)
+			}
+			for rows.Next() {
+				var name, id string
+				if err := rows.Scan(&name, &id); err != nil {
+					rows.Close()
+					return repo.Err("memindai daftar putih provider", err)
+				}
+				providerMap[name] = id
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				return repo.Err("iterasi daftar putih provider", err)
+			}
+			rows.Close()
+		}
+
 		resolvedProviderIDs := make([]string, 0, len(providerIDs))
 		for _, raw := range providerIDs {
 			raw = strings.TrimSpace(raw)
@@ -416,14 +473,10 @@ func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, provi
 			}
 			if isUUID(raw) {
 				resolvedProviderIDs = append(resolvedProviderIDs, raw)
+			} else if id, ok := providerMap[raw]; ok {
+				resolvedProviderIDs = append(resolvedProviderIDs, id)
 			} else {
-				var id string
-				err := r.q.QueryRow(ctx, `select id::text from providers where name = $1`, raw).Scan(&id)
-				if err == nil {
-					resolvedProviderIDs = append(resolvedProviderIDs, id)
-				} else {
-					resolvedProviderIDs = append(resolvedProviderIDs, raw)
-				}
+				resolvedProviderIDs = append(resolvedProviderIDs, raw)
 			}
 		}
 

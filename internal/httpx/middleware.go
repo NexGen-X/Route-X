@@ -318,6 +318,8 @@ const (
 		"base-uri 'self'; " +
 		"form-action 'self'; " +
 		"frame-ancestors 'none'; " +
+		"frame-src 'none'; " +
+		"upgrade-insecure-requests; " +
 		"object-src 'none'; " +
 		"script-src 'self'; " +
 		"style-src 'self' 'unsafe-inline'; " +
@@ -352,6 +354,7 @@ func SecurityHeaders(cfg *config.Config) func(http.Handler) http.Handler {
 			h.Set("X-Frame-Options", "DENY")
 			h.Set("Permissions-Policy", permissionsPolicy)
 			h.Set("Cross-Origin-Opener-Policy", "same-origin")
+			h.Set("Cross-Origin-Resource-Policy", "same-origin")
 			h.Set("Content-Security-Policy", cspSPA)
 
 			// HSTS hanya di produksi, dan ini bukan sekadar kerapian.

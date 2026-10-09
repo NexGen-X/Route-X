@@ -49,17 +49,33 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [bRes, lRes, kRes, mRes] = await Promise.all([
+      const [bRes, lRes, kRes, mRes] = await Promise.allSettled([
         api.budgets.list(),
-        api.rateLimits.list().catch(() => ({ items: [] as RateLimit[] })),
-        api.apiKeys.list().catch(() => ({ items: [] as APIKey[] })),
-        api.models.list().catch(() => ({ items: [] as Model[] })),
+        api.rateLimits.list(),
+        api.apiKeys.list(),
+        api.models.list(),
       ]);
-      setBudgets(bRes.items || []);
-      setLimits(lRes.items || []);
-      setApiKeys(kRes.items || []);
-      setModels(mRes.items || []);
-      setLoadError(null);
+
+      if (bRes.status === 'fulfilled' && bRes.value) {
+        setBudgets(bRes.value.items || []);
+      }
+      if (lRes.status === 'fulfilled' && lRes.value) {
+        setLimits(lRes.value.items || []);
+      }
+      if (kRes.status === 'fulfilled' && kRes.value) {
+        setApiKeys(kRes.value.items || []);
+      }
+      if (mRes.status === 'fulfilled' && mRes.value) {
+        setModels(mRes.value.items || []);
+      }
+
+      if (bRes.status === 'rejected') {
+        setLoadError(getErrorMessage(bRes.reason));
+      } else if (lRes.status === 'rejected') {
+        setLoadError(getErrorMessage(lRes.reason));
+      } else {
+        setLoadError(null);
+      }
     } catch (err: unknown) {
       setLoadError(getErrorMessage(err));
     } finally {

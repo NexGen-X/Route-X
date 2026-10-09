@@ -76,6 +76,10 @@ type Metrics struct {
 	WorkerDuration  *prometheus.HistogramVec
 	PoolConnections *prometheus.GaugeVec
 
+	// Metrik saturasi & waktu tunggu pgxpool database
+	DBEmptyAcquireTotal   prometheus.Counter
+	DBAcquireWaitDuration prometheus.Counter
+
 	// UsageRecords dan UsageQueueDepth adalah pertanggungjawaban pencatat pemakaian.
 	// Pencatatan sengaja tidak boleh menggagalkan permintaan, jadi kegagalannya senyap
 	// bagi pengguna — dan tanpa kedua angka ini, gateway bisa berjalan berhari-hari
@@ -201,6 +205,16 @@ func NewMetrics() *Metrics {
 			Help: "Jumlah koneksi pool per backend (postgres, redis) dan state (total, idle, in_use).",
 		}, []string{"backend", "state"}),
 
+		DBEmptyAcquireTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "routex_db_empty_acquire_total",
+			Help: "Jumlah acquire koneksi database yang harus menunggu karena pool kosong.",
+		}),
+
+		DBAcquireWaitDuration: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "routex_db_acquire_wait_seconds_total",
+			Help: "Total waktu kumulatif menunggu acquire koneksi database dalam detik.",
+		}),
+
 		UsageRecords: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "routex_usage_records_total",
 			Help: "Baris pemakaian yang diproses pencatat, dipecah per hasil (written, failed, dropped).",
@@ -219,6 +233,7 @@ func NewMetrics() *Metrics {
 		m.ProviderUp, m.ProviderLatencyMS, m.ProviderAvailability,
 		m.HTTPRequestsTotal, m.HTTPDuration, m.HTTPInFlight,
 		m.WorkerRunsTotal, m.WorkerDuration, m.PoolConnections,
+		m.DBEmptyAcquireTotal, m.DBAcquireWaitDuration,
 		m.UsageRecords, m.UsageQueueDepth,
 	)
 	return m

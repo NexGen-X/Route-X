@@ -359,6 +359,43 @@ func TestAllowsModelAndProvider(t *testing.T) {
 			t.Error("provider di luar daftar putih diizinkan")
 		}
 	})
+
+	t.Run("resolusi batch slug dan nama provider", func(t *testing.T) {
+		created := mustCreate(t, ctx, r, CreateParams{
+			Name: "batch-slugs", OwnerUserID: owner, Live: true,
+			AllowedModelIDs:    []string{"model-a", "model-b"},
+			AllowedProviderIDs: []string{"prov-a", "prov-b"},
+		})
+		if ok, _ := r.AllowsModel(ctx, created.Key.ID, modelA); !ok {
+			t.Error("modelA dari slug seharusnya diizinkan")
+		}
+		if ok, _ := r.AllowsModel(ctx, created.Key.ID, modelB); !ok {
+			t.Error("modelB dari slug seharusnya diizinkan")
+		}
+		if ok, _ := r.AllowsProvider(ctx, created.Key.ID, providerA); !ok {
+			t.Error("providerA dari nama seharusnya diizinkan")
+		}
+		if ok, _ := r.AllowsProvider(ctx, created.Key.ID, providerB); !ok {
+			t.Error("providerB dari nama seharusnya diizinkan")
+		}
+
+		// Uji SetAllowed secara terpisah
+		if err := r.SetAllowed(ctx, created.Key.ID, []string{"model-a"}, []string{"prov-b"}); err != nil {
+			t.Fatalf("SetAllowed gagal: %v", err)
+		}
+		if ok, _ := r.AllowsModel(ctx, created.Key.ID, modelA); !ok {
+			t.Error("modelA seharusnya diizinkan setelah SetAllowed")
+		}
+		if ok, _ := r.AllowsModel(ctx, created.Key.ID, modelB); ok {
+			t.Error("modelB seharusnya ditolak setelah SetAllowed")
+		}
+		if ok, _ := r.AllowsProvider(ctx, created.Key.ID, providerA); ok {
+			t.Error("providerA seharusnya ditolak setelah SetAllowed")
+		}
+		if ok, _ := r.AllowsProvider(ctx, created.Key.ID, providerB); !ok {
+			t.Error("providerB seharusnya diizinkan setelah SetAllowed")
+		}
+	})
 }
 
 func TestCreateRejectsUnknownReference(t *testing.T) {

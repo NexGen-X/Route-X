@@ -118,4 +118,43 @@ describe('ToastContext & ToastNotificationCard', () => {
 
     expect(screen.queryByText('Operasi berhasil!')).not.toBeInTheDocument();
   });
+
+  it('memastikan objek toast dan value provider stabil (memoized) saat toast ditambahkan', () => {
+    let capturedContext1: ReturnType<typeof useToast> | null = null;
+    let capturedContext2: ReturnType<typeof useToast> | null = null;
+
+    const ContextProbe: React.FC<{ round: number }> = ({ round }) => {
+      const ctx = useToast();
+      if (round === 1) capturedContext1 = ctx;
+      if (round === 2) capturedContext2 = ctx;
+      return (
+        <button onClick={() => ctx.toast.success('Pesan')}>Pemicu</button>
+      );
+    };
+
+    const { rerender } = render(
+      <ToastProvider>
+        <ContextProbe round={1} />
+      </ToastProvider>
+    );
+
+    // Memicu penambahan toast (mutasi internal state `toasts`)
+    act(() => {
+      fireEvent.click(screen.getByText('Pemicu'));
+    });
+
+    // Rerender probe untuk menangkap referensi context setelah penambahan toast
+    rerender(
+      <ToastProvider>
+        <ContextProbe round={2} />
+      </ToastProvider>
+    );
+
+    expect(capturedContext1).not.toBeNull();
+    expect(capturedContext2).not.toBeNull();
+    // Memastikan referensi context value dan toast tetap identik (memoized)
+    expect(capturedContext1).toBe(capturedContext2);
+    expect(capturedContext1!.toast).toBe(capturedContext2!.toast);
+    expect(capturedContext1!.showToast).toBe(capturedContext2!.showToast);
+  });
 });

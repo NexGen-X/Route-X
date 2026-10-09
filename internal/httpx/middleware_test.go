@@ -262,12 +262,13 @@ func TestRecoverMeneruskanErrAbortHandler(t *testing.T) {
 
 func TestSecurityHeaders(t *testing.T) {
 	wajib := map[string]string{
-		"X-Content-Type-Options":     "nosniff",
-		"X-Frame-Options":            "DENY",
-		"Referrer-Policy":            "strict-origin-when-cross-origin",
-		"Cross-Origin-Opener-Policy": "same-origin",
-		"Permissions-Policy":         permissionsPolicy,
-		"Content-Security-Policy":    cspSPA,
+		"X-Content-Type-Options":       "nosniff",
+		"X-Frame-Options":              "DENY",
+		"Referrer-Policy":              "strict-origin-when-cross-origin",
+		"Cross-Origin-Opener-Policy":   "same-origin",
+		"Cross-Origin-Resource-Policy": "same-origin",
+		"Permissions-Policy":           permissionsPolicy,
+		"Content-Security-Policy":      cspSPA,
 	}
 
 	for _, tc := range []struct {
@@ -292,7 +293,7 @@ func TestSecurityHeaders(t *testing.T) {
 					t.Errorf("header %s = %q, want %q", name, got, want)
 				}
 			}
-			for _, direktif := range []string{"default-src 'self'", "frame-ancestors 'none'", "object-src 'none'"} {
+			for _, direktif := range []string{"default-src 'self'", "frame-ancestors 'none'", "frame-src 'none'", "upgrade-insecure-requests", "object-src 'none'"} {
 				if !strings.Contains(rec.Header().Get("Content-Security-Policy"), direktif) {
 					t.Errorf("CSP tidak memuat %q", direktif)
 				}
@@ -316,6 +317,9 @@ func TestSecurityHeadersMenerimaConfigNil(t *testing.T) {
 
 	if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Error("header dasar hilang saat cfg nil")
+	}
+	if rec.Header().Get("Cross-Origin-Resource-Policy") != "same-origin" {
+		t.Error("Cross-Origin-Resource-Policy hilang saat cfg nil")
 	}
 	if rec.Header().Get("Strict-Transport-Security") != "" {
 		t.Error("cfg nil harus diperlakukan sebagai non-produksi")

@@ -22,6 +22,9 @@ import (
 // DefaultTTL bawaan untuk entri cache respons (1 jam).
 const DefaultTTL = 1 * time.Hour
 
+// DefaultStatsTTL bawaan untuk metrik statistik cache respons (30 hari).
+const DefaultStatsTTL = 30 * 24 * time.Hour
+
 // Entry adalah satu respons inferensi yang disimpan di Redis.
 type Entry struct {
 	Model string `json:"model"`
@@ -214,7 +217,8 @@ func (e *Engine) Flush(ctx context.Context) (int64, error) {
 		return 0, nil
 	}
 
-	pattern := cache.Key(cache.NamespaceResponseCache, "entry", "*")
+	pattern := cache.Key(cache.NamespaceResponseCache, "entry") + ":*"
+	entryCountKey := cache.Key(cache.NamespaceResponseCache, "meta", "entry_count")
 	client := e.redis.Client()
 
 	var deletedCount int64
@@ -240,6 +244,9 @@ func (e *Engine) Flush(ctx context.Context) (int64, error) {
 		}
 	}
 
+	// Reset counter ringkas entry_count setelah flush berhasil
+	_ = client.Del(ctx, entryCountKey)
+
 	return deletedCount, nil
 }
 
@@ -256,25 +263,38 @@ func (e *Engine) Stats(ctx context.Context) (Stats, error) {
 	client := e.redis.Client()
 	hitsKey := cache.Key(cache.NamespaceResponseCache, "stats", "hits")
 	missesKey := cache.Key(cache.NamespaceResponseCache, "stats", "misses")
+	entryCountKey := cache.Key(cache.NamespaceResponseCache, "meta", "entry_count")
 
-	// AUDIT FIX: kegagalan baca counter tidak lagi ditelan diam-diam — nilai nol
-	// palsu membuat dashboard menampilkan statistik kosong tanpa petunjuk penyebab.
-	hits, err := client.Get(ctx, hitsKey).Int64()
+	// Pipelining pembacaan hits, misses, dan counter ringkas entry_count dalam 1 round-trip
+	pipe := client.Pipeline()
+	hitsCmd := pipe.Get(ctx, hitsKey)
+	missesCmd := pipe.Get(ctx, missesKey)
+	entryCountCmd := pipe.Get(ctx, entryCountKey)
+	_, _ = pipe.Exec(ctx)
+
+	hits, err := hitsCmd.Int64()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		e.logger.WarnContext(ctx, "gagal membaca counter hits response cache", "error", err)
 	}
-	misses, err := client.Get(ctx, missesKey).Int64()
+	misses, err := missesCmd.Int64()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		e.logger.WarnContext(ctx, "gagal membaca counter misses response cache", "error", err)
 	}
 	s.Hits = hits
 	s.Misses = misses
 
-	pattern := cache.Key(cache.NamespaceResponseCache, "entry", "*")
+	// Bila counter ringkas meta:entry_count tersedia, langsung gunakan (O(1)) tanpa SCAN O(N).
+	if entryCount, err := entryCountCmd.Int64(); err == nil && entryCount >= 0 {
+		s.TotalEntries = entryCount
+		return s, nil
+	}
+
+	// Fallback ke pipeline SCAN teroptimasi (batch 500) bila counter ringkas belum ada.
+	pattern := cache.Key(cache.NamespaceResponseCache, "entry") + ":*"
 	var count int64
 	var cursor uint64
 	for {
-		keys, next, err := client.Scan(ctx, cursor, pattern, 200).Result()
+		keys, next, err := client.Scan(ctx, cursor, pattern, 500).Result()
 		if err != nil {
 			// AUDIT FIX: log kegagalan SCAN; TotalEntries bisa jadi under-count.
 			e.logger.WarnContext(ctx, "gagal scan kunci entry response cache", "error", err)
@@ -296,7 +316,13 @@ func (e *Engine) recordStat(ctx context.Context, metric string) {
 		return
 	}
 	key := cache.Key(cache.NamespaceResponseCache, "stats", metric)
-	if err := e.redis.Client().Incr(ctx, key).Err(); err != nil {
+	client := e.redis.Client()
+
+	// Pasang TTL 30 hari via pipeline agar counter statistik tidak tersimpan selamanya di Redis.
+	pipe := client.Pipeline()
+	pipe.Incr(ctx, key)
+	pipe.Expire(ctx, key, DefaultStatsTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
 		// AUDIT FIX: gagal Incr tidak lagi senyap; hit/miss statistic bisa meleset
 		// tanpa jejak. Warning sekali per kejadian cukup — jangan banjiri log.
 		e.logger.WarnContext(ctx, "gagal menaikkan counter response cache", "metric", metric, "error", err)

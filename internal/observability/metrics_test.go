@@ -48,6 +48,8 @@ func TestNewMetricsRegistersEverything(t *testing.T) {
 	m.WorkerRunsTotal.WithLabelValues("health_checker", "success").Inc()
 	m.WorkerDuration.WithLabelValues("health_checker").Observe(0.4)
 	m.PoolConnections.WithLabelValues("postgres", "idle").Set(5)
+	m.DBEmptyAcquireTotal.Inc()
+	m.DBAcquireWaitDuration.Add(1.234)
 	m.UsageRecords.WithLabelValues("written").Inc()
 	m.UsageQueueDepth.Set(12)
 
@@ -72,6 +74,8 @@ func TestNewMetricsRegistersEverything(t *testing.T) {
 		"routex_worker_runs_total",
 		"routex_worker_duration_seconds",
 		"routex_pool_connections",
+		"routex_db_empty_acquire_total",
+		"routex_db_acquire_wait_seconds_total",
 		"routex_gateway_upstream_failures_total",
 		"routex_provider_availability_ratio",
 		"routex_usage_records_total",
@@ -148,5 +152,21 @@ func TestBreakerStateValues(t *testing.T) {
 	if BreakerClosed != 0 || BreakerHalfOpen != 1 || BreakerOpen != 2 {
 		t.Errorf("nilai state breaker berubah: closed=%d half_open=%d open=%d",
 			BreakerClosed, BreakerHalfOpen, BreakerOpen)
+	}
+}
+
+// TestDBPoolMetrics memverifikasi bahwa counter pgxpool terdaftar dan dapat di-increment dengan benar.
+func TestDBPoolMetrics(t *testing.T) {
+	m := NewMetrics()
+
+	m.DBEmptyAcquireTotal.Add(5)
+	m.DBAcquireWaitDuration.Add(2.5)
+
+	body := scrape(t, m)
+	if !strings.Contains(body, "routex_db_empty_acquire_total 5") {
+		t.Errorf("routex_db_empty_acquire_total tidak tertera 5, dapat:\n%s", body)
+	}
+	if !strings.Contains(body, "routex_db_acquire_wait_seconds_total 2.5") {
+		t.Errorf("routex_db_acquire_wait_seconds_total tidak tertera 2.5, dapat:\n%s", body)
 	}
 }

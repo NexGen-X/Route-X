@@ -91,7 +91,7 @@ export const matchPresetForProvider = (
  */
 export const matchExistingProvider = (
   preset: KnownProviderPreset | null,
-  providersList: Provider[]
+  providersList: (Provider | null | undefined)[]
 ): Provider | null => {
   if (!preset || !providersList || !Array.isArray(providersList) || providersList.length === 0) return null;
 

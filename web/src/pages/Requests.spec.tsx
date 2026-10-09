@@ -136,7 +136,7 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     render(<Requests />);
 
     await waitFor(() => {
-      expect(mockListFn).toHaveBeenCalled();
+      expect(screen.getAllByText('req-uuid-1').length).toBeGreaterThan(0);
     });
 
     // Cek header dan filter tabs
@@ -146,7 +146,6 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     expect(screen.getByText('Errors (4xx/5xx)')).toBeInTheDocument();
 
     // Verifikasi baris request tampil di desktop & mobile
-    expect(screen.getAllByText('req-uuid-1').length).toBeGreaterThan(0);
     expect(screen.getAllByText('req-uuid-2').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gpt-4o').length).toBeGreaterThan(0);
     expect(screen.getAllByText('claude-3-5-sonnet').length).toBeGreaterThan(0);
@@ -157,13 +156,11 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     render(<Requests />);
 
     await waitFor(() => {
-      expect(mockListFn).toHaveBeenCalled();
+      expect(screen.getByText('Tidak ada catatan permintaan')).toBeInTheDocument();
+      expect(
+        screen.getByText(/Belum ada permintaan inferensi yang cocok/i)
+      ).toBeInTheDocument();
     });
-
-    expect(screen.getByText('Tidak ada catatan permintaan')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Belum ada permintaan inferensi yang cocok/i)
-    ).toBeInTheDocument();
   });
 
   it('menangani filter tab (Success, Errors, All) dan pencarian teks', async () => {
@@ -226,10 +223,12 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     expect(mockPayloadFn).toHaveBeenCalledWith('req-1', MOCK_REQUEST_SUCCESS.created_at);
 
     // Verifikasi Quick Metrics dalam modal
-    expect(screen.getByText('Total Durasi')).toBeInTheDocument();
-    expect(screen.getByText('Waterfall Latensi Inferensi')).toBeInTheDocument();
-    expect(screen.getByText('upstream_attempt')).toBeInTheDocument();
-    expect(screen.getByText('stream_chunk')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Total Durasi')).toBeInTheDocument();
+      expect(screen.getByText('Waterfall Latensi Inferensi')).toBeInTheDocument();
+      expect(screen.getByText('upstream_attempt')).toBeInTheDocument();
+      expect(screen.getByText('stream_chunk')).toBeInTheDocument();
+    });
   });
 
   it('menangani aksi salin perintah cURL dan menampilkan isi JSON payload', async () => {
@@ -358,7 +357,7 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     fireEvent.click(retryBtn);
 
     await waitFor(() => {
-      expect(screen.getByText('req-uuid-1')).toBeInTheDocument();
+      expect(screen.getAllByText('req-uuid-1').length).toBeGreaterThan(0);
     });
   });
 

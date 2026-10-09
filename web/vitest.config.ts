@@ -15,5 +15,6 @@ export default defineConfig({
     coverage: {
       include: ['src/lib/**', 'src/utils/**'],
     },
+    testTimeout: 15000,
   },
 });

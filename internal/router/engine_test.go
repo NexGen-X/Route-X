@@ -296,3 +296,82 @@ func TestOrderCandidatesMembuangYangTidakSanggup(t *testing.T) {
 		t.Errorf("urutan = %v, mau %v — kandidat tanpa tools harus dibuang", nama(got), mau)
 	}
 }
+
+// TestEngineRouteWeightedPembaruanBobotKonkuren memverifikasi bahwa pembaruan bobot
+// (weighted routing) secara konkuren di goroutine tidak memicu race condition.
+// Sejumlah goroutine terus melakukan routing dengan StrategyWeighted sementara goroutine
+// lain secara bersamaan memperbarui konfigurasi bobot provider pada aturan dan
+// memanggil Invalidate untuk memicu pemuatan ulang cache.
+func TestEngineRouteWeightedPembaruanBobotKonkuren(t *testing.T) {
+	modelID := "m-weighted-test"
+	bikinAturan := func(bobotAlpha, bobotBravo int) []*upstream.RoutingRule {
+		r := baris("aturan-weighted", 10, StrategyWeighted, func(rule *upstream.RoutingRule) {
+			rule.MatchModelID = &modelID
+			rule.Providers = []upstream.RuleProvider{
+				{ProviderID: "prov-alpha", Position: 1, Weight: ptr(bobotAlpha)},
+				{ProviderID: "prov-bravo", Position: 2, Weight: ptr(bobotBravo)},
+			}
+		})
+		return []*upstream.RoutingRule{r}
+	}
+
+	src := &sumberAturan{rows: bikinAturan(10, 90)}
+	e := NewEngine(src, NewSelector(), nil, WithRuleTTL(10*time.Millisecond))
+
+	cands := []*upstream.RouteCandidate{
+		kandidat("alpha", 1, 10),
+		kandidat("bravo", 1, 10),
+	}
+
+	const pekerja = 16
+	const durasi = 150 * time.Millisecond
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Goroutine pembaruan bobot (writer)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		bobotA, bobotB := 10, 90
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				bobotA, bobotB = bobotB, bobotA // tukar bobot secara dinamis
+				src.ganti(bikinAturan(bobotA, bobotB), nil)
+				e.Invalidate()
+			}
+		}
+	}()
+
+	// Goroutine pembaca routing (readers)
+	for i := 0; i < pekerja; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					dec := e.Route(context.Background(), Request{ModelID: modelID}, cands)
+					if dec.Rule == nil {
+						t.Errorf("Rule tidak boleh nil")
+						return
+					}
+					if len(dec.Candidates) != 2 {
+						t.Errorf("jumlah kandidat = %d, mau 2", len(dec.Candidates))
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	time.Sleep(durasi)
+	close(stop)
+	wg.Wait()
+}

@@ -37,6 +37,7 @@ import { ProfileSecurityScreen } from './src/screens/ProfileSecurityScreen';
 
 export type ScreenId =
   | 'home'
+  | 'login'
   | 'providers'
   | 'routing'
   | 'apikeys'
@@ -88,6 +89,61 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, Er
             <Text style={styles.retryButtonText}>Muat Ulang Antarmuka</Text>
           </TouchableOpacity>
         </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+interface ScreenErrorBoundaryProps {
+  screenId: ScreenId | 'login';
+  children: React.ReactNode;
+  onNavigateHome: () => void;
+}
+
+class ScreenErrorBoundary extends React.Component<ScreenErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ScreenErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error(`Route-X Screen [${this.props.screenId}] Error:`, error, errorInfo);
+  }
+
+  componentDidUpdate(prevProps: ScreenErrorBoundaryProps) {
+    if (prevProps.screenId !== this.props.screenId && this.state.hasError) {
+      this.setState({ hasError: false, error: undefined });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.screenErrorContainer}>
+          <Text style={styles.screenErrorTitle}>Gagal Memuat Layar</Text>
+          <Text style={styles.screenErrorMessage}>
+            {this.state.error?.message || 'Layanan upstream atau komponen layar ini mengalami kesalahan.'}
+          </Text>
+          <View style={styles.screenErrorActionRow}>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => this.setState({ hasError: false, error: undefined })}
+            >
+              <Text style={styles.retryButtonText}>Coba Lagi</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.retryButton, styles.homeButton]}
+              onPress={this.props.onNavigateHome}
+            >
+              <Text style={styles.homeButtonText}>Kembali ke Beranda</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       );
     }
     return this.props.children;
@@ -264,7 +320,9 @@ function MainApp(): React.JSX.Element {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="light-content" backgroundColor={colors.bgBase} />
-        <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />
+        <ScreenErrorBoundary screenId="login" onNavigateHome={() => {}}>
+          <LoginScreen onLoginSuccess={() => setIsAuthenticated(true)} />
+        </ScreenErrorBoundary>
       </SafeAreaView>
     );
   }
@@ -277,7 +335,12 @@ function MainApp(): React.JSX.Element {
       />
 
       <View style={styles.container}>
-        {renderActiveScreen()}
+        <ScreenErrorBoundary
+          screenId={currentScreen}
+          onNavigateHome={handleBackToHome}
+        >
+          {renderActiveScreen()}
+        </ScreenErrorBoundary>
 
         <BottomNav
           activeTab={activeTab}
@@ -357,11 +420,50 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 20,
     paddingVertical: 12,
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   retryButtonText: {
     color: colors.accentPrimary,
     fontSize: 14,
     fontWeight: '700',
+  },
+  screenErrorContainer: {
+    flex: 1,
+    backgroundColor: colors.bgCanvas,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  screenErrorTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.accentPrimary,
+    marginBottom: 8,
+  },
+  screenErrorMessage: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 18,
+  },
+  screenErrorActionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  homeButton: {
+    borderColor: colors.border,
+    backgroundColor: colors.bgSurface,
+  },
+  homeButtonText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
   },
   loadingContainer: {
     flex: 1,

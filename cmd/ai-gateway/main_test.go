@@ -340,3 +340,18 @@ func TestMetricsAndDocsRequireAuthWhenAuthSvcEnabled(t *testing.T) {
 		t.Errorf("status /docs/openapi.yaml tanpa sesi = %d, mau 401", recYAML.Code)
 	}
 }
+
+// TestRootRouterCORSIsolation memverifikasi bahwa root router tidak lagi memantulkan header CORS
+// sehingga endpoint sistem/admin terlindungi dari cross-origin browser abuse (P2-1).
+func TestRootRouterCORSIsolation(t *testing.T) {
+	r := newTestRouter(t, testConfig(config.EnvDevelopment), okChecker("postgres"))
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.Header.Set("Origin", "https://malicious-site.example.com")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("root router memantulkan Access-Control-Allow-Origin = %q; seharusnya kosong (isolasi CORS)", got)
+	}
+}

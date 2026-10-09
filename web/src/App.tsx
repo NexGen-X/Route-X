@@ -6,6 +6,7 @@ import { Header } from './components/layout/Header';
 import { Login } from './pages/Login';
 import { ChangePassword } from './pages/ChangePassword';
 import { PageErrorBoundary } from './components/common/PageErrorBoundary';
+import { WidgetErrorBoundary } from './components/common/WidgetErrorBoundary';
 import { CommandPalette } from './components/common/CommandPalette';
 import { Loader2 } from 'lucide-react';
 
@@ -72,11 +73,19 @@ const Shell: React.FC = () => {
   }
 
   if (!principal || !user) {
-    return <Login />;
+    return (
+      <PageErrorBoundary pageName="Masuk (Login)">
+        <Login />
+      </PageErrorBoundary>
+    );
   }
 
   if (user.must_change_password) {
-    return <ChangePassword />;
+    return (
+      <PageErrorBoundary pageName="Ganti Kata Sandi">
+        <ChangePassword />
+      </PageErrorBoundary>
+    );
   }
 
   const getPageInfo = (): { title: string; content: React.ReactNode } => {
@@ -194,18 +203,22 @@ const Shell: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-bg-base flex">
-      <Sidebar
-        currentPath={currentPath}
-        onNavigate={navigate}
-        isMobileOpen={isMobileOpen}
-        setIsMobileOpen={setIsMobileOpen}
-      />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header
-          title={title}
-          onOpenMobileMenu={() => setIsMobileOpen(true)}
-          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+      <WidgetErrorBoundary title="Navigasi Sidebar" className="m-2 rounded-xl">
+        <Sidebar
+          currentPath={currentPath}
+          onNavigate={navigate}
+          isMobileOpen={isMobileOpen}
+          setIsMobileOpen={setIsMobileOpen}
         />
+      </WidgetErrorBoundary>
+      <div className="flex-1 flex flex-col min-w-0">
+        <WidgetErrorBoundary title="Header Panel" className="m-2 rounded-xl">
+          <Header
+            title={title}
+            onOpenMobileMenu={() => setIsMobileOpen(true)}
+            onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          />
+        </WidgetErrorBoundary>
         <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
           <PageErrorBoundary key={currentPath} pageName={title}>
             <React.Suspense
@@ -221,11 +234,13 @@ const Shell: React.FC = () => {
           </PageErrorBoundary>
         </main>
       </div>
-      <CommandPalette
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        onNavigate={navigate}
-      />
+      <WidgetErrorBoundary title="Command Palette">
+        <CommandPalette
+          isOpen={isCommandPaletteOpen}
+          onClose={() => setIsCommandPaletteOpen(false)}
+          onNavigate={navigate}
+        />
+      </WidgetErrorBoundary>
     </div>
   );
 };

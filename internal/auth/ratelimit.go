@@ -35,12 +35,13 @@ const (
 // sama-sama menganggap kunci itu baru, dan lebih buruk, sebuah proses yang mati di antara
 // INCR dan EXPIRE meninggalkan penghitung tanpa masa berlaku — yang berarti akun atau
 // alamat itu terkunci selamanya sampai ada yang menghapus kuncinya dengan tangan.
+// Pengecekan PTTL < 0 menjamin kunci yang kehilangan TTL otomatis dipulihkan masa berlakunya.
 //
 // PTTL diambil di dalam skrip yang sama supaya nilai Retry-After yang dikirim ke klien
 // benar-benar sisa umur jendela ini, bukan lebar jendela penuh yang selalu terlalu lama.
 var loginCounterScript = cache.NewScript(`
 local hits = redis.call('INCR', KEYS[1])
-if hits == 1 then
+if hits == 1 or redis.call('PTTL', KEYS[1]) < 0 then
 	redis.call('PEXPIRE', KEYS[1], ARGV[1])
 end
 return {hits, redis.call('PTTL', KEYS[1])}

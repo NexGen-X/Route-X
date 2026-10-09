@@ -218,7 +218,10 @@ func (c *GoogleOAuthClient) ExchangeAuthCodeWithProxy(
 		return nil, fmt.Errorf("server oauth google menolak kode: %s", errMsg)
 	}
 
-	email, name := parseIDTokenClaims(res.IDToken)
+	email, name, err := parseIDTokenClaims(res.IDToken, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("validasi id_token google: %w", err)
+	}
 	var scopes []string
 	if res.Scope != "" {
 		scopes = strings.Fields(res.Scope)
@@ -319,14 +322,19 @@ func (c *GoogleOAuthClient) RefreshAccessTokenWithProxy(
 	}, nil
 }
 
-// parseIDTokenClaims mengekstrak email dan nama dari JWT id_token Google secara aman tanpa dependensi eksternal.
-func parseIDTokenClaims(idToken string) (string, string) {
+// parseIDTokenClaims mengekstrak dan memvalidasi klausa JWT id_token Google secara aman tanpa dependensi eksternal.
+// Memvalidasi:
+// - Issuer (iss) wajib https://accounts.google.com atau accounts.google.com (jika ada).
+// - Audience (aud) wajib cocok dengan expectedClientID (jika expectedClientID diberikan).
+// - Expiry (exp) wajib belum kadaluarsa dengan toleransi clock skew 60 detik (jika ada).
+// - Email verified (email_verified) wajib bernilai true bila klausa tersebut ada.
+func parseIDTokenClaims(idToken string, expectedClientID ...string) (string, string, error) {
 	if idToken == "" {
-		return "", ""
+		return "", "", nil
 	}
 	parts := strings.Split(idToken, ".")
 	if len(parts) < 2 {
-		return "", ""
+		return "", "", errors.New("format id_token tidak valid: token bukan JWT")
 	}
 
 	payloadRaw, err := base64.RawURLEncoding.DecodeString(parts[1])
@@ -334,16 +342,79 @@ func parseIDTokenClaims(idToken string) (string, string) {
 		// Coba base64 standard dengan padding jika raw gagal
 		payloadRaw, err = base64.URLEncoding.DecodeString(parts[1])
 		if err != nil {
-			return "", ""
+			return "", "", fmt.Errorf("dekode payload id_token gagal: %w", err)
 		}
 	}
 
 	var claims struct {
-		Email string `json:"email"`
-		Name  string `json:"name"`
+		Iss           string          `json:"iss"`
+		Aud           json.RawMessage `json:"aud"`
+		Exp           int64           `json:"exp"`
+		Email         string          `json:"email"`
+		EmailVerified any             `json:"email_verified"`
+		Name          string          `json:"name"`
 	}
 	if err := json.Unmarshal(payloadRaw, &claims); err != nil {
-		return "", ""
+		return "", "", fmt.Errorf("uraian json klausa id_token gagal: %w", err)
 	}
-	return claims.Email, claims.Name
+
+	// 1. Validasi Issuer (iss) jika ada
+	if claims.Iss != "" && claims.Iss != "https://accounts.google.com" && claims.Iss != "accounts.google.com" {
+		return "", "", fmt.Errorf("issuer id_token tidak valid: %s", claims.Iss)
+	}
+
+	// 2. Validasi Audience (aud) jika expectedClientID diberikan
+	var targetClient string
+	if len(expectedClientID) > 0 {
+		targetClient = expectedClientID[0]
+	}
+	if targetClient != "" {
+		if len(claims.Aud) == 0 {
+			return "", "", errors.New("klausa aud id_token kosong atau tidak ada")
+		}
+		var audStr string
+		var audArr []string
+		matched := false
+		if err := json.Unmarshal(claims.Aud, &audStr); err == nil {
+			matched = (audStr == targetClient)
+		} else if err := json.Unmarshal(claims.Aud, &audArr); err == nil {
+			for _, a := range audArr {
+				if a == targetClient {
+					matched = true
+					break
+				}
+			}
+		} else {
+			return "", "", errors.New("format klausa aud id_token tidak valid")
+		}
+		if !matched {
+			return "", "", fmt.Errorf("aud id_token tidak cocok dengan expected client ID %q", targetClient)
+		}
+	}
+
+	// 3. Validasi Expiry (exp) jika ada (toleransi 60s clock skew: exp >= now - 60s)
+	if claims.Exp > 0 {
+		now := time.Now().Unix()
+		if claims.Exp < (now - 60) {
+			return "", "", fmt.Errorf("id_token telah kadaluarsa (exp: %d, now: %d)", claims.Exp, now)
+		}
+	}
+
+	// 4. Validasi Email Verified jika ada klausa tersebut
+	if claims.EmailVerified != nil {
+		switch v := claims.EmailVerified.(type) {
+		case bool:
+			if !v {
+				return "", "", errors.New("email id_token belum diverifikasi oleh Google")
+			}
+		case string:
+			if strings.ToLower(v) != "true" {
+				return "", "", errors.New("email id_token belum diverifikasi oleh Google")
+			}
+		default:
+			return "", "", errors.New("format klausa email_verified tidak valid")
+		}
+	}
+
+	return claims.Email, claims.Name, nil
 }

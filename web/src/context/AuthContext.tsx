@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { api, setCsrfToken, ApiError } from '../api/client';
 import type { Principal, User } from '../types';
 
@@ -11,6 +11,20 @@ interface AuthContextType {
   refresh: () => Promise<void>;
   can: (perm: string) => boolean;
   hasRole: (role: string) => boolean;
+}
+
+interface AuthResponse extends Partial<Principal> {
+  principal?: Principal;
+  csrf_token?: string;
+}
+
+function extractHttpStatus(err: unknown): number | undefined {
+  if (err instanceof ApiError) return err.status;
+  if (typeof err === 'object' && err !== null && 'status' in err) {
+    const s = (err as Record<string, unknown>).status;
+    if (typeof s === 'number') return s;
+  }
+  return undefined;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -26,25 +40,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refresh = useCallback(async () => {
     try {
-      const res: any = await api.auth.me();
+      const res = (await api.auth.me()) as AuthResponse;
       if (!mountedRef.current) return;
       if (res) {
-        const p: Principal = res.principal || res;
+        const p: Principal = (res.principal || res) as Principal;
         if (!p.session_id && p.session?.id) {
           p.session_id = p.session.id;
         }
-        if ((res as any).csrf_token) {
-          setCsrfToken((res as any).csrf_token);
+        if (res.csrf_token) {
+          setCsrfToken(res.csrf_token);
         }
         setPrincipal(p);
         refreshRetriedRef.current = false;
       } else {
         setPrincipal(null);
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (!mountedRef.current) return;
       // Hanya 401 yang berarti sesi benar-benar mati -> logout.
-      const status = err instanceof ApiError ? err.status : (err as any)?.status;
+      const status = extractHttpStatus(err);
       if (status === 401) {
         setPrincipal(null);
       } else if (!refreshRetriedRef.current) {
@@ -82,19 +96,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [refresh]);
 
-  const login = async (email: string, pass: string, keep = false) => {
-    const res: any = await api.auth.login({ email, password: pass, keep_signed_in: keep });
-    const p: Principal = res.principal || res;
+  const login = useCallback(async (email: string, pass: string, keep = false) => {
+    const res = (await api.auth.login({ email, password: pass, keep_signed_in: keep })) as AuthResponse;
+    const p: Principal = (res.principal || res) as Principal;
     if (!p.session_id && p.session?.id) {
       p.session_id = p.session.id;
     }
-    if ((res as any).csrf_token) {
-      setCsrfToken((res as any).csrf_token);
+    if (res.csrf_token) {
+      setCsrfToken(res.csrf_token);
     }
     setPrincipal(p);
-  };
+  }, []);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await api.auth.logout();
     } finally {
@@ -102,31 +116,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCsrfToken('');
       window.location.hash = '#/login';
     }
-  };
+  }, []);
 
-  const can = (_perm: string): boolean => {
+  const can = useCallback((_perm: string): boolean => {
     // Single-admin architecture: all authenticated principals have full access.
     return !!principal;
-  };
+  }, [principal]);
 
-  const hasRole = (_role: string): boolean => {
+  const hasRole = useCallback((_role: string): boolean => {
     // Single-admin architecture: all authenticated principals have full admin rights.
     return !!principal;
-  };
+  }, [principal]);
+
+  const user = useMemo(() => principal?.user || null, [principal]);
+
+  const value = useMemo<AuthContextType>(
+    () => ({
+      principal,
+      user,
+      isLoading,
+      login,
+      logout,
+      refresh,
+      can,
+      hasRole,
+    }),
+    [principal, user, isLoading, login, logout, refresh, can, hasRole]
+  );
 
   return (
-    <AuthContext.Provider
-      value={{
-        principal,
-        user: principal?.user || null,
-        isLoading,
-        login,
-        logout,
-        refresh,
-        can,
-        hasRole,
-      }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

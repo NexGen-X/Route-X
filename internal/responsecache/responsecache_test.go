@@ -3,10 +3,16 @@ package responsecache
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
+
+	"github.com/NexGen-X/Route-X/internal/cache"
+	"github.com/NexGen-X/Route-X/internal/config"
 	"github.com/NexGen-X/Route-X/internal/providers"
+	"github.com/NexGen-X/Route-X/internal/security"
 )
 
 func TestComputeKey(t *testing.T) {
@@ -206,5 +212,125 @@ func TestComputeScopedKeyIsolasiPemilik(t *testing.T) {
 	// ada tetap bisa dibaca setelah deploy.
 	if got := e.ComputeScopedKey(req(), Scope{}); got != e.ComputeKey(req()) {
 		t.Error("scope kosong harus menghasilkan kunci yang sama dengan ComputeKey lama")
+	}
+}
+
+func newTestEngine(t *testing.T) (*Engine, *miniredis.Miniredis) {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb, err := cache.Connect(context.Background(), &config.Config{
+		AppEnv:   config.EnvDevelopment,
+		RedisURL: security.Secret("redis://" + mr.Addr()),
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("cache.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	return NewEngine(rdb, slog.New(slog.DiscardHandler)), mr
+}
+
+// TestRecordStatTTL memverifikasi bahwa counter statistik hits dan misses
+// diberi TTL 30 hari (DefaultStatsTTL) dan tidak tersimpan abadi di Redis.
+func TestRecordStatTTL(t *testing.T) {
+	e, mr := newTestEngine(t)
+	ctx := context.Background()
+
+	e.recordStat(ctx, "hits")
+	e.recordStat(ctx, "misses")
+
+	hitsKey := cache.Key(cache.NamespaceResponseCache, "stats", "hits")
+	missesKey := cache.Key(cache.NamespaceResponseCache, "stats", "misses")
+
+	for _, key := range []string{hitsKey, missesKey} {
+		ttl := mr.TTL(key)
+		if ttl <= 0 {
+			t.Errorf("kunci statistik %q tidak memiliki TTL (ttl = %v)", key, ttl)
+		}
+		if ttl > DefaultStatsTTL {
+			t.Errorf("kunci statistik %q TTL = %v melebihi DefaultStatsTTL %v", key, ttl, DefaultStatsTTL)
+		}
+	}
+
+	val, err := mr.Get(hitsKey)
+	if err != nil || val != "1" {
+		t.Errorf("hits counter = %q, err = %v, mau \"1\"", val, err)
+	}
+	val, err = mr.Get(missesKey)
+	if err != nil || val != "1" {
+		t.Errorf("misses counter = %q, err = %v, mau \"1\"", val, err)
+	}
+}
+
+// TestStatsWithEntryCount memverifikasi pembacaan counter ringkas meta:entry_count secara O(1).
+func TestStatsWithEntryCount(t *testing.T) {
+	e, mr := newTestEngine(t)
+	ctx := context.Background()
+
+	e.recordStat(ctx, "hits")
+	e.recordStat(ctx, "hits")
+	e.recordStat(ctx, "misses")
+
+	entryCountKey := cache.Key(cache.NamespaceResponseCache, "meta", "entry_count")
+	if err := mr.Set(entryCountKey, "42"); err != nil {
+		t.Fatalf("gagal menyetel entry_count: %v", err)
+	}
+
+	stats, err := e.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats error: %v", err)
+	}
+
+	if stats.Hits != 2 {
+		t.Errorf("Hits = %d, mau 2", stats.Hits)
+	}
+	if stats.Misses != 1 {
+		t.Errorf("Misses = %d, mau 1", stats.Misses)
+	}
+	if stats.TotalEntries != 42 {
+		t.Errorf("TotalEntries = %d, mau 42", stats.TotalEntries)
+	}
+}
+
+// TestStatsWithScanFallback memverifikasi pemindaian SCAN O(N) teroptimasi ketika counter ringkas tidak ada.
+func TestStatsWithScanFallback(t *testing.T) {
+	e, _ := newTestEngine(t)
+	ctx := context.Background()
+
+	// Simpan dua entri cache
+	entry := &Entry{Model: "gpt-4o", Raw: json.RawMessage(`{"text":"ok"}`)}
+	if err := e.Set(ctx, "sig1", entry); err != nil {
+		t.Fatalf("Set sig1: %v", err)
+	}
+	if err := e.Set(ctx, "sig2", entry); err != nil {
+		t.Fatalf("Set sig2: %v", err)
+	}
+
+	stats, err := e.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats error: %v", err)
+	}
+
+	if stats.TotalEntries != 2 {
+		t.Errorf("TotalEntries = %d, mau 2", stats.TotalEntries)
+	}
+}
+
+// TestFlushResetsEntryCount memverifikasi bahwa Flush mereset counter ringkas entry_count.
+func TestFlushResetsEntryCount(t *testing.T) {
+	e, mr := newTestEngine(t)
+	ctx := context.Background()
+
+	entryCountKey := cache.Key(cache.NamespaceResponseCache, "meta", "entry_count")
+	if err := mr.Set(entryCountKey, "10"); err != nil {
+		t.Fatalf("mr.Set: %v", err)
+	}
+
+	if _, err := e.Flush(ctx); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	if mr.Exists(entryCountKey) {
+		t.Errorf("entry_count masih ada setelah Flush")
 	}
 }

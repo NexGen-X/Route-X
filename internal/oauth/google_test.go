@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestExtractCode(t *testing.T) {
@@ -57,18 +59,200 @@ func TestParseIDTokenClaims(t *testing.T) {
 	payload := base64.RawURLEncoding.EncodeToString(claimsJSON)
 	fakeJWT := fmt.Sprintf("%s.%s.fakeSignature", header, payload)
 
-	email, name := parseIDTokenClaims(fakeJWT)
+	email, name, err := parseIDTokenClaims(fakeJWT)
+	if err != nil {
+		t.Fatalf("parseIDTokenClaims gagal: %v", err)
+	}
 	if email != "developer@antigravity.test" {
 		t.Errorf("email = %q, ingin %q", email, "developer@antigravity.test")
 	}
 	if name != "Antigravity Dev" {
 		t.Errorf("name = %q, ingin %q", name, "Antigravity Dev")
 	}
+
+	// Sub-pengujian validasi klausa standar Google
+	now := time.Now().Unix()
+
+	t.Run("Valid with standard Google claims", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"iss":            "https://accounts.google.com",
+			"aud":            "my-client-id.apps.googleusercontent.com",
+			"exp":            now + 3600,
+			"email":          "user@gmail.com",
+			"email_verified": true,
+			"name":           "Verified User",
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		em, nm, err := parseIDTokenClaims(jwt, "my-client-id.apps.googleusercontent.com")
+		if err != nil {
+			t.Fatalf("seharusnya valid, tetapi error: %v", err)
+		}
+		if em != "user@gmail.com" || nm != "Verified User" {
+			t.Errorf("email=%q, name=%q", em, nm)
+		}
+	})
+
+	t.Run("Valid with alternative accounts.google.com issuer", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"iss":            "accounts.google.com",
+			"aud":            "client-123",
+			"exp":            now + 100,
+			"email":          "alt@gmail.com",
+			"email_verified": true,
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		em, _, err := parseIDTokenClaims(jwt, "client-123")
+		if err != nil {
+			t.Fatalf("seharusnya valid dengan issuer accounts.google.com, err: %v", err)
+		}
+		if em != "alt@gmail.com" {
+			t.Errorf("email = %q, ingin alt@gmail.com", em)
+		}
+	})
+
+	t.Run("Valid aud as array of clients", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"iss":   "https://accounts.google.com",
+			"aud":   []string{"client-a", "client-b"},
+			"email": "arr@gmail.com",
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		_, _, err := parseIDTokenClaims(jwt, "client-b")
+		if err != nil {
+			t.Fatalf("seharusnya aud dalam array dikenali: %v", err)
+		}
+	})
+
+	t.Run("Reject invalid issuer", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"iss":   "https://evil-issuer.com",
+			"email": "hacker@evil.com",
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		_, _, err := parseIDTokenClaims(jwt)
+		if err == nil || !strings.Contains(err.Error(), "issuer") {
+			t.Fatalf("seharusnya error issuer tidak valid, dapat: %v", err)
+		}
+	})
+
+	t.Run("Reject mismatched audience", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"aud":   "other-client.apps.googleusercontent.com",
+			"email": "user@gmail.com",
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		_, _, err := parseIDTokenClaims(jwt, "expected-client.apps.googleusercontent.com")
+		if err == nil || !strings.Contains(err.Error(), "aud") {
+			t.Fatalf("seharusnya error aud mismatch, dapat: %v", err)
+		}
+	})
+
+	t.Run("Reject missing audience when expectedClientID given", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"email": "user@gmail.com",
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		_, _, err := parseIDTokenClaims(jwt, "expected-client")
+		if err == nil || !strings.Contains(err.Error(), "aud") {
+			t.Fatalf("seharusnya error aud kosong ketika expectedClientID diberikan, dapat: %v", err)
+		}
+	})
+
+	t.Run("Reject expired token", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"exp":   now - 70, // Melebihi 60s skew allowance
+			"email": "expired@gmail.com",
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		_, _, err := parseIDTokenClaims(jwt)
+		if err == nil || !strings.Contains(err.Error(), "kadaluarsa") {
+			t.Fatalf("seharusnya error token kadaluarsa, dapat: %v", err)
+		}
+	})
+
+	t.Run("Allow token within 60s clock skew window", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"exp":   now - 30, // Dalam 60s skew allowance (exp >= now - 60s)
+			"email": "skew@gmail.com",
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		em, _, err := parseIDTokenClaims(jwt)
+		if err != nil {
+			t.Fatalf("seharusnya diizinkan dalam toleransi skew 60s: %v", err)
+		}
+		if em != "skew@gmail.com" {
+			t.Errorf("email = %q", em)
+		}
+	})
+
+	t.Run("Reject unverified email bool", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"email":          "unverified@gmail.com",
+			"email_verified": false,
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		_, _, err := parseIDTokenClaims(jwt)
+		if err == nil || !strings.Contains(err.Error(), "belum diverifikasi") {
+			t.Fatalf("seharusnya error email belum diverifikasi, dapat: %v", err)
+		}
+	})
+
+	t.Run("Reject unverified email string", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"email":          "unverified@gmail.com",
+			"email_verified": "false",
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		_, _, err := parseIDTokenClaims(jwt)
+		if err == nil || !strings.Contains(err.Error(), "belum diverifikasi") {
+			t.Fatalf("seharusnya error email string belum diverifikasi, dapat: %v", err)
+		}
+	})
+
+	t.Run("Accept verified email string", func(t *testing.T) {
+		cj, _ := json.Marshal(map[string]any{
+			"email":          "verified@gmail.com",
+			"email_verified": "true",
+		})
+		jwt := fmt.Sprintf("%s.%s.sig", header, base64.RawURLEncoding.EncodeToString(cj))
+		em, _, err := parseIDTokenClaims(jwt)
+		if err != nil {
+			t.Fatalf("seharusnya valid dengan email_verified 'true', err: %v", err)
+		}
+		if em != "verified@gmail.com" {
+			t.Errorf("email = %q", em)
+		}
+	})
+
+	t.Run("Reject malformed JWT format", func(t *testing.T) {
+		_, _, err := parseIDTokenClaims("invalid-token-no-dots")
+		if err == nil {
+			t.Fatal("seharusnya error pada format token tanpa titik")
+		}
+	})
+
+	t.Run("Empty token returns empty strings without error", func(t *testing.T) {
+		em, nm, err := parseIDTokenClaims("")
+		if err != nil {
+			t.Fatalf("token kosong seharusnya tidak error: %v", err)
+		}
+		if em != "" || nm != "" {
+			t.Errorf("token kosong menghasilkan non-empty email/nama: %q, %q", em, nm)
+		}
+	})
 }
 
 func TestExchangeAuthCodeMock(t *testing.T) {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256"}`))
-	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"email":"test@gmail.com","name":"Test User"}`))
+	mockClaims, _ := json.Marshal(map[string]any{
+		"iss":            "https://accounts.google.com",
+		"aud":            DefaultAntigravityClientID,
+		"exp":            time.Now().Add(time.Hour).Unix(),
+		"email":          "test@gmail.com",
+		"email_verified": true,
+		"name":           "Test User",
+	})
+	payload := base64.RawURLEncoding.EncodeToString(mockClaims)
 	fakeJWT := header + "." + payload + ".sig"
 
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

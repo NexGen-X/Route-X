@@ -45,12 +45,12 @@ describe('matchExistingProvider', () => {
     expect(matchExistingProvider(null, [])).toBeNull();
     expect(matchExistingProvider(mockPreset, [])).toBeNull();
     expect(matchExistingProvider(null, [makeProvider({})])).toBeNull();
-    expect(matchExistingProvider(mockPreset, null as any)).toBeNull();
-    expect(matchExistingProvider(mockPreset, undefined as any)).toBeNull();
+    expect(matchExistingProvider(mockPreset, null as unknown as Provider[])).toBeNull();
+    expect(matchExistingProvider(mockPreset, undefined as unknown as Provider[])).toBeNull();
   });
 
   it('aman dari elemen array bernilai null, undefined, atau tanpa properti name', () => {
-    const listWithHoles = [null, undefined, { id: 'bad' } as any];
+    const listWithHoles = [null, undefined, { id: 'bad' } as unknown as Provider] as unknown as Provider[];
     expect(matchExistingProvider(mockPreset, listWithHoles)).toBeNull();
   });
 
@@ -177,7 +177,7 @@ describe('matchPresetForProvider', () => {
   it('mengembalikan null jika provider null, undefined, atau bukan objek', () => {
     expect(matchPresetForProvider(null)).toBeNull();
     expect(matchPresetForProvider(undefined)).toBeNull();
-    expect(matchPresetForProvider('invalid' as any)).toBeNull();
+    expect(matchPresetForProvider('invalid' as unknown as Provider)).toBeNull();
   });
 
   it('Pass 1: mendeteksi Antigravity berdasarkan nama provider', () => {

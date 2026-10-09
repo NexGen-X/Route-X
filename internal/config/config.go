@@ -208,8 +208,8 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 		PublicURL: r.str("PUBLIC_URL", ""),
 
 		DatabaseURL: r.requiredURL("DATABASE_URL", "postgres", "postgresql"),
-		DBMaxConns:  int32(r.intRange("DB_MAX_CONNS", 20, 1, 1000)),
-		DBMinConns:  int32(r.intRange("DB_MIN_CONNS", 2, 0, 1000)),
+		DBMaxConns:  int32(r.intRange("DB_MAX_CONNS", 25, 1, 1000)),
+		DBMinConns:  int32(r.intRange("DB_MIN_CONNS", 8, 0, 1000)),
 
 		RedisURL:       r.requiredURL("REDIS_URL", "redis", "rediss", "unix"),
 		TrustedProxies: r.csv("TRUSTED_PROXIES"),

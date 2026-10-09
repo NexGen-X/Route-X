@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useId, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useId, useRef, useEffect, useMemo } from 'react';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, Trash2, HelpCircle } from 'lucide-react';
 import { Modal } from '../components/common/Modal';
 
@@ -189,12 +189,15 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     []
   );
 
-  const toast = {
-    success: (message: string, title?: string) => showToast('success', message, title),
-    error: (message: string, title?: string) => showToast('error', message, title || 'Terjadi Kesalahan'),
-    warn: (message: string, title?: string) => showToast('warn', message, title || 'Peringatan'),
-    info: (message: string, title?: string) => showToast('info', message, title),
-  };
+  const toast = useMemo(
+    () => ({
+      success: (message: string, title?: string) => showToast('success', message, title),
+      error: (message: string, title?: string) => showToast('error', message, title || 'Terjadi Kesalahan'),
+      warn: (message: string, title?: string) => showToast('warn', message, title || 'Peringatan'),
+      info: (message: string, title?: string) => showToast('info', message, title),
+    }),
+    [showToast]
+  );
 
   const confirmModal = useCallback((options: ConfirmOptions): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -215,8 +218,13 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const contextValue = useMemo<ToastContextType>(
+    () => ({ showToast, toast, confirmModal }),
+    [showToast, toast, confirmModal]
+  );
+
   return (
-    <ToastContext.Provider value={{ showToast, toast, confirmModal }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
 
       {/* Kontainer Notifikasi Toast dengan Safe Area Berponi & Z-Index Tinggi */}

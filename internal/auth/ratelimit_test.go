@@ -182,6 +182,100 @@ func TestLimiterDoesNotStoreRawEmail(t *testing.T) {
 	}
 }
 
+// Kunci Redis yang kehilangan masa berlaku (PTTL < 0, mis. akibat anomali jaringan setelah
+// INCR atau proses yang mati) harus otomatis dipulihkan TTL-nya pada hit berikutnya agar
+// tidak terkunci permanen.
+func TestLimiterRestoresLostTTL(t *testing.T) {
+	ctx := context.Background()
+
+	// 1. Uji pemulihan TTL pada sumbu IP
+	limiterIP, mrIP := newLimiter(t, WithLoginRateLimits(5, 0), WithLoginRateWindow(time.Minute))
+	if ok, _ := limiterIP.Allow(ctx, "203.0.113.88", "pulih-ip@example.test"); !ok {
+		t.Fatal("IP: hit pertama ditolak")
+	}
+	for _, key := range mrIP.Keys() {
+		if err := limiterIP.redis.Client().Persist(ctx, key).Err(); err != nil {
+			t.Fatalf("IP: gagal PERSIST pada kunci %q: %v", key, err)
+		}
+		if pttl := limiterIP.redis.Client().PTTL(ctx, key).Val(); pttl >= 0 {
+			t.Fatalf("IP: kunci %q seharusnya kehilangan TTL, PTTL = %v", key, pttl)
+		}
+	}
+	// Hit kedua harus mendeteksi PTTL < 0 dan memanggil PEXPIRE untuk memulihkan TTL.
+	if ok, _ := limiterIP.Allow(ctx, "203.0.113.88", "pulih-ip@example.test"); !ok {
+		t.Fatal("IP: hit kedua ditolak")
+	}
+	for _, key := range mrIP.Keys() {
+		if pttl := limiterIP.redis.Client().PTTL(ctx, key).Val(); pttl <= 0 {
+			t.Errorf("IP: kunci %q tidak dipulihkan TTL-nya: PTTL = %v", key, pttl)
+		}
+		if ttl := mrIP.TTL(key); ttl <= 0 || ttl > time.Minute {
+			t.Errorf("IP: kunci %q sisa TTL = %v, mau di antara 0 dan %v", key, ttl, time.Minute)
+		}
+	}
+
+	// 2. Uji pemulihan TTL pada sumbu Email
+	limiterEmail, mrEmail := newLimiter(t, WithLoginRateLimits(0, 5), WithLoginRateWindow(time.Minute))
+	if ok, _ := limiterEmail.Allow(ctx, "198.51.100.1", "pulih-email@example.test"); !ok {
+		t.Fatal("Email: hit pertama ditolak")
+	}
+	for _, key := range mrEmail.Keys() {
+		if err := limiterEmail.redis.Client().Persist(ctx, key).Err(); err != nil {
+			t.Fatalf("Email: gagal PERSIST pada kunci %q: %v", key, err)
+		}
+		if pttl := limiterEmail.redis.Client().PTTL(ctx, key).Val(); pttl >= 0 {
+			t.Fatalf("Email: kunci %q seharusnya kehilangan TTL, PTTL = %v", key, pttl)
+		}
+	}
+	// Hit kedua dengan IP berbeda untuk memastikan hanya sumbu email yang dievaluasi.
+	if ok, _ := limiterEmail.Allow(ctx, "198.51.100.2", "pulih-email@example.test"); !ok {
+		t.Fatal("Email: hit kedua ditolak")
+	}
+	for _, key := range mrEmail.Keys() {
+		if pttl := limiterEmail.redis.Client().PTTL(ctx, key).Val(); pttl <= 0 {
+			t.Errorf("Email: kunci %q tidak dipulihkan TTL-nya: PTTL = %v", key, pttl)
+		}
+		if ttl := mrEmail.TTL(key); ttl <= 0 || ttl > time.Minute {
+			t.Errorf("Email: kunci %q sisa TTL = %v, mau di antara 0 dan %v", key, ttl, time.Minute)
+		}
+	}
+
+	// 3. Pengujian saat batas laju terlampaui ketika TTL hilang
+	limiterTight, mrTight := newLimiter(t, WithLoginRateLimits(2, 0), WithLoginRateWindow(time.Minute))
+	if ok, _ := limiterTight.Allow(ctx, "203.0.113.99", "tight@example.test"); !ok {
+		t.Fatal("tight: hit pertama ditolak")
+	}
+	for _, key := range mrTight.Keys() {
+		if err := limiterTight.redis.Client().Persist(ctx, key).Err(); err != nil {
+			t.Fatalf("tight: gagal PERSIST pada kunci %q: %v", key, err)
+		}
+	}
+
+	// Hit kedua: lolos (hits = 2 <= 2), TTL dipulihkan.
+	if ok, _ := limiterTight.Allow(ctx, "203.0.113.99", "tight@example.test"); !ok {
+		t.Fatal("tight: hit kedua ditolak")
+	}
+	// Hilangkan lagi TTL untuk mensimulasikan kondisi ekstrem sebelum hit penolakan.
+	for _, key := range mrTight.Keys() {
+		if err := limiterTight.redis.Client().Persist(ctx, key).Err(); err != nil {
+			t.Fatalf("tight: gagal PERSIST kedua pada kunci %q: %v", key, err)
+		}
+	}
+	// Hit ketiga: ditolak (hits = 3 > 2), TTL dipulihkan dan retryAfter > 0.
+	ok, retryAfter := limiterTight.Allow(ctx, "203.0.113.99", "tight@example.test")
+	if ok {
+		t.Fatal("tight: hit ketiga seharusnya ditolak")
+	}
+	if retryAfter <= 0 || retryAfter > time.Minute {
+		t.Errorf("retryAfter = %v, mau di antara 0 dan 1 menit", retryAfter)
+	}
+	for _, key := range mrTight.Keys() {
+		if pttl := limiterTight.redis.Client().PTTL(ctx, key).Val(); pttl <= 0 {
+			t.Errorf("tight: kunci %q tidak dipulihkan TTL-nya: PTTL = %v", key, pttl)
+		}
+	}
+}
+
 // Redis yang mati harus membuat percobaan diloloskan, bukan ditolak: kalau gagal tertutup,
 // matinya Redis berarti tidak ada seorang pun bisa masuk untuk memperbaikinya.
 func TestLimiterFailsOpen(t *testing.T) {

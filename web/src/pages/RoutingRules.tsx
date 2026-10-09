@@ -37,15 +37,28 @@ export const RoutingRules: React.FC = () => {
   const loadRules = async () => {
     setIsRulesLoading(true);
     try {
-      const [resRules, resModels, resProv] = await Promise.all([
+      const [resRules, resModels, resProv] = await Promise.allSettled([
         api.routing.list(),
         api.models.list(),
         api.providers.list(),
       ]);
-      setRules(resRules.items || []);
-      setModels(resModels.items || []);
-      setProviders(resProv.items || []);
-      setRulesError(null);
+
+      if (resRules.status === 'fulfilled') {
+        setRules(resRules.value?.items || []);
+        setRulesError(null);
+      } else {
+        const err = resRules.reason;
+        setRulesError(err instanceof Error ? err.message : String(err));
+      }
+
+      if (resModels.status === 'fulfilled') {
+        setModels(resModels.value?.items || []);
+      }
+
+      if (resProv.status === 'fulfilled') {
+        const pItems = Array.isArray(resProv.value) ? resProv.value : resProv.value?.items;
+        setProviders(pItems || []);
+      }
     } catch (err: unknown) {
       setRulesError(err instanceof Error ? err.message : String(err));
     } finally {

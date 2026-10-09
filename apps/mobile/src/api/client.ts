@@ -212,7 +212,9 @@ export class RouteXApiClient {
 
       return (await res.json()) as T;
     } catch (err: unknown) {
-      const isAbort = (err as any)?.name === 'AbortError';
+      const isAbort =
+        (err instanceof Error && err.name === 'AbortError') ||
+        (typeof err === 'object' && err !== null && 'name' in err && (err as Record<string, unknown>).name === 'AbortError');
       if (isAbort) {
         throw new Error(`Waktu tunggu permintaan habis (15 detik) ke ${url}.`);
       }
@@ -249,7 +251,9 @@ export class RouteXApiClient {
         });
       } catch (networkErr: unknown) {
         clearTimeout(timeoutId);
-        const isAbort = (networkErr as any)?.name === 'AbortError';
+        const isAbort =
+          (networkErr instanceof Error && networkErr.name === 'AbortError') ||
+          (typeof networkErr === 'object' && networkErr !== null && 'name' in networkErr && (networkErr as Record<string, unknown>).name === 'AbortError');
         if (isAbort) {
           return {
             success: false,
@@ -424,10 +428,14 @@ export class RouteXApiClient {
           if (r.status_code >= 400 && r.status_code < 500) status = 'warning';
           if (r.status_code >= 500) status = 'error';
 
+          const rawMethod = r.method?.toUpperCase();
+          const method: 'GET' | 'POST' | 'PUT' | 'DELETE' =
+            rawMethod === 'GET' || rawMethod === 'PUT' || rawMethod === 'DELETE' ? rawMethod : 'POST';
+
           return {
             id: r.id,
             title: `HTTP ${r.status_code} • ${r.latency_ms}ms`,
-            method: (r.method?.toUpperCase() as any) || 'POST',
+            method,
             endpoint: r.path || '/v1/chat/completions',
             timestamp: new Date(r.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
             status,
@@ -593,7 +601,11 @@ export class RouteXApiClient {
       const res = await this.request<{ items: BackendUser[] }>('/api/admin/access/users');
       if (res.items && res.items.length > 0) {
         return res.items.map((u) => {
-          const role = (u.roles && u.roles[0]) ? (u.roles[0] as any) : 'Admin';
+          const rawRole = u.roles && u.roles[0] ? u.roles[0].toLowerCase() : '';
+          const role: 'Admin' | 'Operator' | 'Developer' | 'User' =
+            rawRole === 'operator' ? 'Operator' :
+            rawRole === 'developer' ? 'Developer' :
+            rawRole === 'user' ? 'User' : 'Admin';
           const name = u.display_name || u.email.split('@')[0];
           return {
             id: u.id,
@@ -767,7 +779,7 @@ export class RouteXApiClient {
           url: w.url,
           events: w.events || ['*'],
           active: w.enabled,
-          lastDeliveryStatus: (w.last_delivery_status as any) || 'success',
+          lastDeliveryStatus: w.last_delivery_status === 'failed' ? 'failed' : 'success',
           lastDeliveryTime: w.last_delivery_at ? new Date(w.last_delivery_at).toLocaleTimeString('id-ID') : 'Aktif',
         }));
       }

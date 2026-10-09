@@ -214,6 +214,11 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    mockSummaryFn.mockImplementation(async () => MOCK_SUMMARY);
+    mockSeriesFn.mockImplementation(async () => ({ points: MOCK_SERIES }));
+    mockProvidersFn.mockImplementation(async () => ({ items: MOCK_PROVIDERS }));
+    mockOverviewFn.mockImplementation(async () => MOCK_OVERVIEW);
+    mockRequestsFn.mockImplementation(async () => ({ items: MOCK_REQUESTS }));
   });
 
   it('merender seluruh segmen halaman Dashboard secara lengkap', async () => {
@@ -343,7 +348,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
   });
 
   it('menangani kegagalan pemanggilan API dengan notifikasi error', async () => {
-    mockSummaryFn.mockRejectedValueOnce(new Error('Network timeout gateway'));
+    mockSummaryFn.mockRejectedValue(new Error('Network timeout gateway'));
 
     render(<Dashboard onNavigate={mockNavigate} />);
 

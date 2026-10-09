@@ -91,12 +91,24 @@ export const Diagnostics: React.FC = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [resDiag, resJobs] = await Promise.all([
+      const [resDiag, resJobs] = await Promise.allSettled([
         api.system.diagnostics(),
         api.system.jobs(),
       ]);
-      setDiag(resDiag);
-      setJobs(resJobs.items || []);
+
+      if (resDiag.status === 'fulfilled' && resDiag.value) {
+        setDiag(resDiag.value);
+      }
+      if (resJobs.status === 'fulfilled' && resJobs.value) {
+        setJobs(resJobs.value.items || []);
+      }
+
+      if (resDiag.status === 'rejected' && resJobs.status === 'rejected') {
+        setLoadError(getErrorMessage(resDiag.reason));
+      } else {
+        setLoadError(null);
+      }
+
       try {
         const resCache = await api.system.cacheStats();
         setCache(resCache);
@@ -105,7 +117,6 @@ export const Diagnostics: React.FC = () => {
       } catch {
         setCache(null);
       }
-      setLoadError(null);
     } catch (err: unknown) {
       setLoadError(getErrorMessage(err));
     } finally {

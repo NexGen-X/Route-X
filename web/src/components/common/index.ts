@@ -6,6 +6,8 @@ export * from './CommandPalette';
 export * from './Drawer';
 export * from './Modal';
 export * from './PageErrorBoundary';
+export * from './GlobalErrorBoundary';
+export * from './WidgetErrorBoundary';
 export * from './PageHeader';
 export * from './QueryError';
 export * from './Select';

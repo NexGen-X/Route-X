@@ -98,36 +98,45 @@ export const CLIIntegrations: React.FC = () => {
   const loadData = async () => {
     try {
       setRefreshing(true);
-      const [cliRes, modelsRes, rulesRes, apiKeysRes] = await Promise.all([
+      const [cliRes, modelsRes, rulesRes, apiKeysRes] = await Promise.allSettled([
         api.cli.detected(),
         api.models.list(),
         api.routing.list(),
-        api.apiKeys.list().catch(() => ({ items: [] })),
+        api.apiKeys.list(),
       ]);
 
-      setData(cliRes);
-      setModels(modelsRes.items || []);
-      setRules(rulesRes.items || []);
-      setRegisteredKeys(apiKeysRes.items || []);
+      if (cliRes.status === 'fulfilled' && cliRes.value) {
+        setData(cliRes.value);
+        const modelsList = modelsRes.status === 'fulfilled' ? modelsRes.value?.items || [] : [];
+        const rulesList = rulesRes.status === 'fulfilled' ? rulesRes.value?.items || [] : [];
+        const keysList = apiKeysRes.status === 'fulfilled' ? apiKeysRes.value?.items || [] : [];
 
-      const comboOpts = extractDynamicComboOptions(rulesRes.items || []);
-      const initialConfigs: Record<string, ToolConfig> = {};
-      cliRes.tools.forEach((t: CLITool) => {
-        const mode = t.active_mode || 'model_only';
-        const fallback =
-          mode === 'routing'
-            ? rulesRes.items[0]?.name || ''
-            : mode === 'combo'
-            ? comboOpts[0]?.value || ''
-            : modelsRes.items[0]?.model_id || '';
-        initialConfigs[t.id] = {
-          mode,
-          target: t.active_target || fallback,
-          apiKey: '',
-        };
-      });
-      setToolConfigs(initialConfigs);
-      setLoadError(null);
+        setModels(modelsList);
+        setRules(rulesList);
+        setRegisteredKeys(keysList);
+
+        const comboOpts = extractDynamicComboOptions(rulesList);
+        const initialConfigs: Record<string, ToolConfig> = {};
+        cliRes.value.tools.forEach((t: CLITool) => {
+          const mode = t.active_mode || 'model_only';
+          const fallback =
+            mode === 'routing'
+              ? rulesList[0]?.name || ''
+              : mode === 'combo'
+              ? comboOpts[0]?.value || ''
+              : modelsList[0]?.model_id || '';
+          initialConfigs[t.id] = {
+            mode,
+            target: t.active_target || fallback,
+            apiKey: '',
+          };
+        });
+        setToolConfigs(initialConfigs);
+        setLoadError(null);
+      } else {
+        const err = cliRes.status === 'rejected' ? cliRes.reason : new Error('Gagal memuat status CLI.');
+        setLoadError(err instanceof Error ? err.message : String(err));
+      }
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : String(err));
     } finally {

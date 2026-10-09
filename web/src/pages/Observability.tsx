@@ -97,17 +97,24 @@ export const Observability: React.FC = () => {
     setIsLoading(true);
     try {
       const metricQuery = (metric === 'throughput' || metric === 'error_rate') ? 'requests' : metric;
-      const [sRes, bRes, sumRes, cRes] = await Promise.all([
+      const [sRes, bRes, sumRes, cRes] = await Promise.allSettled([
         api.observability.series(metricQuery, windowTime),
         api.observability.breakdown(breakdownBy, windowTime),
-        api.observability.summary(windowTime).catch(() => null),
-        api.system.cacheStats().catch(() => null),
+        api.observability.summary(windowTime),
+        api.system.cacheStats(),
       ]);
-      setSeries(sRes.points || []);
-      setBreakdowns(bRes.items || []);
-      setSummary(sumRes);
-      setCacheStats(cRes);
-      setLoadError(null);
+
+      if (sRes.status === 'fulfilled') setSeries(sRes.value?.points || []);
+      if (bRes.status === 'fulfilled') setBreakdowns(bRes.value?.items || []);
+      if (sumRes.status === 'fulfilled') setSummary(sumRes.value);
+      if (cRes.status === 'fulfilled') setCacheStats(cRes.value);
+
+      const allFailed = sRes.status === 'rejected' && bRes.status === 'rejected' && sumRes.status === 'rejected';
+      if (allFailed) {
+        setLoadError('Seluruh layanan observabilitas gagal merespons. Periksa koneksi jaringan.');
+      } else {
+        setLoadError(null);
+      }
 
       try {
         const dRes = await api.system.diagnostics();

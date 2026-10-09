@@ -3,6 +3,7 @@ package router
 import (
 	"math"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -577,4 +578,56 @@ func TestOrderWeightedTieBreakerBanyakKandidat(t *testing.T) {
 			t.Errorf("kandidat %s rasio = %.2f, mau seimbang di sekitar sepertiga (~0.33)", namaKandidat, rasio)
 		}
 	}
+}
+
+// TestOrderWeightedKonkurenBanyakGoroutine memverifikasi keamanan konkurensi (zero data race)
+// saat sejumlah goroutine secara simultan menjalankan strategi weighted routing dengan
+// kombinasi bobot berbeda dan kandidat yang sama.
+func TestOrderWeightedKonkurenBanyakGoroutine(t *testing.T) {
+	s := NewSelector()
+	cands := []*upstream.RouteCandidate{
+		kandidat("alpha", 1, 50),
+		kandidat("bravo", 1, 30),
+		kandidat("charlie", 1, 20),
+	}
+
+	ruleA := &Rule{
+		Strategy: StrategyWeighted,
+		Providers: []RuleProvider{
+			{ProviderID: "prov-alpha", Position: 1, Weight: ptr(10)},
+			{ProviderID: "prov-bravo", Position: 2, Weight: ptr(70)},
+			{ProviderID: "prov-charlie", Position: 3, Weight: ptr(20)},
+		},
+	}
+	ruleB := &Rule{
+		Strategy: StrategyWeighted,
+		Providers: []RuleProvider{
+			{ProviderID: "prov-alpha", Position: 1, Weight: ptr(80)},
+			{ProviderID: "prov-bravo", Position: 2, Weight: ptr(10)},
+			{ProviderID: "prov-charlie", Position: 3, Weight: ptr(10)},
+		},
+	}
+
+	var wg sync.WaitGroup
+	const pekerja = 20
+	const iterasi = 200
+
+	for i := 0; i < pekerja; i++ {
+		wg.Add(1)
+		r := ruleA
+		if i%2 == 1 {
+			r = ruleB
+		}
+		go func(targetRule *Rule) {
+			defer wg.Done()
+			for j := 0; j < iterasi; j++ {
+				got := s.Order(Request{}, targetRule, cands)
+				if len(got) != 3 {
+					t.Errorf("len kandidat = %d, mau 3", len(got))
+					return
+				}
+			}
+		}(r)
+	}
+	wg.Wait()
 }

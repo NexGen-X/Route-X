@@ -38,14 +38,25 @@ func MetricsRecorder(m *observability.Metrics) func(http.Handler) http.Handler {
 				routePattern = "unmatched"
 			}
 
-			method := r.Method
-			if method == "" {
-				method = "GET"
-			}
+			method := sanitizeMethod(r.Method)
 			status := strconv.Itoa(rw.status)
 
 			m.HTTPRequestsTotal.WithLabelValues(method, routePattern, status).Inc()
 			m.HTTPDuration.WithLabelValues(method, routePattern).Observe(time.Since(start).Seconds())
 		})
+	}
+}
+
+// sanitizeMethod menormalkan metode HTTP ke kumpulan metode standar RFC untuk mencegah
+// ledakan kardinalitas metrik akibat request dengan metode acak dari pemindai/penyerang.
+func sanitizeMethod(method string) string {
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete,
+		http.MethodPatch, http.MethodHead, http.MethodOptions, http.MethodConnect, http.MethodTrace:
+		return method
+	case "":
+		return http.MethodGet
+	default:
+		return "OTHER"
 	}
 }

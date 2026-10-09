@@ -20,24 +20,29 @@ func cookiesOf(t *testing.T, rec *httptest.ResponseRecorder) map[string]*http.Co
 	return out
 }
 
-// Atribut cookie sesi harus mengikuti environment, dan namanya ikut berubah karena prefiks
-// "__Host-" tidak sah tanpa Secure.
+// Atribut cookie sesi harus mengikuti environment dan skema PublicURL, dan namanya ikut
+// berubah karena prefiks "__Host-" tidak sah tanpa Secure.
 func TestSessionCookieAttributes(t *testing.T) {
 	cases := []struct {
 		name       string
 		env        config.Env
+		publicURL  string
 		wantName   string
 		wantSecure bool
 	}{
-		{"development", config.EnvDevelopment, SessionCookieName, false},
-		{"staging", config.EnvStaging, SessionCookieName, false},
-		{"production", config.EnvProduction, SessionCookieNameHost, true},
+		{"development", config.EnvDevelopment, "", SessionCookieName, false},
+		{"staging", config.EnvStaging, "", SessionCookieName, false},
+		{"staging_http", config.EnvStaging, "http://staging.internal", SessionCookieName, false},
+		{"staging_https", config.EnvStaging, "https://staging.internal", SessionCookieNameHost, true},
+		{"development_https", config.EnvDevelopment, "https://dev.internal", SessionCookieNameHost, true},
+		{"production", config.EnvProduction, "", SessionCookieNameHost, true},
+		{"production_https", config.EnvProduction, "https://api.routex.ai", SessionCookieNameHost, true},
 	}
 
 	const ttl = 3 * time.Hour
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cookies := NewCookies(&config.Config{AppEnv: tc.env}, ttl)
+			cookies := NewCookies(&config.Config{AppEnv: tc.env, PublicURL: tc.publicURL}, ttl)
 
 			rec := httptest.NewRecorder()
 			cookies.SetSession(rec, security.Secret("token-uji"))
@@ -71,11 +76,13 @@ func TestSessionCookieAttributes(t *testing.T) {
 	}
 }
 
-// Prefiks "__Host-" hanya boleh muncul di produksi: di http://localhost browser menolak
-// cookie berprefiks itu secara diam-diam, sehingga login tidak akan pernah berhasil.
+// Prefiks "__Host-" hanya boleh muncul di produksi atau saat PublicURL berskema HTTPS:
+// di http://localhost browser menolak cookie berprefiks itu secara diam-diam, sehingga
+// login tidak akan pernah berhasil.
 func TestHostPrefixOnlyInProduction(t *testing.T) {
 	dev := NewCookies(&config.Config{AppEnv: config.EnvDevelopment}, time.Hour)
 	prod := NewCookies(&config.Config{AppEnv: config.EnvProduction}, time.Hour)
+	stagingHTTPS := NewCookies(&config.Config{AppEnv: config.EnvStaging, PublicURL: "https://staging.internal"}, time.Hour)
 
 	for _, name := range []string{dev.SessionName(), dev.CSRFName()} {
 		if len(name) >= len(hostPrefix) && name[:len(hostPrefix)] == hostPrefix {
@@ -85,10 +92,74 @@ func TestHostPrefixOnlyInProduction(t *testing.T) {
 	if prod.SessionName() != SessionCookieNameHost || prod.CSRFName() != CSRFCookieNameHost {
 		t.Errorf("nama cookie produksi = %q dan %q", prod.SessionName(), prod.CSRFName())
 	}
+	if stagingHTTPS.SessionName() != SessionCookieNameHost || stagingHTTPS.CSRFName() != CSRFCookieNameHost {
+		t.Errorf("nama cookie staging HTTPS = %q dan %q", stagingHTTPS.SessionName(), stagingHTTPS.CSRFName())
+	}
 
 	// cfg nil diperlakukan sebagai non-produksi.
 	if NewCookies(nil, time.Hour).SessionName() != SessionCookieName {
 		t.Error("cfg nil seharusnya diperlakukan sebagai non-produksi")
+	}
+}
+
+// Bila PublicURL berskema HTTPS, cookie sesi dan CSRF wajib berprefiks __Host-
+// dan beratribut Secure: true bahkan di lingkungan staging atau development.
+func TestCookiesWithHTTPSPublicURL(t *testing.T) {
+	cases := []struct {
+		name       string
+		env        config.Env
+		publicURL  string
+		wantSecure bool
+		wantHost   bool
+	}{
+		{"staging_https", config.EnvStaging, "https://staging.internal", true, true},
+		{"development_https", config.EnvDevelopment, "https://dev.internal", true, true},
+		{"staging_http", config.EnvStaging, "http://staging.internal", false, false},
+		{"development_http", config.EnvDevelopment, "http://localhost:8080", false, false},
+		{"production_empty_url", config.EnvProduction, "", true, true},
+		{"production_https", config.EnvProduction, "https://api.routex.ai", true, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cookies := NewCookies(&config.Config{AppEnv: tc.env, PublicURL: tc.publicURL}, time.Hour)
+			if tc.wantHost {
+				if cookies.SessionName() != SessionCookieNameHost {
+					t.Errorf("SessionName = %q, mau %q", cookies.SessionName(), SessionCookieNameHost)
+				}
+				if cookies.CSRFName() != CSRFCookieNameHost {
+					t.Errorf("CSRFName = %q, mau %q", cookies.CSRFName(), CSRFCookieNameHost)
+				}
+			} else {
+				if cookies.SessionName() != SessionCookieName {
+					t.Errorf("SessionName = %q, mau %q", cookies.SessionName(), SessionCookieName)
+				}
+				if cookies.CSRFName() != CSRFCookieName {
+					t.Errorf("CSRFName = %q, mau %q", cookies.CSRFName(), CSRFCookieName)
+				}
+			}
+
+			rec := httptest.NewRecorder()
+			cookies.SetSession(rec, security.Secret("s-token"))
+			cookies.SetCSRF(rec, "c-token")
+
+			cookiesMap := cookiesOf(t, rec)
+			sCk := cookiesMap[cookies.SessionName()]
+			if sCk == nil {
+				t.Fatalf("cookie sesi %q tidak ditemukan", cookies.SessionName())
+			}
+			if sCk.Secure != tc.wantSecure {
+				t.Errorf("sesi Secure = %v, mau %v", sCk.Secure, tc.wantSecure)
+			}
+
+			cCk := cookiesMap[cookies.CSRFName()]
+			if cCk == nil {
+				t.Fatalf("cookie CSRF %q tidak ditemukan", cookies.CSRFName())
+			}
+			if cCk.Secure != tc.wantSecure {
+				t.Errorf("CSRF Secure = %v, mau %v", cCk.Secure, tc.wantSecure)
+			}
+		})
 	}
 }
 

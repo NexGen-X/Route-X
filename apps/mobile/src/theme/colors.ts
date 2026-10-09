@@ -4,6 +4,7 @@ export const colors = {
   bgSurface: '#0F1523',
   bgElevated: '#182238',
   border: '#1E293B',
+  borderDefault: '#1E293B',
   borderSubtle: '#151F32',
 
   // Aksen Route-X (DeepSeek / Hermes Celestial Blue)

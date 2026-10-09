@@ -21,18 +21,18 @@ import (
 //
 // Justru karena syaratnya HTTPS, prefiks itu tidak bisa dipakai di development yang
 // berjalan di http://localhost: browser akan menolak cookie-nya secara diam-diam dan
-// login tidak akan pernah berhasil. Jadi nama yang dipakai ditentukan environment, dan
-// bukan Secure-nya saja yang berubah — namanya ikut berubah, karena "__Host-" tanpa
-// Secure adalah kombinasi yang tidak sah.
+// login tidak akan pernah berhasil. Jadi nama yang dipakai ditentukan environment dan
+// skema URL, dan bukan Secure-nya saja yang berubah — namanya ikut berubah, karena "__Host-"
+// tanpa Secure adalah kombinasi yang tidak sah.
 const (
-	// SessionCookieName dipakai di luar produksi.
+	// SessionCookieName dipakai di luar produksi dan non-HTTPS.
 	SessionCookieName = "routex_session"
-	// SessionCookieNameHost dipakai di produksi.
+	// SessionCookieNameHost dipakai di produksi atau saat PublicURL berskema HTTPS.
 	SessionCookieNameHost = hostPrefix + SessionCookieName
 
-	// CSRFCookieName dipakai di luar produksi.
+	// CSRFCookieName dipakai di luar produksi dan non-HTTPS.
 	CSRFCookieName = "routex_csrf"
-	// CSRFCookieNameHost dipakai di produksi.
+	// CSRFCookieNameHost dipakai di produksi atau saat PublicURL berskema HTTPS.
 	CSRFCookieNameHost = hostPrefix + CSRFCookieName
 )
 
@@ -44,26 +44,33 @@ const hostPrefix = "__Host-"
 // Dibuat sekali saat start lalu dibagikan: seluruh isinya hanya dibaca, jadi aman dipakai
 // bersamaan dari banyak goroutine.
 type Cookies struct {
-	// production menentukan nama cookie dan atribut Secure sekaligus, karena keduanya
-	// tidak boleh berbeda pendapat.
-	production bool
+	// secure menentukan nama cookie (prefiks "__Host-") dan atribut Secure sekaligus,
+	// karena keduanya tidak boleh berbeda pendapat. Aktif di lingkungan produksi
+	// atau bila PublicURL berskema HTTPS (mis. staging HTTPS).
+	secure bool
 	// ttl menentukan Max-Age. Sama dengan masa berlaku sesi di database supaya cookie
 	// tidak hidup lebih lama daripada sesi yang diwakilinya.
 	ttl time.Duration
 }
 
 // NewCookies membuat penyusun cookie. cfg boleh nil dan diperlakukan sebagai
-// non-produksi; ttl ≤ 0 memakai masa berlaku sesi bawaan.
+// non-produksi / non-HTTPS; ttl ≤ 0 memakai masa berlaku sesi bawaan.
+// Bila cfg.PublicURL berskema HTTPS atau cfg di lingkungan produksi, prefiks
+// "__Host-" dan atribut Secure: true diaktifkan.
 func NewCookies(cfg *config.Config, ttl time.Duration) *Cookies {
 	if ttl <= 0 {
 		ttl = DefaultSessionTTL
 	}
-	return &Cookies{production: cfg != nil && cfg.AppEnv.IsProduction(), ttl: ttl}
+	secure := false
+	if cfg != nil {
+		secure = cfg.AppEnv.IsProduction() || strings.HasPrefix(cfg.PublicURL, "https://")
+	}
+	return &Cookies{secure: secure, ttl: ttl}
 }
 
 // SessionName mengembalikan nama cookie sesi untuk environment ini.
 func (c *Cookies) SessionName() string {
-	if c.production {
+	if c.secure {
 		return SessionCookieNameHost
 	}
 	return SessionCookieName
@@ -71,7 +78,7 @@ func (c *Cookies) SessionName() string {
 
 // CSRFName mengembalikan nama cookie CSRF untuk environment ini.
 func (c *Cookies) CSRFName() string {
-	if c.production {
+	if c.secure {
 		return CSRFCookieNameHost
 	}
 	return CSRFCookieName
@@ -166,7 +173,7 @@ func (c *Cookies) cookie(name, value string, httpOnly bool, maxAge int) *http.Co
 		Value:    value,
 		Path:     "/",
 		HttpOnly: httpOnly,
-		Secure:   c.production,
+		Secure:   c.secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   maxAge,
 	}

@@ -17,6 +17,7 @@ SRC_DIR="${SRC_DIR:-$REPO_DIR}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/routex}"
 ENV_FILE="${ENV_FILE:-/etc/routex/routex.env}"
 SERVICE_NAME="${SERVICE_NAME:-routex}"
+GATEWAY_PORT="${PORT:-8080}"
 MAX_RETRIES="${MAX_RETRIES:-15}"
 RETRY_DELAY="${RETRY_DELAY:-1}"
 
@@ -30,11 +31,30 @@ echo " ⚡ ROUTE-X LIVE STAGING HOT-RELOAD & REBUILD"
 echo "=================================================================="
 
 # ------------------------------------------------------------------------------
-# 1. Idempotensi & Concurrency Control (File Lock)
+# 1. Validasi Lingkungan & Hak Akses (Fail-Fast)
+# ------------------------------------------------------------------------------
+if [ "$(id -u)" -ne 0 ]; then
+    echo "❌ Error: Skrip ini wajib dijalankan sebagai root atau dengan sudo." >&2
+    exit 1
+fi
+
+if [ ! -f "$ENV_FILE" ]; then
+    echo "❌ Error: Berkas konfigurasi lingkungan $ENV_FILE tidak ditemukan." >&2
+    echo "   Jalankan ./install-native.sh terlebih dahulu untuk inisialisasi awal." >&2
+    exit 1
+fi
+
+if [ ! -d "$SRC_DIR" ] || [ ! -f "$SRC_DIR/go.mod" ]; then
+    echo "❌ Error: Direktori sumber $SRC_DIR tidak valid (go.mod tidak ditemukan)." >&2
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# 2. Idempotensi & Concurrency Control (File Lock Mutex)
 # ------------------------------------------------------------------------------
 LOCK_FILE="/var/run/routex-update.lock"
-if ! touch "$LOCK_FILE" 2>/dev/null; then
-    LOCK_FILE="/tmp/routex-update.lock"
+if [ ! -d "/var/run" ] && [ -d "/run" ]; then
+    LOCK_FILE="/run/routex-update.lock"
 fi
 
 eval "exec ${LOCK_FD}>\"$LOCK_FILE\""
@@ -49,6 +69,7 @@ fi
 rollback_service() {
     # Nonaktifkan flag agar rollback tidak dijalankan berulang (non-reentrant)
     ROLLBACK_REQUIRED=0
+    set +e
     echo ""
     echo "🚨 =============================================================="
     echo " ⚠️ MEMULAI PROSEDUR ROLLBACK OTOMATIS (SAFE ROLLBACK)"
@@ -56,8 +77,9 @@ rollback_service() {
 
     if [ "$BACKUP_CREATED" -eq 1 ] && [ -f "${INSTALL_DIR}/ai-gateway.bak" ]; then
         echo "🔄 [Rollback 1/3] Mengembalikan biner sebelumnya dari ${INSTALL_DIR}/ai-gateway.bak..."
-        cp -fp "${INSTALL_DIR}/ai-gateway.bak" "${INSTALL_DIR}/ai-gateway"
-        chmod 755 "${INSTALL_DIR}/ai-gateway"
+        cp -fp "${INSTALL_DIR}/ai-gateway.bak" "${INSTALL_DIR}/ai-gateway.rollback.tmp"
+        chmod 755 "${INSTALL_DIR}/ai-gateway.rollback.tmp"
+        mv -f "${INSTALL_DIR}/ai-gateway.rollback.tmp" "${INSTALL_DIR}/ai-gateway"
 
         echo "🔄 [Rollback 2/3] Me-restart layanan ${SERVICE_NAME}.service..."
         if systemctl restart "$SERVICE_NAME"; then
@@ -92,18 +114,18 @@ rollback_service() {
 
 cleanup() {
     local exit_code=$?
-    # Bersihkan berkas biner sementara .new jika tersisa
-    if [ -f "${INSTALL_DIR}/ai-gateway.new" ]; then
-        rm -f "${INSTALL_DIR}/ai-gateway.new"
-    fi
+    set +e
+    # Bersihkan berkas biner sementara jika tersisa
+    rm -f "${INSTALL_DIR}/ai-gateway.new" "${INSTALL_DIR}/ai-gateway.rollback.tmp" 2>/dev/null || true
 
     # Jalankan rollback jika status memerlukan rollback
     if [ "$ROLLBACK_REQUIRED" -eq 1 ]; then
         rollback_service
     fi
 
-    # Lepaskan lock file
+    # Lepaskan lock file dan tutup file descriptor
     flock -u "$LOCK_FD" 2>/dev/null || true
+    eval "exec ${LOCK_FD}>&-" 2>/dev/null || true
 
     exit "$exit_code"
 }
@@ -112,28 +134,9 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # ------------------------------------------------------------------------------
-# 2. Validasi Lingkungan & Hak Akses
-# ------------------------------------------------------------------------------
-if [ "$(id -u)" -ne 0 ]; then
-    echo "❌ Error: Skrip ini wajib dijalankan sebagai root atau dengan sudo." >&2
-    exit 1
-fi
-
-if [ ! -f "$ENV_FILE" ]; then
-    echo "❌ Error: Berkas konfigurasi lingkungan $ENV_FILE tidak ditemukan." >&2
-    echo "   Jalankan ./install-native.sh terlebih dahulu untuk inisialisasi awal." >&2
-    exit 1
-fi
-
-if [ ! -d "$SRC_DIR" ] || [ ! -f "$SRC_DIR/go.mod" ]; then
-    echo "❌ Error: Direktori sumber $SRC_DIR tidak valid (go.mod tidak ditemukan)." >&2
-    exit 1
-fi
-
-# ------------------------------------------------------------------------------
 # 3. Validasi Dependensi Wajib Sistem
 # ------------------------------------------------------------------------------
-REQUIRED_TOOLS=("systemctl" "curl" "go" "git" "flock" "chmod" "cp" "mv")
+REQUIRED_TOOLS=("systemctl" "curl" "go" "git" "flock" "chmod" "cp" "mv" "rm" "grep" "cut" "tr" "date")
 MISSING_TOOLS=()
 for tool in "${REQUIRED_TOOLS[@]}"; do
     if ! command -v "$tool" >/dev/null 2>&1; then
@@ -149,8 +152,14 @@ if [ ${#MISSING_TOOLS[@]} -gt 0 ]; then
     exit 1
 fi
 
-# Baca port dari berkas konfigurasi lingkungan (default fallback 8080)
-GATEWAY_PORT="8080"
+# Validasi bahwa layanan systemd terdaftar
+if ! systemctl cat "$SERVICE_NAME" >/dev/null 2>&1; then
+    echo "❌ Error: Layanan systemd '${SERVICE_NAME}.service' tidak ditemukan di sistem." >&2
+    echo "   Pastikan unit service telah dipasang di /etc/systemd/system/." >&2
+    exit 1
+fi
+
+# Baca port dari berkas konfigurasi lingkungan jika tersedia
 PARSED_PORT="$(grep -E '^PORT=' "$ENV_FILE" | head -n1 | cut -d'=' -f2 | tr -d ' "' || true)"
 if [ -n "$PARSED_PORT" ]; then
     GATEWAY_PORT="$PARSED_PORT"
@@ -165,7 +174,7 @@ cd "$SRC_DIR"
 BUILD_WEB="${BUILD_WEB:-auto}"
 SHOULD_BUILD_WEB=0
 
-if [ "$BUILD_WEB" = "always" ] || { [ ! -d "$SRC_DIR/internal/server/dist" ] && [ ! -d "$SRC_DIR/web/dist" ]; }; then
+if [ "$BUILD_WEB" = "always" ] || [ ! -d "$SRC_DIR/web/dist" ]; then
     SHOULD_BUILD_WEB=1
 elif [ "$BUILD_WEB" = "auto" ] && command -v git &>/dev/null; then
     # Cek jika ada perubahan pada folder web/ pada commit terakhir
@@ -272,7 +281,9 @@ if [ "$HEALTHY" -eq 1 ]; then
     echo " 🔹 Versi Gateway Aktif: ${VERSION} (${GIT_COMMIT})"
     echo " 🔹 Status Layanan     : $(systemctl is-active "$SERVICE_NAME")"
     echo " 🔹 Endpoint Lokal     : http://127.0.0.1:${GATEWAY_PORT}/healthz (200 OK)"
-    echo " 🔹 Edge Proxy         : http://localhost/ (Caddy port 80/443)"
+    if command -v caddy >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
+        echo " 🔹 Edge Proxy         : http://localhost/ (Caddy aktif)"
+    fi
     echo " 🔹 Biner Cadangan     : ${INSTALL_DIR}/ai-gateway.bak (tersedia)"
     echo "=================================================================="
 else

@@ -112,7 +112,7 @@ export const Login: React.FC = () => {
                 <h1 className="text-xl font-bold text-white tracking-tight leading-tight">
                   Route-X
                 </h1>
-                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700/60">
+                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
                   Gateway
                 </span>
               </div>
@@ -214,7 +214,7 @@ export const Login: React.FC = () => {
                 required
                 aria-describedby={error ? 'login-error' : undefined}
                 placeholder="admin@routex.local"
-                className="w-full min-h-[44px] px-3.5 py-2.5 bg-bg-surface-1/80 hover:bg-bg-surface-1 border border-white/[0.08] hover:border-white/[0.16] focus:border-accent focus:ring-2 focus:ring-accent/25 rounded-xl text-sm text-text-primary placeholder:text-text-muted transition-all duration-150 outline-none"
+                className="w-full min-h-[44px] px-3.5 py-2.5 bg-bg-surface-1/80 hover:bg-bg-surface-1 border border-white/[0.08] hover:border-white/[0.16] focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 rounded-xl text-sm text-text-primary placeholder:text-text-muted transition-all duration-150 outline-none"
               />
             </div>
 
@@ -236,12 +236,12 @@ export const Login: React.FC = () => {
                   required
                   aria-describedby={error ? 'login-error' : undefined}
                   placeholder="••••••••••••"
-                  className="w-full min-h-[44px] px-3.5 py-2.5 pr-12 bg-bg-surface-1/80 hover:bg-bg-surface-1 border border-white/[0.08] hover:border-white/[0.16] focus:border-accent focus:ring-2 focus:ring-accent/25 rounded-xl text-sm text-text-primary placeholder:text-text-muted transition-all duration-150 outline-none"
+                  className="w-full min-h-[44px] px-3.5 py-2.5 pr-12 bg-bg-surface-1/80 hover:bg-bg-surface-1 border border-white/[0.08] hover:border-white/[0.16] focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 rounded-xl text-sm text-text-primary placeholder:text-text-muted transition-all duration-150 outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
                   aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
                 >
                   {showPassword ? (
@@ -261,14 +261,14 @@ export const Login: React.FC = () => {
               />
             </div>
 
-            {/* Monochrome High-Contrast Solid White Submit Button */}
+            {/* Primary Electric Indigo Submit Button */}
             <Button
               type="submit"
               variant="primary"
               size="lg"
               isLoading={isLoading}
               className="w-full mt-2 min-h-[42px] font-medium"
-              icon={<ArrowRight className="w-4 h-4 text-zinc-950" aria-hidden="true" />}
+              icon={<ArrowRight className="w-4 h-4 text-white" aria-hidden="true" />}
             >
               Masuk ke Konsol
             </Button>

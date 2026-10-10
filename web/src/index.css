@@ -5,15 +5,17 @@
 @layer base {
   body {
     background-color: #09090B;
+    background-image: radial-gradient(ellipse 65% 35% at 50% 0%, rgba(99, 102, 241, 0.08), transparent 70%);
+    background-repeat: no-repeat;
     color: #FAFAFA;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Universal Selection Color — Pure Zinc / High Contrast */
+  /* Universal Selection Color — Electric Indigo */
   ::selection {
-    background-color: #27272A;
+    background-color: #6366F1;
     color: #FFFFFF;
   }
 }
@@ -123,8 +125,8 @@ input[type="checkbox"]:hover:not(:disabled) {
 }
 
 input[type="checkbox"]:focus-visible {
-  border-color: #A1A1AA;
-  box-shadow: 0 0 0 2px #09090B, 0 0 0 4px #27272A;
+  border-color: #6366F1;
+  box-shadow: 0 0 0 2px #09090B, 0 0 0 4px rgba(99, 102, 241, 0.4);
 }
 
 input[type="checkbox"]:checked {
@@ -173,8 +175,8 @@ input[type="radio"]:hover:not(:disabled) {
 }
 
 input[type="radio"]:focus-visible {
-  border-color: #A1A1AA;
-  box-shadow: 0 0 0 2px #09090B, 0 0 0 4px #27272A;
+  border-color: #6366F1;
+  box-shadow: 0 0 0 2px #09090B, 0 0 0 4px rgba(99, 102, 241, 0.4);
 }
 
 input[type="radio"]:checked {
@@ -265,9 +267,9 @@ input[type="radio"]:disabled {
 }
 
 .input-dark:focus {
-  border-color: #71717A;
+  border-color: #6366F1;
   outline: none;
-  box-shadow: 0 0 0 1px #71717A;
+  box-shadow: 0 0 0 1px #6366F1, 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
 textarea {

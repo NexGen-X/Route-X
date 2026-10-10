@@ -24,7 +24,9 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
           <span className="text-xs font-normal text-zinc-400 truncate">
             Total Permintaan
           </span>
-          <Activity className="w-4 h-4 text-zinc-500 shrink-0" aria-hidden="true" />
+          <div className="p-1.5 rounded-md text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 shrink-0">
+            <Activity className="w-3.5 h-3.5" aria-hidden="true" />
+          </div>
         </div>
 
         <div className="mt-2.5">
@@ -53,7 +55,9 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
       <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-3.5 sm:p-4 hover:border-zinc-700/80 transition-colors shadow-sm flex flex-col justify-between">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-normal text-zinc-400 truncate">Total Token</span>
-          <Zap className="w-4 h-4 text-zinc-500 shrink-0" aria-hidden="true" />
+          <div className="p-1.5 rounded-md text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 shrink-0">
+            <Zap className="w-3.5 h-3.5" aria-hidden="true" />
+          </div>
         </div>
 
         <div className="mt-2.5">
@@ -81,7 +85,9 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
           <span className="text-xs font-normal text-zinc-400 truncate">
             Estimasi Biaya
           </span>
-          <Coins className="w-4 h-4 text-zinc-500 shrink-0" aria-hidden="true" />
+          <div className="p-1.5 rounded-md text-amber-400 bg-amber-500/10 border border-amber-500/20 shrink-0">
+            <Coins className="w-3.5 h-3.5" aria-hidden="true" />
+          </div>
         </div>
 
         <div className="mt-2.5">
@@ -105,7 +111,9 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
       <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-3.5 sm:p-4 hover:border-zinc-700/80 transition-colors shadow-sm flex flex-col justify-between">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-normal text-zinc-400 truncate">Latensi P95</span>
-          <Clock className="w-4 h-4 text-zinc-500 shrink-0" aria-hidden="true" />
+          <div className="p-1.5 rounded-md text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 shrink-0">
+            <Clock className="w-3.5 h-3.5" aria-hidden="true" />
+          </div>
         </div>
 
         <div className="mt-2.5">

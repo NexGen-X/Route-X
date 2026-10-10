@@ -46,13 +46,16 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
         ) : (
           <div className="divide-y divide-zinc-800/80 border-y border-zinc-800/80">
             {recentRequests.map((req) => {
-              const isOk = req.status_code >= 200 && req.status_code < 300;
-              const isErr = req.status_code >= 400;
-              const statusColor = isOk
-                ? 'text-emerald-400'
-                : isErr
-                ? 'text-rose-400'
-                : 'text-amber-400';
+              const is2xx = req.status_code >= 200 && req.status_code < 300;
+              const is4xx = req.status_code >= 400 && req.status_code < 500;
+              const is5xx = req.status_code >= 500;
+              const statusBadgeClass = is2xx
+                ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                : is4xx
+                ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                : is5xx
+                ? 'text-rose-400 bg-rose-500/10 border-rose-500/20'
+                : 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20';
 
               return (
                 <div
@@ -70,14 +73,14 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                 >
                   {/* Kiri: Status code, Model Name, Protocol */}
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className={`font-mono font-medium text-xs tabular-nums shrink-0 ${statusColor}`}>
+                    <span className={`font-mono font-medium text-[11px] tabular-nums shrink-0 px-1.5 py-0.5 rounded border ${statusBadgeClass}`}>
                       {req.status_code}
                     </span>
                     <span className="font-mono text-xs text-zinc-200 truncate group-hover:text-white transition-colors">
                       {req.requested_model || req.model_id || 'unknown'}
                     </span>
                     {req.is_stream && (
-                      <span className="text-[9px] font-mono px-1 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 shrink-0">
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 shrink-0">
                         SSE
                       </span>
                     )}

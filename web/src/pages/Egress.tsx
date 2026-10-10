@@ -72,10 +72,21 @@ export const Egress: React.FC = () => {
     try {
       const res = await api.egress.test(id);
       setProbeFeedback({ poolId: id, result: res });
-      toast.success(
-        `Uji koneksi egress sukses: ${res.latency_ms} ms (Exit IP: ${res.exit_ip || 'n/a'})`,
-        'Egress Sehat'
-      );
+
+      const isHealthy =
+        (res.status === 'healthy' || res.success === true) &&
+        typeof res.latency_ms === 'number';
+
+      if (isHealthy) {
+        toast.success(
+          `Uji koneksi egress sukses: ${res.latency_ms} ms (Exit IP: ${res.exit_ip || 'n/a'})`,
+          'Egress Sehat'
+        );
+      } else {
+        const errorDetail =
+          res.message || res.error || 'Proxy tidak merespons atau rute koneksi terputus.';
+        toast.error(errorDetail, 'Uji Egress Gagal');
+      }
       void loadPools();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);

@@ -182,9 +182,16 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const showToast = useCallback(
     (type: ToastType, message: string, title?: string, duration = 4000) => {
-      const id = Math.random().toString(36).substring(2, 9);
-      const newToast: ToastItem = { id, type, title, message, duration };
-      setToasts((prev) => [...prev, newToast]);
+      setToasts((prev) => {
+        // Cegah duplikasi toast dengan pesan dan tipe yang identik
+        if (prev.some((t) => t.message === message && t.type === type)) {
+          return prev;
+        }
+        const id = Math.random().toString(36).substring(2, 9);
+        const newToast: ToastItem = { id, type, title, message, duration };
+        // Batasi maksimal 3 notifikasi aktif secara bersamaan agar UI tetap ramping
+        return [...prev.slice(-2), newToast];
+      });
     },
     []
   );

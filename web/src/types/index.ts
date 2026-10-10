@@ -155,6 +155,7 @@ export interface EgressPool {
 
 export interface EgressProbeResult {
   status: 'healthy' | 'unhealthy';
+  success?: boolean;
   latency_ms?: number;
   exit_ip?: string;
   country?: string;

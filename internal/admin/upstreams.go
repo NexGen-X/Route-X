@@ -1847,6 +1847,7 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		_ = h.egressRepo.RecordHealth(ctx, id, "unhealthy", nil)
 		_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
 			Status:    "unhealthy",
+			Success:   false,
 			CheckedAt: now,
 			Message:   fmt.Sprintf("Gagal terhubung melalui proxy %s: %v", ep.Name, err),
 			Error:     err.Error(),
@@ -1863,6 +1864,7 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
 			Status:    "unhealthy",
+			Success:   false,
 			CheckedAt: now,
 			Message:   fmt.Sprintf("Proxy merespons dengan kode status HTTP %d", resp.StatusCode),
 			Error:     fmt.Sprintf("HTTP status %d", resp.StatusCode),
@@ -1903,6 +1905,7 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 
 	_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
 		Status:     "healthy",
+		Success:    true,
 		LatencyMS:  &duration,
 		ExitIP:     exitIP,
 		Country:    loc,

@@ -151,6 +151,7 @@ export const APIKeys: React.FC = () => {
 
       const keyId = res.id;
       const budgetNum = Number(formData.monthlyBudgetUsd);
+      let budgetWarning: string | null = null;
       if (keyId && Number.isFinite(budgetNum) && budgetNum > 0) {
         try {
           await api.budgets.create({
@@ -163,18 +164,26 @@ export const APIKeys: React.FC = () => {
             action_on_exceed: 'block',
           });
         } catch (bErr: unknown) {
-          toast.warn('Kunci dibuat, namun alokasi anggaran otomatis gagal: ' + getErrorMessage(bErr));
+          budgetWarning = getErrorMessage(bErr);
         }
       }
 
       setIsCreateOpen(false);
       setCreatedRawKey(res.raw_key || null);
-      toast.success(
-        budgetNum > 0
-          ? `Kunci API dan alokasi anggaran $${budgetNum.toFixed(2)}/bulan berhasil dibuat.`
-          : 'Kunci API baru berhasil dibuat.',
-        'API Key Dibuat'
-      );
+
+      if (budgetWarning) {
+        toast.warn(
+          `Kunci API dibuat, namun alokasi anggaran otomatis gagal: ${budgetWarning}`,
+          'Kunci Dibuat Sebagian'
+        );
+      } else {
+        toast.success(
+          budgetNum > 0
+            ? `Kunci API dan alokasi anggaran $${budgetNum.toFixed(2)}/bulan berhasil dibuat.`
+            : 'Kunci API baru berhasil dibuat.',
+          'API Key Dibuat'
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
       void queryClient.invalidateQueries({ queryKey: ['budgets'] });
     } catch (err: unknown) {

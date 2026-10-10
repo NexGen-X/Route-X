@@ -284,6 +284,36 @@ describe('Egress Page — Unit & Modular Decomposition Tests', () => {
     );
   });
 
+  it('menampilkan toast error dan banner saat live probe test mengembalikan status unhealthy', async () => {
+    const unhealthyResult: EgressProbeResult = {
+      status: 'unhealthy',
+      success: false,
+      message: 'Gagal terhubung melalui proxy Singapore SOCKS5: dial tcp: lookup proxy-sg.internal: no such host',
+      error: 'lookup proxy-sg.internal: no such host',
+      checked_at: new Date().toISOString(),
+    };
+    mockTestFn.mockResolvedValueOnce(unhealthyResult);
+
+    render(<Egress />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Singapore SOCKS5')).toBeInTheDocument();
+    });
+
+    const ujiPingButtons = screen.getAllByRole('button', { name: /Uji Ping/i });
+    fireEvent.click(ujiPingButtons[0]);
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith(
+        'Gagal terhubung melalui proxy Singapore SOCKS5: dial tcp: lookup proxy-sg.internal: no such host',
+        'Uji Egress Gagal'
+      );
+    });
+
+    // Pastikan toast sukses TIDAK PERNAH dipanggil
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+  });
+
   it('menghapus pool saat konfirmasi disetujui', async () => {
     mockDeleteFn.mockResolvedValueOnce(undefined);
 

@@ -790,6 +790,7 @@ func (DomainConfigDTO) adalahDTO() {}
 // EgressProbeResponseDTO adalah hasil pengujian konektivitas live ke proxy keluar.
 type EgressProbeResponseDTO struct {
 	Status     string    `json:"status"`
+	Success    bool      `json:"success"`
 	LatencyMS  *int      `json:"latency_ms,omitempty"`
 	ExitIP     string    `json:"exit_ip,omitempty"`
 	Country    string    `json:"country,omitempty"`

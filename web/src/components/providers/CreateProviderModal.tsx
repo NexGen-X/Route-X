@@ -293,6 +293,8 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           egress_pool_id: selectedEgressPoolId || undefined,
         });
 
+        let authNote = '';
+        let authWarning = '';
         if (effectiveApiKey) {
           if (authTab === 'oauth' || currentPreset?.authLoginType === 'oauth_fallback' || currentPreset?.id === 'antigravity') {
             setSavingStep('Menukarkan token OAuth ke Google & mengaktifkan auto-refresh worker...');
@@ -300,10 +302,10 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
               const oauthRes = await api.providers.oauthExchange(created.id, {
                 code: effectiveApiKey,
               });
-              toast.success(`Akun Google (${oauthRes.account_email || 'Antigravity'}) berhasil dihubungkan! Auto-refresh aktif.`);
+              authNote = `Akun Google (${oauthRes.account_email || 'Antigravity'}) terhubung`;
             } catch (oauthErr: unknown) {
               const errMsg = oauthErr instanceof Error ? oauthErr.message : String(oauthErr);
-              toast.warn('Provider dibuat, namun autentikasi OAuth gagal ditukar: ' + errMsg);
+              authWarning = `autentikasi OAuth gagal ditukar: ${errMsg}`;
             }
           } else {
             setSavingStep('Menyimpan dan mengenkripsi Kredensial (AES-256-GCM)...');
@@ -313,14 +315,16 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                 label: finalLabel,
                 api_key: effectiveApiKey,
               });
+              authNote = 'kredensial tersimpan';
             } catch (keyErr: unknown) {
               const errMsg = keyErr instanceof Error ? keyErr.message : String(keyErr);
-              toast.warn('Provider dibuat, namun kredensial gagal disimpan: ' + errMsg);
+              authWarning = `kredensial gagal disimpan: ${errMsg}`;
             }
           }
         }
 
         let pulledCount = 0;
+        let syncWarning = '';
         if (syncAfterSave && (effectiveApiKey || currentPreset?.authLoginType === 'local_socket')) {
           setSavingStep('Melakukan discovery & menarik model upstream...');
           try {
@@ -328,17 +332,29 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
             pulledCount = syncRes.count;
           } catch (err: unknown) {
             const errMsg = err instanceof Error ? err.message : String(err);
-            toast.warn('Provider dibuat, tetapi sinkronisasi model awal gagal: ' + errMsg);
+            syncWarning = `sinkronisasi model gagal: ${errMsg}`;
           }
         }
 
         await loadData();
         onClose();
 
-        if (pulledCount > 0) {
-          toast.success(`Provider "${created.display_name || created.name}" berhasil didaftarkan (${pulledCount} model ditarik)`);
+        const providerLabel = created.display_name || created.name;
+        if (authWarning || syncWarning) {
+          const warnings = [authWarning, syncWarning].filter(Boolean).join('; ');
+          toast.warn(`Provider "${providerLabel}" dibuat, namun ${warnings}`);
+        } else if (pulledCount > 0) {
+          toast.success(
+            authNote
+              ? `Provider "${providerLabel}" berhasil didaftarkan (${authNote}, ${pulledCount} model ditarik)`
+              : `Provider "${providerLabel}" berhasil didaftarkan (${pulledCount} model ditarik)`
+          );
         } else {
-          toast.success(`Provider "${created.display_name || created.name}" berhasil didaftarkan`);
+          toast.success(
+            authNote
+              ? `Provider "${providerLabel}" berhasil didaftarkan (${authNote})`
+              : `Provider "${providerLabel}" berhasil didaftarkan`
+          );
         }
 
         handleOpenDrawer(created, effectiveApiKey ? 'credentials' : 'models');

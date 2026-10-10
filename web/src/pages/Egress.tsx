@@ -71,35 +71,26 @@ export const Egress: React.FC = () => {
     setProbeFeedback(null);
     try {
       const res = await api.egress.test(id);
-      setProbeFeedback({ poolId: id, result: res });
 
       const isHealthy =
         (res.status === 'healthy' || res.success === true) &&
         typeof res.latency_ms === 'number';
 
       if (isHealthy) {
-        toast.success(
-          `Uji koneksi egress sukses: ${res.latency_ms} ms (Exit IP: ${res.exit_ip || 'n/a'})`,
-          'Egress Sehat'
-        );
+        // Tampilkan panel telemetri kaya di halaman (Exit IP, Edge PoP, Region, Latensi)
+        setProbeFeedback({ poolId: id, result: res });
       } else {
+        // Redam banner error in-page; pusatkan notifikasi kegagalan secara tunggal ke Toast
+        setProbeFeedback(null);
         const errorDetail =
           res.message || res.error || 'Proxy tidak merespons atau rute koneksi terputus.';
-        toast.error(errorDetail, 'Uji Egress Gagal');
+        toast.error(errorDetail, 'Uji Egress Gagal', { dedupeKey: `probe-${id}` });
       }
       void loadPools();
     } catch (err: unknown) {
+      setProbeFeedback(null);
       const message = err instanceof Error ? err.message : String(err);
-      setProbeFeedback({
-        poolId: id,
-        result: {
-          status: 'unhealthy',
-          latency_ms: 0,
-          checked_at: new Date().toISOString(),
-          message,
-        },
-      });
-      toast.error('Uji koneksi egress gagal: ' + message);
+      toast.error('Uji koneksi egress gagal: ' + message, 'Uji Egress Gagal', { dedupeKey: `probe-${id}` });
     } finally {
       setTestingId(null);
     }

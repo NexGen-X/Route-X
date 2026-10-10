@@ -261,7 +261,7 @@ describe('Egress Page — Unit & Modular Decomposition Tests', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  it('menampilkan notifikasi gagal saat live probe test mengalami error', async () => {
+  it('menampilkan notifikasi toast error tunggal dan tidak menduplikasi banner saat live probe test mengalami error', async () => {
     mockTestFn.mockRejectedValueOnce(new Error('Koneksi timeout ke exit node'));
 
     render(<Egress />);
@@ -274,17 +274,19 @@ describe('Egress Page — Unit & Modular Decomposition Tests', () => {
     fireEvent.click(ujiPingButtons[0]);
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
-      expect(screen.getByText('Uji Koneksi Gagal')).toBeInTheDocument();
-      expect(screen.getByText('Koneksi timeout ke exit node')).toBeInTheDocument();
+      expect(mockToastError).toHaveBeenCalledWith(
+        'Uji koneksi egress gagal: Koneksi timeout ke exit node',
+        'Uji Egress Gagal',
+        expect.objectContaining({ dedupeKey: 'probe-pool-sg-1' })
+      );
     });
 
-    expect(mockToastError).toHaveBeenCalledWith(
-      'Uji koneksi egress gagal: Koneksi timeout ke exit node'
-    );
+    // Pastikan banner alert duplikat TIDAK ditampilkan
+    expect(screen.queryByText('Uji Koneksi Gagal')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('menampilkan toast error dan banner saat live probe test mengembalikan status unhealthy', async () => {
+  it('menampilkan toast error tunggal dan tidak menduplikasi banner saat live probe test mengembalikan status unhealthy', async () => {
     const unhealthyResult: EgressProbeResult = {
       status: 'unhealthy',
       success: false,
@@ -306,12 +308,16 @@ describe('Egress Page — Unit & Modular Decomposition Tests', () => {
     await waitFor(() => {
       expect(mockToastError).toHaveBeenCalledWith(
         'Gagal terhubung melalui proxy Singapore SOCKS5: dial tcp: lookup proxy-sg.internal: no such host',
-        'Uji Egress Gagal'
+        'Uji Egress Gagal',
+        expect.objectContaining({ dedupeKey: 'probe-pool-sg-1' })
       );
     });
 
     // Pastikan toast sukses TIDAK PERNAH dipanggil
     expect(mockToastSuccess).not.toHaveBeenCalled();
+    // Pastikan tidak ada banner error duplikat
+    expect(screen.queryByText('Uji Koneksi Gagal')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('menghapus pool saat konfirmasi disetujui', async () => {

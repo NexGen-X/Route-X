@@ -21,23 +21,23 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const base =
-    'relative inline-flex items-center justify-center gap-2 font-medium select-none rounded-nav overflow-hidden transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none disabled:active:scale-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-base cursor-pointer';
+    'relative inline-flex items-center justify-center gap-2 font-medium select-none rounded-md transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none focus:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400 cursor-pointer';
 
   const variants = {
     primary:
-      'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 bg-[length:200%_auto] hover:bg-[position:right_center] text-white font-semibold shadow-sm shadow-blue-500/25 hover:shadow-glow-accent border border-blue-400/30 hover:border-blue-300/50',
+      'bg-white text-zinc-950 hover:bg-zinc-200 font-medium shadow-sm border border-transparent',
     secondary:
-      'bg-bg-surface-2/90 hover:bg-bg-surface-3 text-text-primary hover:text-white border border-white/[0.08] hover:border-white/[0.18] shadow-sm hover:shadow-glow-subtle/20',
+      'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 hover:border-zinc-700 shadow-sm',
     danger:
-      'bg-status-error/10 text-status-error hover:text-white hover:bg-status-error border border-status-error/25 hover:border-status-error/50 shadow-sm shadow-rose-950/20',
+      'bg-rose-950/40 text-rose-300 hover:bg-rose-900/60 border border-rose-800/60 hover:border-rose-700 shadow-sm',
     ghost:
-      'text-text-secondary hover:text-text-primary hover:bg-bg-surface-2/80 border border-transparent',
+      'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 border border-transparent',
   };
 
   const sizes = {
-    sm: 'text-xs px-3 py-1.5 min-h-[44px] sm:min-h-[32px]',
-    md: 'text-sm px-4 py-2 min-h-[44px] sm:min-h-[38px]',
-    lg: 'text-base px-5 py-2.5 min-h-[48px] sm:min-h-[44px]',
+    sm: 'text-xs px-3 py-1.5 min-h-[36px] sm:min-h-[30px]',
+    md: 'text-xs sm:text-sm px-3.5 py-1.5 min-h-[40px] sm:min-h-[34px]',
+    lg: 'text-sm px-4 py-2 min-h-[44px] sm:min-h-[38px]',
   };
 
   return (
@@ -49,7 +49,7 @@ export const Button: React.FC<ButtonProps> = ({
       {...props}
     >
       {isLoading ? (
-        <Loader2 className="w-4 h-4 animate-spin shrink-0 text-current" aria-hidden="true" />
+        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 text-current" aria-hidden="true" />
       ) : icon ? (
         <span className="inline-flex shrink-0 items-center justify-center" aria-hidden="true">
           {icon}

@@ -149,19 +149,19 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
   // Tampilan ciut (Collapsed Compact Bar)
   if (isCollapsed) {
     return (
-      <div className="h-12 px-4 bg-bg-surface border border-border/80 rounded-card flex items-center justify-between text-xs transition-all shadow-sm">
+      <div className="h-10 px-3.5 bg-zinc-900/40 border border-zinc-800/80 rounded-lg flex items-center justify-between text-xs transition-colors shadow-sm">
         <div className="flex items-center gap-2 truncate">
-          <Sparkles className="w-4 h-4 text-blue-400 shrink-0" aria-hidden="true" />
-          <span className="text-white font-medium truncate">
-            Panduan Cepat Memulai Route-X (3 Langkah Integrasi)
+          <Sparkles className="w-3.5 h-3.5 text-zinc-400 shrink-0" aria-hidden="true" />
+          <span className="text-zinc-200 font-medium truncate">
+            Panduan Cepat Memulai Route-X
           </span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={toggleCollapse}
             aria-label="Buka Panduan"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-white bg-bg-surface-2 hover:bg-bg-surface-3 border border-border/80 rounded-lg transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs text-zinc-400 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-md transition-colors cursor-pointer"
           >
             <span>Buka Panduan</span>
             <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
@@ -170,7 +170,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
             type="button"
             onClick={dismissOnboarding}
             aria-label="tutup panduan"
-            className="text-text-muted hover:text-white p-2 rounded-lg hover:bg-bg-surface-2 transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
+            className="text-zinc-500 hover:text-white p-1 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer"
             title="Tutup panduan secara permanen"
           >
             <X className="w-4 h-4" aria-hidden="true" />
@@ -182,28 +182,22 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
 
   return (
     <>
-      <div className="bg-bg-surface border border-border/80 rounded-card p-5 sm:p-6 shadow-sm relative overflow-hidden transition-all">
-        {/* Ambient subtle glow background */}
-        <div
-          className="pointer-events-none absolute -top-24 right-10 w-96 h-40 bg-blue-500/10 rounded-full blur-3xl"
-          aria-hidden="true"
-        />
-
+      <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-4 sm:p-5 shadow-sm relative transition-colors">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20">
-              <Sparkles className="w-4 h-4" aria-hidden="true" />
+            <div className="w-6 h-6 rounded bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-zinc-300">
+              <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
             </div>
-            <h3 className="text-sm font-semibold text-white tracking-tight">
+            <h3 className="text-sm font-medium text-white tracking-tight">
               Panduan Cepat Memulai Route-X
             </h3>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={toggleCollapse}
               aria-label="Ciutkan Panduan"
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs text-text-muted hover:text-white rounded-lg hover:bg-bg-surface-2 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-white rounded-md hover:bg-zinc-800 transition-colors cursor-pointer"
               title="Ciutkan panduan untuk mengosongkan ruang layar"
             >
               <span>Ciutkan Panduan</span>
@@ -213,7 +207,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
               type="button"
               onClick={dismissOnboarding}
               aria-label="tutup panduan"
-              className="text-text-muted hover:text-white p-2 rounded-lg hover:bg-bg-surface-2 transition-colors cursor-pointer min-w-[36px] min-h-[36px] flex items-center justify-center"
+              className="text-zinc-500 hover:text-white p-1 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer"
               title="Tutup panduan secara permanen"
             >
               <X className="w-4 h-4" aria-hidden="true" />
@@ -221,8 +215,8 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
           </div>
         </div>
 
-        {/* 3 Step Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 mt-5">
+        {/* 3 Step Cards — Lean Zinc Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
           {/* Step 1 */}
           <div
             role="button"
@@ -234,18 +228,18 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
               }
             }}
             onClick={() => onNavigate('/upstreams/providers')}
-            className="p-4 rounded-xl bg-bg-surface-2/60 border border-border/80 hover:border-blue-500/40 hover:bg-bg-surface-2 cursor-pointer transition-all space-y-2 group"
+            className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-800/50 cursor-pointer transition-colors space-y-1.5 group"
           >
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-bg-surface-3 text-text-secondary border border-border/60 font-semibold">
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 font-medium">
                 Langkah 1
               </span>
-              <Server className="w-4 h-4 text-text-muted group-hover:text-blue-400 transition-colors" aria-hidden="true" />
+              <Server className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-300 transition-colors" aria-hidden="true" />
             </div>
-            <h4 className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors">
+            <h4 className="text-xs font-medium text-white group-hover:text-zinc-200 transition-colors">
               Tambah Penyedia AI Upstream
             </h4>
-            <p className="text-[11px] text-text-muted leading-relaxed">
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
               Daftarkan OpenAI, Anthropic, Gemini, Groq, atau Ollama dengan API Key Anda.
             </p>
           </div>
@@ -261,18 +255,18 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
               }
             }}
             onClick={() => onNavigate('/access/api-keys')}
-            className="p-4 rounded-xl bg-bg-surface-2/60 border border-border/80 hover:border-blue-500/40 hover:bg-bg-surface-2 cursor-pointer transition-all space-y-2 group"
+            className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-800/50 cursor-pointer transition-colors space-y-1.5 group"
           >
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-bg-surface-3 text-text-secondary border border-border/60 font-semibold">
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 font-medium">
                 Langkah 2
               </span>
-              <KeyRound className="w-4 h-4 text-text-muted group-hover:text-blue-400 transition-colors" aria-hidden="true" />
+              <KeyRound className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-300 transition-colors" aria-hidden="true" />
             </div>
-            <h4 className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors">
+            <h4 className="text-xs font-medium text-white group-hover:text-zinc-200 transition-colors">
               Terbitkan Kunci API Klien
             </h4>
-            <p className="text-[11px] text-text-muted leading-relaxed">
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
               Buat Bearer token aman untuk mengautentikasi aplikasi, script, dan CLI Anda.
             </p>
           </div>
@@ -288,43 +282,43 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
               }
             }}
             onClick={() => onNavigate('/cli-integrations')}
-            className="p-4 rounded-xl bg-bg-surface-2/60 border border-border/80 hover:border-blue-500/40 hover:bg-bg-surface-2 cursor-pointer transition-all space-y-2 group"
+            className="p-3.5 rounded-lg bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-800/50 cursor-pointer transition-colors space-y-1.5 group"
           >
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-bg-surface-3 text-text-secondary border border-border/60 font-semibold">
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 font-medium">
                 Langkah 3
               </span>
-              <Terminal className="w-4 h-4 text-text-muted group-hover:text-blue-400 transition-colors" aria-hidden="true" />
+              <Terminal className="w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-300 transition-colors" aria-hidden="true" />
             </div>
-            <h4 className="text-xs font-semibold text-white group-hover:text-blue-400 transition-colors">
+            <h4 className="text-xs font-medium text-white group-hover:text-zinc-200 transition-colors">
               Sambungkan Editor atau CLI
             </h4>
-            <p className="text-[11px] text-text-muted leading-relaxed">
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
               Integrasikan Cursor, Claude Code, Cline, Antigravity, atau Aider dalam 1-klik.
             </p>
           </div>
         </div>
 
-        {/* Tab Kode Instan (Instant Code Snippets) */}
-        <div className="mt-5 pt-4 border-t border-border/60">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
+        {/* Tab Kode Instan */}
+        <div className="mt-4 pt-3.5 border-t border-zinc-800/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-2.5">
             <div className="flex items-center gap-2">
-              <Code2 className="w-4 h-4 text-blue-400" aria-hidden="true" />
-              <span className="text-xs font-semibold text-white tracking-wide">
+              <Code2 className="w-3.5 h-3.5 text-zinc-400" aria-hidden="true" />
+              <span className="text-xs font-medium text-zinc-200">
                 Tab Kode Instan (Uji Konektivitas Gateway)
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto p-1 rounded-xl bg-bg-surface-2/70 border border-border/70 scrollbar-none">
+            <div className="flex items-center gap-1 overflow-x-auto p-0.5 rounded-md bg-zinc-900 border border-zinc-800 scrollbar-none">
               {(Object.keys(CODE_SNIPPETS) as CodeTab[]).map((tab) => (
                 <button
                   key={tab}
                   type="button"
                   onClick={() => setActiveCodeTab(tab)}
-                  className={`px-2.5 py-1 text-xs font-mono rounded-lg transition-all cursor-pointer ${
+                  className={`px-2 py-0.5 text-xs font-mono rounded transition-colors cursor-pointer ${
                     activeCodeTab === tab
-                      ? 'bg-blue-600 text-white font-medium shadow-sm'
-                      : 'text-text-muted hover:text-white hover:bg-bg-surface-3/50'
+                      ? 'bg-zinc-800 text-white font-medium'
+                      : 'text-zinc-400 hover:text-white'
                   }`}
                 >
                   {CODE_SNIPPETS[tab].label}
@@ -333,13 +327,13 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
             </div>
           </div>
 
-          <div className="relative rounded-xl bg-bg-surface-2/80 border border-border/80 overflow-hidden font-mono text-xs">
-            <div className="flex items-center justify-between px-3.5 py-2 border-b border-border/60 bg-bg-surface-3/30 text-[11px] text-text-muted">
+          <div className="relative rounded-md bg-zinc-950 border border-zinc-800 overflow-hidden font-mono text-xs">
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-800 bg-zinc-900/60 text-[11px] text-zinc-400">
               <span>{CODE_SNIPPETS[activeCodeTab].label} Integration</span>
               <button
                 type="button"
                 onClick={() => handleCopyCodeSnippet(CODE_SNIPPETS[activeCodeTab].code)}
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
               >
                 {codeCopied ? (
                   <>
@@ -354,57 +348,54 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
                 )}
               </button>
             </div>
-            <pre className="p-3.5 overflow-x-auto text-text-primary leading-relaxed text-[11px] scrollbar-thin">
+            <pre className="p-3 overflow-x-auto text-zinc-300 leading-relaxed text-[11px] scrollbar-thin">
               {CODE_SNIPPETS[activeCodeTab].code}
             </pre>
           </div>
         </div>
 
-        {/* Strip Resep Cepat 1-Klik untuk Pemula */}
-        <div className="mt-5 pt-4 border-t border-border/60">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider flex items-center gap-1.5 font-mono">
-              <Sparkles className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
+        {/* Strip Resep Cepat 1-Klik */}
+        <div className="mt-4 pt-3.5 border-t border-zinc-800/80">
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-xs font-medium text-zinc-400 tracking-wide flex items-center gap-1.5 font-mono">
+              <Sparkles className="w-3.5 h-3.5 text-zinc-500" aria-hidden="true" />
               Resep Cepat 1-Klik (Siap Pakai untuk Pemula)
-            </span>
-            <span className="text-[11px] text-text-muted hidden sm:inline">
-              Pilih skenario penggunaan Anda
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <button
               type="button"
               onClick={() => setSelectedRecipe('coding')}
-              className="p-3.5 rounded-xl bg-bg-surface-2/60 border border-border/80 hover:border-sky-500/40 hover:bg-sky-500/5 transition-all text-left group cursor-pointer"
+              className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-800/50 transition-colors text-left group cursor-pointer"
             >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-semibold text-white group-hover:text-sky-300 transition-colors flex items-center gap-1.5">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-zinc-200 group-hover:text-white transition-colors">
                   🛠️ Coding Asisten
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/20 font-mono">
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 font-mono">
                   Cursor / Claude
                 </span>
               </div>
-              <p className="text-[11px] text-text-muted leading-relaxed">
-                Panduan &amp; konfigurasi instan untuk menghubungkan Cursor, Claude Code, atau Cline.
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Panduan konfigurasi instan untuk menghubungkan Cursor, Claude Code, atau Cline.
               </p>
             </button>
 
             <button
               type="button"
               onClick={() => setSelectedRecipe('budget')}
-              className="p-3.5 rounded-xl bg-bg-surface-2/60 border border-border/80 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition-all text-left group cursor-pointer"
+              className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-800/50 transition-colors text-left group cursor-pointer"
             >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-semibold text-white group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-zinc-200 group-hover:text-white transition-colors">
                   💰 Hemat Biaya 90%
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono">
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 font-mono">
                   DeepSeek / Groq
                 </span>
               </div>
-              <p className="text-[11px] text-text-muted leading-relaxed">
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
                 Alihkan prompt harian ke model hemat dengan fallback cerdas ke model flagship.
               </p>
             </button>
@@ -412,17 +403,17 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
             <button
               type="button"
               onClick={() => setSelectedRecipe('uptime')}
-              className="p-3.5 rounded-xl bg-bg-surface-2/60 border border-border/80 hover:border-purple-500/40 hover:bg-purple-500/5 transition-all text-left group cursor-pointer"
+              className="p-3 rounded-lg bg-zinc-900/60 border border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-800/50 transition-colors text-left group cursor-pointer"
             >
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-semibold text-white group-hover:text-purple-300 transition-colors flex items-center gap-1.5">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-medium text-zinc-200 group-hover:text-white transition-colors">
                   🛡️ Anti-Downtime
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-mono">
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 font-mono">
                   Auto Failover
                 </span>
               </div>
-              <p className="text-[11px] text-text-muted leading-relaxed">
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
                 Kombinasi multi-upstream: jika OpenAI sibuk/error, otomatis beralih ke Claude/Gemini.
               </p>
             </button>
@@ -444,11 +435,12 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
         maxWidth="2xl"
         footer={
           <div className="flex items-center justify-between w-full">
-            <Button variant="ghost" onClick={() => setSelectedRecipe(null)}>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedRecipe(null)}>
               Tutup
             </Button>
             <Button
               variant="primary"
+              size="sm"
               onClick={() => {
                 const target =
                   selectedRecipe === 'coding' ? '/cli-integrations' : '/gateway/routing';
@@ -465,29 +457,29 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
         <div className="space-y-4 text-xs">
           {selectedRecipe === 'coding' && (
             <>
-              <div className="p-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-200 leading-relaxed">
+              <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 leading-relaxed">
                 Route-X mendukung <strong>Dual-Protocol</strong> native: OpenAI API (
                 <code className="font-mono text-white">/v1/chat/completions</code>) dan Anthropic Claude (
                 <code className="font-mono text-white">/v1/messages</code>) secara bersamaan!
               </div>
 
               <div className="space-y-2">
-                <h4 className="font-semibold text-white">1. Parameter Sambungan Gateway</h4>
+                <h4 className="font-medium text-white">1. Parameter Sambungan Gateway</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-[11px]">
-                  <div className="p-2.5 rounded-lg bg-bg-surface-2 border border-border">
-                    <span className="text-text-muted block text-[10px]">OpenAI Endpoint:</span>
-                    <span className="text-blue-400">http://localhost:8080/v1</span>
+                  <div className="p-2.5 rounded-md bg-zinc-900 border border-zinc-800">
+                    <span className="text-zinc-500 block text-[10px]">OpenAI Endpoint:</span>
+                    <span className="text-zinc-200">http://localhost:8080/v1</span>
                   </div>
-                  <div className="p-2.5 rounded-lg bg-bg-surface-2 border border-border">
-                    <span className="text-text-muted block text-[10px]">Anthropic Endpoint:</span>
-                    <span className="text-blue-400">http://localhost:8080</span>
+                  <div className="p-2.5 rounded-md bg-zinc-900 border border-zinc-800">
+                    <span className="text-zinc-500 block text-[10px]">Anthropic Endpoint:</span>
+                    <span className="text-zinc-200">http://localhost:8080</span>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-semibold text-white">2. Ekspor Variabel Shell Seketika</h4>
+                  <h4 className="font-medium text-white">2. Ekspor Variabel Shell Seketika</h4>
                   <button
                     type="button"
                     onClick={() =>
@@ -495,7 +487,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
                         `export OPENAI_BASE_URL="http://localhost:8080/v1"\nexport ANTHROPIC_BASE_URL="http://localhost:8080"\nexport OPENAI_API_KEY="your_routex_api_key"\nexport ANTHROPIC_API_KEY="your_routex_api_key"`
                       )
                     }
-                    className="inline-flex items-center gap-1 text-[11px] text-blue-400 hover:underline font-mono cursor-pointer"
+                    className="inline-flex items-center gap-1 text-[11px] text-zinc-300 hover:text-white font-mono cursor-pointer"
                   >
                     {recipeCopied ? (
                       <Check className="w-3 h-3 text-emerald-400" aria-hidden="true" />
@@ -505,7 +497,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
                     <span>{recipeCopied ? 'Tersalin!' : 'Salin Snippet'}</span>
                   </button>
                 </div>
-                <pre className="p-3 rounded-xl bg-bg-surface-2 border border-border font-mono text-[11px] text-text-primary overflow-x-auto leading-relaxed">
+                <pre className="p-3 rounded-md bg-zinc-900 border border-zinc-800 font-mono text-[11px] text-zinc-300 overflow-x-auto leading-relaxed">
 {`export OPENAI_BASE_URL="http://localhost:8080/v1"
 export ANTHROPIC_BASE_URL="http://localhost:8080"
 export OPENAI_API_KEY="your_routex_api_key"
@@ -517,24 +509,22 @@ export ANTHROPIC_API_KEY="your_routex_api_key"`}
 
           {selectedRecipe === 'budget' && (
             <>
-              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 leading-relaxed">
+              <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 leading-relaxed">
                 Hemat anggaran token hingga <strong>90%</strong> dengan mengarahkan percakapan rutin ke model
                 ultra-hemat (DeepSeek V3 / Groq LLaMA 3.3) dan hanya beralih ke model flagship saat diperlukan.
               </div>
 
               <div className="space-y-2">
-                <h4 className="font-semibold text-white">Langkah Mudah Penerapan:</h4>
-                <ol className="list-decimal list-inside space-y-1.5 text-text-secondary">
+                <h4 className="font-medium text-white">Langkah Mudah Penerapan:</h4>
+                <ol className="list-decimal list-inside space-y-1.5 text-zinc-400">
                   <li>
-                    Buka menu <strong className="text-white">Penyedia AI</strong> dan tambahkan API Key DeepSeek atau Groq.
+                    Buka menu <strong className="text-zinc-200">Penyedia AI</strong> dan tambahkan API Key DeepSeek atau Groq.
                   </li>
                   <li>
-                    Buka menu <strong className="text-white">Perutean Cerdas</strong>, pilih mode{' '}
-                    <strong className="text-blue-400">Combo Cascade</strong>.
+                    Buka menu <strong className="text-zinc-200">Perutean Cerdas</strong>, pilih mode Combo Cascade.
                   </li>
                   <li>
-                    Setel <em>Tier 1 (Utama)</em> ke DeepSeek V3, dan <em>Tier 2 (Cadangan)</em> ke Claude 3.5
-                    Sonnet / GPT-4o.
+                    Setel Tier 1 ke DeepSeek V3, dan Tier 2 ke Claude 3.5 Sonnet / GPT-4o.
                   </li>
                 </ol>
               </div>
@@ -543,25 +533,21 @@ export ANTHROPIC_API_KEY="your_routex_api_key"`}
 
           {selectedRecipe === 'uptime' && (
             <>
-              <div className="p-3.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-200 leading-relaxed">
-                Jaminan keandalan tinggi (<em>High Availability</em>): Jika OpenAI mengalami lonjakan error (503 / 500)
-                atau batas kuota (429), Route-X otomatis mengalihkan request ke Anthropic atau Google dalam &lt; 200
-                milidetik.
+              <div className="p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 leading-relaxed">
+                Jaminan keandalan tinggi: Jika OpenAI mengalami lonjakan error atau limit kuota, Route-X otomatis mengalihkan request ke Anthropic atau Google dalam &lt; 200 ms.
               </div>
 
               <div className="space-y-2">
-                <h4 className="font-semibold text-white">Langkah Pengaktifan:</h4>
-                <ol className="list-decimal list-inside space-y-1.5 text-text-secondary">
+                <h4 className="font-medium text-white">Langkah Pengaktifan:</h4>
+                <ol className="list-decimal list-inside space-y-1.5 text-zinc-400">
                   <li>
-                    Pastikan minimal 2 Penyedia AI upstream terhubung (misal: OpenAI + Anthropic).
+                    Pastikan minimal 2 Penyedia AI upstream terhubung.
                   </li>
                   <li>
-                    Buka menu <strong className="text-white">Perutean Cerdas</strong>, pilih mode{' '}
-                    <strong className="text-purple-300">Failover (Priority)</strong>.
+                    Buka menu <strong className="text-zinc-200">Perutean Cerdas</strong>, pilih mode Failover.
                   </li>
                   <li>
-                    Centang kedua provider; Route-X akan otomatis menangani pemulihan saat provider utama
-                    sibuk.
+                    Centang kedua provider untuk mengaktifkan recovery otomatis.
                   </li>
                 </ol>
               </div>

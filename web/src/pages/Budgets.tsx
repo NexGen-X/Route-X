@@ -402,8 +402,8 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
           ) : limits.length === 0 && !loadError ? (
             <Card className="py-12 px-6 text-center" data-testid="limits-empty-state">
               <div className="max-w-md mx-auto space-y-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center mx-auto shadow-inner">
-                  <Gauge className="w-6 h-6" />
+                <div className="w-10 h-10 rounded-lg bg-zinc-800 border border-zinc-700/60 text-zinc-300 flex items-center justify-center mx-auto">
+                  <Gauge className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white">Belum Ada Aturan Rate Limit</h3>

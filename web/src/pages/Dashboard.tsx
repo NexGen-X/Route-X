@@ -27,52 +27,46 @@ export const TrafficChartSkeleton: React.FC = () => (
   <div
     role="status"
     aria-label="Memuat grafik analitik lalu lintas"
-    className="bg-bg-surface border border-border/80 rounded-card p-4 sm:p-5 shadow-sm flex flex-col justify-between animate-pulse min-h-[340px]"
+    className="bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-4 sm:p-5 shadow-sm flex flex-col justify-between animate-pulse min-h-[340px]"
   >
-    {/* DeepSeek themed header skeleton */}
+    {/* Minimalist zinc header skeleton */}
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
       <div className="flex items-center gap-2">
-        <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
-          <div className="w-4 h-4 rounded bg-blue-400/40" />
-        </div>
+        <div className="w-4 h-4 rounded bg-zinc-800" />
         <div>
-          <div className="h-4 w-48 bg-bg-surface-2 rounded mb-1" />
-          <div className="h-2.5 w-24 bg-bg-surface-2/60 rounded" />
+          <div className="h-4 w-40 bg-zinc-800 rounded mb-1" />
+          <div className="h-2.5 w-20 bg-zinc-800/60 rounded" />
         </div>
       </div>
-      <div className="flex items-center overflow-x-auto max-w-full bg-bg-surface-2/80 p-1 rounded-xl border border-border/80 gap-1">
-        <div className="h-7 w-12 bg-blue-600/30 rounded-lg" />
-        <div className="h-7 w-12 bg-bg-surface-3/40 rounded-lg" />
-        <div className="h-7 w-14 bg-bg-surface-3/40 rounded-lg" />
-        <span className="w-px h-5 bg-border/80 mx-1" />
-        <div className="h-7 w-8 bg-bg-surface-3/40 rounded-lg" />
-        <div className="h-7 w-8 bg-bg-surface-3/40 rounded-lg" />
-        <div className="h-7 w-9 bg-bg-surface-3/60 rounded-lg" />
+      <div className="flex items-center overflow-x-auto max-w-full bg-zinc-900 p-0.5 rounded-md border border-zinc-800 gap-1">
+        <div className="h-6 w-10 bg-zinc-800 rounded" />
+        <div className="h-6 w-10 bg-zinc-850 rounded" />
+        <div className="h-6 w-12 bg-zinc-850 rounded" />
+        <span className="w-px h-4 bg-zinc-800 mx-0.5" />
+        <div className="h-6 w-7 bg-zinc-850 rounded" />
+        <div className="h-6 w-7 bg-zinc-850 rounded" />
+        <div className="h-6 w-8 bg-zinc-850 rounded" />
       </div>
     </div>
 
-    {/* DeepSeek themed area chart silhouette */}
-    <div className="h-52 sm:h-64 w-full pt-1 sm:pt-2 flex flex-col justify-end relative overflow-hidden rounded-xl bg-gradient-to-b from-blue-500/5 to-transparent border border-border/40 p-4">
-      {/* Subtle gridlines */}
+    {/* Minimalist zinc area chart silhouette */}
+    <div className="h-52 sm:h-64 w-full pt-1 sm:pt-2 flex flex-col justify-end relative overflow-hidden rounded-md bg-zinc-950 border border-zinc-800/80 p-4">
       <div className="absolute inset-0 flex flex-col justify-between p-4 pointer-events-none opacity-20">
-        <div className="border-b border-dashed border-slate-600 w-full" />
-        <div className="border-b border-dashed border-slate-600 w-full" />
-        <div className="border-b border-dashed border-slate-600 w-full" />
-        <div className="border-b border-dashed border-slate-600 w-full" />
+        <div className="border-b border-dashed border-zinc-700 w-full" />
+        <div className="border-b border-dashed border-zinc-700 w-full" />
+        <div className="border-b border-dashed border-zinc-700 w-full" />
       </div>
-      {/* Neon wave bars silhouette */}
-      <div className="w-full h-32 bg-gradient-to-t from-blue-500/20 via-indigo-500/10 to-transparent rounded-t-xl relative overflow-hidden flex items-end justify-between px-2 gap-1.5 sm:gap-3">
-        <div className="w-full h-[25%] bg-blue-400/20 rounded-t" />
-        <div className="w-full h-[40%] bg-blue-400/25 rounded-t" />
-        <div className="w-full h-[30%] bg-blue-400/20 rounded-t" />
-        <div className="w-full h-[55%] bg-blue-400/30 rounded-t" />
-        <div className="w-full h-[45%] bg-blue-400/25 rounded-t" />
-        <div className="w-full h-[70%] bg-blue-400/35 rounded-t" />
-        <div className="w-full h-[60%] bg-blue-400/30 rounded-t" />
-        <div className="w-full h-[85%] bg-blue-400/40 rounded-t" />
-        <div className="w-full h-[65%] bg-blue-400/30 rounded-t" />
-        <div className="w-full h-[95%] bg-blue-400/45 rounded-t" />
-        <div className="w-full h-[75%] bg-blue-400/35 rounded-t" />
+      <div className="w-full h-28 bg-zinc-900/40 rounded-t relative overflow-hidden flex items-end justify-between px-2 gap-1.5 sm:gap-3">
+        <div className="w-full h-[25%] bg-zinc-800 rounded-t" />
+        <div className="w-full h-[40%] bg-zinc-800 rounded-t" />
+        <div className="w-full h-[30%] bg-zinc-800 rounded-t" />
+        <div className="w-full h-[55%] bg-zinc-800 rounded-t" />
+        <div className="w-full h-[45%] bg-zinc-800 rounded-t" />
+        <div className="w-full h-[70%] bg-zinc-800 rounded-t" />
+        <div className="w-full h-[60%] bg-zinc-800 rounded-t" />
+        <div className="w-full h-[85%] bg-zinc-800 rounded-t" />
+        <div className="w-full h-[65%] bg-zinc-800 rounded-t" />
+        <div className="w-full h-[95%] bg-zinc-800 rounded-t" />
       </div>
     </div>
   </div>
@@ -325,29 +319,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
       {/* 6. SYSTEM TELEMETRY — collapsible, tersembunyi secara default */}
       <WidgetErrorBoundary title="Runtime Telemetri Gateway">
-        <div className="border border-border/80 rounded-card overflow-hidden bg-bg-surface shadow-sm transition-all">
+        <div className="border border-zinc-800/80 rounded-lg overflow-hidden bg-zinc-900/40 shadow-sm transition-colors">
           <button
             type="button"
             onClick={() => setTelemetryExpanded((v) => !v)}
-            className="w-full flex items-center justify-between px-5 py-3.5 bg-bg-surface hover:bg-bg-surface-2 transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent min-h-[44px]"
+            className="w-full flex items-center justify-between px-4 py-3 bg-zinc-900/40 hover:bg-zinc-900/70 transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400 min-h-[40px]"
             aria-expanded={telemetryExpanded}
             aria-label="Tampilkan atau sembunyikan runtime telemetri gateway"
           >
-            <div className="flex items-center gap-2.5">
-              <Cpu className="w-4 h-4 text-blue-400" aria-hidden="true" />
-              <span className="text-xs font-semibold text-text-secondary">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-4 h-4 text-zinc-400" aria-hidden="true" />
+              <span className="text-xs font-medium text-zinc-300">
                 Runtime Telemetri Gateway
               </span>
             </div>
             <ChevronDown
-              className={`w-4 h-4 text-text-muted transition-transform duration-200 ${
+              className={`w-4 h-4 text-zinc-500 transition-transform duration-150 ${
                 telemetryExpanded ? 'rotate-180' : ''
               }`}
               aria-hidden="true"
             />
           </button>
           {telemetryExpanded && (
-            <div className="p-5 border-t border-border/70 bg-bg-surface-1/40">
+            <div className="p-4 sm:p-5 border-t border-zinc-800/80 bg-zinc-950/40">
               <SystemTelemetrySection overview={overview} />
             </div>
           )}

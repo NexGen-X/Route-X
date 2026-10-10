@@ -191,7 +191,7 @@ export const Observability: React.FC = () => {
                   onClick={() => setWindowTime(w)}
                   className={`min-h-[44px] sm:min-h-[32px] px-3 py-1 rounded-inner text-xs font-semibold transition-colors cursor-pointer ${
                     windowTime === w
-                      ? 'bg-accent text-white font-bold shadow-sm shadow-blue-500/20'
+                      ? 'bg-zinc-800 text-white font-medium border border-zinc-700/60'
                       : 'text-text-secondary hover:text-white'
                   }`}
                 >

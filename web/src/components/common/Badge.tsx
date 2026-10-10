@@ -24,32 +24,32 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 const VARIANT_STYLES: Record<string, { pill: string; dot: string }> = {
   blue: {
-    pill: 'bg-blue-500/10 text-blue-400 border-blue-500/25 shadow-[0_0_12px_-3px_rgba(59,130,246,0.25)]',
-    dot: 'bg-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.8)]',
+    pill: 'bg-zinc-900 text-zinc-300 border-zinc-800',
+    dot: 'bg-zinc-400',
   },
   emerald: {
-    pill: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25 shadow-[0_0_12px_-3px_rgba(16,185,129,0.25)]',
-    dot: 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)]',
+    pill: 'bg-emerald-950/40 text-emerald-400 border-emerald-800/60',
+    dot: 'bg-emerald-500',
   },
   purple: {
-    pill: 'bg-purple-500/10 text-purple-400 border-purple-500/25 shadow-[0_0_12px_-3px_rgba(168,85,247,0.25)]',
-    dot: 'bg-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.8)]',
+    pill: 'bg-purple-950/40 text-purple-300 border-purple-800/60',
+    dot: 'bg-purple-400',
   },
   amber: {
-    pill: 'bg-amber-500/10 text-amber-400 border-amber-500/25 shadow-[0_0_12px_-3px_rgba(245,158,11,0.25)]',
-    dot: 'bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)]',
+    pill: 'bg-amber-950/40 text-amber-400 border-amber-800/60',
+    dot: 'bg-amber-500',
   },
   rose: {
-    pill: 'bg-rose-500/10 text-rose-400 border-rose-500/25 shadow-[0_0_12px_-3px_rgba(244,63,94,0.25)]',
-    dot: 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.8)]',
+    pill: 'bg-rose-950/40 text-rose-400 border-rose-800/60',
+    dot: 'bg-rose-500',
   },
   lime: {
-    pill: 'bg-lime-500/10 text-lime-400 border-lime-500/25 shadow-[0_0_12px_-3px_rgba(163,230,53,0.25)]',
-    dot: 'bg-lime-400 shadow-[0_0_8px_rgba(163,230,53,0.8)]',
+    pill: 'bg-zinc-900 text-zinc-200 border-zinc-800',
+    dot: 'bg-emerald-400',
   },
   neutral: {
-    pill: 'bg-bg-surface-2 text-text-secondary border-white/[0.08] shadow-sm',
-    dot: 'bg-zinc-400',
+    pill: 'bg-zinc-900 text-zinc-400 border-zinc-800',
+    dot: 'bg-zinc-500',
   },
 };
 
@@ -72,14 +72,14 @@ export const Badge: React.FC<BadgeProps> = ({
   const config = VARIANT_STYLES[resolvedVariantKey] || VARIANT_STYLES.neutral;
 
   const sizes = {
-    sm: 'text-[11px] px-2.5 py-0.5 min-h-[22px]',
-    md: 'text-xs px-3 py-1 min-h-[26px]',
+    sm: 'text-[11px] px-2 py-0.5 min-h-[20px]',
+    md: 'text-xs px-2.5 py-0.5 min-h-[24px]',
   };
 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 font-medium rounded-chip tracking-wide border select-none transition-colors duration-150',
+        'inline-flex items-center gap-1.5 font-medium rounded-md tracking-wide border select-none transition-colors duration-150',
         config.pill,
         sizes[size],
         className
@@ -88,7 +88,7 @@ export const Badge: React.FC<BadgeProps> = ({
     >
       {dot && (
         <span
-          className={cn('w-1.5 h-1.5 rounded-full shrink-0 animate-pulse-glow', config.dot)}
+          className={cn('w-1.5 h-1.5 rounded-full shrink-0', config.dot)}
           aria-hidden="true"
         />
       )}

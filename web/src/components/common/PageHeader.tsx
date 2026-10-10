@@ -17,22 +17,22 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6 pb-2',
+        'flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 pb-1',
         className
       )}
     >
-      <div className="min-w-0 space-y-1">
-        <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2.5">
+      <div className="min-w-0">
+        <h2 className="text-base sm:text-lg font-semibold tracking-tight text-zinc-100 flex items-center gap-2">
           {title}
         </h2>
         {description && (
-          <p className="text-xs sm:text-sm text-text-muted mt-0.5 leading-relaxed font-normal">
+          <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed font-normal">
             {description}
           </p>
         )}
       </div>
       {actions && (
-        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-2.5 shrink-0">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0">
           {actions}
         </div>
       )}

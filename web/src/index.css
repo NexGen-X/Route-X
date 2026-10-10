@@ -4,16 +4,16 @@
 
 @layer base {
   body {
-    background-color: #05070B;
-    color: #F8FAFC;
+    background-color: #09090B;
+    color: #FAFAFA;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Universal Selection Color */
+  /* Universal Selection Color — Pure Zinc / High Contrast */
   ::selection {
-    background-color: #3B82F6;
+    background-color: #27272A;
     color: #FFFFFF;
   }
 }
@@ -25,7 +25,7 @@
 /* Firefox & W3C Standard */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #1E293B #070A10;
+  scrollbar-color: #27272A #09090B;
 }
 
 /* WebKit & Blink (Chrome, Safari, Edge, Android Chrome, iOS Safari) */
@@ -35,28 +35,26 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #070A10;
+  background: #09090B;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1E293B;
+  background: #27272A;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2C3E5F;
+  background: #3F3F46;
 }
 
 /* -------------------------------------------------------------------------- */
 /* 2. Mobile & Touch Normalization (iOS Safari & Android)                    */
 /* -------------------------------------------------------------------------- */
 
-/* Hilangkan kedipan native abu-abu/biru pada Android dan iOS saat disentuh */
 *, *::before, *::after {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Cegah iOS Safari auto-zoom pada input form saat disentuh di layar kecil */
 @media (max-width: 768px) {
   input[type="text"],
   input[type="password"],
@@ -72,13 +70,11 @@
 /* 3. Cross-Browser Input Normalization (Edge, Chrome, Safari, Firefox)      */
 /* -------------------------------------------------------------------------- */
 
-/* Sembunyikan ikon mata & tombol clear native Edge/Windows pada kolom password */
 input::-ms-reveal,
 input::-ms-clear {
   display: none !important;
 }
 
-/* Sembunyikan spinner tombol panah bawaan browser pada input[type=number] */
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button {
   -webkit-appearance: none;
@@ -89,19 +85,18 @@ input[type=number] {
   appearance: textfield;
 }
 
-/* Override latar autofill Chrome/Edge/Safari agar tidak silau/putih terang di dark mode */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 40px #0B0F19 inset !important;
-  -webkit-text-fill-color: #F8FAFC !important;
-  caret-color: #3B82F6 !important;
+  -webkit-box-shadow: 0 0 0 40px #121215 inset !important;
+  -webkit-text-fill-color: #FAFAFA !important;
+  caret-color: #FAFAFA !important;
   transition: background-color 5000s ease-in-out 0s;
 }
 
 /* -------------------------------------------------------------------------- */
-/* 4. In-App Rendered Checkbox (Tanpa Kotak Abu-Abu / Bevel Bawaan OS)       */
+/* 4. In-App Rendered Checkbox (Monochrome Minimalist)                       */
 /* -------------------------------------------------------------------------- */
 
 input[type="checkbox"] {
@@ -112,9 +107,9 @@ input[type="checkbox"] {
   height: 1rem;
   min-width: 1rem;
   min-height: 1rem;
-  border: 1px solid #1E293B;
+  border: 1px solid #27272A;
   border-radius: 0.25rem;
-  background-color: #0B0F19;
+  background-color: #121215;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -124,19 +119,17 @@ input[type="checkbox"] {
 }
 
 input[type="checkbox"]:hover:not(:disabled) {
-  border-color: #3B82F6;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
+  border-color: #52525B;
 }
 
 input[type="checkbox"]:focus-visible {
-  border-color: #3B82F6;
-  box-shadow: 0 0 0 2px #05070B, 0 0 0 4px #3B82F6;
+  border-color: #A1A1AA;
+  box-shadow: 0 0 0 2px #09090B, 0 0 0 4px #27272A;
 }
 
 input[type="checkbox"]:checked {
-  background-color: #3B82F6;
-  border-color: #3B82F6;
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.35);
+  background-color: #FAFAFA;
+  border-color: #FAFAFA;
 }
 
 input[type="checkbox"]:checked::before {
@@ -144,7 +137,7 @@ input[type="checkbox"]:checked::before {
   width: 0.55rem;
   height: 0.55rem;
   clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
-  background-color: #FFFFFF;
+  background-color: #09090B;
 }
 
 input[type="checkbox"]:disabled {
@@ -153,7 +146,7 @@ input[type="checkbox"]:disabled {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 5. In-App Rendered Radio Button (Bulatan seragam di semua OS)              */
+/* 5. In-App Rendered Radio Button (Monochrome Minimalist)                   */
 /* -------------------------------------------------------------------------- */
 
 input[type="radio"] {
@@ -164,9 +157,9 @@ input[type="radio"] {
   height: 1rem;
   min-width: 1rem;
   min-height: 1rem;
-  border: 1px solid #1E293B;
+  border: 1px solid #27272A;
   border-radius: 9999px;
-  background-color: #0B0F19;
+  background-color: #121215;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -176,17 +169,16 @@ input[type="radio"] {
 }
 
 input[type="radio"]:hover:not(:disabled) {
-  border-color: #3B82F6;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
+  border-color: #52525B;
 }
 
 input[type="radio"]:focus-visible {
-  border-color: #3B82F6;
-  box-shadow: 0 0 0 2px #05070B, 0 0 0 4px #3B82F6;
+  border-color: #A1A1AA;
+  box-shadow: 0 0 0 2px #09090B, 0 0 0 4px #27272A;
 }
 
 input[type="radio"]:checked {
-  border-color: #3B82F6;
+  border-color: #FAFAFA;
 }
 
 input[type="radio"]:checked::before {
@@ -194,7 +186,7 @@ input[type="radio"]:checked::before {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 9999px;
-  background-color: #3B82F6;
+  background-color: #FAFAFA;
 }
 
 input[type="radio"]:disabled {
@@ -206,10 +198,9 @@ input[type="radio"]:disabled {
 /* 6. In-App Utility Classes & Form Controls Normalization                   */
 /* -------------------------------------------------------------------------- */
 
-/* Custom panel scrollbar ramping modern untuk Drawer, Modal, dan dropdown */
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #1F2C47 transparent;
+  scrollbar-color: #27272A transparent;
 }
 
 .scrollbar-thin::-webkit-scrollbar {
@@ -222,15 +213,14 @@ input[type="radio"]:disabled {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #1F2C47;
+  background: #27272A;
   border-radius: 9999px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #2C3E5F;
+  background: #3F3F46;
 }
 
-/* Sembunyikan scrollbar sepenuhnya bila diperlukan */
 .scrollbar-none {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -239,63 +229,60 @@ input[type="radio"]:disabled {
   display: none;
 }
 
-/* Glassmorphic Surfaces SOTA 2026 */
+/* Minimalist Dark Surfaces */
 .glass-surface {
-  background: rgba(11, 15, 25, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 18, 21, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #27272A;
 }
 
 .glass-surface-subtle {
-  background: rgba(15, 22, 38, 0.65);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(24, 24, 27, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid #27272A;
 }
 
-/* Pola Grid Infrastruktur High-Tech 32px */
+/* Subtle Carbon Grid Pattern */
 .bg-grid-tech {
   background-size: 32px 32px;
   background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
 }
 
-/* Styling Dark Form Controls Bersih */
+/* Clean Dark Form Controls */
 .input-dark {
-  background-color: rgba(11, 15, 25, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #F8FAFC;
+  background-color: #121215;
+  border: 1px solid #27272A;
+  color: #FAFAFA;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .input-dark:hover {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: #3F3F46;
 }
 
 .input-dark:focus {
-  border-color: #3B82F6;
+  border-color: #71717A;
   outline: none;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 0 0 1px #71717A;
 }
 
-/* Batasi resize textarea hanya secara vertikal agar tidak merusak layout grid */
 textarea {
   resize: vertical;
 }
 
-/* Normalisasi Select dropdown lintas OS (Windows, macOS, Linux, iOS, Android) */
 select {
   color-scheme: dark;
 }
 
 select option {
-  background-color: #0B0F19;
-  color: #F8FAFC;
+  background-color: #121215;
+  color: #FAFAFA;
 }
 
-/* Normalisasi Date / Time picker dialog native */
 input[type="date"],
 input[type="time"],
 input[type="datetime-local"] {
@@ -303,18 +290,18 @@ input[type="datetime-local"] {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 7. Comfortable Table Density & Visual Rhythm                               */
+/* 7. Table Density & Visual Rhythm                                           */
 /* -------------------------------------------------------------------------- */
 table th {
-  padding-top: 0.625rem;
-  padding-bottom: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.025em;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 table td {
-  padding-top: 0.625rem;
-  padding-bottom: 0.625rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
   vertical-align: middle;
 }
 

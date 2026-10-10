@@ -90,10 +90,10 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
                 aria-selected={isActive}
                 aria-label={`Filter ${tab.label}`}
                 onClick={() => onTabChange(tab.id)}
-                className={`min-h-[44px] sm:min-h-[36px] px-3.5 py-1.5 rounded-chip text-xs font-semibold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
+                className={`min-h-[44px] sm:min-h-[36px] px-3.5 py-1.5 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1.5 cursor-pointer ${
                   isActive
-                    ? 'bg-accent/15 text-blue-400 border border-accent/40 shadow-sm shadow-blue-500/10'
-                    : 'bg-bg-surface-2 text-text-secondary border border-border hover:border-border-hover hover:text-white'
+                    ? 'bg-zinc-800 text-white border border-zinc-700/60'
+                    : 'bg-zinc-900/60 text-zinc-400 border border-zinc-800 hover:border-zinc-700 hover:text-white'
                 }`}
               >
                 {tab.id === 'success' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />}

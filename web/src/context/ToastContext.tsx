@@ -4,12 +4,21 @@ import { Modal } from '../components/common/Modal';
 
 export type ToastType = 'success' | 'error' | 'warn' | 'info';
 
+export interface ToastOptions {
+  title?: string;
+  duration?: number;
+  dedupeKey?: string;
+  operationId?: string;
+}
+
 export interface ToastItem {
   id: string;
   type: ToastType;
   title?: string;
   message: string;
   duration?: number;
+  dedupeKey?: string;
+  createdAt?: number;
 }
 
 export interface ConfirmOptions {
@@ -20,13 +29,24 @@ export interface ConfirmOptions {
   danger?: boolean;
 }
 
+export type ToastMethod = (
+  message: string,
+  titleOrOptions?: string | ToastOptions,
+  options?: ToastOptions
+) => void;
+
 interface ToastContextType {
-  showToast: (type: ToastType, message: string, title?: string, duration?: number) => void;
+  showToast: (
+    type: ToastType,
+    message: string,
+    titleOrOptions?: string | ToastOptions,
+    durationOrOptions?: number | ToastOptions
+  ) => void;
   toast: {
-    success: (message: string, title?: string) => void;
-    error: (message: string, title?: string) => void;
-    warn: (message: string, title?: string) => void;
-    info: (message: string, title?: string) => void;
+    success: ToastMethod;
+    error: ToastMethod;
+    warn: ToastMethod;
+    info: ToastMethod;
   };
   confirmModal: (options: ConfirmOptions) => Promise<boolean>;
 }
@@ -180,15 +200,85 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const recentToastsRef = useRef<Map<string, number>>(new Map());
+
   const showToast = useCallback(
-    (type: ToastType, message: string, title?: string, duration = 4000) => {
-      setToasts((prev) => {
-        // Cegah duplikasi toast dengan pesan dan tipe yang identik
-        if (prev.some((t) => t.message === message && t.type === type)) {
-          return prev;
+    (
+      type: ToastType,
+      message: string,
+      titleOrOptions?: string | ToastOptions,
+      durationOrOptions?: number | ToastOptions
+    ) => {
+      let title: string | undefined;
+      let duration = 4000;
+      let dedupeKey: string | undefined;
+
+      if (typeof titleOrOptions === 'string') {
+        title = titleOrOptions;
+        if (typeof durationOrOptions === 'number') {
+          duration = durationOrOptions;
+        } else if (durationOrOptions && typeof durationOrOptions === 'object') {
+          duration = durationOrOptions.duration ?? 4000;
+          dedupeKey = durationOrOptions.dedupeKey || durationOrOptions.operationId;
         }
+      } else if (titleOrOptions && typeof titleOrOptions === 'object') {
+        title = titleOrOptions.title;
+        duration = titleOrOptions.duration ?? 4000;
+        dedupeKey = titleOrOptions.dedupeKey || titleOrOptions.operationId;
+      } else if (typeof durationOrOptions === 'number') {
+        duration = durationOrOptions;
+      } else if (durationOrOptions && typeof durationOrOptions === 'object') {
+        title = durationOrOptions.title;
+        duration = durationOrOptions.duration ?? 4000;
+        dedupeKey = durationOrOptions.dedupeKey || durationOrOptions.operationId;
+      }
+
+      // Bangun key unik stabil untuk operasi ini
+      const normalizedKey = dedupeKey
+        ? `op:${dedupeKey}`
+        : `${type}:${(title || '').trim().toLowerCase()}:${message.trim().toLowerCase()}`;
+
+      const now = Date.now();
+      const lastSeen = recentToastsRef.current.get(normalizedKey);
+      const DEDUPE_BURST_WINDOW_MS = 1000;
+
+      // Skenario 1: Ledakan panggilan duplikat dalam 1 detik (interceptor global + komponen lokal)
+      if (lastSeen !== undefined && now - lastSeen < DEDUPE_BURST_WINDOW_MS) {
+        return;
+      }
+
+      recentToastsRef.current.set(normalizedKey, now);
+
+      // Pembersihan cache berkala
+      if (recentToastsRef.current.size > 60) {
+        for (const [k, timestamp] of recentToastsRef.current.entries()) {
+          if (now - timestamp > 30000) {
+            recentToastsRef.current.delete(k);
+          }
+        }
+      }
+
+      setToasts((prev) => {
         const id = Math.random().toString(36).substring(2, 9);
-        const newToast: ToastItem = { id, type, title, message, duration };
+        const newToast: ToastItem = {
+          id,
+          type,
+          title,
+          message,
+          duration,
+          dedupeKey: normalizedKey,
+          createdAt: now,
+        };
+
+        // Skenario 2: Retry user sesudah jendela burst (now - lastSeen >= 1000ms)
+        // Refresh timer notifikasi jika masih aktif di layar
+        const existingIdx = prev.findIndex((t) => t.dedupeKey === normalizedKey);
+        if (existingIdx >= 0) {
+          const updated = [...prev];
+          updated[existingIdx] = newToast;
+          return updated;
+        }
+
         // Batasi maksimal 3 notifikasi aktif secara bersamaan agar UI tetap ramping
         return [...prev.slice(-2), newToast];
       });
@@ -198,10 +288,20 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const toast = useMemo(
     () => ({
-      success: (message: string, title?: string) => showToast('success', message, title),
-      error: (message: string, title?: string) => showToast('error', message, title || 'Terjadi Kesalahan'),
-      warn: (message: string, title?: string) => showToast('warn', message, title || 'Peringatan'),
-      info: (message: string, title?: string) => showToast('info', message, title),
+      success: (msg: string, titleOrOpt?: string | ToastOptions, opt?: ToastOptions) => {
+        showToast('success', msg, titleOrOpt, opt);
+      },
+      error: (msg: string, titleOrOpt?: string | ToastOptions, opt?: ToastOptions) => {
+        const defaultTitle = typeof titleOrOpt === 'string' ? titleOrOpt : titleOrOpt?.title || 'Terjadi Kesalahan';
+        showToast('error', msg, typeof titleOrOpt === 'string' ? defaultTitle : { ...titleOrOpt, title: defaultTitle }, opt);
+      },
+      warn: (msg: string, titleOrOpt?: string | ToastOptions, opt?: ToastOptions) => {
+        const defaultTitle = typeof titleOrOpt === 'string' ? titleOrOpt : titleOrOpt?.title || 'Peringatan';
+        showToast('warn', msg, typeof titleOrOpt === 'string' ? defaultTitle : { ...titleOrOpt, title: defaultTitle }, opt);
+      },
+      info: (msg: string, titleOrOpt?: string | ToastOptions, opt?: ToastOptions) => {
+        showToast('info', msg, titleOrOpt, opt);
+      },
     }),
     [showToast]
   );

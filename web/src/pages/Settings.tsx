@@ -126,10 +126,7 @@ export const Settings: React.FC = () => {
     try {
       await api.system.backup.restore(selectedBackupFile);
       toast.success('Basis data berhasil dipulihkan!');
-      setBackupFeedback({
-        type: 'success',
-        message: 'Pemulihan berhasil dilakukan. Seluruh konfigurasi dan tabel sistem telah disinkronkan kembali.',
-      });
+      setBackupFeedback(null);
       setIsRestoreModalOpen(false);
       setSelectedBackupFile(null);
       if (fileInputRef.current) {
@@ -140,10 +137,7 @@ export const Settings: React.FC = () => {
     } catch (err: unknown) {
       const msg = getErrorMessage(err);
       toast.error('Gagal memulihkan database: ' + msg);
-      setBackupFeedback({
-        type: 'error',
-        message: `Gagal memulihkan database: ${msg}`,
-      });
+      setBackupFeedback(null);
     } finally {
       setIsRestoring(false);
     }

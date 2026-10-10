@@ -4,7 +4,7 @@
 
 @layer base {
   body {
-    background-color: #080B11;
+    background-color: #05070B;
     color: #F8FAFC;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     -webkit-font-smoothing: antialiased;
@@ -25,7 +25,7 @@
 /* Firefox & W3C Standard */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #1E293B #06080E;
+  scrollbar-color: #1E293B #070A10;
 }
 
 /* WebKit & Blink (Chrome, Safari, Edge, Android Chrome, iOS Safari) */
@@ -35,7 +35,7 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #06080E;
+  background: #070A10;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -94,7 +94,7 @@ input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 40px #0D121F inset !important;
+  -webkit-box-shadow: 0 0 0 40px #0B0F19 inset !important;
   -webkit-text-fill-color: #F8FAFC !important;
   caret-color: #3B82F6 !important;
   transition: background-color 5000s ease-in-out 0s;
@@ -114,7 +114,7 @@ input[type="checkbox"] {
   min-height: 1rem;
   border: 1px solid #1E293B;
   border-radius: 0.25rem;
-  background-color: #0D121F;
+  background-color: #0B0F19;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -130,7 +130,7 @@ input[type="checkbox"]:hover:not(:disabled) {
 
 input[type="checkbox"]:focus-visible {
   border-color: #3B82F6;
-  box-shadow: 0 0 0 2px #080B11, 0 0 0 4px #3B82F6;
+  box-shadow: 0 0 0 2px #05070B, 0 0 0 4px #3B82F6;
 }
 
 input[type="checkbox"]:checked {
@@ -166,7 +166,7 @@ input[type="radio"] {
   min-height: 1rem;
   border: 1px solid #1E293B;
   border-radius: 9999px;
-  background-color: #0D121F;
+  background-color: #0B0F19;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -182,7 +182,7 @@ input[type="radio"]:hover:not(:disabled) {
 
 input[type="radio"]:focus-visible {
   border-color: #3B82F6;
-  box-shadow: 0 0 0 2px #080B11, 0 0 0 4px #3B82F6;
+  box-shadow: 0 0 0 2px #05070B, 0 0 0 4px #3B82F6;
 }
 
 input[type="radio"]:checked {
@@ -241,29 +241,37 @@ input[type="radio"]:disabled {
 
 /* Glassmorphic Surfaces SOTA 2026 */
 .glass-surface {
-  background: rgba(13, 18, 31, 0.85);
+  background: rgba(11, 15, 25, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .glass-surface-subtle {
-  background: rgba(17, 24, 39, 0.65);
+  background: rgba(15, 22, 38, 0.65);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+/* Pola Grid Infrastruktur High-Tech 32px */
+.bg-grid-tech {
+  background-size: 32px 32px;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+}
+
 /* Styling Dark Form Controls Bersih */
 .input-dark {
-  background-color: rgba(13, 18, 31, 0.9);
+  background-color: rgba(11, 15, 25, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #F8FAFC;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .input-dark:hover {
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.16);
 }
 
 .input-dark:focus {
@@ -283,7 +291,7 @@ select {
 }
 
 select option {
-  background-color: #0D121F;
+  background-color: #0B0F19;
   color: #F8FAFC;
 }
 

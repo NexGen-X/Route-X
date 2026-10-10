@@ -13,3 +13,4 @@ export * from './QueryError';
 export * from './Select';
 export * from './Tooltip';
 export * from './StatusDot';
+export * from './RouteXLogo';

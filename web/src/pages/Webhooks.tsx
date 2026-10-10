@@ -101,7 +101,16 @@ export const Webhooks: React.FC = () => {
   const handleTest = async (wh: Webhook) => {
     try {
       const res = await api.webhooks.test(wh.id);
-      toast.success(`Uji coba webhook terkirim. Status: ${res.status}, Durasi: ${res.duration_ms}ms`);
+      const statusCode = typeof res.status === 'number' ? res.status : res.status_code;
+      const isFailed = res.status === 'failed' || (typeof statusCode === 'number' && statusCode >= 400);
+
+      if (!isFailed) {
+        toast.success(`Uji coba webhook terkirim. Status: ${res.status}, Durasi: ${res.duration_ms}ms`);
+      } else {
+        const errorDetail = res.error ? `: ${res.error}` : '';
+        toast.error(`Uji coba webhook gagal (Status: ${res.status}${errorDetail})`, 'Uji Webhook Gagal');
+      }
+
       // Reload deliveries if currently viewing this webhook
       if (selectedWebhook?.id === wh.id) {
         loadDeliveries(wh.id);

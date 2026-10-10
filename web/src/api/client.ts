@@ -662,7 +662,7 @@ export const api = {
         body: JSON.stringify({ enabled }),
       }),
     test: (id: string) =>
-      request<{ status: number; duration_ms: number; response?: string }>(
+      request<{ status: string | number; status_code?: number; duration_ms: number; error?: string; response?: string }>(
         `/api/admin/automation/webhooks/${encodeURIComponent(id)}/test`,
         { method: 'POST' }
       ),

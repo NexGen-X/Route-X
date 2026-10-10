@@ -228,9 +228,15 @@ export const Providers: React.FC = () => {
   // ---------------------------------------------------------------------------
   const handleProbe = async (prov: Provider) => {
     setProbingId(prov.id);
+    const provName = prov.display_name || prov.name;
     try {
       const res = await api.providers.probe(prov.id);
-      toast.success(`Probe ${prov.display_name || prov.name}: ${res.status.toUpperCase()} (${res.latency_ms} ms)`);
+      if (res.status === 'healthy') {
+        toast.success(`Probe ${provName} sehat (200 OK, ${res.latency_ms} ms)`);
+      } else {
+        const errorDetail = res.error ? `: ${res.error}` : '';
+        toast.error(`Probe ${provName} gagal (${res.status.toUpperCase()}${errorDetail})`, 'Probe Gagal');
+      }
       await loadData();
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);

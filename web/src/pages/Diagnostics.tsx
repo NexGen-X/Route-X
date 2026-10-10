@@ -190,7 +190,13 @@ export const Diagnostics: React.FC = () => {
         },
       ]);
 
-      toast.success(`Uji kesehatan live berhasil (${duration} ms). Semua sistem nominal.`, 'Diagnosa Live OK');
+      if (!isDbOk) {
+        toast.error('Uji diagnostik: Database PostgreSQL mengalami gangguan atau offline!', 'Diagnosa Kritis');
+      } else if (hasUnhealthyProviders) {
+        toast.warn(`Uji diagnostik selesai (${duration} ms): Terdapat upstream provider yang mengalami degradasi.`, 'Sistem Terdegradasi');
+      } else {
+        toast.success(`Uji kesehatan live berhasil (${duration} ms). Semua sistem nominal.`, 'Diagnosa Live OK');
+      }
     } catch (err: unknown) {
       toast.error('Uji live diagnostik mengalami kegagalan: ' + getErrorMessage(err));
     } finally {

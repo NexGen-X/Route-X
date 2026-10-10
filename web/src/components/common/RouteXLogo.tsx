@@ -15,7 +15,7 @@ export const RouteXLogo: React.FC<RouteXLogoProps> = ({
     <div className={`relative inline-flex items-center justify-center shrink-0 ${className}`}>
       {glow && (
         <div
-          className="absolute -inset-1 rounded-lg bg-white/10 opacity-30 blur-sm transition-opacity duration-200 pointer-events-none"
+          className="absolute -inset-1 rounded-lg bg-indigo-500/20 opacity-40 blur-sm transition-opacity duration-200 pointer-events-none"
           aria-hidden="true"
         />
       )}
@@ -30,38 +30,38 @@ export const RouteXLogo: React.FC<RouteXLogoProps> = ({
       >
         <defs>
           <linearGradient id="rx-prism-grad-primary" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#E4E4E7" />
-            <stop offset="100%" stopColor="#71717A" />
+            <stop offset="0%" stopColor="#6366F1" />
+            <stop offset="100%" stopColor="#3B82F6" />
           </linearGradient>
 
           <linearGradient id="rx-prism-grad-cyan" x1="0%" y1="100%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#FAFAFA" />
-            <stop offset="100%" stopColor="#A1A1AA" />
+            <stop offset="0%" stopColor="#06B6D4" />
+            <stop offset="100%" stopColor="#6366F1" />
           </linearGradient>
 
           <linearGradient id="rx-prism-facet-top" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#FAFAFA" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#71717A" stopOpacity="0.08" />
+            <stop offset="0%" stopColor="#6366F1" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#3B82F6" stopOpacity="0.10" />
           </linearGradient>
 
           <linearGradient id="rx-prism-facet-left" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#E4E4E7" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="#52525B" stopOpacity="0.05" />
+            <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.30" />
+            <stop offset="100%" stopColor="#6366F1" stopOpacity="0.08" />
           </linearGradient>
 
           <linearGradient id="rx-prism-facet-right" x1="100%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#D4D4D8" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="#3F3F46" stopOpacity="0.05" />
+            <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.30" />
+            <stop offset="100%" stopColor="#6366F1" stopOpacity="0.08" />
           </linearGradient>
 
           <linearGradient id="rx-conduit-stroke-1" x1="10%" y1="10%" x2="90%" y2="90%">
-            <stop offset="0%" stopColor="#FAFAFA" />
-            <stop offset="100%" stopColor="#A1A1AA" />
+            <stop offset="0%" stopColor="#06B6D4" />
+            <stop offset="100%" stopColor="#6366F1" />
           </linearGradient>
 
           <linearGradient id="rx-conduit-stroke-2" x1="90%" y1="10%" x2="10%" y2="90%">
-            <stop offset="0%" stopColor="#A1A1AA" />
-            <stop offset="100%" stopColor="#FAFAFA" />
+            <stop offset="0%" stopColor="#6366F1" />
+            <stop offset="100%" stopColor="#3B82F6" />
           </linearGradient>
         </defs>
 
@@ -69,7 +69,7 @@ export const RouteXLogo: React.FC<RouteXLogoProps> = ({
         <polygon
           points="20,2.5 35.5,11.25 35.5,28.75 20,37.5 4.5,28.75 4.5,11.25"
           fill="#121215"
-          stroke="rgba(255, 255, 255, 0.12)"
+          stroke="rgba(99, 102, 241, 0.3)"
           strokeWidth="1.2"
         />
 
@@ -78,7 +78,7 @@ export const RouteXLogo: React.FC<RouteXLogoProps> = ({
         <polygon
           points="20,4.5 33.5,12 20,19.5 6.5,12"
           fill="url(#rx-prism-facet-top)"
-          stroke="rgba(255, 255, 255, 0.15)"
+          stroke="rgba(99, 102, 241, 0.35)"
           strokeWidth="0.8"
         />
 
@@ -86,7 +86,7 @@ export const RouteXLogo: React.FC<RouteXLogoProps> = ({
         <polygon
           points="6.5,13.5 18.8,20.5 18.8,35 6.5,27.8"
           fill="url(#rx-prism-facet-left)"
-          stroke="rgba(255, 255, 255, 0.1)"
+          stroke="rgba(6, 182, 212, 0.3)"
           strokeWidth="0.8"
         />
 
@@ -94,7 +94,7 @@ export const RouteXLogo: React.FC<RouteXLogoProps> = ({
         <polygon
           points="21.2,20.5 33.5,13.5 33.5,27.8 21.2,35"
           fill="url(#rx-prism-facet-right)"
-          stroke="rgba(255, 255, 255, 0.1)"
+          stroke="rgba(59, 130, 246, 0.3)"
           strokeWidth="0.8"
         />
 
@@ -123,10 +123,10 @@ export const RouteXLogo: React.FC<RouteXLogoProps> = ({
         />
 
         {/* Edge Routing Nodes */}
-        <circle cx="9.5" cy="14" r="2.2" fill="#E4E4E7" stroke="#09090B" strokeWidth="0.8" />
-        <circle cx="30.5" cy="14" r="2.2" fill="#A1A1AA" stroke="#09090B" strokeWidth="0.8" />
-        <circle cx="9.5" cy="26" r="2.2" fill="#A1A1AA" stroke="#09090B" strokeWidth="0.8" />
-        <circle cx="30.5" cy="26" r="2.2" fill="#E4E4E7" stroke="#09090B" strokeWidth="0.8" />
+        <circle cx="9.5" cy="14" r="2.2" fill="#06B6D4" stroke="#09090B" strokeWidth="0.8" />
+        <circle cx="30.5" cy="14" r="2.2" fill="#6366F1" stroke="#09090B" strokeWidth="0.8" />
+        <circle cx="9.5" cy="26" r="2.2" fill="#6366F1" stroke="#09090B" strokeWidth="0.8" />
+        <circle cx="30.5" cy="26" r="2.2" fill="#3B82F6" stroke="#09090B" strokeWidth="0.8" />
 
         {/* Core Nexus Center Dot */}
         <circle

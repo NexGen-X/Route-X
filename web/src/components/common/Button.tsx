@@ -21,11 +21,11 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const base =
-    'relative inline-flex items-center justify-center gap-2 font-medium select-none rounded-md transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none focus:outline-none focus-visible:ring-1 focus-visible:ring-zinc-400 cursor-pointer';
+    'relative inline-flex items-center justify-center gap-2 font-medium select-none rounded-md transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500/40 cursor-pointer';
 
   const variants = {
     primary:
-      'bg-white text-zinc-950 hover:bg-zinc-200 font-medium shadow-sm border border-transparent',
+      'bg-indigo-600 hover:bg-indigo-500 text-white font-medium shadow-sm shadow-indigo-600/25 border border-indigo-400/20 active:scale-[0.98] transition-all',
     secondary:
       'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 hover:border-zinc-700 shadow-sm',
     danger:

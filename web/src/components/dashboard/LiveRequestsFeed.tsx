@@ -14,54 +14,45 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
   onNavigate,
 }) => {
   return (
-    <div className="bg-bg-surface border border-border/80 rounded-card p-4 sm:p-5 shadow-sm flex flex-col justify-between">
+    <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-4 shadow-sm flex flex-col justify-between h-full">
       <div>
-        {/* Header — live pulse dot + title */}
-        <div className="flex items-center justify-between mb-3.5">
+        {/* Header — clean minimal dot + title */}
+        <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span
-                className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"
-                aria-hidden="true"
-              />
-              <span
-                className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)]"
-                aria-hidden="true"
-              />
-            </span>
-            <h3 className="text-sm font-semibold text-white tracking-tight">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
+            <h3 className="text-sm font-medium text-white tracking-tight">
               Live Requests Feed
             </h3>
           </div>
-          <span className="text-[10px] font-mono text-text-muted">
+          <span className="text-[10px] font-mono text-zinc-500">
             Auto-refresh (5s)
           </span>
         </div>
 
-        {/* List of recent requests */}
-        <div className="space-y-2.5">
-          {recentRequests.length === 0 ? (
-            <div className="py-12 text-center text-xs text-text-muted space-y-2">
-              <Activity className="w-5 h-5 mx-auto text-text-muted" aria-hidden="true" />
-              <p>Belum ada permintaan inferensi yang tercatat.</p>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => onNavigate('/cli-integrations')}
-                className="mt-2 text-xs"
-              >
-                Buka Panduan Integrasi
-              </Button>
-            </div>
-          ) : (
-            recentRequests.map((req) => {
+        {/* Tabular List of recent requests */}
+        {recentRequests.length === 0 ? (
+          <div className="py-10 text-center text-xs text-zinc-500 space-y-2">
+            <Activity className="w-4 h-4 mx-auto text-zinc-600" aria-hidden="true" />
+            <p>Belum ada permintaan inferensi yang tercatat.</p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => onNavigate('/cli-integrations')}
+              className="mt-2 text-xs"
+            >
+              Buka Panduan Integrasi
+            </Button>
+          </div>
+        ) : (
+          <div className="divide-y divide-zinc-800/80 border-y border-zinc-800/80">
+            {recentRequests.map((req) => {
               const isOk = req.status_code >= 200 && req.status_code < 300;
               const isErr = req.status_code >= 400;
-              const statusClass = isOk
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+              const statusColor = isOk
+                ? 'text-emerald-400'
                 : isErr
-                ? 'bg-rose-500/10 text-rose-400 border-rose-500/25'
-                : 'bg-amber-500/10 text-amber-400 border-amber-500/25';
+                ? 'text-rose-400'
+                : 'text-amber-400';
 
               return (
                 <div
@@ -75,78 +66,61 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                     }
                   }}
                   onClick={() => onNavigate('/requests')}
-                  className="p-2.5 sm:p-3 rounded-xl bg-bg-surface-2/60 border border-border/70 hover:border-border-hover hover:bg-bg-surface-2 transition-all cursor-pointer group"
+                  className="py-2 px-1 flex items-center justify-between gap-2 text-xs hover:bg-zinc-800/30 transition-colors cursor-pointer group"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {/* Badge status HTTP berkode warna */}
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-[11px] font-mono font-bold border tabular-nums ${statusClass}`}
-                      >
-                        {req.status_code}
+                  {/* Kiri: Status code, Model Name, Protocol */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`font-mono font-medium text-xs tabular-nums shrink-0 ${statusColor}`}>
+                      {req.status_code}
+                    </span>
+                    <span className="font-mono text-xs text-zinc-200 truncate group-hover:text-white transition-colors">
+                      {req.requested_model || req.model_id || 'unknown'}
+                    </span>
+                    {req.is_stream && (
+                      <span className="text-[9px] font-mono px-1 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60 shrink-0">
+                        SSE
                       </span>
-                      <span className="text-xs font-mono font-semibold text-white truncate max-w-[140px] group-hover:text-blue-400 transition-colors">
-                        {req.requested_model || req.model_id || 'unknown'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-[10px] text-text-muted font-mono whitespace-nowrap">
-                        {formatTimeAgo(req.created_at)}
-                      </span>
-                      {/* Tombol inspect */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onNavigate('/requests');
-                        }}
-                        aria-label={`Inspeksi request ${req.requested_model || req.model_id}`}
-                        className="p-1 text-text-muted hover:text-white rounded-md hover:bg-bg-surface-3 transition-colors cursor-pointer"
-                        title="Inspeksi jejak audit request"
-                      >
-                        <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-                      </button>
-                    </div>
+                    )}
                   </div>
 
-                  <div className="mt-2 flex items-center justify-between text-[11px] font-mono text-text-secondary">
-                    <span className="text-text-muted flex items-center gap-1.5 truncate">
-                      <span className="truncate">{req.provider_name || 'auto-routed'}</span>
-                      {req.is_stream && (
-                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/15 text-blue-400 font-semibold border border-blue-500/25">
-                          SSE
-                        </span>
-                      )}
+                  {/* Kanan: Latency, Tokens, Time */}
+                  <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] text-zinc-400">
+                    <span className="tabular-nums">{req.duration_ms}ms</span>
+                    <span className="text-zinc-700 select-none" aria-hidden="true">·</span>
+                    <span className="text-zinc-500 tabular-nums hidden sm:inline">{req.total_tokens || 0} tok</span>
+                    <span className="text-zinc-700 select-none hidden sm:inline" aria-hidden="true">·</span>
+                    <span className="text-zinc-500 text-[10px] whitespace-nowrap">
+                      {formatTimeAgo(req.created_at)}
                     </span>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {/* Latency pill */}
-                      <span className="px-1.5 py-0.5 rounded bg-bg-surface-3 text-text-primary text-[10px] border border-border/60 tabular-nums font-semibold">
-                        {req.duration_ms}ms
-                      </span>
-                      <span className="text-border" aria-hidden="true">·</span>
-                      <span className="text-text-muted tabular-nums">
-                        {req.total_tokens || 0} tok
-                      </span>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigate('/requests');
+                      }}
+                      aria-label={`Inspeksi request ${req.requested_model || req.model_id}`}
+                      className="p-1 text-zinc-500 hover:text-white rounded hover:bg-zinc-800 transition-colors"
+                      title="Inspeksi jejak audit request"
+                    >
+                      <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
                   </div>
                 </div>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </div>
 
       {/* Footer — inspeksi button */}
-      <div className="mt-4 pt-2">
+      <div className="mt-3 pt-2">
         <button
           type="button"
           onClick={() => onNavigate('/requests')}
-          className="w-full min-h-[38px] py-2 text-center text-xs text-text-muted hover:text-white font-mono rounded-xl bg-bg-surface-2/60 hover:bg-bg-surface-2 border border-border/70 hover:border-blue-500/30 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+          className="w-full py-1.5 text-center text-xs text-zinc-400 hover:text-zinc-200 font-mono rounded-md bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800/80 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
         >
           <span>Inspeksi Seluruh Jejak Audit Request</span>
-          <ExternalLink className="w-3.5 h-3.5 text-text-muted group-hover:text-blue-400" aria-hidden="true" />
+          <ExternalLink className="w-3 h-3 text-zinc-500" aria-hidden="true" />
         </button>
       </div>
     </div>

@@ -101,28 +101,22 @@ export const Login: React.FC = () => {
       />
 
       {/* Central Login Container */}
-      <div className="relative w-full max-w-[440px] z-10">
-        {/* Glowing aura frame behind card */}
-        <div
-          className="absolute -inset-0.5 rounded-2xl bg-gradient-to-b from-blue-500/25 via-cyan-500/10 to-transparent blur-md opacity-70 pointer-events-none"
-          aria-hidden="true"
-        />
-
-        {/* Frosted Glassmorphic Card SOTA 2026 */}
-        <div className="relative rounded-2xl backdrop-blur-xl bg-bg-surface/80 border border-white/[0.08] shadow-elevation-glass p-6 sm:p-8 flex flex-col">
-          {/* Header Brand & Futuristic Gateway Vector */}
+      <div className="relative w-full max-w-[420px] z-10">
+        {/* Minimalist Zinc Card */}
+        <div className="relative rounded-xl bg-zinc-900/60 border border-zinc-800/80 shadow-lg p-6 sm:p-8 flex flex-col">
+          {/* Header Brand */}
           <div className="flex items-center gap-3.5 mb-6">
-            <RouteXLogo size={42} glow={true} className="group cursor-default" />
+            <RouteXLogo size={36} glow={false} className="group cursor-default" />
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold text-white tracking-tight leading-tight">
                   Route-X
                 </h1>
-                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-blue-500/10 text-cyan-400 border border-cyan-500/20 shadow-[0_0_10px_rgba(6,182,212,0.15)]">
+                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700/60">
                   Gateway
                 </span>
               </div>
-              <p className="text-xs text-text-secondary mt-0.5 flex items-center gap-1.5 font-mono">
+              <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1.5 font-mono">
                 <Cpu className="w-3 h-3 text-cyan-400 shrink-0" aria-hidden="true" />
                 <span>Next-Gen AI Routing Fabric</span>
               </p>
@@ -267,14 +261,14 @@ export const Login: React.FC = () => {
               />
             </div>
 
-            {/* Energetic High-Class Gradient Submit Button with Tactile Active Press */}
+            {/* Monochrome High-Contrast Solid White Submit Button */}
             <Button
               type="submit"
               variant="primary"
               size="lg"
               isLoading={isLoading}
-              className="w-full mt-2 min-h-[46px] rounded-xl font-medium bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-glow-accent hover:shadow-glow-ai active:scale-[0.98] transition-all duration-200 cursor-pointer"
-              icon={<ArrowRight className="w-4 h-4" aria-hidden="true" />}
+              className="w-full mt-2 min-h-[42px] font-medium"
+              icon={<ArrowRight className="w-4 h-4 text-zinc-950" aria-hidden="true" />}
             >
               Masuk ke Konsol
             </Button>

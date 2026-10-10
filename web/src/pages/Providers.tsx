@@ -6,6 +6,7 @@ import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { Tooltip } from '../components/common/Tooltip';
+import { PageHeader } from '../components/common/PageHeader';
 import {
   Server,
   Plus,
@@ -431,22 +432,24 @@ export const Providers: React.FC = () => {
       {/* ------------------------------------------------------------------- */}
       {/* 1. HEADER HALAMAN & KATALOG PRESET SHOWCASE                         */}
       {/* ------------------------------------------------------------------- */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2.5">
-            <Server className="w-6 h-6 text-accent" />
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
+            <Server className="w-5 h-5 text-zinc-400" />
             <span>Upstream Providers</span>
-          </h2>
-        </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={handleOpenCustomCreate}
-          icon={<Plus className="w-4 h-4" />}
-        >
-          Tambah Provider Manual
-        </Button>
-      </div>
+          </span>
+        }
+        actions={
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleOpenCustomCreate}
+            icon={<Plus className="w-4 h-4" />}
+          >
+            Tambah Provider Manual
+          </Button>
+        }
+      />
 
       {/* Preset Showcase Accordion */}
       <div className="rounded-xl border border-border/80 bg-bg-surface-2/40 p-4 transition-all">
@@ -516,7 +519,7 @@ export const Providers: React.FC = () => {
               {healthyCount} / {providers.length}
             </div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+          <div className="w-8 h-8 rounded-lg bg-zinc-850 border border-zinc-800 flex items-center justify-center text-emerald-400">
             <Activity className="w-4 h-4" />
           </div>
         </div>
@@ -526,7 +529,7 @@ export const Providers: React.FC = () => {
             <span className="text-xs font-medium text-text-muted">Pool Egress</span>
             <div className="text-lg font-bold text-white">{egressPools.length}</div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+          <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-zinc-300">
             <Globe className="w-4 h-4" />
           </div>
         </div>

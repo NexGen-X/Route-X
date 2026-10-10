@@ -23,8 +23,8 @@ export const RateLimitCard: React.FC<RateLimitCardProps> = ({
       <div>
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
-              <Gauge className="w-5 h-5" aria-hidden="true" />
+            <div className="w-8 h-8 rounded-md bg-zinc-800 border border-zinc-700/60 text-zinc-300 flex items-center justify-center shrink-0">
+              <Gauge className="w-4 h-4" aria-hidden="true" />
             </div>
             <div>
               <h4 className="text-sm font-bold text-white uppercase tracking-wider">{limit.scope}</h4>

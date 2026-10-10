@@ -394,7 +394,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         >
           {/* Search Bar */}
           <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border/70 bg-bg-surface-2/50">
-            <Search className="w-5 h-5 text-blue-400 shrink-0" aria-hidden="true" />
+            <Search className="w-5 h-5 text-zinc-400 shrink-0" aria-hidden="true" />
             <input
               ref={inputRef}
               type="text"
@@ -435,8 +435,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               filteredItems.map((item, idx) => {
                 const Icon = item.icon;
                 const isSelected = idx === selectedIndex;
-                const isNav = item.category === 'Navigasi';
-                const isAction = item.category === 'Aksi Cepat';
 
                 return (
                   <button
@@ -446,33 +444,29 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     aria-selected={isSelected}
                     onClick={item.action}
                     onMouseEnter={() => setSelectedIndex(idx)}
-                    className={`w-full text-left px-3.5 py-2.5 rounded-xl flex items-center justify-between transition-all cursor-pointer ${
+                    className={`w-full text-left px-3 py-2 rounded-md flex items-center justify-between transition-colors cursor-pointer ${
                       isSelected
-                        ? 'bg-accent/15 text-white border border-accent/35 shadow-sm shadow-blue-500/10'
-                        : 'text-text-secondary hover:bg-bg-surface-2/60 hover:text-white border border-transparent'
+                        ? 'bg-zinc-800 text-white font-medium border border-zinc-700/60'
+                        : 'text-zinc-400 hover:bg-zinc-800/40 hover:text-white border border-transparent'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <div
-                        className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
+                        className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 transition-colors ${
                           isSelected
-                            ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30'
-                            : isNav
-                            ? 'bg-bg-surface-2 text-blue-400'
-                            : isAction
-                            ? 'bg-bg-surface-2 text-amber-400'
-                            : 'bg-bg-surface-2 text-emerald-400'
+                            ? 'bg-zinc-700 text-white'
+                            : 'bg-zinc-800 text-zinc-300'
                         }`}
                       >
-                        <Icon className="w-4 h-4" aria-hidden="true" />
+                        <Icon className="w-3.5 h-3.5" aria-hidden="true" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-white truncate">
+                          <span className="text-xs font-medium text-white truncate">
                             {item.title}
                           </span>
                           {item.badge && (
-                            <span className="text-[10px] px-1.5 py-0.2 bg-blue-500/15 text-blue-400 border border-blue-500/25 rounded-md font-mono font-medium">
+                            <span className="text-[10px] px-1.5 py-0.2 bg-zinc-800 text-zinc-300 border border-zinc-700/60 rounded font-mono">
                               {item.badge}
                             </span>
                           )}
@@ -490,7 +484,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         {item.category}
                       </span>
                       {isSelected ? (
-                        <CornerDownLeft className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
+                        <CornerDownLeft className="w-3.5 h-3.5 text-zinc-300" aria-hidden="true" />
                       ) : (
                         <ArrowRight className="w-3.5 h-3.5 text-text-muted/40 hidden group-hover:inline-block" aria-hidden="true" />
                       )}
@@ -520,7 +514,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 <span>Tutup</span>
               </span>
             </div>
-            <span className="font-mono text-blue-400 font-semibold text-[10px] tracking-wide">
+            <span className="font-mono text-zinc-400 font-medium text-[10px] tracking-wide">
               Route-X Spotlight
             </span>
           </div>

@@ -4,6 +4,11 @@ Semua perubahan penting pada project Route-X didokumentasikan dalam berkas ini.
 
 Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) dan mematuhi [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Removed
+- **Aplikasi mobile native (`apps/mobile/`) dihapus** sebagai bagian dari redesign UI/UX ala Muse: satu antarmuka web responsif + PWA menjadi satu-satunya klien resmi Route-X untuk desktop dan mobile. Job CI `mobile` dan seluruh referensi ke `apps/mobile/` dibersihkan. Alias API backend yang sebelumnya dipakai companion app (`/overview`, `/diagnostics`, `/summary`) dipertahankan karena juga dipakai CLI dan integrasi pihak ketiga. Kode mobile terakhir sebelum penghapusan ditandai tag `pre-mobile-removal`.
+
 ## [v1.4.0] - 2026-10-07
 
 Rilis besar yang menghadirkan Redesain Total UI/UX berestetika DeepSeek & Hermes, spatial UI pada inspeksi permintaan (Requests), penguatan sanitasi token zero-leakage, touch target optimal untuk perangkat seluler, pembersihan repo hygiene, serta sinkronisasi dokumentasi lintas aspek.

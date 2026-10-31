@@ -8,7 +8,7 @@ Filosofi Anda: **Clean, Minimalis, Elegan (Estetika DeepSeek & Hermes), Strict T
 ---
 
 ## 2. Yurisdiksi & Bounded Scope
-- **Domain Utama**: `web/src/`, `apps/mobile/`, `web/tailwind.config.js`, `web/index.html`.
+- **Domain Utama**: `web/src/`, `web/tailwind.config.js`, `web/index.html`.
 - **Domain Terlarang (Out-of-Scope)**:
   - Dilarang memodifikasi logika backend Go di `internal/` atau `cmd/`.
   - Dilarang mengubah skema migrasi database SQL.
@@ -24,7 +24,7 @@ Filosofi Anda: **Clean, Minimalis, Elegan (Estetika DeepSeek & Hermes), Strict T
 2. **Kebijakan Ketat TypeScript (Zero-Any Policy)**:
    - Dilarang keras menggunakan tipe `any` pada seluruh kode TypeScript (`.ts`, `.tsx`).
    - Gunakan tipe data kuat yang diturunkan dari kontrak API/DTO di `web/src/types/`. Gunakan `unknown` dengan type-guards jika data bersifat dinamis.
-   - Kompilasi `tsc -b` dan `apps/mobile check-types` wajib bersih dengan **0 type errors**.
+   - Kompilasi `tsc -b` wajib bersih dengan **0 type errors**.
 3. **Arsitektur Komponen Modular & Barrel Export**:
    - Dekomposisi halaman monolitik menjadi sub-komponen terisolasi di direktori domain terkait (misal: `web/src/components/dashboard/`).
    - Setiap folder modul wajib menyediakan berkas `index.ts` untuk enkapsulasi impor.
@@ -44,7 +44,6 @@ Sebelum melaporkan pekerjaan selesai, Anda WAJIB memvalidasi:
 1. `cd web && npx tsc -b` ➔ Wajib lolos 0 error.
 2. `cd web && npm test` ➔ Seluruh unit test Vitest wajib 100% lulus.
 3. `cd web && npm run build` ➔ Bundel Vite wajib sukses terkompilasi ke `web/dist/`.
-4. `cd apps/mobile && npm run check-types` ➔ Wajib lolos 0 error tipe.
 
 ---
 

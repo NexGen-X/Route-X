@@ -10,9 +10,9 @@ Setelah gateway dinyalakan, buka konsol web di peramban:
 `http://localhost:8080/login` (atau domain produksi Anda).
 
 - **Instalasi Baru (First-Run)**: Tampilan login dilengkapi kartu bantuan **"SETUP AWAL"** dengan tombol pintasan untuk mengisi alamat email admin secara otomatis.
-- **Kredensial Bawaan**:
-  - Email: `admin@routex.local`
-  - Password: `RouteX#Initial2026!` (atau nilai `INITIAL_ADMIN_PASSWORD` pada lingkungan produksi / output instalasi).
+- **Kredensial Bawaan**: Tidak ada password default. Akun admin pertama hanya dibuat bila `INITIAL_ADMIN_PASSWORD` disetel sebelum start pertama; installer resmi menghasilkan password acak unik dan menampilkannya sekali di akhir instalasi.
+  - Email: nilai `INITIAL_ADMIN_EMAIL` (bawaan `admin@routex.local`)
+  - Password: nilai `INITIAL_ADMIN_PASSWORD` yang Anda setel / hasil acak installer.
 - **Pengalihan Wajib**: Pada login pertama, Anda akan langsung diarahkan untuk membuat kata sandi baru. Setelah kata sandi diperbarui, kartu bantuan setup akan dinonaktifkan secara otomatis.
 
 ---

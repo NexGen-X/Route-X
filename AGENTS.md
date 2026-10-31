@@ -21,7 +21,7 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 
 ## Konfigurasi app & Arsitektur Identitas
 - Wajib: `DATABASE_URL` (postgres://), `REDIS_URL` (redis://), `SESSION_SECRET`, `ENCRYPTION_KEY`, `API_KEY_PEPPER`
-- Opsional: `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` (jika kosong, seed otomatis membuat default admin `admin@routex.local` / `RouteX#Initial2026!` dengan `MustChangePassword: true`)
+- Opsional: `INITIAL_ADMIN_EMAIL` (bawaan `admin@routex.local`); `INITIAL_ADMIN_PASSWORD` wajib disetel agar seed membuat admin pertama (dengan `MustChangePassword: true`) — jika kosong, TIDAK ada admin yang dibuat dan tidak ada password default.
 - Arsitektur Single-Admin: Seluruh peran RBAC (`roles`, `permissions`, `user_roles`) telah dihapus (migrasi 0010). Setiap user terautentikasi adalah `Admin` dengan hak penuh (`*`).
 - Endpoint `GET /api/auth/setup-hint` mendeteksi status onboarding awal dan dinonaktifkan otomatis begitu kata sandi diperbarui.
 - Tidak ada `.env` di repo — baca `internal/config/config.go` untuk daftar env lengkap
@@ -32,7 +32,7 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
   - [Aturan Pengembangan & Standar Kerja (routex-dev)](file:///root/Route-X/.agents/rules/routex-dev.md) — Konvensi Go & TS, zero-race, arsitektur single-admin, dan keamanan zero-trust.
   - [Standar Verifikasi Multi-Aspek](file:///root/Route-X/.agents/rules/multi_aspect_verification.md) — 4 lapisan verifikasi empiris, wire protocol live probe, dan protokol anti-halusinasi.
 - Bahasa komentar/log di codebase ini: Indonesia. Ikuti gaya yang ada.
-- Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0015_credential_egress_pool.sql`)
+- Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0016_performance_indexes.sql`)
 - **Alur Kerja Git Wajib PR (PR-Only Policy)**: Dilarang keras melakukan komit atau push langsung ke branch `main`. Setiap perubahan wajib dibuat pada branch terisolasi (`feat/*`, `fix/*`, `chore/*`), didorong ke remote, diajukan melalui `gh pr create`, dipantau hingga status CI hijau (`gh pr checks <id> --watch`), dan digabungkan melalui `gh pr merge <id> --squash --delete-branch`.
 - **Standar Verifikasi Multi-Aspek & Protokol 7-Layer QA (Wajib Bukti Nyata)**:
   - Dilarang keras menyajikan hasil mentah, asumsi, atau klaim penyelesaian tugas hanya berdasarkan spekulasi kode atau mock lokal semata.
@@ -61,7 +61,7 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 Sebelum mempublikasikan patch atau rilis `v1.4.x`, lakukan verifikasi berurutan berikut:
 1. **Audit Data Race**: Jalankan `go test -race ./...` (wajib 0 data race terdeteksi).
 2. **Formatting Go**: Jalankan `gofmt -l .` (wajib kosong/bersih).
-3. **Integritas Database**: Pastikan berkas migrasi `internal/database/migrations/` berurutan rapi (saat ini 0001 sampai 0015) dan tidak merusak skema produksi.
+3. **Integritas Database**: Pastikan berkas migrasi `internal/database/migrations/` berurutan rapi (saat ini 0001 sampai 0016) dan tidak merusak skema produksi.
 4. **Build Frontend**: Jalankan `cd /root/Route-X/web && npm run build && npm test` (wajib kompilasi `tsc`, `vite build`, dan unit test lolos tanpa error).
 5. **Uji Probing Gateway E2E**: Jalankan `./scripts/probe_e2e_gateway.sh` untuk memvalidasi rute `/v1/chat/completions` (non-stream & SSE stream) serta `/v1/messages` native Anthropic.
 6. **Validasi Observabilitas**: Jalankan `./scripts/check_metrics.sh` untuk memverifikasi endpoint `/metrics` tidak merekam kegagalan terselubung.

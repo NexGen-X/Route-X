@@ -4,8 +4,8 @@
 
 @layer base {
   body {
-    background-color: #09090B;
-    background-image: radial-gradient(ellipse 65% 35% at 50% 0%, rgba(99, 102, 241, 0.08), transparent 70%);
+    background-color: #181818;
+    background-image: radial-gradient(ellipse 65% 35% at 50% 0%, rgba(255, 255, 255, 0.025), transparent 70%);
     background-repeat: no-repeat;
     color: #FAFAFA;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
@@ -15,7 +15,7 @@
 
   /* Universal Selection Color — Electric Indigo */
   ::selection {
-    background-color: #6366F1;
+    background-color: #0070E0;
     color: #FFFFFF;
   }
 }
@@ -27,7 +27,7 @@
 /* Firefox & W3C Standard */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #27272A #09090B;
+  scrollbar-color: #2A2A2A #181818;
 }
 
 /* WebKit & Blink (Chrome, Safari, Edge, Android Chrome, iOS Safari) */
@@ -37,16 +37,16 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #09090B;
+  background: #181818;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #27272A;
+  background: #2A2A2A;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #3F3F46;
+  background: #3A3A3A;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -91,7 +91,7 @@ input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 40px #121215 inset !important;
+  -webkit-box-shadow: 0 0 0 40px #1F1F1F inset !important;
   -webkit-text-fill-color: #FAFAFA !important;
   caret-color: #FAFAFA !important;
   transition: background-color 5000s ease-in-out 0s;
@@ -109,9 +109,9 @@ input[type="checkbox"] {
   height: 1rem;
   min-width: 1rem;
   min-height: 1rem;
-  border: 1px solid #27272A;
+  border: 1px solid #2A2A2A;
   border-radius: 0.25rem;
-  background-color: #121215;
+  background-color: #1F1F1F;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -121,12 +121,12 @@ input[type="checkbox"] {
 }
 
 input[type="checkbox"]:hover:not(:disabled) {
-  border-color: #52525B;
+  border-color: #4A4A4A;
 }
 
 input[type="checkbox"]:focus-visible {
-  border-color: #6366F1;
-  box-shadow: 0 0 0 2px #09090B, 0 0 0 4px rgba(99, 102, 241, 0.4);
+  border-color: #0070E0;
+  box-shadow: 0 0 0 2px #181818, 0 0 0 4px rgba(0, 112, 224, 0.4);
 }
 
 input[type="checkbox"]:checked {
@@ -139,7 +139,7 @@ input[type="checkbox"]:checked::before {
   width: 0.55rem;
   height: 0.55rem;
   clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
-  background-color: #09090B;
+  background-color: #181818;
 }
 
 input[type="checkbox"]:disabled {
@@ -159,9 +159,9 @@ input[type="radio"] {
   height: 1rem;
   min-width: 1rem;
   min-height: 1rem;
-  border: 1px solid #27272A;
+  border: 1px solid #2A2A2A;
   border-radius: 9999px;
-  background-color: #121215;
+  background-color: #1F1F1F;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
@@ -171,12 +171,12 @@ input[type="radio"] {
 }
 
 input[type="radio"]:hover:not(:disabled) {
-  border-color: #52525B;
+  border-color: #4A4A4A;
 }
 
 input[type="radio"]:focus-visible {
-  border-color: #6366F1;
-  box-shadow: 0 0 0 2px #09090B, 0 0 0 4px rgba(99, 102, 241, 0.4);
+  border-color: #0070E0;
+  box-shadow: 0 0 0 2px #181818, 0 0 0 4px rgba(0, 112, 224, 0.4);
 }
 
 input[type="radio"]:checked {
@@ -202,7 +202,7 @@ input[type="radio"]:disabled {
 
 .scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #27272A transparent;
+  scrollbar-color: #2A2A2A transparent;
 }
 
 .scrollbar-thin::-webkit-scrollbar {
@@ -215,12 +215,12 @@ input[type="radio"]:disabled {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #27272A;
+  background: #2A2A2A;
   border-radius: 9999px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #3F3F46;
+  background: #3A3A3A;
 }
 
 .scrollbar-none {
@@ -236,14 +236,14 @@ input[type="radio"]:disabled {
   background: rgba(18, 18, 21, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid #27272A;
+  border: 1px solid #2A2A2A;
 }
 
 .glass-surface-subtle {
   background: rgba(24, 24, 27, 0.75);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid #27272A;
+  border: 1px solid #2A2A2A;
 }
 
 /* Subtle Carbon Grid Pattern */
@@ -256,20 +256,20 @@ input[type="radio"]:disabled {
 
 /* Clean Dark Form Controls */
 .input-dark {
-  background-color: #121215;
-  border: 1px solid #27272A;
+  background-color: #1F1F1F;
+  border: 1px solid #2A2A2A;
   color: #FAFAFA;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .input-dark:hover {
-  border-color: #3F3F46;
+  border-color: #3A3A3A;
 }
 
 .input-dark:focus {
-  border-color: #6366F1;
+  border-color: #0070E0;
   outline: none;
-  box-shadow: 0 0 0 1px #6366F1, 0 0 0 3px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 0 1px #0070E0, 0 0 0 3px rgba(0, 112, 224, 0.2);
 }
 
 textarea {
@@ -281,7 +281,7 @@ select {
 }
 
 select option {
-  background-color: #121215;
+  background-color: #1F1F1F;
   color: #FAFAFA;
 }
 

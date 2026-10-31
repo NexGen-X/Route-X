@@ -97,16 +97,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed lg:static top-0 left-0 bottom-0 z-50 flex flex-col bg-bg-sidebar border-r border-zinc-800/80 transition-all duration-200 select-none ${
+        className={`fixed lg:static top-0 left-0 bottom-0 z-50 flex flex-col bg-bg-sidebar border-r border-border transition-all duration-200 select-none ${
           isCollapsed ? 'w-[64px]' : 'w-[240px]'
         } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
         aria-label="Sidebar Navigasi"
       >
         {/* Brand Header */}
-        <div className="h-14 flex items-center px-3.5 border-b border-zinc-800/80 justify-between">
+        <div className="h-14 flex items-center px-3.5 border-b border-border justify-between">
           <button
             type="button"
-            className="group flex items-center gap-2.5 overflow-hidden cursor-pointer text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500/40 rounded-md p-1 -m-1 transition-colors"
+            className="group flex items-center gap-2.5 overflow-hidden cursor-pointer text-left focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 rounded-md p-1 -m-1 transition-colors"
             onClick={() => onNavigate('/')}
             aria-label="Route-X Beranda"
           >
@@ -117,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="font-semibold tracking-tight text-white text-sm leading-none">
                   Route-X
                 </span>
-                <span className="text-[10px] font-mono text-indigo-400 px-1.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
+                <span className="text-[10px] font-mono text-accent px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/20">
                   v1.4
                 </span>
               </div>
@@ -130,11 +130,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {navGroups.map((group, gIdx) => (
             <div key={gIdx} className="space-y-0.5">
               {!isCollapsed && (
-                <div className="px-2.5 pb-1 text-[11px] font-mono font-medium tracking-wider text-zinc-500 uppercase">
+                <div className="px-2.5 pb-1 text-[11px] font-medium tracking-wider text-text-muted uppercase">
                   {group.title}
                 </div>
               )}
-              {isCollapsed && <div className="h-px bg-zinc-800/80 my-1.5 mx-1" aria-hidden="true" />}
+              {isCollapsed && <div className="h-px bg-border my-1.5 mx-1" aria-hidden="true" />}
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentPath === item.path;
@@ -147,23 +147,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     aria-label={item.name}
                     aria-current={isActive ? 'page' : undefined}
-                    className={`w-full min-h-[34px] flex items-center gap-2.5 px-2.5 py-1.5 text-xs transition-colors rounded-md group cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500/40 ${
+                    className={`w-full min-h-[38px] flex items-center gap-2.5 px-2.5 py-1.5 text-xs transition-colors rounded-nav group cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 ${
                       isActive
-                        ? 'bg-indigo-500/10 text-indigo-300 font-medium border-l-2 border-indigo-500 rounded-r-md'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40'
+                        ? 'bg-bg-surface-2 text-white font-medium'
+                        : 'text-text-secondary hover:text-white hover:bg-bg-surface-1'
                     } ${isCollapsed ? 'justify-center px-0' : ''}`}
                   >
                     <Icon
                       aria-hidden="true"
                       className={`w-4 h-4 flex-shrink-0 transition-colors ${
-                        isActive ? 'text-indigo-400' : 'text-zinc-400 group-hover:text-zinc-200'
+                        isActive ? 'text-white' : 'text-text-muted group-hover:text-white'
                       }`}
                     />
                     {!isCollapsed && (
                       <div className="flex-1 flex items-center justify-between min-w-0">
                         <span className="truncate">{item.name}</span>
                         {item.badge && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
                             {item.badge}
                           </span>
                         )}
@@ -187,22 +187,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </nav>
 
         {/* Compact Unified Footer: user info, gateway status, logout, and collapse */}
-        <div className="p-2 border-t border-zinc-800/80 bg-zinc-950 flex flex-col gap-1.5">
+        <div className="p-2 border-t border-border bg-bg-sidebar flex flex-col gap-1.5">
           {!isCollapsed && user ? (
-            <div className="flex items-center justify-between px-2 py-1.5 rounded-md bg-zinc-900/60 border border-zinc-800/80 text-xs">
+            <div className="flex items-center justify-between px-2 py-1.5 rounded-md bg-zinc-900/60 border border-border text-xs">
               {/* User details */}
               <div className="flex items-center gap-2 min-w-0">
                 <div
-                  className="w-6 h-6 rounded bg-zinc-800 text-zinc-200 flex items-center justify-center font-semibold text-[11px] shrink-0 border border-zinc-700/60"
+                  className="w-6 h-6 rounded-full bg-bg-surface-2 text-text-primary flex items-center justify-center font-semibold text-[11px] shrink-0 border border-border"
                   aria-hidden="true"
                 >
                   {user.display_name.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex flex-col min-w-0 leading-tight">
-                  <span className="text-xs font-medium text-zinc-200 truncate">
+                  <span className="text-xs font-medium text-text-primary truncate">
                     {user.display_name}
                   </span>
-                  <span className="text-[10px] text-zinc-500 truncate font-mono">
+                  <span className="text-[10px] text-text-muted truncate font-mono">
                     {principal?.roles[0] || 'User'}
                   </span>
                 </div>
@@ -220,7 +220,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     type="button"
                     onClick={logout}
                     aria-label="Keluar dari akun"
-                    className="p-1 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800/80 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500/40"
+                    className="p-1 text-text-secondary hover:text-rose-400 rounded-full hover:bg-bg-surface-2 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
                   >
                     <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
@@ -231,7 +231,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="flex flex-col items-center gap-2 py-1">
               <Tooltip content={`${user.display_name} (${principal?.roles[0] || 'User'})`} position="right">
                 <div
-                  className="w-7 h-7 rounded bg-zinc-800 text-zinc-200 flex items-center justify-center font-semibold text-xs shrink-0 border border-zinc-700/60"
+                  className="w-7 h-7 rounded-full bg-bg-surface-2 text-text-primary flex items-center justify-center font-semibold text-xs shrink-0 border border-border"
                   aria-hidden="true"
                 >
                   {user.display_name.charAt(0).toUpperCase()}
@@ -242,7 +242,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   type="button"
                   onClick={logout}
                   aria-label="Keluar dari akun"
-                  className="p-1.5 text-zinc-400 hover:text-rose-400 rounded hover:bg-zinc-800/80 transition-colors cursor-pointer"
+                  className="p-1.5 text-text-secondary hover:text-rose-400 rounded-full hover:bg-bg-surface-2 transition-colors cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
                 </button>
@@ -256,7 +256,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className={`hidden lg:flex min-w-[28px] min-h-[28px] items-center justify-center rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/60 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500/40 ${
+                className={`hidden lg:flex min-w-[28px] min-h-[28px] items-center justify-center rounded text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 ${
                   isCollapsed ? 'mx-auto' : 'ml-auto'
                 }`}
                 aria-label={isCollapsed ? 'Perluas Sidebar' : 'Ciutkan Sidebar'}

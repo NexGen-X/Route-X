@@ -88,14 +88,14 @@ export const Modal: React.FC<ModalProps> = ({
         aria-labelledby={titleId}
         aria-describedby={subtitle ? subtitleId : ariaDescribedBy}
         onClick={onClose}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xl animate-in fade-in duration-200 cursor-pointer"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
       >
         <div
-          className={`w-full ${maxW} bg-bg-surface/95 border border-white/[0.08] rounded-card shadow-surface-elevated flex flex-col max-h-[90vh] overflow-hidden cursor-default backdrop-blur-xl animate-in zoom-in-95 duration-200`}
+          className={`w-full ${maxW} bg-bg-surface border border-border rounded-card shadow-surface-elevated flex flex-col max-h-[90vh] overflow-hidden cursor-default backdrop-blur-sm animate-in zoom-in-95 duration-200`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06] bg-bg-surface-1/50 shrink-0">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-bg-surface-1/50 shrink-0">
             <div className="min-w-0 pr-3">
               <h2 id={titleId} className="text-sm font-semibold text-text-primary tracking-tight">
                 {title}
@@ -123,7 +123,7 @@ export const Modal: React.FC<ModalProps> = ({
 
           {/* Sticky Footer */}
           {footer && (
-            <div className="px-5 py-3.5 border-t border-white/[0.06] bg-bg-surface-1/70 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10">
+            <div className="px-5 py-3.5 border-t border-border bg-bg-surface-1/70 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10">
               {footer}
             </div>
           )}

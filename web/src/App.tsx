@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
+import { MobileNav } from './components/layout/MobileNav';
 import { Login } from './pages/Login';
 import { ChangePassword } from './pages/ChangePassword';
 import { PageErrorBoundary } from './components/common/PageErrorBoundary';
@@ -61,7 +62,7 @@ const Shell: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-bg-base flex flex-col items-center justify-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center font-extrabold text-white text-lg shadow-lg shadow-blue-500/25 ring-1 ring-white/10">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-accent to-accent-hover flex items-center justify-center font-extrabold text-white text-lg shadow-lg shadow-black/40 ring-1 ring-white/10">
           RX
         </div>
         <p className="text-xs text-text-muted font-mono flex items-center gap-2">
@@ -219,7 +220,7 @@ const Shell: React.FC = () => {
             onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
           />
         </WidgetErrorBoundary>
-        <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
+        <main className="flex-1 p-4 sm:p-6 pb-24 lg:pb-6 max-w-7xl w-full mx-auto overflow-x-hidden">
           <PageErrorBoundary key={currentPath} pageName={title}>
             <React.Suspense
               fallback={
@@ -234,6 +235,11 @@ const Shell: React.FC = () => {
           </PageErrorBoundary>
         </main>
       </div>
+      <MobileNav
+        currentPath={currentPath}
+        onNavigate={navigate}
+        onOpenMore={() => setIsMobileOpen(true)}
+      />
       <WidgetErrorBoundary title="Command Palette">
         <CommandPalette
           isOpen={isCommandPaletteOpen}

@@ -95,18 +95,18 @@ export const Drawer: React.FC<DrawerProps> = ({
       >
         {/* Backdrop */}
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-xl transition-opacity animate-in fade-in duration-200"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
           onClick={onClose}
         />
 
         {/* Sheet dinamis: mobile bottom-sheet mengambang dengan safe-area, desktop dialog tengah */}
         <div className="fixed inset-0 flex items-end justify-center sm:items-center px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-6 pointer-events-none">
           <div
-            className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface/95 border border-white/[0.08] shadow-surface-elevated flex flex-col h-auto max-h-[92dvh] sm:max-h-[88vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-card overflow-hidden backdrop-blur-xl`}
+            className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border border-border shadow-surface-elevated flex flex-col h-auto max-h-[92dvh] sm:max-h-[88vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-card overflow-hidden backdrop-blur-sm`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Drawer Header */}
-            <div className="flex items-start justify-between px-4 py-3.5 sm:px-6 sm:py-4 border-b border-white/[0.06] bg-bg-surface-1/50 flex-shrink-0">
+            <div className="flex items-start justify-between px-4 py-3.5 sm:px-6 sm:py-4 border-b border-border bg-bg-surface-1/50 flex-shrink-0">
               <div className="space-y-1 flex-1 min-w-0 pr-3 sm:pr-4">
                 <div className="flex items-center gap-3">
                   <h2 id={titleId} className="text-sm sm:text-base font-semibold text-white tracking-tight truncate">
@@ -126,7 +126,7 @@ export const Drawer: React.FC<DrawerProps> = ({
                   type="button"
                   onClick={onClose}
                   aria-label="Tutup panel"
-                  className="text-text-muted hover:text-white p-2 rounded-xl hover:bg-bg-surface-2/80 border border-transparent hover:border-white/[0.08] transition-all flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+                  className="text-text-muted hover:text-white p-2 rounded-xl hover:bg-bg-surface-2/80 border border-transparent hover:border-border transition-all flex-shrink-0 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
                 >
                   <X className="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -140,7 +140,7 @@ export const Drawer: React.FC<DrawerProps> = ({
 
             {/* Drawer Footer (Sticky) */}
             {footer && (
-              <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-t border-white/[0.06] bg-bg-surface-1/80 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10">
+              <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-t border-border bg-bg-surface-1/80 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10">
                 {footer}
               </div>
             )}

@@ -394,7 +394,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         >
           {/* Search Bar */}
           <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border/70 bg-bg-surface-2/50">
-            <Search className="w-5 h-5 text-zinc-400 shrink-0" aria-hidden="true" />
+            <Search className="w-5 h-5 text-text-muted shrink-0" aria-hidden="true" />
             <input
               ref={inputRef}
               type="text"
@@ -444,18 +444,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     aria-selected={isSelected}
                     onClick={item.action}
                     onMouseEnter={() => setSelectedIndex(idx)}
-                    className={`w-full text-left px-3 py-2 rounded-md flex items-center justify-between transition-colors cursor-pointer ${
+                    className={`w-full text-left px-3 py-2 rounded-nav flex items-center justify-between transition-colors cursor-pointer ${
                       isSelected
-                        ? 'bg-zinc-800 text-white font-medium border border-zinc-700/60'
-                        : 'text-zinc-400 hover:bg-zinc-800/40 hover:text-white border border-transparent'
+                        ? 'bg-bg-surface-2 text-white font-medium border border-border'
+                        : 'text-text-secondary hover:bg-bg-surface-1 hover:text-white border border-transparent'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div
-                        className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 transition-colors ${
+                        className={`w-7 h-7 rounded-nav flex items-center justify-center shrink-0 transition-colors ${
                           isSelected
-                            ? 'bg-zinc-700 text-white'
-                            : 'bg-zinc-800 text-zinc-300'
+                            ? 'bg-bg-surface-3 text-white'
+                            : 'bg-bg-surface-2 text-text-secondary'
                         }`}
                       >
                         <Icon className="w-3.5 h-3.5" aria-hidden="true" />
@@ -466,7 +466,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                             {item.title}
                           </span>
                           {item.badge && (
-                            <span className="text-[10px] px-1.5 py-0.2 bg-zinc-800 text-zinc-300 border border-zinc-700/60 rounded font-mono">
+                            <span className="text-[10px] px-1.5 py-0.2 bg-bg-surface-2 text-text-secondary border border-border rounded-full font-mono">
                               {item.badge}
                             </span>
                           )}

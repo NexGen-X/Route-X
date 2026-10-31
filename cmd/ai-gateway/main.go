@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -461,7 +462,27 @@ func buildGatewaySurface(
 	providersRepo := upstream.NewProviderRepo(db.Pool)
 
 	// Engine response cache untuk caching cerdas inferensi prompt berulang.
+	// Bawaan engine NONAKTIF (audit F3); pulihkan setelan yang pernah
+	// dipersistensikan admin dari tabel settings. Tanpa baris tersimpan,
+	// cache tetap mati — restart tidak lagi menyalakannya diam-diam
+	// melewati penolakan cache_policy_unsafe di API admin.
 	respCache := responsecache.NewEngine(rdb, logger)
+	{
+		settingsRepoCache := identity.NewSettings(db.Pool)
+		if s, err := settingsRepoCache.Get(ctx, responsecache.SettingKey); err == nil && len(s.Value) > 0 {
+			var persisted responsecache.PersistedSettings
+			if jerr := json.Unmarshal(s.Value, &persisted); jerr != nil {
+				logger.Warn("setelan response cache tersimpan tidak terbaca; cache dibiarkan nonaktif", "error", jerr)
+			} else if persisted.Enabled {
+				// Jalur admin menolak aktivasi sampai kebijakan fingerprint
+				// diterapkan, jadi baris enabled=true tidak mungkin berasal
+				// dari versi ini; perlakukan sebagai tidak sah.
+				logger.Warn("setelan response cache tersimpan meminta enabled=true yang tidak diizinkan kebijakan saat ini; cache dibiarkan nonaktif")
+			} else {
+				respCache.SetSettings(false, time.Duration(persisted.TTLSeconds)*time.Second)
+			}
+		}
+	}
 
 	// Pabrik adapter provider dipakai bersama antara permintaan inferensi dan health checker
 	// worker, menegakkan kebijakan SSRF dan cache instance yang konsisten (Aturan 14).

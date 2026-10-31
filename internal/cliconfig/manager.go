@@ -59,6 +59,33 @@ type StoredConfig struct {
 }
 
 // Scan memeriksa keberadaan perkakas CLI di sistem dan memuat konfigurasi aktifnya.
+// tulisAtomik menulis berkas secara atomik: tulis ke berkas sementara di
+// direktori yang sama, sesuaikan izin, lalu rename (audit F5). Penulisan
+// langsung (os.WriteFile) bisa meninggalkan berkas setengah jadi bila
+// proses terputus di tengah — dan berkas-berkas ini (~/.bashrc,
+// settings.json milik tool CLI, key.env berisi API key) dibaca proses
+// lain apa adanya.
+func tulisAtomik(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".routex-tulis-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
 func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolStatus, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -192,7 +219,10 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 			Description: fmt.Sprintf("Konfigurasi integrasi CLI untuk %s", toolDef.Name),
 		})
 		if err != nil {
-			m.logger.Warn("gagal menyimpan konfigurasi CLI ke database", "tool", p.ToolID, "error", err)
+			// Kegagalan persistensi = Configure GAGAL (audit F5): versi lama
+			// hanya mencatat log lalu melaporkan sukses, sehingga operator
+			// mengira konfigurasi tersimpan padahal hilang saat restart.
+			return nil, fmt.Errorf("menyimpan konfigurasi CLI %s ke database: %w", p.ToolID, err)
 		}
 	}
 
@@ -202,21 +232,31 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	homeDir, _ := os.UserHomeDir()
 	if p.APIKey != "" && homeDir != "" {
 		routexDir := filepath.Join(homeDir, ".routex")
-		_ = os.MkdirAll(routexDir, 0755)
+		if err := os.MkdirAll(routexDir, 0755); err != nil {
+			return nil, fmt.Errorf("menyiapkan direktori %s: %w", routexDir, err)
+		}
 		keyEnvPath := filepath.Join(routexDir, "key.env")
-		if qKey, err := shellQuote(p.APIKey); err == nil {
-			keyContent := fmt.Sprintf("export ROUTEX_API_KEY=%s\nexport ANTHROPIC_API_KEY=%s\nexport OPENAI_API_KEY=%s\nexport OPENCODE_API_KEY=%s\n",
-				qKey, qKey, qKey, qKey)
-			_ = os.WriteFile(keyEnvPath, []byte(keyContent), 0600)
+		qKey, err := shellQuote(p.APIKey)
+		if err != nil {
+			return nil, fmt.Errorf("mengutip API key untuk berkas env: %w", err)
+		}
+		keyContent := fmt.Sprintf("export ROUTEX_API_KEY=%s\nexport ANTHROPIC_API_KEY=%s\nexport OPENAI_API_KEY=%s\nexport OPENCODE_API_KEY=%s\n",
+			qKey, qKey, qKey, qKey)
+		if err := tulisAtomik(keyEnvPath, []byte(keyContent), 0600); err != nil {
+			return nil, fmt.Errorf("menulis %s: %w", keyEnvPath, err)
 		}
 	}
 
 	fullEnvVars := m.buildEnvVars(toolDef, p.Mode, p.Target, gwURL)
 
-	_ = m.syncGlobalEnvScript(homeDir, toolDef, fullEnvVars)
+	if err := m.syncGlobalEnvScript(homeDir, toolDef, fullEnvVars); err != nil {
+		return nil, fmt.Errorf("menyinkronkan skrip env global CLI: %w", err)
+	}
 
 	// 3. Tulis file konfigurasi lokal spesifik jika ada direktorinya.
-	_ = m.applyToolSpecificConfig(homeDir, toolDef, p.Mode, p.Target, gwURL, p.APIKey)
+	if err := m.applyToolSpecificConfig(homeDir, toolDef, p.Mode, p.Target, gwURL, p.APIKey); err != nil {
+		return nil, fmt.Errorf("menulis konfigurasi lokal %s: %w", toolDef.Name, err)
+	}
 
 	execPath := m.findBinary(toolDef.BinaryNames, homeDir)
 	status := &ToolStatus{
@@ -431,41 +471,60 @@ func (m *Manager) syncGlobalEnvScript(homeDir string, tool ToolDef, vars map[str
 
 	// Hapus assignment API key legacy dari file host, lalu batasi izin file.
 	newContent = m.removeAPIKeysFromScript(newContent)
-	if err := os.WriteFile(envFile, []byte(newContent), 0600); err != nil {
+	if err := tulisAtomik(envFile, []byte(newContent), 0600); err != nil {
 		return err
 	}
 
-	m.ensureShellAutoLoad(homeDir)
-	return nil
+	return m.ensureShellAutoLoad(homeDir)
 }
 
 // ensureShellAutoLoad memastikan skrip login shell otomatis memuat ~/.routex/cli-env.sh.
-func (m *Manager) ensureShellAutoLoad(homeDir string) {
+// Kegagalan memasang hook di berkas MILIK PENGGUNA (.bashrc/.zshrc)
+// dikembalikan ke pemanggil (audit F5): versi lama menelan semua error
+// sehingga status "terkonfigurasi" bisa berarti hook tidak pernah
+// terpasang dan env tidak pernah termuat di shell baru. SATU pengecualian:
+// hook sistem /etc/profile.d bersifat best-effort — direktori itu milik
+// root, dan menggagalkan seluruh Configure untuk gateway yang berjalan
+// sebagai pengguna biasa akan mematahkan fitur padahal hook per-pengguna
+// sudah cukup. Kegagalannya dicatat sebagai peringatan, bukan ditelan
+// diam-diam.
+func (m *Manager) ensureShellAutoLoad(homeDir string) error {
 	if homeDir == "" {
-		return
+		return nil
 	}
 	hook := "\n# >>> Route-X AI Gateway CLI Auto-Loader >>>\nif [ -f \"$HOME/.routex/cli-env.sh\" ]; then\n    . \"$HOME/.routex/cli-env.sh\"\nfi\n# <<< Route-X AI Gateway CLI Auto-Loader <<<\n"
 
 	bashrcPath := filepath.Join(homeDir, ".bashrc")
 	if data, err := os.ReadFile(bashrcPath); err == nil {
 		if !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
-			_ = os.WriteFile(bashrcPath, []byte(hook+"\n"+string(data)), 0644)
+			if err := tulisAtomik(bashrcPath, []byte(hook+"\n"+string(data)), 0644); err != nil {
+				return fmt.Errorf("memasang hook di %s: %w", bashrcPath, err)
+			}
 		}
 	}
 
 	zshrcPath := filepath.Join(homeDir, ".zshrc")
 	if data, err := os.ReadFile(zshrcPath); err == nil {
 		if !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
-			_ = os.WriteFile(zshrcPath, []byte(string(data)+hook), 0644)
+			if err := tulisAtomik(zshrcPath, []byte(string(data)+hook), 0644); err != nil {
+				return fmt.Errorf("memasang hook di %s: %w", zshrcPath, err)
+			}
 		}
 	}
 
 	profilePath := "/etc/profile.d/routex.sh"
 	if fi, err := os.Stat("/etc/profile.d"); err == nil && fi.IsDir() {
 		if data, err := os.ReadFile(profilePath); err != nil || !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
-			_ = os.WriteFile(profilePath, []byte(hook), 0644)
+			if err := tulisAtomik(profilePath, []byte(hook), 0644); err != nil {
+				// Best-effort (lihat komentar fungsi): catat, jangan gagalkan.
+				if m.logger != nil {
+					m.logger.Warn("hook /etc/profile.d tidak terpasang (best-effort); hook per-pengguna tetap berlaku",
+						"path", profilePath, "error", err)
+				}
+			}
 		}
 	}
+	return nil
 }
 
 // applyToolSpecificConfig menulis berkas konfigurasi lokal jika aplikabel.
@@ -490,15 +549,20 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 			"model":              target,
 		}
 		data, err := json.MarshalIndent(cfg, "", "  ")
-		if err == nil {
-			_ = os.WriteFile(settingsPath, data, 0644)
+		if err != nil {
+			return fmt.Errorf("mengkodekan settings.json Claude: %w", err)
+		}
+		if err := tulisAtomik(settingsPath, data, 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", settingsPath, err)
 		}
 
 	case "aider":
 		// Tulis ~/.aider.conf.yml
 		aiderConfigPath := filepath.Join(homeDir, ".aider.conf.yml")
 		content := fmt.Sprintf("openai-api-base: %s\nmodel: %s\n", gwURL, target)
-		_ = os.WriteFile(aiderConfigPath, []byte(content), 0644)
+		if err := tulisAtomik(aiderConfigPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", aiderConfigPath, err)
+		}
 
 	case "fabric":
 		// Tulis ~/.config/fabric/.env
@@ -506,7 +570,9 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 		_ = os.MkdirAll(fabricDir, 0755)
 		envPath := filepath.Join(fabricDir, ".env")
 		content := fmt.Sprintf("OPENAI_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
-		_ = os.WriteFile(envPath, []byte(content), 0644)
+		if err := tulisAtomik(envPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", envPath, err)
+		}
 
 	case "sgpt":
 		// Tulis ~/.config/shell_gpt/.sgptrc
@@ -514,13 +580,17 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 		_ = os.MkdirAll(sgptDir, 0755)
 		sgptPath := filepath.Join(sgptDir, ".sgptrc")
 		content := fmt.Sprintf("OPENAI_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
-		_ = os.WriteFile(sgptPath, []byte(content), 0644)
+		if err := tulisAtomik(sgptPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", sgptPath, err)
+		}
 
 	case "opencommit":
 		// Tulis ~/.opencommit
 		ocoPath := filepath.Join(homeDir, ".opencommit")
 		content := fmt.Sprintf("OCO_OPENAI_BASE_PATH=%s\nOCO_MODEL=%s\n", gwURL, target)
-		_ = os.WriteFile(ocoPath, []byte(content), 0644)
+		if err := tulisAtomik(ocoPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", ocoPath, err)
+		}
 
 	case "opencode":
 		// Tulis atau perbarui ~/.config/opencode/opencode.json
@@ -564,8 +634,12 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 		}
 		models[target] = map[string]any{"name": target}
 		cfg["model"] = "routex/" + target
-		if data, err := json.MarshalIndent(cfg, "", "  "); err == nil {
-			_ = os.WriteFile(configPath, data, 0644)
+		data, err := json.MarshalIndent(cfg, "", "  ")
+		if err != nil {
+			return fmt.Errorf("mengkodekan opencode.json: %w", err)
+		}
+		if err := tulisAtomik(configPath, data, 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", configPath, err)
 		}
 	}
 

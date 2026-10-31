@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { Provider, EgressPool } from '../../types';
 import type { api as apiClient } from '../../api/client';
 import { Modal } from '../common/Modal';
@@ -146,8 +146,16 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
     }
   };
 
+  // Inisialisasi HANYA saat modal berubah tertutup -> terbuka (audit F7):
+  // versi lama menyertakan `providers` pada dependensi effect, sehingga
+  // setiap refetch daftar provider (fokus jendela, invalidasi mutasi)
+  // menjalankan ulang setup dan mengosongkan API key yang sedang diketik
+  // operator di tengah pengisian form.
+  const prevOpenRef = useRef(false);
   useEffect(() => {
-    if (isOpen) {
+    const baruBuka = isOpen && !prevOpenRef.current;
+    prevOpenRef.current = isOpen;
+    if (baruBuka) {
       setQuickApiKey('');
       setAuthFallbackInput('');
       setAuthExtractedToken('');
@@ -160,7 +168,8 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
       setShowPresetPicker(!initialPreset);
       setupPreset(initialPreset);
     }
-  }, [isOpen, initialPreset, providers, targetProviderOverride]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialPreset, targetProviderOverride]);
 
   const handleFallbackInputChange = (val: string) => {
     setAuthFallbackInput(val);

@@ -46,7 +46,10 @@ jobs:
         run: |
           # Versi di-pin (audit F10): @latest membuat hasil CI tidak
           # reprodusibel dan bisa berubah perilaku tanpa perubahan repo.
-          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+          # v1.9.0 = versi terbaru yang terbukti lolos di repo ini;
+          # versi lama (v1.1.4) PANIK saat menganalisis kode Go 1.27
+          # karena x/tools bawaannya belum mengenal konstruksinya.
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           govulncheck ./...
       - name: Vet
         run: go vet ./...

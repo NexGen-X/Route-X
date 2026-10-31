@@ -447,6 +447,29 @@ func TestTokenAliranIkutTercatat(t *testing.T) {
 	}
 }
 
+// TestCatatTokenTetapJalanSaatKlienMemutusAliran menjaga jalur yang paling mudah bocor:
+// klien menutup koneksi di tengah aliran SSE. Pada saat itu context request sudah
+// dibatalkan ketika defer pencatatan berjalan, sehingga operasi Redis ditolak dan token
+// yang sudah dibayar ke upstream hilang dari anggaran. Dampaknya bukan sekadar angka
+// laporan yang kurang: klien yang selalu memutus aliran sebelum token terakhir tidak
+// pernah memakan kuotanya.
+func TestCatatTokenTetapJalanSaatKlienMemutusAliran(t *testing.T) {
+	src := &sumberKebijakan{limits: []*policy.RateLimit{{
+		Scope: policy.ScopeGlobal, DailyTokenLimit: pointerG(int64(10)), Enabled: true,
+	}}}
+	g := guardUji(t, src)
+	targets := []policy.Target{{Scope: policy.ScopeGlobal}}
+
+	ctx, batal := context.WithCancel(context.Background())
+	batal()
+
+	g.CatatToken(ctx, nil, targets, 50)
+
+	if got := g.GerbangToken(context.Background(), nil, targets); got == nil {
+		t.Fatal("anggaran token tidak tergerbangi setelah pencatatan pada context yang dibatalkan; token dari aliran yang diputus klien hilang")
+	}
+}
+
 // --- Tanpa kebijakan ---------------------------------------------------------
 
 // TestTanpaKebijakanSemuanyaLolos: pemasangan yang belum mengisi satu pun tabel kebijakan

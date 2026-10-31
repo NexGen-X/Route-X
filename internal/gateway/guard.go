@@ -326,15 +326,29 @@ func (g *Guard) GerbangToken(ctx context.Context, p *apikey.Principal, targets [
 	return rejectionBatas(d, "anggaran token untuk periode ini sudah habis")
 }
 
+// batasCatatToken membatasi pekerjaan Redis saat mencatat pemakaian token. Context-nya
+// sengaja dilepas dari pembatalan request, jadi tanpa tenggat sendiri satu Redis yang
+// menggantung bisa menahan handler yang sedang menutup.
+const batasCatatToken = 5 * time.Second
+
 // CatatToken mencatat pemakaian token setelah jawaban selesai.
 //
 // Tidak menolak apa pun dan kegagalannya diabaikan selain dicatat: pada titik ini
 // permintaannya sudah dilayani dan biayanya sudah dikeluarkan ke upstream. Yang hilang bila
 // gagal adalah ketepatan penghitung yang menggerbangi permintaan berikutnya.
+//
+// Context dilepas dari pembatalan request. Pada streaming, pencatatan berjalan di defer
+// setelah klien memutus koneksi — dan saat itu context request sudah dibatalkan. Memakainya
+// apa adanya membuat Redis menolak operasi, sehingga token yang sudah dibayar ke upstream
+// tidak pernah memakan kuota, dan klien yang selalu memutus aliran sebelum token terakhir
+// memakai token secara gratis. Nilai-nilai context (request_id, logger) tetap dipertahankan.
 func (g *Guard) CatatToken(ctx context.Context, p *apikey.Principal, targets []policy.Target, tokens int64) {
-	if tokens <= 0 {
+	if g == nil || tokens <= 0 {
 		return
 	}
+	ctx, batal := context.WithTimeout(context.WithoutCancel(ctx), batasCatatToken)
+	defer batal()
+
 	scopes := g.cakupanToken(ctx, p, targets)
 	if len(scopes) == 0 {
 		return

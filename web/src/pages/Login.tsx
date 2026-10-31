@@ -242,7 +242,7 @@ export const Login: React.FC = () => {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-                  aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+                  aria-label={showPassword ? 'Sembunyikan sandi' : 'Lihat sandi'}
                 >
                   {showPassword ? (
                     <EyeOff className="w-4 h-4" aria-hidden="true" />

@@ -113,7 +113,7 @@ export const ChangePassword: React.FC = () => {
                 type="button"
                 onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                 className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors cursor-pointer rounded-nav focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                aria-label={showCurrentPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+                aria-label={showCurrentPassword ? 'Sembunyikan sandi' : 'Lihat sandi'}
               >
                 {showCurrentPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
               </button>
@@ -138,7 +138,7 @@ export const ChangePassword: React.FC = () => {
                 type="button"
                 onClick={() => setShowNewPassword(!showNewPassword)}
                 className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors cursor-pointer rounded-nav focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                aria-label={showNewPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+                aria-label={showNewPassword ? 'Sembunyikan sandi' : 'Lihat sandi'}
               >
                 {showNewPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
               </button>
@@ -163,7 +163,7 @@ export const ChangePassword: React.FC = () => {
                 type="button"
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                 className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors cursor-pointer rounded-nav focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                aria-label={showConfirmPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
+                aria-label={showConfirmPassword ? 'Sembunyikan sandi' : 'Lihat sandi'}
               >
                 {showConfirmPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
               </button>

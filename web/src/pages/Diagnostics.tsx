@@ -24,7 +24,7 @@ interface GatewayCheckItem {
   id: string;
   name: string;
   category: string;
-  status: 'healthy' | 'degraded' | 'offline';
+  status: 'healthy' | 'degraded' | 'offline' | 'unknown';
   latencyMs?: number;
   details: string;
 }
@@ -45,47 +45,16 @@ export const Diagnostics: React.FC = () => {
   const [isTestingLive, setIsTestingLive] = useState(false);
   const [lastLiveTestAt, setLastLiveTestAt] = useState<string | null>(null);
   const [liveTestDurationMs, setLiveTestDurationMs] = useState<number | null>(null);
+  // Keadaan awal: BELUM DIUJI (audit F7). Versi lama menginisialisasi
+  // kelima pemeriksaan sebagai 'healthy' dengan latensi karangan, dan
+  // header selalu mengklaim SEMUA SISTEM OK — halaman diagnostik yang
+  // menampilkan kesehatan karangan lebih buruk daripada halaman kosong.
   const [gatewayChecks, setGatewayChecks] = useState<GatewayCheckItem[]>([
-    {
-      id: 'core-engine',
-      name: 'Gateway Core & HTTP Proxy',
-      category: 'Core System',
-      status: 'healthy',
-      latencyMs: 1,
-      details: 'Reverse proxy and routing table nominal',
-    },
-    {
-      id: 'response-cache',
-      name: 'Redis Response Caching Engine',
-      category: 'Cache & Memory',
-      status: 'healthy',
-      latencyMs: 2,
-      details: 'Sub-2ms response offloading operational',
-    },
-    {
-      id: 'db-pool',
-      name: 'PostgreSQL Database & Pool',
-      category: 'Persistence',
-      status: 'healthy',
-      latencyMs: 3,
-      details: 'Connection pool acquired and ready',
-    },
-    {
-      id: 'circuit-breakers',
-      name: 'Upstream Circuit Breakers',
-      category: 'Reliability',
-      status: 'healthy',
-      latencyMs: 5,
-      details: 'All provider circuit breakers closed (healthy)',
-    },
-    {
-      id: 'supervisor-workers',
-      name: 'Background Task Supervisor',
-      category: 'Workers',
-      status: 'healthy',
-      latencyMs: 1,
-      details: 'Heartbeats and metrics sync running',
-    },
+    { id: 'core-engine', name: 'Gateway Core & HTTP Proxy', category: 'Core System', status: 'unknown', details: 'Belum diuji — jalankan Uji Live' },
+    { id: 'response-cache', name: 'Redis Response Caching Engine', category: 'Cache & Memory', status: 'unknown', details: 'Belum diuji — jalankan Uji Live' },
+    { id: 'db-pool', name: 'PostgreSQL Database & Pool', category: 'Persistence', status: 'unknown', details: 'Belum diuji — jalankan Uji Live' },
+    { id: 'circuit-breakers', name: 'Upstream Circuit Breakers', category: 'Reliability', status: 'unknown', details: 'Belum diuji — jalankan Uji Live' },
+    { id: 'supervisor-workers', name: 'Background Task Supervisor', category: 'Workers', status: 'unknown', details: 'Belum diuji — jalankan Uji Live' },
   ]);
 
   const loadData = async () => {
@@ -142,51 +111,76 @@ export const Diagnostics: React.FC = () => {
       setLastLiveTestAt(new Date().toLocaleTimeString());
       setDiag(diagRes);
 
-      // Perbarui checklist berdasarkan hasil riil
-      const isDbOk = (diagRes.db_pool?.total_conns ?? 0) >= 0;
-      const isCacheOk = cache?.enabled ?? true;
-      const hasUnhealthyProviders = healthRes?.providers?.some((p) => p.status === 'unhealthy') ?? false;
+      // Perbarui checklist berdasarkan hasil riil (audit F7):
+      // - DB dianggap sehat hanya bila blok db_pool benar-benar ada dan
+      //   pool terkonfigurasi; versi lama memakai `total_conns >= 0`
+      //   yang selalu benar untuk angka apa pun.
+      // - Statistik cache yang gagal dimuat = tidak diketahui, bukan sehat.
+      // - Status supervisor diturunkan dari status job nyata.
+      // - Latensi per-komponen TIDAK lagi dikarang dari pecahan durasi;
+      //   satu-satunya angka nyata adalah round-trip uji pada core.
+      const isDbOk = !!diagRes.db_pool && (diagRes.db_pool.max_conns ?? 0) > 0;
+      const cacheTersedia = cache !== null;
+      const isCacheOk = cache?.enabled ?? false;
+      const healthTersedia = healthRes !== null && Array.isArray(healthRes?.providers);
+      const hasUnhealthyProviders = healthTersedia
+        ? healthRes.providers.some((p) => p.status === 'unhealthy')
+        : false;
+      const jobGagal = jobs.filter((j) => j.last_status === 'failed').length;
 
       setGatewayChecks([
         {
           id: 'core-engine',
           name: 'Gateway Core & HTTP Proxy',
           category: 'Core System',
+          // Sehat karena endpoint diagnostik benar-benar menjawab;
+          // latencyMs di sini adalah round-trip uji yang terukur.
           status: 'healthy',
-          latencyMs: Math.max(1, Math.round(duration * 0.2)),
+          latencyMs: duration,
           details: `Gateway ${diagRes.version || 'v1.4'} aktif, ${diagRes.num_goroutine} goroutines`,
         },
         {
           id: 'response-cache',
           name: 'Redis Response Caching Engine',
           category: 'Cache & Memory',
-          status: isCacheOk ? 'healthy' : 'degraded',
-          latencyMs: Math.max(1, Math.round(duration * 0.15)),
-          details: isCacheOk ? `${cache?.total_entries ?? 0} entri aktif, latensi < 2ms` : 'Caching dinonaktifkan',
+          status: !cacheTersedia ? 'unknown' : isCacheOk ? 'healthy' : 'degraded',
+          details: !cacheTersedia
+            ? 'Statistik cache tidak tersedia'
+            : isCacheOk
+            ? `${cache?.total_entries ?? 0} entri aktif`
+            : 'Caching dinonaktifkan',
         },
         {
           id: 'db-pool',
           name: 'PostgreSQL Database & Pool',
           category: 'Persistence',
           status: isDbOk ? 'healthy' : 'offline',
-          latencyMs: Math.max(1, Math.round(duration * 0.3)),
-          details: `${diagRes.db_pool?.acquired_conns ?? 0}/${diagRes.db_pool?.max_conns ?? 0} koneksi aktif`,
+          details: isDbOk
+            ? `${diagRes.db_pool?.acquired_conns ?? 0}/${diagRes.db_pool?.max_conns ?? 0} koneksi aktif`
+            : 'Blok db_pool tidak tersedia dari endpoint diagnostik',
         },
         {
           id: 'circuit-breakers',
           name: 'Upstream Circuit Breakers',
           category: 'Reliability',
-          status: hasUnhealthyProviders ? 'degraded' : 'healthy',
-          latencyMs: Math.max(1, Math.round(duration * 0.25)),
-          details: hasUnhealthyProviders ? 'Terdapat penyedia degradasi' : 'Semua upstream provider siaga',
+          status: !healthTersedia ? 'unknown' : hasUnhealthyProviders ? 'degraded' : 'healthy',
+          details: !healthTersedia
+            ? 'Data kesehatan provider tidak tersedia'
+            : hasUnhealthyProviders
+            ? 'Terdapat penyedia degradasi'
+            : 'Semua upstream provider siaga',
         },
         {
           id: 'supervisor-workers',
           name: 'Background Task Supervisor',
           category: 'Workers',
-          status: 'healthy',
-          latencyMs: Math.max(1, Math.round(duration * 0.1)),
-          details: `${jobs.length} worker pengawas aktif`,
+          status: jobs.length === 0 ? 'unknown' : jobGagal > 0 ? 'degraded' : 'healthy',
+          details:
+            jobs.length === 0
+              ? 'Data worker tidak tersedia'
+              : jobGagal > 0
+              ? `${jobGagal} dari ${jobs.length} worker terakhir gagal`
+              : `${jobs.length} worker pengawas aktif`,
         },
       ]);
 
@@ -318,12 +312,23 @@ export const Diagnostics: React.FC = () => {
                 Uji terakhir: {lastLiveTestAt} ({liveTestDurationMs} ms)
               </span>
             )}
-            <Badge variant="success">
-              <span className="flex items-center gap-1">
-                <Check className="w-3 h-3" aria-hidden="true" />
-                <span>SEMUA SISTEM OK</span>
-              </span>
-            </Badge>
+            {(() => {
+              const ringkasan = gatewayChecks.some((c) => c.status === 'offline')
+                ? { variant: 'error' as const, label: 'ADA SISTEM OFFLINE' }
+                : gatewayChecks.some((c) => c.status === 'degraded')
+                ? { variant: 'warn' as const, label: 'ADA DEGRADASI' }
+                : gatewayChecks.every((c) => c.status === 'healthy')
+                ? { variant: 'success' as const, label: 'SEMUA SISTEM OK' }
+                : { variant: 'neutral' as const, label: 'BELUM DIUJI' };
+              return (
+                <Badge variant={ringkasan.variant}>
+                  <span className="flex items-center gap-1">
+                    <Check className="w-3 h-3" aria-hidden="true" />
+                    <span>{ringkasan.label}</span>
+                  </span>
+                </Badge>
+              );
+            })()}
           </div>
         }
       >
@@ -331,6 +336,7 @@ export const Diagnostics: React.FC = () => {
           {gatewayChecks.map((check) => {
             const isHealthy = check.status === 'healthy';
             const isDegraded = check.status === 'degraded';
+            const isUnknown = check.status === 'unknown';
             return (
               <div
                 key={check.id}
@@ -343,6 +349,8 @@ export const Diagnostics: React.FC = () => {
                         ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                         : isDegraded
                         ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        : isUnknown
+                        ? 'bg-bg-surface-2 text-text-muted border-border/60'
                         : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
                     }`}
                   >
@@ -369,8 +377,18 @@ export const Diagnostics: React.FC = () => {
                       ~{check.latencyMs} ms
                     </span>
                   )}
-                  <Badge variant={isHealthy ? 'success' : isDegraded ? 'warn' : 'error'}>
-                    {check.status.toUpperCase()}
+                  <Badge
+                    variant={
+                      isHealthy
+                        ? 'success'
+                        : isDegraded
+                        ? 'warn'
+                        : check.status === 'unknown'
+                        ? 'neutral'
+                        : 'error'
+                    }
+                  >
+                    {check.status === 'unknown' ? 'BELUM DIUJI' : check.status.toUpperCase()}
                   </Badge>
                 </div>
               </div>

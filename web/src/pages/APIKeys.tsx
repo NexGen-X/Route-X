@@ -30,13 +30,13 @@ export const APIKeys: React.FC = () => {
     isFetching,
   } = useQuery({
     queryKey: ['apiKeys'],
-    queryFn: () => api.apiKeys.list(),
+    queryFn: () => api.apiKeys.listAll(),
   });
   const keys = keysData?.items || [];
 
-  const { data: modelsData } = useQuery({
+  const { data: modelsData, isLoading: isLoadingModels } = useQuery({
     queryKey: ['models'],
-    queryFn: () => api.models.list(),
+    queryFn: () => api.models.listAll(),
   });
   const models = (modelsData?.items || []) as Model[];
 
@@ -232,7 +232,12 @@ export const APIKeys: React.FC = () => {
     }
   };
 
+  // Penjaga urutan untuk drawer scope (audit F7): respons getAllowed key
+  // sebelumnya tidak boleh menimpa pilihan key yang sedang dibuka.
+  const allowedReqRef = React.useRef(0);
+
   const handleOpenAllowed = async (k: APIKey) => {
+    const reqId = ++allowedReqRef.current;
     setSelectedKey(k);
     setIsAllowedOpen(true);
     setScopeSearch('');
@@ -257,13 +262,17 @@ export const APIKeys: React.FC = () => {
     try {
       setIsLoadingAllowed(true);
       const res = await api.apiKeys.getAllowed(k.id);
+      // Buang respons basi: drawer sudah berpindah ke key lain.
+      if (allowedReqRef.current !== reqId) return;
       if (res) {
         setSelectedScopeIds(resolveSelected(res.model_ids || [], res.provider_ids || []));
       }
     } catch {
       // Pertahankan initial value jika endpoint gagal
     } finally {
-      setIsLoadingAllowed(false);
+      if (allowedReqRef.current === reqId) {
+        setIsLoadingAllowed(false);
+      }
     }
   };
 
@@ -453,7 +462,7 @@ export const APIKeys: React.FC = () => {
         onSelectAll={handleSelectAllScopes}
         onDeselectAll={handleDeselectAllScopes}
         onSave={handleSaveAllowed}
-        isLoading={isLoadingAllowed}
+        isLoading={isLoadingAllowed || isLoadingModels}
       />
     </div>
   );

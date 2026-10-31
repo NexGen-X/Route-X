@@ -48,6 +48,7 @@ vi.mock('../api/client', () => ({
   api: {
     routing: {
       list: vi.fn(async () => ({ items: [] as RoutingRule[] })),
+      listAll: vi.fn(async () => ({ items: [] as RoutingRule[] })),
       create: vi.fn(async (data: Record<string, unknown>) => {
         payloadStore.create = data;
         return { id: 'r-baru' } as RoutingRule;
@@ -62,10 +63,12 @@ vi.mock('../api/client', () => ({
     },
     models: {
       list: vi.fn(async () => ({ items: [MODEL_GPT5, MODEL_GEMINI, MODEL_LLAMA] })),
+      listAll: vi.fn(async () => ({ items: [MODEL_GPT5, MODEL_GEMINI, MODEL_LLAMA] })),
       addAlias: vi.fn(async () => ({})),
     },
     providers: {
       list: vi.fn(async () => ({ items: [PROVIDER_A] })),
+      listAll: vi.fn(async () => ({ items: [PROVIDER_A] })),
     },
     breakers: {
       list: vi.fn(async () => ({ items: [] })),
@@ -95,6 +98,7 @@ const api = (await import('../api/client')).api;
 // sekali di useEffect. Badge mode di kartu jadi sinyal "data sudah siap".
 const renderHalaman = async (rules: RoutingRule[]) => {
   vi.mocked(api.routing.list).mockResolvedValue({ items: rules });
+  vi.mocked(api.routing.listAll).mockResolvedValue({ items: rules });
   render(<RoutingRules />);
   await waitFor(() =>
     expect(screen.getAllByText(/COMBO PIPELINE|MODEL ONLY|MULTI-PROVIDER/i).length).toBeGreaterThan(0),

@@ -52,8 +52,8 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
       const [bRes, lRes, kRes, mRes] = await Promise.allSettled([
         api.budgets.list(),
         api.rateLimits.list(),
-        api.apiKeys.list(),
-        api.models.list(),
+        api.apiKeys.listAll(),
+        api.models.listAll(),
       ]);
 
       if (bRes.status === 'fulfilled' && bRes.value) {

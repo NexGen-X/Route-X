@@ -120,7 +120,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         const [sumRes, serRes, provRes, overRes, reqRes] = await Promise.allSettled([
           api.observability.summary(timeWindow),
           api.observability.series(metricType, timeWindow),
-          api.providers.list(),
+          api.providers.listAll(),
           api.system.overview(),
           api.requests.list({ limit: 6 }),
         ]);

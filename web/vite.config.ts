@@ -5,7 +5,9 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
-    emptyOutDir: false,
+    // true (audit F9): dist dibersihkan tiap build. false membuat artefak
+    // generasi build lama menumpuk dan ikut ter-embed ke biner Go.
+    emptyOutDir: true,
     chunkSizeWarningLimit: 600,
     modulePreload: {
       resolveDependencies(filename, deps, { hostType }) {

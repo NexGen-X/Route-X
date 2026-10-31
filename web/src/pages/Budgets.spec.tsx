@@ -141,9 +141,11 @@ vi.mock('../api/client', () => ({
     },
     apiKeys: {
       list: () => mockListApiKeys(),
+      listAll: () => mockListApiKeys(),
     },
     models: {
       list: () => mockListModels(),
+      listAll: () => mockListModels(),
     },
   },
 }));

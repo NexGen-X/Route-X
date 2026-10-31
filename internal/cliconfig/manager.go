@@ -479,9 +479,15 @@ func (m *Manager) syncGlobalEnvScript(homeDir string, tool ToolDef, vars map[str
 }
 
 // ensureShellAutoLoad memastikan skrip login shell otomatis memuat ~/.routex/cli-env.sh.
-// Kegagalan memasang hook dikembalikan ke pemanggil (audit F5): versi lama
-// menelan semua error sehingga status "terkonfigurasi" bisa berarti hook
-// tidak pernah terpasang dan env tidak pernah termuat di shell baru.
+// Kegagalan memasang hook di berkas MILIK PENGGUNA (.bashrc/.zshrc)
+// dikembalikan ke pemanggil (audit F5): versi lama menelan semua error
+// sehingga status "terkonfigurasi" bisa berarti hook tidak pernah
+// terpasang dan env tidak pernah termuat di shell baru. SATU pengecualian:
+// hook sistem /etc/profile.d bersifat best-effort — direktori itu milik
+// root, dan menggagalkan seluruh Configure untuk gateway yang berjalan
+// sebagai pengguna biasa akan mematahkan fitur padahal hook per-pengguna
+// sudah cukup. Kegagalannya dicatat sebagai peringatan, bukan ditelan
+// diam-diam.
 func (m *Manager) ensureShellAutoLoad(homeDir string) error {
 	if homeDir == "" {
 		return nil
@@ -510,7 +516,11 @@ func (m *Manager) ensureShellAutoLoad(homeDir string) error {
 	if fi, err := os.Stat("/etc/profile.d"); err == nil && fi.IsDir() {
 		if data, err := os.ReadFile(profilePath); err != nil || !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
 			if err := tulisAtomik(profilePath, []byte(hook), 0644); err != nil {
-				return fmt.Errorf("memasang hook di %s: %w", profilePath, err)
+				// Best-effort (lihat komentar fungsi): catat, jangan gagalkan.
+				if m.logger != nil {
+					m.logger.Warn("hook /etc/profile.d tidak terpasang (best-effort); hook per-pengguna tetap berlaku",
+						"path", profilePath, "error", err)
+				}
 			}
 		}
 	}

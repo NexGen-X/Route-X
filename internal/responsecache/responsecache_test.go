@@ -157,16 +157,22 @@ func TestComputeKeyFieldCoverage(t *testing.T) {
 func TestEngineSettings(t *testing.T) {
 	e := NewEngine(nil, nil)
 
-	if !e.enabled {
-		t.Fatal("default engine enabled harus true")
+	// Bawaan engine NONAKTIF sejak audit F3: cache hanya menyala dari
+	// setelan eksplisit yang dipersistensikan, bukan sejak boot.
+	if e.enabled {
+		t.Fatal("default engine enabled harus false")
 	}
 	if e.TTL() != DefaultTTL {
 		t.Fatalf("default TTL harus %v, dapat %v", DefaultTTL, e.TTL())
 	}
 
+	e.SetSettings(true, 30*time.Minute)
+	if !e.enabled {
+		t.Fatal("engine enabled harus true setelah disetel")
+	}
 	e.SetSettings(false, 30*time.Minute)
 	if e.enabled {
-		t.Fatal("engine enabled harus false setelah disetel")
+		t.Fatal("engine enabled harus false setelah dimatikan")
 	}
 	if e.TTL() != 30*time.Minute {
 		t.Fatalf("TTL harus 30m, dapat %v", e.TTL())
@@ -227,7 +233,11 @@ func newTestEngine(t *testing.T) (*Engine, *miniredis.Miniredis) {
 	}
 	t.Cleanup(func() { _ = rdb.Close() })
 
-	return NewEngine(rdb, slog.New(slog.DiscardHandler)), mr
+	// Tes-tes engine memakai cache AKTIF; bawaan produksi kini nonaktif
+	// (audit F3), jadi helper menyalakannya secara eksplisit.
+	e := NewEngine(rdb, slog.New(slog.DiscardHandler))
+	e.SetSettings(true, DefaultTTL)
+	return e, mr
 }
 
 // TestRecordStatTTL memverifikasi bahwa counter statistik hits dan misses

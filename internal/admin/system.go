@@ -16,6 +16,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/responsecache"
 	"github.com/NexGen-X/Route-X/internal/worker"
 )
 
@@ -371,6 +372,26 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ttl := time.Duration(req.TTLSeconds) * time.Second
+	// Persistensikan SEBELUM menerapkan (audit F3): setelan yang hanya
+	// hidup di memori hilang saat restart dan boot lama diam-diam
+	// menyalakan cache lagi. Kini tabel settings adalah sumber kebenaran;
+	// kegagalan menyimpannya menggagalkan handler, bukan sukses palsu.
+	if h.settingsRepo != nil {
+		var actorID string
+		if p, ok := auth.PrincipalFrom(r.Context()); ok && p != nil {
+			actorID = p.User.ID
+		}
+		persisted, _ := json.Marshal(responsecache.PersistedSettings{Enabled: false, TTLSeconds: req.TTLSeconds})
+		if _, err := h.settingsRepo.Put(r.Context(), identity.SettingWrite{
+			Key:         responsecache.SettingKey,
+			Value:       persisted,
+			Description: "Setelan response cache (enabled + TTL) yang dipulihkan saat boot",
+			UpdatedBy:   actorID,
+		}); err != nil {
+			mapRepoError(w, r, err, "setelan response cache")
+			return
+		}
+	}
 	h.responseCache.SetSettings(false, ttl)
 	_ = h.respond(w, r, http.StatusOK, CacheSettingsResponseDTO{
 		Enabled:    false,

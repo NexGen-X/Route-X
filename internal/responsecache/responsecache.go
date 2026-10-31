@@ -60,7 +60,27 @@ type Engine struct {
 	ttl     time.Duration
 }
 
+// SettingKey adalah kunci baris settings tempat setelan cache yang
+// diubah admin dipersistensikan (dipakai bersama cmd dan admin).
+const SettingKey = "system:response_cache"
+
+// PersistedSettings adalah bentuk JSON setelan response cache di tabel
+// settings: satu-satunya sumber kebenaran yang bertahan melewati restart.
+type PersistedSettings struct {
+	Enabled    bool  `json:"enabled"`
+	TTLSeconds int64 `json:"ttl_seconds"`
+}
+
 // NewEngine membuat Engine baru. Bila redis nil, caching otomatis tidak aktif.
+//
+// Bawaan engine adalah NONAKTIF (audit F3): versi lama menyala sejak boot
+// padahal endpoint admin justru MENOLAK menyalakannya sebagai tidak aman
+// (cache_policy_unsafe) dan setelan admin tidak dipersistensikan — jadi
+// setiap restart diam-diam menyalakan lagi fitur yang oleh sistem sendiri
+// dinyatakan belum aman. Kini cache hanya menyala dari setelan yang
+// dipersistensikan secara eksplisit (pemulihan saat boot di cmd), dan
+// jalur admin tetap menolak aktivasi sampai kebijakan fingerprint-nya
+// diterapkan.
 func NewEngine(r *cache.Redis, logger *slog.Logger) *Engine {
 	if logger == nil {
 		logger = slog.Default()
@@ -68,7 +88,7 @@ func NewEngine(r *cache.Redis, logger *slog.Logger) *Engine {
 	return &Engine{
 		redis:   r,
 		logger:  logger,
-		enabled: true,
+		enabled: false,
 		ttl:     DefaultTTL,
 	}
 }

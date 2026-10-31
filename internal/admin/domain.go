@@ -132,7 +132,9 @@ func probeServerIP() string {
 	resp, err := client.Get("https://api.ipify.org")
 	if err == nil && resp.StatusCode == http.StatusOK {
 		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
+		// Respons ipify hanyalah teks IP (audit F3): batasi pembacaan —
+		// sebelumnya io.ReadAll tanpa batas atas respons eksternal.
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
 		if err == nil {
 			ip := strings.TrimSpace(string(body))
 			if net.ParseIP(ip) != nil {

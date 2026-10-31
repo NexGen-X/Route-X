@@ -24,7 +24,7 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       className={cn(
-        'bg-zinc-900/40 border border-zinc-800/80 rounded-lg overflow-hidden shadow-sm transition-colors',
+        'bg-bg-surface border border-border rounded-card overflow-hidden shadow-card transition-colors',
         className
       )}
       {...props}
@@ -32,7 +32,7 @@ export const Card: React.FC<CardProps> = ({
       {(title || action || subtitle) && (
         <div
           className={cn(
-            'px-4 py-3 border-b border-zinc-800/80 bg-zinc-900/20 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4',
+            'px-4 py-3 border-b border-border bg-bg-surface-1/60 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4',
             headerClassName
           )}
         >

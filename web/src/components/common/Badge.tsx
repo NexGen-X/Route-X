@@ -24,8 +24,8 @@ export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 const VARIANT_STYLES: Record<string, { pill: string; dot: string }> = {
   blue: {
-    pill: 'bg-zinc-900 text-zinc-300 border-zinc-800',
-    dot: 'bg-zinc-400',
+    pill: 'bg-bg-surface-1 text-text-secondary border-border',
+    dot: 'bg-text-secondary',
   },
   emerald: {
     pill: 'bg-emerald-950/40 text-emerald-400 border-emerald-800/60',
@@ -44,12 +44,12 @@ const VARIANT_STYLES: Record<string, { pill: string; dot: string }> = {
     dot: 'bg-rose-500',
   },
   lime: {
-    pill: 'bg-zinc-900 text-zinc-200 border-zinc-800',
+    pill: 'bg-bg-surface-1 text-text-primary border-border',
     dot: 'bg-emerald-400',
   },
   neutral: {
-    pill: 'bg-zinc-900 text-zinc-400 border-zinc-800',
-    dot: 'bg-zinc-500',
+    pill: 'bg-bg-surface-1 text-text-secondary border-border',
+    dot: 'bg-text-muted',
   },
 };
 

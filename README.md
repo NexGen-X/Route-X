@@ -3,7 +3,7 @@
 <div align="center">
 
 <p align="center">
-  <strong>Enterprise-grade, ultra-low-latency AI Gateway with native dual-protocol ingestion (OpenAI & Anthropic), intelligent multi-model combo routing, sub-microsecond zero-allocation hot-path, micro-budget financial governance, and instant developer CLI synchronization.</strong>
+  <strong>A self-hosted, single-admin AI Gateway for personal use and small trusted teams — with native dual-protocol ingestion (OpenAI & Anthropic), intelligent multi-model combo routing, fast in-memory routing decisions, precise budget accounting, and instant developer CLI synchronization.</strong>
 </p>
 
 [![Release](https://img.shields.io/badge/Release-v1.4.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.4.0)
@@ -12,10 +12,8 @@
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql)](https://postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis)](https://redis.io)
-[![Data-Race Free](https://img.shields.io/badge/Race%20Detector-PASSED%20(0%20Race)-success?style=for-the-badge&logo=shield)](https://github.com/NexGen-X/Route-X)
-[![A11y WCAG 2.1 AA](https://img.shields.io/badge/A11y-WCAG%202.1%20AA-blueviolet?style=for-the-badge&logo=w3c)](https://www.w3.org/WAI/standards-guidelines/wcag/)
-[![Unit Tests](https://img.shields.io/badge/Unit%20Tests-171%2F171%20Passed-brightgreen?style=for-the-badge&logo=vitest)](https://github.com/NexGen-X/Route-X)
-[![Hot Path](https://img.shields.io/badge/Hot--Path-Sub--Microsecond%20Zero--Alloc-FF6B6B?style=for-the-badge&logo=speedtest)](https://github.com/NexGen-X/Route-X)
+[![CI](https://github.com/NexGen-X/Route-X/actions/workflows/ci.yml/badge.svg)](https://github.com/NexGen-X/Route-X/actions/workflows/ci.yml)
+[![A11y WCAG 2.1 AA](https://img.shields.io/badge/A11y-WCAG%202.1%20AA%20Design%20Target-blueviolet?style=for-the-badge&logo=w3c)](https://www.w3.org/WAI/standards-guidelines/wcag/)
 
 <p align="center">
   <a href="#-why-route-x"><strong>Why Route-X</strong></a> •
@@ -37,48 +35,50 @@
 
 Direct integration with heterogeneous AI model APIs leads to severe operational vulnerabilities: dialect fragmentation, API key sprawl, unpredictable rate limits, silent provider outages, and untracked token expenditures. 
 
-**Route-X** provides an enterprise-ready reverse proxy and control plane that abstracts upstream providers behind unified interfaces, enforces real-time financial guardrails, executes sub-microsecond routing decisions, and coordinates developer terminal tools—shipped as a **single, self-contained Go binary** with zero external frontend runtime dependencies.
+**Route-X** provides a self-hosted reverse proxy and control plane that abstracts upstream providers behind unified interfaces, enforces budget guardrails, executes fast in-memory routing decisions, and coordinates developer terminal tools — shipped as a **single Go binary for the application tier** (dashboard embedded, no Node.js or separate static host) with **PostgreSQL 16 and Redis 7 as required external state services**.
 
-| Enterprise Pain Point | Route-X Solution |
+> **Scope — please read before deploying.** Route-X is built and maintained as an **open-source project for personal use and small, trusted teams**. Its identity model is **single-admin**: every authenticated dashboard user has full administrator rights (`*`) — there is no role-based access control and no multi-tenant isolation between dashboard users. Do not expose a Route-X instance to untrusted users, and protect internet-facing instances like any other admin panel that stores paid upstream API credentials.
+
+| Pain Point | Route-X Solution |
 |---|---|
-| **Dialect Incompatibility**: Tools like Claude Code expect Anthropic Messages schema, while standard enterprise gateways only ingest OpenAI. | **Native Dual-Protocol Engine**: Transparent, zero-copy transpilation between `/v1/chat/completions` and `/v1/messages` with bidirectional streaming. |
-| **Upstream Provider Outages**: Silent model downtime interrupts critical inference pipelines. | **Cascading Failover & 3-State Circuit Breaker**: Sub-millisecond canary probes, automatic failover cascades, and proactive context window bypass. |
-| **Hot-Path Proxy Latency Overhead**: Heavy gateways introduce 10–50ms proxy latency per hop. | **Sub-Microsecond Zero-Alloc Core**: 23ns rule matching and 87ns token-bucket evaluation running in pure Go memory. |
-| **Inaccessible Internal Tools**: Compliance failure on enterprise accessibility audits. | **WCAG 2.1 Level AA Certified UI**: Strict WAI-ARIA comboboxes, FocusTrap modal containment, explicit label bindings, and screen-reader readiness. |
+| **Dialect Incompatibility**: Tools like Claude Code expect Anthropic Messages schema, while standard gateways only ingest OpenAI. | **Native Dual-Protocol Engine**: Transpilation between `/v1/chat/completions` and `/v1/messages` with bidirectional streaming. |
+| **Upstream Provider Outages**: Silent model downtime interrupts critical inference pipelines. | **Cascading Failover & 3-State Circuit Breaker**: Automatic failover cascades, half-open canary probes, and context-window bypass to higher-context models. |
+| **Hot-Path Proxy Latency Overhead**: Heavy gateways introduce 10–50ms proxy latency per hop. | **Fast In-Memory Routing**: Rule matching measured at ~23ns in a single-rule micro-benchmark (see Benchmarks — full candidate selection costs more), with distributed rate limiting enforced by atomic Redis Lua scripts. |
+| **Inaccessible Internal Tools**: Dashboard features that keyboard and screen-reader users cannot operate. | **WCAG 2.1 Level AA Design Target**: WAI-ARIA comboboxes, FocusTrap modal containment, labelled form controls, and screen-reader readiness. The UI is designed toward AA; it is not externally certified. |
 | **Developer Onboarding Friction**: Manual terminal configuration and dotfile management across 6+ CLI tools. | **Automated CLI Synchronization**: 1-click declarative provisioning for Claude Code, OpenCode, Aider, Shell-GPT, Fabric, and OpenCommit. |
-| **Runaway AI Operational Costs**: Surprise billing spikes when API keys or automated agents loop indefinitely. | **Micro-Budget Governance**: Real-time `$0.00000001` precision accounting with Redis sliding-window token bucket enforcement. |
-| **Fragile Multi-Container Deployments**: Requiring Node.js runtime, Nginx sidecars, and separate static asset hosts. | **Single Static Executable**: React 18 dashboard embedded directly into the Go binary via `//go:embed`. |
+| **Runaway AI Operational Costs**: Surprise billing spikes when API keys or automated agents loop indefinitely. | **Precise Budget Accounting**: Cost accounting at `$0.00000001` (10⁻⁸ USD) integer precision — no floating point in the money path — with budget checks against periodically refreshed spend state. |
+| **Fragile Multi-Container Deployments**: Requiring Node.js runtime, Nginx sidecars, and separate static asset hosts for the app tier. | **Single Static Executable for the App Tier**: React 18 dashboard embedded directly into the Go binary via `//go:embed`. PostgreSQL and Redis still run as their own services. |
 
 ---
 
 ## 🌟 Core Pillars
 
 ### 🌐 1. Dual-Protocol Native Ingestion
-- **OpenAI Standard Compatibility**: Drop-in target for official OpenAI Python/TypeScript SDKs, LangChain, LlamaIndex, LiteLLM, Cursor IDE, Cline, and Open WebUI via `/v1/chat/completions`.
+- **OpenAI Standard Compatibility**: Drop-in target for official OpenAI Python/TypeScript SDKs, LangChain, LlamaIndex, LiteLLM, Cursor IDE, Cline, and Open WebUI via `/v1/chat/completions`. (`/v1/responses` is also routed, as a compatibility alias of the same chat-completions handler — it is not a separate, full implementation of the OpenAI Responses API.)
 - **Native Anthropic Messages Ingestion**: Drop-in target for Anthropic SDK and **Claude Code CLI** via `/v1/messages` and `/v1/v1/messages`.
 - **Bidirectional Dialect Transpiler**: Converts roles, arrays, base64 vision payloads, and structured function/tool calling between OpenAI and Anthropic specifications on the fly.
 - **Resilient SSE Streaming Engine**: Zero-buffering event streaming pipeline with UTF-8 multibyte boundary split safety and immediate upstream cancellation upon client disconnect.
 
-### ⚡ 2. Sub-Microsecond Performance & Zero-Alloc Hot-Path
-Route-X hot-path is engineered for extreme throughput with minimal garbage collection overhead:
-- **Zero-Allocation Rule Matching**: Evaluates model IDs, API keys, and model capability constraints in just **23 nanoseconds** with **0 heap allocations**.
-- **Deterministic FNV-1a Tie-Breaker**: High-entropy 64-bit jitter hash eliminates load skew on balanced weights in **35 nanoseconds** without pseudo-random locking.
-- **In-Memory Token Bucket Limiting**: Evaluates rate limits in **87 nanoseconds** (single-goroutine) and **118 nanoseconds** (highly concurrent multi-goroutine).
+### ⚡ 2. Fast In-Memory Routing Decisions
+Route-X's routing hot-path is engineered to add as little overhead as possible to the upstream LLM round-trip:
+- **Allocation-Free Rule Matching (micro-benchmark)**: Matching a single rule against model IDs, API keys, and capability constraints measures **~23 nanoseconds with 0 heap allocations**. Real requests evaluate the full rule set and candidate ordering on top of this, so end-to-end routing costs more — see the Benchmarks section for the complete, honestly-scoped table.
+- **Deterministic FNV-1a Tie-Breaker**: 64-bit hash jitter reduces load skew on balanced weights in **~35 nanoseconds** in its micro-benchmark, without pseudo-random locking.
+- **Distributed Rate Limiting in Production**: The limiter that actually enforces limits on live traffic is an **atomic Redis Lua fixed-window limiter** (check-all-windows, then increment-all), shared across instances — not the in-memory token bucket, which exists as a benchmarked component (`~87ns` single-goroutine) and is not wired into the production request path.
 
 ### 🔀 3. Intelligent Multi-Model Combo Routing & Resiliency
 - **Sophisticated Balancing Strategies**:
   - **Priority Tiering**: Strict deterministic failover across upstream tiers.
-  - **Weighted Distribution**: Efraimidis-Spirakis reservoir sampling with FNV-1a tie-breaking (<3% statistical variance).
-  - **Lowest Latency (EMA)**: Dynamic Exponential Moving Average tracking P95 response times.
-  - **Lowest Cost**: Dynamic routing to the lowest cost-per-token provider matching requirements.
-  - **Round Robin**: Lock-free atomic round-robin across healthy endpoints.
-- **Proactive Context Overflow Bypass**: Seamlessly upgrades requests to higher-context upstream models when prompt length exceeds the primary provider's limit.
-- **3-State Circuit Breaker**: Evaluates health transitions (`Closed` ➔ `Open` ➔ `Half-Open` canary) with zero thread contention to protect gateway throughput.
+  - **Weighted Distribution**: Efraimidis-Spirakis weighted ordering with FNV-1a tie-breaking, applied across the whole failover order — not just the first pick.
+  - **Lowest Latency**: Dynamic routing based on tracked P95 response times; candidates without measurements are ranked last rather than treated as fastest.
+  - **Lowest Cost**: Dynamic routing to the lowest cost-per-token provider matching requirements; candidates without pricing are ranked last rather than treated as free.
+  - **Round Robin**: Atomic round-robin across healthy endpoints.
+- **Proactive Context Overflow Bypass**: Upgrades requests to higher-context upstream models when prompt length exceeds the primary provider's limit.
+- **3-State Circuit Breaker**: Health transitions (`Closed` ➔ `Open` ➔ `Half-Open` canary probes) tracked atomically in Redis Lua, shared across instances, to protect gateway throughput.
 
-### ♿ 4. Full Accessibility (WCAG 2.1 Level AA Certified)
-- **Focus Management**: Complete focus trapping (`FocusTrap`) on Command Palette (`Cmd+K`), Dialogs, and Mobile Drawers.
-- **WAI-ARIA Combobox Specification**: Fully compliant searchable Command Palette with `role="dialog"`, `role="combobox"`, `role="listbox"`, and `role="option"`.
-- **Form Association & Screen Reader Support**: 100% explicit `<label htmlFor>` and `<input id>` associations, semantic error alerts (`role="alert"`), and `aria-label` standardization on all icon-only triggers.
+### ♿ 4. Accessibility (Designed Toward WCAG 2.1 Level AA)
+- **Focus Management**: Focus trapping (`FocusTrap`) on Command Palette (`Cmd+K`), Dialogs, and Mobile Drawers, with Escape handling and body scroll-lock.
+- **WAI-ARIA Combobox Specification**: Searchable Command Palette with `role="dialog"`, `role="combobox"`, `role="listbox"`, and `role="option"`.
+- **Form Association & Screen Reader Support**: Form controls associated with explicit `<label htmlFor>` or `aria-label`, semantic error alerts (`role="alert"`), and `aria-label` standardization on icon-only triggers. Accessibility is a design target verified by internal checks — Route-X has not undergone external WCAG certification, and some areas (for example muted-text contrast at small sizes) are still being improved.
 - **Decorative SVG Hardening**: `aria-hidden="true"` applied across all decorative Lucide SVG icons to eliminate screen-reader noise.
 
 ### 💻 5. Universal Developer CLI Synchronization
@@ -92,15 +92,15 @@ Route-X hot-path is engineered for extreme throughput with minimal garbage colle
 - **Interactive Latency Diagnostics**: Execute live round-trip latency probes directly from the Web Console.
 - **Strict Antigravity CLI Protection**: Guaranteed isolation ensuring Antigravity CLI (`agy`) and `~/.gemini` remain completely untouched and protected.
 
-### 🛡️ 6. Zero-Trust Financial & Operational Guardrails
-- **Micro-Budget Precision**: Real-time cost accounting with 8-decimal precision (`$0.00000001` USD) across users, keys, and teams.
+### 🛡️ 6. Financial & Operational Guardrails
+- **Micro-Budget Precision**: Cost accounting with 8-decimal precision (`$0.00000001` USD) across budget scopes (global, API key, provider, and model). Budget checks read periodically refreshed spend state and spend is recorded after each request completes, so enforcement is near-real-time rather than a hard pre-authorization hold: a burst of parallel requests can overshoot a limit before the recorded spend catches up.
 - **AES-256-GCM Credential Vault**: Provider credentials and API keys encrypted at rest using AES-256-GCM with distinct nonces and AEAD verification.
 - **Transport Anti-SSRF Dialer**: Custom network dialer strictly blocks DNS rebinding, internal RFC 1918 networks, IPv6 loopbacks, and cloud metadata endpoints (`169.254.169.254`).
 - **Argon2id Authentication**: Cryptographically sound password hashing with constant-time verification preventing timing side-channel attacks.
 
-### 📦 7. Single Self-Contained Binary
+### 📦 7. Single Binary for the Application Tier
 - **Zero Web Server Dependencies**: React 18 production bundle is embedded directly into the Go executable via Go's native `//go:embed` directive.
-- **Zero External Runtime**: No Node.js runtime, Nginx, or external static servers required in production.
+- **No App-Tier Runtime Dependencies**: No Node.js runtime, Nginx, or external static servers required to serve the gateway and dashboard. **PostgreSQL 16 and Redis 7 are still required** as separate state services — "single binary" describes the application tier, not the whole stack.
 
 ---
 
@@ -125,9 +125,9 @@ flowchart TD
         end
 
         subgraph Engine["Policy & Routing Pipeline"]
-            R1["In-Memory Token Bucket Limiter (87ns)"]
+            R1["Distributed Rate Limiter (Redis Lua)"]
             R2["Micro-Budget Accounting ($0.00000001)"]
-            R3["Rule Matching Engine (23ns Zero-Alloc)"]
+            R3["Rule Matching Engine (In-Memory)"]
             R4["Combo Router (Priority / Weighted / EMA / Cost)"]
             R5["3-State Circuit Breaker & Cascade Failover"]
         end
@@ -140,13 +140,13 @@ flowchart TD
         
         subgraph UI["Embedded Dashboard"]
             U1["React 18 + Tailwind 3.4 (go:embed)"]
-            U2["WCAG 2.1 AA Accessible UI"]
+            U2["WCAG 2.1 AA-Oriented UI"]
         end
     end
 
     subgraph State["3. Storage & State Layer"]
         DB[("PostgreSQL 16\n(Partitions & State)")]
-        RD[("Redis 7\n(Distributed Token Bucket)")]
+        RD[("Redis 7\n(Rate Limit & Breaker State)")]
     end
 
     subgraph Upstreams["4. Upstream LLM Providers"]
@@ -168,7 +168,7 @@ flowchart TD
 
 ## ⚡ Benchmarks & Performance
 
-Official benchmark results executed on dedicated **Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz** (PR #78):
+Historical benchmark results measured on a dedicated **Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz** (PR #78). These figures are a snapshot from that machine and that PR — they are **not** re-measured per release, results vary by hardware, and they describe individual micro-benchmarks, not end-to-end request latency. Reproduce them yourself with `go test -bench . ./internal/router/ ./internal/ratelimit/ ./internal/gateway/`:
 
 | Benchmark Test | Operations / sec | Time / op | Memory / op | Allocations / op |
 |---|:---:|:---:|:---:|:---:|
@@ -179,13 +179,12 @@ Official benchmark results executed on dedicated **Intel(R) Xeon(R) Platinum 825
 | **`BenchmarkComboPipeline_Evaluate`** | **~7,500,000 ops/s** | **132.90 ns/op** | 32 B/op | 1 allocs/op |
 | **`BenchmarkSelectCandidate_Priority`** | **~6,500,000 ops/s** | **154.70 ns/op** | 48 B/op | 1 allocs/op |
 | **`BenchmarkFormatKey`** | **~14,300,000 ops/s** | **69.80 ns/op** | 16 B/op | 1 allocs/op |
-| **`BenchmarkHash`** (SHA-256 Digest) | ~1,800,000 ops/s | 557.10 ns/op | 176 B/op | 3 allocs/op |
 | **`BenchmarkSelectCandidate_RoundRobin`** | ~2,850,000 ops/s | 350.90 ns/op | 88 B/op | 4 allocs/op |
 | **`BenchmarkSelectCandidate_LowestLatency`** | ~1,670,000 ops/s | 598.00 ns/op | 48 B/op | 1 allocs/op |
 | **`BenchmarkSelectCandidate_LowestCost`** | ~1,720,000 ops/s | 579.70 ns/op | 48 B/op | 1 allocs/op |
 | **`BenchmarkSelectCandidate_Weighted`** | ~880,000 ops/s | 1,139.00 ns/op | 48 B/op | 1 allocs/op |
 
-> **Takeaway**: Critical routing decisions and rate-limit evaluations execute in **less than 150 nanoseconds**, introducing virtually zero measurable overhead to the upstream LLM round-trip time.
+> **Takeaway, stated precisely**: the allocation-free micro-benchmarks (rule matching, tie-breaking, in-memory limiter component) run in **under 150 nanoseconds**, while full candidate selection measured **~155ns–1,139ns** depending on strategy in the same snapshot. Production rate limiting additionally costs a Redis round-trip by design, because its state is distributed. In all cases the gateway's own decision overhead is small next to an upstream LLM round-trip — but "sub-microsecond, zero-allocation" only ever described the micro-benchmarks, not the whole request path.
 
 ---
 
@@ -206,20 +205,22 @@ tar -xzvf routex-v1.4.0-linux-amd64.tar.gz
 ./ai-gateway
 ```
 
-### Option B: Automated Native Linux 1-Liner (Production Systemd)
+### Option B: Automated Native Linux Installer (Systemd)
 Installs Route-X Core, PostgreSQL 16, Redis 7, and Caddy Reverse Proxy with Auto-TLS via systemd:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NexGen-X/Route-X/main/install-native.sh | sudo bash
 ```
 
-#### 🔄 Zero-Downtime Live Updates
-When updating an active staging or production instance:
+> Review the script before running it, as with any `curl | sudo bash` installer, and verify the installed version afterwards with `./ai-gateway -version` — the installer pins its own release tag, which may lag the newest GitHub release.
+
+#### 🔄 Live Updates with Automatic Rollback
+When updating an active instance:
 ```bash
 git pull origin main
 make live-update
 ```
-*Performs an isolated atomic build (`ai-gateway.new`), applies idempotent migrations, swaps the binary, and reloads `routex.service` in under 250ms without dropping active streaming connections.*
+*Builds the new binary in isolation, applies migrations before the swap, swaps the binary atomically, probes `/healthz`, and automatically rolls back to the previous binary if the health check fails. The service restarts during the swap, so this is a brief-restart update with a safety net — not a guaranteed zero-downtime or sub-second cutover, and in-flight streaming connections are not promised to survive it.*
 
 ### Option C: Docker Stack Deployment
 Deploy the complete containerized stack in isolated containers:
@@ -249,13 +250,18 @@ make build
 ---
 
 ## 🔐 First-Run Onboarding
- 
-Navigate to `http://localhost:8080/login` (or your domain `https://your-domain.com/login`):
 
-- **Default Email**: `admin@routex.local`
-- **Default Password**: `RouteX#Initial2026!` (atau nilai konfigurasi `INITIAL_ADMIN_PASSWORD`)
-- *💡 Klik tombol **"Email Admin"** pada kartu bantuan setup awal untuk mengisi alamat email otomatis (kata sandi tidak pernah dikirim lewat API demi integritas zero-trust).*
-- *🔒 Penggantian kata sandi wajib diselesaikan saat autentikasi pertama. Setelah diperbarui, kartu bantuan setup otomatis dinonaktifkan permanen.*
+**There is no default password.** Earlier documentation listed a published default credential — that value must be considered burned and must never be used. The current code works as follows:
+
+1. **Set the initial admin password before the first run.** The seed creates the first admin **only** when `INITIAL_ADMIN_PASSWORD` is set (minimum 16 characters in production). If it is empty, admin creation is *skipped* — no account with a known password is ever created.
+   ```bash
+   export INITIAL_ADMIN_EMAIL="admin@routex.local"   # optional; this is the default email
+   export INITIAL_ADMIN_PASSWORD="$(openssl rand -base64 24)"  # generate your own; store it safely
+   ```
+2. Navigate to `http://localhost:8080/login` (or your domain `https://your-domain.com/login`) and sign in with that email and the password you just set.
+- *💡 The setup-hint card on the login page can auto-fill the admin email — the password itself is never sent by that API.*
+- *🔒 The initial admin is created with `MustChangePassword`, so changing the password is mandatory at first login. Once changed, the setup-hint card is permanently disabled.*
+- *⚠️ Instances originally seeded by older versions with the previously published default password must change it immediately (or delete and re-seed the admin) — anyone who has read this repository knows that value.*
 
 ---
 
@@ -304,7 +310,7 @@ stream = client.chat.completions.create(
     model="claude-3-7-sonnet", # Aliased combo rule
     messages=[
         {"role": "system", "content": "You are a helpful software architect."},
-        {"role": "user", "content": "How does Route-X achieve sub-microsecond routing?"}
+        {"role": "user", "content": "How does Route-X keep its routing overhead low?"}
     ],
     stream=True,
 )
@@ -392,14 +398,14 @@ Route-X is built and maintained under a rigorous **Multi-Agent Orchestration Pro
 ```
 
 ### The 7-Layer QA Verification Protocol
-Every pull request and release is validated through 7 non-negotiable gates:
-1. **Layer 1 (TypeScript Strictness)**: `npx tsc -b` passes with **0 type errors** and **0 `any` bypasses**.
-2. **Layer 2 (Frontend Unit Testing)**: Vitest suite runs **171/171 tests passing** (100% green).
-3. **Layer 3 (Asset Compilation)**: Vite production bundle builds cleanly under 10 seconds.
-4. **Layer 4 (Go Concurrency & Race Detection)**: `go test -race ./...` verifies **0 data races** across all packages.
-5. **Layer 5 (Go Formatting & Linting)**: `gofmt -l .` reports zero syntax or indentation defects.
-6. **Layer 6 (SQL Schema Integrity)**: All 15+ PostgreSQL migrations run idempotently with atomic rollback semantics.
-7. **Layer 7 (End-to-End Synthetic Validation)**: Playwright test suite verifies auth session reuse, 16 navigational routes, and zero layout overflow across 5 browser profiles.
+Pull requests and releases are validated through 7 gates (live status: the CI badge at the top of this README — this document intentionally does not hard-code test counts, which go stale):
+1. **Layer 1 (TypeScript Strictness)**: `npx tsc -b` passes with **0 type errors**; the web source currently contains **0 `any` bypasses**.
+2. **Layer 2 (Frontend Unit Testing)**: The Vitest suite (200+ cases and growing) must pass in CI.
+3. **Layer 3 (Asset Compilation)**: The Vite production bundle builds cleanly.
+4. **Layer 4 (Go Concurrency & Race Detection)**: CI runs `go test -race ./...` across all packages; the Go suite contains 1,100+ test functions, including database-backed integration tests that require PostgreSQL (and skip without it locally).
+5. **Layer 5 (Go Formatting & Vetting)**: `gofmt -l .` reports no defects and `go vet ./...` passes; CI also runs `govulncheck`.
+6. **Layer 6 (SQL Schema Integrity)**: All **16 PostgreSQL migrations (0001–0016)** are checksum-verified against the migration ledger and each applies inside its own transaction. There are no down-migrations — schema rollback means restoring from backup, as described in the Disaster Recovery runbook.
+7. **Layer 7 (End-to-End Synthetic Validation)**: The Playwright suite (run against a staging instance) verifies auth session reuse and core navigation across desktop and mobile browser projects.
 
 ---
 
@@ -408,7 +414,7 @@ Every pull request and release is validated through 7 non-negotiable gates:
 - 📘 [**Quickstart Guide**](docs/QUICKSTART.md) — Comprehensive developer setup and client tutorials.
 - 📙 [**Operations Runbook**](docs/runbook-operasi.md) — Production operations, service monitoring, and logging.
 - 📕 [**Disaster Recovery**](docs/DISASTER_RECOVERY.md) — Database backup, restoration, and outage mitigation.
-- 📗 [**OpenAPI Specification**](docs/openapi.yaml) — Raw API schemas and endpoint contracts.
+- 📗 [**OpenAPI Specification**](docs/openapi.yaml) — Schemas for the public gateway endpoints and a subset of the admin API. It does **not** yet cover the full admin surface (100+ operations in code); the dashboard's API client and the admin route registrations in `internal/admin/` are the current source of truth for admin endpoints.
 - 📜 [**Multi-Agent Governance Rules**](.agents/rules/multi_agent_orchestration.md) — Full 13-agent orchestration specification.
 
 ---

@@ -341,14 +341,20 @@ func (h *Handlers) updateDomainConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Simpan URL publik kanonikal
+		// Simpan URL publik kanonikal. Error-nya diteruskan (audit F5):
+		// versi lama menelannya sehingga domain bisa aktif sementara
+		// public_url tetap yang lama — padahal nilai itu dipakai
+		// resolveGatewayURL dan pemeriksaan origin CSRF.
 		pubURLBytes, _ := json.Marshal("https://" + domain)
-		_, _ = h.settingsRepo.Put(ctx, identity.SettingWrite{
+		if _, err := h.settingsRepo.Put(ctx, identity.SettingWrite{
 			Key:         SettingKeyPublicURL,
 			Value:       pubURLBytes,
 			Description: "URL publik kanonikal Route-X",
 			UpdatedBy:   actorID,
-		})
+		}); err != nil {
+			mapRepoError(w, r, err, "url publik domain")
+			return
+		}
 	}
 
 	h.writeAudit(ctx, r, "configure", "system_domain", domain, map[string]any{
@@ -377,8 +383,16 @@ func (h *Handlers) deleteDomainConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if h.settingsRepo != nil {
-		_ = h.settingsRepo.Delete(ctx, SettingKeyDomainConfig)
-		_ = h.settingsRepo.Delete(ctx, SettingKeyPublicURL)
+		// Error penghapusan diteruskan (audit F5): operator tidak boleh
+		// menerima "ok" untuk pencabutan domain yang sebenarnya gagal.
+		if err := h.settingsRepo.Delete(ctx, SettingKeyDomainConfig); err != nil {
+			mapRepoError(w, r, err, "konfigurasi domain")
+			return
+		}
+		if err := h.settingsRepo.Delete(ctx, SettingKeyPublicURL); err != nil {
+			mapRepoError(w, r, err, "url publik domain")
+			return
+		}
 	}
 
 	h.writeAudit(ctx, r, "delete", "system_domain", "", nil)

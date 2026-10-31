@@ -632,11 +632,18 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Menonaktifkan admin aktif TERAKHIR DITOLAK: mencegah lockout sistem.
-			if activePage, err := h.usersRepo.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2}); err == nil {
-				if len(activePage.Users) <= 1 {
-					httpx.BadRequest(w, r, "last_admin_forbidden", "pengguna ini admin aktif terakhir; buat admin lain dulu sebelum menonaktifkannya")
-					return
-				}
+			// Pemeriksaan ini FAIL-CLOSED (audit F5): kegagalan query List
+			// menggagalkan mutasi, bukan melewatkan penolakan — versi lama
+			// membungkusnya dalam `err == nil` sehingga DB hiccup sesaat
+			// bisa mengunci operator keluar dari sistemnya sendiri.
+			activePage, listErr := h.usersRepo.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2})
+			if listErr != nil {
+				mapRepoError(w, r, listErr, "pengguna")
+				return
+			}
+			if len(activePage.Users) <= 1 {
+				httpx.BadRequest(w, r, "last_admin_forbidden", "pengguna ini admin aktif terakhir; buat admin lain dulu sebelum menonaktifkannya")
+				return
 			}
 		}
 		_, err := h.usersRepo.SetStatus(ctx, id, identity.UserStatus(req.Status))
@@ -670,11 +677,15 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Menghapus admin aktif TERAKHIR DITOLAK untuk mencegah lockout sistem.
-	if activePage, err := h.usersRepo.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2}); err == nil {
-		if len(activePage.Users) <= 1 {
-			httpx.BadRequest(w, r, "last_admin_forbidden", "pengguna ini admin aktif terakhir; buat admin lain dulu sebelum menghapusnya")
-			return
-		}
+	// FAIL-CLOSED seperti di updateUser (audit F5): error List = mutasi batal.
+	activePage, listErr := h.usersRepo.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2})
+	if listErr != nil {
+		mapRepoError(w, r, listErr, "pengguna")
+		return
+	}
+	if len(activePage.Users) <= 1 {
+		httpx.BadRequest(w, r, "last_admin_forbidden", "pengguna ini admin aktif terakhir; buat admin lain dulu sebelum menghapusnya")
+		return
 	}
 
 	if err := h.usersRepo.Delete(ctx, id); err != nil {

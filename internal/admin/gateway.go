@@ -537,7 +537,13 @@ func (h *Handlers) setRuleProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rule, _ := h.routingRepo.Get(ctx, id)
+	// Baca-ulang yang gagal = 500 (audit F5): versi lama membuang error
+	// lalu menjawab 200 dengan DTO kosong, seolah aturan baru saja kosong.
+	rule, err := h.routingRepo.Get(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "aturan routing")
+		return
+	}
 	h.writeAudit(ctx, r, "set_providers", "routing_rule", id, map[string]any{"providers": req.ProviderIDs})
 	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
@@ -1222,17 +1228,25 @@ func (h *Handlers) listCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 				model, _ = url.PathUnescape(parts[3])
 			}
 
-			// Ambil status keputusan state sesungguhnya dari Breaker.State()
-			stateStr := "closed"
+			// Ambil status keputusan state sesungguhnya dari Breaker.State().
+			// Bila tidak bisa ditentukan, laporkan "unknown" (audit F5):
+			// versi lama membiarkan nilai bawaan "closed" sehingga breaker
+			// yang sebenarnya terbuka tampil sehat saat Redis bermasalah.
+			stateStr := "unknown"
 			if h.breaker != nil {
 				st, err := h.breaker.State(ctx, providerID, model)
 				if err == nil {
 					stateStr = string(st)
+				} else {
+					h.logger.WarnContext(ctx, "gagal membaca status circuit breaker", "key", k, "error", err)
 				}
 			}
 
 			// Ambil metrik kegagalan dan jadwal probe dari Redis hash
-			hashData, _ := h.redis.HGetAll(ctx, k).Result()
+			hashData, hashErr := h.redis.HGetAll(ctx, k).Result()
+			if hashErr != nil {
+				h.logger.WarnContext(ctx, "gagal membaca metrik circuit breaker", "key", k, "error", hashErr)
+			}
 			var failureCount int64
 			for fKey, fVal := range hashData {
 				if strings.HasPrefix(fKey, "f") {
@@ -1257,6 +1271,13 @@ func (h *Handlers) listCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 				FailureCount: failureCount,
 				NextProbeAt:  nextProbeAt,
 			})
+		}
+		// Iterator yang gagal di tengah = daftar parsial yang menyesatkan;
+		// laporkan sebagai error (audit F5).
+		if err := iter.Err(); err != nil {
+			h.logger.ErrorContext(ctx, "gagal memindai kunci circuit breaker", "error", err)
+			httpx.InternalError(w, r)
+			return
 		}
 	}
 
@@ -1294,7 +1315,17 @@ func (h *Handlers) resetCircuitBreaker(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if h.redis != nil {
-		_ = h.redis.Del(ctx, serverKey).Err()
+		// Error Del diteruskan (audit F5): reset yang gagal tidak boleh
+		// dicatat audit sebagai berhasil.
+		if err := h.redis.Del(ctx, serverKey).Err(); err != nil {
+			h.logger.ErrorContext(ctx, "gagal mereset circuit breaker via redis", "key", serverKey, "error", err)
+			httpx.InternalError(w, r)
+			return
+		}
+	} else {
+		// Tidak ada backend breaker sama sekali: jangan pura-pura mereset.
+		httpx.BadRequest(w, r, "breaker_unavailable", "Circuit breaker tidak tersedia pada instalasi ini")
+		return
 	}
 
 	h.writeAudit(ctx, r, "reset", "circuit_breaker", serverKey, map[string]any{

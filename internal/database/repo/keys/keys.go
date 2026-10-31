@@ -15,6 +15,7 @@ import (
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/security"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Status API key.
@@ -213,6 +214,26 @@ type pgxRow interface {
 // longgar daripada yang diinginkan operator.
 func (r *Repo) Create(ctx context.Context, p CreateParams) (*Created, error) {
 	const op = "membuat API key"
+
+	// Jaminan atomik (audit F5): pembuatan key beserta daftar putihnya wajib
+	// satu transaksi — kegagalan di tengah tidak boleh meninggalkan key
+	// tanpa pembatasan (semua provider/model terizinkan). Bila Querier
+	// masih berupa pool, bungkus transaksinya di sini supaya SETIAP
+	// pemanggil (handler admin maupun CLI routex-apikey) aman; bila sudah
+	// transaksi, lanjut apa adanya (pola yang sama seperti Rotate, tetapi
+	// tanpa menolak pemanggil non-transaksi).
+	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
+		var out *Created
+		err := repo.InTx(ctx, pool, func(q repo.Querier) error {
+			var err error
+			out, err = r.WithQuerier(q).Create(ctx, p)
+			return err
+		})
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
 
 	generated, err := security.GenerateAPIKey(p.Live, r.pepper)
 	if err != nil {
@@ -493,7 +514,19 @@ func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, provi
 }
 
 // SetAllowed mengganti daftar putih model dan provider satu key.
+//
+// Penggantian bersifat atomik (audit F5): delete-then-insert di dua tabel
+// wajib satu transaksi. Kegagalan di tengah pada versi lama meninggalkan
+// daftar kosong — yang berarti SEMUA model/provider terizinkan, kebalikan
+// dari maksud operator. Bila Querier masih berupa pool, transaksi
+// dibungkus di sini; jalur admin sebelumnya memanggil metode ini langsung
+// di atas pool tanpa transaksi sama sekali.
 func (r *Repo) SetAllowed(ctx context.Context, keyID string, modelIDs, providerIDs []string) error {
+	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
+		return repo.InTx(ctx, pool, func(q repo.Querier) error {
+			return r.WithQuerier(q).replaceAllowed(ctx, keyID, modelIDs, providerIDs)
+		})
+	}
 	return r.replaceAllowed(ctx, keyID, modelIDs, providerIDs)
 }
 
@@ -503,17 +536,22 @@ func (r *Repo) GetAllowed(ctx context.Context, keyID string) (modelIDs, provider
 	if err != nil {
 		return nil, nil, repo.Err("mengambil daftar model yang diizinkan", err)
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
+			rows.Close()
 			return nil, nil, repo.Err("memindai model yang diizinkan", err)
 		}
 		modelIDs = append(modelIDs, id)
 	}
 	if err := rows.Err(); err != nil {
+		rows.Close()
 		return nil, nil, repo.Err("iterasi model yang diizinkan", err)
 	}
+	// Tutup eksplisit sebelum query kedua (audit F5): pada Querier berupa
+	// transaksi (satu koneksi), Rows yang masih terbuka membuat query
+	// berikutnya gagal; jangan andalkan kelelahan iterasi untuk menutupnya.
+	rows.Close()
 
 	pRows, err := r.q.Query(ctx, `select provider_id::text from api_key_allowed_providers where api_key_id = $1 order by provider_id`, keyID)
 	if err != nil {
@@ -556,17 +594,19 @@ func (r *Repo) GetAllowedMap(ctx context.Context, keyIDs []string) (map[string][
 	if err != nil {
 		return nil, nil, repo.Err("mengambil batch model yang diizinkan", err)
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var kID, mID string
 		if err := rows.Scan(&kID, &mID); err != nil {
+			rows.Close()
 			return nil, nil, repo.Err("memindai batch model", err)
 		}
 		modelMap[kID] = append(modelMap[kID], mID)
 	}
 	if err := rows.Err(); err != nil {
+		rows.Close()
 		return nil, nil, repo.Err("iterasi batch model", err)
 	}
+	rows.Close()
 
 	pRows, err := r.q.Query(ctx, `
 		select api_key_id::text, provider_id::text

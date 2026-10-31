@@ -2,29 +2,29 @@ import { test, expect } from '@playwright/test';
 
 // Uji menyeluruh Route-X: kunjungi SELURUH halaman lewat hash, pastikan
 // judul Header + konten utama tampil dan tidak ada error boundary.
-// Sesi viewer tersimpan dari auth.setup.ts (hemat limiter login).
-// Prasyarat env: BASE_URL, E2E_EMAIL, E2E_PASSWORD (peran Viewer cukup karena
-// semua halaman ini read; halaman tulis diuji terpisah di aksi-tulis.spec.ts).
-// Viewer tidak punya akses tulis: test ini hanya memastikan halaman TERBUKA
-// dan memuat, bukan bahwa tombol simpan berfungsi.
+// Sesi pengguna kedua tersimpan dari auth.setup.ts (hemat limiter login).
+// Prasyarat env: BASE_URL, E2E_EMAIL, E2E_PASSWORD. Arsitektur Route-X kini
+// single-admin (RBAC dihapus di migrasi 0010): setiap pengguna
+// terautentikasi adalah admin penuh. Test ini hanya memastikan halaman
+// TERBUKA dan memuat; alur tulis diuji terpisah di aksi-tulis.spec.ts.
 
 const HALAMAN: Array<{ hash: string; judul: string; penanda: string }> = [
-  { hash: '#/', judul: 'Dashboard', penanda: 'Route-X Mission Control' },
+  { hash: '#/', judul: 'Dashboard', penanda: 'Route-X Gateway Control' },
   { hash: '#/requests', judul: 'Requests Inspector', penanda: 'Requests Inspector' },
   { hash: '#/observability', judul: 'Observabilitas & Telemetri', penanda: 'Observabilitas & Telemetri' },
   { hash: '#/upstreams/providers', judul: 'Upstream Providers', penanda: 'Upstream Providers' },
-  { hash: '#/upstreams/models', judul: 'Katalog Model', penanda: 'Model Registry & Pricing' },
+  { hash: '#/upstreams/models', judul: 'Upstream Providers', penanda: 'Upstream Providers' },
   { hash: '#/access/users', judul: 'Pengguna Admin', penanda: 'Tambah Pengguna' },
-  { hash: '#/access/roles', judul: 'Peran & Izin', penanda: 'Buat Peran' },
   { hash: '#/upstreams/egress', judul: 'Egress Proxy Pools', penanda: 'Egress Proxy Pools' },
   { hash: '#/gateway/routing', judul: 'Routing Rules', penanda: 'Routing Rules Engine' },
-  { hash: '#/cli-integrations', judul: 'CLI Integrations & 3-Mode Configurator', penanda: 'CLI Terdeteksi' },
+  { hash: '#/cli-integrations', judul: 'CLI Integrations & 3-Mode Configurator', penanda: 'Integrasi CLI & Editor AI' },
   { hash: '#/gateway/rate-limits', judul: 'Rate Limits', penanda: 'Rate Limits' },
-  { hash: '#/gateway/budgets', judul: 'Budgets & Cost Limits', penanda: 'Budgets & Cost Control' },
+  { hash: '#/gateway/budgets', judul: 'Budgets & Rate Limits', penanda: 'Budgets & Cost Control' },
   { hash: '#/gateway/breakers', judul: 'Routing & Failover', penanda: 'Routing & Failover' },
   { hash: '#/access/api-keys', judul: 'Client API Keys', penanda: 'Client API Keys' },
-  { hash: '#/system/settings', judul: 'Runtime Settings', penanda: 'Domain Publik' },
+  { hash: '#/system/settings', judul: 'Runtime Settings', penanda: 'Pengaturan Sistem' },
   { hash: '#/system/diagnostics', judul: 'System Diagnostics & Workers', penanda: 'System Diagnostics' },
+  { hash: '#/webhooks', judul: 'Webhooks', penanda: 'Webhooks' },
 ];
 
 test.describe('semua halaman viewer', () => {
@@ -32,12 +32,12 @@ test.describe('semua halaman viewer', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await expect(
-      page.getByRole('heading', { name: 'Route-X Mission Control' }),
+      page.getByRole('heading', { name: 'Route-X Gateway Control' }),
     ).toBeVisible({ timeout: 20000 });
   });
 
   for (const h of HALAMAN) {
-    test(`halaman ${h.judul} terbuka dan memuat`, async ({ page }) => {
+    test(`halaman ${h.judul} (${h.hash}) terbuka dan memuat`, async ({ page }) => {
       // beforeEach memastikan sesi di dashboard lalu pindah hash.
       await page.goto('/' + h.hash);
       // Judul Header (h1) + penanda konten utama keduanya harus tampil.
@@ -55,7 +55,7 @@ test.describe('semua halaman viewer', () => {
   test('rute tak dikenal jatuh ke dashboard, bukan blank', async ({ page }) => {
     await page.goto('/#/rute-tidak-ada-xyz');
     await expect(
-      page.getByRole('heading', { name: 'Route-X Mission Control' }),
+      page.getByRole('heading', { name: 'Route-X Gateway Control' }),
     ).toBeVisible({ timeout: 20000 });
   });
 });

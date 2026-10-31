@@ -17,7 +17,7 @@ setup('login admin sekali', async ({ page }) => {
   await page.getByLabel('Kata Sandi').fill(password);
   await page.getByRole('button', { name: 'Masuk ke Konsol' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Route-X Mission Control' }),
+    page.getByRole('heading', { name: 'Route-X Gateway Control' }),
   ).toBeVisible({ timeout: 20000 });
   await page.context().storageState({ path: ADMIN_JSON });
 });
@@ -31,7 +31,7 @@ setup('login viewer sekali', async ({ page }) => {
   await page.getByLabel('Kata Sandi').fill(password);
   await page.getByRole('button', { name: 'Masuk ke Konsol' }).click();
   await expect(
-    page.getByRole('heading', { name: 'Route-X Mission Control' }),
+    page.getByRole('heading', { name: 'Route-X Gateway Control' }),
   ).toBeVisible({ timeout: 20000 });
   await page.context().storageState({ path: VIEWER_JSON });
 });

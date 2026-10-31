@@ -23,7 +23,7 @@ test.describe('login', () => {
     await page.getByLabel('Kata Sandi').fill(password);
     await page.getByRole('button', { name: 'Masuk ke Konsol' }).click();
     await expect(
-      page.getByRole('heading', { name: 'Route-X Mission Control' }),
+      page.getByRole('heading', { name: 'Route-X Gateway Control' }),
     ).toBeVisible({ timeout: 20000 });
   });
 });
@@ -31,12 +31,12 @@ test.describe('login', () => {
 test.describe('konsol viewer', () => {
   test.use({ storageState: './e2e/.auth-viewer.json' });
   // Alur 2: dashboard termuat dengan indikator in-flight.
-  test('dashboard menampilkan mission control dan in-flight', async ({
+  test('dashboard menampilkan gateway control dan in-flight', async ({
     page,
   }) => {
     await page.goto('/');
     await expect(
-      page.getByRole('heading', { name: 'Route-X Mission Control' }),
+      page.getByRole('heading', { name: 'Route-X Gateway Control' }),
     ).toBeVisible({ timeout: 20000 });
     await expect(page.getByText('in-flight')).toBeVisible();
   });
@@ -45,7 +45,7 @@ test.describe('konsol viewer', () => {
   test('inspector request terbuka dan daftar termuat', async ({ page }) => {
     await page.goto('/');
     await expect(
-      page.getByRole('heading', { name: 'Route-X Mission Control' }),
+      page.getByRole('heading', { name: 'Route-X Gateway Control' }),
     ).toBeVisible({ timeout: 20000 });
 
     await page.goto('/#/requests');

@@ -106,29 +106,33 @@ describe('Settings — Pengujian Halaman Modular & Terisolasi', () => {
   it('merender default tab Domain & HTTPS beserta data domain aktif', async () => {
     render(<Settings />);
 
+    // SEMUA assertion dibungkus satu waitFor: data domain dimuat async
+    // (api.system.domain.get), jadi assertion sinkron sesudah waitFor
+    // parsial berlomba dengan render data dan flaky di suite penuh
+    // (lulus sendirian, gagal saat beban) — temuan audit F11.
     await waitFor(() => {
       expect(screen.getByText('Pengaturan Sistem')).toBeInTheDocument();
       expect(screen.getByText('Domain Publik & Otomatis HTTPS (SSL)')).toBeInTheDocument();
+
+      // Verifikasi badge status aktif
+      expect(screen.getByText(/Aktif & Terlindungi/i)).toBeInTheDocument();
+
+      // Verifikasi nilai domain yang terisi pada input
+      const domainInput = screen.getByLabelText(/Nama Domain FQDN/i) as HTMLInputElement;
+      expect(domainInput.value).toBe('ai.routex.io');
+
+      // Verifikasi IP server
+      expect(screen.getByText('203.0.113.10')).toBeInTheDocument();
+
+      // Verifikasi info panel dan endpoint live
+      expect(screen.getByText('https://ai.routex.io')).toBeInTheDocument();
+      expect(screen.getByText('https://ai.routex.io/v1')).toBeInTheDocument();
+      expect(screen.getByText('Terverifikasi')).toBeInTheDocument();
+
+      // Verifikasi tombol submit & lepas domain
+      expect(screen.getByRole('button', { name: /Perbarui & Verifikasi Domain/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Lepas Domain/i })).toBeInTheDocument();
     });
-
-    // Verifikasi badge status aktif
-    expect(screen.getByText(/Aktif & Terlindungi/i)).toBeInTheDocument();
-
-    // Verifikasi nilai domain yang terisi pada input
-    const domainInput = screen.getByLabelText(/Nama Domain FQDN/i) as HTMLInputElement;
-    expect(domainInput.value).toBe('ai.routex.io');
-
-    // Verifikasi IP server
-    expect(screen.getByText('203.0.113.10')).toBeInTheDocument();
-
-    // Verifikasi info panel dan endpoint live
-    expect(screen.getByText('https://ai.routex.io')).toBeInTheDocument();
-    expect(screen.getByText('https://ai.routex.io/v1')).toBeInTheDocument();
-    expect(screen.getByText('Terverifikasi')).toBeInTheDocument();
-
-    // Verifikasi tombol submit & lepas domain
-    expect(screen.getByRole('button', { name: /Perbarui & Verifikasi Domain/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Lepas Domain/i })).toBeInTheDocument();
   });
 
   it('berganti ke tab Backup dan memverifikasi status backup serta tombol download/upload', async () => {

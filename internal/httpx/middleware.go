@@ -311,6 +311,11 @@ const (
 	// berasal dari origin sendiri, tidak ada plugin, dan halaman tidak boleh
 	// disematkan di frame mana pun.
 	//
+	// Direktif upgrade-insecure-requests di dalamnya HANYA berlaku di produksi
+	// (lihat SecurityHeaders): validasi config menjamin PUBLIC_URL produksi
+	// selalu https. Di luar produksi direktif itu dicabut — alasan lengkapnya
+	// sama dengan alasan HSTS di bawah.
+	//
 	// 'unsafe-inline' hanya diberikan pada style-src karena bundler dan komponen UI
 	// menyuntikkan <style> inline saat runtime; script-src tetap ketat, dan di
 	// situlah risiko XSS sebenarnya berada.
@@ -355,7 +360,20 @@ func SecurityHeaders(cfg *config.Config) func(http.Handler) http.Handler {
 			h.Set("Permissions-Policy", permissionsPolicy)
 			h.Set("Cross-Origin-Opener-Policy", "same-origin")
 			h.Set("Cross-Origin-Resource-Policy", "same-origin")
-			h.Set("Content-Security-Policy", cspSPA)
+			// upgrade-insecure-requests hanya aman di produksi, dengan alasan
+			// yang sejajar HSTS di bawah: di development/staging gateway lazim
+			// diakses lewat http:// polos (localhost, IP LAN). Chrome dan Firefox
+			// mengecualikan origin loopback dari peningkatan paksa itu, tetapi
+			// WebKit/Safari tidak mengecualikan IP literal 127.0.0.1 — satu
+			// header ini membuat seluruh aset dashboard diminta lewat https ke
+			// server http polos, handshake TLS gagal, dan halaman tampil kosong
+			// total di Safari. Di produksi risikonya tidak ada karena validasi
+			// config mewajibkan PUBLIC_URL https.
+			csp := cspSPA
+			if !production {
+				csp = strings.Replace(csp, "upgrade-insecure-requests; ", "", 1)
+			}
+			h.Set("Content-Security-Policy", csp)
 
 			// HSTS hanya di produksi, dan ini bukan sekadar kerapian.
 			//

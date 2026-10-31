@@ -268,7 +268,6 @@ func TestSecurityHeaders(t *testing.T) {
 		"Cross-Origin-Opener-Policy":   "same-origin",
 		"Cross-Origin-Resource-Policy": "same-origin",
 		"Permissions-Policy":           permissionsPolicy,
-		"Content-Security-Policy":      cspSPA,
 	}
 
 	for _, tc := range []struct {
@@ -279,6 +278,9 @@ func TestSecurityHeaders(t *testing.T) {
 		{config.EnvStaging, false},
 		{config.EnvProduction, true},
 	} {
+		// CSP produksi memuat upgrade-insecure-requests; di luar produksi
+		// direktif itu dicabut agar dashboard http polos tetap bisa dimuat
+		// WebKit/Safari (lihat komentar di SecurityHeaders).
 		t.Run(string(tc.env), func(t *testing.T) {
 			cfg := testConfig(tc.env)
 			handler := SecurityHeaders(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -293,10 +295,17 @@ func TestSecurityHeaders(t *testing.T) {
 					t.Errorf("header %s = %q, want %q", name, got, want)
 				}
 			}
-			for _, direktif := range []string{"default-src 'self'", "frame-ancestors 'none'", "frame-src 'none'", "upgrade-insecure-requests", "object-src 'none'"} {
+			for _, direktif := range []string{"default-src 'self'", "frame-ancestors 'none'", "frame-src 'none'", "object-src 'none'"} {
 				if !strings.Contains(rec.Header().Get("Content-Security-Policy"), direktif) {
 					t.Errorf("CSP tidak memuat %q", direktif)
 				}
+			}
+			uir := strings.Contains(rec.Header().Get("Content-Security-Policy"), "upgrade-insecure-requests")
+			if tc.wantHSTS && !uir {
+				t.Error("upgrade-insecure-requests harus dipasang di produksi")
+			}
+			if !tc.wantHSTS && uir {
+				t.Errorf("upgrade-insecure-requests tidak boleh dipasang di %s", tc.env)
 			}
 
 			hsts := rec.Header().Get("Strict-Transport-Security")

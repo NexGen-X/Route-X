@@ -579,10 +579,10 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                             className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border flex items-center gap-1 ${
                               session.enabled
                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                : 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30'
+                                : 'bg-bg-surface-2 text-text-secondary border-border'
                             }`}
                           >
-                            <span className={`w-1.5 h-1.5 rounded-full ${session.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
+                            <span className={`w-1.5 h-1.5 rounded-full ${session.enabled ? 'bg-emerald-400' : 'bg-text-muted'}`} />
                             {session.enabled ? 'Aktif' : 'Standby'}
                           </span>
 
@@ -699,7 +699,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cred.enabled ? 'bg-emerald-400' : 'bg-zinc-400'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cred.enabled ? 'bg-emerald-400' : 'bg-text-muted'}`} />
                   <span className="font-bold text-white text-xs truncate">{cred.label}</span>
                   {currentStrategy === 'priority' && (
                     <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase shrink-0 ${

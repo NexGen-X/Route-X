@@ -341,7 +341,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     baseUrl: 'https://openrouter.ai/api/v1',
     tag: 'Meta Aggregator 100+',
     description: 'Pintu gerbang tunggal fleksibel ke seluruh model komersial dan open-source.',
-    color: '#6366F1',
+    color: '#0070E0',
     bgColor: 'rgba(99, 102, 241, 0.12)',
     borderColor: 'rgba(99, 102, 241, 0.35)',
     apiKeyPlaceholder: 'sk-or-v1-...',

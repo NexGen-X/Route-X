@@ -205,7 +205,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                     onClick={() => onModeChange(tool.id, 'model_only')}
                     className={`text-[11px] py-1 px-1.5 rounded font-medium transition-all cursor-pointer ${
                       config.mode === 'model_only'
-                        ? 'bg-zinc-200 text-black font-semibold shadow'
+                        ? 'bg-white text-black font-semibold shadow'
                         : 'text-text-muted hover:text-white'
                     }`}
                     title="Direct passthrough ke satu model tanpa failover"
@@ -218,7 +218,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                     onClick={() => onModeChange(tool.id, 'routing')}
                     className={`text-[11px] py-1 px-1.5 rounded font-medium transition-all cursor-pointer ${
                       config.mode === 'routing'
-                        ? 'bg-zinc-200 text-black font-semibold shadow'
+                        ? 'bg-white text-black font-semibold shadow'
                         : 'text-text-muted hover:text-white'
                     }`}
                     title="Routing failover dinamis ke aturan rute"
@@ -231,7 +231,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                     onClick={() => onModeChange(tool.id, 'combo')}
                     className={`text-[11px] py-1 px-1.5 rounded font-medium transition-all cursor-pointer ${
                       config.mode === 'combo'
-                        ? 'bg-zinc-200 text-black font-semibold shadow'
+                        ? 'bg-white text-black font-semibold shadow'
                         : 'text-text-muted hover:text-white'
                     }`}
                     title="Smart Tiered Cascade (Hemat/Cepat -> Flagship Fallback)"

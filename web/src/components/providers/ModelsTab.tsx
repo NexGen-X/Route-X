@@ -123,7 +123,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
                   <span className="font-mono text-xs sm:text-sm font-bold text-white truncate min-w-0 flex-1">{model.upstream_model_name}</span>
                   <span className="hidden md:inline px-1.5 py-0.2 text-[10px] rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-mono flex-shrink-0">{brand}</span>
-                  <span className="hidden sm:inline px-1.5 py-0.2 text-[10px] rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono flex-shrink-0">{context}</span>
+                  <span className="hidden sm:inline px-1.5 py-0.2 text-[10px] rounded bg-accent/10 text-blue-300 border border-blue-500/20 font-mono flex-shrink-0">{context}</span>
                   <button
                     type="button"
                     onClick={() => void copyWithFeedback(model.upstream_model_name, `Model ID "${model.upstream_model_name}" disalin`, () => {

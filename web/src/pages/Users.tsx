@@ -238,7 +238,7 @@ export const UsersPage: React.FC = () => {
                             {(u.display_name || u.email).charAt(0).toUpperCase()}
                           </span>
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 max-w-28 sm:max-w-none">
                           <p className="font-semibold text-white truncate">{u.display_name}</p>
                           <p className="text-[11px] text-text-muted font-mono truncate">{u.email}</p>
                         </div>

@@ -92,8 +92,8 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
                 onClick={() => onTabChange(tab.id)}
                 className={`min-h-[44px] sm:min-h-[36px] px-3.5 py-1.5 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1.5 cursor-pointer ${
                   isActive
-                    ? 'bg-zinc-800 text-white border border-zinc-700/60'
-                    : 'bg-zinc-900/60 text-zinc-400 border border-zinc-800 hover:border-zinc-700 hover:text-white'
+                    ? 'bg-bg-surface-2 text-white border border-border-hover/60'
+                    : 'bg-bg-surface-1/60 text-text-secondary border border-border hover:border-border-hover hover:text-white'
                 }`}
               >
                 {tab.id === 'success' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />}

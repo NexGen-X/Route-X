@@ -66,7 +66,7 @@ Sebelum mempublikasikan patch atau rilis `v1.4.x`, lakukan verifikasi berurutan 
 5. **Uji Probing Gateway E2E**: Jalankan `./scripts/probe_e2e_gateway.sh` untuk memvalidasi rute `/v1/chat/completions` (non-stream & SSE stream) serta `/v1/messages` native Anthropic.
 6. **Validasi Observabilitas**: Jalankan `./scripts/check_metrics.sh` untuk memverifikasi endpoint `/metrics` tidak merekam kegagalan terselubung.
 7. **Sinkronisasi Versi**:
-   - Perbarui versi pada `web/package.json` dan `apps/mobile/package.json` sesuai target rilis (misal `1.4.0`).
+   - Perbarui versi pada `web/package.json` sesuai target rilis (misal `1.4.0`).
    - Tambahkan catatan perubahan rilis pada `CHANGELOG.md` di bawah seksi versi terkait.
    - Perbarui badge versi di `README.md` dan fallback versi di `Makefile` serta skrip instalasi/operasional.
 8. **Git Tagging & Publikasi**:

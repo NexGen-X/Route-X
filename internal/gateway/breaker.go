@@ -603,6 +603,24 @@ func (b *Breaker) Warm(ctx context.Context) error {
 // gagal-terbuka di dokumentasi tipe. Pemanggil yang menulis `if err != nil { return err }`
 // membalikkan sifat itu dan mengubah matinya Redis menjadi matinya gateway.
 func (b *Breaker) Allow(ctx context.Context, providerID, model string) (bool, State, error) {
+	if b == nil {
+		return true, StateClosed, nil
+	}
+	return b.allowDengan(ctx, providerID, model, b.cfg, true)
+}
+
+// AllowWithConfig adalah Allow dengan konfigurasi per-aturan routing
+// (audit F4): routing_rules menyimpan failure_threshold/open_duration_ms/
+// half_open_probes per aturan dan kolom-kolom itu sebelumnya tidak pernah
+// sampai ke breaker — semua aturan berbagi konfigurasi global. Pemetaan
+// semantiknya mengikuti catatan di konstanta paket ini: failure_threshold
+// (jumlah) menjadi MinSamples, sisanya nama-sama. Memo keputusan dilewati
+// karena memo dikunci per (provider, model) tanpa dimensi konfigurasi.
+func (b *Breaker) AllowWithConfig(ctx context.Context, providerID, model string, cfg BreakerConfig) (bool, State, error) {
+	return b.allowDengan(ctx, providerID, model, cfg.normalized(), false)
+}
+
+func (b *Breaker) allowDengan(ctx context.Context, providerID, model string, cfg BreakerConfig, pakaiMemo bool) (bool, State, error) {
 	if b == nil || b.redis == nil {
 		return true, StateClosed, nil
 	}
@@ -612,12 +630,14 @@ func (b *Breaker) Allow(ctx context.Context, providerID, model string) (bool, St
 
 	key := cache.CircuitBreakerKey(providerID, model)
 	now := b.now()
-	if e, ok := b.memoGet(key, now); ok {
-		return e.allow, e.state, nil
+	if pakaiMemo {
+		if e, ok := b.memoGet(key, now); ok {
+			return e.allow, e.state, nil
+		}
 	}
 
 	res, err := b.redis.RunScript(ctx, allowScript, []string{key},
-		now.UnixMilli(), b.cfg.HalfOpenProbes, b.probeWait().Milliseconds(), b.keyTTL().Milliseconds())
+		now.UnixMilli(), cfg.HalfOpenProbes, cfg.probeWait().Milliseconds(), cfg.keyTTL().Milliseconds())
 	if err != nil {
 		b.log(ctx).Warn("circuit breaker tidak bisa menghubungi redis, permintaan diloloskan",
 			"provider", providerID, "model", model, "error", err.Error())
@@ -625,7 +645,7 @@ func (b *Breaker) Allow(ctx context.Context, providerID, model string) (bool, St
 	}
 
 	allow, state, openRemaining := parseAllow(res)
-	if state != StateHalfOpen {
+	if pakaiMemo && state != StateHalfOpen {
 		b.memoPut(key, memoEntry{allow: allow, state: state, expires: b.memoExpiry(now, openRemaining)})
 	}
 	return allow, state, nil
@@ -641,6 +661,19 @@ func (b *Breaker) Allow(ctx context.Context, providerID, model string) (bool, St
 // sesuatu yang SUDAH terjadi, dan Redis yang tidak bisa dihubungi tidak membuatnya
 // belum terjadi.
 func (b *Breaker) Record(ctx context.Context, providerID, model string, sukses bool) error {
+	if b == nil {
+		return nil
+	}
+	return b.recordDengan(ctx, providerID, model, sukses, b.cfg, true)
+}
+
+// RecordWithConfig adalah Record dengan konfigurasi per-aturan routing;
+// lihat AllowWithConfig untuk pemetaan semantiknya (audit F4).
+func (b *Breaker) RecordWithConfig(ctx context.Context, providerID, model string, sukses bool, cfg BreakerConfig) error {
+	return b.recordDengan(ctx, providerID, model, sukses, cfg.normalized(), false)
+}
+
+func (b *Breaker) recordDengan(ctx context.Context, providerID, model string, sukses bool, cfg BreakerConfig, pakaiMemo bool) error {
 	if b == nil || b.redis == nil {
 		return nil
 	}
@@ -656,9 +689,9 @@ func (b *Breaker) Record(ctx context.Context, providerID, model string, sukses b
 	}
 
 	res, err := b.redis.RunScript(ctx, recordScript, []string{key},
-		now.UnixMilli(), ok, b.cfg.FailureThreshold, b.cfg.MinSamples,
-		b.cfg.bucketWidth().Milliseconds(), windowBuckets,
-		b.cfg.OpenDuration.Milliseconds(), b.keyTTL().Milliseconds())
+		now.UnixMilli(), ok, cfg.FailureThreshold, cfg.MinSamples,
+		cfg.bucketWidth().Milliseconds(), windowBuckets,
+		cfg.OpenDuration.Milliseconds(), cfg.keyTTL().Milliseconds())
 	if err != nil {
 		b.log(ctx).Warn("circuit breaker tidak bisa mencatat hasil ke redis",
 			"provider", providerID, "model", model, "sukses", sukses, "error", err.Error())
@@ -672,11 +705,13 @@ func (b *Breaker) Record(ctx context.Context, providerID, model string, sukses b
 	// berumur satu permintaan, bukan memoTTL. Record tidak pernah mengembalikan half_open
 	// — dari state itu ia selalu menutup atau membuka — sehingga larangan menyimpan
 	// keputusan half_open tidak perlu diperiksa lagi di sini.
-	b.memoPut(key, memoEntry{
-		allow:   state != StateOpen,
-		state:   state,
-		expires: b.memoExpiry(now, openRemaining),
-	})
+	if pakaiMemo {
+		b.memoPut(key, memoEntry{
+			allow:   state != StateOpen,
+			state:   state,
+			expires: b.memoExpiry(now, openRemaining),
+		})
+	}
 
 	if changed {
 		// Hanya perpindahan yang dicatat, bukan setiap pencatatan: yang perlu dilihat
@@ -823,7 +858,17 @@ func (b *Breaker) Reset(ctx context.Context, providerID, model string) error {
 // sebelum yang pertama menjawab, sehingga beberapa permintaan percobaan, bukan tepat
 // HalfOpenProbes, sampai ke upstream. Melebihi kuota probe sesaat jauh lebih murah
 // daripada breaker yang macet.
-func (b *Breaker) probeWait() time.Duration { return b.cfg.OpenDuration }
+func (b *Breaker) probeWait() time.Duration { return b.cfg.probeWait() }
+
+// probeWait adalah batas menunggu hasil sebuah probe half_open, sebagai
+// metode konfigurasi agar jalur per-aturan (WithConfig) memakai nilainya
+// sendiri, bukan konfigurasi global breaker.
+func (c BreakerConfig) probeWait() time.Duration { return c.OpenDuration }
+
+// keyTTL versi konfigurasi; lihat probeWait.
+func (c BreakerConfig) keyTTL() time.Duration {
+	return c.Window + c.OpenDuration + c.probeWait()
+}
 
 // keyTTL adalah masa berlaku kunci breaker di Redis.
 //
@@ -838,9 +883,7 @@ func (b *Breaker) probeWait() time.Duration { return b.cfg.OpenDuration }
 // Window untuk sampel yang masih dihitung, OpenDuration untuk episode open yang sedang
 // berjalan, probeWait untuk probe yang belum bersuara. Menjumlahkannya memenuhi ketiganya
 // sekaligus dengan margin, tanpa kode ini perlu tahu state mana yang sedang berlaku.
-func (b *Breaker) keyTTL() time.Duration {
-	return b.cfg.Window + b.cfg.OpenDuration + b.probeWait()
-}
+func (b *Breaker) keyTTL() time.Duration { return b.cfg.keyTTL() }
 
 // --- Jalur cepat di memori ---------------------------------------------------
 

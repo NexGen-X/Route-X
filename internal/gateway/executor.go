@@ -19,9 +19,11 @@ package gateway
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"math/rand/v2"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
@@ -71,6 +73,18 @@ type CircuitGuard interface {
 // Breaker wajib memenuhi kontrak yang dipakai executor.
 var _ CircuitGuard = (*Breaker)(nil)
 
+// CircuitGuardTerkonfigurasi adalah penjaga arus yang menerima konfigurasi
+// per-aturan routing (audit F4). Executor memakainya bila Plan membawa
+// BreakerCfg dari aturan yang cocok; penjaga yang tidak menerapkannya
+// (mis. ganda uji) tetap bekerja lewat CircuitGuard biasa.
+type CircuitGuardTerkonfigurasi interface {
+	AllowWithConfig(ctx context.Context, providerID, model string, cfg BreakerConfig) (bool, State, error)
+	RecordWithConfig(ctx context.Context, providerID, model string, sukses bool, cfg BreakerConfig) error
+}
+
+// var _ memastikan *Breaker memenuhi kontrak terkonfigurasi.
+var _ CircuitGuardTerkonfigurasi = (*Breaker)(nil)
+
 // Plan adalah rencana eksekusi satu permintaan: kandidat berurut beserta kesabaran yang
 // berlaku untuknya.
 //
@@ -106,6 +120,19 @@ type Plan struct {
 
 	// BackoffBase adalah jeda dasar backoff eksponensial. Nol berarti tanpa jeda.
 	BackoffBase time.Duration
+
+	// BreakerCfg adalah konfigurasi pemutus arus dari aturan routing yang
+	// cocok (audit F4). Nilai nol berarti konfigurasi global breaker.
+	// Pemetaan dari kolom routing_rules: FailureThreshold (jumlah) menjadi
+	// MinSamples; OpenDuration dan HalfOpenProbes nama-sama — mengikuti
+	// catatan semantik di breaker.go.
+	BreakerCfg BreakerConfig
+
+	// streaming menandai rencana ExecuteStream: hasil percobaan yang
+	// BERHASIL membuka aliran tidak dicatat ke pemutus arus di sini,
+	// melainkan oleh pembungkus aliran saat aliran benar-benar selesai
+	// (audit F4 — aliran yang mati di tengah bukan keberhasilan).
+	streaming bool
 }
 
 // PlanFromRule menyusun Plan dari aturan routing dan kandidat yang sudah terurut.
@@ -134,6 +161,18 @@ func PlanFromRule(rule *router.Rule, model string, cands []*upstream.RouteCandid
 		// upstream yang baru 429/5xx seketika. Hanya timpa bila > 0.
 		if rule.BackoffBase > 0 {
 			p.BackoffBase = rule.BackoffBase
+		}
+		// Konfigurasi pemutus arus per-aturan (audit F4): kolom-kolom ini
+		// sebelumnya tersimpan rapi di DB dan tidak pernah dibaca jalur
+		// request sama sekali.
+		if rule.FailureThreshold > 0 {
+			p.BreakerCfg.MinSamples = rule.FailureThreshold
+		}
+		if rule.OpenDuration > 0 {
+			p.BreakerCfg.OpenDuration = rule.OpenDuration
+		}
+		if rule.HalfOpenProbes > 0 {
+			p.BreakerCfg.HalfOpenProbes = rule.HalfOpenProbes
 		}
 	}
 	return p
@@ -214,6 +253,14 @@ type Executor struct {
 	guard  CircuitGuard
 	logger *slog.Logger
 
+	// slotMu/slotAktif menegakkan kolom providers.max_concurrent secara
+	// in-proses (audit F4): Route-X adalah satu biner, jadi penghitung
+	// konkurensi per provider cukup di memori proses ini. Slot diambil
+	// per percobaan dan dilepas segera setelah percobaan selesai —
+	// jeda backoff antar-percobaan tidak menahan slot.
+	slotMu    sync.Mutex
+	slotAktif map[string]int
+
 	// acakJitter dipisah supaya test bisa membuat backoff deterministik.
 	acakJitter func(n int64) int64
 	// tidur dipisah supaya test tidak perlu benar-benar menunggu.
@@ -259,6 +306,7 @@ func NewExecutor(guard CircuitGuard, logger *slog.Logger, opts ...ExecutorOption
 		logger:     logger,
 		acakJitter: rand.Int64N,
 		tidur:      tidurContext,
+		slotAktif:  make(map[string]int),
 	}
 	for _, o := range opts {
 		o(e)
@@ -345,8 +393,15 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 			}
 			jatah = min(maksPercobaan, sisa)
 		}
+		// Kolom providers.max_retries membatasi percobaan per kandidat ini
+		// (audit F4): sebelumnya kolom itu tersimpan dan tidak ditegakkan
+		// di mana pun — yang berlaku selalu MaxAttempts aturan. max_retries
+		// adalah jumlah PENGULANGAN sesudah percobaan pertama.
+		if c.MaxRetries >= 0 && c.MaxRetries+1 < jatah {
+			jatah = c.MaxRetries + 1
+		}
 
-		izin, state, gerr := e.izinkan(ctx, c, plan.Model)
+		izin, state, gerr := e.izinkan(ctx, c, plan.Model, plan.BreakerCfg)
 		if gerr != nil {
 			// Penjaga yang error tidak memblokir: lihat catatan di CircuitGuard.
 			e.logger.WarnContext(ctx, "pemutus arus tidak bisa dibaca, permintaan diloloskan",
@@ -398,15 +453,54 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 
 // izinkan menanyakan pemutus arus, dan meloloskan permintaan bila penjaganya sendiri
 // bermasalah.
-func (e *Executor) izinkan(ctx context.Context, c *upstream.RouteCandidate, model string) (bool, State, error) {
+func (e *Executor) izinkan(ctx context.Context, c *upstream.RouteCandidate, model string, cfg BreakerConfig) (bool, State, error) {
 	if e.guard == nil {
 		return true, "", nil
+	}
+	// Jalur terkonfigurasi hanya bila rencana membawa konfigurasi aturan
+	// DAN penjaga mendukungnya; selain itu jalur biasa.
+	if cfg != (BreakerConfig{}) {
+		if ter, ok := e.guard.(CircuitGuardTerkonfigurasi); ok {
+			izin, state, err := ter.AllowWithConfig(ctx, c.ProviderID, model, cfg)
+			if err != nil {
+				return true, state, err
+			}
+			return izin, state, nil
+		}
 	}
 	izin, state, err := e.guard.Allow(ctx, c.ProviderID, model)
 	if err != nil {
 		return true, state, err
 	}
 	return izin, state, nil
+}
+
+// ambilSlot memesan satu slot konkurensi provider. ok=false berarti batas
+// max_concurrent provider sedang penuh. Fungsi lepas yang dikembalikan
+// aman dipanggil tepat satu kali oleh pemesan.
+func (e *Executor) ambilSlot(c *upstream.RouteCandidate) (lepas func(), ok bool) {
+	if c.MaxConcurrent == nil || *c.MaxConcurrent <= 0 {
+		return func() {}, true
+	}
+	e.slotMu.Lock()
+	defer e.slotMu.Unlock()
+	if e.slotAktif == nil {
+		e.slotAktif = make(map[string]int)
+	}
+	if e.slotAktif[c.ProviderID] >= *c.MaxConcurrent {
+		return nil, false
+	}
+	e.slotAktif[c.ProviderID]++
+	var sekali sync.Once
+	return func() {
+		sekali.Do(func() {
+			e.slotMu.Lock()
+			defer e.slotMu.Unlock()
+			if e.slotAktif[c.ProviderID] > 0 {
+				e.slotAktif[c.ProviderID]--
+			}
+		})
+	}, true
 }
 
 // cobaKandidat mengulang satu kandidat sampai berhasil, kehabisan percobaan, atau menemui
@@ -429,8 +523,30 @@ func cobaKandidat[T any](
 	att := make([]Attempt, 0, maksPercobaan)
 
 	for n := 1; n <= maksPercobaan; n++ {
+		// Batas konkurensi provider (audit F4): slot penuh berarti kandidat
+		// dilewati TANPA menghubungi upstream dan TANPA catatan kegagalan
+		// breaker (penolakan lokal) — kandidat berikutnya dicoba.
+		lepas, okSlot := e.ambilSlot(c)
+		if !okSlot {
+			att = append(att, Attempt{
+				ProviderID: c.ProviderID, ProviderName: c.ProviderName,
+				ProviderModelID: c.ProviderModelID, UpstreamModel: c.UpstreamModelName,
+				Nth: n, Started: time.Now(),
+				BreakerState: state,
+				SkipReason:   "batas konkurensi provider penuh",
+				Err: &providers.Error{
+					Kind:     providers.ErrKindRateLimit,
+					Provider: c.ProviderName,
+					Message:  "batas konkurensi gateway ke provider ini sedang penuh",
+					Local:    true,
+				},
+			})
+			return kosong, att, false
+		}
+
 		mulai := time.Now()
 		nilai, perr := jalankan(ctx, c)
+		lepas()
 		a := Attempt{
 			ProviderID: c.ProviderID, ProviderName: c.ProviderName,
 			ProviderModelID: c.ProviderModelID, UpstreamModel: c.UpstreamModelName,
@@ -440,7 +556,12 @@ func cobaKandidat[T any](
 
 		if perr == nil {
 			att = append(att, a)
-			e.catat(ctx, c, plan.Model, true)
+			// Untuk streaming, keberhasilan membuka aliran BUKAN hasil akhir:
+			// pencatatan ditunda ke pembungkus aliran di ExecuteStream yang
+			// tahu bagaimana aliran itu berakhir (audit F4).
+			if !plan.streaming {
+				e.catat(ctx, c, plan.Model, true, plan.BreakerCfg)
+			}
 			return nilai, att, true
 		}
 
@@ -450,8 +571,12 @@ func cobaKandidat[T any](
 		// Pembatalan oleh klien bukan kegagalan provider dan tidak boleh menghitung ke
 		// pemutus arus: kalau dicatat, satu klien yang menutup koneksi berkali-kali bisa
 		// memutus arus ke provider yang sebenarnya sehat.
-		if a.Err.Kind != providers.ErrKindCanceled {
-			e.catat(ctx, c, plan.Model, false)
+		//
+		// Hal yang sama berlaku untuk penolakan LOKAL gateway (Local): batas
+		// laju/konkurensi yang diputuskan gateway sendiri sebelum upstream
+		// dihubungi bukan bukti kesehatan provider (audit F4).
+		if a.Err.Kind != providers.ErrKindCanceled && !a.Err.Local {
+			e.catat(ctx, c, plan.Model, false, plan.BreakerCfg)
 		}
 
 		if !a.Err.Retryable() || n == maksPercobaan {
@@ -564,11 +689,21 @@ func jadikanProviderError(provider string, err error) *providers.Error {
 // Kegagalan mencatat hanya di-log, tidak dikembalikan: pada titik ini permintaan sudah
 // punya jawaban, dan menggagalkannya karena Redis tidak bisa dicatat berarti menukar
 // permintaan yang berhasil dengan error demi kerapian metrik.
-func (e *Executor) catat(ctx context.Context, c *upstream.RouteCandidate, model string, sukses bool) {
+func (e *Executor) catat(ctx context.Context, c *upstream.RouteCandidate, model string, sukses bool, cfg BreakerConfig) {
 	if e.guard == nil {
 		return
 	}
-	if err := e.guard.Record(ctx, c.ProviderID, model, sukses); err != nil {
+	var err error
+	if cfg != (BreakerConfig{}) {
+		if ter, ok := e.guard.(CircuitGuardTerkonfigurasi); ok {
+			err = ter.RecordWithConfig(ctx, c.ProviderID, model, sukses, cfg)
+		} else {
+			err = e.guard.Record(ctx, c.ProviderID, model, sukses)
+		}
+	} else {
+		err = e.guard.Record(ctx, c.ProviderID, model, sukses)
+	}
+	if err != nil {
 		e.logger.WarnContext(ctx, "hasil percobaan gagal dicatat ke pemutus arus",
 			"provider", c.ProviderName, "model", model, "sukses", sukses, "error", err)
 	}
@@ -658,7 +793,88 @@ func ExecuteStream(
 	plan Plan,
 	open func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error),
 ) *Outcome[providers.Stream] {
-	return jalankanRencana(ctx, e, plan, denganTenggatPembukaan(open))
+	plan.streaming = true
+	return jalankanRencana(ctx, e, plan, denganTenggatPembukaan(bungkusPencatatAliran(ctx, e, plan, open)))
+}
+
+// bungkusPencatatAliran membungkus pembuka aliran agar hasil AKHIR aliran
+// — bukan sekadar keberhasilannya dibuka — yang dicatat ke pemutus arus
+// (audit F4). Aliran yang dibuka lalu mati di tengah sebelumnya tercatat
+// sebagai keberhasilan penuh, sehingga provider yang alirannya selalu
+// putus tidak pernah terputus arusnya.
+func bungkusPencatatAliran(
+	ctx context.Context,
+	e *Executor,
+	plan Plan,
+	open func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error),
+) func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
+	return func(octx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
+		str, err := open(octx, c)
+		if err != nil || str == nil {
+			return str, err
+		}
+		return &aliranPencatat{
+			Stream: str,
+			ctx:    ctx,
+			catat: func(sukses bool) {
+				e.catat(ctx, c, plan.Model, sukses, plan.BreakerCfg)
+			},
+		}, nil
+	}
+}
+
+// aliranPencatat adalah providers.Stream yang melaporkan hasil akhirnya
+// tepat satu kali. Aturan hasilnya:
+//   - Recv mengembalikan io.EOF: aliran selesai bersih — sukses.
+//   - Recv mengembalikan error lain: aliran mati di tengah — gagal.
+//   - Close sebelum Recv terminal: sukses bila aliran sudah sempat
+//     mengirim >=1 peristiwa tanpa error (konsumen menutup aliran yang
+//     sehat), gagal bila belum ada satu pun peristiwa (aliran dibuka
+//     lalu mati sebelum berguna).
+//   - Context permintaan sudah dibatalkan (klien pergi): tidak dicatat
+//     sama sekali, konsisten dengan aturan ErrKindCanceled di executor.
+type aliranPencatat struct {
+	providers.Stream
+	ctx    context.Context
+	catat  func(sukses bool)
+	mu     sync.Mutex
+	sudah  bool
+	terima int
+}
+
+func (a *aliranPencatat) laporkan(sukses bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.sudah {
+		return
+	}
+	a.sudah = true
+	if a.ctx.Err() != nil {
+		// Klien sudah pergi: jangan catat apa pun (konsisten dengan aturan
+		// ErrKindCanceled di cobaKandidat).
+		return
+	}
+	a.catat(sukses)
+}
+
+func (a *aliranPencatat) Recv() (*providers.StreamEvent, error) {
+	ev, err := a.Stream.Recv()
+	if err != nil {
+		a.laporkan(errors.Is(err, io.EOF))
+	} else {
+		a.mu.Lock()
+		a.terima++
+		a.mu.Unlock()
+	}
+	return ev, err
+}
+
+func (a *aliranPencatat) Close() error {
+	a.mu.Lock()
+	terima := a.terima
+	a.mu.Unlock()
+	a.laporkan(terima > 0)
+	return a.Stream.Close()
 }
 
 // denganTenggatPembukaan membatasi tahap membuka aliran tanpa membatasi pembacaannya.

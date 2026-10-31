@@ -24,6 +24,10 @@ func kandidat(nama string, ubah ...func(*upstream.RouteCandidate)) *upstream.Rou
 		ProviderName:      nama,
 		Kind:              upstream.KindOpenAI,
 		TimeoutMS:         5_000,
+		// Samakan dengan bawaan kolom providers.max_retries di DB: kandidat
+		// produksi selalu membawa nilai ini, dan executor kini
+		// menegakkannya (audit F4).
+		MaxRetries: 2,
 	}
 	for _, f := range ubah {
 		f(c)

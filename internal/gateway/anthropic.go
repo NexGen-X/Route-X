@@ -322,9 +322,12 @@ func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
-	out := Execute(r.Context(), h.exec, pr.plan,
+	out := Execute(h.guard.DenganMemoBatas(r.Context()), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.ChatResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
+				return nil, perr
+			}
+			if perr := h.guard.PeriksaKolomProvider(ctx, c); perr != nil {
 				return nil, perr
 			}
 			p, err := h.adapter(ctx, c)
@@ -370,6 +373,7 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 
 	j.pasangPemakaian(out.Value.Usage)
 	h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(out.Value.Usage.TotalTokens))
+	h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(out.Value.Usage.TotalTokens))
 
 	if rj := h.guard.SaringJawaban(r.Context(), teksJawaban(out.Value),
 		pr.model.ID, out.Candidate.ProviderID); rj != nil {
@@ -448,9 +452,12 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 }
 
 func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
-	out := ExecuteStream(r.Context(), h.exec, pr.plan,
+	out := ExecuteStream(h.guard.DenganMemoBatas(r.Context()), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
+				return nil, perr
+			}
+			if perr := h.guard.PeriksaKolomProvider(ctx, c); perr != nil {
 				return nil, perr
 			}
 			p, err := h.adapter(ctx, c)
@@ -563,6 +570,7 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 			usage.TotalTokens = usage.InputTokens + lantai
 		}
 		h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(usage.TotalTokens))
+		h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(usage.TotalTokens))
 		j.pasangPemakaian(usage)
 	}()
 

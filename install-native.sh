@@ -222,7 +222,7 @@ if [ -f "$SRC_DIR/bin/ai-gateway" ]; then
     install -m 755 "$SRC_DIR/bin/ai-gateway" "$INSTALL_DIR/ai-gateway"
     INSTALLED_FROM_RELEASE=1
 else
-    RELEASE_TAG="v1.2.1"
+    RELEASE_TAG="v1.4.0"
     ARCH="$(uname -m)"
     case "$ARCH" in
         x86_64) TARBALL_NAME="routex-${RELEASE_TAG}-linux-amd64.tar.gz" ;;
@@ -246,14 +246,14 @@ fi
 if [ "$INSTALLED_FROM_RELEASE" -eq 0 ]; then
     echo "   Memeriksa toolchain kompilasi Node.js & Golang..."
     if ! command -v node &>/dev/null; then
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>/dev/null || true
+        curl -fsSL https://deb.nodesource.com/setup_24.x | bash - 2>/dev/null || true
         apt-get install -y nodejs
     fi
 
     if ! command -v go &>/dev/null; then
-        # Versi ini wajib mengikuti go.mod (saat ini 1.27.1); toolchain lebih lama
+        # Versi ini wajib mengikuti go.mod (saat ini 1.27.3); toolchain lebih lama
         # menolak membangun modul.
-        GO_VERSION="1.27.1"
+        GO_VERSION="1.27.3"
         ARCH="$(uname -m)"
         case "$ARCH" in
             x86_64) GO_ARCH="amd64" ;;
@@ -273,7 +273,7 @@ if [ "$INSTALLED_FROM_RELEASE" -eq 0 ]; then
     cd "$SRC_DIR"
 
     echo "   Membangun Biner Core Route-X (go build)..."
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${RELEASE_TAG:-v1.2.1}" -o ai-gateway ./cmd/ai-gateway
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${RELEASE_TAG:-v1.4.0}" -o ai-gateway ./cmd/ai-gateway
     install -m 755 ai-gateway "$INSTALL_DIR/ai-gateway"
 fi
 

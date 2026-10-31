@@ -191,7 +191,7 @@ export const Observability: React.FC = () => {
                   onClick={() => setWindowTime(w)}
                   className={`min-h-[44px] sm:min-h-[32px] px-3 py-1 rounded-inner text-xs font-semibold transition-colors cursor-pointer ${
                     windowTime === w
-                      ? 'bg-zinc-800 text-white font-medium border border-zinc-700/60'
+                      ? 'bg-bg-surface-2 text-white font-medium border border-border-hover/60'
                       : 'text-text-secondary hover:text-white'
                   }`}
                 >
@@ -240,7 +240,7 @@ export const Observability: React.FC = () => {
                 <span>Rata-rata: {avgThroughputRps.toFixed(2)} req/dtk</span>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-blue-400">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent-hover">
               <Activity className="w-5 h-5" aria-hidden="true" />
             </div>
           </div>
@@ -335,7 +335,7 @@ export const Observability: React.FC = () => {
                 onClick={() => setMetric(m.key)}
                 className={`min-h-[44px] sm:min-h-[30px] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium whitespace-nowrap text-center cursor-pointer ${
                   metric === m.key
-                    ? 'bg-accent/20 text-blue-400 border border-accent/40 font-semibold shadow-sm'
+                    ? 'bg-accent/20 text-accent-hover border border-accent/40 font-semibold shadow-sm'
                     : 'text-text-muted hover:text-text-primary'
                 }`}
               >

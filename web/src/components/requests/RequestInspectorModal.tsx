@@ -28,9 +28,9 @@ export interface RequestInspectorModalProps {
 }
 
 const WATERFALL_COLORS = [
-  'bg-blue-500',
+  'bg-accent',
   'bg-cyan-500',
-  'bg-indigo-500',
+  'bg-accent',
   'bg-amber-500',
   'bg-emerald-500',
 ];
@@ -344,7 +344,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
                 onClick={() => setActiveInspectorTab('payload')}
                 className={`min-h-[44px] sm:min-h-[30px] px-3 py-1 rounded-inner text-xs font-semibold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                   activeInspectorTab === 'payload'
-                    ? 'bg-accent/20 text-blue-400 border border-accent/40 shadow-sm'
+                    ? 'bg-accent/20 text-accent-hover border border-accent/40 shadow-sm'
                     : 'text-text-secondary hover:text-white'
                 }`}
               >
@@ -358,7 +358,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
                 onClick={() => setActiveInspectorTab('headers')}
                 className={`min-h-[44px] sm:min-h-[30px] px-3 py-1 rounded-inner text-xs font-semibold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                   activeInspectorTab === 'headers'
-                    ? 'bg-accent/20 text-blue-400 border border-accent/40 shadow-sm'
+                    ? 'bg-accent/20 text-accent-hover border border-accent/40 shadow-sm'
                     : 'text-text-secondary hover:text-white'
                 }`}
               >
@@ -372,7 +372,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
                 onClick={() => setActiveInspectorTab('curl')}
                 className={`min-h-[44px] sm:min-h-[30px] px-3 py-1 rounded-inner text-xs font-semibold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                   activeInspectorTab === 'curl'
-                    ? 'bg-accent/20 text-blue-400 border border-accent/40 shadow-sm'
+                    ? 'bg-accent/20 text-accent-hover border border-accent/40 shadow-sm'
                     : 'text-text-secondary hover:text-white'
                 }`}
               >

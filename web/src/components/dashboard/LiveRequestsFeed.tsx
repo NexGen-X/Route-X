@@ -14,7 +14,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
   onNavigate,
 }) => {
   return (
-    <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-4 shadow-sm flex flex-col justify-between h-full">
+    <div className="bg-bg-surface-1/40 border border-border/80 rounded-lg p-4 shadow-sm flex flex-col justify-between h-full">
       <div>
         {/* Header — clean minimal dot + title */}
         <div className="flex items-center justify-between mb-3">
@@ -24,15 +24,15 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
               Live Requests Feed
             </h3>
           </div>
-          <span className="text-[10px] font-mono text-zinc-500">
+          <span className="text-[10px] font-mono text-text-muted">
             Auto-refresh (5s)
           </span>
         </div>
 
         {/* Tabular List of recent requests */}
         {recentRequests.length === 0 ? (
-          <div className="py-10 text-center text-xs text-zinc-500 space-y-2">
-            <Activity className="w-4 h-4 mx-auto text-zinc-600" aria-hidden="true" />
+          <div className="py-10 text-center text-xs text-text-muted space-y-2">
+            <Activity className="w-4 h-4 mx-auto text-text-muted" aria-hidden="true" />
             <p>Belum ada permintaan inferensi yang tercatat.</p>
             <Button
               variant="secondary"
@@ -44,7 +44,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
             </Button>
           </div>
         ) : (
-          <div className="divide-y divide-zinc-800/80 border-y border-zinc-800/80">
+          <div className="divide-y divide-border/80 border-y border-border/80">
             {recentRequests.map((req) => {
               const is2xx = req.status_code >= 200 && req.status_code < 300;
               const is4xx = req.status_code >= 400 && req.status_code < 500;
@@ -55,7 +55,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                 ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
                 : is5xx
                 ? 'text-rose-400 bg-rose-500/10 border-rose-500/20'
-                : 'text-zinc-400 bg-zinc-500/10 border-zinc-500/20';
+                : 'text-text-secondary bg-bg-surface-2 border-border';
 
               return (
                 <div
@@ -69,14 +69,14 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                     }
                   }}
                   onClick={() => onNavigate('/requests')}
-                  className="py-2 px-1 flex items-center justify-between gap-2 text-xs hover:bg-zinc-800/30 transition-colors cursor-pointer group"
+                  className="py-2 px-1 flex items-center justify-between gap-2 text-xs hover:bg-bg-surface-2/30 transition-colors cursor-pointer group"
                 >
                   {/* Kiri: Status code, Model Name, Protocol */}
                   <div className="flex items-center gap-2 min-w-0">
                     <span className={`font-mono font-medium text-[11px] tabular-nums shrink-0 px-1.5 py-0.5 rounded border ${statusBadgeClass}`}>
                       {req.status_code}
                     </span>
-                    <span className="font-mono text-xs text-zinc-200 truncate group-hover:text-white transition-colors">
+                    <span className="font-mono text-xs text-text-primary truncate group-hover:text-white transition-colors">
                       {req.requested_model || req.model_id || 'unknown'}
                     </span>
                     {req.is_stream && (
@@ -87,12 +87,12 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                   </div>
 
                   {/* Kanan: Latency, Tokens, Time */}
-                  <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] text-zinc-400">
+                  <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] text-text-secondary">
                     <span className="tabular-nums">{req.duration_ms}ms</span>
-                    <span className="text-zinc-700 select-none" aria-hidden="true">·</span>
-                    <span className="text-zinc-500 tabular-nums hidden sm:inline">{req.total_tokens || 0} tok</span>
-                    <span className="text-zinc-700 select-none hidden sm:inline" aria-hidden="true">·</span>
-                    <span className="text-zinc-500 text-[10px] whitespace-nowrap">
+                    <span className="text-text-muted select-none" aria-hidden="true">·</span>
+                    <span className="text-text-muted tabular-nums hidden sm:inline">{req.total_tokens || 0} tok</span>
+                    <span className="text-text-muted select-none hidden sm:inline" aria-hidden="true">·</span>
+                    <span className="text-text-muted text-[10px] whitespace-nowrap">
                       {formatTimeAgo(req.created_at)}
                     </span>
                     <button
@@ -102,7 +102,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                         onNavigate('/requests');
                       }}
                       aria-label={`Inspeksi request ${req.requested_model || req.model_id}`}
-                      className="p-1 text-zinc-500 hover:text-white rounded hover:bg-zinc-800 transition-colors"
+                      className="p-1 text-text-muted hover:text-white rounded hover:bg-bg-surface-2 transition-colors"
                       title="Inspeksi jejak audit request"
                     >
                       <Eye className="w-3.5 h-3.5" aria-hidden="true" />
@@ -120,10 +120,10 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
         <button
           type="button"
           onClick={() => onNavigate('/requests')}
-          className="w-full py-1.5 text-center text-xs text-zinc-400 hover:text-zinc-200 font-mono rounded-md bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800/80 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+          className="w-full py-1.5 text-center text-xs text-text-secondary hover:text-white font-mono rounded-md bg-bg-surface-1/60 hover:bg-bg-surface-2 border border-border/80 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
         >
           <span>Inspeksi Seluruh Jejak Audit Request</span>
-          <ExternalLink className="w-3 h-3 text-zinc-500" aria-hidden="true" />
+          <ExternalLink className="w-3 h-3 text-text-muted" aria-hidden="true" />
         </button>
       </div>
     </div>

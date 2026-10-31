@@ -103,7 +103,7 @@ export const Login: React.FC = () => {
       {/* Central Login Container */}
       <div className="relative w-full max-w-[420px] z-10">
         {/* Minimalist Zinc Card */}
-        <div className="relative rounded-xl bg-zinc-900/60 border border-zinc-800/80 shadow-lg p-6 sm:p-8 flex flex-col">
+        <div className="relative rounded-xl bg-bg-surface-1/60 border border-border/80 shadow-lg p-6 sm:p-8 flex flex-col">
           {/* Header Brand */}
           <div className="flex items-center gap-3.5 mb-6">
             <RouteXLogo size={36} glow={false} className="group cursor-default" />
@@ -112,11 +112,11 @@ export const Login: React.FC = () => {
                 <h1 className="text-xl font-bold text-white tracking-tight leading-tight">
                   Route-X
                 </h1>
-                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent-hover border border-accent/30">
                   Gateway
                 </span>
               </div>
-              <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1.5 font-mono">
+              <p className="text-xs text-text-secondary mt-0.5 flex items-center gap-1.5 font-mono">
                 <Cpu className="w-3 h-3 text-cyan-400 shrink-0" aria-hidden="true" />
                 <span>Next-Gen AI Routing Fabric</span>
               </p>
@@ -141,7 +141,7 @@ export const Login: React.FC = () => {
               </p>
 
               {/* 1-Klik Salin & Isi Email Admin */}
-              <div className="flex items-center justify-between p-2 rounded-lg bg-bg-base/90 border border-white/[0.08] text-xs font-mono">
+              <div className="flex items-center justify-between p-2 rounded-lg bg-bg-base/90 border border-border text-xs font-mono">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-text-muted text-[11px]">Email:</span>
                   <button
@@ -157,7 +157,7 @@ export const Login: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => handleCopyEmail(setupHint.default_email!)}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded bg-bg-surface-2 hover:bg-bg-surface-3 border border-white/[0.08] text-[10px] text-cyan-400 hover:text-white transition-all active:scale-95 cursor-pointer shrink-0 ml-2"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-[10px] text-cyan-400 hover:text-white transition-all active:scale-95 cursor-pointer shrink-0 ml-2"
                     aria-label="Salin dan isi email otomatis"
                   >
                     {copiedEmail ? (
@@ -214,7 +214,7 @@ export const Login: React.FC = () => {
                 required
                 aria-describedby={error ? 'login-error' : undefined}
                 placeholder="admin@routex.local"
-                className="w-full min-h-[44px] px-3.5 py-2.5 bg-bg-surface-1/80 hover:bg-bg-surface-1 border border-white/[0.08] hover:border-white/[0.16] focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 rounded-xl text-sm text-text-primary placeholder:text-text-muted transition-all duration-150 outline-none"
+                className="w-full min-h-[44px] px-3.5 py-2.5 bg-bg-surface-1/80 hover:bg-bg-surface-1 border border-border hover:border-border-hover focus:border-accent focus:ring-1 focus:ring-accent/40 rounded-xl text-sm text-text-primary placeholder:text-text-muted transition-all duration-150 outline-none"
               />
             </div>
 
@@ -236,12 +236,12 @@ export const Login: React.FC = () => {
                   required
                   aria-describedby={error ? 'login-error' : undefined}
                   placeholder="••••••••••••"
-                  className="w-full min-h-[44px] px-3.5 py-2.5 pr-12 bg-bg-surface-1/80 hover:bg-bg-surface-1 border border-white/[0.08] hover:border-white/[0.16] focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/40 rounded-xl text-sm text-text-primary placeholder:text-text-muted transition-all duration-150 outline-none"
+                  className="w-full min-h-[44px] px-3.5 py-2.5 pr-12 bg-bg-surface-1/80 hover:bg-bg-surface-1 border border-border hover:border-border-hover focus:border-accent focus:ring-1 focus:ring-accent/40 rounded-xl text-sm text-text-primary placeholder:text-text-muted transition-all duration-150 outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-white p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center transition-colors cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                   aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Lihat kata sandi'}
                 >
                   {showPassword ? (

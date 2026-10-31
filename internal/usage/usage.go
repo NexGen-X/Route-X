@@ -44,6 +44,7 @@ package usage
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/netip"
 	"sync"
@@ -437,19 +438,34 @@ func (r *Recorder) jalan() {
 		select {
 		case ev := <-r.antre:
 			r.metrikKedalaman(r.dalam.Add(-1))
-			r.tulis(ev)
+			r.tulisAman(ev)
 		case <-r.mati:
 			for {
 				select {
 				case ev := <-r.antre:
 					r.metrikKedalaman(r.dalam.Add(-1))
-					r.tulis(ev)
+					r.tulisAman(ev)
 				default:
 					return
 				}
 			}
 		}
 	}
+}
+
+// tulisAman membungkus tulis dengan pemulihan panic (audit F5): penulis
+// berjalan di goroutine tanpa supervisor, jadi SATU panic (baris cacat,
+// harga ternormalisasi buruk, bug driver) sebelumnya membunuh SELURUH
+// proses gateway. Kini panic hanya mengorbankan catatan itu sendiri.
+func (r *Recorder) tulisAman(ev Event) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			r.hasil(OutcomeFailed)
+			r.logger.Error("panic tertangkap saat menulis catatan pemakaian; hanya catatan ini yang hilang",
+				"request_id", ev.RequestID, "panic", fmt.Sprint(rec))
+		}
+	}()
+	r.tulis(ev)
 }
 
 // tulis menyimpan satu catatan.
@@ -472,10 +488,12 @@ func (r *Recorder) tulis(ev Event) {
 
 	biaya := r.biaya(ctx, ev)
 
+	insertGagal := false
 	if r.store != nil {
 		pk, dibuat, err := r.store.Insert(ctx, ev.record(biaya))
 		switch {
 		case err != nil:
+			insertGagal = true
 			r.hasil(OutcomeFailed)
 			r.logger.ErrorContext(ctx, "baris log request gagal ditulis",
 				"request_id", ev.RequestID, "status", ev.StatusCode, "error", err)
@@ -490,6 +508,19 @@ func (r *Recorder) tulis(ev Event) {
 				}
 			}
 		}
+	}
+
+	// Konsistensi log <-> anggaran (audit F6): AddSpend TETAP dijalankan
+	// walau baris request gagal ditulis — biayanya nyata sudah keluar ke
+	// upstream, dan membatalkan penegakan anggaran hanya karena log gagal
+	// berarti anggaran bocor diam-diam saat insiden DB (keputusan sadar
+	// ini juga dikunci oleh TestRecorderMencatatKegagalanPenulisan*).
+	// Yang ditambahkan audit: PENANDA REKONSILIASI eksplisit per RequestID
+	// agar pasangan "anggaran terpotong tanpa baris log" bisa ditemukan
+	// dan diselaraskan kemudian, bukan tenggelam di log yang terpisah.
+	if insertGagal && biaya > 0 {
+		r.logger.ErrorContext(ctx, "REKONSILIASI: pemakaian anggaran tetap dinaikkan walau baris request gagal ditulis",
+			"request_id", ev.RequestID, "biaya_usd", biaya.String())
 	}
 
 	r.tambahPemakaian(ctx, ev, biaya)

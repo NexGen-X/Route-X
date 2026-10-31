@@ -15,7 +15,7 @@ export const RouteXLogo: React.FC<RouteXLogoProps> = ({
     <div className={`relative inline-flex items-center justify-center shrink-0 ${className}`}>
       {glow && (
         <div
-          className="absolute -inset-1 rounded-lg bg-indigo-500/20 opacity-40 blur-sm transition-opacity duration-200 pointer-events-none"
+          className="absolute -inset-1 rounded-lg bg-accent/20 opacity-40 blur-sm transition-opacity duration-200 pointer-events-none"
           aria-hidden="true"
         />
       )}

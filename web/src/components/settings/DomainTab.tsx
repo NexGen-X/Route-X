@@ -77,7 +77,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
               ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
               : domainFeedback.type === 'error'
               ? 'bg-red-500/10 text-red-300 border-red-500/30'
-              : 'bg-blue-500/10 text-blue-300 border-blue-500/30'
+              : 'bg-accent/10 text-blue-300 border-blue-500/30'
           }`}
         >
           {domainFeedback.type === 'success' ? (
@@ -85,7 +85,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
           ) : domainFeedback.type === 'error' ? (
             <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
           ) : (
-            <Info className="w-4 h-4 shrink-0 text-blue-400 mt-0.5" />
+            <Info className="w-4 h-4 shrink-0 text-accent-hover mt-0.5" />
           )}
           <div className="flex-1">{domainFeedback.message}</div>
         </div>

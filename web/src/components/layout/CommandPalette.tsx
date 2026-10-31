@@ -484,7 +484,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         {item.category}
                       </span>
                       {isSelected ? (
-                        <CornerDownLeft className="w-3.5 h-3.5 text-zinc-300" aria-hidden="true" />
+                        <CornerDownLeft className="w-3.5 h-3.5 text-text-secondary" aria-hidden="true" />
                       ) : (
                         <ArrowRight className="w-3.5 h-3.5 text-text-muted/40 hidden group-hover:inline-block" aria-hidden="true" />
                       )}
@@ -514,7 +514,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 <span>Tutup</span>
               </span>
             </div>
-            <span className="font-mono text-zinc-400 font-medium text-[10px] tracking-wide">
+            <span className="font-mono text-text-secondary font-medium text-[10px] tracking-wide">
               Route-X Spotlight
             </span>
           </div>

@@ -189,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Compact Unified Footer: user info, gateway status, logout, and collapse */}
         <div className="p-2 border-t border-border bg-bg-sidebar flex flex-col gap-1.5">
           {!isCollapsed && user ? (
-            <div className="flex items-center justify-between px-2 py-1.5 rounded-md bg-zinc-900/60 border border-border text-xs">
+            <div className="flex items-center justify-between px-2 py-1.5 rounded-md bg-bg-surface-1/60 border border-border text-xs">
               {/* User details */}
               <div className="flex items-center gap-2 min-w-0">
                 <div

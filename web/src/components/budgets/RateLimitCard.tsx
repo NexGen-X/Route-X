@@ -23,7 +23,7 @@ export const RateLimitCard: React.FC<RateLimitCardProps> = ({
       <div>
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-md bg-zinc-800 border border-zinc-700/60 text-zinc-300 flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-md bg-bg-surface-2 border border-border-hover/60 text-text-secondary flex items-center justify-center shrink-0">
               <Gauge className="w-4 h-4" aria-hidden="true" />
             </div>
             <div>
@@ -62,10 +62,10 @@ export const RateLimitCard: React.FC<RateLimitCardProps> = ({
         <div className="mt-3.5 p-3 rounded-inner bg-bg-surface-1 border border-border/60 space-y-2">
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-text-muted flex items-center gap-1.5 font-medium">
-              <Waves className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
+              <Waves className="w-3.5 h-3.5 text-accent-hover" aria-hidden="true" />
               <span>Token Bucket Indicator</span>
             </span>
-            <span className="font-mono text-xs text-blue-400 font-semibold">
+            <span className="font-mono text-xs text-accent-hover font-semibold">
               {rps > 0 ? `${rps} burst window` : 'unlimited'}
             </span>
           </div>
@@ -92,7 +92,7 @@ export const RateLimitCard: React.FC<RateLimitCardProps> = ({
             </div>
             <div className="w-full h-1.5 bg-bg-surface-2 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-indigo-500 to-purple-400 rounded-full transition-all duration-500"
+                className="h-full bg-gradient-to-r from-accent to-purple-400 rounded-full transition-all duration-500"
                 style={{ width: `${tpmCapacityPct}%` }}
               />
             </div>

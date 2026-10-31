@@ -102,9 +102,6 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
               type="button"
               onClick={() => setMetricType(m)}
               aria-pressed={metricType === m}
-              aria-label={
-                m === 'requests' ? 'Jumlah request' : m === 'tokens' ? 'Jumlah token' : 'Latensi'
-              }
               className={`px-2.5 py-1 rounded capitalize transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 cursor-pointer ${
                 metricType === m
                   ? 'bg-accent text-white font-medium shadow-sm'

@@ -41,10 +41,10 @@ test.describe('tulis admin via UI', () => {
       page.getByRole('heading', { name: 'Client API Keys', level: 1 }),
     ).toBeVisible({ timeout: 20000 });
     await page.getByRole('button', { name: 'Buat API Key' }).first().click();
-    await page.locator('#api-key-name').fill(nama);
+    await page.locator('#api-key-name-drawer').fill(nama);
     await page.getByRole('button', { name: 'Hasilkan Kunci API' }).click();
     // Modal sukses menampilkan kunci mentah sekali: bukti tulis berhasil.
-    await expect(page.getByText('Simpan kunci ini sekarang')).toBeVisible({
+    await expect(page.getByText('Kunci API Berhasil Dibuat')).toBeVisible({
       timeout: 20000,
     });
     // Tutup modal lalu pastikan nama muncul di daftar.

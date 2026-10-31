@@ -140,7 +140,7 @@ test('egress: buat pool, probe gagal terkontrol, hapus', async () => {
   expect(await sesudah.text()).not.toContain(nama);
 });
 
-test('users: buat sekali pakai, beri peran, login, update, hapus', async () => {
+test('users: buat sekali pakai, login, update, hapus', async () => {
   const email = `e2e-sisa-user-${Date.now()}@local`;
   const pwBaru = 'SisaUser2026!Kuat#1';
   let userId = '';
@@ -158,16 +158,9 @@ test('users: buat sekali pakai, beri peran, login, update, hapus', async () => {
     userId = (await buat.json()).id;
     expect(userId).toBeTruthy();
 
-    // Beri peran Viewer.
-    const roles = await ctx.get('/api/admin/access/roles');
-    const daftarPeran = ((await roles.json()).items ?? []) as any[];
-    const viewer = daftarPeran.find((r) => r.name === 'Viewer');
-    expect(viewer?.id).toBeTruthy();
-    const grant = await ctx.post(`/api/admin/access/users/${userId}/roles`, {
-      headers: H,
-      data: { role_id: viewer.id },
-    });
-    expect(grant.ok()).toBeTruthy();
+    // Arsitektur single-admin (migrasi 0010): tidak ada peran untuk
+    // diberikan — user baru otomatis admin penuh. Dulu langkah ini
+    // memberi peran Viewer lewat /api/admin/access/roles yang sudah dihapus.
 
     // Login sebagai user baru membuktikan kredensial berfungsi.
     // Konteks TERPISAH: login di ctx admin akan menimpa cookie sesi

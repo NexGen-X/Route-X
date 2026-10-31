@@ -16,7 +16,7 @@ import { test, expect } from '@playwright/test';
 //   adalah mode form UI, bukan strategy DB.
 //
 // Prasyarat env: BASE_URL, E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD,
-// serta E2E_EMAIL + E2E_PASSWORD (Viewer, untuk test penolakan).
+// serta E2E_EMAIL + E2E_PASSWORD (pengguna kedua, untuk test single-admin).
 
 test.describe('tulis admin via UI', () => {
   test.use({ storageState: './e2e/.auth-admin.json' });
@@ -33,7 +33,7 @@ test.describe('tulis admin via UI', () => {
   test('buat API key lewat UI lalu muncul di daftar', async ({ page }) => {
     await page.goto('/');
     await expect(
-      page.getByRole('heading', { name: 'Route-X Mission Control' }),
+      page.getByRole('heading', { name: 'Route-X Gateway Control' }),
     ).toBeVisible({ timeout: 20000 });
     const nama = 'e2e-tulis-' + Date.now();
     await page.goto('/#/access/api-keys');
@@ -69,7 +69,7 @@ test.describe('tulis admin via UI', () => {
   test('alokasikan budget lewat UI lalu muncul di daftar', async ({ page }) => {
     await page.goto('/');
     await expect(
-      page.getByRole('heading', { name: 'Route-X Mission Control' }),
+      page.getByRole('heading', { name: 'Route-X Gateway Control' }),
     ).toBeVisible({ timeout: 20000 });
     // Backend hanya mengizinkan satu budget per scope global: bersihkan
     // sisa e2e lebih dulu lewat sesi browser yang sama.
@@ -89,7 +89,7 @@ test.describe('tulis admin via UI', () => {
     const nama = 'e2e-budget-' + Date.now();
     await page.goto('/#/gateway/budgets');
     await expect(
-      page.getByRole('heading', { name: 'Budgets & Cost Limits', level: 1 }),
+      page.getByRole('heading', { name: 'Budgets & Rate Limits', level: 1 }),
     ).toBeVisible({ timeout: 20000 });
     await page.getByRole('button', { name: 'Alokasikan Anggaran' }).first().click();
     await page.getByPlaceholder('Budget Bulanan Tim Internal').fill(nama);
@@ -112,87 +112,51 @@ test.describe('tulis admin via UI', () => {
     }
   });
 
-  test('buat peran kustom UI + beri ke user baru UI, lalu hapus bersih', async ({
+  test('buat user baru lewat UI, verifikasi API, lalu hapus bersih', async ({
     page,
-    }) => {
+  }) => {
     await page.goto('/');
     await expect(
-    page.getByRole('heading', { name: 'Route-X Mission Control' }),
+      page.getByRole('heading', { name: 'Route-X Gateway Control' }),
     ).toBeVisible({ timeout: 20000 });
     const H = await headerMutasi(page);
     const cap = Date.now();
-    const namaPeran = 'e2e-peran-' + cap;
     const emailUser = `e2e-user-ui-${cap}@local`;
-    let peranId = '';
     let userId = '';
     try {
-    await page.goto('/#/access/roles');
-    await expect(
-      page.getByRole('heading', { name: 'Peran & Izin', level: 1 }),
-    ).toBeVisible({ timeout: 20000 });
-    await page.getByRole('button', { name: 'Buat Peran' }).first().click();
-    await page.getByPlaceholder('Operator').fill(namaPeran);
-    await page.getByRole('button', { name: 'Buat Peran', exact: true }).last().click();
-    await expect(page.getByText(namaPeran).first()).toBeVisible({
-      timeout: 20000,
-    });
-    const daftarPeran = await page.request.get('/api/admin/access/roles');
-    const badanPeran = await daftarPeran.json();
-    peranId = ((badanPeran.items ?? []) as any[]).find(
-      (r) => r.name === namaPeran,
-    )?.id;
-    expect(peranId).toBeTruthy();
-
-    await page.goto('/#/access/users');
-    await expect(
-      page.getByRole('heading', { name: 'Pengguna Admin', level: 1 }),
-    ).toBeVisible({ timeout: 20000 });
-    await page.getByRole('button', { name: 'Tambah Pengguna' }).first().click();
-    await page.locator('input[type="email"]').fill(emailUser);
-    await page.locator('input[type="text"]').first().fill('E2E User UI');
-    await page.locator('input[type="password"]').fill('KuatUi2026!Xx9#');
-    await page.getByRole('button', { name: 'Simpan Pengguna' }).click();
-    await expect(page.getByText(emailUser).first()).toBeVisible({
-      timeout: 20000,
-    });
-    const daftarUser = await page.request.get('/api/admin/access/users');
-    const badanUser = await daftarUser.json();
-    userId = ((badanUser.items ?? []) as any[]).find(
-      (u) => u.email === emailUser,
-    )?.id;
-    expect(userId).toBeTruthy();
-
-    const grant = await page.request.post(
-      `/api/admin/access/users/${userId}/roles`,
-      { headers: H, data: { role_id: peranId } },
-    );
-    expect(grant.ok()).toBeTruthy();
-    const baca = await page.request.get(
-      `/api/admin/access/users/${userId}`,
-    );
-    expect(await baca.text()).toContain(namaPeran);
-    } finally {
-    if (userId && peranId) {
-      await page.request.delete(
-        `/api/admin/access/users/${userId}/roles/${peranId}`,
-        { headers: H },
+      await page.goto('/#/access/users');
+      await expect(
+        page.getByRole('heading', { name: 'Pengguna Admin', level: 1 }),
+      ).toBeVisible({ timeout: 20000 });
+      await page.getByRole('button', { name: 'Tambah Pengguna' }).first().click();
+      await page.locator('input[type="email"]').fill(emailUser);
+      await page.locator('input[type="text"]').first().fill('E2E User UI');
+      await page.locator('input[type="password"]').fill('KuatUi2026!Xx9#');
+      await page.getByRole('button', { name: 'Simpan Pengguna' }).click();
+      await expect(page.getByText(emailUser).first()).toBeVisible({
+        timeout: 20000,
+      });
+      const daftarUser = await page.request.get('/api/admin/access/users');
+      const badanUser = await daftarUser.json();
+      userId = ((badanUser.items ?? []) as any[]).find(
+        (u) => u.email === emailUser,
+      )?.id;
+      expect(userId).toBeTruthy();
+      // Arsitektur single-admin: user baru langsung terbaca sebagai admin
+      // penuh (tidak ada lagi peran/izin terpisah sejak migrasi 0010).
+      const baca = await page.request.get(
+        `/api/admin/access/users/${userId}`,
       );
-    }
-    if (userId) {
-      await page.request.delete(`/api/admin/access/users/${userId}`, {
-        headers: H,
-      });
-    }
-    if (peranId) {
-      await page.request.delete(`/api/admin/access/roles/${peranId}`, {
-        headers: H,
-      });
-    }
+      expect(baca.ok()).toBeTruthy();
+    } finally {
+      if (userId) {
+        await page.request.delete(`/api/admin/access/users/${userId}`, {
+          headers: H,
+        });
+      }
     }
     const sesudahUser = await page.request.get('/api/admin/access/users');
     expect(await sesudahUser.text()).not.toContain(emailUser);
-    const sesudahPeran = await page.request.get('/api/admin/access/roles');
-    expect(await sesudahPeran.text()).not.toContain(namaPeran);
   });
 });
 
@@ -245,9 +209,13 @@ test('routing rule + rate limit via API: buat, baca, hapus', async ({
   expect(await sesudah.text()).not.toContain(namaRule);
 });
 
-test('Viewer ditolak tulis: bukti guard permission bekerja', async ({
+test('pengguna kedua adalah admin penuh (arsitektur single-admin)', async ({
   request,
 }) => {
+  // RBAC lama dihapus (migrasi 0010): tidak ada lagi peran Viewer yang
+  // ditolak tulis. Test ini MENEGASKAN perilaku aktual: pengguna kedua
+  // yang terautentikasi BOLEH menulis, sama seperti admin pertama, lalu
+  // membersihkan datanya sendiri.
   const email = process.env.E2E_EMAIL || '';
   const password = process.env.E2E_PASSWORD || '';
   test.skip(!email || !password, 'E2E_EMAIL/E2E_PASSWORD belum diset');
@@ -261,9 +229,17 @@ test('Viewer ditolak tulis: bukti guard permission bekerja', async ({
     Origin: process.env.BASE_URL || 'http://127.0.0.1:18080',
     'X-CSRF-Token': tokenV,
   };
-  const coba = await request.post('/api/admin/gateway/routing-rules', {
+  const namaRule = 'e2e-single-admin-' + Date.now();
+  const buat = await request.post('/api/admin/gateway/routing-rules', {
     headers: HV,
-    data: { name: 'e2e-coba-ditolak', strategy: 'priority' },
+    data: { name: namaRule, strategy: 'priority', priority: 1 },
   });
-  expect(coba.status()).toBe(403);
+  expect(buat.ok()).toBeTruthy();
+  const ruleId = (await buat.json()).id;
+  expect(ruleId).toBeTruthy();
+  await request.delete(`/api/admin/gateway/routing-rules/${ruleId}`, {
+    headers: HV,
+  });
+  const sesudah = await request.get('/api/admin/gateway/routing-rules');
+  expect(await sesudah.text()).not.toContain(namaRule);
 });

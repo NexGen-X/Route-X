@@ -73,10 +73,21 @@ func TryAdvisoryLock(ctx context.Context, pool *pgxpool.Pool, lockKey int64) (fu
 	}
 
 	unlock := func() {
-		defer conn.Release()
 		uCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_, _ = conn.Exec(uCtx, "select pg_advisory_unlock($1)", lockKey)
+		var released bool
+		err := conn.QueryRow(uCtx, "select pg_advisory_unlock($1)", lockKey).Scan(&released)
+		if err != nil || !released {
+			// Gagal melepas kunci (audit F5): koneksi TIDAK boleh kembali
+			// ke pool — advisory lock tingkat sesi akan bocor ke peminjam
+			// berikutnya dan semua job berkunci ini mati diam-diam.
+			// Hancurkan koneksinya; PostgreSQL melepas lock sesi saat
+			// koneksi putus.
+			hijacked := conn.Hijack()
+			_ = hijacked.Close(uCtx)
+			return
+		}
+		conn.Release()
 	}
 
 	return unlock, true, nil
@@ -108,6 +119,10 @@ type ScheduledJob struct {
 // ErrJobNotFound dikembalikan ketika nama job yang dipicu tidak terdaftar pada supervisor.
 var ErrJobNotFound = errors.New("worker: job tidak ditemukan")
 
+// ErrJobAlreadyRunning dikembalikan TriggerJob ketika job yang sama sedang
+// berjalan (terjadwal maupun manual) — pemicu tumpang tindih ditolak.
+var ErrJobAlreadyRunning = errors.New("worker: job sedang berjalan")
+
 // ErrSupervisorStopped menandakan job manual tidak dapat diterima karena tidak
 // ada lifecycle supervisor yang dapat membatalkan dan menunggunya.
 var ErrSupervisorStopped = errors.New("worker: supervisor belum berjalan")
@@ -128,6 +143,7 @@ type JobInfo struct {
 // jobRuntimeState menyimpan state eksekusi internal satu job berjadwal.
 type jobRuntimeState struct {
 	job          ScheduledJob
+	running      bool // penjaga konkurensi: satu job tidak boleh berjalan bersamaan dengan dirinya (audit F5)
 	lastRunAt    *time.Time
 	lastDuration time.Duration
 	lastStatus   string // "ok", "failed", "running", "idle"
@@ -260,6 +276,15 @@ func (s *Supervisor) TriggerJob(ctx context.Context, name string) error {
 		return ErrSupervisorStopped
 	}
 
+	// Tolak pemicu tumpang tindih (audit F5): tanpa penjaga ini job yang
+	// sama bisa berjalan bersamaan dengan putaran terjadwalnya — data race
+	// nyata pada state job (mis. WebhookWorker.lastRecovery tanpa kunci).
+	if target.running {
+		s.mu.Unlock()
+		return fmt.Errorf("%w: %s", ErrJobAlreadyRunning, name)
+	}
+	target.running = true
+
 	// Nilai context pemicu (request ID/logger) dipertahankan, sedangkan lifecycle
 	// eksekusi mengikuti supervisor agar Stop membatalkan dan menunggunya.
 	runCtx := mergeContextValues(s.runCtx, context.WithoutCancel(ctx))
@@ -267,7 +292,7 @@ func (s *Supervisor) TriggerJob(ctx context.Context, name string) error {
 	s.mu.Unlock()
 	go func() {
 		defer s.wg.Done()
-		s.executeOnce(runCtx, target)
+		s.executeClaimed(runCtx, target)
 	}()
 	return nil
 }
@@ -369,8 +394,27 @@ func (s *Supervisor) runLoop(ctx context.Context, st *jobRuntimeState) {
 	}
 }
 
-// executeOnce mengeksekusi satu kali run job dengan perlindungan panic, isolasi error, dan observabilitas.
+// executeOnce mengklaim hak jalan lalu mengeksekusi satu putaran job.
+// Bila putaran sebelumnya (terjadwal atau manual) masih berjalan, putaran
+// ini DILEWATI — satu job tidak pernah berjalan bersamaan dengan dirinya
+// (audit F5; melindungi state internal job yang tidak aman-konkuren).
 func (s *Supervisor) executeOnce(ctx context.Context, st *jobRuntimeState) {
+	s.mu.Lock()
+	if st.running {
+		s.mu.Unlock()
+		s.logger.DebugContext(ctx, "eksekusi job dilewati karena putaran sebelumnya masih berjalan",
+			"worker", st.job.Job.Name())
+		return
+	}
+	st.running = true
+	s.mu.Unlock()
+	s.executeClaimed(ctx, st)
+}
+
+// executeClaimed mengeksekusi job yang klaim `running`-nya SUDAH dipegang
+// pemanggil (executeOnce atau TriggerJob), dengan perlindungan panic,
+// isolasi error, dan observabilitas.
+func (s *Supervisor) executeClaimed(ctx context.Context, st *jobRuntimeState) {
 	name := st.job.Job.Name()
 	start := time.Now()
 	outcome := OutcomeSuccess
@@ -418,6 +462,7 @@ func (s *Supervisor) executeOnce(ctx context.Context, st *jobRuntimeState) {
 		st.lastDuration = duration
 		st.lastStatus = lastStat
 		st.lastError = errMsg
+		st.running = false
 		s.mu.Unlock()
 
 		// Laporkan metrik jika tersedia

@@ -156,40 +156,49 @@ func (h *Handlers) exportDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 	}
 	baseArgs = append(baseArgs, dbName)
 
+	// pg_dump dijalankan ke BUFFER terlebih dahulu (audit F5): versi lama
+	// mengalirkan stdout langsung ke ResponseWriter, sehingga kegagalan di
+	// tengah menghasilkan unduhan rusak berstatus 200 (dan pada cabang
+	// gzip, stream tanpa trailer CRC). Kini header hanya dikirim setelah
+	// dump terbukti utuh; kegagalan = 500 yang jujur.
+	var dump bytes.Buffer
+	{
+		cmd := exec.CommandContext(ctx, "pg_dump", baseArgs...)
+		cmd.Env = env
+		cmd.Stdout = &dump
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			h.logger.ErrorContext(ctx, "gagal mengekspor database", slog.String("error", stderr.String()), slog.Any("err", err))
+			httpx.InternalError(w, r)
+			return
+		}
+	}
+
 	if format == "sql" {
 		fileName := fmt.Sprintf("routex_backup_%s.sql", timestamp)
 		w.Header().Set("Content-Type", "application/sql; charset=utf-8")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
 		w.Header().Set("Cache-Control", "no-store")
-
-		cmd := exec.CommandContext(ctx, "pg_dump", baseArgs...)
-		cmd.Env = env
-		cmd.Stdout = w
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err != nil {
-			h.logger.ErrorContext(ctx, "gagal mengekspor database sql", slog.String("error", stderr.String()), slog.Any("err", err))
+		_, _ = w.Write(dump.Bytes())
+	} else {
+		var terkompres bytes.Buffer
+		gw := gzip.NewWriter(&terkompres)
+		if _, err := gw.Write(dump.Bytes()); err != nil {
+			h.logger.ErrorContext(ctx, "gagal mengompres ekspor database", slog.Any("err", err))
+			httpx.InternalError(w, r)
 			return
 		}
-	} else {
+		if err := gw.Close(); err != nil {
+			h.logger.ErrorContext(ctx, "gagal menutup kompresor ekspor database", slog.Any("err", err))
+			httpx.InternalError(w, r)
+			return
+		}
 		fileName := fmt.Sprintf("routex_backup_%s.sql.gz", timestamp)
 		w.Header().Set("Content-Type", "application/gzip")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fileName))
 		w.Header().Set("Cache-Control", "no-store")
-
-		cmd := exec.CommandContext(ctx, "pg_dump", baseArgs...)
-		cmd.Env = env
-		gw := gzip.NewWriter(w)
-		cmd.Stdout = gw
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err != nil {
-			h.logger.ErrorContext(ctx, "gagal mengekspor database sql.gz", slog.String("error", stderr.String()), slog.Any("err", err))
-			return
-		}
-		_ = gw.Close()
+		_, _ = w.Write(terkompres.Bytes())
 	}
 
 	h.writeAudit(ctx, r, "export", "database_backup", "all", map[string]any{"format": format})

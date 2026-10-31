@@ -37,6 +37,13 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	providerID := chi.URLParam(r, "id")
 
+	// Penjaga nil (audit F5): dependensi opsional yang tidak terpasang
+	// harus menjadi 400 yang bersih, bukan panic per-request.
+	if h.oauthClient == nil {
+		httpx.BadRequest(w, r, "oauth_unavailable", "Klien OAuth tidak tersedia pada instalasi ini")
+		return
+	}
+
 	p, err := h.authorizeProviderAccess(ctx, providerID)
 	if err != nil {
 		mapRepoError(w, r, err, "provider")
@@ -82,15 +89,19 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 	label := "oauth:" + email
 	expiresAt := time.Now().Add(time.Duration(tokenRes.ExpiresIn) * time.Second)
 
-	// Periksa apakah kredensial dengan label yang sama sudah ada pada provider ini
+	// Periksa apakah kredensial dengan label yang sama sudah ada pada provider ini.
+	// Error List diteruskan (audit F5): versi lama memperlakukan kegagalan
+	// baca sebagai "belum ada kredensial" dan membuat duplikat.
 	var credID string
 	existingCreds, err := h.credentialRepo.List(ctx, providerID)
-	if err == nil {
-		for _, c := range existingCreds {
-			if c.Label == label {
-				credID = c.ID
-				break
-			}
+	if err != nil {
+		httpx.BadRequest(w, r, "credential_list_failed", "Gagal memeriksa kredensial provider: "+err.Error())
+		return
+	}
+	for _, c := range existingCreds {
+		if c.Label == label {
+			credID = c.ID
+			break
 		}
 	}
 
@@ -101,7 +112,13 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if poolID != nil {
-			_ = h.credentialRepo.SetCredentialEgressPool(ctx, credID, poolID)
+			// Pool yang diminta pengguna WAJIB terpasang atau handler gagal
+			// (audit F5): menelannya berarti trafik OAuth keluar lewat
+			// jalur lain dari yang dikonfigurasi, tanpa sinyal apa pun.
+			if err := h.credentialRepo.SetCredentialEgressPool(ctx, credID, poolID); err != nil {
+				httpx.BadRequest(w, r, "credential_egress_failed", "Gagal memasang egress pool ke kredensial: "+err.Error())
+				return
+			}
 		}
 	} else {
 		// Buat kredensial baru di provider_credentials
@@ -133,14 +150,19 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Otomatis sinkronkan kind & base_url ke endpoint resmi Gemini
+	// Otomatis sinkronkan kind & base_url ke endpoint resmi Gemini.
+	// Kegagalan dicatat keras (audit F5): sesi sudah tersimpan, jadi handler
+	// tetap "connected", tetapi operator harus tahu sinkronisasi provider
+	// tidak terjadi — bukan ditelan senyap.
 	if p.Kind != "google" || !strings.Contains(p.BaseURL, "googleapis.com") {
 		googleBaseURL := "https://generativelanguage.googleapis.com"
 		googleKind := "google"
-		_, _ = h.providerRepo.Update(ctx, providerID, upstream.UpdateProviderParams{
+		if _, err := h.providerRepo.Update(ctx, providerID, upstream.UpdateProviderParams{
 			Kind:    &googleKind,
 			BaseURL: &googleBaseURL,
-		})
+		}); err != nil {
+			h.logger.ErrorContext(ctx, "gagal menyinkronkan kind/base_url provider google setelah oauth", "provider_id", providerID, "error", err)
+		}
 	}
 
 	h.writeAudit(ctx, r, "connect_oauth", "provider", providerID, map[string]any{
@@ -182,6 +204,11 @@ func (h *Handlers) listOAuthSessions(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	providerID := chi.URLParam(r, "id")
+
+	if h.oauthClient == nil {
+		httpx.BadRequest(w, r, "oauth_unavailable", "Klien OAuth tidak tersedia pada instalasi ini")
+		return
+	}
 
 	if _, err := h.authorizeProviderAccess(ctx, providerID); err != nil {
 		mapRepoError(w, r, err, "provider")

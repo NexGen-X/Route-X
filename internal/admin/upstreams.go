@@ -755,11 +755,20 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	slices.Sort(rawIDs)
 	uniqueIDs := slices.Compact(rawIDs)
 
-	// 6. Simpan model dan pemetaan ke database secara idempoten
+	// 6. Simpan model dan pemetaan ke database secara idempoten.
+	// Kegagalan per-model DIKUMPULKAN dan dicatat (audit F5): versi lama
+	// menelan semuanya lalu menjawab "Berhasil menyinkronkan 0 model"
+	// dengan status 200 walau yang gagal adalah penyimpanan lokal.
 	var syncedModels []string
+	var gagal []string
 	for _, mid := range uniqueIDs {
 		// Pastikan model kanonik ada
 		m, err := h.modelRepo.GetByModelID(ctx, mid)
+		if err != nil && !errors.Is(err, repo.ErrNotFound) {
+			h.logger.WarnContext(ctx, "sinkronisasi model: gagal membaca model", "model_id", mid, "error", err)
+			gagal = append(gagal, mid)
+			continue
+		}
 		if errors.Is(err, repo.ErrNotFound) {
 			m, err = h.modelRepo.Create(ctx, upstream.CreateModelParams{
 				ModelID:      mid,
@@ -772,6 +781,8 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if m == nil {
+			h.logger.WarnContext(ctx, "sinkronisasi model: model tidak tersimpan", "model_id", mid)
+			gagal = append(gagal, mid)
 			continue
 		}
 
@@ -783,18 +794,32 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		})
 		if attachErr == nil || errors.Is(attachErr, repo.ErrConflict) {
 			syncedModels = append(syncedModels, mid)
+		} else {
+			h.logger.WarnContext(ctx, "sinkronisasi model: gagal memasang pemetaan provider", "model_id", mid, "error", attachErr)
+			gagal = append(gagal, mid)
 		}
+	}
+
+	if len(syncedModels) == 0 && len(gagal) > 0 {
+		h.logger.ErrorContext(ctx, "sinkronisasi model gagal total", "provider_id", id, "gagal", len(gagal))
+		httpx.InternalError(w, r)
+		return
 	}
 
 	h.writeAudit(ctx, r, "sync_models", "provider", id, map[string]any{
 		"provider_name": p.Name,
 		"models_count":  len(syncedModels),
+		"failed_count":  len(gagal),
 	})
 
+	pesan := fmt.Sprintf("Berhasil menyinkronkan %d model dari provider %s", len(syncedModels), p.DisplayName)
+	if len(gagal) > 0 {
+		pesan += fmt.Sprintf("; %d model gagal disimpan (lihat log server)", len(gagal))
+	}
 	_ = h.respond(w, r, http.StatusOK, SyncModelsResponseDTO{
 		Count:   len(syncedModels),
 		Models:  syncedModels,
-		Message: fmt.Sprintf("Berhasil menyinkronkan %d model dari provider %s", len(syncedModels), p.DisplayName),
+		Message: pesan,
 	})
 }
 
@@ -1239,19 +1264,27 @@ func (h *Handlers) listModels(w http.ResponseWriter, r *http.Request) {
 			WHERE pm.model_id = ANY($1) AND pm.enabled = true
 			ORDER BY p.name ASC
 		`, modelIDs)
-		if qErr == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var mid, pid, pname, pdisp, upstreamName string
-				if err := rows.Scan(&mid, &pid, &pname, &pdisp, &upstreamName); err == nil {
-					provMap[mid] = append(provMap[mid], ModelProviderSummaryDTO{
-						ProviderID:        pid,
-						ProviderName:      pname,
-						DisplayName:       pdisp,
-						UpstreamModelName: upstreamName,
-					})
-				}
+		if qErr != nil {
+			mapRepoError(w, r, qErr, "provider model")
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var mid, pid, pname, pdisp, upstreamName string
+			if err := rows.Scan(&mid, &pid, &pname, &pdisp, &upstreamName); err != nil {
+				mapRepoError(w, r, err, "provider model")
+				return
 			}
+			provMap[mid] = append(provMap[mid], ModelProviderSummaryDTO{
+				ProviderID:        pid,
+				ProviderName:      pname,
+				DisplayName:       pdisp,
+				UpstreamModelName: upstreamName,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			mapRepoError(w, r, err, "provider model")
+			return
 		}
 	}
 
@@ -1280,8 +1313,19 @@ func (h *Handlers) getModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	aliases, _ := h.modelRepo.ListAliases(ctx, id)
-	mappings, _ := h.modelRepo.ListProviderModels(ctx, upstream.ProviderModelFilter{ModelID: id})
+	// Error sub-query diteruskan (audit F5): versi lama menelannya sehingga
+	// kegagalan DB tampil sebagai "model ini tidak punya alias/mapping" —
+	// data yang salah secara faktual, bukan daftar kosong yang sah.
+	aliases, err := h.modelRepo.ListAliases(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "alias model")
+		return
+	}
+	mappings, err := h.modelRepo.ListProviderModels(ctx, upstream.ProviderModelFilter{ModelID: id})
+	if err != nil {
+		mapRepoError(w, r, err, "pemetaan model")
+		return
+	}
 
 	aliasesDTO := make([]ModelAliasDTO, 0, len(aliases))
 	for _, a := range aliases {
@@ -1302,19 +1346,27 @@ func (h *Handlers) getModel(w http.ResponseWriter, r *http.Request) {
 			WHERE pm.model_id = $1 AND pm.enabled = true
 			ORDER BY p.name ASC
 		`, m.ID)
-		if qErr == nil {
-			defer rows.Close()
-			for rows.Next() {
-				var mid, pid, pname, pdisp, upstreamName string
-				if err := rows.Scan(&mid, &pid, &pname, &pdisp, &upstreamName); err == nil {
-					modelDTO.Providers = append(modelDTO.Providers, ModelProviderSummaryDTO{
-						ProviderID:        pid,
-						ProviderName:      pname,
-						DisplayName:       pdisp,
-						UpstreamModelName: upstreamName,
-					})
-				}
+		if qErr != nil {
+			mapRepoError(w, r, qErr, "provider model")
+			return
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var mid, pid, pname, pdisp, upstreamName string
+			if err := rows.Scan(&mid, &pid, &pname, &pdisp, &upstreamName); err != nil {
+				mapRepoError(w, r, err, "provider model")
+				return
 			}
+			modelDTO.Providers = append(modelDTO.Providers, ModelProviderSummaryDTO{
+				ProviderID:        pid,
+				ProviderName:      pname,
+				DisplayName:       pdisp,
+				UpstreamModelName: upstreamName,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			mapRepoError(w, r, err, "provider model")
+			return
 		}
 	}
 

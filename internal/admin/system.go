@@ -353,8 +353,17 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req CacheSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", "Body permintaan tidak valid")
+	// Pakai decodeJSON bersama (audit F5): handler ini sebelumnya satu-satunya
+	// yang men-decode tanpa batas 1 MB + DisallowUnknownFields.
+	if err := decodeJSON(r, &req); err != nil {
+		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+	// Validasi rentang TTL sebelum konversi (audit F5): nilai negatif atau
+	// raksasa meluap int64 saat dikali time.Second dan tersimpan sebagai
+	// durasi acak tanpa satu pun penolakan.
+	if req.TTLSeconds < 0 || req.TTLSeconds > 86400 {
+		httpx.BadRequest(w, r, "invalid_ttl", "TTLSeconds harus dalam rentang 0–86400 detik")
 		return
 	}
 	if req.Enabled {

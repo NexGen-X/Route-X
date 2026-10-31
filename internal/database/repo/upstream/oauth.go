@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/oauth"
 	"github.com/NexGen-X/Route-X/internal/security"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // OAuthSessionMeta adalah metadata sesi otorisasi OAuth upstream untuk pemantauan UI.
@@ -171,14 +173,20 @@ func (r *OAuthRepo) UpsertSession(ctx context.Context, p UpsertOAuthSessionParam
 		return nil, repo.Err(op, err)
 	}
 
-	// Jika on conflict update terjadi dan id tidak sama, re-encrypt dengan actualID agar AAD cocok
+	// Jika on conflict update terjadi dan id tidak sama, re-encrypt dengan actualID agar AAD cocok.
+	// Error di langkah ini TIDAK boleh ditelan (audit F5): ciphertext yang
+	// terikat AAD ke ID sementara yang salah membuat refresh token sesi
+	// PERMANEN tidak bisa didekripsi, sementara pemanggil melihat sukses.
 	if actualID != id {
 		recipher, err := r.cipher.EncryptSecret(p.RefreshToken, security.OAuthSessionAAD(actualID))
-		if err == nil {
-			_, _ = r.q.Exec(ctx, `
-				update provider_oauth_sessions
-				set refresh_token_encrypted = $2, encryption_key_id = $3
-				where id = $1`, actualID, recipher, r.cipher.KeyID())
+		if err != nil {
+			return nil, repo.Err(op, err)
+		}
+		if _, err := r.q.Exec(ctx, `
+			update provider_oauth_sessions
+			set refresh_token_encrypted = $2, encryption_key_id = $3
+			where id = $1`, actualID, recipher, r.cipher.KeyID()); err != nil {
+			return nil, repo.Err(op, err)
 		}
 	}
 
@@ -270,7 +278,13 @@ func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold tim
 
 		secret, err := r.cipher.DecryptSecret(ciphertext, security.OAuthSessionAAD(id))
 		if err != nil {
-			// Jika gagal dekripsi (misal rotasi kunci belum tuntas), catat dan lanjutkan ke sesi lain
+			// Gagal dekripsi (mis. rotasi kunci belum tuntas): CATAT dan
+			// lanjutkan ke sesi lain. Sesi ini tidak akan pernah direfresh
+			// sampai kunci/ciphertext-nya beres, jadi log ini satu-satunya
+			// sinyal operator (audit F5: sebelumnya dilewati diam-diam
+			// padahal komentar mengaku mencatat).
+			slog.Warn("sesi oauth dilewati: refresh token gagal didekripsi",
+				"session_id", id, "provider_id", provID, "error", err)
 			continue
 		}
 
@@ -346,8 +360,17 @@ func (r *OAuthRepo) UpdateRefreshStatus(ctx context.Context, sessionID string, e
 }
 
 // SetEnabled menyalakan atau mematikan sesi OAuth dan kredensial terkait secara bersamaan.
+//
+// Kedua tabel ditulis dalam SATU transaksi (audit F5): versi lama menulis
+// berurutan tanpa transaksi sehingga kegagalan di tengah meninggalkan
+// sesi dan kredensial dengan status berbeda.
 func (r *OAuthRepo) SetEnabled(ctx context.Context, sessionID string, enabled bool) error {
 	const op = "mengubah status sesi oauth"
+	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
+		return repo.InTx(ctx, pool, func(q repo.Querier) error {
+			return r.WithQuerier(q).SetEnabled(ctx, sessionID, enabled)
+		})
+	}
 	if !idOK(sessionID) {
 		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
@@ -371,8 +394,18 @@ func (r *OAuthRepo) SetEnabled(ctx context.Context, sessionID string, enabled bo
 }
 
 // Delete menghapus sesi OAuth dan kredensial terkait dari database.
+//
+// Satu transaksi + error penghapusan kredensial diteruskan (audit F5):
+// versi lama menelan error delete kredensial sehingga kredensial yatim
+// tetap enabled dan bisa melayani trafik setelah operator "menghapus"
+// akun OAuth.
 func (r *OAuthRepo) Delete(ctx context.Context, sessionID string) error {
 	const op = "menghapus sesi oauth"
+	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
+		return repo.InTx(ctx, pool, func(q repo.Querier) error {
+			return r.WithQuerier(q).Delete(ctx, sessionID)
+		})
+	}
 	if !idOK(sessionID) {
 		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
@@ -386,7 +419,9 @@ func (r *OAuthRepo) Delete(ctx context.Context, sessionID string) error {
 		return repo.Err(op, err)
 	}
 
-	// Hapus kredensial yang terikat
-	_, _ = r.q.Exec(ctx, `delete from provider_credentials where id = $1`, credID)
+	// Hapus kredensial yang terikat; error-nya diteruskan, bukan ditelan.
+	if _, err := r.q.Exec(ctx, `delete from provider_credentials where id = $1`, credID); err != nil {
+		return repo.Err(op, err)
+	}
 	return nil
 }

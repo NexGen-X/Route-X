@@ -10,6 +10,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
+	"github.com/NexGen-X/Route-X/internal/httpx"
 )
 
 func (h *Handlers) observabilityRoutes(r chi.Router) {
@@ -181,6 +182,11 @@ func (h *Handlers) getHealthSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) getLiveMetrics(w http.ResponseWriter, r *http.Request) {
+	// Penjaga nil (audit F5): samakan dengan getDiagnostics/getSystemOverview.
+	if h.pool == nil {
+		httpx.InternalError(w, r)
+		return
+	}
 	stat := h.pool.Stat()
 
 	resp := LiveMetricsResponse{

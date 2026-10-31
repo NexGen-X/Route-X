@@ -292,7 +292,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
     });
 
     // Switch metric ke Token
-    const tokenMetricBtn = screen.getByRole('button', { name: 'Jumlah token' });
+    const tokenMetricBtn = screen.getByRole('button', { name: 'Token' });
     fireEvent.click(tokenMetricBtn);
 
     await waitFor(() => {

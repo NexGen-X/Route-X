@@ -101,6 +101,13 @@ type Error struct {
 	UpstreamCode string
 	// RetryAfter berasal dari header Retry-After bila upstream mengirimkannya.
 	RetryAfter time.Duration
+	// Local menandai kegagalan yang diputuskan gateway SENDIRI sebelum upstream
+	// dihubungi (batas laju lokal, batas konkurensi lokal, penolakan kebijakan).
+	// Kegagalan lokal BUKAN bukti kesehatan provider: mesin eksekusi tidak
+	// boleh mencatatnya ke pemutus arus, karena provider yang sehat akan
+	// terputus arusnya oleh keputusan gateway sendiri (audit F4).
+	Local bool
+
 	// StreamedBytes > 0 berarti sebagian respons sudah terkirim ke klien. Ini mengubah
 	// segalanya: mengulang atau mengalihkan request akan menghasilkan aliran kedua yang
 	// tersambung di tengah aliran pertama, dan klien menerima jawaban yang tidak

@@ -972,9 +972,12 @@ func (h *Handlers) cobaTierFallbackSekali(ctx context.Context, tier ComboTier, p
 	tPlan := PlanFromRule(pr.decision.Rule, tModel.ModelID, cands)
 
 	h.logger.InfoContext(ctx, "menjalankan fallback combo routing tier", "tier", tier.Tier, "tier_model", tModel.ModelID)
-	out := Execute(ctx, h.exec, tPlan,
+	out := Execute(h.guard.DenganMemoBatas(ctx), h.exec, tPlan,
 		func(c context.Context, cand *upstream.RouteCandidate) (*providers.ChatResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(c, cand.ProviderID, cand.ProviderName); perr != nil {
+				return nil, perr
+			}
+			if perr := h.guard.PeriksaKolomProvider(c, cand); perr != nil {
 				return nil, perr
 			}
 			p, err := h.adapter(c, cand)
@@ -1011,9 +1014,12 @@ func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier,
 	tPlan := PlanFromRule(pr.decision.Rule, tModel.ModelID, cands)
 
 	h.logger.InfoContext(ctx, "menjalankan fallback streaming combo routing tier", "tier", tier.Tier, "tier_model", tModel.ModelID)
-	out := ExecuteStream(ctx, h.exec, tPlan,
+	out := ExecuteStream(h.guard.DenganMemoBatas(ctx), h.exec, tPlan,
 		func(c context.Context, cand *upstream.RouteCandidate) (providers.Stream, error) {
 			if perr := h.guard.PeriksaBatasProvider(c, cand.ProviderID, cand.ProviderName); perr != nil {
+				return nil, perr
+			}
+			if perr := h.guard.PeriksaKolomProvider(c, cand); perr != nil {
 				return nil, perr
 			}
 			p, err := h.adapter(c, cand)
@@ -1100,9 +1106,12 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 		}
 	}
 
-	out := Execute(r.Context(), h.exec, pr.plan,
+	out := Execute(h.guard.DenganMemoBatas(r.Context()), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.ChatResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
+				return nil, perr
+			}
+			if perr := h.guard.PeriksaKolomProvider(ctx, c); perr != nil {
 				return nil, perr
 			}
 			p, err := h.adapter(ctx, c)
@@ -1155,6 +1164,7 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 	// tetap harus memakan kuota. Kalau dibalik, klien bisa menghabiskan token tanpa batas
 	// dengan mengirim permintaan yang jawabannya selalu tertahan penyaring.
 	h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(out.Value.Usage.TotalTokens))
+	h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(out.Value.Usage.TotalTokens))
 
 	if rj := h.guard.SaringJawaban(r.Context(), teksJawaban(out.Value),
 		pr.model.ID, out.Candidate.ProviderID); rj != nil {
@@ -1324,9 +1334,12 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		}
 	}
 
-	out := ExecuteStream(r.Context(), h.exec, pr.plan,
+	out := ExecuteStream(h.guard.DenganMemoBatas(r.Context()), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
+				return nil, perr
+			}
+			if perr := h.guard.PeriksaKolomProvider(ctx, c); perr != nil {
 				return nil, perr
 			}
 			p, err := h.adapter(ctx, c)
@@ -1393,6 +1406,10 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		terkirim     int64
 		usage        providers.Usage
 		streamChunks []string
+		// totalChunk/tampungJenuh membatasi penampungan chunk untuk cache
+		// (audit F4); lihat titik append di bawah.
+		totalChunk   int
+		tampungJenuh bool
 	)
 	// Pencatatan token dijalankan lewat defer, bukan hanya di jalur selesai-normal: aliran
 	// bisa berakhir karena klien menutup koneksi atau upstream terputus di tengah, dan token
@@ -1413,6 +1430,7 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 			usage.TotalTokens = usage.InputTokens + lantai
 		}
 		h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(usage.TotalTokens))
+		h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(usage.TotalTokens))
 		// Token juga diserahkan ke pencatat lewat defer yang sama, dan alasannya sama:
 		// aliran bisa berakhir karena klien menutup koneksi atau upstream terputus di
 		// tengah, dan token yang sudah dihasilkan sampai titik itu tetap ditagihkan
@@ -1451,7 +1469,21 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 			continue
 		}
 
-		streamChunks = append(streamChunks, string(ev.Raw))
+		// Chunk hanya ditampung bila response cache AKTIF untuk request
+		// ini (audit F4): satu-satunya konsumen streamChunks adalah
+		// pengisian cache di akhir aliran, jadi menampungnya selalu
+		// berarti seluruh respons streaming diduplikasi di memori tanpa
+		// batas — termasuk saat cache mati (bawaan sejak audit F3).
+		// Batas total 2 MB: aliran yang melewatinya tidak di-cache.
+		if !tampungJenuh && cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() {
+			if totalChunk+len(ev.Raw) <= 2<<20 {
+				streamChunks = append(streamChunks, string(ev.Raw))
+				totalChunk += len(ev.Raw)
+			} else {
+				tampungJenuh = true
+				streamChunks = nil
+			}
+		}
 
 		n, err := tulisPeristiwa(w, ev.Raw)
 		terkirim += n
@@ -1650,9 +1682,12 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 	}
 	plan := PlanFromRule(keputusan.Rule, model.ModelID, keputusan.Candidates)
 
-	out := Execute(r.Context(), h.exec, plan,
+	out := Execute(h.guard.DenganMemoBatas(r.Context()), h.exec, plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.EmbeddingsResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
+				return nil, perr
+			}
+			if perr := h.guard.PeriksaKolomProvider(ctx, c); perr != nil {
 				return nil, perr
 			}
 			prov, err := h.adapter(ctx, c)
@@ -1672,6 +1707,7 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 	}
 	j.pasangPemakaian(out.Value.Usage)
 	h.guard.CatatToken(r.Context(), p, targets, int64(out.Value.Usage.TotalTokens))
+	h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(out.Value.Usage.TotalTokens))
 	if len(out.Value.Raw) == 0 {
 		h.logger.ErrorContext(r.Context(), "adapter embedding mengembalikan respons tanpa body mentah",
 			"provider", namaProvider(out.Candidate))

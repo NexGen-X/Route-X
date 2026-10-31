@@ -118,10 +118,10 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
 
         <div className="mt-2.5">
           <div className="text-xl sm:text-2xl font-semibold text-text-primary font-mono tabular-nums tracking-tight">
-            {summary?.p95_latency_ms ?? 0} ms
+            {Math.round(summary?.p95_latency_ms ?? 0)} ms
           </div>
           <div className="text-[11px] text-text-muted mt-1 font-mono tabular-nums truncate">
-            Rata-rata: {summary?.avg_latency_ms ?? 0} ms
+            Rata-rata: {Math.round(summary?.avg_latency_ms ?? 0)} ms
           </div>
         </div>
 

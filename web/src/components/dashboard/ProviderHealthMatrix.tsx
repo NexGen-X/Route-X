@@ -45,7 +45,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
-          <Server className="w-4 h-4 text-zinc-400 shrink-0" aria-hidden="true" />
+          <Server className="w-4 h-4 text-text-secondary shrink-0" aria-hidden="true" />
           <h3 className="text-sm font-medium text-white tracking-tight truncate">
             Status Kesehatan Upstream Providers
           </h3>
@@ -55,7 +55,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
           size="sm"
           onClick={() => onNavigate('/upstreams/providers')}
           aria-label="Buka halaman kelola provider"
-          className="text-xs text-zinc-400 hover:text-white"
+          className="text-xs text-text-secondary hover:text-white"
         >
           Kelola &rarr;
         </Button>
@@ -63,12 +63,12 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {providers.length === 0 ? (
-          <div className="col-span-full py-8 text-center text-xs text-zinc-500 bg-zinc-900/40 border border-zinc-800/80 rounded-lg space-y-2">
+          <div className="col-span-full py-8 text-center text-xs text-text-muted bg-bg-surface-1/40 border border-border/80 rounded-lg space-y-2">
             <p>Belum ada provider upstream yang terdaftar.</p>
             <button
               type="button"
               onClick={() => onNavigate('/upstreams/providers')}
-              className="text-zinc-300 hover:text-white hover:underline font-medium cursor-pointer inline-flex items-center gap-1"
+              className="text-text-secondary hover:text-white hover:underline font-medium cursor-pointer inline-flex items-center gap-1"
             >
               <span>Tambahkan provider sekarang</span>
               <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
@@ -91,11 +91,11 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
             return (
               <div
                 key={p.id}
-                className="bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-3.5 hover:border-zinc-700/80 transition-colors flex flex-col justify-between shadow-sm group"
+                className="bg-bg-surface-1/40 border border-border/80 rounded-lg p-3.5 hover:border-border-hover/80 transition-colors flex flex-col justify-between shadow-sm group"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-md bg-zinc-800/80 border border-zinc-700/60 flex items-center justify-center text-zinc-200 shrink-0">
+                    <div className="w-8 h-8 rounded-md bg-bg-surface-2/80 border border-border-hover/60 flex items-center justify-center text-text-primary shrink-0">
                       <ProviderBrandIcon
                         providerIdOrKind={p.kind}
                         name={p.name}
@@ -103,10 +103,10 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
                       />
                     </div>
                     <div className="min-w-0">
-                      <h4 className="text-xs font-medium text-white group-hover:text-zinc-200 transition-colors truncate">
+                      <h4 className="text-xs font-medium text-white group-hover:text-white transition-colors truncate">
                         {p.display_name || p.name}
                       </h4>
-                      <p className="text-[11px] text-zinc-400 font-mono capitalize truncate mt-0.5">
+                      <p className="text-[11px] text-text-secondary font-mono capitalize truncate mt-0.5">
                         {p.kind}
                         {p.last_latency_ms ? ` · ${p.last_latency_ms} ms` : ''}
                       </p>
@@ -133,13 +133,13 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
                 </div>
 
                 {/* Footer kartu: Badge Protokol & Info Berat/Prioritas */}
-                <div className="mt-3 pt-2 border-t border-zinc-800/80 flex items-center justify-between gap-2 text-[10px] font-mono">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-zinc-800">
-                    <Cpu className="w-3 h-3 text-zinc-500" aria-hidden="true" />
+                <div className="mt-3 pt-2 border-t border-border/80 flex items-center justify-between gap-2 text-[10px] font-mono">
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-bg-surface-1 text-text-secondary border border-border">
+                    <Cpu className="w-3 h-3 text-text-muted" aria-hidden="true" />
                     <span>{protocolLabel}</span>
                   </span>
 
-                  <span className="text-zinc-500 truncate">
+                  <span className="text-text-muted truncate">
                     P{p.priority} · W{p.weight} · {p.timeout_ms ? `${p.timeout_ms / 1000}s` : '30s'}
                   </span>
                 </div>

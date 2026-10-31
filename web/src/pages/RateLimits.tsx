@@ -145,7 +145,7 @@ export const RateLimits: React.FC = () => {
       ) : limits.length === 0 && !loadError ? (
         <Card className="py-12 px-6 text-center">
           <div className="max-w-md mx-auto space-y-4">
-            <div className="w-10 h-10 rounded-lg bg-zinc-800 border border-zinc-700/60 text-zinc-300 flex items-center justify-center mx-auto">
+            <div className="w-10 h-10 rounded-lg bg-bg-surface-2 border border-border-hover/60 text-text-secondary flex items-center justify-center mx-auto">
               <Gauge className="w-5 h-5" aria-hidden="true" />
             </div>
             <div>

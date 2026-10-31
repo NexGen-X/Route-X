@@ -46,12 +46,12 @@ const STATUS_CONFIG: Record<
     label: 'Terganggu',
   },
   disabled: {
-    dot: 'bg-zinc-600',
+    dot: 'bg-text-muted',
     glow: '',
     label: 'Nonaktif',
   },
   neutral: {
-    dot: 'bg-zinc-400',
+    dot: 'bg-text-muted',
     glow: '',
     label: 'Netral',
   },

@@ -119,7 +119,7 @@ export const ComboBuilder: React.FC<ComboBuilderProps> = ({
               ) : value.strategy === 'lowest_cost' ? (
                 <Coins className="w-3.5 h-3.5 text-cyan-400" aria-hidden="true" />
               ) : (
-                <Layers className="w-3.5 h-3.5 text-blue-400" aria-hidden="true" />
+                <Layers className="w-3.5 h-3.5 text-accent-hover" aria-hidden="true" />
               )}
               <span>Visualisasi Distribusi &amp; Probabilitas</span>
             </span>
@@ -138,7 +138,7 @@ export const ComboBuilder: React.FC<ComboBuilderProps> = ({
                     style={{ width: `${100 / value.models.length}%` }}
                     className={`h-full ${
                       i === 0
-                        ? 'bg-blue-500'
+                        ? 'bg-accent'
                         : i === 1
                         ? 'bg-purple-500'
                         : i === 2
@@ -177,7 +177,7 @@ export const ComboBuilder: React.FC<ComboBuilderProps> = ({
                       {i > 0 && <ArrowRight className="w-3 h-3 text-text-muted shrink-0" aria-hidden="true" />}
                       <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium truncate max-w-[140px] ${
                         i === 0
-                          ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                          ? 'bg-accent/20 text-blue-300 border border-blue-500/40'
                           : 'bg-bg-surface text-text-secondary border border-border'
                       }`}>
                         T{i + 1}: {name}

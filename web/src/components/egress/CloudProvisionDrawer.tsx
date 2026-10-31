@@ -256,7 +256,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
               }`}
             >
               <span>🦕 Deno Deploy Relay</span>
-              <span className="text-[10px] font-normal px-1.5 py-0.2 bg-blue-500/20 text-blue-300 rounded">
+              <span className="text-[10px] font-normal px-1.5 py-0.2 bg-accent/20 text-blue-300 rounded">
                 Streaming V8
               </span>
             </button>
@@ -399,7 +399,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
           {/* Tab Content: Deno */}
           {activeTab === 'deno' && (
             <form onSubmit={handleProvisionDeno} className="space-y-4 text-xs">
-              <div className="p-3.5 bg-blue-500/10 border border-blue-500/20 rounded-nav text-blue-200/90 text-xs space-y-1.5">
+              <div className="p-3.5 bg-accent/10 border border-blue-500/20 rounded-nav text-blue-200/90 text-xs space-y-1.5">
                 <div className="font-semibold flex items-center gap-1.5 text-blue-300">
                   <span>🦕 Keunggulan Deno Deploy Relay:</span>
                 </div>

@@ -441,7 +441,7 @@ export const Providers: React.FC = () => {
       <PageHeader
         title={
           <span className="flex items-center gap-2">
-            <Server className="w-5 h-5 text-zinc-400" />
+            <Server className="w-5 h-5 text-text-secondary" />
             <span>Upstream Providers</span>
           </span>
         }
@@ -525,7 +525,7 @@ export const Providers: React.FC = () => {
               {healthyCount} / {providers.length}
             </div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-zinc-850 border border-zinc-800 flex items-center justify-center text-emerald-400">
+          <div className="w-8 h-8 rounded-lg bg-bg-surface-2 border border-border flex items-center justify-center text-emerald-400">
             <Activity className="w-4 h-4" />
           </div>
         </div>
@@ -535,7 +535,7 @@ export const Providers: React.FC = () => {
             <span className="text-xs font-medium text-text-muted">Pool Egress</span>
             <div className="text-lg font-bold text-white">{egressPools.length}</div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700/60 flex items-center justify-center text-zinc-300">
+          <div className="w-8 h-8 rounded-lg bg-bg-surface-2 border border-border-hover/60 flex items-center justify-center text-text-secondary">
             <Globe className="w-4 h-4" />
           </div>
         </div>

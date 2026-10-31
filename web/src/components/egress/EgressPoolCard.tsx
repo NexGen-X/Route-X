@@ -26,7 +26,7 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
         {/* Header Kartu */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-md flex items-center justify-center border border-zinc-700/60 bg-zinc-800 text-zinc-300">
+            <div className="w-9 h-9 rounded-md flex items-center justify-center border border-border-hover/60 bg-bg-surface-2 text-text-secondary">
               <Network className="w-4 h-4" />
             </div>
             <div>
@@ -59,7 +59,7 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-text-muted select-none">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-text-muted shrink-0" />
                 <span>Belum Diuji</span>
               </span>
             )}

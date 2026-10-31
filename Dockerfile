@@ -1,11 +1,11 @@
-FROM node:20-alpine AS frontend-builder
+FROM node:24-alpine AS frontend-builder
 WORKDIR /app
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.27-alpine AS backend-builder
+FROM golang:1.27.3-alpine3.24 AS backend-builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -15,7 +15,7 @@ COPY --from=frontend-builder /app/dist ./web/dist
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o ai-gateway ./cmd/ai-gateway
 
-FROM alpine:3.21
+FROM alpine:3.24
 WORKDIR /opt/routex
 RUN apk --no-cache add ca-certificates tzdata \
     && addgroup -g 10001 -S routex \

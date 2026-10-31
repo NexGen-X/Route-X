@@ -85,7 +85,7 @@ describe('Login Page — Futuristic AI Gateway Portal', () => {
     const passwordInput = screen.getByPlaceholderText('••••••••••••') as HTMLInputElement;
     expect(passwordInput.type).toBe('password');
 
-    const toggleBtn = screen.getByLabelText(/lihat kata sandi/i);
+    const toggleBtn = screen.getByLabelText(/lihat sandi/i);
     fireEvent.click(toggleBtn);
 
     expect(passwordInput.type).toBe('text');

@@ -210,7 +210,7 @@ export const UsersPage: React.FC = () => {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border bg-bg-surface-2/60">
-                  <th className="px-4 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide">
+                  <th className="px-2.5 py-3 sm:px-4 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide">
                     Pengguna
                   </th>
                   <th className="px-3 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide hidden sm:table-cell">
@@ -222,7 +222,7 @@ export const UsersPage: React.FC = () => {
                   <th className="px-3 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide hidden md:table-cell">
                     Keterangan
                   </th>
-                  <th className="px-4 py-3 text-right text-[11px] font-semibold text-text-muted uppercase tracking-wide">
+                  <th className="px-2.5 py-3 sm:px-4 text-right text-[11px] font-semibold text-text-muted uppercase tracking-wide">
                     Aksi
                   </th>
                 </tr>
@@ -231,14 +231,14 @@ export const UsersPage: React.FC = () => {
                 {users.map((u) => (
                   <tr key={u.id} className="hover:bg-bg-surface-2/40 transition-colors">
                     {/* Avatar + Nama + Email */}
-                    <td className="px-4 py-3">
+                    <td className="px-2.5 py-3 sm:px-4">
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-8 h-8 rounded-full bg-accent/15 border border-accent/20 flex items-center justify-center flex-shrink-0">
                           <span className="text-xs font-bold text-accent">
                             {(u.display_name || u.email).charAt(0).toUpperCase()}
                           </span>
                         </div>
-                        <div className="min-w-0 max-w-28 sm:max-w-none">
+                        <div className="min-w-0 max-w-20 sm:max-w-none">
                           <p className="font-semibold text-white truncate">{u.display_name}</p>
                           <p className="text-[11px] text-text-muted font-mono truncate">{u.email}</p>
                         </div>
@@ -251,7 +251,7 @@ export const UsersPage: React.FC = () => {
                       </Badge>
                     </td>
                     {/* Status */}
-                    <td className="px-3 py-3">
+                    <td className="px-2 py-3 sm:px-3">
                       <Badge variant={statusVariant(u.status)}>{u.status}</Badge>
                     </td>
                     {/* Keterangan */}
@@ -263,8 +263,8 @@ export const UsersPage: React.FC = () => {
                       )}
                     </td>
                     {/* Aksi */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1.5">
+                    <td className="px-2.5 py-3 sm:px-4">
+                      <div className="flex items-center justify-end gap-1 sm:gap-1.5">
                         <Button
                           variant="secondary"
                           size="sm"

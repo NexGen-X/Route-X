@@ -421,5 +421,6 @@ Pull requests and releases are validated through 7 gates (live status: the CI ba
 
 ## 📄 License & Attribution
 
-Copyright © 2026 **NexGen-X / Route-X Development Team**.  
-All rights reserved. Designed for reliable, high-performance, private, self-hosted AI gateway infrastructure.
+Route-X adalah perangkat lunak open source yang dirilis di bawah [Lisensi MIT](LICENSE).
+
+Copyright © 2026 **NexGen-X / Route-X Development Team**. Designed for reliable, high-performance, private, self-hosted AI gateway infrastructure.

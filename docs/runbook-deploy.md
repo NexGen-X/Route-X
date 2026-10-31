@@ -68,7 +68,7 @@ penyerang bisa menghabiskan jatah seluruh pengguna.
 
 ## 5. Setelah deploy pertama
 
-  1. Login ke konsol (admin@routex.local atau default onboarding admin@routex.local / RouteX#Initial2026!), ganti password saat diminta.
+  1. Login ke konsol dengan email/password dari `INITIAL_ADMIN_*` yang Anda setel saat deploy, ganti password saat diminta.
   2. Hapus INITIAL_ADMIN_PASSWORD dari /etc/routex/routex.env jika diisi, restart.
   3. Verifikasi: landing 200 + judul Route-X, /healthz ok, /readyz 200.
 

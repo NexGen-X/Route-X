@@ -58,6 +58,8 @@ if [ ! -f .env ]; then
     SEC_PEPPER="$(rand_b64 32)"
     SEC_PGPASS="$(rand_hex 16)"
     SEC_METRICS="$(rand_hex 32)"
+    SEC_ADMIN="$(rand_hex 12)"
+    SEC_ADMIN_PRINT="$SEC_ADMIN"
 
     # PUBLIC_URL wajib https saat APP_ENV=production (validasi config menolak
     # boot bila skemanya http). Host diambil dari DOMAIN operator atau alamat
@@ -70,6 +72,7 @@ if [ ! -f .env ]; then
     KEY_PG="POSTGRES_PASSWORD"
     KEY_METRICS="METRICS_TOKEN"
     KEY_PURL="PUBLIC_URL"
+    KEY_ADMIN="INITIAL_ADMIN_PASSWORD"
 
     sed -i "s|^${KEY_SESS}=.*|${KEY_SESS}=${SEC_SESSION}|" .env 2>/dev/null || true
     sed -i "s|^${KEY_ENC}=.*|${KEY_ENC}=${SEC_ENC}|" .env 2>/dev/null || true
@@ -77,7 +80,21 @@ if [ ! -f .env ]; then
     sed -i "s|^${KEY_PG}=.*|${KEY_PG}=${SEC_PGPASS}|" .env 2>/dev/null || true
     sed -i "s|^${KEY_METRICS}=.*|${KEY_METRICS}=${SEC_METRICS}|" .env 2>/dev/null || true
     sed -i "s|^${KEY_PURL}=.*|${KEY_PURL}=${SEC_PUBLIC_URL}|" .env 2>/dev/null || true
-    echo "   File .env berhasil dibuat dengan aman."
+    sed -i "s|^${KEY_ADMIN}=.*|${KEY_ADMIN}=${SEC_ADMIN}|" .env 2>/dev/null || true
+    chmod 600 .env
+    echo "   File .env berhasil dibuat dengan aman (izin 600)."
+fi
+
+# Instalasi lama yang .env-nya masih berisi placeholder publik bawaan
+# .env.example (awalan GANTI_, 32 karakter) diperbaiki otomatis: nilai itu
+# BUKAN password rahasia karena tercetak di repositori publik.
+KEY_ADMIN="INITIAL_ADMIN_PASSWORD"
+ADMIN_VAL="$(grep "^${KEY_ADMIN}=" .env 2>/dev/null | head -1 | cut -d= -f2-)"
+if [ "${ADMIN_VAL#GANTI_}" != "$ADMIN_VAL" ] && [ "${#ADMIN_VAL}" = "32" ]; then
+    SEC_ADMIN_PRINT="$(rand_hex 12)"
+    sed -i "s|^${KEY_ADMIN}=.*|${KEY_ADMIN}=${SEC_ADMIN_PRINT}|" .env
+    chmod 600 .env
+    echo "🔐 INITIAL_ADMIN_PASSWORD di .env lama masih placeholder publik — diganti nilai acak unik."
 fi
 
 echo "📦 Membangun image Docker (Kompilasi Frontend & Backend)..."
@@ -89,8 +106,18 @@ docker compose build
 echo "🛠️ Menjalankan layanan infrastruktur dasar (PostgreSQL, Redis)..."
 docker compose up -d db redis
 
-echo "⏳ Menunggu PostgreSQL siap menerima koneksi (5 detik)..."
-sleep 5
+echo "⏳ Menunggu PostgreSQL siap menerima koneksi..."
+for _try in $(seq 1 30); do
+    if docker compose exec -T db pg_isready -U routex -d routex_prod >/dev/null 2>&1; then
+        echo "   PostgreSQL siap."
+        break
+    fi
+    if [ "$_try" = "30" ]; then
+        echo "❌ PostgreSQL tidak siap setelah ±60 detik — periksa: docker compose logs db"
+        exit 1
+    fi
+    sleep 2
+done
 
 echo "🔄 Menjalankan inisialisasi dan migrasi database..."
 # Menjalankan container routex sementara hanya untuk flag -migrate
@@ -108,7 +135,14 @@ echo "📝 Pantau log Route-X : docker compose logs -f routex"
 echo "🔐 Pantau log Caddy   : docker compose logs -f caddy"
 echo "--------------------------------------------------------"
 echo "🎉 SETUP AWAL (FIRST-RUN ONBOARDING):"
-echo "   Set INITIAL_ADMIN_PASSWORD (dan INITIAL_ADMIN_EMAIL bila perlu) di .env"
-echo "   SEBELUM start pertama — admin awal tidak dibuat tanpa itu."
-echo "   (Password default yang hardcoded telah dihapus demi keamanan — audit fix.)"
+if [ -n "${SEC_ADMIN_PRINT:-}" ]; then
+    echo "   Email admin    : admin@routex.local (atau INITIAL_ADMIN_EMAIL di .env)"
+    echo "   Password admin : ${SEC_ADMIN_PRINT}"
+    echo "   (Dihasilkan acak untuk deploy ini — simpan sekarang dan ganti saat"
+    echo "    login pertama. Nilai yang sama tersimpan di .env yang berizin 600.)"
+else
+    echo "   Gunakan INITIAL_ADMIN_EMAIL / INITIAL_ADMIN_PASSWORD dari file .env Anda."
+    echo "   (Tidak ada password default — admin awal hanya dibuat bila variabel"
+    echo "    itu terisi sebelum start pertama.)"
+fi
 echo "--------------------------------------------------------"

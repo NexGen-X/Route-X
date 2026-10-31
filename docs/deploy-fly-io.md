@@ -87,9 +87,9 @@ fly secrets set \
   METRICS_TOKEN="$(openssl rand -hex 32)" \
   PUBLIC_URL="https://<nama-aplikasi-anda>.fly.dev"
 
-# Catatan: INITIAL_ADMIN_EMAIL & INITIAL_ADMIN_PASSWORD bersifat opsional.
-# Jika tidak disetel, Route-X otomatis mengaktifkan setup awal dengan
-# admin default (admin@routex.local / RouteX#Initial2026!).
+# Catatan: INITIAL_ADMIN_EMAIL opsional, INITIAL_ADMIN_PASSWORD WAJIB disetel
+# agar akun admin pertama dibuat. Tidak ada password default: tanpa
+# INITIAL_ADMIN_PASSWORD, seed tidak membuat admin sama sekali.
 # Anda juga dapat menyetelnya secara eksplisit:
 # fly secrets set INITIAL_ADMIN_EMAIL="admin@domain.com" INITIAL_ADMIN_PASSWORD="<password>"
 ```
@@ -126,7 +126,7 @@ Fly.io akan:
    ```bash
    fly open /login
    ```
-   Masuk menggunakan email dan password yang Anda tentukan, atau gunakan kredensial onboarding default (`admin@routex.local` / `RouteX#Initial2026!`) dengan tombol **"Gunakan Kredensial Default (1-Klik)"**. Anda akan otomatis diarahkan untuk mengganti password baru pada login pertama.
+   Masuk menggunakan email dan password dari `INITIAL_ADMIN_EMAIL`/`INITIAL_ADMIN_PASSWORD` yang Anda setel. Anda akan otomatis diarahkan untuk mengganti password baru pada login pertama.
 
 ---
 

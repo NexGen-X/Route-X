@@ -31,7 +31,7 @@ Skrip ini akan mencetak format konfigurasi siap salin:
 - `API_KEY_PEPPER`: Pepper hash kunci API (min 32-byte Base64).
 - `METRICS_TOKEN`: Token autentikasi scraper Prometheus.
 - `INITIAL_ADMIN_EMAIL`: Email administrator awal (opsional, default: `admin@routex.local`).
-- `INITIAL_ADMIN_PASSWORD`: Kata sandi awal yang kuat (opsional, default: `RouteX#Initial2026!`).
+- `INITIAL_ADMIN_PASSWORD`: Kata sandi awal yang kuat (WAJIB agar admin pertama dibuat; tidak ada default).
 
 ---
 
@@ -64,7 +64,7 @@ Selama proses deploy:
 3. **Stage 3 (Runtime)**: Image Alpine Linux minimalis (~25MB) dijalankan.
 4. **Bootstrapping**:
    - `ai-gateway` otomatis terhubung ke `DATABASE_URL` dan menjalankan migrasi skema database (`0001_initial.sql` sampai `0010_drop_roles.sql`).
-   - `seed.Run` otomatis membuat akun Admin pertama jika tabel pengguna masih kosong (menggunakan `INITIAL_ADMIN_*` jika disetel, atau default onboarding `admin@routex.local` / `RouteX#Initial2026!`).
+   - `seed.Run` membuat akun Admin pertama hanya jika tabel pengguna kosong DAN `INITIAL_ADMIN_PASSWORD` disetel (email dari `INITIAL_ADMIN_EMAIL`, bawaan `admin@routex.local`; tanpa password, tidak ada admin yang dibuat).
    - Server mendengarkan pada port yang diatur Render (`PORT=10000`).
 
 ---
@@ -85,7 +85,7 @@ Setelah status di Render Dashboard berubah menjadi **Live**:
 
 2. **Masuk ke Konsol Administrasi**:
    - Buka browser ke `https://route-x.onrender.com/login`.
-   - Masuk menggunakan email dan kata sandi yang Anda tentukan pada `INITIAL_ADMIN_EMAIL` & `INITIAL_ADMIN_PASSWORD`, atau gunakan tombol **"Gunakan Kredensial Default (1-Klik)"** pada kartu onboarding jika menggunakan kredensial bawaan (`admin@routex.local` / `RouteX#Initial2026!`).
+   - Masuk menggunakan email dan kata sandi yang Anda tentukan pada `INITIAL_ADMIN_EMAIL` & `INITIAL_ADMIN_PASSWORD`.
 
 ---
 

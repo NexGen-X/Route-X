@@ -289,6 +289,7 @@ if [ ! -f /etc/routex/routex.env ]; then
     ENCRYPTION_KEY="$(openssl rand -base64 32 | tr -d '\n')"
     API_KEY_PEPPER="$(openssl rand -base64 32 | tr -d '\n')"
     METRICS_TOKEN="$(openssl rand -hex 32 | tr -d '\n')"
+    ADMIN_PASS="$(openssl rand -base64 18 | tr -d '\n')"
 
     cat << EOF > /etc/routex/routex.env
 APP_ENV=production
@@ -303,6 +304,8 @@ METRICS_TOKEN="${METRICS_TOKEN}"
 RATE_LIMIT_FAIL_CLOSED=false
 UPSTREAM_ALLOW_HTTP=false
 UPSTREAM_ALLOWED_PRIVATE_ADDRS=127.0.0.1,::1,127.0.0.0/8
+INITIAL_ADMIN_EMAIL=admin@routex.local
+INITIAL_ADMIN_PASSWORD="${ADMIN_PASS}"
 EOF
     chmod 600 /etc/routex/routex.env
     echo "   Berkas /etc/routex/routex.env berhasil dibuat."
@@ -360,9 +363,14 @@ echo "   journalctl -fu caddy"
 echo "------------------------------------------------------------------"
 echo " 🎉 SETUP AWAL (FIRST-RUN ONBOARDING):"
 echo "   Akses Dashboard : https://${ROUTEX_HOST}/login"
-echo "   Email Default   : admin@routex.local"
-echo "   Password Default: RouteX#Initial2026!"
-echo "   (Atau klik tombol 'Gunakan Kredensial Default (1-Klik)' pada login)"
+echo "   Email Admin     : admin@routex.local"
+if [ -n "${ADMIN_PASS:-}" ]; then
+echo "   Password Admin  : ${ADMIN_PASS}"
+else
+echo "   Password Admin  : (sudah tersimpan di /etc/routex/routex.env)"
+fi
+echo "   (Dihasilkan acak untuk instalasi ini; tersimpan sebagai INITIAL_ADMIN_PASSWORD"
+echo "    di /etc/routex/routex.env — ganti saat login pertama.)"
 echo "   * Anda akan otomatis diminta membuat password baru saat login."
 echo "------------------------------------------------------------------"
 echo " ℹ️ CATATAN HTTPS:"

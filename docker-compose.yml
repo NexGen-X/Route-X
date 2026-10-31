@@ -1,8 +1,20 @@
+# Batas log kontainer bersama: mencegah disk VPS kecil penuh oleh log json-file.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   caddy:
     image: caddy:2-alpine
     container_name: routex-caddy
     restart: unless-stopped
+    environment:
+      # Caddyfile memakai {$DOMAIN:localhost}; tanpa env ini situs selalu
+      # terikat localhost dan sertifikat TLS tidak pernah cocok dengan
+      # domain publik operator.
+      - DOMAIN=${DOMAIN:-localhost}
     ports:
       - "80:80"
       - "443:443"
@@ -10,6 +22,7 @@ services:
       - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+    logging: *default-logging
     networks:
       - routex-network
 
@@ -20,22 +33,33 @@ services:
     environment:
       - APP_ENV=production
       - PORT=8080
-      - PUBLIC_URL=${PUBLIC_URL:-http://localhost:8080}
+      - PUBLIC_URL=${PUBLIC_URL:-https://${DOMAIN:-localhost}}
       - DATABASE_URL=postgres://routex:${POSTGRES_PASSWORD}@db:5432/routex_prod?sslmode=require
       - REDIS_URL=redis://redis:6379/0
       - SESSION_SECRET=${SESSION_SECRET}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - API_KEY_PEPPER=${API_KEY_PEPPER}
-      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@example.com}
-      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD}
+      - INITIAL_ADMIN_EMAIL=${INITIAL_ADMIN_EMAIL:-admin@routex.local}
+      # Kosong = seed TIDAK membuat admin (tidak ada password default).
+      # deploy.sh mengisi nilai acak unik ke .env sebelum start pertama.
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
       - METRICS_TOKEN=${METRICS_TOKEN}
-      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
-      # Loopback & subnet privat lokal diizinkan agar egress pool generik
-      # (http/https/socks5) di host/container yang sama tetap dapat dipakai.
-      - UPSTREAM_ALLOWED_PRIVATE_ADDRS=127.0.0.1,::1,127.0.0.0/8,172.16.0.0/12
+      # Caddy adalah satu-satunya proxy di depan gateway pada topologi ini;
+      # tanpa ini semua IP klien terbaca sebagai IP Caddy sehingga
+      # rate-limit/ban per-IP dan access log tidak berguna. Rentang
+      # 172.16.0.0/12 adalah jaringan bridge internal compose ini.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-172.16.0.0/12}
+      # PERINGATAN: daftar ini mengizinkan upstream/egress ke alamat privat
+      # (provider lokal seperti Ollama di host yang sama adalah kasus pakai
+      # yang sah untuk instalasi pribadi). Perketat lewat env
+      # UPSTREAM_ALLOWED_PRIVATE_ADDRS bila tidak memakai provider lokal.
+      - UPSTREAM_ALLOWED_PRIVATE_ADDRS=${UPSTREAM_ALLOWED_PRIVATE_ADDRS:-127.0.0.1,::1,127.0.0.0/8,172.16.0.0/12}
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging: *default-logging
     networks:
       - routex-network
 
@@ -49,6 +73,12 @@ services:
       - POSTGRES_DB=routex_prod
     volumes:
       - routex_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U routex -d routex_prod"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging: *default-logging
     networks:
       - routex-network
 
@@ -58,6 +88,12 @@ services:
     restart: unless-stopped
     volumes:
       - routex_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging: *default-logging
     networks:
       - routex-network
 

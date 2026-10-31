@@ -28,6 +28,15 @@ window.addEventListener('vite:preloadError', (event) => {
   window.location.reload();
 });
 
+// Daftarkan service worker PWA hanya pada build production
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('[PWA] Gagal mendaftarkan service worker:', err);
+    });
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <GlobalErrorBoundary>

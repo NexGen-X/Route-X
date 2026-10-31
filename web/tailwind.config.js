@@ -19,7 +19,9 @@ export default {
         'border-glass-active': '#4A4A4A',
         'text-primary': '#FAFAFA',
         'text-secondary': '#A3A3A3',
-        'text-muted': '#737373',
+        // #969696: >= 4.85:1 di atas semua permukaan tema (audit F8) —
+        // #737373 lama hanya 3.0-3.7:1 dan gagal WCAG AA untuk teks kecil.
+        'text-muted': '#969696',
         accent: {
           DEFAULT: '#0070E0',
           bg: '#1F1F1F',

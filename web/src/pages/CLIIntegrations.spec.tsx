@@ -122,12 +122,15 @@ vi.mock('../api/client', () => ({
     },
     models: {
       list: vi.fn(async () => ({ items: MOCK_MODELS })),
+      listAll: vi.fn(async () => ({ items: MOCK_MODELS })),
     },
     routing: {
       list: vi.fn(async () => ({ items: MOCK_RULES })),
+      listAll: vi.fn(async () => ({ items: MOCK_RULES })),
     },
     apiKeys: {
       list: vi.fn(async () => ({ items: MOCK_KEYS })),
+      listAll: vi.fn(async () => ({ items: MOCK_KEYS })),
     },
   },
 }));

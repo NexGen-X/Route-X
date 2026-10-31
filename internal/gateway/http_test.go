@@ -239,6 +239,8 @@ func kandidatRute(nama, upstreamModel string) *upstream.RouteCandidate {
 		Kind:              providers.KindOpenAI,
 		BaseURL:           "https://contoh.invalid",
 		TimeoutMS:         2000,
+		// Samakan dengan bawaan kolom providers.max_retries di DB (audit F4).
+		MaxRetries: 2,
 	}
 }
 

@@ -155,6 +155,25 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
+// fetchAllPages mengikuti rantai next_cursor sampai habis (audit F7):
+// daftar admin di backend terpotong pada batas halaman bawaan (50), jadi
+// halaman yang hanya membaca halaman pertama diam-diam menyembunyikan
+// data ke-51 dan seterusnya. Batas 25 halaman x 200 baris (5.000 item)
+// adalah pengaman, bukan perilaku normal untuk instalasi pribadi.
+async function fetchAllPages<T>(
+  fetchPage: (cursor?: string) => Promise<{ items: T[]; next_cursor?: string }>
+): Promise<{ items: T[] }> {
+  const items: T[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < 25; page++) {
+    const res = await fetchPage(cursor);
+    items.push(...(res.items || []));
+    if (!res.next_cursor) break;
+    cursor = res.next_cursor;
+  }
+  return { items };
+}
+
 export const api = {
   // Auth
   auth: {
@@ -214,7 +233,21 @@ export const api = {
 
   // Upstreams
   providers: {
-    list: () => request<{ items: Provider[] }>('/api/admin/upstreams/providers'),
+    list: (params?: { search?: string; kind?: string; enabled?: boolean; is_byok?: boolean; limit?: number; cursor?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.search) q.set('search', params.search);
+      if (params?.kind) q.set('kind', params.kind);
+      if (params?.enabled !== undefined) q.set('enabled', String(params.enabled));
+      if (params?.is_byok !== undefined) q.set('is_byok', String(params.is_byok));
+      if (params?.limit) q.set('limit', String(params.limit));
+      if (params?.cursor) q.set('cursor', params.cursor);
+      const qs = q.toString();
+      return request<{ items: Provider[]; next_cursor?: string }>(
+        qs ? `/api/admin/upstreams/providers?${qs}` : '/api/admin/upstreams/providers'
+      );
+    },
+    listAll: () =>
+      fetchAllPages<Provider>((cursor) => api.providers.list({ limit: 200, cursor })),
     get: (id: string) => request<Provider>(`/api/admin/upstreams/providers/${encodeURIComponent(id)}`),
     create: (data: Partial<Provider>) =>
       request<Provider>('/api/admin/upstreams/providers', {
@@ -343,6 +376,8 @@ export const api = {
       const path = '/api/admin/upstreams/models';
       return request<{ items: Model[]; next_cursor?: string }>(qs ? `${path}?${qs}` : path);
     },
+    listAll: () =>
+      fetchAllPages<Model>((cursor) => api.models.list({ limit: 200, cursor })),
     get: (id: string) =>
       request<{ model: Model; aliases: ModelAlias[]; mappings: ProviderModel[] }>(
         `/api/admin/upstreams/models/${encodeURIComponent(id)}`
@@ -438,7 +473,17 @@ export const api = {
 
   // Gateway Policies
   routing: {
-    list: () => request<{ items: RoutingRule[] }>('/api/admin/gateway/routing-rules'),
+    list: (params?: { limit?: number; cursor?: string }) => {
+      const q = new URLSearchParams();
+      if (params?.limit) q.set('limit', String(params.limit));
+      if (params?.cursor) q.set('cursor', params.cursor);
+      const qs = q.toString();
+      return request<{ items: RoutingRule[]; next_cursor?: string }>(
+        qs ? `/api/admin/gateway/routing-rules?${qs}` : '/api/admin/gateway/routing-rules'
+      );
+    },
+    listAll: () =>
+      fetchAllPages<RoutingRule>((cursor) => api.routing.list({ limit: 200, cursor })),
     create: (data: Partial<RoutingRule>) =>
       request<RoutingRule>('/api/admin/gateway/routing-rules', {
         method: 'POST',
@@ -564,6 +609,8 @@ export const api = {
       }
       return request<{ items: APIKey[]; next_cursor?: string }>(`/api/admin/access/api-keys?${q.toString()}`);
     },
+    listAll: () =>
+      fetchAllPages<APIKey>((cursor) => api.apiKeys.list({ limit: 200, cursor })),
     get: (id: string) => request<APIKey>(`/api/admin/access/api-keys/${encodeURIComponent(id)}`),
     create: (data: Partial<APIKey>) =>
       request<APIKey>('/api/admin/access/api-keys', {

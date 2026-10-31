@@ -2,12 +2,14 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
@@ -115,6 +117,42 @@ func (w *RetentionWorker) Run(ctx context.Context) error {
 		}
 	}
 
+	// 4. Retensi health_checks (audit F6): tabel ini bertambah 1 baris per
+	// provider per interval health check SELAMANYA — sebelumnya tidak ada
+	// DELETE untuknya di seluruh repo. Riwayat kesehatan 7 hari cukup
+	// untuk diagnosis; sisanya hanya membebani indeks.
+	if err := w.deleteHealthChecksBatch(ctx, now.AddDate(0, 0, -7)); err != nil {
+		w.logger.WarnContext(ctx, "gagal membersihkan batch health_checks", "error", err)
+	}
+
+	return nil
+}
+
+// deleteHealthChecksBatch menghapus baris health_checks yang lebih tua dari
+// cutoff secara berbatch agar kunci baris tidak menahan penulis health
+// check yang berjalan tiap interval.
+func (w *RetentionWorker) deleteHealthChecksBatch(ctx context.Context, cutoff time.Time) error {
+	for i := 0; i < 50; i++ {
+		tag, err := w.pool.Exec(ctx, `
+			delete from health_checks
+			where id in (
+				select id from health_checks
+				where checked_at < $1
+				order by id
+				limit 5000
+			)`, cutoff)
+		if err != nil {
+			return repo.Err("menghapus health_checks kedaluwarsa", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(w.batchPause):
+		}
+	}
 	return nil
 }
 
@@ -166,21 +204,44 @@ func (w *RetentionWorker) dropOldPartitions(ctx context.Context, parentTable str
 		}
 
 		// Aturan 5.6: Sinkronisasi Rollup & Retensi.
-		// Retensi WAJIB menolak membuang partisi requests yang jam-jamnya belum pernah ter-rollup
-		// ke usage_hourly, untuk mencegah lubang permanen pada data statistik lalu lintas.
+		// Retensi WAJIB menolak membuang partisi requests yang jam-jamnya belum
+		// ter-rollup PENUH ke usage_hourly, untuk mencegah lubang permanen
+		// pada data statistik lalu lintas.
+		//
+		// Pemeriksaan ini FAIL-CLOSED dan berbasis KELENGKAPAN (audit F5/F6):
+		// versi lama (a) hanya membuktikan ada >=1 baris usage_hourly per jam
+		// — bukan bahwa seluruh request jam itu teragregasi, dan (b) error
+		// query apa pun selain ErrNoRows diperlakukan sebagai "sudah
+		// ter-rollup" sehingga partisi ter-DROP saat pemeriksaan justru
+		// gagal. Kini jumlah request per jam dibandingkan dengan
+		// SUM(request_count) usage_hourly per bucket; selisih ATAU error
+		// pemeriksaan = drop ditolak.
 		if parentTable == "requests" {
 			var unrolled int
 			checkQuery := fmt.Sprintf(`
-				select 1 from %s r
-				where not exists (
-					select 1 from usage_hourly u
-					where u.bucket = date_trunc('hour', r.created_at, 'UTC')
-				) limit 1`, partName)
+				select 1 from (
+					select date_trunc('hour', r.created_at, 'UTC') as b, count(*) as c
+					from %s r
+					group by 1
+				) per_jam
+				left join (
+					select bucket as b, sum(request_count) as s
+					from usage_hourly
+					group by 1
+				) agg on agg.b = per_jam.b
+				where coalesce(agg.s, 0) <> per_jam.c
+				limit 1`, partName)
 			errCheck := w.pool.QueryRow(ctx, checkQuery).Scan(&unrolled)
 			if errCheck == nil {
-				w.logger.ErrorContext(ctx, "PENOLAKAN DROP PARTISI: terdapat data request yang belum ter-rollup ke usage_hourly",
+				w.logger.ErrorContext(ctx, "PENOLAKAN DROP PARTISI: terdapat jam request yang belum ter-rollup penuh ke usage_hourly",
 					"table", parentTable, "partition", partName,
 					"start", startDate.Format("2006-01-02"), "end", endDate.Format("2006-01-02"))
+				unrolledPartitions = append(unrolledPartitions, partName)
+				continue
+			}
+			if !errors.Is(errCheck, pgx.ErrNoRows) {
+				w.logger.ErrorContext(ctx, "PENOLAKAN DROP PARTISI: pemeriksaan rollup gagal, drop dibatalkan demi keamanan data",
+					"table", parentTable, "partition", partName, "error", errCheck)
 				unrolledPartitions = append(unrolledPartitions, partName)
 				continue
 			}

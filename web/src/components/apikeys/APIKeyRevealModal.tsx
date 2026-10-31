@@ -50,7 +50,7 @@ export const APIKeyRevealModal: React.FC<APIKeyRevealModalProps> = ({
     >
       <div className="space-y-4">
         <div className="p-3.5 bg-bg-surface-2 rounded-inner border border-accent/40 shadow-glow-subtle flex items-center justify-between gap-3">
-          <span className="font-mono text-xs text-accent break-all select-all font-semibold tracking-wide">
+          <span className="font-mono text-xs text-cyan break-all select-all font-semibold tracking-wide">
             {rawKey}
           </span>
           <Tooltip content={copied ? 'Tersalin ke clipboard!' : 'Salin Kunci API'} position="left">

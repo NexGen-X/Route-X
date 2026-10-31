@@ -565,6 +565,26 @@ func buildGatewaySurface(
 	oauthJob := worker.NewOAuthRefreshWorker(db.Pool, oauthRepo, creds, egress, googleOAuthClient, logger)
 	workerSup.Register(oauthJob, 10*time.Minute, 1*time.Minute)
 
+	// 8. Pembersih sesi kedaluwarsa: Sessions.DeleteExpired sebelumnya
+	// TIDAK punya satu pun pemanggil produksi (audit F6) — tabel sesi
+	// tumbuh selamanya walau migrasi menyiapkan indeks khusus untuk
+	// worker ini. Berjalan tiap jam dengan tenggang 24 jam.
+	sessionsRepo := identity.NewSessions(db.Pool)
+	sessionCleanupJob := worker.JobFunc{
+		JobName: "session_cleanup",
+		Fn: func(ctx context.Context) error {
+			n, err := sessionsRepo.DeleteExpired(ctx, 24*time.Hour)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				logger.InfoContext(ctx, "sesi kedaluwarsa dibersihkan", "jumlah", n)
+			}
+			return nil
+		},
+	}
+	workerSup.Register(sessionCleanupJob, 1*time.Hour, 45*time.Second)
+
 	workerSup.Start(ctx)
 
 	authn := apikey.NewAuthenticator(keyRepo, metrics, logger)

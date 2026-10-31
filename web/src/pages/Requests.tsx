@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { RequestLog, RequestEvent, RequestPayload } from '../types';
+import { getErrorMessage } from '../utils/error';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
@@ -102,15 +103,33 @@ export const Requests: React.FC = () => {
     setInspectorError(null);
     try {
       const targetId = req.id || req.request_id;
-      const [eventsRes, payloadRes] = await Promise.all([
-        api.requests
-          .events(targetId, req.created_at)
-          .catch(() => ({ events: [] as RequestEvent[] })),
-        api.requests.payload(targetId, req.created_at).catch(() => null),
+      // allSettled TANPA catch penelan (audit F7): versi lama menangkap
+      // kegagalan events/payload menjadi daftar kosong / null, sehingga
+      // inspector menampilkan "tidak ada events" untuk request yang
+      // datanya GAGAL dimuat — keadaan kosong karangan. Kini kegagalan
+      // dilaporkan lewat inspectorError sementara bagian yang berhasil
+      // tetap ditampilkan.
+      const [eventsRes, payloadRes] = await Promise.allSettled([
+        api.requests.events(targetId, req.created_at),
+        api.requests.payload(targetId, req.created_at),
       ]);
       if (inspectorReqRef.current !== reqId) return;
-      setReqEvents(eventsRes.events || []);
-      setReqPayload(payloadRes);
+      const gagal: string[] = [];
+      if (eventsRes.status === 'fulfilled') {
+        setReqEvents(eventsRes.value.events || []);
+      } else {
+        setReqEvents([]);
+        gagal.push('events: ' + getErrorMessage(eventsRes.reason));
+      }
+      if (payloadRes.status === 'fulfilled') {
+        setReqPayload(payloadRes.value);
+      } else {
+        setReqPayload(null);
+        gagal.push('payload: ' + getErrorMessage(payloadRes.reason));
+      }
+      if (gagal.length > 0) {
+        setInspectorError('Sebagian data inspector gagal dimuat — ' + gagal.join('; '));
+      }
     } catch (err: unknown) {
       if (inspectorReqRef.current !== reqId) return;
       setReqEvents([]);

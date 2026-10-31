@@ -28,12 +28,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/apikey"
 	"github.com/NexGen-X/Route-X/internal/billing"
 	"github.com/NexGen-X/Route-X/internal/contentfilter"
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
+	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/providers"
@@ -271,6 +273,53 @@ func (g *Guard) PeriksaBatasModel(ctx context.Context, modelID string) *Rejectio
 	return rejectionBatas(d, "model "+kutipKebijakan(modelID)+" sedang melewati batas lajunya")
 }
 
+// --- Memo keputusan batas per permintaan -------------------------------------
+//
+// Keputusan batas provider (kebijakan maupun kolom) diambil SEKALI per
+// (permintaan, provider), bukan sekali per percobaan (audit F4): versi
+// lama menjalankan pemeriksaan di dalam operasi percobaan, sehingga satu
+// permintaan dengan 3 percobaan memakan kuota limiter 3 kali — dan
+// penolakannya ikut tercatat sebagai kegagalan provider. Memo ini hidup
+// di context permintaan; DenganMemoBatas dipasang handler sebelum
+// Execute/ExecuteStream. Tanpa memo, perilaku lama berlaku apa adanya
+// (aman untuk pemanggil lain dan tes).
+
+type kunciMemoBatas struct{}
+
+type memoBatas struct {
+	mu    sync.Mutex
+	hasil map[string]*providers.Error
+}
+
+// DenganMemoBatas menanam memo keputusan batas pada context permintaan.
+func (g *Guard) DenganMemoBatas(ctx context.Context) context.Context {
+	if ctx == nil || ctx.Value(kunciMemoBatas{}) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, kunciMemoBatas{}, &memoBatas{hasil: make(map[string]*providers.Error)})
+}
+
+func memoBatasAmbil(ctx context.Context, kunci string) (*providers.Error, bool) {
+	m, ok := ctx.Value(kunciMemoBatas{}).(*memoBatas)
+	if !ok || m == nil {
+		return nil, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	err, ada := m.hasil[kunci]
+	return err, ada
+}
+
+func memoBatasSimpan(ctx context.Context, kunci string, err *providers.Error) {
+	m, ok := ctx.Value(kunciMemoBatas{}).(*memoBatas)
+	if !ok || m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.hasil[kunci] = err
+}
+
 // PeriksaBatasProvider menegakkan batas laju cakupan PROVIDER untuk satu percobaan.
 //
 // Mengembalikan *providers.Error, bukan Rejection, dan itu yang membuatnya bekerja seperti
@@ -278,12 +327,24 @@ func (g *Guard) PeriksaBatasModel(ctx context.Context, modelID string) *Rejectio
 // DIALIHKAN, sehingga provider yang sedang melewati batasnya dilewati dan kandidat berikutnya
 // dicoba. Menolak seluruh permintaan di sini akan membuang kandidat lain yang sehat.
 //
-// Inilah batas yang dimaksud kolom rate_limit_rpm di tabel providers: dipaksakan gateway
-// SEBELUM memanggil upstream, supaya kuota pihak ketiga tidak terlanggar dari sisi kami.
+// Sumber batas ini adalah tabel rate_limits (kebijakan operator), BUKAN kolom
+// rate_limit_rpm di tabel providers — kolom itu ditegakkan PeriksaKolomProvider.
 func (g *Guard) PeriksaBatasProvider(ctx context.Context, providerID, providerName string) *providers.Error {
 	if g == nil || g.rates == nil || g.limiter == nil || providerID == "" {
 		return nil
 	}
+	// Keputusan dimemoisasi per (permintaan, provider): kuota hanya
+	// termakan pada pemeriksaan pertama (audit F4).
+	kunciMemo := "kebijakan:" + providerID
+	if tersimpan, ada := memoBatasAmbil(ctx, kunciMemo); ada {
+		return tersimpan
+	}
+	hasil := g.periksaBatasProviderSegar(ctx, providerID, providerName)
+	memoBatasSimpan(ctx, kunciMemo, hasil)
+	return hasil
+}
+
+func (g *Guard) periksaBatasProviderSegar(ctx context.Context, providerID, providerName string) *providers.Error {
 	scopes := g.rates.Requests(ctx, []policy.Target{{Scope: policy.ScopeProvider, ID: providerID}}, apikey.Limits{})
 	if len(scopes) == 0 {
 		return nil
@@ -299,10 +360,100 @@ func (g *Guard) PeriksaBatasProvider(ctx context.Context, providerID, providerNa
 		Kind:     providers.ErrKindRateLimit,
 		Provider: providerName,
 		Message:  "batas laju gateway ke provider ini sedang penuh",
+		// Penolakan ini keputusan gateway sendiri: JANGAN catat sebagai
+		// kegagalan provider ke pemutus arus (audit F4).
+		Local: true,
 		// Sisa umur jendela, bukan lebarnya: mesin eksekusi memakainya untuk memutuskan
 		// menunggu sebentar atau langsung melewati kandidat ini.
 		RetryAfter: d.RetryAfter,
 	}
+}
+
+// cakupanKolomProvider adalah nama cakupan limiter khusus untuk kolom
+// batas di tabel providers. Sengaja BUKAN cakupan "provider" milik tabel
+// rate_limits: dua sumber batas itu harus punya penghitung terpisah,
+// kalau tidak angka dari satu kebijakan mengotori kebijakan lain.
+const cakupanKolomProvider = "provider_column"
+
+// PeriksaKolomProvider menegakkan kolom batas di tabel providers —
+// rate_limit_rpm dan rate_limit_tpm (audit F4). Kolom-kolom ini
+// sebelumnya hanya dibaca ke kandidat dan tidak ditegakkan di mana pun;
+// komentar lama bahkan keliru mengklaim PeriksaBatasProvider (yang
+// sumbernya tabel rate_limits) adalah penegaknya.
+//
+// RPM ditegakkan dengan penghitung limiter (memakan kuota, dimemoisasi
+// per permintaan seperti pemeriksaan kebijakan). TPM hanya bisa
+// digerbangi: jumlah token satu permintaan baru diketahui sesudah
+// dijawab, jadi yang diperiksa adalah pemakaian yang SUDAH tercatat
+// (lihat CatatTokenKolomProvider) — pola yang sama dengan GerbangToken.
+func (g *Guard) PeriksaKolomProvider(ctx context.Context, cand *upstream.RouteCandidate) *providers.Error {
+	if g == nil || g.limiter == nil || cand == nil {
+		return nil
+	}
+	kunciMemo := "kolom:" + cand.ProviderID
+	if tersimpan, ada := memoBatasAmbil(ctx, kunciMemo); ada {
+		return tersimpan
+	}
+	hasil := g.periksaKolomProviderSegar(ctx, cand)
+	memoBatasSimpan(ctx, kunciMemo, hasil)
+	return hasil
+}
+
+func (g *Guard) periksaKolomProviderSegar(ctx context.Context, cand *upstream.RouteCandidate) *providers.Error {
+	if cand.RateLimitRPM != nil && *cand.RateLimitRPM > 0 {
+		d := g.limiter.AllowScopes(ctx, []apikey.ScopeLimits{{
+			Scope:  cakupanKolomProvider,
+			ID:     cand.ProviderID,
+			Limits: apikey.Limits{RPM: *cand.RateLimitRPM},
+		}})
+		if !d.Allowed {
+			g.logger.InfoContext(ctx, "kandidat dilewati karena kolom rate_limit_rpm provider",
+				"provider", cand.ProviderName, "rpm", *cand.RateLimitRPM)
+			return &providers.Error{
+				Kind:       providers.ErrKindRateLimit,
+				Provider:   cand.ProviderName,
+				Message:    "batas laju (kolom provider) gateway ke provider ini sedang penuh",
+				Local:      true,
+				RetryAfter: d.RetryAfter,
+			}
+		}
+	}
+	if cand.RateLimitTPM != nil && *cand.RateLimitTPM > 0 {
+		d := g.limiter.TokensExceededScopes(ctx, []apikey.ScopeTokenLimits{{
+			Scope:  cakupanKolomProvider,
+			ID:     cand.ProviderID,
+			Limits: apikey.TokenLimits{TPM: *cand.RateLimitTPM},
+		}})
+		if !d.Allowed {
+			g.logger.InfoContext(ctx, "kandidat dilewati karena kolom rate_limit_tpm provider",
+				"provider", cand.ProviderName, "tpm", *cand.RateLimitTPM)
+			return &providers.Error{
+				Kind:       providers.ErrKindRateLimit,
+				Provider:   cand.ProviderName,
+				Message:    "anggaran token per menit (kolom provider) ke provider ini sudah habis",
+				Local:      true,
+				RetryAfter: d.RetryAfter,
+			}
+		}
+	}
+	return nil
+}
+
+// CatatTokenKolomProvider mencatat pemakaian token ke penghitung kolom
+// rate_limit_tpm provider yang melayani permintaan ini (audit F4).
+// Pasangan gerbangnya adalah PeriksaKolomProvider.
+func (g *Guard) CatatTokenKolomProvider(ctx context.Context, cand *upstream.RouteCandidate, tokens int64) {
+	if g == nil || g.limiter == nil || cand == nil || tokens <= 0 {
+		return
+	}
+	if cand.RateLimitTPM == nil || *cand.RateLimitTPM <= 0 {
+		return
+	}
+	g.limiter.RecordTokensScopes(ctx, []apikey.ScopeTokenLimits{{
+		Scope:  cakupanKolomProvider,
+		ID:     cand.ProviderID,
+		Limits: apikey.TokenLimits{TPM: *cand.RateLimitTPM},
+	}}, tokens)
 }
 
 // GerbangToken memeriksa apakah anggaran token sudah habis SEBELUM upstream dihubungi.

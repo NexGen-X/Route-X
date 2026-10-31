@@ -164,7 +164,11 @@ func muatKonteks(c *upstream.RouteCandidate, est TokenEstimate) bool {
 	if c.MaxContextWindow == nil || est.InputTokens <= 0 {
 		return true
 	}
-	return est.InputTokens <= *c.MaxContextWindow
+	// Jendela konteks menampung masukan DAN keluaran (audit F4): versi
+	// lama hanya memeriksa masukan, sehingga kandidat yang jendelanya
+	// cukup untuk prompt tetapi tidak menyisakan ruang untuk jawaban
+	// sebesar max_tokens tetap dipilih lalu gagal di upstream.
+	return est.InputTokens+est.OutputTokens <= *c.MaxContextWindow
 }
 
 // urutPrioritas mengurutkan dengan urutan yang paling bisa diramalkan operator.

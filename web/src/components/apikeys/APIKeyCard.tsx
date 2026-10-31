@@ -114,7 +114,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
         {/* Monospace Masked Key Box dengan Tombol Copy dan Reveal Instan */}
         <div className="bg-bg-surface-2 p-2.5 rounded-inner border border-border/80 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-accent/15 text-accent border border-accent/25 shrink-0">
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-accent/15 text-cyan border border-accent/25 shrink-0">
               LIVE
             </span>
             <span className="font-mono text-xs text-text-primary truncate select-all">
@@ -194,7 +194,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
                     : ''}
                 </span>
               ) : (
-                <span className="text-accent font-medium">Semua Model (Bebas)</span>
+                <span className="text-cyan font-medium">Semua Model (Bebas)</span>
               )}
             </span>
           </div>

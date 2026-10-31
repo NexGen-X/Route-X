@@ -198,6 +198,7 @@ vi.mock('../api/client', () => ({
     },
     providers: {
       list: () => mockProvidersFn(),
+      listAll: () => mockProvidersFn(),
     },
     system: {
       overview: () => mockOverviewFn(),

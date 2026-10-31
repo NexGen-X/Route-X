@@ -38,9 +38,9 @@ export const RoutingRules: React.FC = () => {
     setIsRulesLoading(true);
     try {
       const [resRules, resModels, resProv] = await Promise.allSettled([
-        api.routing.list(),
-        api.models.list(),
-        api.providers.list(),
+        api.routing.listAll(),
+        api.models.listAll(),
+        api.providers.listAll(),
       ]);
 
       if (resRules.status === 'fulfilled') {

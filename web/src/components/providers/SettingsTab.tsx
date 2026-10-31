@@ -40,8 +40,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   });
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
+  // Form hanya diinisialisasi ulang saat provider yang DIPILIH berganti
+  // (audit F7), bukan setiap identitas objek selectedProvider berubah
+  // karena refetch — kalau tidak, edit yang belum disimpan selalu hilang
+  // sebelum operator sempat menekan Simpan.
+  const prevProviderIdRef = React.useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (selectedProvider) {
+    if (selectedProvider && prevProviderIdRef.current !== selectedProvider.id) {
+      prevProviderIdRef.current = selectedProvider.id;
       setConfigForm({
         display_name: selectedProvider.display_name || '',
         base_url: selectedProvider.base_url || '',

@@ -100,9 +100,9 @@ export const CLIIntegrations: React.FC = () => {
       setRefreshing(true);
       const [cliRes, modelsRes, rulesRes, apiKeysRes] = await Promise.allSettled([
         api.cli.detected(),
-        api.models.list(),
-        api.routing.list(),
-        api.apiKeys.list(),
+        api.models.listAll(),
+        api.routing.listAll(),
+        api.apiKeys.listAll(),
       ]);
 
       if (cliRes.status === 'fulfilled' && cliRes.value) {
@@ -131,7 +131,18 @@ export const CLIIntegrations: React.FC = () => {
             apiKey: '',
           };
         });
-        setToolConfigs(initialConfigs);
+        // Gabung, jangan bangun ulang (audit F7): "Pindai Ulang" versi
+        // lama mengganti seluruh toolConfigs dari data server sehingga
+        // pilihan mode/target/API key per-tool yang BELUM diterapkan
+        // operator hilang. Konfigurasi yang sudah ada dipertahankan;
+        // initialConfigs hanya menjadi bawaan untuk tool baru.
+        setToolConfigs((prev) => {
+          const merged: Record<string, ToolConfig> = {};
+          cliRes.value.tools.forEach((t: CLITool) => {
+            merged[t.id] = prev[t.id] ?? initialConfigs[t.id];
+          });
+          return merged;
+        });
         setLoadError(null);
       } else {
         const err = cliRes.status === 'rejected' ? cliRes.reason : new Error('Gagal memuat status CLI.');

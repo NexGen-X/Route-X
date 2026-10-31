@@ -159,7 +159,20 @@ export const Settings: React.FC = () => {
       const original = settings.find((s) => s.key === key);
       await api.system.updateSetting(key, editValues[key] || '', original?.description);
       toast.success(`Parameter "${key}" berhasil diperbarui.`);
-      void loadSettings();
+      // Segarkan HANYA baris yang disimpan (audit F7): loadSettings()
+      // penuh membangun ulang seluruh editValues dari server dan
+      // menghapus edit parameter LAIN yang belum disimpan operator.
+      try {
+        const res = await api.system.settings();
+        const fresh = (res.items || []).find((s) => s.key === key);
+        if (fresh) {
+          setSettings((prev) => prev.map((s) => (s.key === key ? fresh : s)));
+          setEditValues((prev) => ({ ...prev, [key]: formatSettingValue(fresh.value) }));
+        }
+      } catch {
+        // Nilai sudah tersimpan; kegagalan menyegarkan satu baris tidak
+        // perlu menggagalkan operasi yang berhasil.
+      }
     } catch (err: unknown) {
       toast.error('Gagal menyimpan pengaturan: ' + getErrorMessage(err));
     } finally {
@@ -179,7 +192,14 @@ export const Settings: React.FC = () => {
     try {
       await api.system.deleteSetting(key);
       toast.success(`Parameter "${key}" berhasil dihapus.`);
-      void loadSettings();
+      // Bedah lokal seperti handleSave (audit F7): jangan muat ulang
+      // seluruh daftar dan menghapus edit lain yang belum disimpan.
+      setSettings((prev) => prev.filter((s) => s.key !== key));
+      setEditValues((prev) => {
+        const sisa = { ...prev };
+        delete sisa[key];
+        return sisa;
+      });
     } catch (err: unknown) {
       toast.error('Gagal menghapus parameter: ' + getErrorMessage(err));
     }

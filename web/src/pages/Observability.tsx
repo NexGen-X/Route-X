@@ -93,7 +93,14 @@ export const Observability: React.FC = () => {
     }
   };
 
+  // Penjaga urutan respons (audit F7): tanpa ini, respons lambat dari
+  // pilihan metrik/jendela SEBELUMNYA bisa tiba sesudah respons pilihan
+  // terbaru dan menimpa tampilannya — grafik tidak lagi cocok dengan
+  // kontrol yang sedang dipilih operator.
+  const loadReqRef = React.useRef(0);
+
   const loadData = async () => {
+    const reqId = ++loadReqRef.current;
     setIsLoading(true);
     try {
       const metricQuery = (metric === 'throughput' || metric === 'error_rate') ? 'requests' : metric;
@@ -104,6 +111,7 @@ export const Observability: React.FC = () => {
         api.system.cacheStats(),
       ]);
 
+      if (loadReqRef.current !== reqId) return;
       if (sRes.status === 'fulfilled') setSeries(sRes.value?.points || []);
       if (bRes.status === 'fulfilled') setBreakdowns(bRes.value?.items || []);
       if (sumRes.status === 'fulfilled') setSummary(sumRes.value);
@@ -118,16 +126,22 @@ export const Observability: React.FC = () => {
 
       try {
         const dRes = await api.system.diagnostics();
+        if (loadReqRef.current !== reqId) return;
         setDiag(dRes);
         setDiagnosticsError(null);
       } catch (err: unknown) {
+        if (loadReqRef.current !== reqId) return;
         setDiag(null);
         setDiagnosticsError(err instanceof Error ? err.message : String(err));
       }
     } catch (err: unknown) {
-      setLoadError(err instanceof Error ? err.message : String(err));
+      if (loadReqRef.current === reqId) {
+        setLoadError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
-      setIsLoading(false);
+      if (loadReqRef.current === reqId) {
+        setIsLoading(false);
+      }
     }
   };
 

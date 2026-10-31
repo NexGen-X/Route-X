@@ -66,7 +66,7 @@ export const Providers: React.FC = () => {
   const { data: provsData = [], isLoading: isProvidersLoading, isError: isProvidersError, error: providersError, refetch: refetchProviders } = useQuery({
     queryKey: ['providers'],
     queryFn: async () => {
-      const res = await api.providers.list();
+      const res = await api.providers.listAll();
       return Array.isArray(res) ? res : (res as { items?: Provider[] }).items || [];
     },
   });
@@ -180,11 +180,15 @@ export const Providers: React.FC = () => {
     ]);
   };
 
-  // Sinkronisasi selectedProvider ketika data query diperbarui
+  // Sinkronisasi selectedProvider ketika data query diperbarui.
+  // Hanya ganti objek bila isinya benar-benar berubah (audit F7): versi
+  // lama mengganti identitas objek pada SETIAP refetch, dan effect di
+  // SettingsTab yang bergantung pada identitas itu menginisialisasi
+  // ulang form — menghapus edit operator yang belum disimpan.
   useEffect(() => {
     if (selectedProvider) {
       const found = providers.find((p: Provider) => p.id === selectedProvider.id);
-      if (found) {
+      if (found && JSON.stringify(found) !== JSON.stringify(selectedProvider)) {
         setSelectedProvider(found);
       }
     }

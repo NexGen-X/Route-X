@@ -1,0 +1,33 @@
+# Dependabot (audit F10): pembaruan dependensi terjadwal agar CVE pada
+# rantai pasok tidak menunggu audit manual. Semua pembaruan masuk sebagai
+# PR dan mengikuti aturan repo: pantau CI sampai hijau lalu gabung.
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+
+  # Citra dasar Dockerfile (node/golang/alpine) ikut terpantau.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3

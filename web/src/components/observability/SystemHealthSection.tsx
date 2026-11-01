@@ -364,7 +364,7 @@ export const SystemHealthSection: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
-              <Clock className="w-4 h-4 text-accent" aria-hidden="true" />
+              <Clock className="w-4 h-4 text-accent-text" aria-hidden="true" />
               Supervisor Background Workers &amp; Tasks
             </h3>
           </div>
@@ -411,7 +411,7 @@ export const SystemHealthSection: React.FC = () => {
                     </div>
                     <div className="flex justify-between text-text-muted">
                       <span>Durasi Terakhir:</span>
-                      <span className="font-mono text-accent">
+                      <span className="font-mono text-accent-text">
                         {j.last_duration_ms ?? 0} ms
                       </span>
                     </div>
@@ -425,7 +425,7 @@ export const SystemHealthSection: React.FC = () => {
                     className="w-full"
                     onClick={() => void handleTriggerJob(j.name)}
                     isLoading={triggeringJob === j.name}
-                    icon={<Play className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
+                    icon={<Play className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />}
                   >
                     Jalankan Sekarang
                   </Button>

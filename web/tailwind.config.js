@@ -26,6 +26,11 @@ export default {
           DEFAULT: '#0070E0',
           bg: '#1F1F1F',
           hover: '#1A7FE6',
+          // #5BACE6: varian aksen KHUSUS TEKS (audit kontras axe Fase 3 P6) —
+          // #0070E0 sebagai teks hanya 2,6–3,6:1 di permukaan gelap dan
+          // gagal WCAG AA; #5BACE6 >= 4,87:1 di semua permukaan tema
+          // termasuk latar bertinta aksen terburuk (#22384E).
+          text: '#5BACE6',
           active: '#005BB8',
           glow: 'rgba(0, 112, 224, 0.3)',
           subtle: 'rgba(0, 112, 224, 0.12)',

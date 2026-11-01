@@ -71,7 +71,7 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
       onClose={handleResetAndClose}
       title={
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-accent/15 text-accent-text flex items-center justify-center">
             <KeyRound className="w-4 h-4" aria-hidden="true" />
           </div>
           <span>Buat Kunci API Klien Baru</span>
@@ -130,7 +130,7 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
         {/* Masa Berlaku (Expiration) */}
         <div className="space-y-2">
           <label className="block text-xs font-semibold text-white flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+            <Clock className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
             Masa Berlaku Kunci (Expiration Badge)
           </label>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
@@ -148,7 +148,7 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
                 onClick={() => setExpirationPreset(preset.id as ExpirationPreset)}
                 className={`py-2 px-1 text-[11px] font-medium rounded-nav transition-all cursor-pointer border text-center ${
                   expirationPreset === preset.id
-                    ? 'bg-accent/15 border-accent text-accent font-semibold shadow-sm'
+                    ? 'bg-accent/15 border-accent text-accent-text font-semibold shadow-sm'
                     : 'bg-bg-surface-2 border-border text-text-secondary hover:text-white hover:bg-bg-surface-3'
                 }`}
               >
@@ -175,7 +175,7 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
         {/* Batas Trafik & Laju (RPM & TPM) */}
         <div className="p-3.5 rounded-xl bg-bg-surface-2 border border-border space-y-3">
           <div className="flex items-center gap-2 text-white font-semibold text-xs">
-            <Activity className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+            <Activity className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
             Batas Kecepatan Kunci (Rate Limiting)
           </div>
 
@@ -216,7 +216,7 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
         {/* Anggaran Bulanan USD */}
         <div className="space-y-1.5">
           <label htmlFor="monthly-budget-usd" className="block text-xs font-semibold text-white flex items-center gap-1.5">
-            <DollarSign className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+            <DollarSign className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
             Batas Anggaran Bulanan (USD, Opsional)
           </label>
           <div className="relative">
@@ -240,7 +240,7 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
 
         {/* Informasi Keamanan & Best Practice */}
         <div className="p-3.5 rounded-xl bg-accent/5 border border-accent/20 text-xs text-text-secondary space-y-1.5">
-          <div className="flex items-center gap-1.5 text-accent font-semibold">
+          <div className="flex items-center gap-1.5 text-accent-text font-semibold">
             <Shield className="w-3.5 h-3.5" aria-hidden="true" />
             Standar Keamanan Route-X
           </div>

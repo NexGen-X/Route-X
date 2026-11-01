@@ -52,7 +52,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
             <div>
               <h4 className="text-sm font-bold text-white leading-tight">{budget.name}</h4>
               <div className="flex items-center gap-1.5 text-[11px] text-text-muted font-mono mt-0.5">
-                <span className="text-accent font-semibold">{scopeDisplay.label}</span>
+                <span className="text-accent-text font-semibold">{scopeDisplay.label}</span>
                 <span>•</span>
                 <span>{budget.period}</span>
               </div>
@@ -64,7 +64,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-bg-surface-3/80 text-text-secondary border border-border/60"
               title={`Frekuensi siklus reset: ${budget.period}`}
             >
-              <CalendarClock className="w-3 h-3 text-accent" aria-hidden="true" />
+              <CalendarClock className="w-3 h-3 text-accent-text" aria-hidden="true" />
               <span>{getResetLabel(budget.period)}</span>
             </span>
             <Badge variant={pct > 90 ? 'error' : pct >= 70 ? 'warn' : 'success'}>
@@ -97,7 +97,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
           <span className="text-border">•</span>
           <div className="flex items-center gap-1.5">
             <span>Aksi:</span>
-            <span className="text-accent font-semibold uppercase">{budget.action || budget.action_on_exceed || 'block'}</span>
+            <span className="text-accent-text font-semibold uppercase">{budget.action || budget.action_on_exceed || 'block'}</span>
           </div>
         </div>
       </div>

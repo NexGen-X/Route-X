@@ -31,7 +31,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
     <Card className="p-6 border-accent/20 bg-bg-surface-2">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent-text flex items-center justify-center">
             <Database className="w-5 h-5" />
           </div>
           <div>
@@ -39,7 +39,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
               <h2 className="text-sm font-semibold text-white">
                 Pencadangan & Pemulihan Database (SQL)
               </h2>
-              <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">
+              <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-accent-text bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">
                 PostgreSQL Native
               </span>
             </div>
@@ -84,7 +84,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
           <span className="font-mono text-white text-sm font-semibold truncate block">
             {backupStatus?.database_name || 'Memuat...'}
           </span>
-          <span className="text-[10px] text-accent font-mono mt-0.5 block">
+          <span className="text-[10px] text-accent-text font-mono mt-0.5 block">
             Ukuran: {backupStatus?.database_size || '-'}
           </span>
         </div>
@@ -125,7 +125,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
         <div className="flex flex-col justify-between p-5 rounded-xl bg-bg-surface-2 border border-border/80">
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-white font-semibold text-sm">
-              <Download className="w-4 h-4 text-accent" />
+              <Download className="w-4 h-4 text-accent-text" />
               <span>Ekspor Snapshot Database (SQL)</span>
             </div>
             <p className="text-xs text-text-secondary leading-relaxed">
@@ -145,8 +145,8 @@ export const BackupTab: React.FC<BackupTabProps> = ({
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-accent">.sql.gz</span>
-                    <span className="text-[9px] bg-accent/20 text-accent font-semibold px-1.5 py-0.2 rounded">Rekomendasi</span>
+                    <span className="font-mono text-xs font-bold text-accent-text">.sql.gz</span>
+                    <span className="text-[9px] bg-accent/20 text-accent-text font-semibold px-1.5 py-0.2 rounded">Rekomendasi</span>
                   </div>
                   <span className="text-[10px] text-text-secondary block mt-1">Kompresi Gzip ringkas, cepat diunduh.</span>
                 </button>
@@ -212,7 +212,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
               >
                 {selectedBackupFile ? (
                   <div className="flex items-center gap-2.5 text-xs text-white">
-                    <FileText className="w-5 h-5 text-accent shrink-0" />
+                    <FileText className="w-5 h-5 text-accent-text shrink-0" />
                     <div className="text-left overflow-hidden">
                       <span className="font-mono font-semibold block truncate max-w-[220px]">
                         {selectedBackupFile.name}

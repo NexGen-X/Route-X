@@ -43,7 +43,7 @@ export const APIKeyScopeDrawer: React.FC<APIKeyScopeDrawerProps> = ({
       onClose={onClose}
       title={
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-accent/15 text-accent-text flex items-center justify-center">
             <Layers className="w-4 h-4" aria-hidden="true" />
           </div>
           <span>Allowed Scope Model & Provider</span>
@@ -135,7 +135,7 @@ export const APIKeyScopeDrawer: React.FC<APIKeyScopeDrawerProps> = ({
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold text-xs text-white group-hover:text-accent transition-colors truncate">
+                        <span className="font-semibold text-xs text-white group-hover:text-accent-text transition-colors truncate">
                           {opt.modelDisplayName}
                         </span>
                         {opt.family && (

@@ -63,7 +63,7 @@ export const RequestCardMobile: React.FC<RequestCardMobileProps> = ({
         <span className="text-text-muted truncate max-w-[140px] flex items-center gap-1">
           <span>{request.provider_name || request.provider_id || '-'}</span>
           {request.is_stream && (
-            <span className="text-[9px] px-1 py-0.2 rounded bg-bg-surface-3 text-accent border border-border/50">
+            <span className="text-[9px] px-1 py-0.2 rounded bg-bg-surface-3 text-accent-text border border-border/50">
               SSE
             </span>
           )}
@@ -87,7 +87,7 @@ export const RequestCardMobile: React.FC<RequestCardMobileProps> = ({
       {/* Baris 3: ID Request & Tombol Aksi */}
       <div className="flex items-center justify-between text-[10px] text-text-muted font-mono pt-1.5 border-t border-border/60">
         <span className="truncate max-w-[200px]">ID: {request.request_id}</span>
-        <span className="text-accent flex items-center gap-0.5 font-medium min-h-[32px] items-center">
+        <span className="text-accent-text flex items-center gap-0.5 font-medium min-h-[32px] items-center">
           Detail <ChevronRight className="w-3 h-3" aria-hidden="true" />
         </span>
       </div>

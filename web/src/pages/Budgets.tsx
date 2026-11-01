@@ -272,7 +272,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
-          <Coins className="w-4 h-4 text-accent" />
+          <Coins className="w-4 h-4 text-accent-text" />
           <span>Batas Anggaran (USD)</span>
         </button>
         <button
@@ -286,7 +286,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
-          <Gauge className="w-4 h-4 text-accent" />
+          <Gauge className="w-4 h-4 text-accent-text" />
           <span>Batas Laju Trafik (RPM / TPM)</span>
         </button>
       </div>
@@ -354,7 +354,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
                       });
                       setIsCreateBudgetOpen(true);
                     }}
-                    icon={<Sparkles className="w-3.5 h-3.5 text-accent" />}
+                    icon={<Sparkles className="w-3.5 h-3.5 text-accent-text" />}
                   >
                     Template Dev $10/bln
                   </Button>

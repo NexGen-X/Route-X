@@ -140,11 +140,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             }`}
           >
             <span className="flex items-center gap-1.5 min-w-0">
-              <Globe className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+              <Globe className="w-3.5 h-3.5 text-accent-text flex-shrink-0" />
               <span className="font-bold text-white truncate">Direct (Tanpa Proxy)</span>
             </span>
             {!selectedProvider?.egress_pool_id && (
-              <span className="px-1.5 py-0.2 text-[10px] rounded bg-accent text-black font-bold flex-shrink-0">Aktif</span>
+              <span className="px-1.5 py-0.2 text-[10px] rounded bg-accent text-white font-bold flex-shrink-0">Aktif</span>
             )}
           </div>
           {egressPools.map((pool) => {
@@ -160,11 +160,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 }`}
               >
                 <span className="flex items-center gap-1.5 min-w-0">
-                  <Globe className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                  <Globe className="w-3.5 h-3.5 text-accent-text flex-shrink-0" />
                   <span className="font-bold text-white truncate">{pool.name}</span>
                 </span>
                 {isSelected && (
-                  <span className="px-1.5 py-0.2 text-[10px] rounded bg-accent text-black font-bold flex-shrink-0">Aktif</span>
+                  <span className="px-1.5 py-0.2 text-[10px] rounded bg-accent text-white font-bold flex-shrink-0">Aktif</span>
                 )}
               </div>
             );

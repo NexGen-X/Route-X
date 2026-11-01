@@ -61,7 +61,7 @@ export const RestoreConfirmModal: React.FC<RestoreConfirmModalProps> = ({
           </div>
           <div className="flex justify-between text-text-secondary">
             <span>Ukuran Berkas:</span>
-            <span className="text-accent">
+            <span className="text-accent-text">
               {selectedBackupFile ? `${(selectedBackupFile.size / 1024).toFixed(1)} KB` : '-'}
             </span>
           </div>

@@ -72,8 +72,8 @@ export const RuleCard: React.FC<RuleCardProps> = ({
     const s = strategy.toLowerCase();
     if (s === 'priority') {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-accent/10 text-accent-hover border border-blue-500/25">
-          <ArrowDownNarrowWide className="w-3 h-3 text-accent-hover" aria-hidden="true" />
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-accent/10 text-accent-text border border-blue-500/25">
+          <ArrowDownNarrowWide className="w-3 h-3 text-accent-text" aria-hidden="true" />
           <span>Priority Failover</span>
         </span>
       );
@@ -120,7 +120,7 @@ export const RuleCard: React.FC<RuleCardProps> = ({
                 ruleMode.mode === 'model_only'
                   ? 'bg-sky-500/10 border border-sky-500/20 text-sky-400'
                   : ruleMode.mode === 'combo_routing'
-                  ? 'bg-accent/10 border border-accent/20 text-accent'
+                  ? 'bg-accent/10 border border-accent/20 text-accent-text'
                   : 'bg-purple-500/10 border border-purple-500/20 text-purple-400'
               }`}
             >

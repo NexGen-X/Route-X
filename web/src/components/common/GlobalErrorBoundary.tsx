@@ -123,7 +123,7 @@ export class GlobalErrorBoundary extends Component<GlobalErrorBoundaryProps, Glo
                 <button
                   type="button"
                   onClick={this.handleCopyDetails}
-                  className="inline-flex items-center gap-1 text-accent hover:text-blue-400 cursor-pointer transition-colors p-1"
+                  className="inline-flex items-center gap-1 text-accent-text hover:text-blue-400 cursor-pointer transition-colors p-1"
                   aria-label="Salin detail kesalahan sistem"
                 >
                   {this.state.copied ? (

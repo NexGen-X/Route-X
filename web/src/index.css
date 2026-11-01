@@ -318,3 +318,47 @@ table td {
     width: 0%;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* 9. Transisi Halaman, Cincin Fokus Baku, Gerakan Tereduksi (Fase 3 P6)      */
+/* -------------------------------------------------------------------------- */
+
+/* Transisi masuk halaman: konten memudar + naik halus 150ms setiap
+   pergantian rute (pembungkus berkunci path di App). Bahasa gerak ini
+   satu-satunya transisi halaman — jangan menambah varian per halaman. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-transition {
+  animation: page-in 150ms ease-out;
+}
+
+/* Cincin fokus baku untuk elemen interaktif yang tidak menata fokusnya
+   sendiri: komponen dengan utilitas ring/outline sendiri tidak terpengaruh
+   (spesifisitas kelas mereka lebih tinggi), elemen polos (tombol/tautan/
+   select mentah di drawer & panel) mendapat garis aksen yang terlihat. */
+:focus-visible {
+  outline: 2px solid #0070e0;
+  outline-offset: 2px;
+}
+
+/* Hormati preferensi gerakan tereduksi: matikan animasi & transisi
+   dekoratif, termasuk transisi halaman dan denyut skeleton. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

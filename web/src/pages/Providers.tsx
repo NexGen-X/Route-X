@@ -450,7 +450,7 @@ export const Providers: React.FC = () => {
       <div className="rounded-xl border border-border/80 bg-bg-surface-2/40 p-4 transition-all">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
+            <div className="w-7 h-7 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent-text">
               <Sparkles className="w-3.5 h-3.5" />
             </div>
             <div>
@@ -502,7 +502,7 @@ export const Providers: React.FC = () => {
             <span className="text-xs font-medium text-text-muted">Total Provider</span>
             <div className="text-lg font-bold text-white">{providers.length}</div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-bg-surface-2 border border-border flex items-center justify-center text-accent">
+          <div className="w-8 h-8 rounded-lg bg-bg-surface-2 border border-border flex items-center justify-center text-accent-text">
             <Server className="w-4 h-4" />
           </div>
         </div>
@@ -532,12 +532,12 @@ export const Providers: React.FC = () => {
         <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
           <div className="space-y-0.5">
             <span className="text-xs font-medium text-text-muted">Enkripsi Kunci</span>
-            <div className="text-xs font-bold text-accent mt-1 flex items-center gap-1">
+            <div className="text-xs font-bold text-accent-text mt-1 flex items-center gap-1">
               <Shield className="w-3.5 h-3.5" />
               <span>AES-256-GCM</span>
             </div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent">
+          <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent-text">
             <KeyRound className="w-4 h-4" />
           </div>
         </div>
@@ -619,7 +619,7 @@ export const Providers: React.FC = () => {
                 className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all cursor-pointer shadow-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
                   isManualProvider
                     ? 'bg-purple-950/50 border border-purple-500/50 text-purple-300 hover:scale-105 hover:border-purple-300'
-                    : 'bg-bg-surface border border-border text-accent hover:scale-105 hover:border-accent'
+                    : 'bg-bg-surface border border-border text-accent-text hover:scale-105 hover:border-accent'
                 }`}
               >
                 {selectedProvider && (
@@ -703,7 +703,7 @@ export const Providers: React.FC = () => {
                 onClick={() => setDrawerTab('models')}
                 className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'models'
-                    ? 'bg-accent text-black font-bold shadow'
+                    ? 'bg-accent text-white font-bold shadow'
                     : 'text-text-secondary hover:text-white hover:bg-bg-surface/50'
                 }`}
               >
@@ -730,7 +730,7 @@ export const Providers: React.FC = () => {
                 onClick={() => setDrawerTab('credentials')}
                 className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'credentials'
-                    ? 'bg-accent text-black font-bold shadow'
+                    ? 'bg-accent text-white font-bold shadow'
                     : 'text-text-secondary hover:text-white hover:bg-bg-surface/50'
                 }`}
               >
@@ -757,7 +757,7 @@ export const Providers: React.FC = () => {
                 onClick={() => setDrawerTab('settings')}
                 className={`flex items-center justify-center gap-1 sm:gap-1.5 py-1.5 sm:py-2 px-1 rounded-lg text-[11px] sm:text-xs font-semibold transition-all cursor-pointer ${
                   drawerTab === 'settings'
-                    ? 'bg-accent text-black font-bold shadow'
+                    ? 'bg-accent text-white font-bold shadow'
                     : 'text-text-secondary hover:text-white hover:bg-bg-surface/50'
                 }`}
               >

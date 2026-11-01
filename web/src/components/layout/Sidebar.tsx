@@ -129,7 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="font-semibold tracking-tight text-white text-sm leading-none">
                   Route-X
                 </span>
-                <span className="text-[10px] font-mono text-accent px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/20">
+                <span className="text-[10px] font-mono text-accent-text px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/20">
                   {APP_VERSION}
                 </span>
               </div>
@@ -175,7 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <div className="flex-1 flex items-center justify-between min-w-0">
                         <span className="truncate">{item.name}</span>
                         {item.badge && (
-                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-accent/15 text-accent-text border border-accent/30">
                             {item.badge}
                           </span>
                         )}

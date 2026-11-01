@@ -160,7 +160,7 @@ export const UsersPage: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={<span className="flex items-center gap-2"><Users className="w-6 h-6 text-accent" /> Pengguna Admin</span>}
+        title={<span className="flex items-center gap-2"><Users className="w-6 h-6 text-accent-text" /> Pengguna Admin</span>}
         actions={
           <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)} icon={<Plus className="w-4 h-4" />} className="w-full sm:w-auto justify-center">
             Tambah Pengguna
@@ -231,7 +231,7 @@ export const UsersPage: React.FC = () => {
                     <td className={kelasSelIsi}>
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-8 h-8 rounded-full bg-accent/15 border border-accent/20 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-bold text-accent">
+                          <span className="text-xs font-bold text-accent-text">
                             {(u.display_name || u.email).charAt(0).toUpperCase()}
                           </span>
                         </div>
@@ -313,7 +313,7 @@ export const UsersPage: React.FC = () => {
             <Card key={u.id} className="p-4 space-y-3">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-full bg-accent/15 border border-accent/20 flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-bold text-accent">
+                  <span className="text-xs font-bold text-accent-text">
                     {(u.display_name || u.email).charAt(0).toUpperCase()}
                   </span>
                 </div>
@@ -455,7 +455,7 @@ export const UsersPage: React.FC = () => {
           <div className="space-y-5 text-xs">
             <div className="flex items-center justify-between p-3 bg-bg-surface-2 border border-border rounded-nav">
               <div className="flex items-center gap-2">
-                <Shield className="w-4 h-4 text-accent" />
+                <Shield className="w-4 h-4 text-accent-text" />
                 <span className="text-white font-semibold">Tingkat Akses</span>
               </div>
               <Badge variant="lime" className="font-mono">Administrator Penuh</Badge>
@@ -463,7 +463,7 @@ export const UsersPage: React.FC = () => {
 
             <div className="pt-3 border-t border-border">
               <div className="flex items-center gap-1.5 text-text-secondary text-xs font-medium mb-2">
-                <Pencil className="w-3.5 h-3.5 text-accent" />
+                <Pencil className="w-3.5 h-3.5 text-accent-text" />
                 <span>Ubah Nama Tampilan:</span>
               </div>
               <div className="flex gap-2">

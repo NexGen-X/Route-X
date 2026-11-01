@@ -325,13 +325,13 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
               onClick={() => setEditMode('combo_routing')}
               className={`py-2 px-2 text-center rounded-lg text-xs font-semibold transition-all flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 cursor-pointer ${
                 editMode === 'combo_routing'
-                  ? 'bg-accent/15 border border-accent/60 text-accent shadow-sm shadow-accent/10'
+                  ? 'bg-accent/15 border border-accent/60 text-accent-text shadow-sm shadow-accent/10'
                   : 'text-text-muted hover:text-white hover:bg-bg-surface border border-transparent'
               }`}
             >
               <Layers
                 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${
-                  editMode === 'combo_routing' ? 'text-accent' : 'text-text-muted'
+                  editMode === 'combo_routing' ? 'text-accent-text' : 'text-text-muted'
                 }`}
               />
               <span className="text-[11px] sm:text-xs">Failover &amp; Combo Cascade</span>

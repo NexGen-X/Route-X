@@ -55,7 +55,7 @@ export const EgressProbeFeedback: React.FC<EgressProbeFeedbackProps> = ({
             </span>
             {result.country && (
               <span>
-                Wilayah: <strong className="text-accent">{result.country}</strong>
+                Wilayah: <strong className="text-accent-text">{result.country}</strong>
               </span>
             )}
             {result.datacenter && (

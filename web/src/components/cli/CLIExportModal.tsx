@@ -79,7 +79,7 @@ export const CLIExportModal: React.FC<CLIExportModalProps> = ({
             onClick={() => onCopy(modalRenderedScript, 'modal-full-script')}
             icon={
               copiedKey === 'modal-full-script' ? (
-                <Check className="w-3.5 h-3.5 text-accent" />
+                <Check className="w-3.5 h-3.5 text-accent-text" />
               ) : (
                 <Copy className="w-3.5 h-3.5" />
               )
@@ -123,7 +123,7 @@ export const CLIExportModal: React.FC<CLIExportModalProps> = ({
         <div className="bg-bg-surface-2 p-3 rounded-inner border border-border text-xs text-text-muted">
           <strong className="text-white block mb-1">Tips Integrasi Shell:</strong>
           Untuk memuat otomatis setiap membuka sesi terminal baru di mesin Anda:
-          <code className="block mt-1 bg-bg-base p-1.5 rounded-inner font-mono text-accent">
+          <code className="block mt-1 bg-bg-base p-1.5 rounded-inner font-mono text-accent-text">
             echo 'source ~/.routex/cli-env.sh' &gt;&gt; ~/.bashrc
           </code>
         </div>

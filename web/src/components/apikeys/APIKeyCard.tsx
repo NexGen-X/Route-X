@@ -94,7 +94,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
         {/* Header: Nama Kunci, Status Badge & Expiration Badge */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 text-accent flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 text-accent-text flex items-center justify-center shrink-0">
               <KeyRound className="w-5 h-5" aria-hidden="true" />
             </div>
             <div className="min-w-0">
@@ -145,10 +145,10 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
                 type="button"
                 onClick={handleCopy}
                 aria-label={`Salin kunci API untuk ${apiKey.name}`}
-                className="min-h-[44px] min-w-[44px] p-2 text-text-muted hover:text-accent rounded-nav transition-colors flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                className="min-h-[44px] min-w-[44px] p-2 text-text-muted hover:text-accent-text rounded-nav transition-colors flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
               >
                 {copied ? (
-                  <Check className="w-4 h-4 text-accent" aria-hidden="true" />
+                  <Check className="w-4 h-4 text-accent-text" aria-hidden="true" />
                 ) : (
                   <Copy className="w-4 h-4" aria-hidden="true" />
                 )}

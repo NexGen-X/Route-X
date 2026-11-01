@@ -58,7 +58,7 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
       <form id="create-budget-form" noValidate onSubmit={handleSubmit} className="space-y-4 text-xs">
         {/* Quick Presets Khusus Developer / Tim */}
         <div className="p-3.5 rounded-xl bg-accent/5 border border-accent/20 space-y-2.5">
-          <span className="text-[11px] font-semibold text-accent flex items-center gap-1.5">
+          <span className="text-[11px] font-semibold text-accent-text flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Preset 1-Klik Anggaran Moneter</span>
           </span>
@@ -235,7 +235,7 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1">
-              <DollarSign className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              <DollarSign className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
               <span>Batas Maksimal (USD) *</span>
             </label>
             <input

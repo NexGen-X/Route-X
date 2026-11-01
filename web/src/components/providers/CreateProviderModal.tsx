@@ -420,13 +420,13 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
         <div className="rounded-xl border border-border/80 bg-bg-surface-2/40 p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold text-text-secondary flex items-center gap-1.5 uppercase tracking-wide">
-              <Sparkles className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              <Sparkles className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
               Pilih Preset Resmi 1-Klik
             </span>
             <button
               type="button"
               onClick={() => setShowPresetPicker(!showPresetPicker)}
-              className="text-[11px] text-accent hover:underline cursor-pointer flex items-center gap-1"
+              className="text-[11px] text-accent-text hover:underline cursor-pointer flex items-center gap-1"
               aria-label={showPresetPicker ? 'Sembunyikan preset' : 'Lihat semua preset'}
             >
               <span>{showPresetPicker ? 'Kecilkan' : 'Lihat Preset'}</span>
@@ -535,7 +535,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           <div className="p-3.5 rounded-xl border border-accent/40 bg-accent/10 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
-                <Users className="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
+                <Users className="w-4 h-4 text-accent-text shrink-0" aria-hidden="true" />
                 <span className="font-bold text-white text-xs truncate">
                   Provider "{targetExistingProvider.display_name || targetExistingProvider.name}" Sudah Terdaftar
                 </span>
@@ -543,7 +543,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
               <button
                 type="button"
                 onClick={switchToCreateNew}
-                className="text-[11px] text-accent hover:underline font-medium shrink-0 cursor-pointer min-h-[32px] flex items-center"
+                className="text-[11px] text-accent-text hover:underline font-medium shrink-0 cursor-pointer min-h-[32px] flex items-center"
                 title="Buat entitas provider baru terpisah di luar pool ini"
                 aria-label="Buat entitas provider baru terpisah"
               >
@@ -554,7 +554,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
               Akun baru akan otomatis digabungkan ke pool multi-account{' '}
               <strong className="text-white">{targetExistingProvider.display_name || targetExistingProvider.name}</strong>{' '}
               dengan strategi rotasi{' '}
-              <strong className="text-accent font-mono">
+              <strong className="text-accent-text font-mono">
                 {targetExistingProvider.credential_strategy === 'priority'
                   ? 'Priority Failover (Utama → Cadangan)'
                   : 'Round Robin (Load Balanced 50:50)'}
@@ -572,7 +572,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
             <button
               type="button"
               onClick={switchAddToPool}
-              className="text-accent hover:underline font-semibold flex items-center gap-1 shrink-0 cursor-pointer min-h-[32px]"
+              className="text-accent-text hover:underline font-semibold flex items-center gap-1 shrink-0 cursor-pointer min-h-[32px]"
               aria-label="Gabungkan ke pool provider yang sudah ada"
             >
               <RotateCcw className="w-3 h-3" aria-hidden="true" />
@@ -670,7 +670,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
               onClick={() => setAuthTab('apikey')}
               className={`pb-1 font-medium transition-colors flex items-center gap-1.5 min-h-[38px] px-2 rounded-t cursor-pointer ${
                 authTab === 'apikey'
-                  ? 'border-b-2 border-accent text-accent font-bold bg-accent/5'
+                  ? 'border-b-2 border-accent text-accent-text font-bold bg-accent/5'
                   : 'text-text-muted hover:text-white'
               }`}
             >
@@ -686,7 +686,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
               onClick={() => setAuthTab('oauth')}
               className={`pb-1 font-medium transition-colors flex items-center gap-1.5 min-h-[38px] px-2 rounded-t cursor-pointer ${
                 authTab === 'oauth'
-                  ? 'border-b-2 border-accent text-accent font-bold bg-accent/5'
+                  ? 'border-b-2 border-accent text-accent-text font-bold bg-accent/5'
                   : 'text-text-muted hover:text-white'
               }`}
             >
@@ -724,7 +724,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                     Secret API Key *
                   </label>
                   {currentPreset?.apiKeyHelp && (
-                    <span className="text-[10px] text-accent font-mono flex items-center gap-1">
+                    <span className="text-[10px] text-accent-text font-mono flex items-center gap-1">
                       <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
                       {currentPreset.apiKeyHelp}
                     </span>
@@ -751,7 +751,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                   </button>
                 </div>
                 <p className="text-[11px] text-text-muted flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-accent flex-shrink-0" aria-hidden="true" />
+                  <Lock className="w-3.5 h-3.5 text-accent-text flex-shrink-0" aria-hidden="true" />
                   Dienkripsi amplop AES-256-GCM tingkat record PostgreSQL dengan AAD.
                 </p>
               </div>
@@ -760,7 +760,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
               {(currentPreset?.authLoginType === 'local_socket' || (!currentPreset && (newProv.base_url.includes('localhost') || newProv.base_url.includes('127.0.0.1')))) && (
                 <div className="pt-2 border-t border-border/50 space-y-2">
                   <div className="flex items-center gap-2 text-white font-semibold text-xs">
-                    <Server className="w-4 h-4 text-accent" aria-hidden="true" />
+                    <Server className="w-4 h-4 text-accent-text" aria-hidden="true" />
                     <span>Socket Server Lokal (Zero-Config)</span>
                   </div>
                   <p className="text-[11px] text-text-muted">
@@ -774,7 +774,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                       size="sm"
                       onClick={handleTestSocket}
                       isLoading={socketPingStatus?.testing}
-                      icon={<Activity className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
+                      icon={<Activity className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />}
                       className="min-h-[38px] text-xs"
                       aria-label="Uji respons socket server lokal"
                     >
@@ -802,7 +802,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           {authTab === 'oauth' && (
             <div id="auth-tabpanel-oauth" role="tabpanel" aria-labelledby="auth-tab-oauth" className="space-y-3 pt-1">
               <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-xs text-text-secondary flex items-start gap-2">
-                <Shield className="w-4 h-4 text-accent shrink-0 mt-0.5" aria-hidden="true" />
+                <Shield className="w-4 h-4 text-accent-text shrink-0 mt-0.5" aria-hidden="true" />
                 <div>
                   <span className="font-semibold text-white block">OAuth Multi-Account Auto-Refresh</span>
                   <span className="text-[11px] text-text-muted">
@@ -813,7 +813,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
 
               <div className="space-y-3">
                 <div className="flex items-start gap-2.5 text-xs text-text-secondary">
-                  <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
+                  <span className="w-5 h-5 rounded-full bg-accent/20 text-accent-text font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
                     1
                   </span>
                   <div>
@@ -829,7 +829,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                       }
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 mt-2 px-3 py-2 rounded-lg bg-accent text-black font-semibold text-xs hover:opacity-90 transition-opacity min-h-[38px]"
+                      className="inline-flex items-center gap-1.5 mt-2 px-3 py-2 rounded-lg bg-accent text-white font-semibold text-xs hover:opacity-90 transition-opacity min-h-[38px]"
                       aria-label="Login dengan Akun Google Otorisasi"
                     >
                       <span>{currentPreset?.authLoginLabel || 'Login dengan Akun Google'}</span>
@@ -839,7 +839,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                 </div>
 
                 <div className="flex items-start gap-2.5 text-xs text-text-secondary pt-2 border-t border-border/50">
-                  <span className="w-5 h-5 rounded-full bg-accent/20 text-accent font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
+                  <span className="w-5 h-5 rounded-full bg-accent/20 text-accent-text font-bold flex items-center justify-center flex-shrink-0 text-[11px]">
                     2
                   </span>
                   <div className="flex-1 space-y-1.5">
@@ -876,7 +876,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           {/* Jalur Keluar (Egress Proxy) */}
           <div className="pt-2.5 border-t border-border/50">
             <label className="block text-xs font-medium text-text-secondary mb-1.5 flex items-center gap-1.5">
-              <Globe className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              <Globe className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
               Jalur Keluar (Egress Proxy) Opsional
             </label>
             <Select
@@ -912,10 +912,10 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
             <button
               type="button"
               onClick={() => setShowAdvanced(!showAdvanced)}
-              className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-accent font-medium transition-colors py-1 cursor-pointer min-h-[36px]"
+              className="inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-accent-text font-medium transition-colors py-1 cursor-pointer min-h-[36px]"
               aria-label={showAdvanced ? 'Sembunyikan Pengaturan Lanjutan' : 'Tampilkan Pengaturan Lanjutan'}
             >
-              {showAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
+              {showAdvanced ? <ChevronUp className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" /> : <ChevronDown className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />}
               <span>{showAdvanced ? 'Sembunyikan Pengaturan Lanjutan' : '⚙️ Pengaturan Lanjutan (ID Unik, Base URL, Egress Proxy)'}</span>
             </button>
             {showAdvanced && (
@@ -951,7 +951,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
         )}
 
         {isSaving && savingStep && (
-          <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2 animate-pulse" role="status">
+          <div className="p-3 rounded-lg bg-accent/10 border border-accent/20 text-accent-text text-xs flex items-center gap-2 animate-pulse" role="status">
             <RefreshCw className="w-4 h-4 animate-spin flex-shrink-0" aria-hidden="true" />
             <span>{savingStep}</span>
           </div>

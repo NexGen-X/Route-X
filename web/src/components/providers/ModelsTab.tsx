@@ -103,7 +103,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
             type="button"
             onClick={onOpenAddModelModal}
             aria-label="Tambah model manual"
-            className="p-1.5 sm:p-2 rounded-lg bg-accent text-black hover:bg-accent-hover transition-colors cursor-pointer flex-shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            className="p-1.5 sm:p-2 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer flex-shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
           >
             <Plus className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -142,7 +142,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
                     aria-label={`Uji inferensi model ${model.upstream_model_name}`}
                     className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer disabled:opacity-50 flex-shrink-0"
                   >
-                    {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent" aria-hidden="true" /> : <FlaskConical className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
+                    {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent-text" aria-hidden="true" /> : <FlaskConical className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />}
                   </button>
                   <button
                     type="button"

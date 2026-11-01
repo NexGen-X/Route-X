@@ -113,13 +113,13 @@ export const ComboBuilder: React.FC<ComboBuilderProps> = ({
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-white flex items-center gap-1.5">
               {value.strategy === 'round_robin' ? (
-                <Scale className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+                <Scale className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
               ) : value.strategy === 'lowest_latency' ? (
                 <Activity className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
               ) : value.strategy === 'lowest_cost' ? (
                 <Coins className="w-3.5 h-3.5 text-cyan-400" aria-hidden="true" />
               ) : (
-                <Layers className="w-3.5 h-3.5 text-accent-hover" aria-hidden="true" />
+                <Layers className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
               )}
               <span>Visualisasi Distribusi &amp; Probabilitas</span>
             </span>
@@ -152,7 +152,7 @@ export const ComboBuilder: React.FC<ComboBuilderProps> = ({
               </div>
               <div className="flex items-center justify-between text-[10px] font-mono text-text-muted">
                 <span>Pembagian Rata Beban:</span>
-                <span className="text-accent font-semibold">~{equalPercent}% per model</span>
+                <span className="text-accent-text font-semibold">~{equalPercent}% per model</span>
               </div>
             </div>
           ) : value.strategy === 'lowest_latency' ? (
@@ -225,7 +225,7 @@ export const ComboBuilder: React.FC<ComboBuilderProps> = ({
             }));
             return (
               <div key={index} className="flex items-center gap-2">
-                <span className="flex-shrink-0 w-6 text-center text-xs font-mono font-bold text-accent bg-accent/10 py-1.5 rounded border border-accent/20">
+                <span className="flex-shrink-0 w-6 text-center text-xs font-mono font-bold text-accent-text bg-accent/10 py-1.5 rounded border border-accent/20">
                   {index + 1}
                 </span>
                 <div className="flex-1">
@@ -309,7 +309,7 @@ export const ComboBuilder: React.FC<ComboBuilderProps> = ({
           className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-xs text-white focus:outline-none focus:ring-1 focus:ring-accent font-mono"
         />
         <p className="mt-1 text-[11px] text-text-muted flex items-center gap-1">
-          <Zap className="w-3 h-3 flex-shrink-0 text-accent" aria-hidden="true" />
+          <Zap className="w-3 h-3 flex-shrink-0 text-accent-text" aria-hidden="true" />
           Opsional. Klien memanggil pengenal ini alih-alih nama model. Wajib ada resep
           pipeline yang sah.
         </p>

@@ -24,7 +24,7 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
           <span className="text-xs font-normal text-text-secondary truncate">
             Total Permintaan
           </span>
-          <div className="p-1.5 rounded-md text-accent-hover bg-accent/10 border border-accent/20 shrink-0">
+          <div className="p-1.5 rounded-md text-accent-text bg-accent/10 border border-accent/20 shrink-0">
             <Activity className="w-3.5 h-3.5" aria-hidden="true" />
           </div>
         </div>

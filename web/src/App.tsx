@@ -65,7 +65,7 @@ const Shell: React.FC = () => {
           RX
         </div>
         <p className="text-xs text-text-muted font-mono flex items-center gap-2">
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-accent-text" />
           Memuat Konsol Route-X...
         </p>
       </div>
@@ -227,12 +227,17 @@ const Shell: React.FC = () => {
             <React.Suspense
               fallback={
                 <div className="flex flex-col items-center justify-center py-24 text-text-muted">
-                  <Loader2 className="w-7 h-7 animate-spin text-accent mb-2" />
+                  <Loader2 className="w-7 h-7 animate-spin text-accent-text mb-2" />
                   <span className="text-xs font-mono">Memuat modul {title}...</span>
                 </div>
               }
             >
-              {content}
+              {/* Transisi masuk halaman (Fase 3 P6): kunci path membuat
+                  pembungkus terpasang ulang di tiap navigasi sehingga
+                  animasi page-in berjalan sekali per pergantian rute. */}
+              <div key={currentPath} className="page-transition">
+                {content}
+              </div>
             </React.Suspense>
           </PageErrorBoundary>
         </main>

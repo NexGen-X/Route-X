@@ -32,7 +32,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-start md:items-center justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent flex items-center justify-center shrink-0 mt-0.5">
+          <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent-text flex items-center justify-center shrink-0 mt-0.5">
             <Sliders className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
@@ -40,7 +40,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
               <h2 className="text-sm sm:text-base font-bold text-white tracking-tight">
                 Runtime Parameters
               </h2>
-              <span className="inline-flex items-center text-[10px] font-semibold text-accent bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">
+              <span className="inline-flex items-center text-[10px] font-semibold text-accent-text bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">
                 Operasional Dinamis
               </span>
             </div>
@@ -74,7 +74,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
       {customSettings.length === 0 ? (
         <Card className="py-8 px-6 text-center border border-border/60">
           <div className="max-w-md mx-auto space-y-3">
-            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 text-accent flex items-center justify-center mx-auto">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 text-accent-text flex items-center justify-center mx-auto">
               <Sliders className="w-5 h-5" />
             </div>
             <div>
@@ -101,7 +101,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
               <div>
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-7 h-7 rounded-lg bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
+                    <div className="w-7 h-7 rounded-lg bg-accent/10 text-accent-text flex items-center justify-center flex-shrink-0">
                       <Sliders className="w-3.5 h-3.5" />
                     </div>
                     <div className="min-w-0">

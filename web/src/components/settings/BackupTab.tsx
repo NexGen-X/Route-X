@@ -1,5 +1,4 @@
 import React from 'react';
-import { Card } from '../common/Card';
 import { Button } from '../common/Button';
 import {
   Database,
@@ -28,15 +27,13 @@ export const BackupTab: React.FC<BackupTabProps> = ({
   exportUrl,
 }) => {
   return (
-    <Card className="p-6 border-accent/20 bg-bg-surface-2">
+    <section>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent-text flex items-center justify-center">
-            <Database className="w-5 h-5" />
-          </div>
+          <Database className="w-5 h-5 text-accent-text shrink-0" />
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-semibold text-white">
+              <h2 className="text-sm font-semibold text-text-primary">
                 Pencadangan & Pemulihan Database (SQL)
               </h2>
               <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-accent-text bg-accent/10 px-2 py-0.5 rounded-full border border-accent/20 whitespace-nowrap">
@@ -79,34 +76,34 @@ export const BackupTab: React.FC<BackupTabProps> = ({
 
       {/* Ringkasan Status Database */}
       <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
+        <div className="py-1">
           <span className="text-text-muted block text-[11px] font-medium">Basis Data</span>
-          <span className="font-mono text-white text-sm font-semibold truncate block">
+          <span className="font-mono text-text-primary text-sm font-semibold truncate block">
             {backupStatus?.database_name || 'Memuat...'}
           </span>
           <span className="text-[10px] text-accent-text font-mono mt-0.5 block">
             Ukuran: {backupStatus?.database_size || '-'}
           </span>
         </div>
-        <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
+        <div className="py-1">
           <span className="text-text-muted block text-[11px] font-medium">Total Tabel Sistem</span>
-          <span className="font-mono text-white text-sm font-semibold block">
+          <span className="font-mono text-text-primary text-sm font-semibold block">
             {backupStatus ? `${backupStatus.total_tables} Tabel` : '-'}
           </span>
           <span className="text-[10px] text-text-muted font-mono mt-0.5 block">
             DDL & DML terindeks
           </span>
         </div>
-        <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
+        <div className="py-1">
           <span className="text-text-muted block text-[11px] font-medium">Entitas Terkonfigurasi</span>
-          <span className="font-mono text-white text-xs font-semibold block mt-0.5">
+          <span className="font-mono text-text-primary text-xs font-semibold block mt-0.5">
             {backupStatus ? `${backupStatus.models_count} Model · ${backupStatus.providers_count} Provider` : '-'}
           </span>
           <span className="text-[10px] text-text-muted font-mono mt-0.5 block">
             {backupStatus ? `${backupStatus.routing_rules_count} Rules · ${backupStatus.api_keys_count} Keys` : '-'}
           </span>
         </div>
-        <div className="bg-bg-surface-2 p-3 rounded-xl border border-border">
+        <div className="py-1">
           <span className="text-text-muted block text-[11px] font-medium">Cadangan Server Terakhir</span>
           <span className="font-mono text-emerald-400 text-xs font-semibold truncate block">
             {backupStatus?.last_server_backup ? backupStatus.last_server_backup.file_size : 'Belum ada'}
@@ -122,9 +119,9 @@ export const BackupTab: React.FC<BackupTabProps> = ({
       {/* Dua Kolom Aksi Ekspor vs Pemulihan */}
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6 pt-5 border-t border-border">
         {/* Kolom Kiri: Ekspor Cadangan SQL */}
-        <div className="flex flex-col justify-between p-5 rounded-xl bg-bg-surface-2 border border-border/80">
+        <div className="flex flex-col justify-between py-1">
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-white font-semibold text-sm">
+            <div className="flex items-center gap-2 text-text-primary font-semibold text-sm">
               <Download className="w-4 h-4 text-accent-text" />
               <span>Ekspor Snapshot Database (SQL)</span>
             </div>
@@ -140,7 +137,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
                   onClick={() => setExportFormat('sql.gz')}
                   className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
                     exportFormat === 'sql.gz'
-                      ? 'border-accent bg-accent/10 text-white'
+                      ? 'border-accent bg-accent/10 text-text-primary'
                       : 'border-border bg-bg-surface-2 text-text-muted hover:border-border/80'
                   }`}
                 >
@@ -155,12 +152,12 @@ export const BackupTab: React.FC<BackupTabProps> = ({
                   onClick={() => setExportFormat('sql')}
                   className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
                     exportFormat === 'sql'
-                      ? 'border-accent bg-accent/10 text-white'
+                      ? 'border-accent bg-accent/10 text-text-primary'
                       : 'border-border bg-bg-surface-2 text-text-muted hover:border-border/80'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs font-bold text-white">.sql</span>
+                    <span className="font-mono text-xs font-bold text-text-primary">.sql</span>
                     <span className="text-[9px] bg-bg-surface-2 text-text-muted font-medium px-1.5 py-0.2 rounded">Plain</span>
                   </div>
                   <span className="text-[10px] text-text-secondary block mt-1">Teks SQL mentah yang dapat dibaca manusia.</span>
@@ -182,9 +179,9 @@ export const BackupTab: React.FC<BackupTabProps> = ({
         </div>
 
         {/* Kolom Kanan: Pemulihan Database (Restore) */}
-        <div className="flex flex-col justify-between p-5 rounded-xl bg-bg-surface-2 border border-border/80">
+        <div className="flex flex-col justify-between py-1">
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-white font-semibold text-sm">
+            <div className="flex items-center gap-2 text-text-primary font-semibold text-sm">
               <Upload className="w-4 h-4 text-amber-400" />
               <span>Pemulihan Database (Restore SQL)</span>
             </div>
@@ -207,11 +204,11 @@ export const BackupTab: React.FC<BackupTabProps> = ({
                 className={`flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
                   selectedBackupFile
                     ? 'border-accent/60 bg-accent/5'
-                    : 'border-border hover:border-border/80 bg-bg-surface-2'
+                    : 'border-border hover:border-border/80'
                 }`}
               >
                 {selectedBackupFile ? (
-                  <div className="flex items-center gap-2.5 text-xs text-white">
+                  <div className="flex items-center gap-2.5 text-xs text-text-primary">
                     <FileText className="w-5 h-5 text-accent-text shrink-0" />
                     <div className="text-left overflow-hidden">
                       <span className="font-mono font-semibold block truncate max-w-[220px]">
@@ -226,7 +223,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
                 ) : (
                   <div className="text-center">
                     <Upload className="w-6 h-6 text-text-muted mx-auto mb-1.5" />
-                    <span className="text-xs text-white font-medium block">Pilih Berkas Cadangan</span>
+                    <span className="text-xs text-text-primary font-medium block">Pilih Berkas Cadangan</span>
                     <span className="text-[10px] text-text-muted block mt-0.5">
                       Klik untuk memilih berkas .sql atau .sql.gz
                     </span>
@@ -236,7 +233,7 @@ export const BackupTab: React.FC<BackupTabProps> = ({
             </div>
 
             {/* Peringatan Bahaya */}
-            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 flex items-start gap-2">
+            <div className="text-[11px] text-amber-300 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <span>
                 <strong>Perhatian:</strong> Pemulihan data akan menggantikan data konfigurasi saat ini. Disarankan melakukan ekspor cadangan terlebih dahulu sebelum melanjutkan.
@@ -259,6 +256,6 @@ export const BackupTab: React.FC<BackupTabProps> = ({
           </div>
         </div>
       </div>
-    </Card>
+    </section>
   );
 };

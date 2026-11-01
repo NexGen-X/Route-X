@@ -1,5 +1,5 @@
-import React from 'react';
-import { Search, Filter, Clock, Server, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Filter, Clock, Server, CheckCircle2, AlertCircle, ChevronDown, X } from 'lucide-react';
 import type { RequestTabFilter } from './utils';
 
 export interface RequestFilterBarProps {
@@ -18,9 +18,9 @@ export interface RequestFilterBarProps {
 }
 
 const TABS: Array<{ id: RequestTabFilter; label: string }> = [
-  { id: 'all', label: 'All Requests' },
-  { id: 'success', label: 'Success (2xx)' },
-  { id: 'errors', label: 'Errors (4xx/5xx)' },
+  { id: 'all', label: 'Semua Permintaan' },
+  { id: 'success', label: 'Sukses (2xx)' },
+  { id: 'errors', label: 'Error (4xx/5xx)' },
 ];
 
 const PROVIDER_OPTIONS = [
@@ -66,6 +66,12 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
   onTimeRangeFilterChange,
   onResetFilters,
 }) => {
+  // Filter lanjutan terlipat bawaan di viewport kecil (Fase 3 P5):
+  // panel filter dulu memakan ±45% layar pertama di mobile. Dari sm ke
+  // atas panel selalu tampil seperti biasa.
+  const [lanjutanTerbuka, setLanjutanTerbuka] = useState(false);
+  const jumlahFilterLanjutan = [providerFilter, statusFilter, timeRangeFilter].filter(Boolean).length;
+
   const hasActiveFilters = Boolean(
     search ||
     providerFilter ||
@@ -132,8 +138,30 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
         </div>
       </div>
 
+      {/* Tombol lipat filter lanjutan — hanya viewport kecil. */}
+      <button
+        type="button"
+        onClick={() => setLanjutanTerbuka((v) => !v)}
+        aria-expanded={lanjutanTerbuka}
+        className="sm:hidden inline-flex items-center gap-1.5 min-h-[44px] px-2 text-xs font-medium text-text-secondary cursor-pointer"
+      >
+        <Filter className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+        <span>Filter Lanjutan</span>
+        {jumlahFilterLanjutan > 0 && (
+          <span className="px-1.5 py-0.5 rounded-full bg-accent/15 text-accent text-[10px] font-mono">
+            {jumlahFilterLanjutan}
+          </span>
+        )}
+        <ChevronDown
+          className={`w-3.5 h-3.5 transition-transform ${lanjutanTerbuka ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        />
+      </button>
+
       {/* Baris Bawah: Filter Tajam (Provider, Status Code, Rentang Waktu) */}
-      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/40 text-xs">
+      <div
+        className={`${lanjutanTerbuka ? 'flex' : 'hidden'} sm:flex flex-wrap items-center gap-2 pt-1 border-t border-border/40 text-xs`}
+      >
         <div className="flex items-center gap-1.5 text-text-muted font-medium text-[11px] mr-1">
           <Filter className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
           <span>Filter Lanjutan:</span>

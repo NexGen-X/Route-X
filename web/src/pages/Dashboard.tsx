@@ -271,7 +271,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       : null;
   // Ciut efektif: pilihan manual operator selalu menang; tanpa pilihan
   // manual, ikuti status setup (selesai = ciut, belum = terentang).
-  const qsCollapsed = qsPref.collapsed ?? (setupSelesai ?? false);
+  // Di viewport kecil panduan mulai dalam keadaan terciut (Fase 3 P5):
+  // panduan terentang mendominasi layar pertama mobile. Keadaan awal ini
+  // hanya berlaku selama operator belum pernah mengatur manual —
+  // preferensi tersimpan selalu menang, dan lebar dinilai sekali saat
+  // halaman dimuat agar mengubah ukuran jendela tidak melipat tiba-tiba.
+  const [layarKecilAwal] = useState<boolean>(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 639px)').matches,
+  );
+  const qsCollapsed = qsPref.collapsed ?? (layarKecilAwal || (setupSelesai ?? false));
 
   const ubahQsPref = (pref: PrefQuickStart) => {
     setQsPref(pref);

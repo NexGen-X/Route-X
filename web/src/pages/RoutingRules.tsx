@@ -14,6 +14,8 @@ import {
   EditRuleDrawer,
   RuleProvidersDrawer,
 } from '../components/routing';
+import { EmptyState } from '../components/common/EmptyState';
+import { Skeleton } from '../components/common/Skeleton';
 
 export const RoutingRules: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -163,36 +165,33 @@ export const RoutingRules: React.FC = () => {
           {[...Array(3)].map((_, idx) => (
             <Card key={idx} className="p-5 animate-pulse space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-bg-surface-2" />
+                <Skeleton className="w-9 h-9 rounded-full" />
                 <div className="space-y-1.5 flex-1">
-                  <div className="h-4 bg-bg-surface-2 rounded w-2/3" />
-                  <div className="h-3 bg-bg-surface-2 rounded w-1/3" />
+                  <Skeleton className="h-4 w-2/3" />
+                  <Skeleton className="h-3 w-1/3" />
                 </div>
               </div>
-              <div className="h-12 bg-bg-surface-2 rounded" />
+              <Skeleton className="h-12" />
             </Card>
           ))}
         </div>
       ) : rules.length === 0 ? (
-        <Card className="p-10 text-center rounded-box bg-bg-surface-1 border border-border/60">
-          <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mx-auto mb-3">
-            <Layers className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-white mb-1">Belum Ada Aturan Perutean Aktif</h3>
-          <p className="text-xs text-text-secondary max-w-md mx-auto mb-5 leading-relaxed">
-            Konfigurasikan aturan perutean pertama: Passthrough langsung 1:1 ke upstream, Failover
-            multi-provider otomatis, atau Cascade hemat biaya.
-          </p>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setIsCreateOpen(true)}
-            icon={<Plus className="w-4 h-4" />}
-            className="h-9 px-4 text-xs font-semibold mx-auto"
-          >
-            Tambah Aturan Pertama
-          </Button>
-        </Card>
+        <EmptyState
+          icon={<Layers className="w-5 h-5" />}
+          title="Belum Ada Aturan Perutean Aktif"
+          description="Konfigurasikan aturan perutean pertama: Passthrough langsung 1:1 ke upstream, Failover multi-provider otomatis, atau Cascade hemat biaya."
+          action={
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              icon={<Plus className="w-4 h-4" />}
+              className="h-9 px-4 text-xs font-semibold"
+            >
+              Tambah Aturan Pertama
+            </Button>
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {rules.map((r) => (

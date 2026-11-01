@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Zap, Trash2, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Zap, Trash2, CheckCircle2 } from 'lucide-react';
 import { api, ApiError } from '../../api/client';
 import type { ResponseCacheStats } from '../../types';
 import { Badge } from '../common/Badge';
@@ -7,6 +7,7 @@ import { Button } from '../common/Button';
 import { Tooltip } from '../common/Tooltip';
 import { useToast } from '../../context/ToastContext';
 import { getErrorMessage } from './utils';
+import { InfoBanner } from '../common/InfoBanner';
 
 // Tab "Performa & Cache" di Settings (Fase 2 R3) — rumah tunggal kontrol
 // cache respons. Sebelumnya kontrol ini tinggal di halaman Diagnostics,
@@ -159,19 +160,13 @@ export const CacheTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Penjelasan jujur: aktivasi ditahan kebijakan keamanan server. */}
+      {/* Penjelasan jujur: aktivasi ditahan kebijakan keamanan server.
+          Ringkasan selalu tampil; penjelasan panjang di balik Detail
+          (InfoBanner, Fase 3 P5) — bukan lagi dinding teks. */}
       {!cache?.enabled && (
-        <div className="mt-4 flex gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200">
-          <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
-          <p className="text-[11px] leading-relaxed">
-            Cache belum dapat diaktifkan dari panel ini. Server menahan aktivasi sampai
-            kebijakan fingerprint tenant, routing, dan policy diterapk
-...[truncated 4518 chars]an (keputusan keamanan audit
-            F3 — kunci cache belum membedakan konteks tersebut, jadi respons bisa
-            tersaji lintas konteks). TTL di bawah tetap berlaku dan tersimpan;
-            statistik tetap terpantau dari sini.
-          </p>
-        </div>
+        <InfoBanner variant="warning" className="mt-4" summary="Cache belum dapat diaktifkan dari panel ini.">
+          Server menahan aktivasi sampai kebijakan fingerprint tenant, routing, dan policy diterapk ...[truncated 4518 chars]an (keputusan keamanan audit F3 — kunci cache belum membedakan konteks tersebut, jadi respons bisa tersaji lintas konteks). TTL di bawah tetap berlaku dan tersimpan; statistik tetap terpantau dari sini.
+        </InfoBanner>
       )}
 
       {/* Penolakan kebijakan dari server, ditampilkan apa adanya. */}

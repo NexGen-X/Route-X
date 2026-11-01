@@ -7,7 +7,7 @@
     background-color: #181818;
     background-image: radial-gradient(ellipse 65% 35% at 50% 0%, rgba(255, 255, 255, 0.025), transparent 70%);
     background-repeat: no-repeat;
-    color: #FAFAFA;
+    color: #ECECEC;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -92,8 +92,8 @@ input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
   -webkit-box-shadow: 0 0 0 40px #1F1F1F inset !important;
-  -webkit-text-fill-color: #FAFAFA !important;
-  caret-color: #FAFAFA !important;
+  -webkit-text-fill-color: #ECECEC !important;
+  caret-color: #ECECEC !important;
   transition: background-color 5000s ease-in-out 0s;
 }
 
@@ -130,8 +130,8 @@ input[type="checkbox"]:focus-visible {
 }
 
 input[type="checkbox"]:checked {
-  background-color: #FAFAFA;
-  border-color: #FAFAFA;
+  background-color: #ECECEC;
+  border-color: #ECECEC;
 }
 
 input[type="checkbox"]:checked::before {
@@ -180,7 +180,7 @@ input[type="radio"]:focus-visible {
 }
 
 input[type="radio"]:checked {
-  border-color: #FAFAFA;
+  border-color: #ECECEC;
 }
 
 input[type="radio"]:checked::before {
@@ -188,7 +188,7 @@ input[type="radio"]:checked::before {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 9999px;
-  background-color: #FAFAFA;
+  background-color: #ECECEC;
 }
 
 input[type="radio"]:disabled {
@@ -258,7 +258,7 @@ input[type="radio"]:disabled {
 .input-dark {
   background-color: #1F1F1F;
   border: 1px solid #2A2A2A;
-  color: #FAFAFA;
+  color: #ECECEC;
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -282,7 +282,7 @@ select {
 
 select option {
   background-color: #1F1F1F;
-  color: #FAFAFA;
+  color: #ECECEC;
 }
 
 input[type="date"],

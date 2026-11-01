@@ -385,14 +385,14 @@ export const Observability: React.FC = () => {
                     metric === 'error_rate'
                       ? '#F43F5E'
                       : metric === 'cost'
-                      ? '#10B981'
+                      ? '#3ECF8E'
                       : '#5BACE6'
                   }
                   fill={
                     metric === 'error_rate'
                       ? '#F43F5E'
                       : metric === 'cost'
-                      ? '#10B981'
+                      ? '#3ECF8E'
                       : '#5BACE6'
                   }
                   fillOpacity={0.15}

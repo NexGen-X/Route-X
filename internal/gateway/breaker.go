@@ -858,17 +858,10 @@ func (b *Breaker) Reset(ctx context.Context, providerID, model string) error {
 // sebelum yang pertama menjawab, sehingga beberapa permintaan percobaan, bukan tepat
 // HalfOpenProbes, sampai ke upstream. Melebihi kuota probe sesaat jauh lebih murah
 // daripada breaker yang macet.
-func (b *Breaker) probeWait() time.Duration { return b.cfg.probeWait() }
-
-// probeWait adalah batas menunggu hasil sebuah probe half_open, sebagai
-// metode konfigurasi agar jalur per-aturan (WithConfig) memakai nilainya
-// sendiri, bukan konfigurasi global breaker.
+//
+// Metode ini milik BreakerConfig (bukan Breaker) agar jalur per-aturan
+// (WithConfig) memakai nilainya sendiri, bukan konfigurasi global breaker.
 func (c BreakerConfig) probeWait() time.Duration { return c.OpenDuration }
-
-// keyTTL versi konfigurasi; lihat probeWait.
-func (c BreakerConfig) keyTTL() time.Duration {
-	return c.Window + c.OpenDuration + c.probeWait()
-}
 
 // keyTTL adalah masa berlaku kunci breaker di Redis.
 //
@@ -883,7 +876,11 @@ func (c BreakerConfig) keyTTL() time.Duration {
 // Window untuk sampel yang masih dihitung, OpenDuration untuk episode open yang sedang
 // berjalan, probeWait untuk probe yang belum bersuara. Menjumlahkannya memenuhi ketiganya
 // sekaligus dengan margin, tanpa kode ini perlu tahu state mana yang sedang berlaku.
-func (b *Breaker) keyTTL() time.Duration { return b.cfg.keyTTL() }
+//
+// Metode ini milik BreakerConfig; lihat probeWait soal jalur per-aturan.
+func (c BreakerConfig) keyTTL() time.Duration {
+	return c.Window + c.OpenDuration + c.probeWait()
+}
 
 // --- Jalur cepat di memori ---------------------------------------------------
 

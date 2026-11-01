@@ -53,6 +53,17 @@ jobs:
           govulncheck ./...
       - name: Vet
         run: go vet ./...
+      - name: Dead code (deadcode)
+        # Gerbang anti dead code (Fase 3 P2): mode -test supaya fungsi yang
+        # dipakai test sebagai jahitan (seam) tidak dituduh mati. Satu-satunya
+        # pengecualian sah: metode String/GoString/LogValue pada tipe pemuat
+        # rahasia — keberadaannya DIWAJIBKAN lint keamanan AST
+        # TestRedaksiFieldTakDiekspor (internal/security), yang tidak terlihat
+        # oleh analisis keterjangkauan deadcode.
+        run: |
+          go run golang.org/x/tools/cmd/deadcode@v0.52.0 -test ./... > /tmp/deadcode.txt
+          sisa=$(grep -vE "unreachable func: (Handlers|Service|DB)\.(String|GoString|LogValue)$" /tmp/deadcode.txt || true)
+          if [ -n "$sisa" ]; then echo "$sisa"; echo "::error::deadcode menemukan fungsi tak terjangkau baru"; exit 1; fi
       - name: Test
         env:
           TEST_DATABASE_URL: postgres://routex:test_secret_pw@127.0.0.1:5432/routex_test?sslmode=disable

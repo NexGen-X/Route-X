@@ -313,15 +313,6 @@ func WithWorkers(n int) Option {
 	}
 }
 
-// WithWriteTimeout mengubah batas satu penulisan. Nilai <= 0 diabaikan.
-func WithWriteTimeout(d time.Duration) Option {
-	return func(r *Recorder) {
-		if d > 0 {
-			r.batas = d
-		}
-	}
-}
-
 // New membuat pencatat dan menyalakan penulisnya.
 //
 // Pemanggil WAJIB memanggil Close saat shutdown, dan Close-nya harus dijalankan SETELAH

@@ -6,6 +6,11 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Changed
+- **Calm Console (Fase 4, PR #191–#193)**: perampingan visual menyeluruh mengikuti tema gelap Muse — versi tidak lagi tampil berulang di shell, hero Dashboard menjadi baris status tunggal, metrik menjadi strip KPI tanpa kartu bertumpuk, kartu Penyedia & Kunci API menjadi daftar baris, Observabilitas memakai tab garis bawah, dan Pengaturan memakai sub-navigasi ala Linear. Terverifikasi E2E menyeluruh 229 tes (0 gagal) dan audit kontras axe 0 pelanggaran.
+- **Bahasa Indonesia penuh untuk UI (Fase 3, PR #186)** mengikuti glosarium baku, dan **logo digambar ulang flat "Ubin Rute"** (PR #185) termasuk favicon dan ikon PWA. Versi aplikasi kini bersumber tunggal dari `web/package.json` dan badge jumlah tool CLI dihitung dari registri backend, bukan angka statis (PR #184).
+- **Konsolidasi permukaan (Fase 2, PR #175–#181)**: halaman Diagnostics dipensiunkan ke seksi Kesehatan Sistem di Observabilitas, kontrol cache dipindah ke tab Performa & Cache di Pengaturan, panel circuit breaker menampilkan konfigurasi efektif dari aturan prioritas tertinggi, dan 23 alias rute API lama yang terbukti nol konsumen dipangkas (3 alias baca dipertahankan).
+
 ### Removed
 - **Aplikasi mobile native (`apps/mobile/`) dihapus** sebagai bagian dari redesign UI/UX ala Muse: satu antarmuka web responsif + PWA menjadi satu-satunya klien resmi Route-X untuk desktop dan mobile. Job CI `mobile` dan seluruh referensi ke `apps/mobile/` dibersihkan. Alias API backend yang sebelumnya dipakai companion app (`/overview`, `/diagnostics`, `/summary`) dipertahankan karena juga dipakai CLI dan integrasi pihak ketiga. Kode mobile terakhir sebelum penghapusan ditandai tag `pre-mobile-removal`.
 

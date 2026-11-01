@@ -24,7 +24,7 @@ Sebelum memberikan sertifikasi **QA Sign-Off**, Anda WAJIB memverifikasi ke-7 la
 +-------------------------------------------------------------------------------+
 | Layer 1: Frontend Type & Unit Tests (tsc -b 0 errors, Vitest 100% PASS)       |
 | Layer 2: Backend Concurrency & Races (gofmt bersih, go test -race 0 race)     |
-| Layer 3: Theme Tokens, Design Hygiene, & Responsiveness (DeepSeek Aesthetic)  |
+| Layer 3: Theme Tokens, Design Hygiene, & Responsiveness (Calm Console / Claude Dark Theme)  |
 | Layer 4: Live Gateway Wire-Protocol Probe (SSE streaming & unary 200 OK)      |
 | Layer 5: Target Component Functional Integrity (Edge cases & state logic)     |
 | Layer 6: Security & Zero-Leakage Sanitization (No tokens in JSON responses)   |

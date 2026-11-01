@@ -69,7 +69,7 @@ Setiap sub-agent yang menyelesaikan tugas atau berkomunikasi via `send_message` 
 | :--- | :--- | :--- |
 | **`orchestrator`** | `orchestrator_master_prompt.md` | Koordinasi multi-agent, dekomposisi task, mitigasi blast radius, pengawasan PR-only. |
 | **`backend_router`** | `backend_router_master_prompt.md` | Go 1.27, zero-alloc hot path, FNV-1a tie-breaking, dual-protocol OpenAI/Anthropic, SSE streaming. |
-| **`frontend_uiux`** | `frontend_uiux_master_prompt.md` | React 18/19, TypeScript strict (0 `any`), DeepSeek & Hermes aesthetic, WCAG 2.1 AA, mobile-first. |
+| **`frontend_uiux`** | `frontend_uiux_master_prompt.md` | React 18/19, TypeScript strict (0 `any`), Calm Console dark aesthetic (Claude-inspired), WCAG 2.1 AA, mobile-first. |
 | **`qa_audit`** | `qa_audit_master_prompt.md` | Hostile peer review, Protokol 7-Layer QA, zero-race verification, ephemeral DB schema, anti-hallucination. |
 | **`devops_release`** | `devops_release_master_prompt.md` | GitHub Actions CI/CD, systemd daemon, Caddy Auto-TLS, release asset packaging, zero-downtime updates. |
 | **`database_architect`**| `database_architect_master_prompt.md` | PostgreSQL 18, 15 migrations integrity, zero-downtime evolution, connection pool pgx, partisi tabel. |

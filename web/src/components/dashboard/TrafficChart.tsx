@@ -62,7 +62,7 @@ const MemoizedChartInner = React.memo<MemoizedChartInnerProps>(({ series, metric
       <Area
         type="monotone"
         dataKey={metricType === 'latency' ? 'p95_latency_ms' : metricType}
-        stroke="#0070E0"
+        stroke="#5BACE6"
         fillOpacity={1}
         fill="url(#museBlueTrafficGradient)"
         strokeWidth={1.8}
@@ -81,7 +81,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
   setTimeWindow,
 }) => {
   return (
-    <div className="lg:col-span-2 bg-bg-surface-1/40 border border-border/80 rounded-lg p-4 sm:p-5 shadow-sm flex flex-col justify-between">
+    <div className="lg:col-span-2 bg-bg-surface-1/40 border border-border/60 rounded-xl p-4 sm:p-5 flex flex-col justify-between">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
         <div className="flex items-center gap-2">
           <BarChart3 className="w-4 h-4 text-accent-text flex-shrink-0" aria-hidden="true" />

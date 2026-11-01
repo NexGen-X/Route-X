@@ -14,7 +14,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
   onNavigate,
 }) => {
   return (
-    <div className="bg-bg-surface-1/40 border border-border/80 rounded-lg p-4 shadow-sm flex flex-col justify-between h-full">
+    <div className="flex flex-col justify-between h-full py-1">
       <div>
         {/* Header — clean minimal dot + title */}
         <div className="flex items-center justify-between mb-3">
@@ -44,7 +44,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
             </Button>
           </div>
         ) : (
-          <div className="divide-y divide-border/80 border-y border-border/80">
+          <div className="divide-y divide-border/70 border-y border-border/60">
             {recentRequests.map((req) => {
               const is2xx = req.status_code >= 200 && req.status_code < 300;
               const is4xx = req.status_code >= 400 && req.status_code < 500;
@@ -120,7 +120,7 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
         <button
           type="button"
           onClick={() => onNavigate('/requests')}
-          className="w-full py-1.5 text-center text-xs text-text-secondary hover:text-white font-mono rounded-md bg-bg-surface-1/60 hover:bg-bg-surface-2 border border-border/80 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+          className="w-full py-1.5 text-center text-xs text-accent-text hover:text-white font-medium rounded-md transition-colors cursor-pointer flex items-center justify-center gap-1.5"
         >
           <span>Inspeksi Seluruh Jejak Audit Request</span>
           <ExternalLink className="w-3 h-3 text-text-muted" aria-hidden="true" />

@@ -19,7 +19,6 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { Tooltip } from '../common/Tooltip';
 import { RouteXLogo } from '../common/RouteXLogo';
-import { APP_VERSION } from '../../lib/version';
 import { muatJumlahToolCli } from '../../lib/cliCount';
 
 export interface SidebarProps {
@@ -128,9 +127,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="flex items-center gap-2 truncate">
                 <span className="font-semibold tracking-tight text-white text-sm leading-none">
                   Route-X
-                </span>
-                <span className="text-[10px] font-mono text-accent-text px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/20">
-                  {APP_VERSION}
                 </span>
               </div>
             )}

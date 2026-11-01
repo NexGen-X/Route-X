@@ -133,9 +133,12 @@ test.describe('tulis admin via UI', () => {
       await page.locator('input[type="text"]').first().fill('E2E User UI');
       await page.locator('input[type="password"]').fill('KuatUi2026!Xx9#');
       await page.getByRole('button', { name: 'Simpan Pengguna' }).click();
-      await expect(page.getByText(emailUser).first()).toBeVisible({
-        timeout: 20000,
-      });
+      // Halaman Pengguna merender dua salinan (tabel >=sm dan kartu <sm,
+      // Fase 3 P5): yang harus terlihat adalah salinan yang tampil di
+      // viewport proyek ini, bukan sekadar salinan pertama di DOM.
+      await expect(
+        page.locator('p:visible', { hasText: emailUser }),
+      ).toBeVisible({ timeout: 20000 });
       const daftarUser = await page.request.get('/api/admin/access/users');
       const badanUser = await daftarUser.json();
       userId = ((badanUser.items ?? []) as any[]).find(

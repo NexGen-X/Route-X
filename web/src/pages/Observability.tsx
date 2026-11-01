@@ -25,6 +25,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { QueryError } from '../components/common/QueryError';
+import { SystemHealthSection } from '../components/observability/SystemHealthSection';
 import { formatUSD } from '../utils/money';
 
 export const Observability: React.FC = () => {
@@ -549,6 +550,9 @@ export const Observability: React.FC = () => {
           )}
         </Card>
       </div>
+
+      {/* Kesehatan Sistem — konsolidasi isi Diagnostics (Fase 2 R6) */}
+      <SystemHealthSection />
     </div>
   );
 };

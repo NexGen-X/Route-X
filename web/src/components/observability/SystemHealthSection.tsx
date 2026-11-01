@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../api/client';
-import type { Diagnostics as DiagType, BackgroundJob, ResponseCacheStats } from '../types';
-import { Card } from '../components/common/Card';
-import { Badge } from '../components/common/Badge';
-import { Button } from '../components/common/Button';
+import { api } from '../../api/client';
+import type { BackgroundJob, ResponseCacheStats } from '../../types';
+import { Card } from '../common/Card';
+import { Badge } from '../common/Badge';
+import { Button } from '../common/Button';
 import {
   RefreshCw,
   Clock,
@@ -12,11 +12,18 @@ import {
   CheckCircle2,
   Activity,
   Check,
+  ArrowUpRight,
 } from 'lucide-react';
-import { PageHeader } from '../components/common/PageHeader';
-import { useToast } from '../context/ToastContext';
-import { QueryError } from '../components/common/QueryError';
-import { getErrorMessage } from '../utils/error';
+import { useToast } from '../../context/ToastContext';
+import { QueryError } from '../common/QueryError';
+import { getErrorMessage } from '../../utils/error';
+
+// Section "Kesehatan Sistem" di halaman Observability (Fase 2 R6) —
+// rumah baru isi halaman Diagnostics yang dipensiunkan: checklist Uji
+// Live dan daftar background workers. Kartu info Runtime/Memori/Pool
+// Diagnostics TIDAK ikut pindah karena halaman ini sudah menampilkannya
+// di kartu "Live Server & Connection Pool"; status breaker lengkap
+// tinggal di Routing dan kontrol cache di Settings (tautan di bawah).
 
 interface GatewayCheckItem {
   id: string;
@@ -27,9 +34,8 @@ interface GatewayCheckItem {
   details: string;
 }
 
-export const Diagnostics: React.FC = () => {
+export const SystemHealthSection: React.FC = () => {
   const { toast } = useToast();
-  const [diag, setDiag] = useState<DiagType | null>(null);
   const [jobs, setJobs] = useState<BackgroundJob[]>([]);
   const [cache, setCache] = useState<ResponseCacheStats | null>(null);
   const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
@@ -60,9 +66,6 @@ export const Diagnostics: React.FC = () => {
         api.system.jobs(),
       ]);
 
-      if (resDiag.status === 'fulfilled' && resDiag.value) {
-        setDiag(resDiag.value);
-      }
       if (resJobs.status === 'fulfilled' && resJobs.value) {
         setJobs(resJobs.value.items || []);
       }
@@ -102,7 +105,6 @@ export const Diagnostics: React.FC = () => {
       const duration = Math.round(end - start);
       setLiveTestDurationMs(duration);
       setLastLiveTestAt(new Date().toLocaleTimeString());
-      setDiag(diagRes);
 
       // Perbarui checklist berdasarkan hasil riil (audit F7):
       // - DB dianggap sehat hanya bila blok db_pool benar-benar ada dan
@@ -204,43 +206,36 @@ export const Diagnostics: React.FC = () => {
     }
   };
 
-
-  const formatUptime = (sec: number) => {
-    const d = Math.floor(sec / 86400);
-    const h = Math.floor((sec % 86400) / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = sec % 60;
-    return `${d} hari ${h} jam ${m} mnt ${s} dtk`;
-  };
-
-
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="System Diagnostics & Gateway Health"
-        actions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => void handleRunLiveTest()}
-              isLoading={isTestingLive}
-              icon={<Zap className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />}
-            >
-              {isTestingLive ? 'Menguji Gateway...' : 'Uji Live Gateway'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void loadData()}
-              isLoading={isLoading}
-              title="Muat ulang data diagnostik"
-              aria-label="Muat ulang data diagnostik"
-              icon={<RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
-            />
-          </div>
-        }
-      />
+    <section className="pt-6 border-t border-border/40 space-y-6" aria-label="Kesehatan Sistem">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-white tracking-tight">Kesehatan Sistem</h2>
+          <p className="text-xs text-text-muted mt-0.5">
+            Checklist uji live dan supervisor worker — dahulu halaman Diagnostics tersendiri.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => void handleRunLiveTest()}
+            isLoading={isTestingLive}
+            icon={<Zap className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />}
+          >
+            {isTestingLive ? 'Menguji Gateway...' : 'Uji Live Gateway'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void loadData()}
+            isLoading={isLoading}
+            title="Muat ulang data kesehatan sistem"
+            aria-label="Muat ulang data kesehatan sistem"
+            icon={<RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
+          />
+        </div>
+      </div>
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 
@@ -339,96 +334,32 @@ export const Diagnostics: React.FC = () => {
         </div>
       </Card>
 
-      {isLoading && !diag ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <Card key={i} className="p-5 space-y-4 animate-pulse">
-              <div className="h-4 bg-bg-surface-2 rounded w-1/2" />
-              <div className="space-y-2 pt-2">
-                <div className="h-3 bg-bg-surface-2 rounded w-full" />
-                <div className="h-3 bg-bg-surface-2 rounded w-4/5" />
-                <div className="h-3 bg-bg-surface-2 rounded w-3/4" />
-              </div>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card title="Runtime & Versi">
-            <div className="space-y-3 text-xs">
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Versi Gateway</span>
-                <span className="font-mono font-bold text-accent">{diag?.version || 'tidak tersedia'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Git Commit</span>
-                <span className="font-mono text-white">{diag?.commit || 'tidak tersedia'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Go Compiler</span>
-                <span className="font-mono text-text-secondary">{diag?.go_version || 'tidak tersedia'}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-text-muted">Uptime Proses</span>
-                <span className="font-mono text-accent font-semibold">
-                  {diag ? formatUptime(diag.uptime_seconds) : '-'}
-                </span>
-              </div>
-            </div>
-          </Card>
-
-          <Card title="Penggunaan Memori">
-            <div className="space-y-3 text-xs">
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Memori Terpakai</span>
-                <span className="font-mono font-bold text-white">
-                  {diag?.memory?.alloc_bytes ? (diag.memory.alloc_bytes / 1024 / 1024).toFixed(1) : (diag?.memory_allocated_mb ?? '-')} MB
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Total Alokasi</span>
-                <span className="font-mono text-text-secondary">
-                  {diag?.memory?.total_alloc_bytes ? (diag.memory.total_alloc_bytes / 1024 / 1024).toFixed(1) : (diag?.memory_total_alloc_mb ?? '-')} MB
-                </span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Memori Sistem</span>
-                <span className="font-mono text-text-secondary">
-                  {diag?.memory?.sys_bytes ? (diag.memory.sys_bytes / 1024 / 1024).toFixed(1) : (diag?.memory_sys_mb ?? '-')} MB
-                </span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-text-muted">Siklus GC</span>
-                <span className="font-mono text-accent">{diag?.memory?.num_gc ?? diag?.num_gc ?? 0} kali</span>
-              </div>
-            </div>
-          </Card>
-
-          <Card title="PostgreSQL Pool">
-            <div className="space-y-3 text-xs">
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Total Koneksi</span>
-                <span className="font-mono font-bold text-accent">{diag?.db_pool?.total_conns ?? '-'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Koneksi Idle</span>
-                <span className="font-mono text-white">{diag?.db_pool?.idle_conns ?? '-'}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-border/40">
-                <span className="text-text-muted">Koneksi Aktif (Acquired)</span>
-                <span className="font-mono text-white">{diag?.db_pool?.acquired_conns ?? '-'}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-text-muted">Batas Maksimal</span>
-                <span className="font-mono text-text-secondary">{diag?.db_pool?.max_conns ?? '-'}</span>
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
+      {/* Tautan ke rumah masing-masing kontrol yang dulu menumpang di Diagnostics */}
+      <div className="flex flex-col sm:flex-row gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            window.location.hash = '#/system/settings';
+          }}
+          className="flex items-center gap-1.5 text-[11px] text-text-secondary hover:text-white bg-bg-surface-2/60 hover:bg-bg-surface-2 border border-border/60 rounded-lg px-3 py-2 transition-colors cursor-pointer"
+        >
+          Kontrol cache respons ada di Pengaturan → Performa &amp; Cache
+          <ArrowUpRight className="w-3 h-3" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            window.location.hash = '#/gateway/routing';
+          }}
+          className="flex items-center gap-1.5 text-[11px] text-text-secondary hover:text-white bg-bg-surface-2/60 hover:bg-bg-surface-2 border border-border/60 rounded-lg px-3 py-2 transition-colors cursor-pointer"
+        >
+          Status &amp; konfigurasi circuit breaker lengkap ada di Routing
+          <ArrowUpRight className="w-3 h-3" aria-hidden="true" />
+        </button>
+      </div>
 
       {/* Background Workers Section */}
-      <div className="pt-6 border-t border-border/40">
+      <div>
         <div className="flex items-center justify-between mb-4">
           <div>
             <h3 className="text-sm font-semibold text-white tracking-tight flex items-center gap-2">
@@ -503,6 +434,6 @@ export const Diagnostics: React.FC = () => {
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 };

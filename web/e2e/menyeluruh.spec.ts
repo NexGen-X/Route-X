@@ -23,7 +23,7 @@ const HALAMAN: Array<{ hash: string; judul: string; penanda: string }> = [
   { hash: '#/gateway/breakers', judul: 'Routing & Failover', penanda: 'Routing & Failover' },
   { hash: '#/access/api-keys', judul: 'Client API Keys', penanda: 'Client API Keys' },
   { hash: '#/system/settings', judul: 'Runtime Settings', penanda: 'Pengaturan Sistem' },
-  { hash: '#/system/diagnostics', judul: 'System Diagnostics & Workers', penanda: 'System Diagnostics' },
+  { hash: '#/system/diagnostics', judul: 'Observabilitas & Telemetri', penanda: 'Kesehatan Sistem' },
   { hash: '#/webhooks', judul: 'Webhooks', penanda: 'Webhooks' },
 ];
 

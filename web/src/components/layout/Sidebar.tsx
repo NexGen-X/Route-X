@@ -9,7 +9,6 @@ import {
   Coins,
   KeyRound,
   Sliders,
-  HeartPulse,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -80,7 +79,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { name: 'Webhooks', path: '/system/webhooks', icon: Webhook },
         { name: 'Settings', path: '/system/settings', icon: Sliders },
-        { name: 'Diagnostics', path: '/system/diagnostics', icon: HeartPulse },
       ],
     },
   ];

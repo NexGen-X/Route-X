@@ -159,7 +159,7 @@ REQ_BODY=$(cat <<EOF
 {
   "model": "${TEST_MODEL}",
   "messages": [
-    {"role": "user", "content": "Halo Route-X, verifikasi integritas sistem v1.0.1. Jawab 'OK'."}
+    {"role": "user", "content": "Halo Route-X, verifikasi integritas sistem v1.4.0. Jawab 'OK'."}
   ],
   "max_tokens": 10
 }

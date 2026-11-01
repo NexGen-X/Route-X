@@ -12,6 +12,9 @@ export interface CLIFilterToolbarProps {
   selectedCategory: string;
   setSelectedCategory: (cat: string) => void;
   categories: string[];
+  // Hitungan keadaan konfigurasi (Fase 2 R4): berapa tool sudah terarah
+  // ke Route-X dan berapa yang terpasang tetapi belum dikonfigurasi.
+  statusCounts?: { terkonfigurasi: number; belumDikonfigurasi: number };
 }
 
 export const CLIFilterToolbar: React.FC<CLIFilterToolbarProps> = ({
@@ -24,6 +27,7 @@ export const CLIFilterToolbar: React.FC<CLIFilterToolbarProps> = ({
   selectedCategory,
   setSelectedCategory,
   categories,
+  statusCounts,
 }) => {
   return (
     <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-bg-surface p-3.5 rounded-box border border-border">
@@ -75,6 +79,15 @@ export const CLIFilterToolbar: React.FC<CLIFilterToolbarProps> = ({
           </button>
         </div>
       </div>
+
+      {statusCounts && (
+        <p className="text-[11px] text-text-muted w-full sm:w-auto text-center sm:text-left order-first sm:order-none">
+          <span className="text-emerald-400 font-semibold">{statusCounts.terkonfigurasi}</span>{' '}
+          terarah ke Route-X ·{' '}
+          <span className="text-amber-300 font-semibold">{statusCounts.belumDikonfigurasi}</span>{' '}
+          terpasang belum dikonfigurasi
+        </p>
+      )}
 
       {/* Search & Category Filter */}
       <div className="flex items-center gap-3 w-full sm:w-auto">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, ArrowUpRight, Terminal, Shield, Zap } from 'lucide-react';
+import { RefreshCw, ArrowUpRight, Terminal, Shield, Zap, Sparkles } from 'lucide-react';
 import { Button } from '../common/Button';
 import type { SystemOverview } from '../../types';
 import { formatUptime } from './utils';
@@ -13,6 +13,9 @@ export interface DashboardHeroProps {
   isRefreshing: boolean;
   onRefresh: () => void;
   onNavigate: (path: string) => void;
+  // Jalan kembali membuka Panduan Cepat yang sudah ditutup (R1 Fase 2);
+  // diisi Dashboard hanya selama panduan berstatus dismissed.
+  onShowGuide?: () => void;
 }
 
 export const DashboardHero: React.FC<DashboardHeroProps> = ({
@@ -24,6 +27,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   isRefreshing,
   onRefresh,
   onNavigate,
+  onShowGuide,
 }) => {
   return (
     <div className="bg-bg-surface-1/40 border border-border/80 rounded-lg p-3 sm:p-4 shadow-sm transition-colors">
@@ -110,6 +114,18 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
           >
             Segarkan
           </Button>
+
+          {onShowGuide && (
+            <button
+              type="button"
+              onClick={onShowGuide}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-bg-surface-1 hover:bg-bg-surface-2 text-xs text-text-secondary hover:text-white transition-colors font-mono cursor-pointer border border-border hover:border-border-hover"
+              aria-label="Buka Panduan Cepat"
+            >
+              <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Panduan</span>
+            </button>
+          )}
 
           <Button
             variant="primary"

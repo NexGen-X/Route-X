@@ -17,6 +17,11 @@ import {
   ProviderHealthMatrix,
 } from '../components/dashboard';
 import { WidgetErrorBoundary } from '../components/common/WidgetErrorBoundary';
+import {
+  bacaPrefQuickStart,
+  simpanPrefQuickStart,
+  type PrefQuickStart,
+} from '../components/dashboard/quickstartPrefs';
 import { ChevronDown, Cpu } from 'lucide-react';
 
 const TrafficChart = React.lazy(() =>
@@ -89,10 +94,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pollError, setPollError] = useState<string | null>(null);
-  // QuickStart tersembunyi setelah di-dismiss (disimpan ke localStorage)
-  const [quickStartDismissed, setQuickStartDismissed] = useState<boolean>(
-    () => localStorage.getItem('routex-quickstart-dismissed') === '1'
-  );
+  // Panduan Cepat: Dashboard pemilik tunggal keadaannya (R1 Fase 2).
+  // Preferensi operator (dismiss/ciut manual) disimpan lewat quickstartPrefs;
+  // selama operator belum mengatur manual, keadaan ciut mengikuti status
+  // setup — panduan terentang hanya selama setup belum selesai.
+  const [qsPref, setQsPref] = useState<PrefQuickStart>(() => bacaPrefQuickStart());
+  // Jumlah API key untuk menilai status setup; null = belum diketahui.
+  const [jumlahKunci, setJumlahKunci] = useState<number | null>(null);
+  // Penanda muat awal selesai agar status setup tidak dinilai dari data kosong.
+  const [muatAwalSelesai, setMuatAwalSelesai] = useState<boolean>(false);
   // System Telemetry collapsible — tersembunyi secara default agar Dashboard lebih ringkas
   const [telemetryExpanded, setTelemetryExpanded] = useState<boolean>(false);
 
@@ -199,6 +209,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         if (mountedRef.current && seq === loadSeqRef.current) {
           setIsLoading(false);
           setIsRefreshing(false);
+          setMuatAwalSelesai(true);
         }
       }
     },
@@ -234,6 +245,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     }
   }, []);
 
+  // Status setup dinilai sekali dari data awal: provider aktif + API key.
+  // Kegagalan membaca kunci dianggap "belum ada kunci" — panduan tetap
+  // terentang, arah aman bagi operator yang memang belum selesai setup.
+  useEffect(() => {
+    let aktif = true;
+    api.apiKeys
+      .listAll()
+      .then((res) => {
+        if (!aktif) return;
+        const items = Array.isArray(res) ? res : res.items;
+        setJumlahKunci(items?.length ?? 0);
+      })
+      .catch(() => {
+        if (aktif) setJumlahKunci(0);
+      });
+    return () => {
+      aktif = false;
+    };
+  }, []);
+
+  const setupSelesai: boolean | null =
+    muatAwalSelesai && jumlahKunci !== null
+      ? providers.some((p) => p.enabled) && jumlahKunci > 0
+      : null;
+  // Ciut efektif: pilihan manual operator selalu menang; tanpa pilihan
+  // manual, ikuti status setup (selesai = ciut, belum = terentang).
+  const qsCollapsed = qsPref.collapsed ?? (setupSelesai ?? false);
+
+  const ubahQsPref = (pref: PrefQuickStart) => {
+    setQsPref(pref);
+    simpanPrefQuickStart(pref);
+  };
+
   useEffect(() => {
     loadData();
     const slowInterval = setInterval(() => {
@@ -249,8 +293,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   }, [loadData, refreshOverview]);
 
   const handleDismissQuickStart = () => {
-    localStorage.setItem('routex-quickstart-dismissed', '1');
-    setQuickStartDismissed(true);
+    ubahQsPref({ ...qsPref, dismissed: true });
+  };
+
+  const handleToggleQuickStart = () => {
+    // Pilihan manual dicatat apa adanya (melawan keadaan efektif saat ini)
+    // agar preferensi operator selalu menang atas bawaan cerdas.
+    ubahQsPref({ ...qsPref, collapsed: !qsCollapsed });
+  };
+
+  const handleShowQuickStart = () => {
+    ubahQsPref({ ...qsPref, dismissed: false, collapsed: false });
   };
 
   const healthyProvidersCount = providers.filter((p) => p.last_health_status === 'healthy').length;
@@ -278,11 +331,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         isRefreshing={isRefreshing}
         onRefresh={() => loadData(true)}
         onNavigate={onNavigate}
+        onShowGuide={qsPref.dismissed ? handleShowQuickStart : undefined}
       />
 
-      {/* 2. ONBOARDING & QUICK-START GUIDE — muncul hanya sampai di-dismiss */}
-      {!quickStartDismissed && (
-        <QuickStartGuide onNavigate={onNavigate} onDismiss={handleDismissQuickStart} />
+      {/* 2. ONBOARDING & QUICK-START GUIDE — dirender sesudah status setup
+          diketahui agar tidak berkedip terentang lalu menciut. */}
+      {!qsPref.dismissed && setupSelesai !== null && (
+        <QuickStartGuide
+          onNavigate={onNavigate}
+          onDismiss={handleDismissQuickStart}
+          collapsed={qsCollapsed}
+          onToggleCollapse={handleToggleQuickStart}
+        />
       )}
 
       {/* 3. INFERENCE PERFORMANCE METRICS RIBBON (4 CARDS) */}

@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import type { RequestLog, RequestEvent, RequestPayload } from '../types';
 import { getErrorMessage } from '../utils/error';
 import { Card } from '../components/common/Card';
+import { DataTableShell, kelasSelIsi } from '../components/common/DataTableShell';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
 import { QueryError } from '../components/common/QueryError';
@@ -230,16 +231,15 @@ export const Requests: React.FC = () => {
             </div>
 
             {/* Desktop Table (hidden sm:block) */}
-            <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <DataTableShell className="hidden sm:block">
                 <thead>
                   <tr className="border-b border-border text-text-muted font-medium text-xs bg-bg-surface-2/40">
-                    <th className="py-3 px-4 font-semibold">Status &amp; Request ID</th>
-                    <th className="py-3 px-4 font-semibold">Model &amp; Provider</th>
-                    <th className="py-3 px-4 font-semibold">Token &amp; Cost</th>
-                    <th className="py-3 px-4 font-semibold">Durasi &amp; TTFT</th>
-                    <th className="py-3 px-4 font-semibold">Waktu &amp; Klien</th>
-                    <th className="py-3 px-4 text-right">Aksi</th>
+                    <th className={`${kelasSelIsi} font-semibold`}>Status &amp; Request ID</th>
+                    <th className={`${kelasSelIsi} font-semibold`}>Model &amp; Provider</th>
+                    <th className={`${kelasSelIsi} font-semibold`}>Token &amp; Cost</th>
+                    <th className={`${kelasSelIsi} font-semibold`}>Durasi &amp; TTFT</th>
+                    <th className={`${kelasSelIsi} font-semibold`}>Waktu &amp; Klien</th>
+                    <th className={`${kelasSelIsi} text-right`}>Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
@@ -251,8 +251,7 @@ export const Requests: React.FC = () => {
                     />
                   ))}
                 </tbody>
-              </table>
-            </div>
+            </DataTableShell>
           </>
         )}
 

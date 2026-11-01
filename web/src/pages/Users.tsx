@@ -9,6 +9,12 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Users, Plus, Trash2, KeyRound, LogOut, Pencil, UserCheck, Eye, EyeOff, Shield } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import {
+  DataTableShell,
+  kelasSelKepala,
+  kelasSelKepalaKanan,
+  kelasSelIsi,
+} from '../components/common/DataTableShell';
 
 export const UsersPage: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -206,32 +212,21 @@ export const UsersPage: React.FC = () => {
       ) : (
         /* Tabel akun enterprise minimalis — Item 4.2 */
         <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
+          <DataTableShell>
               <thead>
                 <tr className="border-b border-border bg-bg-surface-2/60">
-                  <th className="px-2.5 py-3 sm:px-4 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide">
-                    Pengguna
-                  </th>
-                  <th className="px-3 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide hidden sm:table-cell">
-                    Role
-                  </th>
-                  <th className="px-3 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide">
-                    Status
-                  </th>
-                  <th className="px-3 py-3 text-left text-[11px] font-semibold text-text-muted uppercase tracking-wide hidden md:table-cell">
-                    Keterangan
-                  </th>
-                  <th className="px-2.5 py-3 sm:px-4 text-right text-[11px] font-semibold text-text-muted uppercase tracking-wide">
-                    Aksi
-                  </th>
+                  <th className={kelasSelKepala}>Pengguna</th>
+                  <th className={`${kelasSelKepala} hidden sm:table-cell`}>Role</th>
+                  <th className={kelasSelKepala}>Status</th>
+                  <th className={`${kelasSelKepala} hidden md:table-cell`}>Keterangan</th>
+                  <th className={kelasSelKepalaKanan}>Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {users.map((u) => (
                   <tr key={u.id} className="hover:bg-bg-surface-2/40 transition-colors">
                     {/* Avatar + Nama + Email */}
-                    <td className="px-2.5 py-3 sm:px-4">
+                    <td className={kelasSelIsi}>
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-8 h-8 rounded-full bg-accent/15 border border-accent/20 flex items-center justify-center flex-shrink-0">
                           <span className="text-xs font-bold text-accent">
@@ -245,17 +240,17 @@ export const UsersPage: React.FC = () => {
                       </div>
                     </td>
                     {/* Role */}
-                    <td className="px-3 py-3 hidden sm:table-cell">
+                    <td className={`${kelasSelIsi} hidden sm:table-cell`}>
                       <Badge variant="lime" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1 w-fit">
                         <Shield className="w-3 h-3" /> Admin
                       </Badge>
                     </td>
                     {/* Status */}
-                    <td className="px-2 py-3 sm:px-3">
+                    <td className={kelasSelIsi}>
                       <Badge variant={statusVariant(u.status)}>{u.status}</Badge>
                     </td>
                     {/* Keterangan */}
-                    <td className="px-3 py-3 hidden md:table-cell">
+                    <td className={`${kelasSelIsi} hidden md:table-cell`}>
                       {u.must_change_password ? (
                         <span className="text-[11px] text-amber-300">Wajib ganti password</span>
                       ) : (
@@ -263,7 +258,7 @@ export const UsersPage: React.FC = () => {
                       )}
                     </td>
                     {/* Aksi */}
-                    <td className="px-2.5 py-3 sm:px-4">
+                    <td className={kelasSelIsi}>
                       <div className="flex items-center justify-end gap-1 sm:gap-1.5">
                         <Button
                           variant="secondary"
@@ -307,8 +302,7 @@ export const UsersPage: React.FC = () => {
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+          </DataTableShell>
         </Card>
       )}
 

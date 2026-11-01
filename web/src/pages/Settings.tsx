@@ -3,10 +3,11 @@ import { api } from '../api/client';
 import type { DomainConfig, BackupStatusResponse } from '../types';
 import { PageHeader } from '../components/common/PageHeader';
 import { QueryError } from '../components/common/QueryError';
-import { Globe, Sliders, Database } from 'lucide-react';
+import { Globe, Sliders, Database, Zap } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import {
   DomainTab,
+  CacheTab,
   BackupTab,
   AdvancedSettingsTab,
   CreateSettingModal,
@@ -317,6 +318,18 @@ export const Settings: React.FC = () => {
         </button>
         <button
           type="button"
+          onClick={() => setActiveTab('cache')}
+          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeTab === 'cache'
+              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
+              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+          }`}
+        >
+          <Zap className="w-4 h-4 text-accent" />
+          <span>Performa &amp; Cache</span>
+        </button>
+        <button
+          type="button"
           onClick={() => setActiveTab('backup')}
           className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
             activeTab === 'backup'
@@ -359,7 +372,10 @@ export const Settings: React.FC = () => {
         />
       )}
 
-      {/* 2. Pencadangan & Pemulihan Database (SQL Backup & Disaster Recovery) */}
+      {/* 2. Performa & Cache Respons (Fase 2 R3 — dipindah dari Diagnostics) */}
+      {activeTab === 'cache' && <CacheTab />}
+
+      {/* 3. Pencadangan & Pemulihan Database (SQL Backup & Disaster Recovery) */}
       {activeTab === 'backup' && (
         <BackupTab
           backupStatus={backupStatus}

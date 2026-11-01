@@ -12,7 +12,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import type { AdvancedSettingsTabProps } from './types';
-import { isReservedSetting } from './utils';
+import { isReservedSetting, labelSettingDikenal } from './utils';
 
 export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
   settings,
@@ -105,6 +105,11 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
                       <Sliders className="w-3.5 h-3.5" />
                     </div>
                     <div className="min-w-0">
+                      {labelSettingDikenal(s.key) && (
+                        <span className="text-xs font-semibold text-white block truncate">
+                          {labelSettingDikenal(s.key)}
+                        </span>
+                      )}
                       <h4 className="text-sm font-bold text-white font-mono truncate">{s.key}</h4>
                       <span className="text-[11px] text-text-muted block truncate">
                         {s.description || 'Parameter runtime kustom'}

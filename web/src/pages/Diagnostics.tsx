@@ -4,13 +4,11 @@ import type { Diagnostics as DiagType, BackgroundJob, ResponseCacheStats } from 
 import { Card } from '../components/common/Card';
 import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
-import { Tooltip } from '../components/common/Tooltip';
 import {
   RefreshCw,
   Clock,
   Play,
   Zap,
-  Trash2,
   CheckCircle2,
   Activity,
   Check,
@@ -30,14 +28,11 @@ interface GatewayCheckItem {
 }
 
 export const Diagnostics: React.FC = () => {
-  const { toast, confirmModal } = useToast();
+  const { toast } = useToast();
   const [diag, setDiag] = useState<DiagType | null>(null);
   const [jobs, setJobs] = useState<BackgroundJob[]>([]);
   const [cache, setCache] = useState<ResponseCacheStats | null>(null);
   const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
-  const [flushingCache, setFlushingCache] = useState(false);
-  const [updatingCache, setUpdatingCache] = useState(false);
-  const [ttlMinutes, setTtlMinutes] = useState<number>(60);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -81,8 +76,6 @@ export const Diagnostics: React.FC = () => {
       try {
         const resCache = await api.system.cacheStats();
         setCache(resCache);
-        const ttl = Number(resCache.ttl_seconds);
-        setTtlMinutes(Number.isFinite(ttl) ? Math.min(10080, Math.max(1, Math.floor(ttl / 60))) : 60);
       } catch {
         setCache(null);
       }
@@ -211,55 +204,6 @@ export const Diagnostics: React.FC = () => {
     }
   };
 
-  const handleFlushCache = async () => {
-    const ok = await confirmModal({
-      title: 'Kosongkan Response Cache?',
-      message: 'Apakah Anda yakin ingin mengosongkan seluruh entri cache inferensi di Redis? Permintaan berikutnya akan langsung menuju ke upstream.',
-      confirmText: 'Ya, Kosongkan',
-      cancelText: 'Batal',
-      danger: true,
-    });
-    if (!ok) return;
-
-    setFlushingCache(true);
-    try {
-      const res = await api.system.flushCache();
-      toast.success(res.message || 'Response cache berhasil dibersihkan.', 'Cache Dikosongkan');
-      void loadData();
-    } catch (err: unknown) {
-      toast.error('Gagal membersihkan cache: ' + getErrorMessage(err));
-    } finally {
-      setFlushingCache(false);
-    }
-  };
-
-  const handleToggleCache = async (newEnabled: boolean) => {
-    setUpdatingCache(true);
-    try {
-      await api.system.updateCacheSettings(newEnabled, ttlMinutes * 60);
-      toast.info(newEnabled ? 'Response caching diaktifkan (< 2ms)' : 'Response caching dinonaktifkan', 'Pengaturan Cache');
-      void loadData();
-    } catch (err: unknown) {
-      toast.error('Gagal memperbarui pengaturan cache: ' + getErrorMessage(err));
-    } finally {
-      setUpdatingCache(false);
-    }
-  };
-
-  const handleSaveTTL = async () => {
-    if (!cache) return;
-    const ttl = Math.min(10080, Math.max(1, Math.floor(Number(ttlMinutes) || 60)));
-    setUpdatingCache(true);
-    try {
-      await api.system.updateCacheSettings(cache.enabled, ttl * 60);
-      toast.success(`TTL Response cache berhasil diperbarui ke ${ttl} menit.`, 'TTL Tersimpan');
-      void loadData();
-    } catch (err: unknown) {
-      toast.error('Gagal menyimpan TTL: ' + getErrorMessage(err));
-    } finally {
-      setUpdatingCache(false);
-    }
-  };
 
   const formatUptime = (sec: number) => {
     const d = Math.floor(sec / 86400);
@@ -269,8 +213,6 @@ export const Diagnostics: React.FC = () => {
     return `${d} hari ${h} jam ${m} mnt ${s} dtk`;
   };
 
-  const totalReq = (cache?.hits || 0) + (cache?.misses || 0);
-  const hitRatio = totalReq > 0 ? (((cache?.hits || 0) / totalReq) * 100).toFixed(1) : '0.0';
 
   return (
     <div className="space-y-6">
@@ -396,112 +338,6 @@ export const Diagnostics: React.FC = () => {
           })}
         </div>
       </Card>
-
-      {/* Response Cache Card (Fitur Redis Response Caching) */}
-      <div className="bg-bg-surface-2/40 border border-border/80 rounded-xl p-5 shadow-lg backdrop-blur-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-accent">
-              <Zap className="w-5 h-5" aria-hidden="true" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-semibold text-white">⚡ Redis Response Caching</h3>
-                <Badge variant={cache?.enabled ? 'success' : 'neutral'}>
-                  {cache?.enabled ? 'ACTIVE (< 2ms)' : 'DISABLED'}
-                </Badge>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-            <Button
-              variant={cache?.enabled ? 'danger' : 'primary'}
-              size="sm"
-              isLoading={updatingCache}
-              onClick={() => void handleToggleCache(!cache?.enabled)}
-            >
-              {cache?.enabled ? 'Nonaktifkan Cache' : 'Aktifkan Cache'}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              isLoading={flushingCache}
-              onClick={() => void handleFlushCache()}
-              className="text-red-400 hover:text-red-300 border-red-900/40 hover:bg-red-950/20"
-              icon={<Trash2 className="w-3.5 h-3.5" aria-hidden="true" />}
-            >
-              Kosongkan Cache
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
-          <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
-            <span className="text-[11px] text-text-muted block">Rasio Hit Cache</span>
-            <span className="text-xl font-bold font-mono text-emerald-400 mt-1 block">
-              {hitRatio}%
-            </span>
-            <span className="text-[10px] text-text-secondary block mt-0.5 font-mono">
-              {cache?.hits || 0} hit / {totalReq} total
-            </span>
-          </div>
-
-          <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
-            <span className="text-[11px] text-text-muted block">Hit Cache (Hemat Biaya)</span>
-            <span className="text-xl font-bold font-mono text-white mt-1 block">
-              {cache?.hits || 0}
-            </span>
-            <span className="text-[10px] text-emerald-400/80 block mt-0.5">
-              Latensi &lt; 2ms, $0.00
-            </span>
-          </div>
-
-          <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
-            <span className="text-[11px] text-text-muted block">Total Entri di Redis</span>
-            <span className="text-xl font-bold font-mono text-accent mt-1 block">
-              {cache?.total_entries || 0}
-            </span>
-            <span className="text-[10px] text-text-secondary block mt-0.5">
-              Prompt aktif tersimpan
-            </span>
-          </div>
-
-          <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40 flex flex-col justify-between">
-            <div>
-              <span className="text-[11px] text-text-muted block">Durasi Simpan (TTL)</span>
-              <div className="flex items-center gap-1.5 mt-1">
-                <input
-                  id="cache-ttl-minutes"
-                  aria-label="Durasi simpan cache dalam menit"
-                  type="number"
-                  min="1"
-                  max="10080"
-                  value={ttlMinutes}
-                  onChange={(e) => setTtlMinutes(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-16 bg-bg-base border border-border/80 rounded px-1.5 py-0.5 text-xs text-white font-mono focus:border-accent focus:outline-none"
-                />
-                <span className="text-xs text-text-secondary">menit</span>
-                <Tooltip content="Simpan TTL" position="left">
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveTTL()}
-                    disabled={updatingCache}
-                    className="p-1.5 rounded bg-accent/20 hover:bg-accent/30 text-accent ml-auto text-xs min-w-[28px] min-h-[28px] flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-                    aria-label="Simpan TTL"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
-                  </button>
-                </Tooltip>
-              </div>
-            </div>
-            <span className="text-[10px] text-text-muted mt-1 block">
-              {ttlMinutes >= 60
-                ? `Sekitar ${(ttlMinutes / 60).toFixed(1)} jam masa berlaku`
-                : `Sekitar ${ttlMinutes} menit masa berlaku`}
-            </span>
-          </div>
-        </div>
-      </div>
 
       {isLoading && !diag ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

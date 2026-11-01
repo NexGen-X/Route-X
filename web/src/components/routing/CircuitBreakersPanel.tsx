@@ -1,5 +1,5 @@
-import React from 'react';
-import type { CircuitBreakerStatus, Provider } from '../../types';
+import React, { useEffect, useState } from 'react';
+import type { CircuitBreakerStatus, Model, Provider, RoutingRule } from '../../types';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 import { QueryError } from '../common/QueryError';
@@ -16,21 +16,101 @@ import {
 export interface CircuitBreakersPanelProps {
   breakers: CircuitBreakerStatus[];
   providers: Provider[];
+  // Rule + katalog model dari halaman Routing (sudah dimuat di sana) untuk
+  // gema konfigurasi efektif per breaker — tanpa endpoint baru (R2 Fase 2).
+  rules: RoutingRule[];
+  models: Model[];
   isBreakersLoading: boolean;
   breakersError: string | null;
   loadBreakers: () => Promise<void>;
   handleResetBreaker: (providerId: string, model: string) => Promise<void>;
 }
 
+// Konfigurasi efektif yang ditampilkan untuk satu breaker: rule aktif
+// prioritas tertinggi yang cakupannya memuat provider breaker ini dan
+// (bila rule membatasi model) model breaker ini. Ini GEMA untuk dibaca
+// operator, bukan sumber kebenaran mesin: pada runtime, rule dicocokkan
+// per request (model + API key + kapabilitas), jadi label "+n rule lain"
+// menandai bila ada rule lain yang juga mencakup pasangan ini.
+export interface KonfigurasiEfektif {
+  rule: RoutingRule;
+  jumlahRuleLain: number;
+}
+
+export function konfigurasiEfektif(
+  breaker: CircuitBreakerStatus,
+  rules: RoutingRule[],
+  models: Model[],
+): KonfigurasiEfektif | null {
+  const mencakup = rules.filter((r) => {
+    if (!r.enabled) return false;
+    const cakupanProvider = r.providers ?? [];
+    if (cakupanProvider.length > 0 && !cakupanProvider.some((p) => p.provider_id === breaker.provider_id)) {
+      return false;
+    }
+    if (r.match_model_id) {
+      // Rule khusus model hanya mendefinisikan breaker model itu.
+      if (!breaker.model) return false;
+      const model = models.find((m) => m.id === r.match_model_id);
+      if (!model || model.model_id !== breaker.model) return false;
+    }
+    return true;
+  });
+  if (mencakup.length === 0) return null;
+  const terurut = [...mencakup].sort((a, b) => b.priority - a.priority);
+  return { rule: terurut[0], jumlahRuleLain: terurut.length - 1 };
+}
+
+// Format durasi terbuka rule: milidetik → label ringkas yang terbaca.
+export function labelDurasiBuka(ms: number): string {
+  if (!ms || ms <= 0) return '0 dtk';
+  if (ms < 1000) return `${ms} ms`;
+  const dtk = Math.round(ms / 1000);
+  if (dtk < 60) return `${dtk} dtk`;
+  return `${(dtk / 60).toFixed(dtk % 60 === 0 ? 0 : 1)} mnt`;
+}
+
 export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
   breakers,
   providers,
+  rules,
+  models,
   isBreakersLoading,
   breakersError,
   loadBreakers,
   handleResetBreaker,
 }) => {
   const totalAbnormalBreakers = breakers.filter((b) => b.state !== 'closed').length;
+
+  // Jam lokal untuk hitung mundur probe: berdetak tiap detik hanya selama
+  // ada breaker yang menunggu probe, agar panel diam saat semua normal.
+  const adaProbeMenunggu = breakers.some(
+    (b) => b.state !== 'closed' && b.next_probe_at && new Date(b.next_probe_at).getTime() > Date.now(),
+  );
+  const [sekarang, setSekarang] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!adaProbeMenunggu) return;
+    const id = setInterval(() => setSekarang(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [adaProbeMenunggu]);
+
+  // Segarkan otomatis tiap 15 detik hanya selama ada breaker terganggu
+  // dan tab terlihat — panel tidak mem-polling server saat semua sehat.
+  useEffect(() => {
+    if (totalAbnormalBreakers === 0) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void loadBreakers();
+      }
+    }, 15000);
+    return () => clearInterval(id);
+  }, [totalAbnormalBreakers, loadBreakers]);
+
+  // Ambang bawaan pada banner sehat: dari rule global prioritas tertinggi
+  // (tanpa cakupan provider/model), bukan angka karangan di UI.
+  const ruleGlobalTeratas = [...rules]
+    .filter((r) => r.enabled && (r.providers ?? []).length === 0 && !r.match_model_id)
+    .sort((a, b) => b.priority - a.priority)[0];
 
   return (
     <div className="pt-6 border-t border-border/40">
@@ -125,7 +205,9 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
               <div className="col-span-2 sm:col-span-1 px-3 py-2 rounded-lg bg-bg-surface-1 border border-border/60 text-center">
                 <span className="text-[10px] text-text-muted block font-sans">Ambang Isolasi</span>
                 <span className="text-xs font-bold font-mono text-sky-400">
-                  5x Gagal
+                  {ruleGlobalTeratas
+                    ? `${ruleGlobalTeratas.failure_threshold}x Gagal`
+                    : 'Bawaan Server'}
                 </span>
               </div>
             </div>
@@ -137,6 +219,10 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
               const providerName = provObj?.display_name || provObj?.name || b.provider_id;
               const isTrip = b.state === 'open';
               const isHalf = b.state === 'half-open';
+              const konf = konfigurasiEfektif(b, rules, models);
+              const sisaProbeDtk = b.next_probe_at
+                ? Math.max(0, Math.round((new Date(b.next_probe_at).getTime() - sekarang) / 1000))
+                : null;
 
               return (
                 <div
@@ -190,7 +276,30 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
                               minute: '2-digit',
                               second: '2-digit',
                             })}
+                            {sisaProbeDtk !== null && (
+                              <span className="text-text-muted font-normal">
+                                {' '}
+                                ({sisaProbeDtk > 0 ? `${sisaProbeDtk} dtk lagi` : 'segera'})
+                              </span>
+                            )}
                           </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center text-text-muted text-[11px]">
+                        <span className="flex items-center gap-1">
+                          <ShieldCheck className="w-3 h-3 text-sky-400" aria-hidden="true" />
+                          Konfigurasi Efektif:
+                        </span>
+                        <span className="text-white font-semibold text-right">
+                          {konf
+                            ? `Ambang ${konf.rule.failure_threshold}x · jeda ${labelDurasiBuka(konf.rule.open_duration_ms)} · probe ${konf.rule.half_open_probes}x`
+                            : 'Bawaan server'}
+                        </span>
+                      </div>
+                      {konf && (
+                        <div className="text-[10px] text-text-muted text-right">
+                          dari rule &quot;{konf.rule.name}&quot;
+                          {konf.jumlahRuleLain > 0 && ` · +${konf.jumlahRuleLain} rule lain juga mencakup`}
                         </div>
                       )}
                     </div>

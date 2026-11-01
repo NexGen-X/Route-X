@@ -6,7 +6,20 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-02
+
+Rilis penyelarasan penuh Calm Console: seluruh antarmuka kini mengikuti bahasa desain sampel secara utuh — Pengaturan tanpa panel, palet perintah berkelompok, Observabilitas tanpa kartu, lembar bawah detail Permintaan di mobile, dan batang anggaran per kunci dari data nyata — di atas fondasi konsolidasi Fase 2 dan perombakan UI/UX Fase 3–4. Installer native kini mematok tag rilis v1.5.0 sehingga unduhan biner resmi dan fallback kompilasi sama-sama menghasilkan versi ini.
+
+### Added
+- **Batang anggaran per kunci API** (Fase 7, PR #200): baris kunci menampilkan batang tipis belanja tercatat versus batas dari entitas Budget (`scope: api_key`) — hanya untuk kunci yang benar-benar memiliki anggaran terdaftar.
+- **Lembar bawah (bottom sheet) detail Permintaan di mobile** (Fase 7, PR #200) lewat prop `sheetOnMobile` pada Modal bersama; pemakai Modal lain tidak berubah.
+- **Palet perintah berkelompok per kategori** (Fase 7, PR #199): hasil Ctrl+K kini dikelompokkan Navigasi / Aksi Cepat / Perkakas CLI dengan judul grup.
+- **Galeri dokumentasi visual README yang rinci**: 10 tangkapan layar UI terkini (desktop + mobile) dengan penjelasan tiap permukaan, diganti dari instalasi nyata rilis ini.
+
 ### Changed
+- **Penyelarasan tema persis ke sampel (Fase 6, PR #196–#197)**: token warna disamakan piksel-per-piksel dengan sampel Calm Console (sidebar netral `#161616`, status pastel `#3ECF8E`/`#F26D6D`/`#F5B84C`, teks `#ECECEC`/`#B9B9B9`) dan font sans resmi diganti Inter → **Noto Sans**; screenshot README diganti build Fase 6.
+- **Pengaturan & Observabilitas tanpa panel (Fase 7, PR #198–#199)**: seluruh isi tab Pengaturan (Domain, Cache, Cadangan, Lanjutan) dan tiga panel terakhir Observabilitas diratakan menjadi baris/seksi polos bergaris rambut mengikuti sampel.
+- **Sinkronisasi repo (Fase 5, PR #194–#195)**: README, CHANGELOG, prompt agen, dan seluruh skrip diselaraskan ke keadaan kode (versi tampil installer & probe v1.4.0 pada masanya, tautan `file:///root` diperbaiki).
 - **Calm Console (Fase 4, PR #191–#193)**: perampingan visual menyeluruh mengikuti tema gelap Muse — versi tidak lagi tampil berulang di shell, hero Dashboard menjadi baris status tunggal, metrik menjadi strip KPI tanpa kartu bertumpuk, kartu Penyedia & Kunci API menjadi daftar baris, Observabilitas memakai tab garis bawah, dan Pengaturan memakai sub-navigasi ala Linear. Terverifikasi E2E menyeluruh 229 tes (0 gagal) dan audit kontras axe 0 pelanggaran.
 - **Bahasa Indonesia penuh untuk UI (Fase 3, PR #186)** mengikuti glosarium baku, dan **logo digambar ulang flat "Ubin Rute"** (PR #185) termasuk favicon dan ikon PWA. Versi aplikasi kini bersumber tunggal dari `web/package.json` dan badge jumlah tool CLI dihitung dari registri backend, bukan angka statis (PR #184).
 - **Konsolidasi permukaan (Fase 2, PR #175–#181)**: halaman Diagnostics dipensiunkan ke seksi Kesehatan Sistem di Observabilitas, kontrol cache dipindah ke tab Performa & Cache di Pengaturan, panel circuit breaker menampilkan konfigurasi efektif dari aturan prioritas tertinggi, dan 23 alias rute API lama yang terbukti nol konsumen dipangkas (3 alias baca dipertahankan).

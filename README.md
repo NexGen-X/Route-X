@@ -6,7 +6,7 @@
   <strong>A self-hosted, single-admin AI Gateway for personal use and small trusted teams — with native dual-protocol ingestion (OpenAI & Anthropic), intelligent multi-model combo routing, fast in-memory routing decisions, precise budget accounting, and instant developer CLI synchronization.</strong>
 </p>
 
-[![Release](https://img.shields.io/badge/Release-v1.4.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.4.0)
+[![Release](https://img.shields.io/badge/Release-v1.5.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.5.0)
 [![Go Version](https://img.shields.io/badge/Go-1.27.3+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
@@ -54,13 +54,43 @@ Direct integration with heterogeneous AI model APIs leads to severe operational 
 
 ## 🖥️ Dashboard Preview
 
-The embedded dashboard uses the **Calm Console** design language — a Claude-inspired dark theme (`#181818` base, `#0070E0` accent) with a flat, Linear-style layout discipline: typography carries the hierarchy, status is shown once, metrics are plain KPI strips instead of stacked cards, and the full UI is in Bahasa Indonesia. Screenshots below are from the current release UI.
+The embedded dashboard uses the **Calm Console** design language — a Claude-inspired dark theme (`#181818` base, `#161616` sidebar, `#0070E0` accent, pastel status colors, Noto Sans) with a flat, Linear-style layout discipline: typography carries the hierarchy, panels and stacked cards are avoided, metrics are plain KPI strips and rows, and the full UI is in Bahasa Indonesia. Every screenshot below was captured from a live install of the current release; the numbers shown are that test gateway's real recorded traffic — Route-X never renders placeholder or mock data.
+
+### Desktop
+
+**Dashboard** — one plain status line, a flat KPI strip (requests, error rate, tokens & cost, cache hit), a provider health matrix rendered as simple rows, and a live request feed. Nothing competes for attention; status is shown exactly once.
 
 ![Route-X Dashboard — desktop](docs/images/dashboard-desktop.png)
 
-| Providers (desktop) | Dashboard (mobile PWA) |
-|---|---|
-| ![Route-X Providers — desktop](docs/images/penyedia-desktop.png) | <img src="docs/images/dashboard-mobile.png" alt="Route-X Dashboard — mobile" width="300"> |
+**Providers** — every upstream as a two-line row: status dot, model count, priority and weight. Provider presets (OpenAI, Anthropic, Google, OpenRouter, local runtimes, and more) are added with a single click, then mapped to models with per-provider pricing.
+
+![Route-X Providers — desktop](docs/images/penyedia-desktop.png)
+
+**Observability & Telemetry** — underline metric tabs (Requests, Throughput, Tokens, Error Rate, Cost, P95 Latency) over one large chart, traffic composition as thin bars broken down by provider / model / API key, server & connection-pool health as plain rows, and a system-health checklist consolidated from the former Diagnostics page.
+
+![Route-X Observability — desktop](docs/images/observabilitas-desktop.png)
+
+**Command Palette (`Ctrl+K` / `⌘K`)** — a Raycast-style palette for the whole console: results grouped by category (Navigation, Quick Actions, CLI Tools), full keyboard navigation, no mouse required.
+
+![Route-X Command Palette — desktop](docs/images/palet-perintah-desktop.png)
+
+**API Keys** — key rows with masked secret, RPM/TPM limits, last-used time, and model/provider scope. When a key has a budget registered in the Budgets system, the row also shows a thin **budget bar with real recorded spend versus its limit** (amber at the alert threshold, red at 100%) — keys without a budget show no bar at all.
+
+![Route-X API Keys — desktop](docs/images/kunci-api-desktop.png)
+
+**Settings** — Linear-style left sub-navigation with panel-free content: label–description–control rows for Domain & HTTPS (with DNS guidance and automatic Let's Encrypt), Performance & Cache, Backup & Recovery, and free-form Advanced runtime parameters.
+
+![Route-X Settings — desktop](docs/images/pengaturan-desktop.png)
+
+### Mobile (responsive web + PWA — no separate native app)
+
+| Dashboard | Providers | API Keys with budget bar |
+|---|---|---|
+| <img src="docs/images/dashboard-mobile.png" alt="Route-X Dashboard — mobile" width="260"> | <img src="docs/images/penyedia-mobile.png" alt="Route-X Providers — mobile" width="260"> | <img src="docs/images/kunci-api-mobile.png" alt="Route-X API Keys with per-key budget bar — mobile" width="260"> |
+
+**Request detail as a bottom sheet** — tapping any request in the mobile list raises its full inspector as a sheet from the bottom (status, tokens, cost, latency waterfall, event timeline, payload & cURL) without leaving the list or losing scroll context.
+
+<img src="docs/images/permintaan-sheet-mobile.png" alt="Route-X Request detail bottom sheet — mobile" width="300">
 
 ---
 
@@ -207,11 +237,11 @@ Historical benchmark results measured on a dedicated **Intel(R) Xeon(R) Platinum
 Download and run the official static Linux binary with zero build steps:
 
 ```bash
-# 1. Download official v1.4.0 release
-curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.4.0/routex-v1.4.0-linux-amd64.tar.gz
+# 1. Download official v1.5.0 release
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.5.0/routex-v1.5.0-linux-amd64.tar.gz
 
 # 2. Extract archive
-tar -xzvf routex-v1.4.0-linux-amd64.tar.gz
+tar -xzvf routex-v1.5.0-linux-amd64.tar.gz
 
 # 3. Apply schema migrations & run gateway
 ./ai-gateway -migrate

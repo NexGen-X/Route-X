@@ -211,9 +211,9 @@ fi
 systemctl enable caddy
 systemctl restart caddy || true
 
-# 8. Memasang Biner Route-X Core (Menggunakan Biner Rilis Resmi v1.4.0)
+# 8. Memasang Biner Route-X Core (Menggunakan Biner Rilis Resmi v1.5.0)
 echo ""
-echo "🛠️ [5/6] Menyiapkan biner resmi Route-X Gateway v1.2.1..."
+echo "🛠️ [5/6] Menyiapkan biner resmi Route-X Gateway v1.5.0..."
 mkdir -p "$INSTALL_DIR"
 
 INSTALLED_FROM_RELEASE=0
@@ -222,7 +222,7 @@ if [ -f "$SRC_DIR/bin/ai-gateway" ]; then
     install -m 755 "$SRC_DIR/bin/ai-gateway" "$INSTALL_DIR/ai-gateway"
     INSTALLED_FROM_RELEASE=1
 else
-    RELEASE_TAG="v1.4.0"
+    RELEASE_TAG="v1.5.0"
     ARCH="$(uname -m)"
     case "$ARCH" in
         x86_64) TARBALL_NAME="routex-${RELEASE_TAG}-linux-amd64.tar.gz" ;;
@@ -273,7 +273,7 @@ if [ "$INSTALLED_FROM_RELEASE" -eq 0 ]; then
     cd "$SRC_DIR"
 
     echo "   Membangun Biner Core Route-X (go build)..."
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${RELEASE_TAG:-v1.4.0}" -o ai-gateway ./cmd/ai-gateway
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${RELEASE_TAG:-v1.5.0}" -o ai-gateway ./cmd/ai-gateway
     install -m 755 ai-gateway "$INSTALL_DIR/ai-gateway"
 fi
 

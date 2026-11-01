@@ -126,7 +126,7 @@ export const CacheTab: React.FC = () => {
     <div className="bg-bg-surface-2/40 border border-border/80 rounded-xl p-5 shadow-lg backdrop-blur-sm">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-accent">
+          <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-accent-text">
             <Zap className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
@@ -210,7 +210,7 @@ export const CacheTab: React.FC = () => {
 
         <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
           <span className="text-[11px] text-text-muted block">Total Entri di Redis</span>
-          <span className="text-xl font-bold font-mono text-accent mt-1 block">
+          <span className="text-xl font-bold font-mono text-accent-text mt-1 block">
             {cache?.total_entries || 0}
           </span>
           <span className="text-[10px] text-text-secondary block mt-0.5">
@@ -238,7 +238,7 @@ export const CacheTab: React.FC = () => {
                   type="button"
                   onClick={() => void handleSimpanTTL()}
                   disabled={menyimpan || !cache}
-                  className="p-1.5 rounded bg-accent/20 hover:bg-accent/30 text-accent ml-auto text-xs min-w-[28px] min-h-[28px] flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  className="p-1.5 rounded bg-accent/20 hover:bg-accent/30 text-accent-text ml-auto text-xs min-w-[28px] min-h-[28px] flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                   aria-label="Simpan TTL"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />

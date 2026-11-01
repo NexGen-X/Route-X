@@ -29,7 +29,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <Cpu className="w-4 h-4 text-accent" />
+          <Cpu className="w-4 h-4 text-accent-text" />
           <h3 className="text-sm font-semibold text-white tracking-tight">
             Telemetri Runtime Gateway
           </h3>

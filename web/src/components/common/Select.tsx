@@ -236,7 +236,7 @@ export const Select: React.FC<SelectProps> = ({
           className={cn(
             variant === 'compact' ? 'w-3.5 h-3.5' : 'w-4 h-4',
             'text-text-muted transition-transform duration-200 flex-shrink-0',
-            isOpen ? 'rotate-180 text-accent' : ''
+            isOpen ? 'rotate-180 text-accent-text' : ''
           )}
         />
       </button>
@@ -309,7 +309,7 @@ export const Select: React.FC<SelectProps> = ({
                       opt.disabled
                         ? 'opacity-40 cursor-not-allowed text-text-muted'
                         : isSelected
-                        ? 'bg-accent/15 text-accent font-semibold border-l-2 border-accent'
+                        ? 'bg-accent/15 text-accent-text font-semibold border-l-2 border-accent'
                         : isHighlighted
                         ? 'bg-bg-surface-2 text-white'
                         : 'text-text-secondary hover:text-white hover:bg-bg-surface-2/60'
@@ -327,7 +327,7 @@ export const Select: React.FC<SelectProps> = ({
                       </div>
                     </div>
 
-                    {isSelected && <Check className="w-3.5 h-3.5 text-accent flex-shrink-0" aria-hidden="true" />}
+                    {isSelected && <Check className="w-3.5 h-3.5 text-accent-text flex-shrink-0" aria-hidden="true" />}
                   </div>
                 );
               })

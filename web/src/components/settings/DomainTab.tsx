@@ -39,7 +39,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
     <Card className="p-6 border-accent/20 bg-bg-surface-2">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent-text flex items-center justify-center">
             <Globe className="w-5 h-5" />
           </div>
           <div>
@@ -85,7 +85,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
           ) : domainFeedback.type === 'error' ? (
             <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
           ) : (
-            <Info className="w-4 h-4 shrink-0 text-accent-hover mt-0.5" />
+            <Info className="w-4 h-4 shrink-0 text-accent-text mt-0.5" />
           )}
           <div className="flex-1">{domainFeedback.message}</div>
         </div>
@@ -94,7 +94,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
       {/* Panduan DNS A-Record */}
       <div className="mt-5 p-4 rounded-xl bg-bg-surface-2 border border-border">
         <div className="flex items-center gap-2 text-xs font-semibold text-white mb-2">
-          <Info className="w-4 h-4 text-accent" />
+          <Info className="w-4 h-4 text-accent-text" />
           Petunjuk Konfigurasi DNS di Registrar / Cloudflare:
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
@@ -108,7 +108,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
           </div>
           <div className="bg-bg-surface-2 p-2.5 rounded-lg border border-border">
             <span className="text-text-muted block text-xs font-medium">Nilai Target (IP Publik Server)</span>
-            <span className="font-mono text-accent font-semibold">{serverIP || 'Belum tersedia'}</span>
+            <span className="font-mono text-accent-text font-semibold">{serverIP || 'Belum tersedia'}</span>
           </div>
         </div>
       </div>
@@ -176,7 +176,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
                   href={domainConfig.public_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-accent hover:underline font-mono inline-flex items-center gap-1 font-semibold truncate max-w-full"
+                  className="text-accent-text hover:underline font-mono inline-flex items-center gap-1 font-semibold truncate max-w-full"
                   title={domainConfig.public_url}
                 >
                   <span className="truncate">{domainConfig.public_url}</span>

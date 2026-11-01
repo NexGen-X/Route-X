@@ -255,7 +255,7 @@ export const Observability: React.FC = () => {
                 <span>Rata-rata: {avgThroughputRps.toFixed(2)} req/dtk</span>
               </div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent-hover">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent-text">
               <Activity className="w-5 h-5" aria-hidden="true" />
             </div>
           </div>
@@ -295,7 +295,7 @@ export const Observability: React.FC = () => {
               <div className="text-xl font-bold text-white tracking-tight font-mono">
                 {(summary?.total_tokens ?? totalTokensFromSeries).toLocaleString()} tok
               </div>
-              <div className="text-[10px] text-accent flex items-center gap-1 font-mono">
+              <div className="text-[10px] text-accent-text flex items-center gap-1 font-mono">
                 <Coins className="w-3 h-3" aria-hidden="true" />
                 <span>Estimasi: {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}</span>
               </div>
@@ -350,7 +350,7 @@ export const Observability: React.FC = () => {
                 onClick={() => setMetric(m.key)}
                 className={`min-h-[44px] sm:min-h-[30px] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium whitespace-nowrap text-center cursor-pointer ${
                   metric === m.key
-                    ? 'bg-accent/20 text-accent-hover border border-accent/40 font-semibold shadow-sm'
+                    ? 'bg-accent/20 text-accent-text border border-accent/40 font-semibold shadow-sm'
                     : 'text-text-muted hover:text-text-primary'
                 }`}
               >
@@ -364,7 +364,7 @@ export const Observability: React.FC = () => {
           {isLoading && series.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <div className="animate-pulse flex flex-col items-center gap-2.5 text-text-muted text-xs">
-                <RefreshCw className="w-5 h-5 animate-spin text-accent" aria-hidden="true" />
+                <RefreshCw className="w-5 h-5 animate-spin text-accent-text" aria-hidden="true" />
                 <span>Memuat data telemetri...</span>
               </div>
             </div>
@@ -515,10 +515,10 @@ export const Observability: React.FC = () => {
               <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border">
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-text-secondary flex items-center gap-1.5">
-                    <Database className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+                    <Database className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
                     PostgreSQL Pool
                   </span>
-                  <span className="font-mono font-bold text-accent">
+                  <span className="font-mono font-bold text-accent-text">
                     {diag?.db_pool?.total_conns ?? 0} / {diag?.db_pool?.max_conns ?? 0}
                   </span>
                 </div>
@@ -543,7 +543,7 @@ export const Observability: React.FC = () => {
                 </div>
                 <div className="flex justify-between py-1">
                   <span className="text-text-muted">Memory In-Use</span>
-                  <span className="font-mono text-accent">{diag?.memory_allocated_mb ?? 0} MB</span>
+                  <span className="font-mono text-accent-text">{diag?.memory_allocated_mb ?? 0} MB</span>
                 </div>
               </div>
             </div>

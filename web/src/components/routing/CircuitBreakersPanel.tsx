@@ -314,7 +314,7 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
                         onClick={() => handleResetBreaker(b.provider_id, b.model || '')}
                         aria-label={`Pulihkan sirkuit untuk provider ${providerName}`}
                       >
-                        <RotateCcw className="w-3.5 h-3.5 mr-1.5 text-accent" aria-hidden="true" />
+                        <RotateCcw className="w-3.5 h-3.5 mr-1.5 text-accent-text" aria-hidden="true" />
                         Pulihkan Sirkuit Sekarang
                       </Button>
                     </div>

@@ -195,7 +195,7 @@ export const Webhooks: React.FC = () => {
       ) : webhooks.length === 0 ? (
         <Card className="py-12 px-6 text-center">
           <div className="max-w-md mx-auto space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-accent/10 border border-accent/20 text-accent flex items-center justify-center mx-auto shadow-inner">
+            <div className="w-12 h-12 rounded-2xl bg-accent/10 border border-accent/20 text-accent-text flex items-center justify-center mx-auto shadow-inner">
               <WebhookIcon className="w-6 h-6" />
             </div>
             <div>

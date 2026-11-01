@@ -273,7 +273,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
       {/* Header Row */}
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-bold text-white flex items-center gap-1.5 min-w-0">
-          <KeyRound className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+          <KeyRound className="w-3.5 h-3.5 text-accent-text flex-shrink-0" />
           <span className="truncate">Kredensial & Pool Akun · AES-256-GCM</span>
         </span>
         {!isAddingKeyInline && (
@@ -289,7 +289,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
               });
               setIsAddingKeyInline(true);
             }}
-            className="px-2.5 py-1.5 rounded-lg bg-accent text-black font-bold hover:bg-accent-hover transition-colors flex items-center gap-1 text-xs"
+            className="px-2.5 py-1.5 rounded-lg bg-accent text-white font-bold hover:bg-accent-hover transition-colors flex items-center gap-1 text-xs"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{isAntigravity ? 'Hubungkan Akun Google' : 'Tambah Key'}</span>
@@ -301,7 +301,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
       <div className="p-3 rounded-xl border border-border bg-bg-surface-2/60 space-y-2">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-accent flex-shrink-0" />
+            <Layers className="w-4 h-4 text-accent-text flex-shrink-0" />
             <div>
               <span className="text-xs font-bold text-white block">Strategi Rotasi Antar-Akun</span>
               <span className="text-[10px] text-text-muted">
@@ -316,7 +316,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
               onClick={() => handleStrategyChange('round_robin')}
               className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1.5 ${
                 currentStrategy === 'round_robin'
-                  ? 'bg-accent text-black shadow-sm'
+                  ? 'bg-accent text-white shadow-sm'
                   : 'text-text-muted hover:text-white'
               }`}
             >
@@ -329,7 +329,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
               onClick={() => handleStrategyChange('priority')}
               className={`px-2 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center gap-1.5 ${
                 currentStrategy === 'priority'
-                  ? 'bg-accent text-black shadow-sm'
+                  ? 'bg-accent text-white shadow-sm'
                   : 'text-text-muted hover:text-white'
               }`}
             >
@@ -363,7 +363,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                 onClick={() => setInlineAuthTab('apikey')}
                 className={`pb-1.5 font-medium transition-colors flex items-center gap-1 ${
                   inlineAuthTab === 'apikey'
-                    ? 'border-b-2 border-accent text-accent font-semibold'
+                    ? 'border-b-2 border-accent text-accent-text font-semibold'
                     : 'text-text-muted hover:text-white'
                 }`}
               >
@@ -374,7 +374,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                 onClick={() => setInlineAuthTab('authlogin')}
                 className={`pb-1.5 font-medium transition-colors flex items-center gap-1 ${
                   inlineAuthTab === 'authlogin'
-                    ? 'border-b-2 border-accent text-accent font-semibold'
+                    ? 'border-b-2 border-accent text-accent-text font-semibold'
                     : 'text-text-muted hover:text-white'
                 }`}
               >
@@ -386,7 +386,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
           {/* Banner Khusus Google Antigravity */}
           {isAntigravity && (
             <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-xs text-text-secondary flex items-start gap-2">
-              <Shield className="w-4 h-4 text-accent shrink-0 mt-0.5" />
+              <Shield className="w-4 h-4 text-accent-text shrink-0 mt-0.5" />
               <div>
                 <span className="font-semibold text-white block">OAuth Token Exchange Engine</span>
                 <span className="text-[11px] text-text-muted">
@@ -416,7 +416,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[11px] font-medium text-text-secondary">Secret API Key *</label>
                   {matchedPreset?.apiKeyHelp && (
-                    <span className="text-[10px] text-accent font-mono">{matchedPreset.apiKeyHelp}</span>
+                    <span className="text-[10px] text-accent-text font-mono">{matchedPreset.apiKeyHelp}</span>
                   )}
                 </div>
                 <div className="relative">
@@ -447,7 +447,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                       href={matchedPreset.authLoginUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="px-2.5 py-1 rounded bg-accent text-black font-semibold text-[11px] flex items-center gap-1 hover:opacity-90 flex-shrink-0"
+                      className="px-2.5 py-1 rounded bg-accent text-white font-semibold text-[11px] flex items-center gap-1 hover:opacity-90 flex-shrink-0"
                     >
                       Buka Portal <ExternalLink className="w-3 h-3" />
                     </a>
@@ -482,7 +482,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
             {/* Opsi Jalur Keluar (Egress Proxy) */}
             <div>
               <label className="block text-[11px] font-medium text-text-secondary mb-1 flex items-center gap-1">
-                <Globe className="w-3 h-3 text-accent" />
+                <Globe className="w-3 h-3 text-accent-text" />
                 Jalur Keluar / Proxy Egress (Opsional)
               </label>
               <Select
@@ -502,11 +502,11 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
 
             <div className="flex items-center justify-between pt-1">
               <span className="text-[10px] text-text-muted flex items-center gap-1">
-                <Lock className="w-3 h-3 text-accent flex-shrink-0" /> Enkripsi AES-256-GCM
+                <Lock className="w-3 h-3 text-accent-text flex-shrink-0" /> Enkripsi AES-256-GCM
               </span>
               <div className="flex gap-1.5">
                 <button type="button" onClick={resetInlineForm} className="px-2.5 py-1.5 text-xs rounded-lg bg-bg-surface-2 text-text-primary border border-border hover:text-white transition-colors">Batal</button>
-                <button type="submit" disabled={isSavingKey} className="px-2.5 py-1.5 text-xs rounded-lg bg-accent text-black font-bold hover:bg-accent-hover transition-colors disabled:opacity-50 flex items-center gap-1">
+                <button type="submit" disabled={isSavingKey} className="px-2.5 py-1.5 text-xs rounded-lg bg-accent text-white font-bold hover:bg-accent-hover transition-colors disabled:opacity-50 flex items-center gap-1">
                   {isSavingKey ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   {isAntigravity ? 'Verifikasi & Hubungkan Akun' : 'Simpan Kredensial'}
                 </button>
@@ -521,7 +521,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs px-0.5">
             <span className="font-semibold text-white flex items-center gap-1.5">
-              <Users className="w-3.5 h-3.5 text-accent" />
+              <Users className="w-3.5 h-3.5 text-accent-text" />
               Pool Akun Google ({oauthSessions.length} Terdaftar · {oauthSessions.filter((s) => s.enabled).length} Aktif)
             </span>
             <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
@@ -552,7 +552,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                           className="w-8 h-8 rounded-full border border-border shrink-0 object-cover"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center font-bold text-accent text-xs shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center font-bold text-accent-text text-xs shrink-0">
                           {(session.account_email || 'G')[0].toUpperCase()}
                         </div>
                       )}
@@ -568,7 +568,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                           )}
                           {currentStrategy === 'priority' && (
                             <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
-                              index === 0 ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-bg-surface text-text-muted border border-border'
+                              index === 0 ? 'bg-accent/20 text-accent-text border border-accent/40' : 'bg-bg-surface text-text-muted border border-border'
                             }`}>
                               {index === 0 ? 'Utama' : `Cadangan #${index}`}
                             </span>
@@ -632,7 +632,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                         aria-label="Segarkan access token OAuth sekarang"
                         className="p-1.5 rounded-lg border border-border bg-bg-surface text-text-muted hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer disabled:opacity-50"
                       >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-accent' : ''}`} aria-hidden="true" />
+                        <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-accent-text' : ''}`} aria-hidden="true" />
                       </button>
 
                       <button
@@ -650,7 +650,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                   {/* Selector Jalur Keluar (Egress Proxy) */}
                   <div className="mt-2.5 pt-2 border-t border-border/40 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 sm:gap-2">
                     <span className="text-text-muted text-[11px] flex items-center gap-1 shrink-0">
-                      <Globe className="w-3 h-3 text-accent" aria-hidden="true" />
+                      <Globe className="w-3 h-3 text-accent-text" aria-hidden="true" />
                       Jalur Keluar (Proxy):
                     </span>
                     <div className="w-full sm:w-56 shrink-0">
@@ -683,7 +683,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
           {oauthSessions.length > 0 && (
             <div className="flex items-center justify-between text-xs px-0.5 pt-2">
               <span className="font-semibold text-white flex items-center gap-1.5">
-                <KeyRound className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+                <KeyRound className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
                 API Key Reguler ({directCredentials.length} Kunci · {directCredentials.filter((c) => c.enabled).length} Aktif)
               </span>
             </div>
@@ -703,7 +703,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                   <span className="font-bold text-white text-xs truncate">{cred.label}</span>
                   {currentStrategy === 'priority' && (
                     <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase shrink-0 ${
-                      index === 0 ? 'bg-accent/20 text-accent border border-accent/40' : 'bg-bg-surface text-text-muted border border-border'
+                      index === 0 ? 'bg-accent/20 text-accent-text border border-accent/40' : 'bg-bg-surface text-text-muted border border-border'
                     }`}>
                       {index === 0 ? 'Utama' : `Cadangan #${index}`}
                     </span>
@@ -748,7 +748,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
               </div>
               <div className="pt-1.5 border-t border-border/40 flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-1.5 sm:gap-2">
                 <span className="text-text-muted text-[11px] flex items-center gap-1 shrink-0">
-                  <Globe className="w-3 h-3 text-accent" aria-hidden="true" />
+                  <Globe className="w-3 h-3 text-accent-text" aria-hidden="true" />
                   Jalur Keluar (Proxy):
                 </span>
                 <div className="w-full sm:w-56 shrink-0">

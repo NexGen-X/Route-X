@@ -67,7 +67,7 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
 
           <div className="flex justify-between py-1 items-center">
             <span className="text-text-muted">Target Proxy</span>
-            <span className="font-mono text-accent text-[11px] truncate max-w-[200px]">
+            <span className="font-mono text-accent-text text-[11px] truncate max-w-[200px]">
               {pool.masked_hint || '[ENCRYPTED AT REST]'}
             </span>
           </div>

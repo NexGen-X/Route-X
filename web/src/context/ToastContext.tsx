@@ -361,7 +361,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 className={`p-3 rounded-xl flex-shrink-0 ${
                   confirmState.options.danger
                     ? 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
-                    : 'bg-accent/10 border border-accent/20 text-accent'
+                    : 'bg-accent/10 border border-accent/20 text-accent-text'
                 }`}
               >
                 {confirmState.options.danger ? (

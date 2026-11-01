@@ -110,7 +110,7 @@ export const Egress: React.FC = () => {
               variant="secondary"
               size="sm"
               onClick={() => setIsProvisionOpen(true)}
-              icon={<Zap className="w-3.5 h-3.5 text-accent" />}
+              icon={<Zap className="w-3.5 h-3.5 text-accent-text" />}
               className="border-accent/40 hover:border-accent"
             >
               Auto-Deploy Cloud Relay
@@ -153,7 +153,7 @@ export const Egress: React.FC = () => {
         </div>
       ) : pools.length === 0 ? (
         <Card className="p-12 text-center">
-          <div className="w-12 h-12 rounded-full bg-accent/10 text-accent flex items-center justify-center mx-auto mb-4">
+          <div className="w-12 h-12 rounded-full bg-accent/10 text-accent-text flex items-center justify-center mx-auto mb-4">
             <Network className="w-6 h-6" />
           </div>
           <h3 className="text-base font-bold text-white">Belum Ada Egress Proxy Pool</h3>

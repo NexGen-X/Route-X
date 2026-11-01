@@ -46,7 +46,7 @@ export const RateLimitCard: React.FC<RateLimitCardProps> = ({
           </div>
           <div>
             <span className="block text-[10px] text-text-muted uppercase">Tok / Mnt</span>
-            <span className="font-mono text-sm font-bold text-accent mt-0.5 block">
+            <span className="font-mono text-sm font-bold text-accent-text mt-0.5 block">
               {tpm > 0 ? tpm.toLocaleString() : '∞'}
             </span>
           </div>
@@ -62,10 +62,10 @@ export const RateLimitCard: React.FC<RateLimitCardProps> = ({
         <div className="mt-3.5 p-3 rounded-inner bg-bg-surface-1 border border-border/60 space-y-2">
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-text-muted flex items-center gap-1.5 font-medium">
-              <Waves className="w-3.5 h-3.5 text-accent-hover" aria-hidden="true" />
+              <Waves className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
               <span>Token Bucket Indicator</span>
             </span>
-            <span className="font-mono text-xs text-accent-hover font-semibold">
+            <span className="font-mono text-xs text-accent-text font-semibold">
               {rps > 0 ? `${rps} burst window` : 'unlimited'}
             </span>
           </div>

@@ -425,7 +425,7 @@ export const CLIIntegrations: React.FC = () => {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-text-muted">
-        <RefreshCw className="w-8 h-8 animate-spin text-accent mb-4" />
+        <RefreshCw className="w-8 h-8 animate-spin text-accent-text mb-4" />
         <p className="text-sm font-mono">Memindai perkakas AI CLI di sistem host...</p>
       </div>
     );

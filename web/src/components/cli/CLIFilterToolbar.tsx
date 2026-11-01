@@ -39,7 +39,7 @@ export const CLIFilterToolbar: React.FC<CLIFilterToolbarProps> = ({
             onClick={() => setMainTab('installed')}
             className={`text-xs px-3 py-1.5 rounded-md font-semibold flex items-center gap-1.5 transition-all ${
               mainTab === 'installed'
-                ? 'bg-accent text-black shadow'
+                ? 'bg-accent text-white shadow'
                 : 'text-text-muted hover:text-white'
             }`}
           >
@@ -49,7 +49,7 @@ export const CLIFilterToolbar: React.FC<CLIFilterToolbarProps> = ({
               className={`px-1.5 py-0.2 rounded-full text-[10px] ${
                 mainTab === 'installed'
                   ? 'bg-black/20 text-black font-bold'
-                  : 'bg-bg-surface-3 text-text-muted'
+                  : 'bg-bg-surface-3 text-text-secondary'
               }`}
             >
               {installedCount}
@@ -61,7 +61,7 @@ export const CLIFilterToolbar: React.FC<CLIFilterToolbarProps> = ({
             onClick={() => setMainTab('all')}
             className={`text-xs px-3 py-1.5 rounded-md font-semibold flex items-center gap-1.5 transition-all ${
               mainTab === 'all'
-                ? 'bg-accent text-black shadow'
+                ? 'bg-accent text-white shadow'
                 : 'text-text-muted hover:text-white'
             }`}
           >
@@ -71,7 +71,7 @@ export const CLIFilterToolbar: React.FC<CLIFilterToolbarProps> = ({
               className={`px-1.5 py-0.2 rounded-full text-[10px] ${
                 mainTab === 'all'
                   ? 'bg-black/20 text-black font-bold'
-                  : 'bg-bg-surface-3 text-text-muted'
+                  : 'bg-bg-surface-3 text-text-secondary'
               }`}
             >
               {totalCount}

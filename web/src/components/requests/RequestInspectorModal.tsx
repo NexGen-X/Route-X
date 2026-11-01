@@ -231,7 +231,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
           </div>
           <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
             <span className="text-xs font-medium text-text-muted">Biaya USD</span>
-            <div className="mt-1 font-mono font-bold text-accent">
+            <div className="mt-1 font-mono font-bold text-accent-text">
               {formatUSD(request.cost_usd, 6)}
             </div>
           </div>
@@ -241,10 +241,10 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
         <div className="p-3.5 bg-bg-surface-2 rounded-inner border border-border space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-text-secondary flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+              <Layers className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
               <span>Waterfall Latensi Inferensi</span>
             </span>
-            <span className="font-mono text-accent font-bold">{request.duration_ms} ms</span>
+            <span className="font-mono text-accent-text font-bold">{request.duration_ms} ms</span>
           </div>
           <div className="w-full h-3 bg-bg-base rounded-full overflow-hidden flex border border-border/50">
             {events.length > 0 ? (
@@ -305,7 +305,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
         {/* Event Timeline (Failover & Percobaan) */}
         <div>
           <h4 className="text-xs font-semibold text-text-secondary mb-3 flex items-center gap-1.5">
-            <Network className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+            <Network className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
             <span>Timeline Peristiwa (Failover &amp; Percobaan)</span>
           </h4>
           <div className="space-y-2">
@@ -344,7 +344,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
                 onClick={() => setActiveInspectorTab('payload')}
                 className={`min-h-[44px] sm:min-h-[30px] px-3 py-1 rounded-inner text-xs font-semibold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                   activeInspectorTab === 'payload'
-                    ? 'bg-accent/20 text-accent-hover border border-accent/40 shadow-sm'
+                    ? 'bg-accent/20 text-accent-text border border-accent/40 shadow-sm'
                     : 'text-text-secondary hover:text-white'
                 }`}
               >
@@ -358,7 +358,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
                 onClick={() => setActiveInspectorTab('headers')}
                 className={`min-h-[44px] sm:min-h-[30px] px-3 py-1 rounded-inner text-xs font-semibold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                   activeInspectorTab === 'headers'
-                    ? 'bg-accent/20 text-accent-hover border border-accent/40 shadow-sm'
+                    ? 'bg-accent/20 text-accent-text border border-accent/40 shadow-sm'
                     : 'text-text-secondary hover:text-white'
                 }`}
               >
@@ -372,7 +372,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
                 onClick={() => setActiveInspectorTab('curl')}
                 className={`min-h-[44px] sm:min-h-[30px] px-3 py-1 rounded-inner text-xs font-semibold transition-all inline-flex items-center gap-1.5 cursor-pointer ${
                   activeInspectorTab === 'curl'
-                    ? 'bg-accent/20 text-accent-hover border border-accent/40 shadow-sm'
+                    ? 'bg-accent/20 text-accent-text border border-accent/40 shadow-sm'
                     : 'text-text-secondary hover:text-white'
                 }`}
               >

@@ -84,7 +84,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
     <div className="lg:col-span-2 bg-bg-surface-1/40 border border-border/80 rounded-lg p-4 sm:p-5 shadow-sm flex flex-col justify-between">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
         <div className="flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-accent-hover flex-shrink-0" aria-hidden="true" />
+          <BarChart3 className="w-4 h-4 text-accent-text flex-shrink-0" aria-hidden="true" />
           <h3 className="text-sm font-medium text-white tracking-tight truncate">
             Volume &amp; Dinamika Lalu Lintas
           </h3>
@@ -125,7 +125,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
               aria-label={`Rentang waktu ${w}`}
               className={`px-2 py-1 rounded transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/40 cursor-pointer ${
                 timeWindow === w
-                  ? 'bg-bg-surface-2 text-accent-hover font-medium border border-accent/30'
+                  ? 'bg-bg-surface-2 text-accent-text font-medium border border-accent/30'
                   : 'text-text-secondary hover:text-white'
               }`}
             >

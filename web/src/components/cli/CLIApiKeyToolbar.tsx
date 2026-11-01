@@ -40,7 +40,7 @@ export const CLIApiKeyToolbar: React.FC<CLIApiKeyToolbarProps> = ({
     <div className="bg-bg-surface p-5 rounded-box border border-border space-y-3">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-accent/10 text-accent flex-shrink-0">
+          <div className="p-2 rounded-lg bg-accent/10 text-accent-text flex-shrink-0">
             <Key className="w-4 h-4" />
           </div>
           <div>
@@ -98,7 +98,7 @@ export const CLIApiKeyToolbar: React.FC<CLIApiKeyToolbarProps> = ({
       {registeredKeys.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border text-[11px]">
           <span className="text-text-muted flex items-center gap-1 font-medium">
-            <Key className="w-3 h-3 text-accent" /> Kunci Terdaftar di Sistem:
+            <Key className="w-3 h-3 text-accent-text" /> Kunci Terdaftar di Sistem:
           </span>
           {registeredKeys.map((k) => (
             <button

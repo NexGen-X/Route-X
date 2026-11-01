@@ -145,10 +145,10 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
         aria-expanded={lanjutanTerbuka}
         className="sm:hidden inline-flex items-center gap-1.5 min-h-[44px] px-2 text-xs font-medium text-text-secondary cursor-pointer"
       >
-        <Filter className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+        <Filter className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
         <span>Filter Lanjutan</span>
         {jumlahFilterLanjutan > 0 && (
-          <span className="px-1.5 py-0.5 rounded-full bg-accent/15 text-accent text-[10px] font-mono">
+          <span className="px-1.5 py-0.5 rounded-full bg-accent/15 text-accent-text text-[10px] font-mono">
             {jumlahFilterLanjutan}
           </span>
         )}
@@ -163,7 +163,7 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
         className={`${lanjutanTerbuka ? 'flex' : 'hidden'} sm:flex flex-wrap items-center gap-2 pt-1 border-t border-border/40 text-xs`}
       >
         <div className="flex items-center gap-1.5 text-text-muted font-medium text-[11px] mr-1">
-          <Filter className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
+          <Filter className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
           <span>Filter Lanjutan:</span>
         </div>
 

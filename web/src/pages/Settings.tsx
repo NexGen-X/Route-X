@@ -313,7 +313,7 @@ export const Settings: React.FC = () => {
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
-          <Globe className="w-4 h-4 text-accent" />
+          <Globe className="w-4 h-4 text-accent-text" />
           <span>Domain & HTTPS</span>
         </button>
         <button
@@ -325,7 +325,7 @@ export const Settings: React.FC = () => {
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
-          <Zap className="w-4 h-4 text-accent" />
+          <Zap className="w-4 h-4 text-accent-text" />
           <span>Performa &amp; Cache</span>
         </button>
         <button
@@ -337,7 +337,7 @@ export const Settings: React.FC = () => {
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
-          <Database className="w-4 h-4 text-accent" />
+          <Database className="w-4 h-4 text-accent-text" />
           <span>Cadangan & Pemulihan</span>
         </button>
         <button
@@ -349,7 +349,7 @@ export const Settings: React.FC = () => {
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
-          <Sliders className="w-4 h-4 text-accent" />
+          <Sliders className="w-4 h-4 text-accent-text" />
           <span>Pengaturan Lanjutan</span>
         </button>
       </div>

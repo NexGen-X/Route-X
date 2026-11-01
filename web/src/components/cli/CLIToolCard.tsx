@@ -101,7 +101,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                   : 'bg-bg-surface-3 border-border text-text-muted'
               }`}
             >
-              {isAgy ? <Shield className="w-5 h-5" /> : <Terminal className="w-5 h-5 text-accent" />}
+              {isAgy ? <Shield className="w-5 h-5" /> : <Terminal className="w-5 h-5 text-accent-text" />}
             </div>
             <div className="truncate">
               <h4 className="text-base font-semibold text-white tracking-tight truncate">
@@ -160,7 +160,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
             aria-label={`Salin perintah untuk ${tool.name}`}
           >
             {copiedKey === `snippet-${tool.id}` ? (
-              <Check className="w-3.5 h-3.5 text-accent" />
+              <Check className="w-3.5 h-3.5 text-accent-text" />
             ) : (
               <Copy className="w-3.5 h-3.5" />
             )}
@@ -301,7 +301,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                       <div className="p-2 rounded bg-bg-surface-2 border border-border text-[10px] font-mono space-y-1">
                         <div className="text-text-muted flex items-center justify-between">
                           <span>Alur Cascade:</span>
-                          <span className="text-accent font-medium">Auto-Failover</span>
+                          <span className="text-accent-text font-medium">Auto-Failover</span>
                         </div>
                         <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
                           <span className="px-1.5 py-0.5 rounded bg-bg-surface-3 border border-border text-white whitespace-nowrap">
@@ -329,11 +329,11 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[11px] font-medium text-text-muted flex items-center gap-1">
-                    <Key className="w-3 h-3 text-accent" />
+                    <Key className="w-3 h-3 text-accent-text" />
                     Kunci API Khusus:
                   </label>
                   {config.apiKey ? (
-                    <span className="text-[10px] text-accent font-mono font-medium">Kustom</span>
+                    <span className="text-[10px] text-accent-text font-mono font-medium">Kustom</span>
                   ) : userApiKey ? (
                     <span className="text-[10px] text-emerald-400 font-mono">Memakai Global</span>
                   ) : (
@@ -375,7 +375,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
       {/* Action Buttons & Real Live Diagnostics */}
       <div className="mt-4 pt-3 border-t border-border space-y-2">
         {successMsg && (
-          <div className="p-2 rounded bg-accent/10 border border-accent/30 text-[11px] font-mono text-accent flex items-center gap-1.5">
+          <div className="p-2 rounded bg-accent/10 border border-accent/30 text-[11px] font-mono text-accent-text flex items-center gap-1.5">
             <Check className="w-3.5 h-3.5 flex-shrink-0" />
             <span>{successMsg}</span>
           </div>
@@ -401,7 +401,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
           >
             <div className="flex items-center gap-1.5 truncate">
               {diag.testing ? (
-                <RefreshCw className="w-3 h-3 animate-spin text-accent" />
+                <RefreshCw className="w-3 h-3 animate-spin text-accent-text" />
               ) : diag.ok ? (
                 <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-400" />
               ) : (
@@ -459,10 +459,10 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
             className="min-h-[36px] px-2.5 rounded-inner bg-bg-surface-2 hover:bg-bg-surface-3 border border-border text-xs text-text-secondary hover:text-white transition-all flex items-center gap-1 font-mono cursor-pointer"
           >
             {diag?.testing ? (
-              <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent" />
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent-text" />
             ) : (
               <>
-                <Activity className="w-3.5 h-3.5 text-accent" />
+                <Activity className="w-3.5 h-3.5 text-accent-text" />
                 <span className="text-[11px]">Uji</span>
               </>
             )}
@@ -478,7 +478,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
           >
             {copiedKey === `snippet-${tool.id}` ? (
               <>
-                <Check className="w-3.5 h-3.5 text-accent" />
+                <Check className="w-3.5 h-3.5 text-accent-text" />
                 <span className="hidden sm:inline">Tersalin</span>
               </>
             ) : (

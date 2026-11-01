@@ -26,7 +26,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   <Card
     className={`p-6 sm:p-8 text-center rounded-box bg-bg-surface-1 border border-border/60 ${className}`}
   >
-    <div className="w-11 h-11 rounded-xl bg-accent/10 border border-accent/20 text-accent flex items-center justify-center mx-auto mb-3">
+    <div className="w-11 h-11 rounded-xl bg-accent/10 border border-accent/20 text-accent-text flex items-center justify-center mx-auto mb-3">
       {icon}
     </div>
     <h3 className="text-sm font-bold text-white mb-1">{title}</h3>

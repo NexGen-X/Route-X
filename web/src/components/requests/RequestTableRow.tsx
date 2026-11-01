@@ -77,7 +77,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
         <div className="font-mono text-text-primary font-medium">
           {request.total_tokens != null ? `${request.total_tokens.toLocaleString()} tok` : '-'}
         </div>
-        <div className="text-[11px] text-accent font-mono mt-0.5">
+        <div className="text-[11px] text-accent-text font-mono mt-0.5">
           {formatUSD(request.cost_usd, 6)}
         </div>
       </td>
@@ -112,7 +112,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
 
       {/* Kolom 6: Aksi */}
       <td className="py-3 px-4 text-right">
-        <span className="inline-flex items-center gap-1 text-accent opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity font-medium">
+        <span className="inline-flex items-center gap-1 text-accent-text opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity font-medium">
           Detail <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
         </span>
       </td>

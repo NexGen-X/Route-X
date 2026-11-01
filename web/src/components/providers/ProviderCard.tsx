@@ -193,7 +193,7 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
               type="button"
               onClick={() => onQuickAddAccount(p)}
               aria-label={`Tambah API key untuk ${p.display_name || p.name}`}
-              className="text-[11px] text-accent hover:underline shrink-0 font-medium cursor-pointer min-h-[32px] flex items-center"
+              className="text-[11px] text-accent-text hover:underline shrink-0 font-medium cursor-pointer min-h-[32px] flex items-center"
             >
               + Tambah Key
             </button>
@@ -213,7 +213,7 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
           size="sm"
           onClick={() => void onProbe(p)}
           isLoading={isProbing}
-          icon={<FlaskConical className="w-3.5 h-3.5 text-accent" aria-hidden="true" />}
+          icon={<FlaskConical className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />}
           className="min-h-[38px] sm:min-h-[36px] text-xs"
           aria-label={`Uji latensi koneksi ${p.display_name || p.name}`}
         >

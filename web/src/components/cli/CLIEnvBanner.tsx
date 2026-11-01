@@ -53,7 +53,7 @@ export const CLIEnvBanner: React.FC<CLIEnvBannerProps> = ({
                 onClick={() => setEnvContext('server')}
                 className={`text-[11px] px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-all ${
                   envContext === 'server'
-                    ? 'bg-accent text-black font-bold shadow'
+                    ? 'bg-accent text-white font-bold shadow'
                     : 'text-text-muted hover:text-white'
                 }`}
                 title="CLI berjalan di server ini"
@@ -65,7 +65,7 @@ export const CLIEnvBanner: React.FC<CLIEnvBannerProps> = ({
                 onClick={() => setEnvContext('remote')}
                 className={`text-[11px] px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-all ${
                   envContext === 'remote'
-                    ? 'bg-accent text-black font-bold shadow'
+                    ? 'bg-accent text-white font-bold shadow'
                     : 'text-text-muted hover:text-white'
                 }`}
                 title="CLI berjalan di laptop atau komputer pribadi Anda"
@@ -99,7 +99,7 @@ export const CLIEnvBanner: React.FC<CLIEnvBannerProps> = ({
 
         <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-xs font-mono">
           <span className="text-text-muted">Gateway URL:</span>
-          <code className="text-accent bg-accent/10 px-2 py-0.5 rounded text-[11px]">
+          <code className="text-accent-text bg-accent/10 px-2 py-0.5 rounded text-[11px]">
             {publicBaseURL}/v1
           </code>
         </div>
@@ -110,7 +110,7 @@ export const CLIEnvBanner: React.FC<CLIEnvBannerProps> = ({
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-text-muted flex items-center gap-1.5 uppercase tracking-wider">
-              <FileCode className="w-3.5 h-3.5 text-accent" />
+              <FileCode className="w-3.5 h-3.5 text-accent-text" />
               {envContext === 'server' ? 'Auto-Loader Shell Host' : 'Ekspor Cepat Terminal Laptop'}
             </span>
             <Button
@@ -132,7 +132,7 @@ export const CLIEnvBanner: React.FC<CLIEnvBannerProps> = ({
                 membuka terminal baru, seluruh konfigurasi CLI otomatis aktif:
               </p>
               <div className="flex items-center gap-2 bg-bg-surface-2 border border-border p-2.5 rounded-lg">
-                <code className="text-xs font-mono text-accent flex-1 select-all">
+                <code className="text-xs font-mono text-accent-text flex-1 select-all">
                   source ~/.routex/cli-env.sh
                 </code>
                 <Button
@@ -142,7 +142,7 @@ export const CLIEnvBanner: React.FC<CLIEnvBannerProps> = ({
                   onClick={() => onCopy('source ~/.routex/cli-env.sh', 'global-source')}
                 >
                   {copiedKey === 'global-source' ? (
-                    <Check className="w-3.5 h-3.5 text-accent" />
+                    <Check className="w-3.5 h-3.5 text-accent-text" />
                   ) : (
                     <Copy className="w-3.5 h-3.5" />
                   )}
@@ -157,7 +157,7 @@ export const CLIEnvBanner: React.FC<CLIEnvBannerProps> = ({
                 Route-X Gateway:
               </p>
               <div className="flex items-center gap-2 bg-bg-surface-2 border border-border p-2 rounded-lg">
-                <code className="text-[11px] font-mono text-accent flex-1 truncate select-all">
+                <code className="text-[11px] font-mono text-accent-text flex-1 truncate select-all">
                   export ANTHROPIC_BASE_URL="{publicBaseURL}" OPENAI_API_BASE="{publicBaseURL}/v1"{' '}
                   ROUTEX_API_KEY="{userApiKey || '<KUNCI_API>'}"
                 </code>
@@ -171,7 +171,7 @@ export const CLIEnvBanner: React.FC<CLIEnvBannerProps> = ({
                   }}
                 >
                   {copiedKey === 'laptop-snippet' ? (
-                    <Check className="w-3.5 h-3.5 text-accent" />
+                    <Check className="w-3.5 h-3.5 text-accent-text" />
                   ) : (
                     <Copy className="w-3.5 h-3.5" />
                   )}

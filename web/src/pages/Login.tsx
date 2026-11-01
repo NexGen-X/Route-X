@@ -112,7 +112,7 @@ export const Login: React.FC = () => {
                 <h1 className="text-xl font-bold text-white tracking-tight leading-tight">
                   Route-X
                 </h1>
-                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent-hover border border-accent/30">
+                <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-accent/10 text-accent-text border border-accent/30">
                   Gateway
                 </span>
               </div>

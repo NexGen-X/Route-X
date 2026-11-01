@@ -58,10 +58,10 @@ export const APIKeyRevealModal: React.FC<APIKeyRevealModalProps> = ({
               type="button"
               onClick={handleCopy}
               aria-label="Salin kunci API ke clipboard"
-              className="min-h-[44px] min-w-[44px] p-2 text-text-muted hover:text-accent rounded-nav flex-shrink-0 cursor-pointer flex items-center justify-center focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+              className="min-h-[44px] min-w-[44px] p-2 text-text-muted hover:text-accent-text rounded-nav flex-shrink-0 cursor-pointer flex items-center justify-center focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
             >
               {copied ? (
-                <Check className="w-5 h-5 text-accent" aria-hidden="true" />
+                <Check className="w-5 h-5 text-accent-text" aria-hidden="true" />
               ) : (
                 <Copy className="w-5 h-5" aria-hidden="true" />
               )}

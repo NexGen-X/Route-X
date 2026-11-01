@@ -2,16 +2,16 @@ import React, { createContext, useContext, useState, useCallback, useId, useRef,
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X, Trash2, HelpCircle } from 'lucide-react';
 import { Modal } from '../components/common/Modal';
 
-export type ToastType = 'success' | 'error' | 'warn' | 'info';
+type ToastType = 'success' | 'error' | 'warn' | 'info';
 
-export interface ToastOptions {
+interface ToastOptions {
   title?: string;
   duration?: number;
   dedupeKey?: string;
   operationId?: string;
 }
 
-export interface ToastItem {
+interface ToastItem {
   id: string;
   type: ToastType;
   title?: string;
@@ -21,7 +21,7 @@ export interface ToastItem {
   createdAt?: number;
 }
 
-export interface ConfirmOptions {
+interface ConfirmOptions {
   title: string;
   message: string;
   confirmText?: string;
@@ -29,7 +29,7 @@ export interface ConfirmOptions {
   danger?: boolean;
 }
 
-export type ToastMethod = (
+type ToastMethod = (
   message: string,
   titleOrOptions?: string | ToastOptions,
   options?: ToastOptions
@@ -98,7 +98,7 @@ interface ToastNotificationCardProps {
   onClose: (id: string) => void;
 }
 
-export const ToastNotificationCard: React.FC<ToastNotificationCardProps> = ({ toast, onClose }) => {
+const ToastNotificationCard: React.FC<ToastNotificationCardProps> = ({ toast, onClose }) => {
   const { id, type, title, message, duration = 4000 } = toast;
   const config = typeConfigs[type] || typeConfigs.info;
 

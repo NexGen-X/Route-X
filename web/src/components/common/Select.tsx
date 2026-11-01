@@ -4,7 +4,7 @@ import FocusTrap from 'focus-trap-react';
 import { ChevronDown, Check, Search, X } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
-export interface SelectOption {
+interface SelectOption {
   value: string;
   label: string;
   description?: string;

@@ -173,6 +173,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
       onClose={onClose}
       title="Detail Request & Timeline Event"
       maxWidth="2xl"
+      sheetOnMobile
       footer={
         <div className="flex items-center justify-between w-full">
           <Button

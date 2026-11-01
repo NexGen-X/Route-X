@@ -12,6 +12,7 @@ import {
   Layers,
   Activity,
   Sliders,
+  Wallet,
 } from 'lucide-react';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
@@ -26,7 +27,10 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
   onOpenAllowed,
   onRotate,
   onRevoke,
+  budget,
 }) => {
+  const budgetPct =
+    budget && budget.limitUsd > 0 ? (budget.spentUsd / budget.limitUsd) * 100 : 0;
   const { toast } = useToast();
   const [copied, setCopied] = useState(false);
   const [isRevealed, setIsRevealed] = useState(false);
@@ -93,11 +97,9 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
         {/* Header: Nama Kunci, Status Badge & Expiration Badge */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-bg-surface-2 border border-border text-text-secondary flex items-center justify-center shrink-0">
-              <KeyRound className="w-5 h-5" aria-hidden="true" />
-            </div>
+            <KeyRound className="w-5 h-5 text-text-muted shrink-0 mt-0.5" aria-hidden="true" />
             <div className="min-w-0">
-              <h4 className="text-sm font-bold text-white tracking-tight truncate">
+              <h4 className="text-sm font-bold text-text-primary tracking-tight truncate">
                 {apiKey.name}
               </h4>
               <div className="mt-1 flex items-center gap-1.5 flex-wrap">
@@ -128,7 +130,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
                   type="button"
                   onClick={() => setIsRevealed(!isRevealed)}
                   aria-label={isRevealed ? 'Sembunyikan kunci API mentah' : 'Lihat kunci API mentah'}
-                  className="min-h-[44px] min-w-[44px] p-2 text-text-muted hover:text-white rounded-nav transition-colors flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  className="min-h-[44px] min-w-[44px] p-2 text-text-muted hover:text-text-primary rounded-nav transition-colors flex items-center justify-center cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                 >
                   {isRevealed ? (
                     <EyeOff className="w-4 h-4" aria-hidden="true" />
@@ -163,7 +165,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
               <Activity className="w-3.5 h-3.5 text-text-muted" aria-hidden="true" />
               Batas RPM / TPM
             </span>
-            <span className="font-mono text-white font-medium">
+            <span className="font-mono text-text-primary font-medium">
               {apiKey.rate_limit_rpm ?? apiKey.rpm_limit ?? '∞'} RPM /{' '}
               {apiKey.rate_limit_tpm ?? apiKey.tpm_limit ?? '∞'} TPM
             </span>
@@ -198,6 +200,40 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Batang anggaran per kunci (sampel 09) — data nyata entitas Budget scope api_key */}
+        {budget && budget.limitUsd > 0 && (
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center text-xs">
+              <span className="text-text-muted flex items-center gap-1.5">
+                <Wallet className="w-3.5 h-3.5 text-text-muted" aria-hidden="true" />
+                Anggaran {budget.periodLabel}
+              </span>
+              <span className="font-mono text-text-secondary">
+                ${budget.spentUsd.toFixed(2)} / ${budget.limitUsd.toFixed(2)} ({Math.min(100, Math.round(budgetPct))}%)
+              </span>
+            </div>
+            <div
+              className="w-full h-[5px] bg-bg-surface-2 rounded-full overflow-hidden"
+              role="progressbar"
+              aria-label={`Pemakaian anggaran ${apiKey.name}`}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.min(100, Math.round(budgetPct))}
+            >
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  budgetPct >= 100
+                    ? 'bg-status-error'
+                    : budgetPct >= budget.thresholdPct
+                      ? 'bg-status-warn'
+                      : 'bg-accent'
+                }`}
+                style={{ width: `${Math.min(100, budgetPct)}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action Buttons: Allowed Scope, Rotasi, Cabut */}

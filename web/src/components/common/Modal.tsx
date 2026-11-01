@@ -35,6 +35,9 @@ export interface ModalProps {
   footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
   ariaDescribedBy?: string;
+  // Bila true, di layar kecil modal tampil sebagai lembar bawah (bottom sheet)
+  // mengikuti sampel Calm Console 10; di sm+ tetap dialog tengah seperti biasa.
+  sheetOnMobile?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -46,6 +49,7 @@ export const Modal: React.FC<ModalProps> = ({
   footer,
   maxWidth = 'md',
   ariaDescribedBy,
+  sheetOnMobile = false,
 }) => {
   const generatedTitleId = useId();
   const titleId = `modal-title-${generatedTitleId.replace(/:/g, '')}`;
@@ -88,12 +92,17 @@ export const Modal: React.FC<ModalProps> = ({
         aria-labelledby={titleId}
         aria-describedby={subtitle ? subtitleId : ariaDescribedBy}
         onClick={onClose}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer"
+        className={`fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer ${sheetOnMobile ? 'items-end p-0 sm:items-center sm:p-4' : 'items-center p-4'}`}
       >
         <div
-          className={`w-full ${maxW} bg-bg-surface border border-border rounded-card shadow-surface-elevated flex flex-col max-h-[90vh] overflow-hidden cursor-default backdrop-blur-sm animate-in zoom-in-95 duration-200`}
+          className={`w-full ${maxW} bg-bg-surface border border-border shadow-surface-elevated flex flex-col overflow-hidden cursor-default backdrop-blur-sm ${sheetOnMobile ? 'rounded-t-[20px] sm:rounded-card max-h-[92vh] sm:max-h-[90vh] animate-sheet-up sm:animate-fade-in' : 'rounded-card max-h-[90vh] animate-in zoom-in-95 duration-200'}`}
           onClick={(e) => e.stopPropagation()}
         >
+          {sheetOnMobile && (
+            <div className="sm:hidden flex justify-center pt-2.5 shrink-0" aria-hidden="true">
+              <div className="w-10 h-1 rounded-full bg-bg-surface-3" />
+            </div>
+          )}
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-bg-surface-1/50 shrink-0">
             <div className="min-w-0 pr-3">

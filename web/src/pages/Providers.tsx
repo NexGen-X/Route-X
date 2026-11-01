@@ -10,8 +10,6 @@ import { PageHeader } from '../components/common/PageHeader';
 import {
   Server,
   Plus,
-  Globe,
-  Activity,
   ChevronDown,
   ChevronUp,
   Sliders,
@@ -447,10 +445,10 @@ export const Providers: React.FC = () => {
       />
 
       {/* Preset Showcase Accordion */}
-      <div className="rounded-xl border border-border/80 bg-bg-surface-2/40 p-4 transition-all">
+      <div className="border-y border-border/60 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent-text">
+            <div className="w-7 h-7 rounded-lg bg-bg-surface-2 border border-border flex items-center justify-center text-text-secondary">
               <Sparkles className="w-3.5 h-3.5" />
             </div>
             <div>
@@ -475,7 +473,7 @@ export const Providers: React.FC = () => {
               <button
                 key={preset.id}
                 onClick={() => handleSelectPreset(preset)}
-                className="p-3 rounded-xl border border-border/70 bg-bg-surface hover:border-accent/60 hover:bg-bg-surface-2/80 transition-all flex flex-col items-center text-center gap-2 group shadow-sm cursor-pointer"
+                className="p-3 rounded-lg border border-border/60 hover:border-border-hover hover:bg-bg-surface-1/60 transition-colors flex flex-col items-center text-center gap-2 group cursor-pointer"
               >
                 <div
                   className="w-9 h-9 rounded-xl flex items-center justify-center shadow-inner transition-transform group-hover:scale-105"
@@ -494,53 +492,29 @@ export const Providers: React.FC = () => {
       </div>
 
       {/* ------------------------------------------------------------------- */}
-      {/* 2. STATS SUMMARY BAR                                                */}
-      {/* ------------------------------------------------------------------- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-xs font-medium text-text-muted">Total Provider</span>
-            <div className="text-lg font-bold text-white">{providers.length}</div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-bg-surface-2 border border-border flex items-center justify-center text-accent-text">
-            <Server className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-xs font-medium text-text-muted">Status Sehat</span>
-            <div className="text-lg font-bold text-emerald-400">
-              {healthyCount} / {providers.length}
-            </div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-bg-surface-2 border border-border flex items-center justify-center text-emerald-400">
-            <Activity className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-xs font-medium text-text-muted">Pool Egress</span>
-            <div className="text-lg font-bold text-white">{egressPools.length}</div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-bg-surface-2 border border-border-hover/60 flex items-center justify-center text-text-secondary">
-            <Globe className="w-4 h-4" />
-          </div>
-        </div>
-
-        <div className="p-3.5 rounded-xl border border-border bg-bg-surface flex items-center justify-between">
-          <div className="space-y-0.5">
-            <span className="text-xs font-medium text-text-muted">Enkripsi Kunci</span>
-            <div className="text-xs font-bold text-accent-text mt-1 flex items-center gap-1">
-              <Shield className="w-3.5 h-3.5" />
-              <span>AES-256-GCM</span>
-            </div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center text-accent-text">
-            <KeyRound className="w-4 h-4" />
-          </div>
-        </div>
+      {/* 2. STATS SUMMARY BAR — Fase 4: strip ringkasan polos, bukan kartu */}
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-border/60 pb-4">
+        <span className="flex items-baseline gap-2">
+          <span className="text-xs font-medium text-text-muted">Total Provider</span>
+          <span className="text-base font-bold text-white">{providers.length}</span>
+        </span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-xs font-medium text-text-muted">Status Sehat</span>
+          <span className="text-base font-bold text-emerald-400">
+            {healthyCount} / {providers.length}
+          </span>
+        </span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-xs font-medium text-text-muted">Pool Egress</span>
+          <span className="text-base font-bold text-white">{egressPools.length}</span>
+        </span>
+        <span className="flex items-baseline gap-2">
+          <span className="text-xs font-medium text-text-muted">Enkripsi Kunci</span>
+          <span className="text-xs font-bold text-accent-text flex items-center gap-1">
+            <Shield className="w-3.5 h-3.5" />
+            <span>AES-256-GCM</span>
+          </span>
+        </span>
       </div>
 
       {/* ------------------------------------------------------------------- */}
@@ -556,7 +530,7 @@ export const Providers: React.FC = () => {
           <span role="status" aria-live="polite">Memuat daftar provider...</span>
         </Card>
       ) : providers.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="divide-y divide-border/60 border-b border-border/60">
           {providers.map((p) => {
             const isCustom = isCustomProvider(p);
             const egress = egressPools.find((ep) => ep.id === p.egress_pool_id);
@@ -579,7 +553,7 @@ export const Providers: React.FC = () => {
           })}
         </div>
       ) : (
-        <Card className="p-10 text-center space-y-4">
+        <div className="p-10 text-center space-y-4 border-b border-border/60">
           <Server className="w-12 h-12 text-text-muted mx-auto" />
           <h3 className="text-lg font-bold text-white">Belum Ada Upstream Provider</h3>
           <p className="text-xs text-text-secondary max-w-md mx-auto leading-relaxed">
@@ -588,7 +562,7 @@ export const Providers: React.FC = () => {
           <Button variant="primary" size="md" onClick={handleOpenCustomCreate} icon={<Plus className="w-4 h-4" />}>
             Daftarkan Provider Sekarang
           </Button>
-        </Card>
+        </div>
       )}
 
       {/* ------------------------------------------------------------------- */}

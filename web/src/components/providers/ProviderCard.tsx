@@ -29,6 +29,9 @@ export interface ProviderCardProps {
   isProbing?: boolean;
 }
 
+// Fase 4 (Calm Console): kartu provider menjadi baris daftar polos —
+// tanpa kotak bersarang, bilah indikator, dan aksen ungu khusus custom.
+// Seluruh teks, aria-label, dan aksi dipertahankan persis.
 export const ProviderCard: React.FC<ProviderCardProps> = ({
   provider: p,
   egressPool,
@@ -65,102 +68,69 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
   const cleanBaseUrl = p.base_url.replace(/^https?:\/\//, '');
 
   return (
-    <div
-      className="bg-bg-surface border border-border hover:border-border-hover/80 rounded-card p-5 transition-all flex flex-col justify-between shadow-sm group hover:shadow-glow-subtle relative overflow-hidden"
-      data-testid={`provider-card-${p.name}`}
-    >
-      {/* Subtle top indicator bar */}
-      <div
-        className={`absolute top-0 left-0 right-0 h-[2px] transition-opacity ${
-          providerStatus === 'healthy'
-            ? 'bg-emerald-500/60'
-            : providerStatus === 'unhealthy'
-            ? 'bg-rose-500/60'
-            : providerStatus === 'degraded'
-            ? 'bg-amber-500/60'
-            : 'bg-border'
-        }`}
-      />
+    <div className="py-4 flex flex-col gap-3" data-testid={`provider-card-${p.name}`}>
+      {/* Baris identitas: ikon, nama, status */}
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          type="button"
+          onClick={() => onOpenDrawer(p, 'settings')}
+          aria-label={`Buka pengaturan provider ${p.display_name || p.name}`}
+          title={
+            isCustom
+              ? 'Klik icon custom provider ini untuk membuka drawer konfigurasi & kelola'
+              : 'Klik icon provider untuk membuka drawer konfigurasi'
+          }
+          className="relative w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors cursor-pointer bg-bg-surface-2/70 border border-border text-text-primary hover:border-border-hover"
+        >
+          <ProviderBrandIcon
+            providerIdOrKind={p.kind}
+            name={p.name}
+            className="w-5 h-5"
+            isCustom={isCustom}
+          />
+          <span
+            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-bg-surface border border-border text-text-muted flex items-center justify-center"
+            aria-hidden="true"
+          >
+            <Sliders className="w-2.5 h-2.5" aria-hidden="true" />
+          </span>
+        </button>
 
-      {/* Bagian Atas: Icon, Identitas & Status Dot */}
-      <div className="space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            {/* Icon Provider Interaktif: Klik untuk Buka Drawer */}
-            <button
-              type="button"
-              onClick={() => onOpenDrawer(p, 'settings')}
-              aria-label={`Buka pengaturan provider ${p.display_name || p.name}`}
-              title={
-                isCustom
-                  ? 'Klik icon custom provider ini untuk membuka drawer konfigurasi & kelola'
-                  : 'Klik icon provider untuk membuka drawer konfigurasi'
-              }
-              className={`relative w-11 h-11 rounded-inner flex items-center justify-center flex-shrink-0 transition-transform active:scale-95 cursor-pointer shadow-sm ${
-                isCustom
-                  ? 'bg-purple-950/50 border border-purple-500/40 text-purple-300 hover:scale-105 hover:border-purple-400'
-                  : 'bg-bg-surface-2 border border-border text-text-primary hover:border-accent/50 hover:scale-105'
-              }`}
-            >
-              <ProviderBrandIcon
-                providerIdOrKind={p.kind}
-                name={p.name}
-                className="w-5 h-5"
-                isCustom={isCustom}
-              />
-              <span
-                className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-bg-surface border flex items-center justify-center shadow-sm ${
-                  isCustom
-                    ? 'border-purple-500/60 text-purple-300'
-                    : 'border-border text-text-muted'
-                }`}
-                aria-hidden="true"
-              >
-                <Sliders className="w-2.5 h-2.5" aria-hidden="true" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h4 className="font-semibold text-white text-sm sm:text-base truncate">
+              {p.display_name || p.name}
+            </h4>
+            {isCustom && (
+              <span className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-bg-surface-2 text-text-secondary border border-border flex-shrink-0">
+                Custom
               </span>
-            </button>
-
-            <div className="space-y-0.5 truncate">
-              <div className="flex items-center gap-2">
-                <h4 className="font-semibold text-white text-sm sm:text-base truncate">
-                  {p.display_name || p.name}
-                </h4>
-                {isCustom && (
-                  <span className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 flex-shrink-0">
-                    Custom
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-text-muted font-mono">
-                <span className="truncate">{p.kind}</span>
-                {p.last_latency_ms != null && p.last_latency_ms > 0 && (
-                  <>
-                    <span className="text-border" aria-hidden="true">•</span>
-                    <span className="text-emerald-400/90 font-medium flex items-center gap-0.5">
-                      <Zap className="w-3 h-3" aria-hidden="true" />
-                      {p.last_latency_ms}ms
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
+            )}
           </div>
-
-          {/* Status Dot Minimalis & Interaktif */}
-          <div className="flex items-center flex-shrink-0 pt-0.5">
-            <StatusDot
-              status={providerStatus}
-              latencyMs={p.last_latency_ms}
-            />
+          <div className="flex items-center gap-2 text-xs text-text-muted font-mono">
+            <span className="truncate">{p.kind}</span>
+            {p.last_latency_ms != null && p.last_latency_ms > 0 && (
+              <>
+                <span className="text-border" aria-hidden="true">•</span>
+                <span className="text-text-secondary font-medium flex items-center gap-0.5">
+                  <Zap className="w-3 h-3" aria-hidden="true" />
+                  {p.last_latency_ms}ms
+                </span>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Base URL & Egress Proxy 1-Baris Ringkas */}
-        <div className="flex items-center justify-between text-xs font-mono text-text-secondary bg-bg-surface-2/60 px-3 py-2 rounded-inner border border-border">
-          <span className="truncate pr-2 font-mono" title={p.base_url}>
+        <div className="flex items-center flex-shrink-0">
+          <StatusDot status={providerStatus} latencyMs={p.last_latency_ms} />
+        </div>
+      </div>
+
+      {/* Baris meta & aksi: base URL, egress, ringkasan kredensial, tombol */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+        <span className="inline-flex items-center gap-1.5 font-mono text-text-secondary min-w-0">
+          <span className="truncate" title={p.base_url}>
             {cleanBaseUrl}
-            <span className="text-border mx-1.5" aria-hidden="true">·</span>
-            <span className="text-text-muted">{egressPool ? egressPool.name : 'Direct Outbound'}</span>
           </span>
           <Tooltip content="Salin Base URL" position="top">
             <button
@@ -172,22 +142,23 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
               <Copy className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </Tooltip>
-        </div>
+        </span>
 
-        {/* Ringkasan Pool Kredensial Multi-Account */}
-        <div className="px-3 py-2.5 rounded-inner bg-bg-surface-2/40 border border-border flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 truncate">
-            <Users className="w-3.5 h-3.5 text-text-muted shrink-0" aria-hidden="true" />
-            <span className="text-text-secondary font-medium truncate">
-              {totalAccounts === 0
-                ? 'Belum ada kredensial'
-                : `${activeAccounts} Kredensial Aktif · ${
-                    p.credential_strategy === 'priority'
-                      ? 'Priority Failover'
-                      : 'Round Robin'
-                  }`}
-            </span>
-          </div>
+        <span className="text-text-muted font-mono">
+          {egressPool ? egressPool.name : 'Direct Outbound'}
+        </span>
+
+        <span className="inline-flex items-center gap-2 text-text-secondary">
+          <Users className="w-3.5 h-3.5 text-text-muted shrink-0" aria-hidden="true" />
+          <span className="font-medium">
+            {totalAccounts === 0
+              ? 'Belum ada kredensial'
+              : `${activeAccounts} Kredensial Aktif · ${
+                  p.credential_strategy === 'priority'
+                    ? 'Priority Failover'
+                    : 'Round Robin'
+                }`}
+          </span>
           {totalAccounts === 0 ? (
             <button
               type="button"
@@ -203,33 +174,32 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
               AES-GCM
             </span>
           )}
-        </div>
-      </div>
+        </span>
 
-      {/* Footer Kartu: 2 Tombol Aksi Bersih & Ergonomis (Target sentuh mobile >= 44px) */}
-      <div className="mt-5 pt-3.5 border-t border-border flex items-center justify-between gap-3">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => void onProbe(p)}
-          isLoading={isProbing}
-          icon={<FlaskConical className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />}
-          className="min-h-[38px] sm:min-h-[36px] text-xs"
-          aria-label={`Uji latensi koneksi ${p.display_name || p.name}`}
-        >
-          Uji Latensi
-        </Button>
+        <span className="flex items-center gap-2 ml-auto">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void onProbe(p)}
+            isLoading={isProbing}
+            icon={<FlaskConical className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />}
+            className="min-h-[38px] sm:min-h-[36px] text-xs"
+            aria-label={`Uji latensi koneksi ${p.display_name || p.name}`}
+          >
+            Uji Latensi
+          </Button>
 
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => onOpenDrawer(p, 'models')}
-          icon={<ArrowRight className="w-3.5 h-3.5 text-black" aria-hidden="true" />}
-          className="min-h-[38px] sm:min-h-[36px] text-xs font-semibold"
-          aria-label={`Kelola model dan akun provider ${p.display_name || p.name}`}
-        >
-          Kelola &amp; Akun &rarr;
-        </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => onOpenDrawer(p, 'models')}
+            icon={<ArrowRight className="w-3.5 h-3.5 text-black" aria-hidden="true" />}
+            className="min-h-[38px] sm:min-h-[36px] text-xs font-semibold"
+            aria-label={`Kelola model dan akun provider ${p.display_name || p.name}`}
+          >
+            Kelola &amp; Akun &rarr;
+          </Button>
+        </span>
       </div>
     </div>
   );

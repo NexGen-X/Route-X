@@ -105,65 +105,65 @@ const Shell: React.FC = () => {
         };
       case '/requests':
         return {
-          title: 'Requests Inspector',
+          title: 'Permintaan',
           content: <Requests />,
         };
       case '/upstreams/providers':
       case '/providers':
         return {
-          title: 'Upstream Providers',
+          title: 'Penyedia Upstream',
           content: <Providers />,
         };
       case '/upstreams/models':
       case '/models':
-        // Redirect otomatis ke Upstream Providers agar lebih simpel
+        // Redirect otomatis ke Penyedia Upstream agar lebih simpel
         navigate('/upstreams/providers');
         return {
-          title: 'Upstream Providers',
+          title: 'Penyedia Upstream',
           content: <Providers />,
         };
       case '/upstreams/egress':
       case '/egress':
         return {
-          title: 'Egress Proxy Pools',
+          title: 'Pool Egress',
           content: <Egress />,
         };
       case '/upstreams/routing':
       case '/gateway/routing':
       case '/routing':
         return {
-          title: 'Routing Rules',
+          title: 'Aturan Perutean',
           content: <RoutingRules />,
         };
       case '/cli-integrations':
       case '/integrations':
         return {
-          title: 'CLI Integrations & 3-Mode Configurator',
+          title: 'Integrasi CLI & Konfigurator 3 Mode',
           content: <CLIIntegrations />,
         };
       case '/gateway/rate-limits':
       case '/rate-limits':
         navigate('/gateway/budgets?tab=limits');
         return {
-          title: 'Budgets & Rate Limits',
+          title: 'Anggaran & Batas Laju',
           content: <Budgets initialTab="limits" />,
         };
       case '/gateway/budgets':
       case '/budgets':
         return {
-          title: 'Budgets & Rate Limits',
+          title: 'Anggaran & Batas Laju',
           content: <Budgets initialTab={searchParams.get('tab') === 'limits' ? 'limits' : 'budgets'} />,
         };
       case '/gateway/breakers':
       case '/breakers':
         return {
-          title: 'Routing & Failover',
+          title: 'Perutean & Failover',
           content: <RoutingRules />,
         };
       case '/access/api-keys':
       case '/api-keys':
         return {
-          title: 'Client API Keys',
+          title: 'Kunci API Klien',
           content: <APIKeys />,
         };
       case '/access/users':
@@ -181,7 +181,7 @@ const Shell: React.FC = () => {
       case '/system/settings':
       case '/settings':
         return {
-          title: 'Runtime Settings',
+          title: 'Pengaturan Runtime',
           content: <Settings />,
         };
       case '/system/jobs':

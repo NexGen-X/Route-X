@@ -29,7 +29,7 @@ export const Settings: React.FC = () => {
   // Tab Navigasi: 'domain' | 'backup' | 'advanced'
   const [activeTab, setActiveTab] = useState<SettingsTab>('domain');
 
-  // Runtime Settings state
+  // Pengaturan Runtime state
   const [settings, setSettings] = useState<RuntimeSettingItem[]>([]);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -338,7 +338,7 @@ export const Settings: React.FC = () => {
           }`}
         >
           <Database className="w-4 h-4 text-accent" />
-          <span>Backup & Restore</span>
+          <span>Cadangan & Pemulihan</span>
         </button>
         <button
           type="button"

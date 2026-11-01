@@ -49,7 +49,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     authLoginType: 'console_token',
     authLoginUrl: 'https://platform.openai.com/api-keys',
     authLoginLabel: 'Buka OpenAI Developer Platform',
-    authInstructions: 'Login ke platform OpenAI, buat Secret Key baru pada menu API Keys, lalu salin dan tempelkan token di bawah ini.',
+    authInstructions: 'Login ke platform OpenAI, buat Secret Key baru pada menu Kunci API, lalu salin dan tempelkan token di bawah ini.',
     authFallbackHint: 'sk-proj-... atau sk-...',
   },
   // 2. Anthropic
@@ -73,7 +73,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     authLoginType: 'console_token',
     authLoginUrl: 'https://console.anthropic.com/settings/keys',
     authLoginLabel: 'Buka Anthropic Console',
-    authInstructions: 'Masuk ke konsol Anthropic, buat API Key baru di menu Settings > API Keys, lalu tempelkan token yang didapatkan.',
+    authInstructions: 'Masuk ke konsol Anthropic, buat API Key baru di menu Settings > Kunci API, lalu tempelkan token yang didapatkan.',
     authFallbackHint: 'sk-ant-api03-...',
   },
   // 3. Google Gemini
@@ -144,7 +144,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     authLoginType: 'console_token',
     authLoginUrl: 'https://cloud.cerebras.ai/platform',
     authLoginLabel: 'Buka Cerebras Cloud Portal',
-    authInstructions: 'Login ke Cerebras Cloud, navigasi ke tab API Keys, buat secret token baru berawalan csk- dan tempelkan di sini.',
+    authInstructions: 'Login ke Cerebras Cloud, navigasi ke tab Kunci API, buat secret token baru berawalan csk- dan tempelkan di sini.',
     authFallbackHint: 'csk-...',
   },
   // 5. SambaNova (RDU 405B / 70B)
@@ -375,7 +375,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     authLoginType: 'console_token',
     authLoginUrl: 'https://console.mistral.ai/api-keys',
     authLoginLabel: 'Buka Mistral Console',
-    authInstructions: 'Login ke La Plateforme Mistral, buat API Key baru di menu Codestral/API Keys, lalu tempelkan di sini.',
+    authInstructions: 'Login ke La Plateforme Mistral, buat API Key baru di menu Codestral/Kunci API, lalu tempelkan di sini.',
     authFallbackHint: 'secret-...',
   },
   // 15. Novita AI
@@ -421,7 +421,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
     authLoginType: 'console_token',
     authLoginUrl: 'https://api.together.ai/settings/api-keys',
     authLoginLabel: 'Buka Together AI Settings',
-    authInstructions: 'Login ke dashboard Together AI, salin API key akun Anda di menu Settings > API Keys.',
+    authInstructions: 'Login ke dashboard Together AI, salin API key akun Anda di menu Settings > Kunci API.',
     authFallbackHint: 'together-...',
   },
   // 17. Perplexity AI

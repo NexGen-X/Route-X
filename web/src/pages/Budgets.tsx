@@ -227,7 +227,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={activeTab === 'budgets' ? 'Batas Anggaran (Budgets & Cost Control)' : 'Batas Laju Trafik (Rate Limits)'}
+        title={activeTab === 'budgets' ? 'Batas Anggaran & Kendali Biaya' : 'Batas Laju Trafik'}
         actions={
           activeTab === 'budgets' ? (
             <Button

@@ -335,12 +335,12 @@ export const Observability: React.FC = () => {
         action={
           <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full" role="group" aria-label="Pilihan metrik deret waktu">
             {[
-              { key: 'requests', label: 'Requests' },
+              { key: 'requests', label: 'Permintaan' },
               { key: 'throughput', label: 'Throughput' },
-              { key: 'tokens', label: 'Tokens' },
-              { key: 'error_rate', label: 'Error Rate' },
-              { key: 'cost', label: 'Cost USD' },
-              { key: 'latency', label: 'Latency P95' },
+              { key: 'tokens', label: 'Token' },
+              { key: 'error_rate', label: 'Tingkat Error' },
+              { key: 'cost', label: 'Biaya USD' },
+              { key: 'latency', label: 'Latensi P95' },
             ].map((m) => (
               <button
                 key={m.key}
@@ -497,7 +497,7 @@ export const Observability: React.FC = () => {
         </Card>
 
         {/* Live Pool & Diagnostics */}
-        <Card title="Live Server & Connection Pool">
+        <Card title="Server Live & Pool Koneksi">
           {isLoading && !diag && !diagnosticsError ? (
             <div className="space-y-4 animate-pulse">
               <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border h-16" />

@@ -47,7 +47,7 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           <Server className="w-4 h-4 text-text-secondary shrink-0" aria-hidden="true" />
           <h3 className="text-sm font-medium text-white tracking-tight truncate">
-            Status Kesehatan Upstream Providers
+            Status Kesehatan Penyedia Upstream
           </h3>
         </div>
         <Button

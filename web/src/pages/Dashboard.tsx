@@ -158,7 +158,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           const pItems = Array.isArray(provRes.value) ? provRes.value : provRes.value.items;
           setProviders(pItems || []);
         } else if (provRes.status === 'rejected') {
-          failedEndpoints.push('Upstream Providers');
+          failedEndpoints.push('Penyedia Upstream');
         }
 
         if (overRes.status === 'fulfilled' && overRes.value) {

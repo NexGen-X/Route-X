@@ -67,32 +67,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Ringkasan & Aktivitas',
       items: [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-        { name: 'Requests Inspector', path: '/requests', icon: Terminal },
-        { name: 'Observability', path: '/observability', icon: Activity },
+        { name: 'Permintaan', path: '/requests', icon: Terminal },
+        { name: 'Observabilitas', path: '/observability', icon: Activity },
       ],
     },
     {
       title: 'Penyedia AI & Perutean',
       items: [
-        { name: 'Providers', path: '/upstreams/providers', icon: Server },
-        { name: 'Routing & Failover', path: '/gateway/routing', icon: GitFork },
-        { name: 'CLI Integrations', path: '/cli-integrations', icon: Code2, badge: jumlahToolCli !== null ? String(jumlahToolCli) : undefined },
-        { name: 'Egress Pools', path: '/upstreams/egress', icon: Network },
+        { name: 'Penyedia', path: '/upstreams/providers', icon: Server },
+        { name: 'Perutean & Failover', path: '/gateway/routing', icon: GitFork },
+        { name: 'Integrasi CLI', path: '/cli-integrations', icon: Code2, badge: jumlahToolCli !== null ? String(jumlahToolCli) : undefined },
+        { name: 'Pool Egress', path: '/upstreams/egress', icon: Network },
       ],
     },
     {
       title: 'Akses & Anggaran',
       items: [
-        { name: 'API Keys', path: '/access/api-keys', icon: KeyRound },
-        { name: 'Users', path: '/access/users', icon: Users },
-        { name: 'Budgets & Limits', path: '/gateway/budgets', icon: Coins },
+        { name: 'Kunci API', path: '/access/api-keys', icon: KeyRound },
+        { name: 'Pengguna', path: '/access/users', icon: Users },
+        { name: 'Anggaran & Batas Laju', path: '/gateway/budgets', icon: Coins },
       ],
     },
     {
       title: 'Sistem & Pengaturan',
       items: [
         { name: 'Webhooks', path: '/system/webhooks', icon: Webhook },
-        { name: 'Settings', path: '/system/settings', icon: Sliders },
+        { name: 'Pengaturan', path: '/system/settings', icon: Sliders },
       ],
     },
   ];

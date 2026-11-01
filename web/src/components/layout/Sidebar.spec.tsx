@@ -34,7 +34,7 @@ describe('Sidebar Component — Obsidian Glass SOTA 2026', () => {
 
     expect(screen.getByRole('button', { name: /route-x beranda/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Providers' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Penyedia' })).toBeInTheDocument();
     expect(screen.getByText('Architect Bob')).toBeInTheDocument();
     expect(screen.getByText('SuperAdmin')).toBeInTheDocument();
   });
@@ -52,7 +52,7 @@ describe('Sidebar Component — Obsidian Glass SOTA 2026', () => {
       />
     );
 
-    const providersBtn = screen.getByRole('button', { name: 'Providers' });
+    const providersBtn = screen.getByRole('button', { name: 'Penyedia' });
     fireEvent.click(providersBtn);
 
     expect(handleNavigate).toHaveBeenCalledWith('/upstreams/providers');
@@ -69,7 +69,7 @@ describe('Sidebar Component — Obsidian Glass SOTA 2026', () => {
       />
     );
 
-    const routingBtn = screen.getByRole('button', { name: 'Routing & Failover' });
+    const routingBtn = screen.getByRole('button', { name: 'Perutean & Failover' });
     expect(routingBtn).toHaveAttribute('aria-current', 'page');
   });
 

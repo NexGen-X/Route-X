@@ -154,16 +154,16 @@ describe('Frontend Error Boundary & Fallback Suite', () => {
 
     it('menangkap error level halaman dan menyediakan tombol aksi aksesibel', () => {
       render(
-        <PageErrorBoundary pageName="Routing Rules">
+        <PageErrorBoundary pageName="Aturan Perutean">
           <Bomb message="Gagal sinkronisasi upstream rules" />
         </PageErrorBoundary>
       );
 
       expect(screen.getByRole('alert')).toBeInTheDocument();
-      expect(screen.getByText('Gagal Memuat Halaman Routing Rules')).toBeInTheDocument();
+      expect(screen.getByText('Gagal Memuat Halaman Aturan Perutean')).toBeInTheDocument();
       expect(screen.getByText('Gagal sinkronisasi upstream rules')).toBeInTheDocument();
 
-      const retryBtn = screen.getByRole('button', { name: /Coba muat ulang halaman Routing Rules/i });
+      const retryBtn = screen.getByRole('button', { name: /Coba muat ulang halaman Aturan Perutean/i });
       expect(retryBtn).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Muat ulang browser/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Kembali ke Dashboard/i })).toBeInTheDocument();

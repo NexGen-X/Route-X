@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn } from '../../utils/cn';
 
-export type BadgeVariant =
+type BadgeVariant =
   | 'blue'
   | 'emerald'
   | 'purple'

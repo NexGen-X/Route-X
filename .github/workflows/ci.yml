@@ -91,6 +91,8 @@ jobs:
       - run: npm ci
       - run: npx tsc -b
       - run: npm run test
+      - name: Dead code (knip)
+        run: npm run check:deadcode
       - run: npm run build
 
 

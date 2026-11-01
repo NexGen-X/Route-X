@@ -8,7 +8,7 @@ import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import type { EgressPool } from '../../types';
 
-export interface EditEgressFormData {
+interface EditEgressFormData {
   name: string;
   kind: string;
   proxy_url: string;

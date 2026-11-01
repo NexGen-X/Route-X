@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type AuthLoginType = 'oauth_fallback' | 'console_token' | 'local_socket';
+type AuthLoginType = 'oauth_fallback' | 'console_token' | 'local_socket';
 
 export interface KnownProviderPreset {
   id: string;
@@ -585,7 +585,7 @@ export const KNOWN_PROVIDERS: KnownProviderPreset[] = [
 // SVG Vector Icons for all Known AI Providers
 // ==========================================
 
-export const OpenAIIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const OpenAIIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2z" />
     <path d="M12 6v6l4.5 2.5" />
@@ -593,19 +593,19 @@ export const OpenAIIcon: React.FC<{ className?: string }> = ({ className = 'w-5 
   </svg>
 );
 
-export const AnthropicIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const AnthropicIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M13.8 3h3.4L24 21h-3.6l-1.9-5.1H9.5L7.6 21H4L11.2 3h2.6zm2.4 10.2L12.6 6.8 9.8 13.2h6.4z" />
   </svg>
 );
 
-export const GoogleGeminiIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const GoogleGeminiIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M12 0C12 6.627 6.627 12 0 12c6.627 0 12 5.373 12 12 0-6.627 5.373-12 12-12-6.627 0-12-5.373-12-12z" />
   </svg>
 );
 
-export const CerebrasIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const CerebrasIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <rect x="3" y="3" width="18" height="18" rx="3" fill="none" stroke="currentColor" strokeWidth="2" />
     <circle cx="12" cy="12" r="4" />
@@ -613,51 +613,51 @@ export const CerebrasIcon: React.FC<{ className?: string }> = ({ className = 'w-
   </svg>
 );
 
-export const SambaNovaIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const SambaNovaIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M12 2L2 7l10 5 10-5-10-5zm0 9l-8-4v8l8 4 8-4v-8l-8 4z" />
   </svg>
 );
 
-export const FireworksIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const FireworksIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83" />
     <circle cx="12" cy="12" r="3" fill="currentColor" />
   </svg>
 );
 
-export const QwenIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const QwenIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M12 2a10 10 0 0 0-8.94 14.5L2 22l5.5-1.06A10 10 0 1 0 12 2zm1 14h-2v-2h2v2zm0-4h-2V7h2v5z" />
   </svg>
 );
 
-export const SiliconFlowIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const SiliconFlowIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
     <path d="M5 22h14" />
   </svg>
 );
 
-export const HuggingFaceIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const HuggingFaceIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm-3 8a1.5 1.5 0 1 1 1.5-1.5A1.5 1.5 0 0 1 9 10zm6 0a1.5 1.5 0 1 1 1.5-1.5A1.5 1.5 0 0 1 15 10zm-3 7a5 5 0 0 1-4.24-2.35.75.75 0 1 1 1.28-.78 3.5 3.5 0 0 0 5.92 0 .75.75 0 1 1 1.28.78A5 5 0 0 1 12 17z" />
   </svg>
 );
 
-export const CloudflareIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const CloudflareIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z" />
   </svg>
 );
 
-export const NovitaIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const NovitaIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.8l7.5 3.75L12 12.3 4.5 8.55 12 4.8zM4 10.25l7 3.5v7l-7-3.5v-7zm9 10.5v-7l7-3.5v7l-7 3.5z" />
   </svg>
 );
 
-export const LMStudioIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const LMStudioIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <rect x="2" y="3" width="20" height="14" rx="2" />
     <line x1="8" y1="21" x2="16" y2="21" />
@@ -667,7 +667,7 @@ export const LMStudioIcon: React.FC<{ className?: string }> = ({ className = 'w-
   </svg>
 );
 
-export const VLLMIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const VLLMIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
     <path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
@@ -676,26 +676,26 @@ export const VLLMIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-
   </svg>
 );
 
-export const DeepSeekIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const DeepSeekIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M2.5 14.5c1.5-4 5.5-7 10-7 4 0 7.5 2 9.5 5-2 1-4.5 1.5-7 1.5-4.5 0-8.5-1.5-12.5.5zm19.5 2c-3 3-7.5 4.5-12 4.5-3 0-5.5-1-7.5-2.5 4-1 8.5-.5 12.5-1.5 2.5-.5 5-1 7-.5z" />
     <circle cx="15.5" cy="10.5" r="1.5" />
   </svg>
 );
 
-export const GroqIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const GroqIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
   </svg>
 );
 
-export const OllamaIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const OllamaIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M9 3c-1.1 0-2 .9-2 2v2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2V5a2 2 0 0 0-2-2H9zm0 2h6v2H9V5zm-2 6a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm10 0a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zm-5 4a3 3 0 0 1 3 2H9a3 3 0 0 1 3-2z" />
   </svg>
 );
 
-export const MistralIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const MistralIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <rect x="2" y="3" width="4" height="4" />
     <rect x="18" y="3" width="4" height="4" />
@@ -707,7 +707,7 @@ export const MistralIcon: React.FC<{ className?: string }> = ({ className = 'w-5
   </svg>
 );
 
-export const OpenRouterIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const OpenRouterIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <circle cx="6" cy="6" r="3" />
     <circle cx="18" cy="18" r="3" />
@@ -716,7 +716,7 @@ export const OpenRouterIcon: React.FC<{ className?: string }> = ({ className = '
   </svg>
 );
 
-export const PerplexityIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const PerplexityIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <line x1="12" y1="2" x2="12" y2="22" />
     <line x1="2" y1="12" x2="22" y2="12" />
@@ -726,20 +726,20 @@ export const PerplexityIcon: React.FC<{ className?: string }> = ({ className = '
   </svg>
 );
 
-export const TogetherAIIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const TogetherAIIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <circle cx="8" cy="12" r="5" />
     <circle cx="16" cy="12" r="5" />
   </svg>
 );
 
-export const XAIIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const XAIIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
   </svg>
 );
 
-export const CohereIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const CohereIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <circle cx="8" cy="8" r="4" />
     <circle cx="16" cy="12" r="5" />
@@ -747,14 +747,14 @@ export const CohereIcon: React.FC<{ className?: string }> = ({ className = 'w-5 
   </svg>
 );
 
-export const AzureIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const AzureIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
     <path d="M13.05 4.24l-4.5 7.82 5.4 6.74H6.26l-3.3 4.2h14.54l-4.45-18.76z" />
     <path d="M15.48 7.37L10.3 16.3h7.32l-2.14-8.93z" />
   </svg>
 );
 
-export const CustomProviderIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const CustomProviderIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg
     viewBox="0 0 24 24"
     fill="none"
@@ -771,7 +771,7 @@ export const CustomProviderIcon: React.FC<{ className?: string }> = ({ className
   </svg>
 );
 
-export const AntigravityIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+const AntigravityIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
   <svg
     viewBox="0 0 24 24"
     fill="none"

@@ -86,7 +86,7 @@ export interface OAuthSession {
   updated_at: string;
 }
 
-export interface ModelProviderSummary {
+interface ModelProviderSummary {
   provider_id: string;
   provider_name: string;
   display_name: string;
@@ -165,7 +165,7 @@ export interface EgressProbeResult {
   error?: string;
 }
 
-export interface ComboPipeline {
+interface ComboPipeline {
   // Strategi mengurutkan kandidat gabungan. Hanya 4 strategi UI yang diterima
   // constraint migrasi 0014; backend menolak nilai lain (termasuk weighted/capability
   // yang valid di enum Go tapi tidak disuguhkan UI) dengan 400.
@@ -481,7 +481,7 @@ export interface AuditLogEntry {
   metadata?: Record<string, unknown>;
 }
 
-export interface DiagnosticsMemory {
+interface DiagnosticsMemory {
   alloc_bytes: number;
   total_alloc_bytes: number;
   sys_bytes: number;

@@ -1,0 +1,5 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["e2e/auth.setup.ts"],
+  "ignore": ["public/sw.js"]
+}

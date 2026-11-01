@@ -214,6 +214,8 @@ export const RoutingRules: React.FC = () => {
       <CircuitBreakersPanel
         breakers={breakers}
         providers={providers}
+        rules={rules}
+        models={models}
         isBreakersLoading={isBreakersLoading}
         breakersError={breakersError}
         loadBreakers={loadBreakers}

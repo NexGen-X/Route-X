@@ -374,7 +374,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4">
         {/* Backdrop glassmorphism */}
         <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
           onClick={onClose}
           aria-hidden="true"
         />
@@ -384,10 +384,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           role="dialog"
           aria-modal="true"
           aria-label="Palette Perintah Cepat"
-          className="relative w-full max-w-2xl bg-bg-surface-1/95 border border-border/80 rounded-2xl shadow-2xl shadow-black ring-1 ring-white/10 overflow-hidden z-10 animate-fade-in"
+          className="relative w-full max-w-2xl bg-bg-surface-1 border border-border rounded-xl shadow-2xl shadow-black/60 overflow-hidden z-10 animate-fade-in"
         >
           {/* Search Bar */}
-          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border/70 bg-bg-surface-2/50">
+          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border">
             <Search className="w-5 h-5 text-text-muted shrink-0" aria-hidden="true" />
             <input
               ref={inputRef}
@@ -403,10 +403,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 setQuery(e.target.value);
                 setSelectedIndex(0);
               }}
-              className="flex-1 bg-transparent border-none text-sm text-white placeholder:text-text-muted focus:outline-none font-sans"
+              className="flex-1 bg-transparent border-none text-sm text-text-primary placeholder:text-text-muted focus:outline-none font-sans"
             />
             <kbd
-              className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-text-muted bg-bg-surface-1 border border-border rounded shadow-xs"
+              className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono text-text-muted bg-bg-surface-2 border border-border rounded shadow-xs"
               aria-hidden="true"
             >
               ESC
@@ -426,11 +426,27 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 <p>Tidak ada perintah atau perkakas yang cocok dengan "{query}".</p>
               </div>
             ) : (
-              filteredItems.map((item, idx) => {
-                const Icon = item.icon;
-                const isSelected = idx === selectedIndex;
+              (() => {
+                // Hasil dikelompokkan per kategori dengan judul grup kecil, mengikuti sampel 07.
+                const order: string[] = [];
+                const byCategory = new Map<string, { item: (typeof filteredItems)[number]; idx: number }[]>();
+                filteredItems.forEach((item, idx) => {
+                  if (!byCategory.has(item.category)) {
+                    byCategory.set(item.category, []);
+                    order.push(item.category);
+                  }
+                  byCategory.get(item.category)!.push({ item, idx });
+                });
+                return order.map((category) => (
+                  <div key={category} role="group" aria-label={category}>
+                    <p className="px-3 pt-2.5 pb-1 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                      {category}
+                    </p>
+                    {byCategory.get(category)!.map(({ item, idx }) => {
+                      const Icon = item.icon;
+                      const isSelected = idx === selectedIndex;
 
-                return (
+                      return (
                   <button
                     key={item.id}
                     type="button"
@@ -440,15 +456,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                     onMouseEnter={() => setSelectedIndex(idx)}
                     className={`w-full text-left px-3 py-2 rounded-nav flex items-center justify-between transition-colors cursor-pointer ${
                       isSelected
-                        ? 'bg-bg-surface-2 text-white font-medium border border-border'
-                        : 'text-text-secondary hover:bg-bg-surface-1 hover:text-white border border-transparent'
+                        ? 'bg-bg-surface-2 text-text-primary font-medium border border-transparent'
+                        : 'text-text-secondary hover:bg-bg-surface-2/60 hover:text-text-primary border border-transparent'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div
                         className={`w-7 h-7 rounded-nav flex items-center justify-center shrink-0 transition-colors ${
                           isSelected
-                            ? 'bg-bg-surface-3 text-white'
+                            ? 'bg-bg-surface-3 text-text-primary'
                             : 'bg-bg-surface-2 text-text-secondary'
                         }`}
                       >
@@ -456,7 +472,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-white truncate">
+                          <span className="text-xs font-medium text-text-primary truncate">
                             {item.title}
                           </span>
                           {item.badge && (
@@ -483,14 +499,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                         <ArrowRight className="w-3.5 h-3.5 text-text-muted/40 hidden group-hover:inline-block" aria-hidden="true" />
                       )}
                     </div>
-                  </button>
-                );
-              })
+                      </button>
+                      );
+                    })}
+                  </div>
+                ));
+              })()
             )}
           </div>
 
           {/* Footer toolbar */}
-          <div className="px-4 py-2.5 bg-bg-surface-2/70 border-t border-border/70 flex items-center justify-between text-[11px] text-text-muted font-mono">
+          <div className="px-4 py-2.5 border-t border-border flex items-center justify-between text-[11px] text-text-muted font-mono">
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1">
                 <kbd className="px-1 py-0.5 bg-bg-surface-1 border border-border/80 rounded text-[10px]" aria-hidden="true">↑</kbd>

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import type { TimeSeriesPoint, BreakdownItem, Diagnostics, ObservabilitySummary, ResponseCacheStats } from '../types';
-import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
 import {
@@ -200,8 +199,8 @@ export const Observability: React.FC = () => {
                   onClick={() => setWindowTime(w)}
                   className={`min-h-[44px] sm:min-h-[32px] px-3 py-1 rounded-inner text-xs font-semibold transition-colors cursor-pointer ${
                     windowTime === w
-                      ? 'bg-bg-surface-2 text-white font-medium border border-border-hover/60'
-                      : 'text-text-secondary hover:text-white'
+                      ? 'bg-bg-surface-2 text-text-primary font-medium border border-border-hover/60'
+                      : 'text-text-secondary hover:text-text-primary'
                   }`}
                 >
                   {w}
@@ -240,7 +239,7 @@ export const Observability: React.FC = () => {
           <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted block">
             Throughput &amp; Permintaan ({windowTime})
           </span>
-          <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-white tabular-nums tracking-tight">
+          <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-primary tabular-nums tracking-tight">
             {(summary?.total_requests ?? totalRequestsFromSeries).toLocaleString()}
           </div>
           <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
@@ -271,7 +270,7 @@ export const Observability: React.FC = () => {
           <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted block">
             Konsumsi Token &amp; Biaya
           </span>
-          <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-white tabular-nums tracking-tight">
+          <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-primary tabular-nums tracking-tight">
             {(summary?.total_tokens ?? totalTokensFromSeries).toLocaleString()} tok
           </div>
           <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
@@ -298,9 +297,9 @@ export const Observability: React.FC = () => {
       </div>
 
       {/* Metric Selector & Main Time Series Chart */}
-      <Card
-        title="Deret Waktu Telemetri & Analitik"
-        action={
+      <section aria-label="Deret Waktu Telemetri & Analitik">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-2">
+          <h3 className="text-sm font-medium text-text-primary tracking-tight">Deret Waktu Telemetri & Analitik</h3>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 max-w-full" role="group" aria-label="Pilihan metrik deret waktu">
             {[
               { key: 'requests', label: 'Permintaan' },
@@ -318,7 +317,7 @@ export const Observability: React.FC = () => {
                 onClick={() => setMetric(m.key)}
                 className={`min-h-[44px] sm:min-h-[30px] py-1 text-[11px] sm:text-xs transition-colors whitespace-nowrap text-center cursor-pointer border-b-2 ${
                   metric === m.key
-                    ? 'border-accent text-white font-semibold'
+                    ? 'border-accent text-text-primary font-semibold'
                     : 'border-transparent text-text-muted hover:text-text-primary'
                 }`}
               >
@@ -326,8 +325,7 @@ export const Observability: React.FC = () => {
               </button>
             ))}
           </div>
-        }
-      >
+        </div>
         <div className="h-72 w-full pt-4">
           {isLoading && series.length === 0 ? (
             <div className="h-full flex items-center justify-center">
@@ -402,14 +400,13 @@ export const Observability: React.FC = () => {
             </ResponsiveContainer>
           )}
         </div>
-      </Card>
+      </section>
 
       {/* Breakdown Komposisi & Runtime Server */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card
-          className="lg:col-span-2"
-          title="Komposisi Lalu Lintas"
-          action={
+        <section aria-label="Komposisi Lalu Lintas" className="lg:col-span-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-2">
+            <h3 className="text-sm font-medium text-text-primary tracking-tight">Komposisi Lalu Lintas</h3>
             <div className="flex items-center gap-4 max-w-full">
               {(['provider', 'model', 'api_key'] as const).map((b) => (
                 <button
@@ -418,17 +415,16 @@ export const Observability: React.FC = () => {
                   onClick={() => setBreakdownBy(b)}
                   className={`min-h-[44px] sm:min-h-[28px] py-0.5 text-xs uppercase font-mono whitespace-nowrap text-center cursor-pointer transition-colors border-b-2 ${
                     breakdownBy === b
-                      ? 'border-accent text-white font-semibold'
-                      : 'border-transparent text-text-muted hover:text-white'
+                      ? 'border-accent text-text-primary font-semibold'
+                      : 'border-transparent text-text-muted hover:text-text-primary'
                   }`}
                 >
                   {b.replace('_', ' ')}
                 </button>
               ))}
             </div>
-          }
-        >
-          <div className="space-y-3 mt-2">
+          </div>
+          <div className="space-y-3 pt-4">
             {isLoading && breakdowns.length === 0 ? (
               <div className="space-y-3 py-2 animate-pulse">
                 {[1, 2, 3].map((i) => (
@@ -462,13 +458,17 @@ export const Observability: React.FC = () => {
               ))
             )}
           </div>
-        </Card>
+        </section>
 
         {/* Live Pool & Diagnostics */}
-        <Card title="Server Live & Pool Koneksi">
+        <section aria-label="Server Live & Pool Koneksi">
+          <div className="border-b border-border pb-2">
+            <h3 className="text-sm font-medium text-text-primary tracking-tight">Server Live & Pool Koneksi</h3>
+          </div>
+          <div className="pt-4">
           {isLoading && !diag && !diagnosticsError ? (
             <div className="space-y-4 animate-pulse">
-              <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border h-16" />
+              <div className="h-4 bg-bg-surface-2 rounded w-full" />
               <div className="space-y-2 text-xs pt-1">
                 <div className="h-4 bg-bg-surface-2 rounded w-full" />
                 <div className="h-4 bg-bg-surface-2 rounded w-4/5" />
@@ -499,7 +499,7 @@ export const Observability: React.FC = () => {
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between py-1 border-b border-border/40">
                   <span className="text-text-muted">Versi Gateway</span>
-                  <span className="font-mono font-semibold text-white">{diag?.version || 'tidak tersedia'}</span>
+                  <span className="font-mono font-semibold text-text-primary">{diag?.version || 'tidak tersedia'}</span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-border/40">
                   <span className="text-text-muted">Go Runtime</span>
@@ -516,7 +516,8 @@ export const Observability: React.FC = () => {
               </div>
             </div>
           )}
-        </Card>
+        </div>
+        </section>
       </div>
 
       {/* Kesehatan Sistem — konsolidasi isi Diagnostics (Fase 2 R6) */}

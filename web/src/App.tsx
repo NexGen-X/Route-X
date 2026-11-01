@@ -22,7 +22,6 @@ const Budgets = React.lazy(() => import('./pages/Budgets').then((m) => ({ defaul
 const APIKeys = React.lazy(() => import('./pages/APIKeys').then((m) => ({ default: m.APIKeys })));
 const Webhooks = React.lazy(() => import('./pages/Webhooks').then((m) => ({ default: m.Webhooks })));
 const Settings = React.lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
-const Diagnostics = React.lazy(() => import('./pages/Diagnostics').then((m) => ({ default: m.Diagnostics })));
 const CLIIntegrations = React.lazy(() => import('./pages/CLIIntegrations').then((m) => ({ default: m.CLIIntegrations })));
 // Halaman identitas: daftar akun admin dan status sesi.
 const UsersPage = React.lazy(() => import('./pages/Users').then((m) => ({ default: m.UsersPage })));
@@ -188,9 +187,12 @@ const Shell: React.FC = () => {
       case '/system/jobs':
       case '/system/diagnostics':
       case '/diagnostics':
+        // Halaman Diagnostics dipensiunkan (Fase 2 R6): isinya pindah ke
+        // section Kesehatan Sistem di Observability. Hash lama tetap
+        // diterima agar bookmark tidak mati.
         return {
-          title: 'System Diagnostics & Workers',
-          content: <Diagnostics />,
+          title: 'Observabilitas & Telemetri',
+          content: <Observability />,
         };
       default:
         return {

@@ -13,13 +13,11 @@ import {
   Sliders,
   HeartPulse,
   Copy,
-  Trash2,
   Globe,
   ArrowRight,
   Sparkles,
   CornerDownLeft,
 } from 'lucide-react';
-import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 import { copyTextToClipboard } from '../../utils/clipboard';
 
@@ -187,12 +185,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-diagnostics',
-      title: 'System Diagnostics & Health',
-      subtitle: 'Metrik memori Go, koneksi PostgreSQL pool, dan Redis cache stats',
+      title: 'Kesehatan Sistem (Observability)',
+      subtitle: 'Checklist uji live gateway dan supervisor background workers',
       category: 'Navigasi',
       icon: HeartPulse,
       action: () => {
-        onNavigate('/system/diagnostics');
+        onNavigate('/observability');
         onClose();
       },
     },
@@ -214,23 +212,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           const msg = err instanceof Error ? err.message : String(err);
           toast.error(`Gagal menyalin Base URL: ${msg}`);
         }
-      },
-    },
-    {
-      id: 'act-flush-cache',
-      title: 'Bersihkan Cache Respons Redis',
-      subtitle: 'Hapus seluruh entri cache jawaban inferensi dari Redis',
-      category: 'Aksi Cepat',
-      icon: Trash2,
-      action: async () => {
-        try {
-          const res = await api.system.flushCache();
-          toast.success(`Cache berhasil dibersihkan: ${res.message}`);
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          toast.error(`Gagal membersihkan cache: ${msg}`);
-        }
-        onClose();
       },
     },
     {

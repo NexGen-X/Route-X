@@ -15,7 +15,7 @@ const HALAMAN_MOBILE: Array<{ hash: string; judul: string }> = [
   { hash: '#/access/api-keys', judul: 'Client API Keys' },
   { hash: '#/cli-integrations', judul: 'CLI Integrations & 3-Mode Configurator' },
   { hash: '#/system/settings', judul: 'Runtime Settings' },
-  { hash: '#/system/diagnostics', judul: 'System Diagnostics & Workers' },
+  { hash: '#/system/diagnostics', judul: 'Observabilitas & Telemetri' },
 ];
 
 test.describe('mobile: drawer + tanpa overflow', () => {

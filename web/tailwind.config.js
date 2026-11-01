@@ -6,19 +6,19 @@ export default {
     extend: {
       colors: {
         'bg-base': '#181818',
-        'bg-sidebar': '#141318',
+        'bg-sidebar': '#161616',
         'bg-surface': '#1C1C1C',
         'bg-surface-1': '#1F1F1F',
         'bg-surface-2': '#2A2A2A',
-        'bg-surface-3': '#3A3A3A',
-        border: '#2E2E2E',
+        'bg-surface-3': '#323232',
+        border: '#2A2A2A',
         'border-subtle': '#232323',
         'border-hover': '#3A3A3A',
         'border-glass': 'rgba(255, 255, 255, 0.08)',
         'border-glass-hover': 'rgba(255, 255, 255, 0.14)',
         'border-glass-active': '#4A4A4A',
-        'text-primary': '#FAFAFA',
-        'text-secondary': '#A3A3A3',
+        'text-primary': '#ECECEC',
+        'text-secondary': '#B9B9B9',
         // #969696: >= 4.85:1 di atas semua permukaan tema (audit F8) —
         // #737373 lama hanya 3.0-3.7:1 dan gagal WCAG AA untuk teks kecil.
         'text-muted': '#969696',
@@ -41,11 +41,22 @@ export default {
           glow: 'rgba(77, 163, 232, 0.3)',
         },
         status: {
-          success: '#10B981',
-          error: '#EF4444',
-          warn: '#F59E0B',
-          info: '#38BDF8',
+          success: '#3ECF8E',
+          error: '#F26D6D',
+          warn: '#F5B84C',
+          info: '#5BACE6',
         },
+        // Penyelarasan Fase 6 ke palet sampel Calm Console yang disetujui
+        // pemilik repo: shade Tailwind yang dipakai kelas-kelas status di
+        // seluruh komponen dipetakan ke keluarga pastel mockup (hijau mint
+        // #3ECF8E, koral #F26D6D, kuning lembut #F5B84C, biru teks #5BACE6).
+        emerald: { 300: '#7CE3B1', 400: '#3ECF8E', 500: '#2EB87E' },
+        red: { 300: '#F6A8A8', 400: '#F26D6D', 500: '#E45757', 600: '#D64545' },
+        rose: { 300: '#F6A8A8', 400: '#F26D6D', 500: '#E45757' },
+        amber: { 200: '#FBE3B0', 300: '#FAD48F', 400: '#F5B84C', 500: '#F0A832' },
+        sky: { 300: '#A5D8F7', 400: '#5BACE6', 500: '#3E94D8' },
+        teal: { 400: '#3ECF8E' },
+        green: { 400: '#3ECF8E' },
       },
       borderRadius: {
         card: '16px',
@@ -76,7 +87,7 @@ export default {
         'radial-card': 'radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.02), transparent 80%)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['"Noto Sans"', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
       },
       keyframes: {

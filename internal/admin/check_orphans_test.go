@@ -38,42 +38,17 @@ func TestCheckOrphans(t *testing.T) {
 		return nil
 	})
 
-	// Daftar putih rute yatim yang DISENGAJA, diverifikasi manual pada
-	// audit ulang 1 Nov 2026 (klaster F11): rute-rute ini adalah alias
-	// kompat lama berbentuk datar (kanonisnya berkelompok: /access/*,
-	// /gateway/*, /upstreams/*, /system/*) yang tetap dipertahankan untuk
-	// CLI dan klien pihak ketiga, ditambah alias ringkasan pendamping
-	// (/summary, /overview, /diagnostics) yang juga dipakai non-dashboard.
+	// Daftar putih rute yatim yang DISENGAJA: hanya tiga alias ringkasan
+	// baca (/summary, /overview, /diagnostics) yang dipertahankan sesudah
+	// pemangkasan alias Fase 2 R5 — 23 alias CRUD datar dihapus dari
+	// routes.go setelah analisis membuktikan nol konsumen di dalam repo.
 	// Di luar daftar ini, rute backend TANPA pemanggil frontend adalah
 	// temuan nyata dan MENGGAGALKAN tes ini — sebelum perbaikan F11 tes
 	// ini hanya mencetak tanpa assertion sehingga tidak bisa gagal.
 	orphanTerdaftar := map[string]bool{
-		"/api/admin/api-keys":                     true,
-		"/api/admin/api-keys/{param}/revoke":      true,
-		"/api/admin/api-keys/{param}/toggle":      true,
-		"/api/admin/budgets":                      true,
-		"/api/admin/budgets/{param}":              true,
-		"/api/admin/budgets/{param}/toggle":       true,
-		"/api/admin/diagnostics":                  true,
-		"/api/admin/egress-pools":                 true,
-		"/api/admin/egress/pools":                 true,
-		"/api/admin/overview":                     true,
-		"/api/admin/providers":                    true,
-		"/api/admin/providers/{param}/toggle":     true,
-		"/api/admin/rate-limits":                  true,
-		"/api/admin/rate-limits/{param}/toggle":   true,
-		"/api/admin/ratelimits":                   true,
-		"/api/admin/ratelimits/{param}/toggle":    true,
-		"/api/admin/routing-rules":                true,
-		"/api/admin/routing-rules/{param}/toggle": true,
-		"/api/admin/routing/rules":                true,
-		"/api/admin/routing/rules/{param}/toggle": true,
-		"/api/admin/summary":                      true,
-		"/api/admin/users":                        true,
-		"/api/admin/users/{param}":                true,
-		"/api/admin/webhooks":                     true,
-		"/api/admin/webhooks/{param}/test":        true,
-		"/api/admin/webhooks/{param}/toggle":      true,
+		"/api/admin/diagnostics": true,
+		"/api/admin/overview":    true,
+		"/api/admin/summary":     true,
 	}
 
 	var yatimBaru []string

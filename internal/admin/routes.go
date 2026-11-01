@@ -41,74 +41,22 @@ func (h *Handlers) Routes() http.Handler {
 	r.Route("/system", h.systemRoutes)
 	r.Route("/cli", h.cliRoutes)
 
-	// Top-level aliases untuk kenyamanan mobile companion APK, CLI, dan integrasi pihak ketiga
+	// Alias ringkasan baca tingkat atas (Fase 2 R5): hanya tiga alias GET
+	// ini yang dipertahankan. Alias CRUD datar lainnya (/providers,
+	// /api-keys, /users, /budgets, /ratelimits, /rate-limits,
+	// /routing/rules, /routing-rules, /egress/pools, /egress-pools,
+	// /webhooks — 23 rute) DIPANGKAS pada Fase 2 karena analisis konsumen
+	// di dalam repo membuktikan nol pemanggil: dashboard hanya memakai
+	// rute kanonis berkelompok, binary CLI (cmd/routex-apikey dan
+	// cmd/routex-rotate) tidak memanggil API admin HTTP sama sekali,
+	// skrip dan openapi.yaml hanya mendokumentasikan rute kanonis, dan
+	// mobile companion APK yang dulu disebut komentar ini sudah dihapus.
+	// Tiga alias baca ini dipertahankan karena pola pemakaiannya
+	// (pemantauan/skrip kesehatan eksternal) tidak bisa dibuktikan nol
+	// dari dalam repo dan biaya mempertahankannya kecil.
 	r.Get("/overview", h.getSystemOverview)
 	r.Get("/diagnostics", h.getDiagnostics)
 	r.Get("/summary", h.getSummary)
-
-	r.Route("/providers", func(sub chi.Router) {
-		sub.Get("/", h.listProviders)
-		sub.Post("/", h.createProvider)
-		sub.Post("/{id}/toggle", h.toggleProvider)
-	})
-
-	r.Route("/api-keys", func(sub chi.Router) {
-		sub.Get("/", h.listAPIKeys)
-		sub.Post("/", h.createAPIKey)
-		sub.Post("/{id}/revoke", h.revokeAPIKey)
-		sub.Post("/{id}/toggle", h.toggleAPIKey)
-	})
-
-	r.Route("/users", func(sub chi.Router) {
-		sub.Get("/", h.listUsers)
-		sub.Post("/", h.createUser)
-		sub.Delete("/{id}", h.deleteUser)
-	})
-
-	r.Route("/egress/pools", func(sub chi.Router) {
-		sub.Get("/", h.listEgressPools)
-		sub.Post("/", h.createEgressPool)
-	})
-	r.Route("/egress-pools", func(sub chi.Router) {
-		sub.Get("/", h.listEgressPools)
-		sub.Post("/", h.createEgressPool)
-	})
-
-	r.Route("/budgets", func(sub chi.Router) {
-		sub.Get("/", h.listBudgets)
-		sub.Post("/", h.createBudget)
-		sub.Put("/{id}", h.updateBudget)
-		sub.Post("/{id}/toggle", h.toggleBudget)
-	})
-
-	r.Route("/ratelimits", func(sub chi.Router) {
-		sub.Get("/", h.listRateLimits)
-		sub.Post("/", h.createRateLimit)
-		sub.Post("/{id}/toggle", h.toggleRateLimit)
-	})
-	r.Route("/rate-limits", func(sub chi.Router) {
-		sub.Get("/", h.listRateLimits)
-		sub.Post("/", h.createRateLimit)
-		sub.Post("/{id}/toggle", h.toggleRateLimit)
-	})
-
-	r.Route("/routing/rules", func(sub chi.Router) {
-		sub.Get("/", h.listRoutingRules)
-		sub.Post("/", h.createRoutingRule)
-		sub.Post("/{id}/toggle", h.toggleRoutingRule)
-	})
-	r.Route("/routing-rules", func(sub chi.Router) {
-		sub.Get("/", h.listRoutingRules)
-		sub.Post("/", h.createRoutingRule)
-		sub.Post("/{id}/toggle", h.toggleRoutingRule)
-	})
-
-	r.Route("/webhooks", func(sub chi.Router) {
-		sub.Get("/", h.listWebhooks)
-		sub.Post("/", h.createWebhook)
-		sub.Post("/{id}/toggle", h.toggleWebhook)
-		sub.Post("/{id}/test", h.testWebhookPing)
-	})
 
 	return r
 }

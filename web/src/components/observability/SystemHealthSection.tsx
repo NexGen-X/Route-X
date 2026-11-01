@@ -17,6 +17,7 @@ import {
 import { useToast } from '../../context/ToastContext';
 import { QueryError } from '../common/QueryError';
 import { getErrorMessage } from '../../utils/error';
+import { APP_VERSION } from '../../lib/version';
 
 // Section "Kesehatan Sistem" di halaman Observability (Fase 2 R6) —
 // rumah baru isi halaman Diagnostics yang dipensiunkan: checklist Uji
@@ -132,7 +133,7 @@ export const SystemHealthSection: React.FC = () => {
           // latencyMs di sini adalah round-trip uji yang terukur.
           status: 'healthy',
           latencyMs: duration,
-          details: `Gateway ${diagRes.version || 'v1.4'} aktif, ${diagRes.num_goroutine} goroutines`,
+          details: `Gateway ${diagRes.version || APP_VERSION} aktif, ${diagRes.num_goroutine} goroutines`,
         },
         {
           id: 'response-cache',

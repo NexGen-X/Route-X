@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { copyTextToClipboard } from '../../utils/clipboard';
+import { muatJumlahToolCli } from '../../lib/cliCount';
 
 export interface CommandPaletteProps {
   isOpen: boolean;
@@ -46,6 +47,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 }) => {
   const { toast } = useToast();
   const [query, setQuery] = useState('');
+  // Badge jumlah tool pada perintah CLI dihitung dari registri backend
+  // (cache bersama lib/cliCount) — bukan konstanta.
+  const [jumlahToolCli, setJumlahToolCli] = useState<number | null>(null);
+  useEffect(() => {
+    let hidup = true;
+    muatJumlahToolCli().then((n) => {
+      if (hidup) setJumlahToolCli(n);
+    });
+    return () => {
+      hidup = false;
+    };
+  }, []);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -111,7 +124,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       subtitle: 'Konfigurasi Antigravity, Claude, OpenCode, dan perkakas AI terminal',
       category: 'Navigasi',
       icon: Code2,
-      badge: '20 Tools',
+      badge: jumlahToolCli !== null ? `${jumlahToolCli} Tools` : undefined,
       action: () => {
         onNavigate('/cli-integrations');
         onClose();

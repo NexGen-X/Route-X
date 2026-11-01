@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard,
   Activity,
@@ -19,6 +19,8 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { Tooltip } from '../common/Tooltip';
 import { RouteXLogo } from '../common/RouteXLogo';
+import { APP_VERSION } from '../../lib/version';
+import { muatJumlahToolCli } from '../../lib/cliCount';
 
 export interface SidebarProps {
   currentPath: string;
@@ -46,6 +48,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setIsMobileOpen,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  // Badge CLI dihitung dari registri backend (bukan konstanta): memuat
+  // sekali per sesi lewat cache bersama di lib/cliCount.
+  const [jumlahToolCli, setJumlahToolCli] = useState<number | null>(null);
+  useEffect(() => {
+    let hidup = true;
+    muatJumlahToolCli().then((n) => {
+      if (hidup) setJumlahToolCli(n);
+    });
+    return () => {
+      hidup = false;
+    };
+  }, []);
   const { user, principal, logout } = useAuth();
 
   const navGroups: NavGroup[] = [
@@ -62,7 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { name: 'Providers', path: '/upstreams/providers', icon: Server },
         { name: 'Routing & Failover', path: '/gateway/routing', icon: GitFork },
-        { name: 'CLI Integrations', path: '/cli-integrations', icon: Code2, badge: '20' },
+        { name: 'CLI Integrations', path: '/cli-integrations', icon: Code2, badge: jumlahToolCli !== null ? String(jumlahToolCli) : undefined },
         { name: 'Egress Pools', path: '/upstreams/egress', icon: Network },
       ],
     },
@@ -116,7 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   Route-X
                 </span>
                 <span className="text-[10px] font-mono text-accent px-1.5 py-0.5 rounded-full bg-accent/10 border border-accent/20">
-                  v1.4
+                  {APP_VERSION}
                 </span>
               </div>
             )}

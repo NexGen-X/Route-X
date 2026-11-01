@@ -28,7 +28,7 @@ const TrafficChart = React.lazy(() =>
   import('../components/dashboard/TrafficChart').then((m) => ({ default: m.TrafficChart }))
 );
 
-export const TrafficChartSkeleton: React.FC = () => (
+const TrafficChartSkeleton: React.FC = () => (
   <div
     role="status"
     aria-label="Memuat grafik analitik lalu lintas"

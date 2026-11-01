@@ -29,33 +29,18 @@ import {
   matchPresetForProvider,
   matchExistingProvider,
 } from '../components/providers/providerMatching';
-import { ModelsTab, type ModelsTabProps } from '../components/providers/ModelsTab';
-import { CredentialsTab, type CredentialsTabProps } from '../components/providers/CredentialsTab';
-import { SettingsTab, type SettingsTabProps } from '../components/providers/SettingsTab';
-import { CreateProviderModal, type CreateProviderModalProps } from '../components/providers/CreateProviderModal';
-import { AddModelModal, type AddModelModalProps } from '../components/providers/AddModelModal';
-import { ProviderCard, type ProviderCardProps } from '../components/providers/ProviderCard';
+import { ModelsTab } from '../components/providers/ModelsTab';
+import { CredentialsTab } from '../components/providers/CredentialsTab';
+import { SettingsTab } from '../components/providers/SettingsTab';
+import { CreateProviderModal } from '../components/providers/CreateProviderModal';
+import { AddModelModal } from '../components/providers/AddModelModal';
+import { ProviderCard } from '../components/providers/ProviderCard';
 import type { ModelTestResult } from '../components/providers/types';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { copyTextToClipboard } from '../utils/clipboard';
 
 export { matchPresetForProvider, matchExistingProvider };
-export { ModelsTab as ModelsTabChild };
-export { CredentialsTab as CredentialsTabChild };
-export { SettingsTab as SettingsTabChild };
-export { CreateProviderModal as CreateProviderModalChild };
-export { AddModelModal as AddModelModalChild };
-export { ProviderCard as ProviderCardChild };
-export type {
-  ModelTestResult,
-  ModelsTabProps,
-  CredentialsTabProps,
-  SettingsTabProps,
-  CreateProviderModalProps,
-  AddModelModalProps,
-  ProviderCardProps,
-};
 
 export const Providers: React.FC = () => {
   const { toast, confirmModal } = useToast();

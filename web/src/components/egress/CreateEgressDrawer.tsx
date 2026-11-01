@@ -6,7 +6,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { api } from '../../api/client';
 import { useToast } from '../../context/ToastContext';
 
-export interface CreateEgressFormData {
+interface CreateEgressFormData {
   name: string;
   kind: string;
   proxy_url: string;

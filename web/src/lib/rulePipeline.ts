@@ -23,7 +23,7 @@ export const STRATEGI_COMBO: StrategiCombo[] = [
 
 export const ATTEMPTS_MIN = 1;
 export const ATTEMPTS_MAX = 20;
-export const MODELS_MIN = 1;
+const MODELS_MIN = 1;
 export const MODELS_MAX = 8;
 
 export interface ComboPipeline {

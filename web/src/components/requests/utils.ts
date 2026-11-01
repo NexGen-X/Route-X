@@ -2,7 +2,6 @@ import type { RequestLog, RequestPayload } from '../../types';
 import type { StatusDotVariant } from '../common/StatusDot';
 
 export type RequestTabFilter = 'all' | 'success' | 'errors';
-export type StatusBadgeVariant = 'success' | 'warn' | 'error' | 'neutral';
 
 export interface LatencyPillStyle {
   bg: string;
@@ -101,7 +100,7 @@ export const formatRawPayload = (raw: unknown): string => {
  * Ambil teks prompt pertama dari body request OpenAI-style untuk perintah cURL.
  * Struktur OpenAI: { "messages": [{ "role": "user", "content": "..." }] }.
  */
-export const extractPromptText = (body: unknown): string => {
+const extractPromptText = (body: unknown): string => {
   if (!body || typeof body !== 'object') return '';
   const messages = (body as { messages?: unknown }).messages;
   if (!Array.isArray(messages)) return '';
@@ -113,12 +112,6 @@ export const extractPromptText = (body: unknown): string => {
   return '';
 };
 
-export const getStatusBadgeVariant = (code: number): StatusBadgeVariant => {
-  if (code >= 200 && code < 300) return 'success';
-  if (code >= 400 && code < 500) return 'warn';
-  if (code >= 500) return 'error';
-  return 'neutral';
-};
 
 export const getStatusBadgeLabel = (code: number): string => {
   if (code >= 200 && code < 300) return `${code} OK`;

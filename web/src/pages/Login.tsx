@@ -17,7 +17,7 @@ import {
   Check,
   Cpu,
 } from 'lucide-react';
-import pkg from '../../package.json';
+import { APP_VERSION } from '../lib/version';
 
 export const Login: React.FC = () => {
   const { login } = useAuth();
@@ -285,7 +285,7 @@ export const Login: React.FC = () => {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
               </span>
-              <span className="font-mono text-[10px] text-text-muted">v{pkg.version}</span>
+              <span className="font-mono text-[10px] text-text-muted">{APP_VERSION}</span>
             </div>
           </div>
         </div>

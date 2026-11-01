@@ -19,6 +19,11 @@ import { copyTextToClipboard } from '../../utils/clipboard';
 export interface QuickStartGuideProps {
   onNavigate: (path: string) => void;
   onDismiss?: () => void;
+  // Keadaan ciut dikendalikan Dashboard (R1 Fase 2): Dashboard yang
+  // memutuskan bawaan cerdas berbasis status setup dan memersistensikannya
+  // lewat quickstartPrefs — komponen ini murni menampilkan.
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
 type CodeTab = 'curl' | 'python' | 'typescript' | 'shell';
@@ -77,26 +82,12 @@ export ANTHROPIC_API_KEY="rx_live_secret_key"`,
   },
 };
 
-export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, onDismiss }) => {
-  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
-    try {
-      return (
-        localStorage.getItem('routex-quickstart-dismissed') !== '1' &&
-        localStorage.getItem('routex_dismiss_onboarding') !== 'true'
-      );
-    } catch {
-      return true;
-    }
-  });
-
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('routex_quickstart_collapsed') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
+export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({
+  onNavigate,
+  onDismiss,
+  collapsed,
+  onToggleCollapse,
+}) => {
   const [activeCodeTab, setActiveCodeTab] = useState<CodeTab>('curl');
   const [codeCopied, setCodeCopied] = useState(false);
   const codeCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,34 +111,15 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({ onNavigate, on
   };
 
   const dismissOnboarding = () => {
-    setShowOnboarding(false);
-    try {
-      localStorage.setItem('routex-quickstart-dismissed', '1');
-      localStorage.setItem('routex_dismiss_onboarding', 'true');
-    } catch {
-      // Abaikan kegagalan localStorage
-    }
     onDismiss?.();
   };
 
   const toggleCollapse = () => {
-    setIsCollapsed((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('routex_quickstart_collapsed', String(next));
-      } catch {
-        // Abaikan
-      }
-      return next;
-    });
+    onToggleCollapse();
   };
 
-  if (!showOnboarding) {
-    return null;
-  }
-
   // Tampilan ciut (Collapsed Compact Bar)
-  if (isCollapsed) {
+  if (collapsed) {
     return (
       <div className="h-10 px-3.5 bg-bg-surface-1/40 border border-border/80 rounded-lg flex items-center justify-between text-xs transition-colors shadow-sm">
         <div className="flex items-center gap-2 truncate">

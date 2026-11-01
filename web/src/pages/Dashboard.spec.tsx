@@ -187,6 +187,7 @@ const MOCK_REQUESTS: RequestLog[] = [
 const mockSummaryFn = vi.fn(async (_window?: string) => MOCK_SUMMARY);
 const mockSeriesFn = vi.fn(async (_metric?: string, _window?: string) => ({ points: MOCK_SERIES }));
 const mockProvidersFn = vi.fn(async () => ({ items: MOCK_PROVIDERS }));
+const mockApiKeysFn = vi.fn(async () => ({ items: [] as unknown[] }));
 const mockOverviewFn = vi.fn(async () => MOCK_OVERVIEW);
 const mockRequestsFn = vi.fn(async (_opts?: unknown) => ({ items: MOCK_REQUESTS }));
 
@@ -199,6 +200,10 @@ vi.mock('../api/client', () => ({
     providers: {
       list: () => mockProvidersFn(),
       listAll: () => mockProvidersFn(),
+    },
+    apiKeys: {
+      list: () => mockApiKeysFn(),
+      listAll: () => mockApiKeysFn(),
     },
     system: {
       overview: () => mockOverviewFn(),
@@ -218,6 +223,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
     mockSummaryFn.mockImplementation(async () => MOCK_SUMMARY);
     mockSeriesFn.mockImplementation(async () => ({ points: MOCK_SERIES }));
     mockProvidersFn.mockImplementation(async () => ({ items: MOCK_PROVIDERS }));
+    mockApiKeysFn.mockImplementation(async () => ({ items: [] }));
     mockOverviewFn.mockImplementation(async () => MOCK_OVERVIEW);
     mockRequestsFn.mockImplementation(async () => ({ items: MOCK_REQUESTS }));
   });
@@ -345,7 +351,50 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
     fireEvent.click(closeBtn);
 
     expect(screen.queryByText('Panduan Cepat Memulai Route-X')).not.toBeInTheDocument();
-    expect(localStorage.getItem('routex-quickstart-dismissed')).toBe('1');
+    // Satu skema persistensi baru (R1 Fase 2): kunci lama dibersihkan.
+    const pref = JSON.parse(localStorage.getItem('routex.ui.quickstart') ?? '{}') as {
+      dismissed?: boolean;
+    };
+    expect(pref.dismissed).toBe(true);
+    expect(localStorage.getItem('routex-quickstart-dismissed')).toBeNull();
+  });
+
+  it('menciutkan panduan secara bawaan bila setup sudah selesai (provider aktif + API key ada)', async () => {
+    mockApiKeysFn.mockImplementation(async () => ({ items: [{ id: 'key-1' }] }));
+
+    render(<Dashboard onNavigate={mockNavigate} />);
+
+    // Bar ciut tampil (judul + tombol Buka Panduan), isi langkah tidak tampil.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Buka Panduan' })).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Tambah Penyedia AI Upstream')).not.toBeInTheDocument();
+
+    // Operator membuka manual: pilihan manual menang atas bawaan cerdas.
+    fireEvent.click(screen.getByRole('button', { name: 'Buka Panduan' }));
+    expect(screen.getByText('Tambah Penyedia AI Upstream')).toBeInTheDocument();
+    const pref = JSON.parse(localStorage.getItem('routex.ui.quickstart') ?? '{}') as {
+      collapsed?: boolean | null;
+    };
+    expect(pref.collapsed).toBe(false);
+  });
+
+  it('menampilkan lagi panduan yang ditutup lewat tombol Panduan di hero', async () => {
+    localStorage.setItem(
+      'routex.ui.quickstart',
+      JSON.stringify({ dismissed: true, collapsed: null }),
+    );
+
+    render(<Dashboard onNavigate={mockNavigate} />);
+
+    const tombol = await screen.findByRole('button', { name: 'Buka Panduan Cepat' });
+    expect(screen.queryByText('Panduan Cepat Memulai Route-X')).not.toBeInTheDocument();
+
+    fireEvent.click(tombol);
+
+    await waitFor(() => {
+      expect(screen.getByText('Tambah Penyedia AI Upstream')).toBeInTheDocument();
+    });
   });
 
   it('menangani kegagalan pemanggilan API dengan notifikasi error', async () => {

@@ -40,6 +40,33 @@ export const APIKeys: React.FC = () => {
   });
   const models = (modelsData?.items || []) as Model[];
 
+  // Anggaran per kunci dari entitas Budget (scope 'api_key') untuk batang
+  // anggaran kartu kunci — hanya kunci dengan anggaran aktif & valid yang dipetakan.
+  const { data: budgetsData } = useQuery({
+    queryKey: ['budgets'],
+    queryFn: () => api.budgets.list(),
+  });
+  const budgetByKeyId = useMemo(() => {
+    const map = new Map<
+      string,
+      { spentUsd: number; limitUsd: number; periodLabel: string; thresholdPct: number }
+    >();
+    for (const b of budgetsData?.items || []) {
+      if (b.scope !== 'api_key' || !b.scope_id || !b.enabled || map.has(b.scope_id)) continue;
+      const limitUsd = parseFloat(b.max_spend_usd || b.limit_usd || '');
+      const spentUsd = parseFloat(b.spent_usd || '');
+      if (!Number.isFinite(limitUsd) || limitUsd <= 0 || !Number.isFinite(spentUsd)) continue;
+      map.set(b.scope_id, {
+        spentUsd,
+        limitUsd,
+        periodLabel:
+          b.period === 'daily' ? 'Harian' : b.period === 'weekly' ? 'Mingguan' : 'Bulanan',
+        thresholdPct: b.alert_threshold ?? b.alert_threshold_pct ?? 80,
+      });
+    }
+    return map;
+  }, [budgetsData]);
+
   // State untuk drawer & modal
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSubmittingCreate, setIsSubmittingCreate] = useState(false);
@@ -429,6 +456,7 @@ export const APIKeys: React.FC = () => {
               onOpenAllowed={handleOpenAllowed}
               onRotate={handleRotate}
               onRevoke={handleRevoke}
+              budget={budgetByKeyId.get(k.id)}
             />
           ))}
         </div>

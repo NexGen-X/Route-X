@@ -15,6 +15,8 @@ import {
   kelasSelKepalaKanan,
   kelasSelIsi,
 } from '../components/common/DataTableShell';
+import { EmptyState } from '../components/common/EmptyState';
+import { Skeleton } from '../components/common/Skeleton';
 
 export const UsersPage: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -178,40 +180,40 @@ export const UsersPage: React.FC = () => {
           <div className="animate-pulse divide-y divide-border">
             {[...Array(3)].map((_, idx) => (
               <div key={idx} className="flex items-center gap-4 px-4 py-3">
-                <div className="w-8 h-8 bg-bg-surface-2 rounded-full flex-shrink-0" />
+                <Skeleton className="w-8 h-8 rounded-full flex-shrink-0" />
                 <div className="flex-1 space-y-1.5 min-w-0">
-                  <div className="h-3.5 bg-bg-surface-2 rounded w-1/3" />
-                  <div className="h-3 bg-bg-surface-2 rounded w-1/2" />
+                  <Skeleton className="h-3.5 w-1/3" />
+                  <Skeleton className="h-3 w-1/2" />
                 </div>
-                <div className="h-5 bg-bg-surface-2 rounded w-14 flex-shrink-0" />
-                <div className="h-5 bg-bg-surface-2 rounded w-16 flex-shrink-0" />
-                <div className="h-7 bg-bg-surface-2 rounded w-20 flex-shrink-0" />
+                <Skeleton className="h-5 w-14 flex-shrink-0" />
+                <Skeleton className="h-5 w-16 flex-shrink-0" />
+                <Skeleton className="h-7 w-20 flex-shrink-0" />
               </div>
             ))}
           </div>
         </Card>
       ) : users.length === 0 ? (
-        <Card className="p-10 text-center rounded-box bg-bg-surface-1 border border-border/60">
-          <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center mx-auto mb-3">
-            <Users className="w-6 h-6" />
-          </div>
-          <h3 className="text-base font-bold text-white mb-1">Belum Ada Pengguna Terdaftar</h3>
-          <p className="text-xs text-text-secondary max-w-md mx-auto mb-5 leading-relaxed">
-            Tambahkan akun administrator baru untuk mengelola Route-X AI Gateway.
-          </p>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setIsCreateOpen(true)}
-            icon={<Plus className="w-4 h-4" />}
-            className="h-9 px-4 text-xs font-semibold mx-auto"
-          >
-            Tambah Pengguna Pertama
-          </Button>
-        </Card>
+        <EmptyState
+          icon={<Users className="w-5 h-5" />}
+          title="Belum Ada Pengguna Terdaftar"
+          description="Tambahkan akun administrator baru untuk mengelola Route-X AI Gateway."
+          action={
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsCreateOpen(true)}
+              icon={<Plus className="w-4 h-4" />}
+              className="h-9 px-4 text-xs font-semibold"
+            >
+              Tambah Pengguna Pertama
+            </Button>
+          }
+        />
       ) : (
-        /* Tabel akun enterprise minimalis — Item 4.2 */
-        <Card className="overflow-hidden p-0">
+        <>
+        {/* Tabel akun — hanya tampil dari sm ke atas; di bawah itu
+            daftar kartu mobile di bawah mengambil alih (Fase 3 P5). */}
+        <Card className="overflow-hidden p-0 hidden sm:block">
           <DataTableShell>
               <thead>
                 <tr className="border-b border-border bg-bg-surface-2/60">
@@ -304,6 +306,74 @@ export const UsersPage: React.FC = () => {
               </tbody>
           </DataTableShell>
         </Card>
+        {/* Daftar kartu mobile (<sm): email utuh dan seluruh aksi tersedia —
+            tabel memotong keduanya di viewport kecil (Fase 3 P5). */}
+        <div className="sm:hidden space-y-3">
+          {users.map((u) => (
+            <Card key={u.id} className="p-4 space-y-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-full bg-accent/15 border border-accent/20 flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-bold text-accent">
+                    {(u.display_name || u.email).charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-white text-sm truncate">{u.display_name}</p>
+                  <p className="text-[11px] text-text-muted font-mono break-all">{u.email}</p>
+                </div>
+                <Badge variant={statusVariant(u.status)}>{u.status}</Badge>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="lime" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1 w-fit">
+                  <Shield className="w-3 h-3" /> Admin
+                </Badge>
+                {u.must_change_password && (
+                  <span className="text-[11px] text-amber-300">Wajib ganti password</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void openDetail(u.id)}
+                  icon={<UserCheck className="w-3.5 h-3.5" />}
+                  className="text-xs flex-1 min-h-[44px]"
+                >
+                  Kelola
+                </Button>
+                {u.status === 'active' ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleStatus(u, 'disabled')}
+                    className="text-xs flex-1 min-h-[44px]"
+                  >
+                    Nonaktifkan
+                  </Button>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleStatus(u, 'active')}
+                    className="text-xs flex-1 min-h-[44px]"
+                  >
+                    Aktifkan
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void handleDelete(u)}
+                  icon={<Trash2 className="w-3.5 h-3.5 text-status-error/80" />}
+                  className="text-xs text-status-error/80 border-status-error/20 hover:bg-status-error/10 hover:text-status-error min-h-[44px]"
+                  title="Hapus pengguna"
+                  aria-label={`Hapus pengguna ${u.email}`}
+                />
+              </div>
+            </Card>
+          ))}
+        </div>
+        </>
       )}
 
       <Drawer

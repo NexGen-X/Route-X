@@ -141,9 +141,9 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
 
     // Cek header dan filter tabs
     expect(screen.getByText('Permintaan')).toBeInTheDocument();
-    expect(screen.getByText('All Requests')).toBeInTheDocument();
-    expect(screen.getByText('Success (2xx)')).toBeInTheDocument();
-    expect(screen.getByText('Errors (4xx/5xx)')).toBeInTheDocument();
+    expect(screen.getByText('Semua Permintaan')).toBeInTheDocument();
+    expect(screen.getByText('Sukses (2xx)')).toBeInTheDocument();
+    expect(screen.getByText('Error (4xx/5xx)')).toBeInTheDocument();
 
     // Verifikasi baris request tampil di desktop & mobile
     expect(screen.getAllByText('req-uuid-2').length).toBeGreaterThan(0);
@@ -163,15 +163,15 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     });
   });
 
-  it('menangani filter tab (Success, Errors, All) dan pencarian teks', async () => {
+  it('menangani filter tab (Sukses, Error, Semua) dan pencarian teks', async () => {
     render(<Requests />);
 
     await waitFor(() => {
       expect(mockListFn).toHaveBeenCalledWith({ limit: 25 });
     });
 
-    // 1. Klik tab "Success (2xx)"
-    fireEvent.click(screen.getByText('Success (2xx)'));
+    // 1. Klik tab "Sukses (2xx)"
+    fireEvent.click(screen.getByText('Sukses (2xx)'));
     await waitFor(() => {
       expect(mockListFn).toHaveBeenCalledWith({
         limit: 25,
@@ -179,8 +179,8 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
       });
     });
 
-    // 2. Klik tab "Errors (4xx/5xx)"
-    fireEvent.click(screen.getByText('Errors (4xx/5xx)'));
+    // 2. Klik tab "Error (4xx/5xx)"
+    fireEvent.click(screen.getByText('Error (4xx/5xx)'));
     await waitFor(() => {
       expect(mockListFn).toHaveBeenCalledWith({
         limit: 25,

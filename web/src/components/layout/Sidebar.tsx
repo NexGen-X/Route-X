@@ -159,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     aria-label={item.name}
                     aria-current={isActive ? 'page' : undefined}
-                    className={`w-full min-h-[38px] flex items-center gap-2.5 px-2.5 py-1.5 text-xs transition-colors rounded-nav group cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 ${
+                    className={`w-full min-h-[44px] lg:min-h-[38px] flex items-center gap-2.5 px-2.5 py-1.5 text-xs transition-colors rounded-nav group cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 ${
                       isActive
                         ? 'bg-bg-surface-2 text-white font-medium'
                         : 'text-text-secondary hover:text-white hover:bg-bg-surface-1'

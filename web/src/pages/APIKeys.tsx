@@ -421,7 +421,7 @@ export const APIKeys: React.FC = () => {
           Tidak ada kunci API yang cocok dengan &quot;{searchQuery}&quot;.
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="divide-y divide-border/60 border-y border-border/60">
           {filteredKeys.map((k) => (
             <APIKeyCard
               key={k.id}

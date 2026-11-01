@@ -302,14 +302,15 @@ export const Settings: React.FC = () => {
         <QueryError message={loadError} onRetry={() => void loadSettings()} />
       )}
 
-      {/* Tab Switcher Pills */}
-      <div className="flex flex-wrap border-b border-border/80 gap-1 mb-6">
+      {/* Subnav Pengaturan — Fase 4: tab garis bawah di mobile, kolom kiri ala Linear di desktop */}
+      <div className="lg:flex lg:gap-10 lg:items-start">
+      <div className="flex flex-wrap lg:flex-col border-b lg:border-b-0 border-border/80 gap-1 mb-6 lg:mb-0 lg:w-52 lg:shrink-0">
         <button
           type="button"
           onClick={() => setActiveTab('domain')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 lg:px-3 lg:py-2 text-xs font-semibold rounded-t-lg lg:rounded-lg lg:w-full transition-colors flex items-center gap-2 cursor-pointer text-left ${
             activeTab === 'domain'
-              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
+              ? 'border-b-2 lg:border-b-0 border-accent text-white bg-bg-surface-2'
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
@@ -319,9 +320,9 @@ export const Settings: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('cache')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 lg:px-3 lg:py-2 text-xs font-semibold rounded-t-lg lg:rounded-lg lg:w-full transition-colors flex items-center gap-2 cursor-pointer text-left ${
             activeTab === 'cache'
-              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
+              ? 'border-b-2 lg:border-b-0 border-accent text-white bg-bg-surface-2'
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
@@ -331,9 +332,9 @@ export const Settings: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('backup')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 lg:px-3 lg:py-2 text-xs font-semibold rounded-t-lg lg:rounded-lg lg:w-full transition-colors flex items-center gap-2 cursor-pointer text-left ${
             activeTab === 'backup'
-              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
+              ? 'border-b-2 lg:border-b-0 border-accent text-white bg-bg-surface-2'
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
@@ -343,9 +344,9 @@ export const Settings: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('advanced')}
-          className={`px-4 py-2.5 text-xs font-semibold rounded-t-lg transition-colors flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 lg:px-3 lg:py-2 text-xs font-semibold rounded-t-lg lg:rounded-lg lg:w-full transition-colors flex items-center gap-2 cursor-pointer text-left ${
             activeTab === 'advanced'
-              ? 'border-b-2 border-accent text-white bg-bg-surface-2'
+              ? 'border-b-2 lg:border-b-0 border-accent text-white bg-bg-surface-2'
               : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
           }`}
         >
@@ -354,6 +355,7 @@ export const Settings: React.FC = () => {
         </button>
       </div>
 
+      <div className="flex-1 min-w-0">
       {/* 1. Pengaturan Domain & HTTPS Otomatis */}
       {activeTab === 'domain' && (
         <DomainTab
@@ -407,6 +409,9 @@ export const Settings: React.FC = () => {
           onDeleteSetting={(key) => void handleDeleteSetting(key)}
         />
       )}
+
+      </div>
+      </div>
 
       {/* Modal Tambah Parameter Runtime */}
       <CreateSettingModal

@@ -13,7 +13,6 @@ import {
   Activity,
   Sliders,
 } from 'lucide-react';
-import { Card } from '../common/Card';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
 import { Tooltip } from '../common/Tooltip';
@@ -89,12 +88,12 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
   };
 
   return (
-    <Card className="p-5 flex flex-col justify-between border-border hover:border-border-hover bg-bg-surface transition-all duration-200 rounded-card shadow-sm">
+    <div className="py-5 flex flex-col justify-between gap-4">
       <div className="space-y-4">
         {/* Header: Nama Kunci, Status Badge & Expiration Badge */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 text-accent-text flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-lg bg-bg-surface-2 border border-border text-text-secondary flex items-center justify-center shrink-0">
               <KeyRound className="w-5 h-5" aria-hidden="true" />
             </div>
             <div className="min-w-0">
@@ -112,7 +111,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
         </div>
 
         {/* Monospace Masked Key Box dengan Tombol Copy dan Reveal Instan */}
-        <div className="bg-bg-surface-2 p-2.5 rounded-inner border border-border/80 flex items-center justify-between gap-2">
+        <div className="py-1 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-accent/15 text-cyan border border-accent/25 shrink-0">
               LIVE
@@ -202,7 +201,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
       </div>
 
       {/* Action Buttons: Allowed Scope, Rotasi, Cabut */}
-      <div className="mt-5 pt-3 border-t border-border flex items-center gap-2 flex-wrap justify-between">
+      <div className="flex items-center gap-2 flex-wrap justify-between">
         <Button
           variant="secondary"
           size="sm"
@@ -236,6 +235,6 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
           </Button>
         </div>
       </div>
-    </Card>
+    </div>
   );
 };

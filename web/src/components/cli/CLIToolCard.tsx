@@ -5,6 +5,7 @@ import {
   Lock,
   CheckCircle2,
   XCircle,
+  AlertTriangle,
   Key,
   Eye,
   EyeOff,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Card } from '../common/Card';
 import { Badge } from '../common/Badge';
+import { statusKonfigurasiTool } from './statusTool';
 import { Button } from '../common/Button';
 import { Select } from '../common/Select';
 import type { CLITool, Model, RoutingRule } from '../../types';
@@ -33,6 +35,7 @@ export interface CLIToolCardProps {
   publicBaseURL: string;
   isApplying: boolean;
   successMsg: string | undefined;
+  warningMsg?: string | undefined;
   diag: DiagStatus | undefined;
   copiedKey: string | null;
   onModeChange: (toolId: string, mode: 'model_only' | 'routing' | 'combo') => void;
@@ -53,6 +56,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
   publicBaseURL,
   isApplying,
   successMsg,
+  warningMsg,
   diag,
   copiedKey,
   onModeChange,
@@ -119,10 +123,15 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                 <Lock className="w-3 h-3" />
                 Dilindungi Sistem
               </Badge>
-            ) : tool.installed ? (
+            ) : statusKonfigurasiTool(tool) === 'terkonfigurasi-routex' ? (
               <Badge variant="lime" className="gap-1 font-medium">
                 <CheckCircle2 className="w-3 h-3" />
-                Terpasang
+                Terarah ke Route-X
+              </Badge>
+            ) : statusKonfigurasiTool(tool) === 'belum-dikonfigurasi' ? (
+              <Badge variant="warn" className="gap-1 font-medium">
+                <AlertTriangle className="w-3 h-3" />
+                Terpasang · Belum Dikonfigurasi
               </Badge>
             ) : (
               <Badge variant="neutral" className="gap-1 text-text-muted">
@@ -369,6 +378,13 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
           <div className="p-2 rounded bg-accent/10 border border-accent/30 text-[11px] font-mono text-accent flex items-center gap-1.5">
             <Check className="w-3.5 h-3.5 flex-shrink-0" />
             <span>{successMsg}</span>
+          </div>
+        )}
+
+        {warningMsg && (
+          <div className="p-2 rounded bg-amber-500/10 border border-amber-500/30 text-[11px] font-mono text-amber-300 flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>{warningMsg}</span>
           </div>
         )}
 

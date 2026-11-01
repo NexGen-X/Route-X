@@ -12,6 +12,7 @@ import { extractDynamicComboOptions } from '../components/cli/types';
 import { CLIEnvBanner } from '../components/cli/CLIEnvBanner';
 import { CLIApiKeyToolbar } from '../components/cli/CLIApiKeyToolbar';
 import { CLIFilterToolbar } from '../components/cli/CLIFilterToolbar';
+import { statusKonfigurasiTool, verifikasiHasilApply } from '../components/cli/statusTool';
 import { CLIToolCard } from '../components/cli/CLIToolCard';
 import { CLIExportModal } from '../components/cli/CLIExportModal';
 
@@ -57,6 +58,9 @@ export const CLIIntegrations: React.FC = () => {
   const [toolConfigs, setToolConfigs] = useState<Record<string, ToolConfig>>({});
   const [applyingTool, setApplyingTool] = useState<string | null>(null);
   const [applySuccess, setApplySuccess] = useState<Record<string, string>>({});
+  // Peringatan verifikasi sesudah apply (Fase 2 R4): konfigurasi tersimpan
+  // tetapi pindai ulang tidak cocok — tidak boleh tertutup pesan sukses.
+  const [applyWarning, setApplyWarning] = useState<Record<string, string>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const feedbackTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -228,27 +232,64 @@ export const CLIIntegrations: React.FC = () => {
       });
 
       if (res.success) {
-        setApplySuccess((prev) => ({
-          ...prev,
-          [toolId]: 'Konfigurasi berhasil disimpan dan disinkronkan!',
-        }));
-        feedbackTimersRef.current.push(
-          setTimeout(() => {
-            setApplySuccess((prev) => {
-              const next = { ...prev };
-              delete next[toolId];
-              return next;
-            });
-          }, 4000),
-        );
-
-        setData((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            tools: prev.tools.map((t) => (t.id === toolId ? res.tool : t)),
-          };
+        // Verifikasi sesudah apply (Fase 2 R4): pindai ulang daftar tool
+        // dan cocokkan keadaan tool ini dengan yang baru diterapkan.
+        // Pesan sukses penuh hanya bila pindai ulang membuktikannya;
+        // ketidakcocokan tampil sebagai peringatan berisi keadaan aktual.
+        setApplyWarning((prev) => {
+          const next = { ...prev };
+          delete next[toolId];
+          return next;
         });
+        let terverifikasi = false;
+        let pesanVerifikasi = '';
+        try {
+          const segar = await api.cli.detected();
+          setData(segar);
+          const ver = verifikasiHasilApply(
+            segar.tools.find((t) => t.id === toolId),
+            config.mode,
+            config.target,
+          );
+          terverifikasi = ver.ok;
+          pesanVerifikasi = ver.pesan ?? '';
+        } catch {
+          pesanVerifikasi = 'pindaian ulang untuk verifikasi tidak tersedia';
+          // Pindai ulang gagal: tampilkan hasil respons configure apa
+          // adanya, tetapi tetap tandai belum terverifikasi di bawah.
+          setData((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              tools: prev.tools.map((t) => (t.id === toolId ? res.tool : t)),
+            };
+          });
+        }
+
+        if (terverifikasi) {
+          setApplySuccess((prev) => ({
+            ...prev,
+            [toolId]: 'Konfigurasi berhasil disimpan dan terverifikasi dari pindaian ulang.',
+          }));
+          feedbackTimersRef.current.push(
+            setTimeout(() => {
+              setApplySuccess((prev) => {
+                const next = { ...prev };
+                delete next[toolId];
+                return next;
+              });
+            }, 4000),
+          );
+        } else {
+          setApplyWarning((prev) => ({
+            ...prev,
+            [toolId]: `Konfigurasi tersimpan, tetapi belum terverifikasi: ${pesanVerifikasi}. Periksa keadaan tool sebelum mengandalkannya.`,
+          }));
+          toast.warn(
+            `Konfigurasi ${toolId} tersimpan tetapi verifikasi gagal: ${pesanVerifikasi}`,
+            'Verifikasi Konfigurasi',
+          );
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -447,6 +488,14 @@ export const CLIIntegrations: React.FC = () => {
         selectedCategory={selectedCategory}
         setSelectedCategory={setSelectedCategory}
         categories={CATEGORIES}
+        statusCounts={{
+          terkonfigurasi: (data?.tools ?? []).filter(
+            (t) => statusKonfigurasiTool(t) === 'terkonfigurasi-routex',
+          ).length,
+          belumDikonfigurasi: (data?.tools ?? []).filter(
+            (t) => statusKonfigurasiTool(t) === 'belum-dikonfigurasi',
+          ).length,
+        }}
       />
 
       {/* Grid Kartu Perkakas CLI */}
@@ -469,6 +518,7 @@ export const CLIIntegrations: React.FC = () => {
             publicBaseURL={publicBaseURL}
             isApplying={applyingTool === tool.id}
             successMsg={applySuccess[tool.id]}
+            warningMsg={applyWarning[tool.id]}
             diag={diagStatus[tool.id]}
             copiedKey={copiedKey}
             onModeChange={handleModeChange}

@@ -3,6 +3,7 @@ import { Cpu, DollarSign, Trash2 } from 'lucide-react';
 import type { ModelTableViewProps } from './types';
 import { getModelFamily } from './utils';
 import { Badge } from '../common/Badge';
+import { DataTableShell, kelasSelIsi } from '../common/DataTableShell';
 import { Button } from '../common/Button';
 import { Tooltip } from '../common/Tooltip';
 
@@ -19,23 +20,22 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
 }) => {
   return (
     <div className="bg-bg-surface-1 border border-border rounded-xl overflow-hidden shadow-sm">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs" data-testid="models-table">
+      <DataTableShell testId="models-table">
           <thead>
             <tr className="border-b border-border text-text-muted font-semibold text-xs bg-bg-surface-2/40">
-              <th className="py-3 px-4">Model &amp; ID</th>
-              <th className="py-3 px-4">Keluarga</th>
-              <th className="py-3 px-4">Penyedia Upstream</th>
-              <th className="py-3 px-4">Konteks / Output</th>
-              <th className="py-3 px-4">Kemampuan</th>
-              <th className="py-3 px-4 text-center">Status</th>
-              <th className="py-3 px-4 text-right">Aksi</th>
+              <th className={kelasSelIsi}>Model &amp; ID</th>
+              <th className={kelasSelIsi}>Keluarga</th>
+              <th className={kelasSelIsi}>Penyedia Upstream</th>
+              <th className={kelasSelIsi}>Konteks / Output</th>
+              <th className={kelasSelIsi}>Kemampuan</th>
+              <th className={`${kelasSelIsi} text-center`}>Status</th>
+              <th className={`${kelasSelIsi} text-right`}>Aksi</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/60">
             {models.map((m) => (
               <tr key={m.id} className="hover:bg-bg-surface-2/40 transition-colors group" data-testid={`model-row-${m.model_id}`}>
-                <td className="py-3 px-4">
+                <td className={kelasSelIsi}>
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
                       <Cpu className="w-4 h-4" aria-hidden="true" />
@@ -46,12 +46,12 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
                     </div>
                   </div>
                 </td>
-                <td className="py-3 px-4 whitespace-nowrap">
+                <td className={`${kelasSelIsi} whitespace-nowrap`}>
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-bg-surface-2 border border-border text-text-secondary">
                     {getModelFamily(m)}
                   </span>
                 </td>
-                <td className="py-3 px-4">
+                <td className={kelasSelIsi}>
                   <div className="flex flex-wrap gap-1 max-w-xs">
                     {m.providers && m.providers.length > 0 ? (
                       m.providers.map((p) => (
@@ -67,12 +67,12 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
                     )}
                   </div>
                 </td>
-                <td className="py-3 px-4 font-mono text-[11px] whitespace-nowrap">
+                <td className={`${kelasSelIsi} font-mono text-[11px] whitespace-nowrap`}>
                   <span className="text-white font-medium">{formatTokensK(m.context_window)}</span>
                   <span className="text-text-muted mx-1" aria-hidden="true">/</span>
                   <span className="text-text-muted">{formatTokensK(m.max_output_tokens)}</span>
                 </td>
-                <td className="py-3 px-4">
+                <td className={kelasSelIsi}>
                   <div className="flex items-center gap-1">
                     {m.capabilities && m.capabilities.length > 0 ? (
                       <>
@@ -100,12 +100,12 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
                     )}
                   </div>
                 </td>
-                <td className="py-3 px-4 text-center whitespace-nowrap">
+                <td className={`${kelasSelIsi} text-center whitespace-nowrap`}>
                   <Badge variant={m.enabled ? 'success' : 'neutral'}>
                     {m.enabled ? 'active' : 'disabled'}
                   </Badge>
                 </td>
-                <td className="py-3 px-4 text-right whitespace-nowrap">
+                <td className={`${kelasSelIsi} text-right whitespace-nowrap`}>
                   <div className="flex items-center justify-end gap-1.5">
                     <Button
                       variant="secondary"
@@ -132,8 +132,7 @@ export const ModelTableView: React.FC<ModelTableViewProps> = ({
               </tr>
             ))}
           </tbody>
-        </table>
-      </div>
+      </DataTableShell>
     </div>
   );
 };

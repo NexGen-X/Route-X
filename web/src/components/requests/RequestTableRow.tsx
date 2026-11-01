@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import { StatusDot } from '../common/StatusDot';
+import { kelasSelIsi } from '../common/DataTableShell';
 import { formatUSD } from '../../utils/money';
 import type { RequestLog } from '../../types';
 import {
@@ -39,7 +40,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
       data-testid={`request-row-${request.request_id}`}
     >
       {/* Kolom 1: Status & Request ID */}
-      <td className="py-3 px-4">
+      <td className={kelasSelIsi}>
         <div className="flex items-center gap-2">
           <StatusDot
             status={getHttpStatusDotVariant(request.status_code)}
@@ -62,7 +63,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
       </td>
 
       {/* Kolom 2: Model & Provider */}
-      <td className="py-3 px-4">
+      <td className={kelasSelIsi}>
         <div className="font-semibold text-text-primary flex items-center gap-1.5">
           <span>{request.requested_model || request.model_id || '-'}</span>
         </div>
@@ -72,7 +73,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
       </td>
 
       {/* Kolom 3: Token & Cost */}
-      <td className="py-3 px-4">
+      <td className={kelasSelIsi}>
         <div className="font-mono text-text-primary font-medium">
           {request.total_tokens != null ? `${request.total_tokens.toLocaleString()} tok` : '-'}
         </div>
@@ -82,7 +83,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
       </td>
 
       {/* Kolom 4: Durasi & Latency Pill & TTFT */}
-      <td className="py-3 px-4">
+      <td className={kelasSelIsi}>
         <div className="flex items-center gap-1.5">
           <span className="font-mono text-text-primary font-semibold">{request.duration_ms} ms</span>
           {/* Latency Pill (<100ms hijau, <300ms biru, >500ms kuning) */}
@@ -100,7 +101,7 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
       </td>
 
       {/* Kolom 5: Waktu & Klien */}
-      <td className="py-3 px-4">
+      <td className={kelasSelIsi}>
         <div className="text-text-primary font-mono text-[11px]">
           {new Date(request.created_at).toLocaleTimeString()}
         </div>

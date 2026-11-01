@@ -1,6 +1,6 @@
 import type { DomainConfig, BackupStatusResponse } from '../../types';
 
-export type SettingsTab = 'domain' | 'backup' | 'advanced';
+export type SettingsTab = 'domain' | 'cache' | 'backup' | 'advanced';
 
 export type SSLProviderMode = 'letsencrypt' | 'cloudflare';
 

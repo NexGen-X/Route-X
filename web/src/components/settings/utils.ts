@@ -18,6 +18,22 @@ export function formatSettingValue(val: unknown): string {
 }
 
 /**
+ * Label manusiawi untuk kunci setelan yang dikelola subsistem Route-X
+ * sendiri (Fase 2 R3). Tab Lanjutan selama ini hanya menampilkan kunci
+ * mentah seperti "system:response_cache"; label ini menjelaskan milik
+ * siapa kunci tersebut. Kunci asing tetap null (ditampilkan apa adanya).
+ */
+const LABEL_KUNCI_DIKENAL: Record<string, string> = {
+  'system:response_cache': 'Cache Respons — dikelola tab Performa & Cache',
+  'system:domain:config': 'Konfigurasi Domain & HTTPS — dikelola tab Domain',
+  'system:public_url': 'URL Publik Gateway',
+};
+
+export function labelSettingDikenal(key: string): string | null {
+  return LABEL_KUNCI_DIKENAL[key] ?? null;
+}
+
+/**
  * Cek apakah sebuah kunci parameter dicadangkan untuk subsistem internal Route-X
  */
 export function isReservedSetting(key: string): boolean {

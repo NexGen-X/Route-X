@@ -18,7 +18,7 @@ const HALAMAN: Array<{ hash: string; judul: string; penanda: string }> = [
   { hash: '#/upstreams/egress', judul: 'Pool Egress', penanda: 'Pool Egress' },
   { hash: '#/gateway/routing', judul: 'Aturan Perutean', penanda: 'Mesin Aturan Perutean' },
   { hash: '#/cli-integrations', judul: 'Integrasi CLI & Konfigurator 3 Mode', penanda: 'Integrasi CLI & Editor AI' },
-  { hash: '#/gateway/rate-limits', judul: 'Rate Limits', penanda: 'Rate Limits' },
+  { hash: '#/gateway/rate-limits', judul: 'Anggaran & Batas Laju', penanda: 'Batas Laju Trafik' },
   { hash: '#/gateway/budgets', judul: 'Anggaran & Batas Laju', penanda: 'Kendali Biaya' },
   { hash: '#/gateway/breakers', judul: 'Perutean & Failover', penanda: 'Perutean & Failover' },
   { hash: '#/access/api-keys', judul: 'Kunci API Klien', penanda: 'Kunci API Klien' },

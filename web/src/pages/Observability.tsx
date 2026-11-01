@@ -16,13 +16,7 @@ import {
 import {
   RefreshCw,
   Database,
-  Activity,
-  Coins,
   Zap,
-  TrendingUp,
-  AlertTriangle,
-  Flame,
-  CheckCircle2,
 } from 'lucide-react';
 import { QueryError } from '../components/common/QueryError';
 import { SystemHealthSection } from '../components/observability/SystemHealthSection';
@@ -240,100 +234,74 @@ export const Observability: React.FC = () => {
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 
-      {/* 4 Kartu KPI Analitik Utama: Throughput, Error Rate, Token Consumption, dan Cache Hit */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: Throughput & Total Permintaan */}
-        <Card className="border-border bg-bg-surface">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[11px] font-medium text-text-muted">Throughput &amp; Permintaan ({windowTime})</span>
-              <div className="text-xl font-bold text-white tracking-tight font-mono">
-                {(summary?.total_requests ?? totalRequestsFromSeries).toLocaleString()}
-              </div>
-              <div className="text-[10px] text-text-secondary flex items-center gap-1.5 font-mono">
-                <TrendingUp className="w-3 h-3 text-sky-400" aria-hidden="true" />
-                <span>Rata-rata: {avgThroughputRps.toFixed(2)} req/dtk</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent-text">
-              <Activity className="w-5 h-5" aria-hidden="true" />
-            </div>
+      {/* 4 KPI Analitik Utama — Fase 4: strip polos berpemisah garis, tanpa kartu/tile ikon */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5">
+        <div className="lg:border-l lg:border-border/60 lg:pl-6 lg:first:border-l-0 lg:first:pl-0">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted block">
+            Throughput &amp; Permintaan ({windowTime})
+          </span>
+          <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-white tabular-nums tracking-tight">
+            {(summary?.total_requests ?? totalRequestsFromSeries).toLocaleString()}
           </div>
-        </Card>
+          <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+            Rata-rata: {avgThroughputRps.toFixed(2)} req/dtk
+          </div>
+        </div>
 
-        {/* KPI 2: Error Rate & Kegagalan */}
-        <Card className="border-border bg-bg-surface">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[11px] font-medium text-text-muted">Tingkat Kesalahan (Error Rate)</span>
-              <div className="text-xl font-bold tracking-tight font-mono flex items-center gap-2">
-                <span className={errorRate > 5 ? 'text-rose-400' : 'text-emerald-400'}>
-                  {errorRate.toFixed(2)}%
-                </span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                  errorRate > 5 ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                }`}>
-                  {errorRate > 5 ? 'Degraded' : 'Nominal'}
-                </span>
-              </div>
-              <div className="text-[10px] text-text-secondary flex items-center gap-1 font-mono">
-                <AlertTriangle className="w-3 h-3 text-amber-400" aria-hidden="true" />
-                <span>{summary?.error_requests ?? series.reduce((acc, p) => acc + (p.errors || 0), 0)} gagal</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400">
-              <Flame className="w-5 h-5" aria-hidden="true" />
-            </div>
+        <div className="lg:border-l lg:border-border/60 lg:pl-6 lg:first:border-l-0 lg:first:pl-0">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted block">
+            Tingkat Kesalahan (Error Rate)
+          </span>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className={`text-2xl sm:text-[28px] leading-none font-semibold tabular-nums tracking-tight ${errorRate > 5 ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {errorRate.toFixed(2)}%
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+              errorRate > 5 ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+            }`}>
+              {errorRate > 5 ? 'Degraded' : 'Nominal'}
+            </span>
           </div>
-        </Card>
+          <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+            {summary?.error_requests ?? series.reduce((acc, p) => acc + (p.errors || 0), 0)} gagal
+          </div>
+        </div>
 
-        {/* KPI 3: Token Consumption & Biaya USD */}
-        <Card className="border-border bg-bg-surface">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[11px] font-medium text-text-muted">Konsumsi Token &amp; Biaya</span>
-              <div className="text-xl font-bold text-white tracking-tight font-mono">
-                {(summary?.total_tokens ?? totalTokensFromSeries).toLocaleString()} tok
-              </div>
-              <div className="text-[10px] text-accent-text flex items-center gap-1 font-mono">
-                <Coins className="w-3 h-3" aria-hidden="true" />
-                <span>Estimasi: {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <Coins className="w-5 h-5" aria-hidden="true" />
-            </div>
+        <div className="lg:border-l lg:border-border/60 lg:pl-6 lg:first:border-l-0 lg:first:pl-0">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted block">
+            Konsumsi Token &amp; Biaya
+          </span>
+          <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-white tabular-nums tracking-tight">
+            {(summary?.total_tokens ?? totalTokensFromSeries).toLocaleString()} tok
           </div>
-        </Card>
+          <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+            Estimasi: {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}
+          </div>
+        </div>
 
-        {/* KPI 4: Status Cache Hit & Redis Offloading */}
-        <Card className="border-border bg-bg-surface">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[11px] font-medium text-text-muted">Status Response Cache Hit</span>
-              <div className="text-xl font-bold tracking-tight font-mono text-emerald-400 flex items-center gap-2">
-                <span>{cacheHitRatio}%</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
-                  &lt; 2ms
-                </span>
-              </div>
-              <div className="text-[10px] text-text-secondary flex items-center gap-1 font-mono">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400" aria-hidden="true" />
-                <span>{cacheStats?.hits ?? 0} hits / {cacheStats?.total_entries ?? 0} entri</span>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-              <Zap className="w-5 h-5" aria-hidden="true" />
-            </div>
+        <div className="lg:border-l lg:border-border/60 lg:pl-6 lg:first:border-l-0 lg:first:pl-0">
+          <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted block">
+            Status Response Cache Hit
+          </span>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className="text-2xl sm:text-[28px] leading-none font-semibold tabular-nums tracking-tight text-emerald-400">
+              {cacheHitRatio}%
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
+              &lt; 2ms
+            </span>
           </div>
-        </Card>
+          <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+            {cacheStats?.hits ?? 0} hits / {cacheStats?.total_entries ?? 0} entri
+          </div>
+        </div>
       </div>
 
       {/* Metric Selector & Main Time Series Chart */}
       <Card
         title="Deret Waktu Telemetri & Analitik"
         action={
-          <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full" role="group" aria-label="Pilihan metrik deret waktu">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 max-w-full" role="group" aria-label="Pilihan metrik deret waktu">
             {[
               { key: 'requests', label: 'Permintaan' },
               { key: 'throughput', label: 'Throughput' },
@@ -348,10 +316,10 @@ export const Observability: React.FC = () => {
                 aria-pressed={metric === m.key}
                 aria-label={`Metrik ${m.label}`}
                 onClick={() => setMetric(m.key)}
-                className={`min-h-[44px] sm:min-h-[30px] px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-inner transition-colors font-medium whitespace-nowrap text-center cursor-pointer ${
+                className={`min-h-[44px] sm:min-h-[30px] py-1 text-[11px] sm:text-xs transition-colors whitespace-nowrap text-center cursor-pointer border-b-2 ${
                   metric === m.key
-                    ? 'bg-accent/20 text-accent-text border border-accent/40 font-semibold shadow-sm'
-                    : 'text-text-muted hover:text-text-primary'
+                    ? 'border-accent text-white font-semibold'
+                    : 'border-transparent text-text-muted hover:text-text-primary'
                 }`}
               >
                 {m.label}
@@ -375,16 +343,16 @@ export const Observability: React.FC = () => {
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F293D" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
                 <XAxis
                   dataKey="timestamp"
-                  stroke="#64748B"
+                  stroke="#737373"
                   fontSize={11}
                   tickLine={false}
                   tickFormatter={formatXAxis}
                 />
                 <YAxis
-                  stroke="#64748B"
+                  stroke="#737373"
                   fontSize={11}
                   tickLine={false}
                   tickFormatter={formatYAxis}
@@ -393,8 +361,8 @@ export const Observability: React.FC = () => {
                   formatter={formatTooltipValue}
                   labelFormatter={formatTooltipLabel}
                   contentStyle={{
-                    backgroundColor: '#0F1523',
-                    borderColor: '#1E293B',
+                    backgroundColor: '#1E1E1E',
+                    borderColor: '#333333',
                     borderRadius: '8px',
                     fontSize: '12px',
                     color: '#F8FAFC',
@@ -418,14 +386,14 @@ export const Observability: React.FC = () => {
                       ? '#F43F5E'
                       : metric === 'cost'
                       ? '#10B981'
-                      : '#3B82F6'
+                      : '#5BACE6'
                   }
                   fill={
                     metric === 'error_rate'
                       ? '#F43F5E'
                       : metric === 'cost'
                       ? '#10B981'
-                      : '#3B82F6'
+                      : '#5BACE6'
                   }
                   fillOpacity={0.15}
                   strokeWidth={2}
@@ -442,16 +410,16 @@ export const Observability: React.FC = () => {
           className="lg:col-span-2"
           title="Komposisi Lalu Lintas"
           action={
-            <div className="flex items-center gap-1 bg-bg-surface-2 p-1 rounded-nav border border-border max-w-full">
+            <div className="flex items-center gap-4 max-w-full">
               {(['provider', 'model', 'api_key'] as const).map((b) => (
                 <button
                   key={b}
                   type="button"
                   onClick={() => setBreakdownBy(b)}
-                  className={`min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 text-xs rounded-inner uppercase font-mono whitespace-nowrap text-center cursor-pointer transition-colors ${
+                  className={`min-h-[44px] sm:min-h-[28px] py-0.5 text-xs uppercase font-mono whitespace-nowrap text-center cursor-pointer transition-colors border-b-2 ${
                     breakdownBy === b
-                      ? 'bg-accent text-white font-bold'
-                      : 'text-text-muted hover:text-white'
+                      ? 'border-accent text-white font-semibold'
+                      : 'border-transparent text-text-muted hover:text-white'
                   }`}
                 >
                   {b.replace('_', ' ')}
@@ -484,7 +452,7 @@ export const Observability: React.FC = () => {
                       {(item.requests ?? 0).toLocaleString()} reqs ({(item.percentage ?? 0).toFixed(1)}%)
                     </span>
                   </div>
-                  <div className="w-full h-2 bg-bg-surface-2 rounded-full overflow-hidden">
+                  <div className="w-full h-[5px] bg-bg-surface-2 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-accent transition-all duration-500 rounded-full"
                       style={{ width: `${Math.min(100, Math.max(2, item.percentage ?? 0))}%` }}
@@ -512,7 +480,7 @@ export const Observability: React.FC = () => {
             <QueryError message={diagnosticsError} onRetry={() => void loadData()} />
           ) : (
             <div className="space-y-4">
-              <div className="p-3 bg-bg-surface-2/60 rounded-inner border border-border">
+              <div className="py-1">
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-text-secondary flex items-center gap-1.5">
                     <Database className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />

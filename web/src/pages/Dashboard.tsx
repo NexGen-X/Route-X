@@ -32,7 +32,7 @@ const TrafficChartSkeleton: React.FC = () => (
   <div
     role="status"
     aria-label="Memuat grafik analitik lalu lintas"
-    className="bg-bg-surface-1/40 border border-border/80 rounded-lg p-4 sm:p-5 shadow-sm flex flex-col justify-between animate-pulse min-h-[340px]"
+    className="bg-bg-surface-1/40 border border-border/60 rounded-xl p-4 sm:p-5 flex flex-col justify-between animate-pulse min-h-[340px]"
   >
     {/* Minimalist zinc header skeleton */}
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
@@ -390,11 +390,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
       {/* 6. SYSTEM TELEMETRY — collapsible, tersembunyi secara default */}
       <WidgetErrorBoundary title="Runtime Telemetri Gateway">
-        <div className="border border-border/80 rounded-lg overflow-hidden bg-bg-surface-1/40 shadow-sm transition-colors">
+        <div className="border-y border-border/60">
           <button
             type="button"
             onClick={() => setTelemetryExpanded((v) => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 bg-bg-surface-1/40 hover:bg-bg-surface-1/70 transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 min-h-[40px]"
+            className="w-full flex items-center justify-between px-1 py-3 hover:bg-bg-surface-1/40 transition-colors text-left cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50 min-h-[40px]"
             aria-expanded={telemetryExpanded}
             aria-label="Tampilkan atau sembunyikan runtime telemetri gateway"
           >
@@ -412,7 +412,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             />
           </button>
           {telemetryExpanded && (
-            <div className="p-4 sm:p-5 border-t border-border/80 bg-bg-base/40">
+            <div className="p-4 sm:p-5 border-t border-border/60">
               <SystemTelemetrySection overview={overview} />
             </div>
           )}

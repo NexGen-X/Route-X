@@ -30,17 +30,15 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   onShowGuide,
 }) => {
   return (
-    <div className="bg-bg-surface-1/40 border border-border/80 rounded-lg p-3 sm:p-4 shadow-sm transition-colors">
+    <div className="border-b border-border/60 pb-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
         {/* Kiri: Status Dot, Minimal Label & Telemetry Summary Strip */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
           <div
             role="status"
             aria-live="polite"
-            className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-mono font-medium border shrink-0 transition-colors ${
-              loadError
-                ? 'bg-rose-950/40 border-rose-800/60 text-rose-400'
-                : 'bg-bg-surface-1/80 border-border text-emerald-400'
+            className={`inline-flex items-center gap-2 text-xs font-medium shrink-0 ${
+              loadError ? 'text-rose-400' : 'text-emerald-400'
             }`}
           >
             <span

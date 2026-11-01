@@ -2,7 +2,6 @@ import React from 'react';
 import { Menu, Search, BookOpen } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Tooltip } from '../common/Tooltip';
-import { APP_VERSION } from '../../lib/version';
 
 export interface HeaderProps {
   title: string;
@@ -55,7 +54,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Kanan: Minimalist Status Dot + Search Keycap Pill + Actions */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        {/* Status Gateway: titik status + versi aplikasi (lib/version) */}
+        {/* Status Gateway: titik status saja — versi tinggal di Login & Pengaturan (Fase 4) */}
         <div
           role="status"
           aria-label="Status Telemetri Gateway"
@@ -63,8 +62,6 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
           <span className="text-emerald-400 font-medium">Gateway Online</span>
-          <span className="text-text-muted/60 select-none" aria-hidden="true">·</span>
-          <span className="text-text-secondary">{APP_VERSION}</span>
         </div>
 
         {/* Search button: clean minimal keycap pill (⌘K) */}

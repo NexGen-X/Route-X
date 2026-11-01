@@ -50,7 +50,7 @@ test.describe('konsol viewer', () => {
 
     await page.goto('/#/requests');
     await expect(
-      page.getByRole('heading', { name: 'Requests Inspector' }),
+      page.getByRole('heading', { name: 'Permintaan' }),
     ).toBeVisible({ timeout: 20000 });
   });
 });

@@ -790,7 +790,7 @@ export const api = {
     },
   },
 
-  // CLI Integrations (Fitur 4)
+  // Integrasi CLI (Fitur 4)
   cli: {
     detected: () => request<CLIDetectedResponse>('/api/admin/cli/detected'),
     configure: (data: CLIConfigureRequest) =>

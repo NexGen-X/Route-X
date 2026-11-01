@@ -106,7 +106,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
         enable_cache: cfEnableCache,
       });
 
-      setProgressMsg('Menyimpan ke Egress Pools Route-X...');
+      setProgressMsg('Menyimpan ke Pool Egress Route-X...');
       setSuccessResult({
         provider: 'Cloudflare AI Gateway',
         url: res.target_url,
@@ -147,7 +147,7 @@ export const CloudProvisionDrawer: React.FC<CloudProvisionDrawerProps> = ({
         name: denoPoolName.trim() || undefined,
       });
 
-      setProgressMsg('Menyimpan ke Egress Pools Route-X...');
+      setProgressMsg('Menyimpan ke Pool Egress Route-X...');
       setSuccessResult({
         provider: 'Deno Deploy Streaming Relay',
         url: res.target_url,

@@ -178,7 +178,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
             <span className="truncate">Hapus · permanen, ikut key + model</span>
           </span>
-          <Tooltip content="Hapus Provider Permanen" position="left">
+          <Tooltip content="Hapus Penyedia Permanen" position="left">
             <button
               type="button"
               onClick={() => selectedProvider && handleDeleteProvider(selectedProvider)}

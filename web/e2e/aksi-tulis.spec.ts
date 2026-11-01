@@ -38,7 +38,7 @@ test.describe('tulis admin via UI', () => {
     const nama = 'e2e-tulis-' + Date.now();
     await page.goto('/#/access/api-keys');
     await expect(
-      page.getByRole('heading', { name: 'Client API Keys', level: 1 }),
+      page.getByRole('heading', { name: 'Kunci API Klien', level: 1 }),
     ).toBeVisible({ timeout: 20000 });
     await page.getByRole('button', { name: 'Buat API Key' }).first().click();
     await page.locator('#api-key-name-drawer').fill(nama);
@@ -89,7 +89,7 @@ test.describe('tulis admin via UI', () => {
     const nama = 'e2e-budget-' + Date.now();
     await page.goto('/#/gateway/budgets');
     await expect(
-      page.getByRole('heading', { name: 'Budgets & Rate Limits', level: 1 }),
+      page.getByRole('heading', { name: 'Anggaran & Batas Laju', level: 1 }),
     ).toBeVisible({ timeout: 20000 });
     await page.getByRole('button', { name: 'Alokasikan Anggaran' }).first().click();
     await page.getByPlaceholder('Budget Bulanan Tim Internal').fill(nama);

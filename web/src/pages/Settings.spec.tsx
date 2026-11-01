@@ -142,8 +142,8 @@ describe('Settings — Pengujian Halaman Modular & Terisolasi', () => {
       expect(screen.getByText('Pengaturan Sistem')).toBeInTheDocument();
     });
 
-    // Pindah ke tab Backup & Restore
-    fireEvent.click(screen.getByRole('button', { name: /Backup & Restore/i }));
+    // Pindah ke tab Cadangan & Pemulihan
+    fireEvent.click(screen.getByRole('button', { name: /Cadangan & Pemulihan/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Pencadangan & Pemulihan Database (SQL)')).toBeInTheDocument();
@@ -190,7 +190,7 @@ describe('Settings — Pengujian Halaman Modular & Terisolasi', () => {
     expect(screen.getByText('Setelan Terkelola Subsistem (Read-Only)')).toBeInTheDocument();
     expect(screen.getByText('cli:config:version')).toBeInTheDocument();
     expect(screen.getByText('system:instance_id')).toBeInTheDocument();
-    expect(screen.getByText('CLI Integrations')).toBeInTheDocument();
+    expect(screen.getByText('Integrasi CLI')).toBeInTheDocument();
   });
 
   it('membuka modal Tambah Setting dan submit setting baru', async () => {
@@ -248,7 +248,7 @@ describe('Settings — Pengujian Halaman Modular & Terisolasi', () => {
     });
 
     // Pindah ke tab Backup
-    fireEvent.click(screen.getByRole('button', { name: /Backup & Restore/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Cadangan & Pemulihan/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Pencadangan & Pemulihan Database (SQL)')).toBeInTheDocument();

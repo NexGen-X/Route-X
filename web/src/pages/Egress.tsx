@@ -100,7 +100,7 @@ export const Egress: React.FC = () => {
     <div className="space-y-6">
       {/* Header Halaman */}
       <PageHeader
-        title="Egress Proxy Pools"
+        title="Pool Egress"
         actions={
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" onClick={() => void loadPools()} isLoading={isLoading}>

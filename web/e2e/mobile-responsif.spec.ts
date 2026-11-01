@@ -6,15 +6,15 @@ import { test, expect } from '@playwright/test';
 
 const HALAMAN_MOBILE: Array<{ hash: string; judul: string }> = [
   { hash: '#/', judul: 'Dashboard' },
-  { hash: '#/requests', judul: 'Requests Inspector' },
+  { hash: '#/requests', judul: 'Permintaan' },
   { hash: '#/observability', judul: 'Observabilitas & Telemetri' },
-  { hash: '#/upstreams/providers', judul: 'Upstream Providers' },
-  { hash: '#/upstreams/models', judul: 'Upstream Providers' },
+  { hash: '#/upstreams/providers', judul: 'Penyedia Upstream' },
+  { hash: '#/upstreams/models', judul: 'Penyedia Upstream' },
   { hash: '#/access/users', judul: 'Pengguna Admin' },
-  { hash: '#/gateway/budgets', judul: 'Budgets & Rate Limits' },
-  { hash: '#/access/api-keys', judul: 'Client API Keys' },
-  { hash: '#/cli-integrations', judul: 'CLI Integrations & 3-Mode Configurator' },
-  { hash: '#/system/settings', judul: 'Runtime Settings' },
+  { hash: '#/gateway/budgets', judul: 'Anggaran & Batas Laju' },
+  { hash: '#/access/api-keys', judul: 'Kunci API Klien' },
+  { hash: '#/cli-integrations', judul: 'Integrasi CLI & Konfigurator 3 Mode' },
+  { hash: '#/system/settings', judul: 'Pengaturan Runtime' },
   { hash: '#/system/diagnostics', judul: 'Observabilitas & Telemetri' },
 ];
 
@@ -69,14 +69,14 @@ test.describe('mobile: drawer + tanpa overflow', () => {
     const nav = page.getByRole('navigation', { name: 'Navigasi Bawah Mobile' });
     test.skip(!(await nav.count()), 'viewport desktop: tidak ada bottom nav');
     await expect(nav).toBeVisible({ timeout: 10000 });
-    // Lima tujuan: Dashboard, Requests, Providers, API Keys, Lainnya.
-    for (const label of ['Dashboard', 'Requests', 'Providers', 'API Keys']) {
+    // Lima tujuan: Dashboard, Permintaan, Penyedia, Kunci API, Lainnya.
+    for (const label of ['Dashboard', 'Permintaan', 'Penyedia', 'Kunci API']) {
       await expect(nav.getByRole('button', { name: label, exact: true })).toBeVisible();
     }
     // Navigasi lewat bottom nav benar-benar berpindah halaman.
-    await nav.getByRole('button', { name: 'Providers', exact: true }).click();
+    await nav.getByRole('button', { name: 'Penyedia', exact: true }).click();
     await expect(
-      page.getByRole('heading', { name: 'Upstream Providers', level: 1 }),
+      page.getByRole('heading', { name: 'Penyedia Upstream', level: 1 }),
     ).toBeVisible({ timeout: 20000 });
     // Tombol Lainnya membuka drawer berisi seluruh grup navigasi.
     await nav.getByRole('button', { name: 'Lainnya, buka semua menu' }).click();
@@ -86,7 +86,7 @@ test.describe('mobile: drawer + tanpa overflow', () => {
   test('mobile drawer sidebar bisa dibuka tutup', async ({ page }) => {
     await page.goto('/#/requests');
     await expect(
-      page.getByRole('heading', { name: 'Requests Inspector', level: 1 }),
+      page.getByRole('heading', { name: 'Permintaan', level: 1 }),
     ).toBeVisible({ timeout: 20000 });
     // Tombol hamburger (lg:hidden) hanya ada di viewport kecil: skip
     // jujur di desktop karena drawer memang tidak relevan di sana.
@@ -101,7 +101,7 @@ test.describe('mobile: drawer + tanpa overflow', () => {
     await page.mouse.click(500, 300).catch(() => {});
     await page.waitForTimeout(600);
     await expect(
-      page.getByRole('heading', { name: 'Requests Inspector', level: 1 }),
+      page.getByRole('heading', { name: 'Permintaan', level: 1 }),
     ).toBeVisible({ timeout: 10000 });
     const lebarBocor = await page.evaluate(() => {
       const doc = document.documentElement;

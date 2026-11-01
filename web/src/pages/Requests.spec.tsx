@@ -140,7 +140,7 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     });
 
     // Cek header dan filter tabs
-    expect(screen.getByText('Requests Inspector')).toBeInTheDocument();
+    expect(screen.getByText('Permintaan')).toBeInTheDocument();
     expect(screen.getByText('All Requests')).toBeInTheDocument();
     expect(screen.getByText('Success (2xx)')).toBeInTheDocument();
     expect(screen.getByText('Errors (4xx/5xx)')).toBeInTheDocument();

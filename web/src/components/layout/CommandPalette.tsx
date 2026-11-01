@@ -98,7 +98,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     // Navigasi
     {
       id: 'nav-dashboard',
-      title: 'Dashboard Overview',
+      title: 'Ringkasan Dashboard',
       subtitle: 'Ringkasan performa sistem, volume token, dan latensi model',
       category: 'Navigasi',
       icon: LayoutDashboard,
@@ -109,8 +109,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-requests',
-      title: 'Requests Inspector',
-      subtitle: 'Penelusuran audit log request, payload prompt, dan failover',
+      title: 'Permintaan',
+      subtitle: 'Penelusuran log audit permintaan, payload prompt, dan failover',
       category: 'Navigasi',
       icon: Terminal,
       action: () => {
@@ -120,7 +120,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-cli',
-      title: 'CLI Integrations & 3-Mode Config',
+      title: 'Integrasi CLI & Konfigurasi 3 Mode',
       subtitle: 'Konfigurasi Antigravity, Claude, OpenCode, dan perkakas AI terminal',
       category: 'Navigasi',
       icon: Code2,
@@ -132,7 +132,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-routing',
-      title: 'Routing & Failover Rules',
+      title: 'Aturan Perutean & Failover',
       subtitle: 'Pengaturan Model Only, Smart Routing, dan Combo Tier 1/Tier 2',
       category: 'Navigasi',
       icon: GitFork,
@@ -143,7 +143,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-providers',
-      title: 'Upstream Providers',
+      title: 'Penyedia Upstream',
       subtitle: 'Koneksi ke OpenAI, Anthropic, Google, Ollama, dan penyedia AI',
       category: 'Navigasi',
       icon: Server,
@@ -154,7 +154,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-apikeys',
-      title: 'API Keys Management',
+      title: 'Manajemen Kunci API',
       subtitle: 'Kredensial akses klien Bearer token dan rotasi kunci aman',
       category: 'Navigasi',
       icon: KeyRound,
@@ -165,7 +165,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-observability',
-      title: 'Observability & Metrics',
+      title: 'Observabilitas & Metrik',
       subtitle: 'Deret waktu latensi, throughput, dan telemetri sistem Prometheus',
       category: 'Navigasi',
       icon: Activity,
@@ -176,7 +176,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-budgets',
-      title: 'Budgets & Rate Limits',
+      title: 'Anggaran & Batas Laju',
       subtitle: 'Alokasi plafon keuangan moneter dan pembatasan RPM/TPM',
       category: 'Navigasi',
       icon: Coins,
@@ -187,7 +187,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-settings',
-      title: 'Settings & Domain HTTPS',
+      title: 'Pengaturan & Domain HTTPS',
       subtitle: 'Konfigurasi nama domain publik, SSL otomatis Caddy, dan setelan runtime',
       category: 'Navigasi',
       icon: Sliders,
@@ -198,8 +198,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     },
     {
       id: 'nav-diagnostics',
-      title: 'Kesehatan Sistem (Observability)',
-      subtitle: 'Checklist uji live gateway dan supervisor background workers',
+      title: 'Kesehatan Sistem (Observabilitas)',
+      subtitle: 'Checklist uji live gateway dan supervisor pekerja latar',
       category: 'Navigasi',
       icon: HeartPulse,
       action: () => {
@@ -212,7 +212,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     {
       id: 'act-copy-url',
       title: 'Salin Base URL API Gateway',
-      subtitle: 'Salin endpoint /v1 untuk di-paste ke SDK atau konfigurasi tool',
+      subtitle: 'Salin endpoint /v1 untuk ditempel ke SDK atau konfigurasi tool',
       category: 'Aksi Cepat',
       icon: Copy,
       action: async () => {
@@ -256,7 +256,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     {
       id: 'cli-claude',
       title: 'Konfigurasi: Claude Code CLI',
-      subtitle: 'Anthropic Claude terminal assistant',
+      subtitle: 'Asisten terminal Anthropic Claude',
       category: 'Perkakas CLI',
       icon: Code2,
       badge: 'CLI Agent',
@@ -269,7 +269,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     {
       id: 'cli-opencode',
       title: 'Konfigurasi: OpenCode CLI',
-      subtitle: 'Open-source autonomous terminal coding agent',
+      subtitle: 'Agen koding terminal otonom sumber terbuka',
       category: 'Perkakas CLI',
       icon: Code2,
       action: () => {

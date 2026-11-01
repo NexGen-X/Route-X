@@ -23,7 +23,7 @@ import { APP_VERSION } from '../../lib/version';
 // rumah baru isi halaman Diagnostics yang dipensiunkan: checklist Uji
 // Live dan daftar background workers. Kartu info Runtime/Memori/Pool
 // Diagnostics TIDAK ikut pindah karena halaman ini sudah menampilkannya
-// di kartu "Live Server & Connection Pool"; status breaker lengkap
+// di kartu "Server Live & Pool Koneksi"; status breaker lengkap
 // tinggal di Routing dan kontrol cache di Settings (tautan di bawah).
 
 interface GatewayCheckItem {

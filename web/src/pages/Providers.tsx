@@ -252,7 +252,7 @@ export const Providers: React.FC = () => {
 
   const handleDeleteProvider = async (prov: Provider) => {
     const confirmed = await confirmModal({
-      title: `Hapus Provider "${prov.display_name || prov.name}"?`,
+      title: `Hapus Penyedia "${prov.display_name || prov.name}"?`,
       message: `Tindakan ini akan menghapus permanen provider ini beserta seluruh kredensial API key dan pemetaan model upstream dari basis data.`,
       confirmText: 'Hapus Permanen',
       danger: true,
@@ -271,7 +271,7 @@ export const Providers: React.FC = () => {
   };
 
   // ---------------------------------------------------------------------------
-  // Handlers: API Keys
+  // Handlers: Kunci API
   // ---------------------------------------------------------------------------
 
   const handleToggleKey = async (cred: Credential) => {
@@ -431,7 +431,7 @@ export const Providers: React.FC = () => {
         title={
           <span className="flex items-center gap-2">
             <Server className="w-5 h-5 text-text-secondary" />
-            <span>Upstream Providers</span>
+            <span>Penyedia Upstream</span>
           </span>
         }
         actions={
@@ -441,7 +441,7 @@ export const Providers: React.FC = () => {
             onClick={handleOpenCustomCreate}
             icon={<Plus className="w-4 h-4" />}
           >
-            Tambah Provider Manual
+            Tambah Penyedia Manual
           </Button>
         }
       />
@@ -736,8 +736,8 @@ export const Providers: React.FC = () => {
               >
                 <KeyRound className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
                 <span className="truncate">
-                  <span className="sm:inline hidden">API Keys</span>
-                  <span className="sm:hidden inline">Keys</span>
+                  <span className="sm:inline hidden">Kunci API</span>
+                  <span className="sm:hidden inline">Kunci</span>
                 </span>
                 <span
                   className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono flex-shrink-0 ${

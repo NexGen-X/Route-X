@@ -138,7 +138,7 @@ export const RoutingRules: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Routing Rules Engine"
+        title="Mesin Aturan Perutean"
         actions={
           <Button
             variant="primary"
@@ -244,7 +244,7 @@ export const RoutingRules: React.FC = () => {
         onSuccess={loadRules}
       />
 
-      {/* Drawer Edit Providers & Weights */}
+      {/* Drawer Edit Penyedia & Bobot */}
       <RuleProvidersDrawer
         isOpen={isProvidersDrawerOpen}
         onClose={() => {

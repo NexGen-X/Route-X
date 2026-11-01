@@ -151,7 +151,7 @@ export const Requests: React.FC = () => {
     <div className="space-y-6">
       {/* Header & Filter Bar */}
       <PageHeader
-        title="Requests Inspector"
+        title="Permintaan"
         actions={
           <>
             <button

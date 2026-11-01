@@ -17,9 +17,9 @@ interface MobileNavItem {
 // yang membuka drawer berisi seluruh grup navigasi sidebar.
 const ITEMS: MobileNavItem[] = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
-  { name: 'Requests', path: '/requests', icon: Terminal },
-  { name: 'Providers', path: '/upstreams/providers', icon: Server },
-  { name: 'API Keys', path: '/access/api-keys', icon: KeyRound },
+  { name: 'Permintaan', path: '/requests', icon: Terminal },
+  { name: 'Penyedia', path: '/upstreams/providers', icon: Server },
+  { name: 'Kunci API', path: '/access/api-keys', icon: KeyRound },
 ];
 
 export const MobileNav: React.FC<MobileNavProps> = ({ currentPath, onNavigate, onOpenMore }) => {

@@ -321,7 +321,7 @@ export const APIKeys: React.FC = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Client API Keys"
+        title="Kunci API Klien"
         actions={
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button

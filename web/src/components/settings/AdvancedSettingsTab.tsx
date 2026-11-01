@@ -182,7 +182,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
                     <div className="flex items-start justify-between gap-2 mb-1.5">
                       <h5 className="text-xs font-bold text-white font-mono truncate">{s.key}</h5>
                       <Badge variant={isCLI ? 'neutral' : 'info'}>
-                        {isCLI ? 'CLI Integrations' : 'Sistem'}
+                        {isCLI ? 'Integrasi CLI' : 'Sistem'}
                       </Badge>
                     </div>
                     <p className="text-[11px] text-text-muted mb-2">
@@ -198,7 +198,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
                     {isCLI ? (
                       <a href="#/cli">
                         <Button variant="secondary" size="sm" icon={<ExternalLink className="w-3.5 h-3.5" />}>
-                          Buka CLI Integrations
+                          Buka Integrasi CLI
                         </Button>
                       </a>
                     ) : (

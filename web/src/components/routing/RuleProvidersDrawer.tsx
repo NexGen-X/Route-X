@@ -75,7 +75,7 @@ export const RuleProvidersDrawer: React.FC<RuleProvidersDrawerProps> = ({
     <Drawer
       isOpen={isOpen}
       onClose={onClose}
-      title="Edit Providers & Weights"
+      title="Edit Penyedia & Bobot"
       footer={
         <div className="flex items-center justify-between gap-3 w-full">
           <Button type="button" variant="ghost" size="md" onClick={onClose}>

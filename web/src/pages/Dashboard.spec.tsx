@@ -264,7 +264,7 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
     expect(screen.getByText('claude-3-5-sonnet')).toBeInTheDocument();
 
     // 6. Upstream Provider Health Matrix
-    expect(screen.getByText('Status Kesehatan Upstream Providers')).toBeInTheDocument();
+    expect(screen.getByText('Status Kesehatan Penyedia Upstream')).toBeInTheDocument();
     expect(screen.getByText('OpenAI Production')).toBeInTheDocument();
     expect(screen.getByText('Claude Anthropic')).toBeInTheDocument();
   });

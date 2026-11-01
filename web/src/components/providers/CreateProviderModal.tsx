@@ -383,7 +383,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
     ? `Hubungkan Akun ke Pool ${targetExistingProvider.display_name || targetExistingProvider.name}`
     : currentPreset
     ? `Hubungkan ${currentPreset.displayName}`
-    : 'Tambah Provider AI Manual';
+    : 'Tambah Penyedia AI Manual';
 
   // Quick preset cards for 1-click selection inside modal
   const popularPresets = KNOWN_PROVIDERS.filter((p) =>

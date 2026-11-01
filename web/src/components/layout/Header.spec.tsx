@@ -21,13 +21,13 @@ describe('Header Component — Glassmorphic SOTA 2026', () => {
     const handleOpenMobile = vi.fn();
     render(
       <Header
-        title="Routing Rules"
+        title="Aturan Perutean"
         subtitle="Gateway Pipeline"
         onOpenMobileMenu={handleOpenMobile}
       />
     );
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Routing Rules' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Aturan Perutean' })).toBeInTheDocument();
     expect(screen.getByText('Gateway Pipeline')).toBeInTheDocument();
     expect(screen.getByRole('status', { name: /status telemetri gateway/i })).toBeInTheDocument();
     expect(screen.getByText('Gateway Online')).toBeInTheDocument();

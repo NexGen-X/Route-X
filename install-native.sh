@@ -211,7 +211,7 @@ fi
 systemctl enable caddy
 systemctl restart caddy || true
 
-# 8. Memasang Biner Route-X Core (Menggunakan Biner Rilis Resmi v1.2.1)
+# 8. Memasang Biner Route-X Core (Menggunakan Biner Rilis Resmi v1.4.0)
 echo ""
 echo "🛠️ [5/6] Menyiapkan biner resmi Route-X Gateway v1.2.1..."
 mkdir -p "$INSTALL_DIR"

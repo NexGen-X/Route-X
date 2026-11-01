@@ -201,7 +201,7 @@ fi
 # 5. Dapatkan Versi Git & Kompilasi Biner Baru
 # ------------------------------------------------------------------------------
 GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")"
-VERSION="$(git describe --tags --always 2>/dev/null || echo "v1.4.0-live")"
+VERSION="$(git describe --tags --always 2>/dev/null || echo "v1.5.0-live")"
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 echo "🔨 [2/5] Mengompilasi biner baru (${VERSION} @ ${GIT_COMMIT})..."

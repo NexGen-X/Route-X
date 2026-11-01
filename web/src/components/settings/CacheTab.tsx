@@ -123,15 +123,13 @@ export const CacheTab: React.FC = () => {
   const hitRatio = totalReq > 0 ? (((cache?.hits || 0) / totalReq) * 100).toFixed(1) : '0.0';
 
   return (
-    <div className="bg-bg-surface-2/40 border border-border/80 rounded-xl p-5 shadow-lg backdrop-blur-sm">
+    <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-lg bg-accent/10 border border-accent/20 text-accent-text">
-            <Zap className="w-5 h-5" aria-hidden="true" />
-          </div>
+          <Zap className="w-5 h-5 text-accent-text shrink-0" aria-hidden="true" />
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-base font-semibold text-white">Cache Respons Redis</h3>
+              <h3 className="text-base font-semibold text-text-primary">Cache Respons Redis</h3>
               <Badge variant={cache?.enabled ? 'success' : 'neutral'}>
                 {cache?.enabled ? 'AKTIF' : 'NONAKTIF'}
               </Badge>
@@ -188,7 +186,7 @@ export const CacheTab: React.FC = () => {
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
-        <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
+        <div className="py-1">
           <span className="text-[11px] text-text-muted block">Rasio Hit Cache</span>
           <span className="text-xl font-bold font-mono text-emerald-400 mt-1 block">
             {memuat ? '…' : `${hitRatio}%`}
@@ -198,9 +196,9 @@ export const CacheTab: React.FC = () => {
           </span>
         </div>
 
-        <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
+        <div className="py-1">
           <span className="text-[11px] text-text-muted block">Hit Cache (Hemat Biaya)</span>
-          <span className="text-xl font-bold font-mono text-white mt-1 block">
+          <span className="text-xl font-bold font-mono text-text-primary mt-1 block">
             {cache?.hits || 0}
           </span>
           <span className="text-[10px] text-emerald-400/80 block mt-0.5">
@@ -208,7 +206,7 @@ export const CacheTab: React.FC = () => {
           </span>
         </div>
 
-        <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40">
+        <div className="py-1">
           <span className="text-[11px] text-text-muted block">Total Entri di Redis</span>
           <span className="text-xl font-bold font-mono text-accent-text mt-1 block">
             {cache?.total_entries || 0}
@@ -218,7 +216,7 @@ export const CacheTab: React.FC = () => {
           </span>
         </div>
 
-        <div className="bg-bg-surface-2 rounded-lg p-3 border border-border/40 flex flex-col justify-between">
+        <div className="py-1 flex flex-col justify-between">
           <div>
             <span className="text-[11px] text-text-muted block">Durasi Simpan (TTL)</span>
             <div className="flex items-center gap-1.5 mt-1">
@@ -230,7 +228,7 @@ export const CacheTab: React.FC = () => {
                 max={TTL_MAKS_MENIT}
                 value={ttlMinutes}
                 onChange={(e) => setTtlMinutes(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-16 bg-bg-base border border-border/80 rounded px-1.5 py-0.5 text-xs text-white font-mono focus:border-accent focus:outline-none"
+                className="w-16 bg-bg-base border border-border/80 rounded px-1.5 py-0.5 text-xs text-text-primary font-mono focus:border-accent focus:outline-none"
               />
               <span className="text-xs text-text-secondary">menit</span>
               <Tooltip content="Simpan TTL" position="left">

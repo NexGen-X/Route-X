@@ -1,5 +1,4 @@
 import React from 'react';
-import { Card } from '../common/Card';
 import { Button } from '../common/Button';
 import { Select } from '../common/Select';
 import {
@@ -36,15 +35,13 @@ export const DomainTab: React.FC<DomainTabProps> = ({
   };
 
   return (
-    <Card className="p-6 border-accent/20 bg-bg-surface-2">
+    <section>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-accent/15 text-accent-text flex items-center justify-center">
-            <Globe className="w-5 h-5" />
-          </div>
+          <Globe className="w-5 h-5 text-accent-text shrink-0" />
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-semibold text-white">
+              <h2 className="text-sm font-semibold text-text-primary">
                 Domain Publik & Otomatis HTTPS (SSL)
               </h2>
               {domainConfig?.status === 'active' && (
@@ -92,21 +89,21 @@ export const DomainTab: React.FC<DomainTabProps> = ({
       )}
 
       {/* Panduan DNS A-Record */}
-      <div className="mt-5 p-4 rounded-xl bg-bg-surface-2 border border-border">
-        <div className="flex items-center gap-2 text-xs font-semibold text-white mb-2">
+      <div className="mt-6">
+        <div className="flex items-center gap-2 text-xs font-semibold text-text-primary mb-2">
           <Info className="w-4 h-4 text-accent-text" />
           Petunjuk Konfigurasi DNS di Registrar / Cloudflare:
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          <div className="bg-bg-surface-2 p-2.5 rounded-lg border border-border">
+          <div className="">
             <span className="text-text-muted block text-xs font-medium">Tipe Record</span>
-            <span className="font-mono text-white font-semibold">A Record</span>
+            <span className="font-mono text-text-primary font-semibold">A Record</span>
           </div>
-          <div className="bg-bg-surface-2 p-2.5 rounded-lg border border-border">
+          <div className="">
             <span className="text-text-muted block text-xs font-medium">Nama Host / Subdomain</span>
-            <span className="font-mono text-white font-semibold">ai atau gateway (atau @)</span>
+            <span className="font-mono text-text-primary font-semibold">ai atau gateway (atau @)</span>
           </div>
-          <div className="bg-bg-surface-2 p-2.5 rounded-lg border border-border">
+          <div className="">
             <span className="text-text-muted block text-xs font-medium">Nilai Target (IP Publik Server)</span>
             <span className="font-mono text-accent-text font-semibold">{serverIP || 'Belum tersedia'}</span>
           </div>
@@ -117,7 +114,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
       <form noValidate onSubmit={onSaveDomain} className="mt-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2 space-y-1.5">
-            <label htmlFor="custom-domain" className="text-xs font-semibold text-white">
+            <label htmlFor="custom-domain" className="text-xs font-semibold text-text-primary">
               Nama Domain FQDN
             </label>
             <div className="relative">
@@ -128,7 +125,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
                 placeholder="ai.domainanda.com"
                 value={inputDomain}
                 onChange={(e) => setInputDomain(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-xs text-white font-mono placeholder:text-text-muted focus:outline-none focus:border-accent"
+                className="w-full px-3.5 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-xs text-text-primary font-mono placeholder:text-text-muted focus:outline-none focus:border-accent"
               />
             </div>
             <span className="text-[11px] text-text-muted block">
@@ -159,8 +156,8 @@ export const DomainTab: React.FC<DomainTabProps> = ({
 
         {/* Active Domain Live Info */}
         {domainConfig?.domain && (
-          <div className="p-4 rounded-xl bg-accent/5 border border-accent/20 space-y-2">
-            <div className="text-xs font-semibold text-white flex items-center justify-between">
+          <div className="pt-4 border-t border-border space-y-2">
+            <div className="text-xs font-semibold text-text-primary flex items-center justify-between">
               <span>Alamat Aktif Terpasang:</span>
               <span className="text-[11px] font-mono text-text-muted">
                 DNS Match:{' '}
@@ -170,7 +167,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
               </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded bg-bg-surface-2 gap-1 sm:gap-2 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 min-w-0">
                 <span className="text-text-secondary shrink-0 text-[11px] sm:text-xs">Web Panel:</span>
                 <a
                   href={domainConfig.public_url}
@@ -183,7 +180,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
                   <ExternalLink className="w-3 h-3 shrink-0" />
                 </a>
               </div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded bg-bg-surface-2 gap-1 sm:gap-2 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 min-w-0">
                 <span className="text-text-secondary shrink-0 text-[11px] sm:text-xs">Base URL Endpoint:</span>
                 <span className="text-emerald-400 font-mono font-semibold truncate max-w-full">
                   {domainConfig.base_url}
@@ -222,6 +219,6 @@ export const DomainTab: React.FC<DomainTabProps> = ({
           </Button>
         </div>
       </form>
-    </Card>
+    </section>
   );
 };

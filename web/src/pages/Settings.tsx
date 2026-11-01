@@ -310,8 +310,8 @@ export const Settings: React.FC = () => {
           onClick={() => setActiveTab('domain')}
           className={`px-4 py-2.5 lg:px-3 lg:py-2 text-xs font-semibold rounded-t-lg lg:rounded-lg lg:w-full transition-colors flex items-center gap-2 cursor-pointer text-left ${
             activeTab === 'domain'
-              ? 'border-b-2 lg:border-b-0 border-accent text-white bg-bg-surface-2'
-              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+              ? 'border-b-2 lg:border-b-0 border-accent text-text-primary bg-bg-surface-2'
+              : 'text-text-muted hover:text-text-primary hover:bg-bg-surface-2/40'
           }`}
         >
           <Globe className="w-4 h-4 text-accent-text" />
@@ -322,8 +322,8 @@ export const Settings: React.FC = () => {
           onClick={() => setActiveTab('cache')}
           className={`px-4 py-2.5 lg:px-3 lg:py-2 text-xs font-semibold rounded-t-lg lg:rounded-lg lg:w-full transition-colors flex items-center gap-2 cursor-pointer text-left ${
             activeTab === 'cache'
-              ? 'border-b-2 lg:border-b-0 border-accent text-white bg-bg-surface-2'
-              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+              ? 'border-b-2 lg:border-b-0 border-accent text-text-primary bg-bg-surface-2'
+              : 'text-text-muted hover:text-text-primary hover:bg-bg-surface-2/40'
           }`}
         >
           <Zap className="w-4 h-4 text-accent-text" />
@@ -334,8 +334,8 @@ export const Settings: React.FC = () => {
           onClick={() => setActiveTab('backup')}
           className={`px-4 py-2.5 lg:px-3 lg:py-2 text-xs font-semibold rounded-t-lg lg:rounded-lg lg:w-full transition-colors flex items-center gap-2 cursor-pointer text-left ${
             activeTab === 'backup'
-              ? 'border-b-2 lg:border-b-0 border-accent text-white bg-bg-surface-2'
-              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+              ? 'border-b-2 lg:border-b-0 border-accent text-text-primary bg-bg-surface-2'
+              : 'text-text-muted hover:text-text-primary hover:bg-bg-surface-2/40'
           }`}
         >
           <Database className="w-4 h-4 text-accent-text" />
@@ -346,8 +346,8 @@ export const Settings: React.FC = () => {
           onClick={() => setActiveTab('advanced')}
           className={`px-4 py-2.5 lg:px-3 lg:py-2 text-xs font-semibold rounded-t-lg lg:rounded-lg lg:w-full transition-colors flex items-center gap-2 cursor-pointer text-left ${
             activeTab === 'advanced'
-              ? 'border-b-2 lg:border-b-0 border-accent text-white bg-bg-surface-2'
-              : 'text-text-muted hover:text-white hover:bg-bg-surface-2/40'
+              ? 'border-b-2 lg:border-b-0 border-accent text-text-primary bg-bg-surface-2'
+              : 'text-text-muted hover:text-text-primary hover:bg-bg-surface-2/40'
           }`}
         >
           <Sliders className="w-4 h-4 text-accent-text" />

@@ -202,7 +202,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
 
         {/* Quick Metrics Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
+          <div className="py-1">
             <span className="text-xs font-medium text-text-muted">Status HTTP</span>
             <div className="mt-1 flex items-center gap-1.5">
               <StatusDot
@@ -214,7 +214,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
               </span>
             </div>
           </div>
-          <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
+          <div className="py-1">
             <span className="text-xs font-medium text-text-muted">Total Durasi</span>
             <div className="mt-1 flex items-center gap-1.5">
               <span className="font-mono font-bold text-white">{request.duration_ms} ms</span>
@@ -223,13 +223,13 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
               </span>
             </div>
           </div>
-          <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
+          <div className="py-1">
             <span className="text-xs font-medium text-text-muted">Total Token</span>
             <div className="mt-1 font-mono font-bold text-white">
               {request.total_tokens != null ? `${request.total_tokens.toLocaleString()} tok` : '-'}
             </div>
           </div>
-          <div className="p-3 bg-bg-surface-2 rounded-inner border border-border">
+          <div className="py-1">
             <span className="text-xs font-medium text-text-muted">Biaya USD</span>
             <div className="mt-1 font-mono font-bold text-accent-text">
               {formatUSD(request.cost_usd, 6)}
@@ -238,7 +238,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
         </div>
 
         {/* Latency Waterfall Bar */}
-        <div className="p-3.5 bg-bg-surface-2 rounded-inner border border-border space-y-2">
+        <div className="py-1 space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-text-secondary flex items-center gap-1.5">
               <Layers className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />

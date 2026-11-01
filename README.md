@@ -17,6 +17,7 @@
 
 <p align="center">
   <a href="#-why-route-x"><strong>Why Route-X</strong></a> •
+  <a href="#%EF%B8%8F-dashboard-preview"><strong>Preview</strong></a> •
   <a href="#-core-pillars"><strong>Core Pillars</strong></a> •
   <a href="#%EF%B8%8F-architecture"><strong>Architecture</strong></a> •
   <a href="#-benchmarks--performance"><strong>Benchmarks</strong></a> •
@@ -51,6 +52,18 @@ Direct integration with heterogeneous AI model APIs leads to severe operational 
 
 ---
 
+## 🖥️ Dashboard Preview
+
+The embedded dashboard uses the **Calm Console** design language — a Claude-inspired dark theme (`#181818` base, `#0070E0` accent) with a flat, Linear-style layout discipline: typography carries the hierarchy, status is shown once, metrics are plain KPI strips instead of stacked cards, and the full UI is in Bahasa Indonesia. Screenshots below are from the current release UI.
+
+![Route-X Dashboard — desktop](docs/images/dashboard-desktop.png)
+
+| Providers (desktop) | Dashboard (mobile PWA) |
+|---|---|
+| ![Route-X Providers — desktop](docs/images/penyedia-desktop.png) | <img src="docs/images/dashboard-mobile.png" alt="Route-X Dashboard — mobile" width="300"> |
+
+---
+
 ## 🌟 Core Pillars
 
 ### 🌐 1. Dual-Protocol Native Ingestion
@@ -78,7 +91,7 @@ Route-X's routing hot-path is engineered to add as little overhead as possible t
 ### ♿ 4. Accessibility (Designed Toward WCAG 2.1 Level AA)
 - **Focus Management**: Focus trapping (`FocusTrap`) on Command Palette (`Cmd+K`), Dialogs, and Mobile Drawers, with Escape handling and body scroll-lock.
 - **WAI-ARIA Combobox Specification**: Searchable Command Palette with `role="dialog"`, `role="combobox"`, `role="listbox"`, and `role="option"`.
-- **Form Association & Screen Reader Support**: Form controls associated with explicit `<label htmlFor>` or `aria-label`, semantic error alerts (`role="alert"`), and `aria-label` standardization on icon-only triggers. Accessibility is a design target verified by internal checks — Route-X has not undergone external WCAG certification, and some areas (for example muted-text contrast at small sizes) are still being improved.
+- **Form Association & Screen Reader Support**: Form controls associated with explicit `<label htmlFor>` or `aria-label`, semantic error alerts (`role="alert"`), and `aria-label` standardization on icon-only triggers. Accessibility is a design target verified by internal checks — internal axe-core audits currently report **zero color-contrast violations across all dashboard pages** — but Route-X has not undergone external WCAG certification.
 - **Decorative SVG Hardening**: `aria-hidden="true"` applied across all decorative Lucide SVG icons to eliminate screen-reader noise.
 
 ### 💻 5. Universal Developer CLI Synchronization
@@ -89,7 +102,7 @@ Route-X's routing hot-path is engineered to add as little overhead as possible t
   - **Shell-GPT / SGPT** (`~/.config/shell_gpt/.sgptrc`)
   - **Fabric** (`~/.config/fabric/.env`)
   - **OpenCommit** (`~/.opencommit`)
-- **Interactive Latency Diagnostics**: Execute live round-trip latency probes directly from the Web Console.
+- **Interactive Latency Diagnostics**: Execute live round-trip latency probes from the Observability page in the Web Console.
 - **Strict Antigravity CLI Protection**: Guaranteed isolation ensuring Antigravity CLI (`agy`) and `~/.gemini` remain completely untouched and protected.
 
 ### 🛡️ 6. Financial & Operational Guardrails
@@ -150,8 +163,8 @@ flowchart TD
     end
 
     subgraph Upstreams["4. Upstream LLM Providers"]
-        P1["Anthropic (Claude 3.5 / 3.7)"]
-        P2["OpenAI (GPT-4o / o1 / o3)"]
+        P1["Anthropic (Claude Sonnet 4.5)"]
+        P2["OpenAI (GPT-5)"]
         P3["Groq / DeepSeek / Mistral"]
         P4["Local vLLM / Ollama Cluster"]
     end
@@ -277,7 +290,7 @@ claude -p "Explain the Route-X architecture in one sentence."
 opencode run "Analyze current performance bottlenecks."
 
 # Aider CLI (Pair programming)
-aider --model routex/claude-3-7-sonnet
+aider --model routex/claude-sonnet-4.5
 ```
 
 ### Supported CLI Integrations Matrix
@@ -307,7 +320,7 @@ client = OpenAI(
 
 # Stream response with automatic combo routing & failover
 stream = client.chat.completions.create(
-    model="claude-3-7-sonnet", # Aliased combo rule
+    model="claude-sonnet-4.5", # Aliased combo rule
     messages=[
         {"role": "system", "content": "You are a helpful software architect."},
         {"role": "user", "content": "How does Route-X keep its routing overhead low?"}
@@ -349,7 +362,7 @@ curl -X POST https://ai.yourdomain.com/v1/messages \
   -H "anthropic-version: 2023-06-01" \
   -H "content-type: application/json" \
   -d '{
-    "model": "claude-3-5-sonnet",
+    "model": "claude-sonnet-4.5",
     "max_tokens": 1024,
     "messages": [
       {"role": "user", "content": "Hello Route-X from the Anthropic native dialect!"}
@@ -415,12 +428,15 @@ Pull requests and releases are validated through 7 gates (live status: the CI ba
 - 📙 [**Operations Runbook**](docs/runbook-operasi.md) — Production operations, service monitoring, and logging.
 - 📕 [**Disaster Recovery**](docs/DISASTER_RECOVERY.md) — Database backup, restoration, and outage mitigation.
 - 📗 [**OpenAPI Specification**](docs/openapi.yaml) — Schemas for the public gateway endpoints and a subset of the admin API. It does **not** yet cover the full admin surface (100+ operations in code); the dashboard's API client and the admin route registrations in `internal/admin/` are the current source of truth for admin endpoints.
+- 🚀 [**Fly.io Deployment Guide**](docs/deploy-fly-io.md) — Deploy Route-X on Fly.io.
+- 🚀 [**Render Deployment Guide**](docs/deploy-render.md) — Deploy Route-X on Render.
+- 🧪 [**Load & E2E Runbook**](docs/runbook-beban-e2e.md) — Load-test and end-to-end staging procedures (Indonesian).
 - 📜 [**Multi-Agent Governance Rules**](.agents/rules/multi_agent_orchestration.md) — Full 13-agent orchestration specification.
 
 ---
 
 ## 📄 License & Attribution
 
-Route-X adalah perangkat lunak open source yang dirilis di bawah [Lisensi MIT](LICENSE).
+Route-X is open-source software released under the [MIT License](LICENSE).
 
 Copyright © 2026 **NexGen-X / Route-X Development Team**. Designed for reliable, high-performance, private, self-hosted AI gateway infrastructure.

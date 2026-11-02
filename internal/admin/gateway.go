@@ -20,6 +20,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
+	"github.com/NexGen-X/Route-X/internal/gateway"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/router"
 )
@@ -1291,9 +1292,21 @@ func (h *Handlers) listCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 			// Bila tidak bisa ditentukan, laporkan "unknown" (audit F5):
 			// versi lama membiarkan nilai bawaan "closed" sehingga breaker
 			// yang sebenarnya terbuka tampil sehat saat Redis bermasalah.
+			//
+			// Kunci bersegmen lima adalah varian konfigurasi per-aturan
+			// (audit3 B-024): state-nya hanya bisa dijawab dari kuncinya
+			// sendiri, karena (provider, model) saja menunjuk breaker
+			// konfigurasi global — melaporkan state breaker lain di baris
+			// ini akan menampilkan breaker terbuka sebagai tertutup.
 			stateStr := "unknown"
 			if h.breaker != nil {
-				st, err := h.breaker.State(ctx, providerID, model)
+				var st gateway.State
+				var err error
+				if len(parts) >= 5 {
+					st, err = h.breaker.StateUntukKunci(ctx, k)
+				} else {
+					st, err = h.breaker.State(ctx, providerID, model)
+				}
 				if err == nil {
 					stateStr = string(st)
 				} else {

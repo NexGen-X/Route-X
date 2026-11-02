@@ -5,6 +5,8 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -365,7 +367,7 @@ return {1, state, 0}
 // KEYS[1] kunci breaker.
 // ARGV[1] sekarang (ms epoch), ARGV[2] sukses (0/1), ARGV[3] ambang rasio,
 // ARGV[4] sampel minimum, ARGV[5] lebar ember (ms), ARGV[6] jumlah ember,
-// ARGV[7] OpenDuration (ms), ARGV[8] TTL kunci (ms).
+// ARGV[7] OpenDuration (ms), ARGV[8] TTL kunci (ms), ARGV[9] hasil probe (0/1).
 // Kembalian: {state, sisa open (ms), total sampel, jumlah gagal, state berubah (0/1)}.
 //
 // "Catat, hitung rasio, lalu buka bila terlampaui" harus menjadi satu langkah. Dipecah,
@@ -390,6 +392,15 @@ if state == 'open' then
 end
 
 if state == 'half_open' then
+	if tonumber(ARGV[9]) ~= 1 then
+		-- Hasil ini BUKAN hasil probe: ia milik permintaan yang diizinkan pada
+		-- episode sebelumnya (saat state masih closed) dan baru selesai
+		-- sekarang. Memakainya sebagai putusan probe berarti breaker menutup
+		-- atau membuka lagi tanpa satu pun permintaan percobaan yang
+		-- benar-benar dijalankan pada episode ini (audit3 V-BR-03). Hasil
+		-- basi diabaikan; episode ini diputuskan oleh probe yang sesungguhnya.
+		return {'half_open', 0, 0, 0, 0}
+	end
 	-- DEL, bukan HDEL per field: episode berikutnya — closed maupun open — dimulai
 	-- dengan jendela bersih dan kuota probe kosong, dan menyisakan salah satunya berarti
 	-- breaker yang baru menutup langsung membawa rasio yang sudah pernah memicunya.
@@ -529,8 +540,16 @@ type Breaker struct {
 	// yang berarti test yang lambat, atau yang cepat tetapi tidak menguji perpindahannya.
 	now func() time.Time
 
-	mu            sync.RWMutex
-	memo          map[string]memoEntry
+	mu   sync.RWMutex
+	memo map[string]memoEntry
+	// transisi mencatat state terakhir yang SUDAH disampaikan ke listener,
+	// per kunci breaker. State di Redis diturunkan dari open_until, jadi satu
+	// episode open yang sama dilaporkan recordScript sebagai "berubah" pada
+	// setiap probe yang gagal — tanpa ingatan ini listener menerima
+	// circuit.opened berulang tanpa circuit.closed di antaranya (audit3
+	// V-BR-11). Yang disampaikan ke listener adalah perubahan dari yang
+	// terakhir ia dengar, bukan setiap perpindahan turunan.
+	transisi      map[string]State
 	onStateChange StateChangeListener
 	wg            sync.WaitGroup
 	isClosed      atomic.Bool
@@ -628,7 +647,7 @@ func (b *Breaker) allowDengan(ctx context.Context, providerID, model string, cfg
 		return true, StateClosed, errNoProvider
 	}
 
-	key := cache.CircuitBreakerKey(providerID, model)
+	key := b.kunciUntuk(providerID, model, cfg)
 	now := b.now()
 	if pakaiMemo {
 		if e, ok := b.memoGet(key, now); ok {
@@ -660,20 +679,45 @@ func (b *Breaker) allowDengan(ctx context.Context, providerID, model string, cfg
 // Errornya untuk log, bukan untuk dijadikan kegagalan permintaan: yang dicatat adalah
 // sesuatu yang SUDAH terjadi, dan Redis yang tidak bisa dihubungi tidak membuatnya
 // belum terjadi.
+//
+// Hasil yang dicatat lewat sini diperlakukan sebagai hasil percobaan BIASA,
+// bukan hasil probe half_open — lihat RecordHasil untuk pemanggil yang tahu
+// percobaannya adalah probe.
 func (b *Breaker) Record(ctx context.Context, providerID, model string, sukses bool) error {
 	if b == nil {
 		return nil
 	}
-	return b.recordDengan(ctx, providerID, model, sukses, b.cfg, true)
+	return b.recordDengan(ctx, providerID, model, sukses, b.cfg, true, false)
 }
 
 // RecordWithConfig adalah Record dengan konfigurasi per-aturan routing;
 // lihat AllowWithConfig untuk pemetaan semantiknya (audit F4).
 func (b *Breaker) RecordWithConfig(ctx context.Context, providerID, model string, sukses bool, cfg BreakerConfig) error {
-	return b.recordDengan(ctx, providerID, model, sukses, cfg.normalized(), false)
+	return b.recordDengan(ctx, providerID, model, sukses, cfg.normalized(), false, false)
 }
 
-func (b *Breaker) recordDengan(ctx context.Context, providerID, model string, sukses bool, cfg BreakerConfig, pakaiMemo bool) error {
+// RecordHasil adalah Record yang membedakan hasil probe half_open dari
+// hasil percobaan biasa (audit3 V-BR-03).
+//
+// probe wajib true HANYA bila percobaan ini diizinkan saat state half_open.
+// Pada episode half_open, hanya hasil probe yang boleh memutuskan episode —
+// hasil permintaan lama yang diizinkan saat closed dan baru selesai sesudah
+// open_until lewat adalah hasil basi: memakainya berarti breaker menutup
+// tanpa satu pun permintaan yang benar-benar diuji.
+func (b *Breaker) RecordHasil(ctx context.Context, providerID, model string, sukses, probe bool) error {
+	if b == nil {
+		return nil
+	}
+	return b.recordDengan(ctx, providerID, model, sukses, b.cfg, true, probe)
+}
+
+// RecordHasilWithConfig adalah RecordHasil dengan konfigurasi per-aturan
+// routing; lihat AllowWithConfig untuk pemetaan semantiknya.
+func (b *Breaker) RecordHasilWithConfig(ctx context.Context, providerID, model string, sukses, probe bool, cfg BreakerConfig) error {
+	return b.recordDengan(ctx, providerID, model, sukses, cfg.normalized(), false, probe)
+}
+
+func (b *Breaker) recordDengan(ctx context.Context, providerID, model string, sukses bool, cfg BreakerConfig, pakaiMemo bool, probe bool) error {
 	if b == nil || b.redis == nil {
 		return nil
 	}
@@ -681,17 +725,21 @@ func (b *Breaker) recordDengan(ctx context.Context, providerID, model string, su
 		return errNoProvider
 	}
 
-	key := cache.CircuitBreakerKey(providerID, model)
+	key := b.kunciUntuk(providerID, model, cfg)
 	now := b.now()
 	ok := 0
 	if sukses {
 		ok = 1
 	}
+	adalahProbe := 0
+	if probe {
+		adalahProbe = 1
+	}
 
 	res, err := b.redis.RunScript(ctx, recordScript, []string{key},
 		now.UnixMilli(), ok, cfg.FailureThreshold, cfg.MinSamples,
 		cfg.bucketWidth().Milliseconds(), windowBuckets,
-		cfg.OpenDuration.Milliseconds(), cfg.keyTTL().Milliseconds())
+		cfg.OpenDuration.Milliseconds(), cfg.keyTTL().Milliseconds(), adalahProbe)
 	if err != nil {
 		b.log(ctx).Warn("circuit breaker tidak bisa mencatat hasil ke redis",
 			"provider", providerID, "model", model, "sukses", sukses, "error", err.Error())
@@ -702,10 +750,11 @@ func (b *Breaker) recordDengan(ctx context.Context, providerID, model string, su
 	// Hasil yang baru saja ditulis dipakai untuk menyegarkan jalur cepat. Ini yang membuat
 	// memo tetap muda tanpa satu pun putaran Redis tambahan: pada lalu lintas normal
 	// setiap Allow diikuti satu Record, jadi keputusan yang dibaca permintaan berikutnya
-	// berumur satu permintaan, bukan memoTTL. Record tidak pernah mengembalikan half_open
-	// — dari state itu ia selalu menutup atau membuka — sehingga larangan menyimpan
-	// keputusan half_open tidak perlu diperiksa lagi di sini.
-	if pakaiMemo {
+	// berumur satu permintaan, bukan memoTTL. Keputusan half_open TIDAK pernah disimpan:
+	// ia bisa muncul di sini sejak hasil basi pada episode half_open diabaikan
+	// recordScript (audit3 V-BR-03), dan keputusan half_open yang di-cache akan
+	// dipakai ulang tanpa mengonsumsi kuota probe.
+	if pakaiMemo && state != StateHalfOpen {
 		b.memoPut(key, memoEntry{
 			allow:   state != StateOpen,
 			state:   state,
@@ -733,32 +782,67 @@ func (b *Breaker) recordDengan(ctx context.Context, providerID, model string, su
 			slog.Int64("sisa_open_ms", openRemaining.Milliseconds()),
 		)
 
-		// AUDIT FIX: isClosed dan wg.Add harus atomik terhadap Close(); sebelumnya
-		// Add bisa terjadi setelah Wait melihat counter nol (WaitGroup misuse / panic).
-		b.mu.RLock()
-		listener := b.onStateChange
-		closed := b.isClosed.Load()
-		if listener != nil && !closed {
-			b.wg.Add(1)
-		}
-		b.mu.RUnlock()
-		if listener != nil && !closed {
-			go func() {
-				defer b.wg.Done()
-				defer func() {
-					if r := recover(); r != nil {
-						b.log(ctx).ErrorContext(ctx, "panic tertangkap pada circuit breaker state listener",
-							"provider", providerID,
-							"model", model,
-							"panic", fmt.Sprint(r),
-						)
-					}
-				}()
-				listener(context.WithoutCancel(ctx), providerID, model, state, total, failures)
-			}()
-		}
+		b.sampaikanTransisi(ctx, key, providerID, model, state, total, failures)
 	}
 	return nil
+}
+
+// batasListenerTransisi adalah tenggat satu pemanggilan listener transisi.
+//
+// Pola yang sama dengan batasTandaiPemakaian di factory.go: pekerjaan
+// listener — memasukkan event ke antrean webhook di Postgres — tidak boleh
+// menggantung tanpa batas. Tanpa tenggat, Postgres yang macet saat breaker
+// berosilasi menumpuk satu goroutine per transisi tanpa batas (audit3
+// V-BR-12).
+const batasListenerTransisi = 5 * time.Second
+
+// sampaikanTransisi meneruskan satu perpindahan state ke listener, dengan
+// dua penjagaan:
+//
+//   - Hanya perubahan dari state terakhir yang SUDAH disampaikan untuk
+//     kunci ini yang diteruskan. recordScript melaporkan "berubah" pada
+//     setiap probe yang gagal membuka lagi breaker, jadi tanpa ingatan ini
+//     satu pemadaman menghasilkan circuit.opened berulang tanpa satu pun
+//     circuit.closed (audit3 V-BR-11); dengan ingatan ini keduanya
+//     berpasangan per episode.
+//   - Pemanggilannya berjalan di goroutine dengan context bertenggat
+//     (batasListenerTransisi), dilepas dari pembatalan request tetapi tidak
+//     dari waktu.
+func (b *Breaker) sampaikanTransisi(ctx context.Context, kunci, providerID, model string, state State, total, failures int64) {
+	// isClosed dan wg.Add harus atomik terhadap Close(): Add yang terjadi
+	// setelah Wait melihat penghitung nol adalah penyalahgunaan WaitGroup.
+	b.mu.Lock()
+	listener := b.onStateChange
+	if listener == nil || b.isClosed.Load() {
+		b.mu.Unlock()
+		return
+	}
+	if b.transisi == nil {
+		b.transisi = make(map[string]State)
+	}
+	if b.transisi[kunci] == state {
+		b.mu.Unlock()
+		return
+	}
+	b.transisi[kunci] = state
+	b.wg.Add(1)
+	b.mu.Unlock()
+
+	go func() {
+		defer b.wg.Done()
+		defer func() {
+			if r := recover(); r != nil {
+				b.log(ctx).ErrorContext(ctx, "panic tertangkap pada circuit breaker state listener",
+					"provider", providerID,
+					"model", model,
+					"panic", fmt.Sprint(r),
+				)
+			}
+		}()
+		lctx, batal := context.WithTimeout(context.WithoutCancel(ctx), batasListenerTransisi)
+		defer batal()
+		listener(lctx, providerID, model, state, total, failures)
+	}()
 }
 
 // Close menandai breaker berhenti menerima eksekusi listener baru dan menunggu seluruh
@@ -800,12 +884,38 @@ func (b *Breaker) State(ctx context.Context, providerID, model string) (State, e
 		return StateClosed, errNoProvider
 	}
 
-	res, err := b.redis.RunScript(ctx, stateScript,
-		[]string{cache.CircuitBreakerKey(providerID, model)}, b.now().UnixMilli())
+	state, err := b.stateDariKunci(ctx, cache.CircuitBreakerKey(providerID, model))
 	if err != nil {
 		// Closed dikembalikan bersama error, sejalan dengan gagal-terbuka: pembacaan yang
 		// gagal tidak boleh membuat dashboard melaporkan pemadaman yang tidak ada.
 		return StateClosed, fmt.Errorf("gateway: membaca state breaker %s/%s: %w", providerID, model, err)
+	}
+	return state, nil
+}
+
+// StateUntukKunci membaca state dari satu kunci Redis breaker yang utuh.
+//
+// Untuk pembaca yang menemukan kuncinya lewat pemindaian namespace (daftar
+// breaker di dashboard): sejak kunci membawa dimensi konfigurasi (lihat
+// kunciUntuk), state varian konfigurasi hanya bisa dijawab dari kuncinya
+// sendiri — bertanya lewat (provider, model) akan membaca breaker
+// konfigurasi global dan melaporkan state milik breaker lain.
+func (b *Breaker) StateUntukKunci(ctx context.Context, kunci string) (State, error) {
+	if b == nil || b.redis == nil {
+		return StateClosed, nil
+	}
+	state, err := b.stateDariKunci(ctx, kunci)
+	if err != nil {
+		return StateClosed, fmt.Errorf("gateway: membaca state breaker dari kunci: %w", err)
+	}
+	return state, nil
+}
+
+// stateDariKunci menjalankan stateScript atas satu kunci persis.
+func (b *Breaker) stateDariKunci(ctx context.Context, kunci string) (State, error) {
+	res, err := b.redis.RunScript(ctx, stateScript, []string{kunci}, b.now().UnixMilli())
+	if err != nil {
+		return StateClosed, err
 	}
 	state, _ := parseState(res)
 	return state, nil
@@ -832,13 +942,94 @@ func (b *Breaker) Reset(ctx context.Context, providerID, model string) error {
 	}
 
 	key := cache.CircuitBreakerKey(providerID, model)
+	// Yang dihapus bukan hanya kunci polos: varian konfigurasi per-aturan
+	// (segmen sidik sesudah kunci polos, lihat kunciUntuk) adalah breaker
+	// milik pasangan yang sama, dan menyisakannya berarti tombol reset
+	// melaporkan berhasil sementara sebagian lalu lintas tetap ditolak.
+	kunciSemua := []string{key}
+	iter := b.redis.Client().Scan(ctx, 0, key+":*", 100).Iterator()
+	for iter.Next(ctx) {
+		kunciSemua = append(kunciSemua, iter.Val())
+	}
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("gateway: memindai varian breaker %s/%s: %w", providerID, model, err)
+	}
+
+	// State sebelum penghapusan dibaca untuk dua keperluan: ingatan memo
+	// dibuang per kunci, dan pemulihan oleh operator adalah perpindahan
+	// state yang sesungguhnya — listener harus mendengar circuit.closed,
+	// sama seperti pemulihan lewat probe (audit3 V-BR-11).
+	adaTerbuka := false
+	for _, k := range kunciSemua {
+		if st, err := b.stateDariKunci(ctx, k); err == nil && st != StateClosed {
+			adaTerbuka = true
+		}
+	}
+
 	// DEL satu kunci sudah merupakan satu perintah yang tak bisa disalip, jadi skrip Lua
 	// di sini hanya akan menambah lapisan tanpa menambah jaminan.
-	if err := b.redis.Client().Del(ctx, key).Err(); err != nil {
+	if err := b.redis.Client().Del(ctx, kunciSemua...).Err(); err != nil {
 		return fmt.Errorf("gateway: mereset breaker %s/%s: %w", providerID, model, err)
 	}
-	b.memoDrop(key)
+	for _, k := range kunciSemua {
+		b.memoDrop(k)
+	}
+
+	if adaTerbuka {
+		// Catatan transisi pasangan ini diselaraskan lebih dulu: episode
+		// varian konfigurasi bisa saja yang terbuka, sementara kunci polos
+		// terakhir terdengar closed — tanpa penyelarasan ini penyampaian
+		// closed di bawah akan tertelan aturan anti-pengulangan.
+		b.mu.Lock()
+		if b.transisi == nil {
+			b.transisi = make(map[string]State)
+		}
+		for _, k := range kunciSemua {
+			b.transisi[k] = StateClosed
+		}
+		delete(b.transisi, key)
+		b.mu.Unlock()
+		b.sampaikanTransisi(ctx, key, providerID, model, StateClosed, 0, 0)
+	}
 	return nil
+}
+
+// --- Kunci per konfigurasi ---------------------------------------------------
+
+// sidikKonfigurasi merangkum konfigurasi breaker menjadi penanda pendek yang
+// stabil, untuk segmen kunci Redis.
+//
+// Seluruh field yang menentukan semantik state ikut diringkas — ambang rasio,
+// sampel minimum, window, durasi open, kuota probe — karena dua konfigurasi
+// yang berbeda pada field mana pun itu adalah dua breaker yang berbeda
+// perilakunya, dan dua yang sama persis pada kelimanya adalah breaker yang
+// sama.
+func sidikKonfigurasi(cfg BreakerConfig) string {
+	ringkasan := fmt.Sprintf("%x|%d|%d|%d|%d",
+		math.Float64bits(cfg.FailureThreshold), cfg.MinSamples,
+		cfg.Window.Milliseconds(), cfg.OpenDuration.Milliseconds(), cfg.HalfOpenProbes)
+	sum := sha256.Sum256([]byte(ringkasan))
+	return hex.EncodeToString(sum[:6])
+}
+
+// kunciUntuk menyusun kunci Redis satu breaker (provider, model, konfigurasi).
+//
+// Konfigurasi yang sama dengan konfigurasi global breaker memakai kunci
+// polos yang selalu ada — routex:cb:<provider>:<model> — supaya dashboard
+// dan tombol reset operator tetap menunjuk breaker yang sama seperti
+// sebelum dimensi konfigurasi ada. Konfigurasi yang BERBEDA mendapat segmen
+// sidik sendiri: sebelum ini seluruh aturan routing berbagi satu ember
+// untuk pasangan yang sama, sehingga aturan berambang longgar tertolak oleh
+// breaker yang dibuka aturan ketat, dan probe yang gagal menulis ulang
+// open_until memakai durasi pencatat terakhir, bukan durasi aturan yang
+// membuka episode itu (audit3 V-BR-01). Ambang dan durasi yang berlaku bagi
+// satu state haruslah milik konfigurasi yang membacanya.
+func (b *Breaker) kunciUntuk(providerID, model string, cfg BreakerConfig) string {
+	kunci := cache.CircuitBreakerKey(providerID, model)
+	if cfg == b.cfg {
+		return kunci
+	}
+	return kunci + ":" + sidikKonfigurasi(cfg)
 }
 
 // --- Tenggat turunan ---------------------------------------------------------

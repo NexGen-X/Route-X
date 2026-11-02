@@ -59,6 +59,18 @@ const (
 	// bawaan: tujuannya hanya memanen aliran yang benar-benar mati, bukan
 	// memutus model yang jeda penalarannya lama.
 	tenggatDiamAliran = 120 * time.Second
+
+	// batasTotalRencana adalah anggaran waktu TOTAL satu rencana eksekusi
+	// non-streaming (audit3 V-BR-08). Tanpa anggaran ini, waktu terburuk
+	// satu permintaan adalah kandidat × percobaan × tenggat percobaan —
+	// pada angka bawaan ±9 menit — dan yang menahannya hanya tenggat
+	// server di lapisan HTTP. Nilainya menyelaraskan WRITE_TIMEOUT bawaan
+	// server (5 menit): tenggat request yang lebih pendek tetap menang
+	// karena anggaran ini dipasang sebagai turunan context request.
+	// Streaming dikecualikan — aliran yang sah hidup lebih lama daripada
+	// anggaran membuka mana pun; fase membukanya dibatasi tenggat per
+	// percobaan dan hidupnya dijaga tenggatDiamAliran.
+	batasTotalRencana = 5 * time.Minute
 )
 
 // CircuitGuard adalah penjaga arus per (provider, model), dipenuhi *Breaker.
@@ -94,6 +106,24 @@ type CircuitGuardTerkonfigurasi interface {
 
 // var _ memastikan *Breaker memenuhi kontrak terkonfigurasi.
 var _ CircuitGuardTerkonfigurasi = (*Breaker)(nil)
+
+// CircuitGuardHasilProbe adalah penjaga arus yang bisa membedakan hasil
+// probe half_open dari hasil percobaan biasa (audit3 V-BR-03). Executor
+// memakainya bila penjaga mendukungnya; penjaga yang tidak mendukungnya
+// tetap bekerja lewat Record biasa, dengan konsekuensi hasil basi pada
+// episode half_open tidak bisa disaring — itulah sebabnya *Breaker
+// menerapkannya.
+type CircuitGuardHasilProbe interface {
+	// RecordHasil mencatat hasil satu percobaan; probe=true hanya bila
+	// percobaan itu diizinkan saat state half_open.
+	RecordHasil(ctx context.Context, providerID, model string, sukses, probe bool) error
+	// RecordHasilWithConfig adalah RecordHasil dengan konfigurasi
+	// per-aturan routing.
+	RecordHasilWithConfig(ctx context.Context, providerID, model string, sukses, probe bool, cfg BreakerConfig) error
+}
+
+// var _ memastikan *Breaker memenuhi kontrak hasil probe.
+var _ CircuitGuardHasilProbe = (*Breaker)(nil)
 
 // Plan adalah rencana eksekusi satu permintaan: kandidat berurut beserta kesabaran yang
 // berlaku untuknya.
@@ -375,6 +405,15 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 		return out
 	}
 
+	// Anggaran waktu total rencana (audit3 V-BR-08) — lihat catatan
+	// batasTotalRencana. Dipasang sebagai turunan context request, jadi
+	// tenggat yang lebih pendek pada request tetap yang berlaku.
+	if !plan.streaming {
+		var batal context.CancelFunc
+		ctx, batal = context.WithTimeout(ctx, batasTotalRencana)
+		defer batal()
+	}
+
 	maksPercobaan := max(plan.MaxAttempts, 1)
 
 	// sisa adalah sisa anggaran combo pipeline. Dihitung di sini, di luar loop, karena
@@ -411,29 +450,16 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 			jatah = c.MaxRetries + 1
 		}
 
-		izin, state, gerr := e.izinkan(ctx, c, plan.Model, plan.BreakerCfg)
-		if gerr != nil {
-			// Penjaga yang error tidak memblokir: lihat catatan di CircuitGuard.
-			e.logger.WarnContext(ctx, "pemutus arus tidak bisa dibaca, permintaan diloloskan",
-				"provider", c.ProviderName, "model", plan.Model, "error", gerr)
-		}
-		if !izin {
-			out.Attempts = append(out.Attempts, Attempt{
-				ProviderID: c.ProviderID, ProviderName: c.ProviderName,
-				ProviderModelID: c.ProviderModelID, UpstreamModel: c.UpstreamModelName,
-				BreakerState: state,
-				SkipReason:   "pemutus arus terbuka",
-			})
-			continue
-		}
-
-		hasil, att, ok := cobaKandidat(ctx, e, plan, c, state, jatah, jalankan)
+		hasil, att, ok := cobaKandidat(ctx, e, plan, c, jatah, jalankan)
 		out.Attempts = append(out.Attempts, att...)
-		// Anggaran hanya berkurang oleh percobaan yang benar-benar menghubungi upstream,
-		// sama seperti Percobaan() menghitungnya. Kandidat yang dilewati pemutus arus di
-		// atas tidak memakai anggaran: ia tidak pernah menagih upstream apa pun.
+		// Anggaran hanya berkurang oleh percobaan yang benar-benar menghubungi
+		// upstream, sama seperti Percobaan() menghitungnya. Percobaan lewatan —
+		// kandidat yang disisihkan pemutus arus atau slot penuh — tidak memakai
+		// anggaran: ia tidak pernah menagih upstream apa pun (audit3 V-BR-05;
+		// versi lama mengurangi sebesar len(att) dan menghabiskan seluruh
+		// anggaran combo pada satu kandidat yang bahkan tidak dicoba).
 		if plan.Budget > 0 {
-			sisa -= len(att)
+			sisa -= hitungPercobaanNyata(att)
 		}
 		if ok {
 			out.Value = hasil
@@ -442,19 +468,32 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 			return out
 		}
 
-		// Kegagalan terakhir kandidat ini menjadi kegagalan yang dilaporkan, sampai
-		// kandidat berikutnya menimpanya. Yang dilaporkan ke klien adalah kegagalan
-		// TERAKHIR, bukan yang pertama: yang pertama sudah tidak menggambarkan keadaan
-		// setelah gateway mencoba tempat lain.
-		last := att[len(att)-1]
-		out.Err = last.Err
+		// Kegagalan yang dilaporkan adalah kegagalan NYATA terakhir — dari
+		// kandidat mana pun yang benar-benar menghasilkan error — sampai
+		// kandidat berikutnya menimpanya. Yang dilaporkan ke klien adalah
+		// kegagalan TERAKHIR, bukan yang pertama: yang pertama sudah tidak
+		// menggambarkan keadaan setelah gateway mencoba tempat lain.
+		// Percobaan lewatan (SkipReason terisi, Err nil) tidak menimpa apa
+		// pun: kandidat yang dilewati pemutus arus tidak berkata apa-apa
+		// tentang kesehatan kandidat sebelumnya.
+		var errTerakhir *providers.Error
+		for i := len(att) - 1; i >= 0; i-- {
+			if att[i].Err != nil {
+				errTerakhir = att[i].Err
+				break
+			}
+		}
+		if errTerakhir == nil {
+			continue
+		}
+		out.Err = errTerakhir
 
 		// Aliran yang sudah terkirim sebagian mengakhiri segalanya — tidak boleh diulang
 		// dan tidak boleh dialihkan.
-		if last.Err != nil && last.Err.StreamedBytes > 0 {
+		if errTerakhir.StreamedBytes > 0 {
 			return out
 		}
-		if last.Err != nil && !last.Err.Failoverable() {
+		if !errTerakhir.Failoverable() {
 			return out
 		}
 	}
@@ -527,6 +566,40 @@ func (e *Executor) ambilSlot(c *upstream.RouteCandidate) (lepas func(), ok bool)
 	}, true
 }
 
+// hitungPercobaanNyata menghitung percobaan dalam satu irisan yang benar-benar
+// menghubungi upstream — pasangannya Outcome.Percobaan untuk irisan per kandidat.
+func hitungPercobaanNyata(att []Attempt) int {
+	var n int
+	for _, a := range att {
+		if a.SkipReason == "" {
+			n++
+		}
+	}
+	return n
+}
+
+// kunciStatusProbe menandai context satu percobaan sebagai probe half_open.
+//
+// Penanda ini yang mengantar status izin ke pencatatan aliran streaming:
+// hasil aliran baru dicatat saat aliran berakhir, jauh sesudah percobaan
+// yang membukanya selesai, dan pada saat itu hanya context ini yang masih
+// tahu apakah pembukaannya adalah sebuah probe (audit3 V-BR-03).
+type kunciStatusProbe struct{}
+
+// ctxDenganProbe menanam penanda probe pada context percobaan.
+func ctxDenganProbe(ctx context.Context, probe bool) context.Context {
+	if !probe {
+		return ctx
+	}
+	return context.WithValue(ctx, kunciStatusProbe{}, true)
+}
+
+// probeDariContext membaca penanda probe dari context percobaan.
+func probeDariContext(ctx context.Context) bool {
+	v, _ := ctx.Value(kunciStatusProbe{}).(bool)
+	return v
+}
+
 // cobaKandidat mengulang satu kandidat sampai berhasil, kehabisan percobaan, atau menemui
 // kegagalan yang tidak boleh diulang.
 //
@@ -534,12 +607,23 @@ func (e *Executor) ambilSlot(c *upstream.RouteCandidate) (lepas func(), ok bool)
 //
 // Selalu mengembalikan minimal satu Attempt, sehingga pemanggil boleh membaca elemen
 // terakhirnya tanpa memeriksa panjang.
+//
+// Dua urutan di dalam loop ini adalah perbaikan audit3 dan tidak boleh
+// ditukar balik:
+//
+//   - Slot konkurensi diambil SEBELUM izin pemutus arus diminta (V-BR-07):
+//     izin probe half_open adalah kuota langka, dan mengambilnya lebih dulu
+//     berarti slot yang penuh menghanguskannya tanpa satu pun kontak ke
+//     upstream — breaker lalu macet di half_open walau upstream sudah pulih.
+//   - Izin diminta PER PERCOBAAN, bukan sekali per kandidat (V-BR-02): pada
+//     half_open satu izin adalah satu probe, dan probe yang gagal membuka
+//     lagi breaker; percobaan berikutnya harus bertanya lagi dan akan
+//     ditolak, bukan menembak upstream sampai MaxAttempts dari satu izin.
 func cobaKandidat[T any](
 	ctx context.Context,
 	e *Executor,
 	plan Plan,
 	c *upstream.RouteCandidate,
-	state State,
 	maksPercobaan int,
 	jalankan pelaksana[T],
 ) (T, []Attempt, bool) {
@@ -556,8 +640,7 @@ func cobaKandidat[T any](
 				ProviderID: c.ProviderID, ProviderName: c.ProviderName,
 				ProviderModelID: c.ProviderModelID, UpstreamModel: c.UpstreamModelName,
 				Nth: n, Started: time.Now(),
-				BreakerState: state,
-				SkipReason:   "batas konkurensi provider penuh",
+				SkipReason: "batas konkurensi provider penuh",
 				Err: &providers.Error{
 					Kind:     providers.ErrKindRateLimit,
 					Provider: c.ProviderName,
@@ -568,9 +651,30 @@ func cobaKandidat[T any](
 			return kosong, att, false
 		}
 
+		izin, state, gerr := e.izinkan(ctx, c, plan.Model, plan.BreakerCfg)
+		if gerr != nil {
+			// Penjaga yang error tidak memblokir: lihat catatan di CircuitGuard.
+			e.logger.WarnContext(ctx, "pemutus arus tidak bisa dibaca, permintaan diloloskan",
+				"provider", c.ProviderName, "model", plan.Model, "error", gerr)
+		}
+		if !izin {
+			lepas()
+			att = append(att, Attempt{
+				ProviderID: c.ProviderID, ProviderName: c.ProviderName,
+				ProviderModelID: c.ProviderModelID, UpstreamModel: c.UpstreamModelName,
+				Nth: n, Started: time.Now(),
+				BreakerState: state,
+				SkipReason:   "pemutus arus terbuka",
+			})
+			return kosong, att, false
+		}
+		// Percobaan yang diizinkan saat half_open adalah sebuah probe, dan
+		// status itu menentukan bagaimana hasilnya boleh ditafsirkan
+		// pemutus arus (audit3 V-BR-03).
+		probe := state == StateHalfOpen
+
 		mulai := time.Now()
-		nilai, perr := jalankan(ctx, c)
-		lepas()
+		nilai, perr := jalankan(ctxDenganProbe(ctx, probe), c)
 		a := Attempt{
 			ProviderID: c.ProviderID, ProviderName: c.ProviderName,
 			ProviderModelID: c.ProviderModelID, UpstreamModel: c.UpstreamModelName,
@@ -584,10 +688,19 @@ func cobaKandidat[T any](
 			// pencatatan ditunda ke pembungkus aliran di ExecuteStream yang
 			// tahu bagaimana aliran itu berakhir (audit F4).
 			if !plan.streaming {
-				e.catat(ctx, c, plan.Model, true, plan.BreakerCfg)
+				e.catat(ctx, c, plan.Model, true, plan.BreakerCfg, probe)
+				lepas()
+			} else if aliran, ok := any(nilai).(providers.Stream); ok {
+				// Slot dipegang selama aliran HIDUP, bukan sampai ia dibuka
+				// (audit3 V-BR-06): kepemilikan slot berpindah ke pembungkus
+				// aliran, yang melepasnya saat aliran berakhir.
+				nilai = any(&aliranPemegangSlot{Stream: aliran, lepas: lepas}).(T)
+			} else {
+				lepas()
 			}
 			return nilai, att, true
 		}
+		lepas()
 
 		a.Err = perr
 		att = append(att, a)
@@ -600,7 +713,7 @@ func cobaKandidat[T any](
 		// laju/konkurensi yang diputuskan gateway sendiri sebelum upstream
 		// dihubungi bukan bukti kesehatan provider (audit F4).
 		if a.Err.Kind != providers.ErrKindCanceled && !a.Err.Local {
-			e.catat(ctx, c, plan.Model, false, plan.BreakerCfg)
+			e.catat(ctx, c, plan.Model, false, plan.BreakerCfg, probe)
 		}
 
 		if !a.Err.Retryable() || n == maksPercobaan {
@@ -619,6 +732,37 @@ func cobaKandidat[T any](
 		}
 	}
 	return kosong, att, false
+}
+
+// aliranPemegangSlot memegang slot konkurensi provider selama aliran
+// streaming hidup (audit3 V-BR-06).
+//
+// Sebelum pembungkus ini ada, slot dilepas tepat sesudah pembuka aliran
+// kembali — yaitu saat aliran DIBUKA — sehingga max_concurrent hanya
+// mengatur laju pembukaan: provider ber-max_concurrent 1 terbukti melayani
+// 3 aliran 24 detik bersamaan. Slot kini dilepas pada akhir aliran yang
+// sesungguhnya: peristiwa terminal dari Recv (EOF maupun error) atau
+// Close, mana pun yang lebih dulu.
+type aliranPemegangSlot struct {
+	providers.Stream
+	lepas  func()
+	sekali sync.Once
+}
+
+// Recv meneruskan pembacaan; akhir aliran melepas slot.
+func (a *aliranPemegangSlot) Recv() (*providers.StreamEvent, error) {
+	ev, err := a.Stream.Recv()
+	if err != nil {
+		a.sekali.Do(a.lepas)
+	}
+	return ev, err
+}
+
+// Close menutup aliran lalu melepas slot.
+func (a *aliranPemegangSlot) Close() error {
+	err := a.Stream.Close()
+	a.sekali.Do(a.lepas)
+	return err
 }
 
 // pelaksana adalah satu percobaan yang sudah mengurus umur context-nya sendiri dan
@@ -710,15 +854,26 @@ func jadikanProviderError(provider string, err error) *providers.Error {
 
 // catat melaporkan hasil satu percobaan ke pemutus arus.
 //
+// probe menyampaikan apakah percobaan ini diizinkan sebagai probe
+// half_open, supaya hasilnya tidak tertukar dengan hasil basi percobaan
+// dari episode sebelumnya (audit3 V-BR-03). Penjaga yang tidak menerapkan
+// CircuitGuardHasilProbe menerima Record biasa.
+//
 // Kegagalan mencatat hanya di-log, tidak dikembalikan: pada titik ini permintaan sudah
 // punya jawaban, dan menggagalkannya karena Redis tidak bisa dicatat berarti menukar
 // permintaan yang berhasil dengan error demi kerapian metrik.
-func (e *Executor) catat(ctx context.Context, c *upstream.RouteCandidate, model string, sukses bool, cfg BreakerConfig) {
+func (e *Executor) catat(ctx context.Context, c *upstream.RouteCandidate, model string, sukses bool, cfg BreakerConfig, probe bool) {
 	if e.guard == nil {
 		return
 	}
 	var err error
-	if cfg != (BreakerConfig{}) {
+	if hp, ok := e.guard.(CircuitGuardHasilProbe); ok {
+		if cfg != (BreakerConfig{}) {
+			err = hp.RecordHasilWithConfig(ctx, c.ProviderID, model, sukses, probe, cfg)
+		} else {
+			err = hp.RecordHasil(ctx, c.ProviderID, model, sukses, probe)
+		}
+	} else if cfg != (BreakerConfig{}) {
 		if ter, ok := e.guard.(CircuitGuardTerkonfigurasi); ok {
 			err = ter.RecordWithConfig(ctx, c.ProviderID, model, sukses, cfg)
 		} else {
@@ -869,11 +1024,16 @@ func bungkusPencatatAliran(
 			return nil, err
 		}
 
+		// Status probe pembukaan ini dibaca dari context percobaan: hasil
+		// aliran dicatat saat aliran berakhir, dan hanya penanda di context
+		// yang masih menghubungkan akhir itu ke izin yang membukanya
+		// (audit3 V-BR-03).
+		probe := probeDariContext(octx)
 		return &aliranPencatat{
 			Stream: &aliranPeristiwaPertama{Stream: dijaga, ev: ev},
 			ctx:    ctx,
 			catat: func(sukses bool) {
-				e.catat(ctx, c, plan.Model, sukses, plan.BreakerCfg)
+				e.catat(ctx, c, plan.Model, sukses, plan.BreakerCfg, probe)
 			},
 		}, nil
 	}

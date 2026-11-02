@@ -294,7 +294,15 @@ func (r *Rule) Matches(req Request) bool {
 		return false
 	}
 	alias := r.Alias()
-	explicitTargetMatch := req.ModelName != "" && (r.Name == req.ModelName || (alias != "" && alias == req.ModelName))
+	// Target eksplisit hanya lahir dari ALIAS (virtual_alias atau tag
+	// [combo:alias=...]): alias adalah nama endpoint virtual yang memang
+	// dipanggil klien untuk memanggil aturan ini, sehingga syarat model
+	// aturan tidak boleh menolaknya. Nama aturan TIDAK memberi hak yang
+	// sama — nama adalah label bebas operator yang rutin menabrak nama
+	// model, dan membiarkannya melewatkan MatchModelID membuat aturan
+	// berprioritas rendah membajak lalu lintas model lain hanya karena
+	// namanya kebetulan sama dengan model yang diminta (audit3 V-BR-10).
+	explicitTargetMatch := req.ModelName != "" && alias != "" && alias == req.ModelName
 	if !explicitTargetMatch && r.MatchModelID != "" && r.MatchModelID != req.ModelID {
 		return false
 	}

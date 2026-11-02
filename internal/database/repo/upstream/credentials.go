@@ -214,10 +214,19 @@ func (r *CredentialRepo) List(ctx context.Context, providerID string) ([]*Creden
 
 // Active mengembalikan kredensial aktif provider dalam bentuk sudah terdekripsi.
 //
-// Pemilihannya: yang paling sedikit gagal autentikasi lebih dulu, lalu yang paling lama
-// tidak dipakai. Dengan begitu provider yang punya beberapa kredensial memakainya
-// bergiliran — berguna saat batas laju upstream dihitung per kredensial — dan kredensial
-// yang sedang ditolak upstream tidak dicoba terus-menerus selama masih ada yang lain.
+// Pemilihannya mengikuti strategi provider lebih dulu, baru riwayat
+// kegagalan: pada strategi "priority" kredensial prioritas utama selalu
+// dipilih selama sehat — penghitung auth_failures hanya memecah seri di
+// antara kredensial berprioritas SAMA, bukan mengalahkan prioritas itu
+// sendiri (audit3 V-BR-13: versi lama mengurutkan auth_failures paling
+// depan untuk semua strategi, sehingga satu kegagalan historis
+// menurunkan kredensial utama di bawah cadangannya secara permanen,
+// karena penghitungnya kumulatif dan hanya direset saat rahasia
+// diganti). Pada strategi lain urutan lamanya dipertahankan:
+// auth_failures memimpin (kredensial yang sedang ditolak upstream
+// dihindari selama masih ada yang sehat), lalu pemakaian diputar dari
+// yang paling lama tidak dipakai (Least Recently Used), berguna saat
+// batas laju upstream dihitung per kredensial.
 //
 // Kredensial yang mati atau sudah kedaluwarsa tidak pernah dipilih. Bila baris masih
 // dienkripsi kunci lama, errornya membungkus security.ErrKeyMismatch supaya operator
@@ -245,9 +254,24 @@ func (r *CredentialRepo) Active(ctx context.Context, providerID string) (*Active
 		  and c.enabled
 		  and (c.expires_at is null or c.expires_at > now())
 		order by
-		  c.auth_failures asc,
+		  -- Kunci pertama berbeda per rezim strategi. Pada 'priority',
+		  -- prioritaslah yang memilih, BUKAN riwayat kegagalan (audit3
+		  -- V-BR-13: versi lama mengurutkan auth_failures paling depan
+		  -- untuk semua strategi, sehingga satu kegagalan historis
+		  -- menurunkan kredensial utama di bawah cadangannya secara
+		  -- permanen). Pada strategi lain, auth_failures tetap memimpin
+		  -- seperti perilaku terdokumentasi: kredensial yang sedang
+		  -- ditolak upstream dihindari selama masih ada yang sehat.
 		  case
 		    when p.credential_strategy = 'priority' then c.priority
+		    else c.auth_failures
+		  end asc,
+		  -- Pada 'priority', auth_failures hanya memecah seri di dalam
+		  -- prioritas yang sama: kredensial menyingkir ke belakang
+		  -- saudara seprioritasnya yang lebih bersih, tanpa pernah
+		  -- menjatuhkan prioritasnya sendiri.
+		  case
+		    when p.credential_strategy = 'priority' then c.auth_failures
 		    else null
 		  end asc,
 		  case
@@ -255,6 +279,7 @@ func (r *CredentialRepo) Active(ctx context.Context, providerID string) (*Active
 		    else null
 		  end asc,
 		  c.last_used_at asc nulls first,
+		  c.auth_failures asc,
 		  c.created_at asc
 		limit 1`, providerID).Scan(&id, &label, &ciphertext, &expiresAt, &egressPoolID)
 	if err != nil {

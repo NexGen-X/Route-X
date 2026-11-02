@@ -358,12 +358,29 @@ func (g *Guard) PeriksaBatasModel(ctx context.Context, modelID string) *Rejectio
 // di context permintaan; DenganMemoBatas dipasang handler sebelum
 // Execute/ExecuteStream. Tanpa memo, perilaku lama berlaku apa adanya
 // (aman untuk pemanggil lain dan tes).
+//
+// Satu pengecualian (audit3 V-BR-04): PENOLAKAN hanya dimemoisasi selama
+// RetryAfter-nya. Keputusan lolos tetap sekali per permintaan, tetapi
+// penolakan adalah jawaban tentang jendela limiter yang akan berganti —
+// membekukannya sepanjang permintaan membuat percobaan berikutnya ditolak
+// oleh jendela yang sudah lewat, failover tertunda dua kali RetryAfter,
+// dan percobaan hantu tercatat tanpa satu pun kontak ke upstream.
 
 type kunciMemoBatas struct{}
 
+// entriMemoBatas adalah satu keputusan batas yang dimemoisasi.
+type entriMemoBatas struct {
+	err *providers.Error
+	// berlakuSampai membatasi umur memo PENOLAKAN: nol berarti sepanjang
+	// permintaan, dan itu hanya sah untuk keputusan lolos — kuotanya sudah
+	// termakan satu kali dan tidak boleh termakan lagi oleh percobaan
+	// berikutnya dalam permintaan yang sama.
+	berlakuSampai time.Time
+}
+
 type memoBatas struct {
 	mu    sync.Mutex
-	hasil map[string]*providers.Error
+	hasil map[string]entriMemoBatas
 }
 
 // DenganMemoBatas menanam memo keputusan batas pada context permintaan.
@@ -371,7 +388,7 @@ func (g *Guard) DenganMemoBatas(ctx context.Context) context.Context {
 	if ctx == nil || ctx.Value(kunciMemoBatas{}) != nil {
 		return ctx
 	}
-	return context.WithValue(ctx, kunciMemoBatas{}, &memoBatas{hasil: make(map[string]*providers.Error)})
+	return context.WithValue(ctx, kunciMemoBatas{}, &memoBatas{hasil: make(map[string]entriMemoBatas)})
 }
 
 func memoBatasAmbil(ctx context.Context, kunci string) (*providers.Error, bool) {
@@ -381,8 +398,18 @@ func memoBatasAmbil(ctx context.Context, kunci string) (*providers.Error, bool) 
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	err, ada := m.hasil[kunci]
-	return err, ada
+	entri, ada := m.hasil[kunci]
+	if !ada {
+		return nil, false
+	}
+	// Memo penolakan yang sudah melewati RetryAfter-nya adalah keputusan
+	// tentang jendela limiter yang SUDAH berganti; membuangnya memaksa
+	// pemeriksaan segar pada percobaan berikutnya (audit3 V-BR-04).
+	if !entri.berlakuSampai.IsZero() && !time.Now().Before(entri.berlakuSampai) {
+		delete(m.hasil, kunci)
+		return nil, false
+	}
+	return entri.err, true
 }
 
 func memoBatasSimpan(ctx context.Context, kunci string, err *providers.Error) {
@@ -390,9 +417,24 @@ func memoBatasSimpan(ctx context.Context, kunci string, err *providers.Error) {
 	if !ok || m == nil {
 		return
 	}
+	entri := entriMemoBatas{err: err}
+	if err != nil {
+		// Penolakan hanya dimemoisasi selama RetryAfter-nya (audit3
+		// V-BR-04): penolakan itu jawaban tentang jendela limiter saat ini,
+		// dan memakainya ulang sesudah jendela berganti membuat percobaan
+		// berikutnya ditolak oleh keputusan basi — lalu tercatat sebagai
+		// percobaan upstream padahal upstream tidak pernah dihubungi.
+		// Penolakan tanpa RetryAfter tidak dimemoisasi sama sekali: masa
+		// berlakunya tidak diketahui, dan menebaknya berarti menebak salah
+		// satu dari dua arah.
+		if err.RetryAfter <= 0 {
+			return
+		}
+		entri.berlakuSampai = time.Now().Add(err.RetryAfter)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.hasil[kunci] = err
+	m.hasil[kunci] = entri
 }
 
 // PeriksaBatasProvider menegakkan batas laju cakupan PROVIDER untuk satu percobaan.

@@ -144,8 +144,9 @@ func TestExecuteBatasKonkurensiProviderMelewatiKandidat(t *testing.T) {
 	masuk := make(chan struct{})
 	lepas := make(chan struct{})
 	var sekali sync.Once
+	selesai := make(chan *Outcome[string], 1)
 	go func() {
-		Execute(context.Background(), e, rencana("m", 1, 0, a),
+		selesai <- Execute(context.Background(), e, rencana("m", 1, 0, a),
 			func(_ context.Context, _ *upstream.RouteCandidate) (string, error) {
 				sekali.Do(func() { close(masuk) })
 				<-lepas
@@ -169,11 +170,25 @@ func TestExecuteBatasKonkurensiProviderMelewatiKandidat(t *testing.T) {
 	if out.Value != "dari-b" {
 		t.Errorf("Value = %v, mau dari-b", out.Value)
 	}
-	// Yang tercatat hanya keberhasilan b; kandidat a yang dilewati slot
-	// penuh tidak boleh menghasilkan catatan apa pun (penolakan lokal).
+
+	// Execute pertama WAJIB ditunggu sampai benar-benar kembali sebelum
+	// catatan breaker diperiksa (B-001): menutup kanal lepas hanya
+	// membebaskan op-nya — pencatatan keberhasilannya berjalan sesudah
+	// itu, dan asersi yang tidak menunggu berlomba dengan pencatatan yang
+	// sah itu (±1,7% gagal di bawah -race).
+	pertama := <-selesai
+	if pertama.Err != nil || pertama.Value != "ok" {
+		t.Fatalf("Execute pertama = (%q, %v), mau (ok, nil)", pertama.Value, pertama.Err)
+	}
+
+	// Tepat dua catatan, dalam urutan ini: keberhasilan b dari permintaan
+	// kedua, lalu keberhasilan a dari permintaan pertama. Kandidat a yang
+	// dilewati slot penuh pada permintaan kedua tidak boleh menghasilkan
+	// catatan apa pun (penolakan lokal) — catatan ketiga dari a, dalam
+	// bentuk apa pun, berarti lewatan itu ikut tercatat.
 	cat := g.catatan()
-	if len(cat) != 1 || cat[0] != "prov-b:true" {
-		t.Errorf("catatan breaker = %v, mau tepat [prov-b:true]", cat)
+	if len(cat) != 2 || cat[0] != "prov-b:true" || cat[1] != "prov-a:true" {
+		t.Errorf("catatan breaker = %v, mau tepat [prov-b:true prov-a:true]", cat)
 	}
 }
 

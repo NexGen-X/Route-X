@@ -183,7 +183,10 @@ func TestBreakerClosedKeOpenKeHalfOpenKeClosed(t *testing.T) {
 	// pemanggil kedua akan mendapat izin yang sama.
 	e.assertKeputusan(t, "probe kedua", breakerProviderA, breakerModelA, false, StateHalfOpen)
 
-	e.record(t, breakerProviderA, breakerModelA, true)
+	// Hasil probe dicatat sebagai hasil probe (RecordHasil, audit3 V-BR-03):
+	// Record biasa pada episode half_open kini berarti hasil basi dari
+	// episode sebelumnya dan diabaikan.
+	e.recordProbe(t, breakerProviderA, breakerModelA, true)
 	if state := e.state(t, breakerProviderA, breakerModelA); state != StateClosed {
 		t.Fatalf("probe berhasil tidak menutup breaker: state = %s", state)
 	}
@@ -207,7 +210,7 @@ func TestBreakerHalfOpenGagalMembukaLagiDenganTimerBaru(t *testing.T) {
 	e.advance(cfgUji().OpenDuration)
 	e.assertKeputusan(t, "probe", breakerProviderA, breakerModelA, true, StateHalfOpen)
 
-	e.record(t, breakerProviderA, breakerModelA, false)
+	e.recordProbe(t, breakerProviderA, breakerModelA, false)
 	if state := e.state(t, breakerProviderA, breakerModelA); state != StateOpen {
 		t.Fatalf("probe gagal tidak membuka breaker lagi: state = %s", state)
 	}

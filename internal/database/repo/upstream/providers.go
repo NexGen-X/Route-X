@@ -529,7 +529,17 @@ const routeCandidatesSQL = `
 	  -- Provider yang belum pernah diperiksa (NULL) tetap ikut: kalau tidak, tidak ada
 	  -- satu pun rute yang bisa dipakai sampai worker health check selesai berjalan
 	  -- pertama kali setelah deploy.
-	  and ($2::boolean or p.last_health_status is null or p.last_health_status <> 'unhealthy')
+	  --
+	  -- Snapshot 'unhealthy' hanya dipercaya selama SEGAR (audit3 V-BR-09):
+	  -- worker kesehatan menulisnya setiap HEALTH_CHECK_INTERVAL (bawaan
+	  -- 60 detik), jadi snapshot yang umurnya melewati sepuluh putaran
+	  -- adalah kabar lama, bukan keadaan — worker yang berhenti tidak
+	  -- boleh mengubahnya menjadi kebenaran permanen yang menyisihkan
+	  -- provider sehat selamanya. Snapshot basi diperlakukan seperti
+	  -- belum pernah diperiksa: provider ikut lagi, dan pemutus arus
+	  -- tetap melindungi dari yang benar-benar mati.
+	  and ($2::boolean or p.last_health_status is null or p.last_health_status <> 'unhealthy'
+	       or p.last_health_at is null or p.last_health_at < now() - interval '10 minutes')
 	  and (case
 		when $3::uuid is null then not p.is_byok
 		else not p.is_byok or p.owner_user_id = $3::uuid

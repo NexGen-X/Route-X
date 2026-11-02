@@ -29,7 +29,18 @@ type Selector struct {
 	// hilang hanya jaminan bahwa dua permintaan berurutan lintas instance tidak mengenai
 	// provider yang sama. Itu bukan sifat yang dijanjikan siapa pun, dan bukan sifat yang
 	// pantas dibayar dengan latensi setiap permintaan.
-	rr sync.Map // map[string]*atomic.Uint64
+	//
+	// Entrinya disapu bila peta melewati ambangSapuRR: kunci rotasi berasal
+	// dari pasangan historis yang katalognya berubah mengikuti operator,
+	// dan tanpa penyapuan entri pasangan yang sudah tidak ada menumpuk
+	// permanen selama proses hidup (audit3 V-LN-18).
+	rr sync.Map // map[string]*penghitungRR
+
+	// jumlahRR adalah perkiraan jumlah entri rr, untuk memutuskan kapan
+	// menyapu tanpa menghitung peta pada setiap permintaan.
+	jumlahRR atomic.Int64
+	// menyapuRR memastikan hanya satu goroutine yang menyapu pada satu waktu.
+	menyapuRR atomic.Bool
 
 	// jitter memasok salt tie-breaker untuk memutus seri saat kunci bobot identik.
 	jitter atomic.Uint64
@@ -216,6 +227,44 @@ func urutKemampuan(cands []*upstream.RouteCandidate) {
 	})
 }
 
+// penghitungRR adalah satu penghitung round robin beserta cap waktu
+// pemakaian terakhirnya, supaya entrinya bisa disapu saat tidak lagi dipakai.
+type penghitungRR struct {
+	n        atomic.Uint64
+	terakhir atomic.Int64 // unix nano pemakaian terakhir
+}
+
+// Tetapan penyapuan penghitung round robin (audit3 V-LN-18). Ambangnya jauh
+// di atas jumlah pasangan yang wajar pada satu instalasi, supaya penyapuan
+// praktis tidak pernah berjalan pada lalu lintas normal; umurnya jauh di
+// atas jeda antarpermintaan pasangan yang masih hidup, supaya yang dibuang
+// hanya pasangan yang benar-benar sudah tidak dipakai. Membuang penghitung
+// yang ternyata masih dipakai pun tidak berbahaya: rotasinya mulai lagi
+// dari awal, dan titik awal rotasi memang tidak dijanjikan apa pun.
+const (
+	ambangSapuRR = 512
+	umurEntriRR  = time.Hour
+)
+
+// sapuRR membuang penghitung round robin yang tidak dipakai lebih lama
+// dari umurEntriRR. Dipanggil dari putar hanya saat peta melewati ambang,
+// dan hanya oleh satu goroutine pada satu waktu.
+func (s *Selector) sapuRR() {
+	if !s.menyapuRR.CompareAndSwap(false, true) {
+		return
+	}
+	defer s.menyapuRR.Store(false)
+	batas := time.Now().Add(-umurEntriRR).UnixNano()
+	s.rr.Range(func(k, v any) bool {
+		if v.(*penghitungRR).terakhir.Load() < batas {
+			if s.rr.CompareAndDelete(k, v) {
+				s.jumlahRR.Add(-1)
+			}
+		}
+		return true
+	})
+}
+
 // putar memutar slice sehingga titik awalnya bergeser satu setiap permintaan.
 //
 // Yang diputar adalah SELURUH urutan, bukan hanya elemen pertama, supaya urutan failover
@@ -226,11 +275,17 @@ func (s *Selector) putar(key string, cands []*upstream.RouteCandidate) {
 	if len(cands) < 2 {
 		return
 	}
-	v, _ := s.rr.LoadOrStore(key, new(atomic.Uint64))
-	ctr := v.(*atomic.Uint64)
+	v, dimuat := s.rr.LoadOrStore(key, &penghitungRR{})
+	ctr := v.(*penghitungRR)
+	ctr.terakhir.Store(time.Now().UnixNano())
+	// dimuat=true berarti kunci sudah ada; entri BARU (dimuat=false) yang
+	// menumbuhkan peta dan bisa memicu penyapuan.
+	if !dimuat && s.jumlahRR.Add(1) > ambangSapuRR {
+		s.sapuRR()
+	}
 	// Add mengembalikan nilai SETELAH penambahan, jadi permintaan pertama mulai dari
 	// indeks 1. Titik awalnya tidak penting; yang penting ia bergerak.
-	n := int(ctr.Add(1) % uint64(len(cands)))
+	n := int(ctr.n.Add(1) % uint64(len(cands)))
 	putarSlice(cands, n)
 }
 

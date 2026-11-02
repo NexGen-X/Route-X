@@ -1050,6 +1050,13 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "ban", ban.ID, map[string]any{"kind": ban.SubjectKind, "subject": ban.Subject})
+	// Produser event ban.created (audit3 V-WH-08): fitur pemblokiran memang
+	// ada (policy.CreateBan), hanya produser webhook-nya yang belum terpasang.
+	h.pancarkanEvent(ctx, "ban.created", map[string]any{
+		"ban_id":       ban.ID,
+		"subject_kind": ban.SubjectKind,
+		"subject":      ban.Subject,
+	})
 	_ = h.respond(w, r, http.StatusCreated, toBanDTO(ban))
 }
 

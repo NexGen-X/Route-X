@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,6 +18,7 @@ import (
 type WebhookClaimer interface {
 	ClaimDue(ctx context.Context, workerID string, limit int) ([]*webhooks.Delivery, error)
 	RecoverStuck(ctx context.Context, stuckDuration time.Duration) (int64, error)
+	RenewLeases(ctx context.Context, deliveryIDs []int64, workerID string) error
 }
 
 // WebhookDispatcher mendefinisikan pengiriman satu delivery webhook.
@@ -39,7 +41,11 @@ type WebhookWorker struct {
 	batchSize     int
 	stuckInterval time.Duration
 	lastRecovery  time.Time
-	logger        *slog.Logger
+	// concurrency membatasi pengiriman serentak dalam satu batch.
+	concurrency int
+	// leaseRenewInterval adalah jeda pembaruan sewa batch yang sedang berjalan.
+	leaseRenewInterval time.Duration
+	logger             *slog.Logger
 }
 
 // NewWebhookWorker membuat instance baru WebhookWorker.
@@ -56,13 +62,15 @@ func NewWebhookWorker(
 	wid := fmt.Sprintf("worker-%s-%d", hostname, os.Getpid())
 
 	return &WebhookWorker{
-		pool:          pool,
-		repo:          repo,
-		dispatcher:    dispatcher,
-		workerID:      wid,
-		batchSize:     25,
-		stuckInterval: 2 * time.Minute,
-		logger:        logger,
+		pool:               pool,
+		repo:               repo,
+		dispatcher:         dispatcher,
+		workerID:           wid,
+		batchSize:          25,
+		stuckInterval:      2 * time.Minute,
+		concurrency:        5,
+		leaseRenewInterval: 30 * time.Second,
+		logger:             logger,
 	}
 }
 
@@ -90,25 +98,75 @@ func (w *WebhookWorker) Run(ctx context.Context) error {
 
 	w.logger.DebugContext(ctx, "memproses batch webhook delivery", "jumlah", len(deliveries), "worker_id", w.workerID)
 
+	// Jaga sewa batch selama batch berjalan (audit3 V-WH-12): ClaimDue mencap
+	// locked_at seluruh batch di awal, jadi tanpa pembaruan berkala item ekor
+	// yang masih antre di memori bisa melewati ambang stuck (5 menit) dan
+	// dipulihkan — lalu dikirim ganda — oleh instance lain.
+	ids := make([]int64, len(deliveries))
+	for i, d := range deliveries {
+		ids[i] = d.ID
+	}
+	stopJaga := w.jagaSewa(ctx, ids)
+	defer stopJaga()
+
+	// Dispatch PARALEL terbatas (audit3 V-WH-07): versi lama mengirim serial,
+	// sehingga satu endpoint lambat menahan seluruh batch di belakangnya
+	// (pada verifikasi live, delivery sehat tertahan tepat 20 detik menunggu
+	// endpoint yang tidur 20 detik).
+	sem := make(chan struct{}, w.concurrency)
+	var wg sync.WaitGroup
 	for _, d := range deliveries {
 		select {
 		case <-ctx.Done():
+			wg.Wait()
 			return ctx.Err()
-		default:
+		case sem <- struct{}{}:
 		}
+		wg.Add(1)
+		go func(d *webhooks.Delivery) {
+			defer wg.Done()
+			defer func() { <-sem }()
 
-		if err := w.dispatcher.Dispatch(ctx, d); err != nil {
-			// Dispatch TIDAK pernah gagal diam-diam: setiap kegagalan sudah
-			// ditulis ke webhook_deliveries (status + next_attempt_at) oleh
-			// Dispatcher.RecordFailure sebelum error ini kembali. Yang tersisa
-			// di sini hanyalah visibilitas log + metrik worker generik.
-			w.logger.WarnContext(ctx, "gagal mengirim webhook delivery",
-				"delivery_id", d.ID, "webhook_id", d.WebhookID, "event", d.Event,
-				"attempt", d.AttemptCount+1, "error", err)
-		}
+			if err := w.dispatcher.Dispatch(ctx, d); err != nil {
+				// Dispatch TIDAK pernah gagal diam-diam: setiap kegagalan sudah
+				// ditulis ke webhook_deliveries (status + next_attempt_at) oleh
+				// Dispatcher.RecordFailure sebelum error ini kembali. Yang tersisa
+				// di sini hanyalah visibilitas log + metrik worker generik.
+				w.logger.WarnContext(ctx, "gagal mengirim webhook delivery",
+					"delivery_id", d.ID, "webhook_id", d.WebhookID, "event", d.Event,
+					"attempt", d.AttemptCount+1, "error", err)
+			}
+		}(d)
 	}
+	wg.Wait()
 
 	return nil
+}
+
+// jagaSewa memperbarui locked_at batch setiap leaseRenewInterval sampai
+// fungsi berhenti yang dikembalikan dipanggil (batch selesai).
+func (w *WebhookWorker) jagaSewa(ctx context.Context, ids []int64) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(w.leaseRenewInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := w.repo.RenewLeases(ctx, ids, w.workerID); err != nil {
+					w.logger.WarnContext(ctx, "gagal memperbarui sewa batch webhook", "error", err)
+				}
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 // runStuckRecovery memulihkan pengiriman yang tersangkut dengan advisory lock.

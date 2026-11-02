@@ -21,6 +21,7 @@ export const Webhooks: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [newWebhook, setNewWebhook] = useState({ name: '', url: '', events: [] as string[], secret: '', enabled: true });
   
@@ -53,18 +54,48 @@ export const Webhooks: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Validasi di klien mencerminkan aturan server (audit3 V-FF-14): nama
+    // hanya spasi dan URL sampah dulu lolos cek falsy lalu meledak sebagai
+    // error buram; secret kosong dulu diterima lalu tanda tangannya bisa
+    // dipalsukan siapa pun.
+    const name = newWebhook.name.trim();
+    if (!name) {
+      toast.error('Nama webhook wajib diisi.');
+      return;
+    }
+    let parsed: URL;
     try {
-      if (!newWebhook.name || !newWebhook.url) {
-        toast.error('Nama dan URL webhook wajib diisi.');
-        return;
-      }
-      await api.webhooks.create(newWebhook);
+      parsed = new URL(newWebhook.url.trim());
+    } catch {
+      toast.error('URL webhook tidak valid.');
+      return;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      toast.error('URL webhook harus diawali http:// atau https://.');
+      return;
+    }
+    if (!newWebhook.secret.trim()) {
+      toast.error('Secret wajib diisi: payload webhook selalu ditandatangani dengan secret ini.');
+      return;
+    }
+    setCreating(true);
+    try {
+      await api.webhooks.create({
+        ...newWebhook,
+        name,
+        url: newWebhook.url.trim(),
+        // Kosong berarti berlangganan semua event — dinyatakan eksplisit
+        // sebagai '*' karena server menolak daftar event kosong.
+        events: newWebhook.events.length > 0 ? newWebhook.events : ['*'],
+      });
       toast.success('Webhook baru berhasil didaftarkan.');
       setIsCreateOpen(false);
       setNewWebhook({ name: '', url: '', events: [], secret: '', enabled: true });
       void loadWebhooks();
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, 'Gagal mendaftarkan webhook.'));
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -286,8 +317,8 @@ export const Webhooks: React.FC = () => {
             <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
               Batal
             </Button>
-            <Button variant="primary" type="submit" form="create-webhook-form">
-              Simpan Webhook
+            <Button variant="primary" type="submit" form="create-webhook-form" disabled={creating}>
+              {creating ? 'Menyimpan...' : 'Simpan Webhook'}
             </Button>
           </>
         }
@@ -319,7 +350,7 @@ export const Webhooks: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="wh-secret" className="text-xs font-medium text-text-secondary">Secret (Opsional)</label>
+              <label htmlFor="wh-secret" className="text-xs font-medium text-text-secondary">Secret *</label>
               <button
                 type="button"
                 onClick={() => setShowSecret(!showSecret)}

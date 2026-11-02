@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -41,8 +42,13 @@ func TestMaskSecret(t *testing.T) {
 	if got := MaskSecret("whsec_12345678"); got != "whsec_****5678" {
 		t.Errorf("MaskSecret salah: dapat %q, ingin whsec_****5678", got)
 	}
-	if got := MaskSecret("abc"); got != "whsec_****abc" {
-		t.Errorf("MaskSecret pendek salah: dapat %q, ingin whsec_****abc", got)
+	// Secret pendek tidak boleh tampil sebagian sama sekali (audit3 V-WH-11):
+	// versi lama mengembalikan secret ≤4 karakter UTUH di balik topeng.
+	if got := MaskSecret("abc"); got != "whsec_****" {
+		t.Errorf("MaskSecret pendek membocorkan secret: dapat %q, ingin whsec_****", got)
+	}
+	if got := MaskSecret("12345678"); got != "whsec_****" {
+		t.Errorf("MaskSecret 8 karakter membocorkan secret: dapat %q, ingin whsec_****", got)
 	}
 	if got := MaskSecret(""); got != "whsec_****" {
 		t.Errorf("MaskSecret kosong salah: dapat %q, ingin whsec_****", got)
@@ -121,31 +127,50 @@ func TestCalculateBackoffEqualJitter(t *testing.T) {
 func TestVerifySignature(t *testing.T) {
 	secret := []byte("kunci-rahasia-hmac-1234")
 	payload := []byte(`{"event":"provider.unhealthy","status":"down"}`)
+	const ts = "1793600000"
+	const deliveryID = int64(42)
 
-	// Hitung tanda tangan yang benar
-	h := hmac.New(sha256.New, secret)
-	h.Write(payload)
-	mac := hex.EncodeToString(h.Sum(nil))
+	// Tanda tangan skema saat ini mengikat timestamp + ID delivery + body.
+	mac := SignPayload(secret, ts, deliveryID, payload)
 	sigValid := "sha256=" + mac
 
-	if !VerifySignature(payload, secret, sigValid) {
+	if !VerifySignature(payload, secret, ts, deliveryID, sigValid) {
 		t.Error("VerifySignature gagal memvalidasi tanda tangan sah")
 	}
 
 	// Tanda tangan tanpa prefiks sha256= tetap diterima
-	if !VerifySignature(payload, secret, mac) {
+	if !VerifySignature(payload, secret, ts, deliveryID, mac) {
 		t.Error("VerifySignature gagal memvalidasi tanda tangan tanpa prefiks sha256=")
 	}
 
 	// Payload diubah sedikit (tampered) wajib ditolak
 	payloadPalsu := []byte(`{"event":"provider.unhealthy","status":"up"}`)
-	if VerifySignature(payloadPalsu, secret, sigValid) {
+	if VerifySignature(payloadPalsu, secret, ts, deliveryID, sigValid) {
 		t.Error("VerifySignature meloloskan payload palsu")
 	}
 
 	// Secret salah wajib ditolak
-	if VerifySignature(payload, []byte("kunci-salah"), sigValid) {
+	if VerifySignature(payload, []byte("kunci-salah"), ts, deliveryID, sigValid) {
 		t.Error("VerifySignature meloloskan kunci salah")
+	}
+
+	// Replay dengan timestamp diganti wajib ditolak (audit3 V-WH-05): itulah
+	// gunanya timestamp di dalam MAC.
+	if VerifySignature(payload, secret, "1793700000", deliveryID, sigValid) {
+		t.Error("VerifySignature meloloskan replay bertimestamp lain")
+	}
+
+	// ID delivery diganti juga wajib ditolak.
+	if VerifySignature(payload, secret, ts, 43, sigValid) {
+		t.Error("VerifySignature meloloskan ID delivery lain")
+	}
+
+	// Tanda tangan skema LAMA (HMAC atas body saja) tidak berlaku lagi.
+	h := hmac.New(sha256.New, secret)
+	h.Write(payload)
+	sigLama := "sha256=" + hex.EncodeToString(h.Sum(nil))
+	if VerifySignature(payload, secret, ts, deliveryID, sigLama) {
+		t.Error("VerifySignature masih menerima tanda tangan skema lama (tanpa timestamp/ID)")
 	}
 }
 
@@ -292,6 +317,8 @@ func TestIntegrationWebhooksSiklusHidupDanPengiriman(t *testing.T) {
 
 	var receivedPayload []byte
 	var receivedSig string
+	var receivedTS string
+	var receivedDeliveryID int64
 	var callCount atomic.Int32
 
 	// Server penerima webhook tiruan
@@ -300,6 +327,8 @@ func TestIntegrationWebhooksSiklusHidupDanPengiriman(t *testing.T) {
 		body, _ := io.ReadAll(req.Body)
 		receivedPayload = body
 		receivedSig = req.Header.Get("X-RouteX-Signature")
+		receivedTS = req.Header.Get("X-RouteX-Timestamp")
+		receivedDeliveryID, _ = strconv.ParseInt(req.Header.Get("X-RouteX-Delivery"), 10, 64)
 
 		if count == 1 {
 			// Percobaan pertama sengaja gagal 500 untuk menguji backoff dan retry
@@ -321,6 +350,7 @@ func TestIntegrationWebhooksSiklusHidupDanPengiriman(t *testing.T) {
 		Events:     []string{"provider.unhealthy", "circuit.opened"},
 		RawSecret:  rawSecret,
 		Cipher:     cipher,
+		Enabled:    true,
 		MaxRetries: 3,
 		TimeoutMS:  5000,
 		SSRFPolicy: security.SSRFPolicy{AllowHTTP: true, AllowPrivate: true},
@@ -458,8 +488,9 @@ func TestIntegrationWebhooksSiklusHidupDanPengiriman(t *testing.T) {
 		t.Errorf("delivered_at seharusnya tidak nil saat status delivered")
 	}
 
-	// Cek HMAC signature yang diterima server
-	if !VerifySignature(receivedPayload, []byte(rawSecret), receivedSig) {
+	// Cek HMAC signature yang diterima server: skema saat ini mengikat
+	// timestamp + ID delivery + body (audit3 V-WH-05).
+	if !VerifySignature(receivedPayload, []byte(rawSecret), receivedTS, receivedDeliveryID, receivedSig) {
 		t.Errorf("tanda tangan webhook yang diterima server tidak valid: %s", receivedSig)
 	}
 
@@ -603,6 +634,7 @@ func TestIntegrationWebhooksCRUDDanListDeliveries(t *testing.T) {
 		Events:    []string{"provider.unhealthy"},
 		RawSecret: "whsec_secret123",
 		Cipher:    cipher,
+		Enabled:   true,
 	})
 	if err != nil {
 		t.Fatalf("Create webhook: %v", err)

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -70,9 +71,26 @@ type createWebhookReq struct {
 	URL        string   `json:"url"`
 	Events     []string `json:"events"`
 	Secret     string   `json:"secret"`
-	Enabled    bool     `json:"enabled"`
+	Enabled    *bool    `json:"enabled"`
 	MaxRetries *int     `json:"max_retries"`
 	TimeoutMS  *int     `json:"timeout_ms"`
+}
+
+// validasiFieldWebhook memeriksa satu field masukan webhook dan mengembalikan
+// (kode, pesan) siap pakai untuk 400. Validasi tinggal di handler — bukan
+// hanya di CHECK constraint DB — supaya pesan menyebut field dan rentang yang
+// sah (audit3 V-WH-03: sebelumnya operator hanya menerima constraint_violation
+// generik, dan events kosong justru 500).
+func validasiEventsWebhook(events []string) (string, string, bool) {
+	if len(events) == 0 {
+		return "invalid_events", "events wajib berisi minimal satu event yang dilanggani", false
+	}
+	for _, ev := range events {
+		if !webhooks.ValidEvent(ev) {
+			return "invalid_events", fmt.Sprintf("event %q tidak dikenal; pilihan yang sah: %s", ev, strings.Join(webhooks.KnownEvents, ", ")), false
+		}
+	}
+	return "", "", true
 }
 
 func (h *Handlers) createWebhook(w http.ResponseWriter, r *http.Request) {
@@ -82,8 +100,30 @@ func (h *Handlers) createWebhook(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
 	}
-	if req.URL == "" {
+	if strings.TrimSpace(req.Name) == "" {
+		httpx.BadRequest(w, r, "invalid_name", "nama webhook wajib diisi")
+		return
+	}
+	if strings.TrimSpace(req.URL) == "" {
 		httpx.BadRequest(w, r, "missing_url", "url wajib diisi")
+		return
+	}
+	if code, msg, ok := validasiEventsWebhook(req.Events); !ok {
+		httpx.BadRequest(w, r, code, msg)
+		return
+	}
+	if strings.TrimSpace(req.Secret) == "" {
+		// Secret kosong berarti tanda tangan HMAC berkunci kosong yang bisa
+		// dipalsukan siapa pun yang tahu URL penerima (audit3 V-WH-04).
+		httpx.BadRequest(w, r, "missing_secret", "secret wajib diisi: payload webhook selalu ditandatangani dengan secret ini")
+		return
+	}
+	if req.MaxRetries != nil && (*req.MaxRetries < 0 || *req.MaxRetries > 20) {
+		httpx.BadRequest(w, r, "invalid_max_retries", "max_retries harus antara 0 dan 20")
+		return
+	}
+	if req.TimeoutMS != nil && (*req.TimeoutMS < 1000 || *req.TimeoutMS > 120000) {
+		httpx.BadRequest(w, r, "invalid_timeout_ms", "timeout_ms harus antara 1000 dan 120000")
 		return
 	}
 
@@ -92,21 +132,29 @@ func (h *Handlers) createWebhook(w http.ResponseWriter, r *http.Request) {
 		actorID = p.User.ID
 	}
 
+	// Nilai eksplisit dihormati apa adanya — termasuk max_retries 0 ("sekali
+	// kirim saja") yang versi lama telan menjadi bawaan 3, dan enabled false
+	// yang versi lama abaikan sehingga webhook lahir aktif (audit3 V-WH-02).
 	maxRetries := 3
-	if req.MaxRetries != nil && *req.MaxRetries > 0 {
+	if req.MaxRetries != nil {
 		maxRetries = *req.MaxRetries
 	}
 	timeoutMS := 10000
-	if req.TimeoutMS != nil && *req.TimeoutMS > 0 {
+	if req.TimeoutMS != nil {
 		timeoutMS = *req.TimeoutMS
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
 	}
 
 	wh, err := h.webhooksRepo.Create(ctx, webhooks.CreateWebhookParams{
-		Name:       req.Name,
+		Name:       strings.TrimSpace(req.Name),
 		URL:        req.URL,
 		Events:     req.Events,
 		RawSecret:  req.Secret,
 		Cipher:     h.cipher,
+		Enabled:    enabled,
 		MaxRetries: maxRetries,
 		TimeoutMS:  timeoutMS,
 		CreatedBy:  actorID,
@@ -153,6 +201,27 @@ func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+
+	// Field yang dikirim divalidasi di sini juga (pola createWebhook):
+	// pesan 400 menyebut field dan rentang yang sah, bukan CHECK DB yang buram.
+	if req.Name != nil && strings.TrimSpace(*req.Name) == "" {
+		httpx.BadRequest(w, r, "invalid_name", "nama webhook tidak boleh kosong")
+		return
+	}
+	if req.Events != nil {
+		if code, msg, ok := validasiEventsWebhook(req.Events); !ok {
+			httpx.BadRequest(w, r, code, msg)
+			return
+		}
+	}
+	if req.MaxRetries != nil && (*req.MaxRetries < 0 || *req.MaxRetries > 20) {
+		httpx.BadRequest(w, r, "invalid_max_retries", "max_retries harus antara 0 dan 20")
+		return
+	}
+	if req.TimeoutMS != nil && (*req.TimeoutMS < 1000 || *req.TimeoutMS > 120000) {
+		httpx.BadRequest(w, r, "invalid_timeout_ms", "timeout_ms harus antara 1000 dan 120000")
 		return
 	}
 

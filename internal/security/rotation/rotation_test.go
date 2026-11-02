@@ -143,6 +143,7 @@ func TestRotationIntegration(t *testing.T) {
 		Events:    []string{"*"},
 		RawSecret: plainWebhookSecret,
 		Cipher:    cipherLama,
+		Enabled:   true,
 	})
 	if err != nil {
 		t.Fatalf("whRepo.Create: %v", err)

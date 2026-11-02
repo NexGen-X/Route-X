@@ -2,6 +2,7 @@ package admin
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +13,25 @@ import (
 	"github.com/NexGen-X/Route-X/internal/httpx"
 )
 
+// batasWaktuAdmin membungkus middleware.Timeout(chi) dengan satu pengecualian:
+// ekspor dan restore backup tidak tunduk pada tenggat generik admin (lihat
+// komentar pemakaian di Routes). Pencocokan memakai sufiks path karena router
+// ini di-mount di bawah /api/admin.
+func batasWaktuAdmin(d time.Duration) func(http.Handler) http.Handler {
+	denganTenggat := middleware.Timeout(d)
+	return func(next http.Handler) http.Handler {
+		terbungkus := denganTenggat(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/system/backup/export") ||
+				strings.HasSuffix(r.URL.Path, "/system/backup/restore") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			terbungkus.ServeHTTP(w, r)
+		})
+	}
+}
+
 // Routes mengembalikan router chi yang memuat seluruh 7 grup endpoint admin.
 func (h *Handlers) Routes() http.Handler {
 	r := chi.NewRouter()
@@ -21,8 +41,13 @@ func (h *Handlers) Routes() http.Handler {
 	r.MethodNotAllowed(httpx.MethodNotAllowedHandler)
 
 	// Batas waktu operasi admin: 60 detik mencegah query agregasi atau database lambat
-	// menahan koneksi dan goroutine server tanpa batas waktu.
-	r.Use(middleware.Timeout(60 * time.Second))
+	// menahan koneksi dan goroutine server tanpa batas waktu. Ekspor & restore
+	// backup DIKECUALIKAN (audit3 V-EM-07): keduanya operasi berkas yang sah
+	// berjalan lebih dari 60 detik pada database besar, dan tenggat middleware
+	// dulu membatalkan konteks handler di tengah — membunuh proses psql
+	// restore dan memutus unduhan ekspor. Keduanya kini dibatasi tenggat
+	// tulis server (WRITE_TIMEOUT) dan pembatalan oleh klien saja.
+	r.Use(batasWaktuAdmin(60 * time.Second))
 
 	// Rantai middleware global admin:
 	// 1. Wajib memiliki sesi login aktif di cookie (RequireSession).

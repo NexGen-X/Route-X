@@ -45,6 +45,18 @@ type StatusResponse struct {
 
 func (StatusResponse) adalahDTO() {}
 
+// BackupRestoreResponse adalah hasil restore database yang berhasil:
+// SafetyDatabase adalah nama database salinan pra-restore (keadaan sebelum
+// restore, dipertahankan untuk rollback manual) dan SchemaVersion adalah
+// versi migrasi akhir database yang kini melayani.
+type BackupRestoreResponse struct {
+	Status         string `json:"status"`
+	SafetyDatabase string `json:"safety_database"`
+	SchemaVersion  int64  `json:"schema_version"`
+}
+
+func (BackupRestoreResponse) adalahDTO() {}
+
 // StatusCountResponse adalah respons mutasi yang memuat status dan jumlah entitas terdampak.
 type StatusCountResponse struct {
 	Status string `json:"status"`

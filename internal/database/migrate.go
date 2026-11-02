@@ -94,6 +94,24 @@ func embeddedMigrations() ([]migration, error) {
 	return parseMigrations(src)
 }
 
+// LatestMigrationVersion mengembalikan nomor versi migrasi tertinggi yang
+// tertanam di biner ini. Dipakai jalur restore backup untuk menolak dump yang
+// berasal dari biner lebih baru (ledger skemanya mendahului kode yang akan
+// membacanya) sebelum dump itu menyentuh database produksi.
+func LatestMigrationVersion() (int64, error) {
+	migrations, err := embeddedMigrations()
+	if err != nil {
+		return 0, err
+	}
+	var latest int64
+	for _, m := range migrations {
+		if m.version > latest {
+			latest = m.version
+		}
+	}
+	return latest, nil
+}
+
 // parseMigrations membaca dan memvalidasi seluruh file migrasi di akar fsys, lalu
 // mengembalikannya terurut naik menurut nomor versi.
 //

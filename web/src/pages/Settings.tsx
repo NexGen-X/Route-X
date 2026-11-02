@@ -52,6 +52,7 @@ export const Settings: React.FC = () => {
   const [isBackupLoading, setIsBackupLoading] = useState(false);
   const [exportFormat, setExportFormat] = useState<'sql.gz' | 'sql'>('sql.gz');
   const [selectedBackupFile, setSelectedBackupFile] = useState<File | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
   const [backupFeedback, setBackupFeedback] = useState<BackupFeedback>(null);
@@ -100,6 +101,17 @@ export const Settings: React.FC = () => {
       console.error('Gagal memuat status backup:', err);
     } finally {
       setIsBackupLoading(false);
+    }
+  };
+
+  const handleExportBackup = async () => {
+    setIsExporting(true);
+    try {
+      await api.system.backup.download(exportFormat);
+    } catch (err: unknown) {
+      toast.error('Gagal mengunduh cadangan: ' + getErrorMessage(err));
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -391,7 +403,8 @@ export const Settings: React.FC = () => {
           onRefresh={() => void loadBackupStatus()}
           onFileChange={handleFileChange}
           onOpenRestoreModal={() => setIsRestoreModalOpen(true)}
-          exportUrl={api.system.backup.exportUrl(exportFormat)}
+          onExport={() => void handleExportBackup()}
+          isExporting={isExporting}
         />
       )}
 

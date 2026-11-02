@@ -17,7 +17,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.version=
 
 FROM alpine:3.24
 WORKDIR /opt/routex
-RUN apk --no-cache add ca-certificates tzdata \
+# postgresql-client WAJIB ada: fitur Backup/Restore admin mengeksekusi
+# pg_dump/psql dari PATH — tanpa paket ini fitur itu selalu 500 di Docker
+# (audit3 V-DP-11). Paket client Alpine (versi server bawaannya lebih baru)
+# tetap kompatibel dengan server PostgreSQL 16 di Compose: pg_dump/psql
+# mendukung server yang lebih lama dari versinya sendiri.
+RUN apk --no-cache add ca-certificates tzdata postgresql-client \
     && addgroup -g 10001 -S routex \
     && adduser -u 10001 -S -G routex -s /sbin/nologin routex
 COPY --from=backend-builder --chmod=0555 /app/ai-gateway /opt/routex/ai-gateway

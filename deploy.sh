@@ -97,6 +97,19 @@ if [ "${ADMIN_VAL#GANTI_}" != "$ADMIN_VAL" ] && [ "${#ADMIN_VAL}" = "32" ]; then
     echo "🔐 INITIAL_ADMIN_PASSWORD di .env lama masih placeholder publik — diganti nilai acak unik."
 fi
 
+# Cap versi biner Docker: sumber versi tunggal repo adalah web/package.json
+# (audit3 V-DP-12 — tanpa ini biner Docker selalu tercap "dev"). Operator
+# boleh menimpa lewat env VERSION; bila ekstraksi gagal, "dev" dipertahankan
+# sebagai cap yang jujur untuk build tanpa identitas rilis.
+if [ -z "${VERSION:-}" ] && [ -f web/package.json ]; then
+    PKG_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' web/package.json | head -n 1)"
+    if [ -n "$PKG_VERSION" ]; then
+        VERSION="v${PKG_VERSION}"
+    fi
+fi
+export VERSION="${VERSION:-dev}"
+echo "🏷️  Versi biner: ${VERSION}"
+
 echo "📦 Membangun image Docker (Kompilasi Frontend & Backend)..."
 echo "🧹 Membersihkan kontainer lama..."
 docker compose down --remove-orphans

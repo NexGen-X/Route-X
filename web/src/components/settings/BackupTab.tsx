@@ -24,7 +24,8 @@ export const BackupTab: React.FC<BackupTabProps> = ({
   onRefresh,
   onFileChange,
   onOpenRestoreModal,
-  exportUrl,
+  onExport,
+  isExporting,
 }) => {
   return (
     <section>
@@ -167,14 +168,15 @@ export const BackupTab: React.FC<BackupTabProps> = ({
           </div>
 
           <div className="pt-5 mt-4 border-t border-border/60">
-            <a
-              href={exportUrl}
-              download
-              className="inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-accent hover:bg-accent/90 text-bg-base font-semibold text-xs rounded-nav transition-colors shadow-sm"
+            <button
+              type="button"
+              onClick={onExport}
+              disabled={isExporting}
+              className="inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-accent hover:bg-accent/90 text-bg-base font-semibold text-xs rounded-nav transition-colors shadow-sm disabled:opacity-60 disabled:cursor-wait"
             >
               <Download className="w-4 h-4" />
-              <span>Unduh Cadangan SQL ({exportFormat === 'sql.gz' ? '.sql.gz' : '.sql'})</span>
-            </a>
+              <span>{isExporting ? 'Menyiapkan Cadangan…' : `Unduh Cadangan SQL (${exportFormat === 'sql.gz' ? '.sql.gz' : '.sql'})`}</span>
+            </button>
           </div>
         </div>
 

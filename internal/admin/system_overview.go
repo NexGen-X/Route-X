@@ -58,8 +58,13 @@ func (s *systemSampler) sampleMetrics(recvBytes, sentBytes uint64, procTicks, to
 		deltaTotal := float64(totalTicks - s.lastTotalCPU)
 		if procTicks >= s.lastProcCPU && deltaTotal > 0 {
 			deltaProc := float64(procTicks - s.lastProcCPU)
-			// Skala persentase terhadap seluruh core sistem
-			s.procCPUPct = (deltaProc / deltaTotal) * 100.0 * float64(runtime.NumCPU())
+			// Persentase proses terhadap TOTAL kapasitas CPU host (semua
+			// core), konsisten dengan hostCPUPct di bawah dan dengan tampilan
+			// dashboard (batang 0–100%). Versi lama mengalikan lagi dengan
+			// NumCPU lalu menjepit ke 100, sehingga proses yang memakai
+			// 1/NumCPU kapasitas saja sudah terbaca jenuh 100% permanen
+			// (audit3 V-EM-28).
+			s.procCPUPct = (deltaProc / deltaTotal) * 100.0
 			if s.procCPUPct > 100.0 {
 				s.procCPUPct = 100.0
 			}

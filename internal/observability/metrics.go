@@ -88,6 +88,15 @@ type Metrics struct {
 	UsageRecords    *prometheus.CounterVec
 	UsageQueueDepth prometheus.Gauge
 
+	// UsageSpendFailures menghitung kegagalan menaikkan pemakaian anggaran
+	// sesudah baris pemakaian tertulis. Ia counter TERPISAH, bukan outcome
+	// lain dari UsageRecords: satu event yang barisnya tertulis TETAPI
+	// pemakaian anggarannya gagal dulu menaikkan DUA outcome sekaligus,
+	// sehingga UsageRecords bukan partisi kejadian dan jumlah seluruh
+	// outcome-nya melebihi jumlah event (audit3 V-EM-25). Outcome
+	// UsageRecords kini murni hasil penulisan baris: written/failed/dropped.
+	UsageSpendFailures prometheus.Counter
+
 	// UsageEventFailures menghitung kegagalan menulis timeline percobaan
 	// (request_events) sesudah baris requests-nya berhasil. Tanpa angka ini
 	// timeline inspector bisa hilang massal sementara UsageRecords tampak
@@ -237,6 +246,11 @@ func NewMetrics() *Metrics {
 			Help: "Jumlah catatan pemakaian yang menunggu ditulis ke database.",
 		}),
 
+		UsageSpendFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "routex_usage_spend_failures_total",
+			Help: "Jumlah kegagalan menaikkan pemakaian anggaran sesudah baris pemakaian tertulis.",
+		}),
+
 		UsageEventFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "routex_usage_event_failures_total",
 			Help: "Jumlah kegagalan menulis timeline percobaan (request_events) oleh pencatat pemakaian.",
@@ -256,7 +270,7 @@ func NewMetrics() *Metrics {
 		m.HTTPRequestsTotal, m.HTTPDuration, m.HTTPInFlight,
 		m.WorkerRunsTotal, m.WorkerDuration, m.PoolConnections,
 		m.DBEmptyAcquireTotal, m.DBAcquireWaitDuration,
-		m.UsageRecords, m.UsageQueueDepth,
+		m.UsageRecords, m.UsageQueueDepth, m.UsageSpendFailures,
 		m.UsageEventFailures, m.UsageUnpriced,
 	)
 	return m

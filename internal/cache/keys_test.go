@@ -64,7 +64,7 @@ func TestKeyTidakBisaMenabrakNamespace(t *testing.T) {
 	}
 
 	// Nilai yang menyamar sebagai prefix aplikasi lain juga harus tetap terkurung.
-	escaped := Key(NamespaceHealth, "other-app:secrets")
+	escaped := Key(NamespaceResponseCache, "other-app:secrets")
 	if strings.Count(escaped, ":") != 2 {
 		t.Fatalf("kunci %q punya jumlah segmen yang tidak terduga", escaped)
 	}
@@ -100,8 +100,7 @@ func TestKonstruktorKunci(t *testing.T) {
 		{"breaker provider dan model", CircuitBreakerKey("openai-prod", "gpt-4o-mini"), "routex:cb:openai-prod:gpt-4o-mini"},
 		{"breaker model bergaya vendor", CircuitBreakerKey("openrouter", "openai/gpt-4o"), "routex:cb:openrouter:openai/gpt-4o"},
 		{"breaker tanpa model", CircuitBreakerKey("openai-prod", ""), "routex:cb:openai-prod"},
-		{"health provider", HealthKey("anthropic-prod"), "routex:health:anthropic-prod"},
-		{"health provider bermuatan pemisah", HealthKey("anthropic:prod"), "routex:health:anthropic%3Aprod"},
+		{"cache respons", Key(NamespaceResponseCache, "abc123"), "routex:rc:abc123"},
 	}
 
 	for _, tc := range tests {
@@ -120,7 +119,7 @@ func TestKonstruktorKunciTidakSalingTumpang(t *testing.T) {
 	keys := []string{
 		RateLimitKey(id, id, id),
 		CircuitBreakerKey(id, id),
-		HealthKey(id),
+		Key(NamespaceResponseCache, id),
 	}
 	seen := make(map[string]struct{}, len(keys))
 	for _, k := range keys {

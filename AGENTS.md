@@ -32,7 +32,7 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
   - [Aturan Pengembangan & Standar Kerja (routex-dev)](.agents/rules/routex-dev.md) — Konvensi Go & TS, zero-race, arsitektur single-admin, dan keamanan zero-trust.
   - [Standar Verifikasi Multi-Aspek](.agents/rules/multi_aspect_verification.md) — 4 lapisan verifikasi empiris, wire protocol live probe, dan protokol anti-halusinasi.
 - Bahasa komentar/log di codebase ini: Indonesia. Ikuti gaya yang ada.
-- Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir: `0016_performance_indexes.sql`)
+- Migrasi baru: tambah file `internal/database/migrations/NNNN_nama.sql` berurutan (terakhir saat ini: 0019)
 - **Alur Kerja Git Wajib PR (PR-Only Policy)**: Dilarang keras melakukan komit atau push langsung ke branch `main`. Setiap perubahan wajib dibuat pada branch terisolasi (`feat/*`, `fix/*`, `chore/*`), didorong ke remote, diajukan melalui `gh pr create`, dipantau hingga status CI hijau (`gh pr checks <id> --watch`), dan digabungkan melalui `gh pr merge <id> --squash --delete-branch`.
 - **Standar Verifikasi Multi-Aspek & Protokol 7-Layer QA (Wajib Bukti Nyata)**:
   - Dilarang keras menyajikan hasil mentah, asumsi, atau klaim penyelesaian tugas hanya berdasarkan spekulasi kode atau mock lokal semata.
@@ -61,7 +61,7 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 Sebelum mempublikasikan patch atau rilis `v1.4.x`, lakukan verifikasi berurutan berikut:
 1. **Audit Data Race**: Jalankan `go test -race ./...` (wajib 0 data race terdeteksi).
 2. **Formatting Go**: Jalankan `gofmt -l .` (wajib kosong/bersih).
-3. **Integritas Database**: Pastikan berkas migrasi `internal/database/migrations/` berurutan rapi (saat ini 0001 sampai 0016) dan tidak merusak skema produksi.
+3. **Integritas Database**: Pastikan berkas migrasi `internal/database/migrations/` berurutan rapi (saat ini 0001 sampai 0019) dan tidak merusak skema produksi.
 4. **Build Frontend**: Jalankan `cd /root/Route-X/web && npm run build && npm test` (wajib kompilasi `tsc`, `vite build`, dan unit test lolos tanpa error).
 5. **Uji Probing Gateway E2E**: Jalankan `./scripts/probe_e2e_gateway.sh` untuk memvalidasi rute `/v1/chat/completions` (non-stream & SSE stream) serta `/v1/messages` native Anthropic.
 6. **Validasi Observabilitas**: Jalankan `./scripts/check_metrics.sh` untuk memverifikasi endpoint `/metrics` tidak merekam kegagalan terselubung.
@@ -73,3 +73,4 @@ Sebelum mempublikasikan patch atau rilis `v1.4.x`, lakukan verifikasi berurutan 
    - Lakukan commit perubahan: `git commit -m "release: v1.4.x - ..."`
    - Buat tag git: `git tag -a v1.4.x -m "Release v1.4.x"`
    - Buat release via GitHub CLI: `gh release create v1.4.x --title "v1.4.x" --notes-file ...`
+   - Terbitkan checksum SATU berkas per tarball di rilis yang sama: `sha256sum routex-v1.4.x-linux-amd64.tar.gz > routex-v1.4.x-linux-amd64.tar.gz.sha256` (ulangi untuk arm64), lalu unggah tiap `.sha256` sebagai aset rilis — installer native mengunduh `<tarball>.sha256` dari rilis dan memverifikasinya; tanpa berkas ini installer hanya memperingatkan keras.

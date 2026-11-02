@@ -254,7 +254,8 @@ func TestInvalidateMemaksaPembacaanUlang(t *testing.T) {
 
 // TestPembacaanGagalMempertahankanSalinanLama menjaga dua hal sekaligus: satu tabel
 // konfigurasi yang tidak terbaca tidak boleh mematikan penegakan yang sudah berjalan, dan
-// kegagalan tidak boleh memperpanjang masa tanpa penegakan sampai satu TTL penuh.
+// kegagalan menjadi cache negatif berumur pendek (audit3 V-LN-11) — bukan percobaan ulang
+// pada setiap request, dan bukan pula penantian satu TTL penuh sebelum mencoba lagi.
 func TestPembacaanGagalMempertahankanSalinanLama(t *testing.T) {
 	src := &sumber{rows: []*policy.RateLimit{
 		baris(policy.ScopeGlobal, "", func(r *policy.RateLimit) { r.RequestsPerMinute = pointer(10) }),
@@ -274,10 +275,20 @@ func TestPembacaanGagalMempertahankanSalinanLama(t *testing.T) {
 	if len(got) != 1 || got[0].Limits.RPM != 10 {
 		t.Errorf("setelah pembacaan gagal = %+v, mau salinan lama tetap dipakai", got)
 	}
-	// Percobaan berikutnya tidak menunggu TTL penuh: waktu muat tidak diperbarui saat gagal.
+	// Cache negatif (audit3 V-LN-11): percobaan berikutnya di dalam jendela
+	// jedaGagalMuat TIDAK mengulang query ke database yang sedang sakit.
+	// Perilaku lama — mencoba lagi pada SETIAP request — mengantrekan
+	// seluruh request gateway di mutex pemuatan di belakang query yang
+	// sama-sama gagal.
+	e.Requests(context.Background(), target, apikey.Limits{})
+	if n := src.jumlahDibaca(); n != 2 {
+		t.Errorf("pembacaan tabel = %d di dalam jendela cache negatif, mau 2", n)
+	}
+	// Sesudah jendela lewat, pembacaan dicoba lagi (pemulihan tetap cepat).
+	sekarang = sekarang.Add(jedaGagalMuat + time.Second)
 	e.Requests(context.Background(), target, apikey.Limits{})
 	if n := src.jumlahDibaca(); n != 3 {
-		t.Errorf("pembacaan tabel = %d, mau 3 (dua percobaan setelah yang berhasil)", n)
+		t.Errorf("pembacaan tabel = %d sesudah jendela cache negatif, mau 3", n)
 	}
 }
 

@@ -29,6 +29,10 @@ RAND_ADMIN_PASS="$(openssl rand -base64 16 | tr -dc 'A-Za-z0-9!@#$%^&*' | head -
 if ! command -v fly &> /dev/null && ! command -v flyctl &> /dev/null; then
   echo ""
   echo "PERINGATAN: 'fly' atau 'flyctl' tidak terdeteksi di PATH sistem."
+  echo "⚠️ BAHAYA ROTASI (audit3 V-DP-17): nilai di bawah ini BARU dihasilkan."
+  echo "   Menyetelnya di atas secrets yang sudah ada akan merotasi ENCRYPTION_KEY &"
+  echo "   API_KEY_PEPPER — data terenkripsi lama menjadi TIDAK terbaca. Hanya pakai"
+  echo "   untuk instalasi pertama atau rotasi yang disengaja."
   echo "Silakan salin dan jalankan perintah berikut secara manual di terminal Anda:"
   echo ""
   echo "fly secrets set \\"
@@ -47,6 +51,25 @@ fi
 FLY_BIN="fly"
 if ! command -v fly &> /dev/null; then
   FLY_BIN="flyctl"
+fi
+
+# PENJAGA ROTASI (audit3 V-DP-17): skrip ini menghasilkan rahasia BARU setiap
+# kali jalan. Bila secrets kriptografi SUDAH ter-set di Fly, menyetel ulang
+# berarti merotasi ENCRYPTION_KEY/API_KEY_PEPPER secara senyap dan data
+# terenkripsi lama hangus. Berhenti kecuali operator menegaskan rotasi.
+DAFTAR_SECRETS="$(${FLY_BIN} secrets list -a "${APP_NAME}" 2>/dev/null || true)"
+SUDAH_ADA=""
+for NAMA_RAHASIA in SESSION_SECRET ENCRYPTION_KEY API_KEY_PEPPER; do
+  if printf '%s' "$DAFTAR_SECRETS" | grep -q "^${NAMA_RAHASIA}[[:space:]]"; then
+    SUDAH_ADA="${SUDAH_ADA} ${NAMA_RAHASIA}"
+  fi
+done
+if [[ -n "$SUDAH_ADA" && "${ROTASI_SECRETS:-0}" != "1" ]]; then
+  echo "❌ Secrets kriptografi berikut SUDAH ter-set di Fly:${SUDAH_ADA}" >&2
+  echo "   Menyetel ulang akan merotasinya: data terenkripsi lama tidak bisa dibaca" >&2
+  echo "   dan sesi aktif gugur. Untuk instalasi pertama ini tidak seharusnya terjadi;" >&2
+  echo "   bila rotasi MEMANG disengaja, jalankan: ROTASI_SECRETS=1 $0" >&2
+  exit 1
 fi
 
 echo "Menyetel secrets via ${FLY_BIN}..."

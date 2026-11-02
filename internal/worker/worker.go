@@ -99,6 +99,34 @@ type Job interface {
 	Run(ctx context.Context) error
 }
 
+// JobBertenggat adalah antarmuka opsional: job yang menerapkannya menentukan
+// tenggat satu putarannya sendiri. Yang tidak, memakai tenggat bawaan
+// Supervisor (lihat tenggatPutaran).
+type JobBertenggat interface {
+	TenggatPutaran() time.Duration
+}
+
+// tenggatPutaran menentukan batas waktu SATU putaran job (audit3 V-LN-10).
+//
+// Tanpa tenggat, satu query job yang menggantung membuat job itu tidak
+// pernah jalan lagi selama proses hidup — putaran berikutnya dilewati
+// terus, dan koneksi advisory lock-nya tertahan. Job boleh menentukan
+// tenggatnya sendiri lewat JobBertenggat; bawaan diturunkan dari interval
+// (dua periode: satu putaran yang melewati dua jadwalnya sendiri sudah
+// pasti macet, bukan sekadar lambat) dengan lantai 5 menit untuk job
+// berinterval pendek yang pekerjaannya memang bisa semenit-dua menit.
+func tenggatPutaran(job Job, interval time.Duration) time.Duration {
+	if jb, ok := job.(JobBertenggat); ok {
+		if d := jb.TenggatPutaran(); d > 0 {
+			return d
+		}
+	}
+	if d := 2 * interval; d > 5*time.Minute {
+		return d
+	}
+	return 5 * time.Minute
+}
+
 // JobFunc pembungkus fungsi biasa menjadi implementasi Job.
 type JobFunc struct {
 	JobName string
@@ -182,6 +210,10 @@ func NewSupervisor(metrics *observability.Metrics, logger *slog.Logger) *Supervi
 // Register mendaftarkan job berkala ke supervisor.
 func (s *Supervisor) Register(job Job, interval time.Duration, initialDelay time.Duration) {
 	if interval <= 0 {
+		// Penggantian diam-diam adalah jebakan knob-0 (audit3 V-LN-21):
+		// nyatakan dengan keras bahwa interval yang diminta tidak dipakai.
+		s.logger.Warn("interval worker tidak sah diganti bawaan 1 menit",
+			"worker", job.Name(), "interval_diminta", interval.String())
 		interval = 1 * time.Minute
 	}
 	s.mu.Lock()
@@ -402,7 +434,10 @@ func (s *Supervisor) executeOnce(ctx context.Context, st *jobRuntimeState) {
 	s.mu.Lock()
 	if st.running {
 		s.mu.Unlock()
-		s.logger.DebugContext(ctx, "eksekusi job dilewati karena putaran sebelumnya masih berjalan",
+		// Level Warn, bukan Debug (audit3 V-LN-10): putaran yang dilewati
+		// karena pendahulunya macet adalah gejala job yang mati senyap, dan
+		// harus terlihat di log produksi tanpa menyalakan debug.
+		s.logger.WarnContext(ctx, "eksekusi job dilewati karena putaran sebelumnya masih berjalan",
 			"worker", st.job.Job.Name())
 		return
 	}
@@ -472,5 +507,11 @@ func (s *Supervisor) executeClaimed(ctx context.Context, st *jobRuntimeState) {
 		}
 	}()
 
-	runErr = st.job.Job.Run(ctx)
+	// Setiap putaran berjalan dengan tenggatnya sendiri (audit3 V-LN-10):
+	// query yang menghormati context akan berhenti di tenggat dan putaran
+	// tercatat gagal (terlihat di metrik & dashboard), bukan menggantung
+	// selamanya sambil menahan klaim `running` dan advisory lock.
+	runCtx, batalPutaran := context.WithTimeout(ctx, tenggatPutaran(st.job.Job, st.job.Interval))
+	runErr = st.job.Job.Run(runCtx)
+	batalPutaran()
 }

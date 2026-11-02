@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +33,32 @@ type Manager struct {
 	cipher   *security.Cipher
 	logger   *slog.Logger
 	mu       sync.RWMutex
+
+	// cacheVersi menahan hasil detectVersion per path biner (audit3
+	// V-LN-37): Scan mengeksekusi `--version` SETIAP biner pada SETIAP
+	// panggilan, jadi membuka halaman CLI berarti ±20 proses anak. Versi
+	// biner tidak berubah di tengah jalan; TTL beberapa menit cukup.
+	cacheVersiMu sync.Mutex
+	cacheVersi   map[string]entriVersi
+}
+
+// entriVersi adalah satu hasil deteksi versi yang ditahan.
+type entriVersi struct {
+	versi string
+	pada  time.Time
+}
+
+// ttlCacheVersi adalah umur hasil deteksi versi biner yang ditahan.
+const ttlCacheVersi = 5 * time.Minute
+
+// namaVarKunciGenerik adalah nama variabel generik yang diisi key.env dari
+// kunci tool yang paling baru dikonfigurasi, supaya tool yang membaca nama
+// generik tetap mendapat kunci Route-X yang sah.
+var namaVarKunciGenerik = []string{
+	"ROUTEX_API_KEY",
+	"ANTHROPIC_API_KEY",
+	"OPENAI_API_KEY",
+	"OPENCODE_API_KEY",
 }
 
 // NewManager membuat instance baru Manager.
@@ -205,14 +233,79 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 		stored.APIKeyEncrypted = encrypted
 	}
 
+	settingKey := fmt.Sprintf("cli:config:%s", p.ToolID)
+
+	// Pertahankan kunci tersimpan tool ini bila Configure tidak membawa
+	// kunci baru: Put menimpa SELURUH StoredConfig, jadi tanpa langkah ini
+	// konfigurasi ulang tanpa kunci diam-diam menghapus kunci tersimpan
+	// tool itu sendiri (bagian dari audit3 V-LN-26). Tidak ada alur
+	// "hapus kunci" yang disengaja — field kosong berarti "tidak diubah".
+	if p.APIKey == "" && m.settings != nil {
+		if lama, errGet := m.settings.Get(ctx, settingKey); errGet == nil && len(lama.Value) > 0 {
+			var storedLama StoredConfig
+			if json.Unmarshal(lama.Value, &storedLama) == nil {
+				stored.APIKeyEncrypted = storedLama.APIKeyEncrypted
+			}
+		}
+	}
+
 	rawJSON, err := json.Marshal(stored)
 	if err != nil {
 		return nil, fmt.Errorf("mengkodekan konfigurasi CLI: %w", err)
 	}
 
-	// 1. Simpan ke tabel settings database
+	homeDir, _ := os.UserHomeDir()
+	fullEnvVars := m.buildEnvVars(toolDef, p.Mode, p.Target, gwURL)
+
+	// Urutan penulisan (audit3 V-LN-35): BERKAS dulu, database TERAKHIR,
+	// dan key.env di-snapshot sebelum ditulis ulang. Versi lama menyimpan
+	// ke DB lebih dulu — kegagalan langkah berkas sesudahnya meninggalkan
+	// DB yang mengklaim konfigurasi yang tidak pernah diterapkan di disk.
+	var keyEnvPath string
+	var snapshotKeyEnv []byte
+	keyEnvAda := false
+	if homeDir != "" {
+		routexDir := filepath.Join(homeDir, ".routex")
+		if err := os.MkdirAll(routexDir, 0755); err != nil {
+			return nil, fmt.Errorf("menyiapkan direktori %s: %w", routexDir, err)
+		}
+		keyEnvPath = filepath.Join(routexDir, "key.env")
+		if data, errBaca := os.ReadFile(keyEnvPath); errBaca == nil {
+			snapshotKeyEnv, keyEnvAda = data, true
+		}
+		// key.env DIBANGUN ULANG dari seluruh konfigurasi tersimpan, bukan
+		// ditimpa empat nama generik milik tool terakhir saja (audit3
+		// V-LN-24/26/27): setiap tool berkonfigurasi mendapat baris
+		// variabelnya sendiri, dan tool lain tidak lagi hilang dari berkas
+		// hanya karena tool lain dikonfigurasi sesudahnya.
+		if err := m.tulisUlangKeyEnv(ctx, keyEnvPath, p.ToolID, p.APIKey, stored); err != nil {
+			return nil, err
+		}
+	}
+	pulihkanKeyEnv := func() {
+		if keyEnvPath == "" {
+			return
+		}
+		if keyEnvAda {
+			_ = tulisAtomik(keyEnvPath, snapshotKeyEnv, 0600)
+		} else {
+			_ = os.Remove(keyEnvPath)
+		}
+	}
+
+	if err := m.syncGlobalEnvScript(homeDir, toolDef, fullEnvVars); err != nil {
+		pulihkanKeyEnv()
+		return nil, fmt.Errorf("menyinkronkan skrip env global CLI: %w", err)
+	}
+
+	// Tulis file konfigurasi lokal spesifik jika ada direktorinya.
+	if err := m.applyToolSpecificConfig(homeDir, toolDef, p.Mode, p.Target, gwURL, p.APIKey); err != nil {
+		pulihkanKeyEnv()
+		return nil, fmt.Errorf("menulis konfigurasi lokal %s: %w", toolDef.Name, err)
+	}
+
+	// Simpan ke tabel settings database TERAKHIR (lihat urutan di atas).
 	if m.settings != nil {
-		settingKey := fmt.Sprintf("cli:config:%s", p.ToolID)
 		_, err = m.settings.Put(ctx, identity.SettingWrite{
 			Key:         settingKey,
 			Value:       rawJSON,
@@ -224,38 +317,6 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 			// mengira konfigurasi tersimpan padahal hilang saat restart.
 			return nil, fmt.Errorf("menyimpan konfigurasi CLI %s ke database: %w", p.ToolID, err)
 		}
-	}
-
-	// 2. Tulis berkas shell script lingkungan terpadu ~/.routex/cli-env.sh.
-	// API key tidak ditulis ke disk; operator memasukkannya ke lingkungan proses
-	// CLI melalui secret manager atau shell aktif.
-	homeDir, _ := os.UserHomeDir()
-	if p.APIKey != "" && homeDir != "" {
-		routexDir := filepath.Join(homeDir, ".routex")
-		if err := os.MkdirAll(routexDir, 0755); err != nil {
-			return nil, fmt.Errorf("menyiapkan direktori %s: %w", routexDir, err)
-		}
-		keyEnvPath := filepath.Join(routexDir, "key.env")
-		qKey, err := shellQuote(p.APIKey)
-		if err != nil {
-			return nil, fmt.Errorf("mengutip API key untuk berkas env: %w", err)
-		}
-		keyContent := fmt.Sprintf("export ROUTEX_API_KEY=%s\nexport ANTHROPIC_API_KEY=%s\nexport OPENAI_API_KEY=%s\nexport OPENCODE_API_KEY=%s\n",
-			qKey, qKey, qKey, qKey)
-		if err := tulisAtomik(keyEnvPath, []byte(keyContent), 0600); err != nil {
-			return nil, fmt.Errorf("menulis %s: %w", keyEnvPath, err)
-		}
-	}
-
-	fullEnvVars := m.buildEnvVars(toolDef, p.Mode, p.Target, gwURL)
-
-	if err := m.syncGlobalEnvScript(homeDir, toolDef, fullEnvVars); err != nil {
-		return nil, fmt.Errorf("menyinkronkan skrip env global CLI: %w", err)
-	}
-
-	// 3. Tulis file konfigurasi lokal spesifik jika ada direktorinya.
-	if err := m.applyToolSpecificConfig(homeDir, toolDef, p.Mode, p.Target, gwURL, p.APIKey); err != nil {
-		return nil, fmt.Errorf("menulis konfigurasi lokal %s: %w", toolDef.Name, err)
 	}
 
 	execPath := m.findBinary(toolDef.BinaryNames, homeDir)
@@ -277,6 +338,153 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	}
 
 	return status, nil
+}
+
+// kunciTersimpan adalah API key plaintext satu tool beserta waktu
+// konfigurasi terakhirnya, hasil dekripsi StoredConfig di database.
+type kunciTersimpan struct {
+	kunci      string
+	diperbarui time.Time
+}
+
+// semuaKunciTersimpan membaca API key plaintext SELURUH tool yang
+// terkonfigurasi dari tabel settings. Tool tanpa kunci (atau yang gagal
+// didekripsi) tidak masuk hasil — kegagalan dekripsi dicatat, tidak
+// menggagalkan pembangunan ulang key.env untuk tool lain.
+func (m *Manager) semuaKunciTersimpan(ctx context.Context) map[string]kunciTersimpan {
+	hasil := make(map[string]kunciTersimpan)
+	if m.settings == nil {
+		return hasil
+	}
+	semua, err := m.settings.All(ctx)
+	if err != nil {
+		if m.logger != nil {
+			m.logger.WarnContext(ctx, "gagal membaca seluruh konfigurasi CLI untuk key.env", "error", err)
+		}
+		return hasil
+	}
+	for _, s := range semua {
+		toolID, ok := strings.CutPrefix(s.Key, "cli:config:")
+		if !ok || len(s.Value) == 0 {
+			continue
+		}
+		var stored StoredConfig
+		if json.Unmarshal(s.Value, &stored) != nil {
+			continue
+		}
+		kunci := stored.APIKey // legacy plaintext, bila ciphertext absen
+		if stored.APIKeyEncrypted != "" {
+			kunci = ""
+			if m.cipher != nil {
+				if dec, errDec := m.cipher.Decrypt(stored.APIKeyEncrypted, security.CLIToolAAD(toolID)); errDec == nil {
+					kunci = string(dec)
+				} else if m.logger != nil {
+					m.logger.WarnContext(ctx, "gagal mendekripsi API key CLI untuk key.env",
+						"tool", toolID, "error", errDec)
+				}
+			}
+		}
+		if kunci != "" {
+			hasil[toolID] = kunciTersimpan{kunci: kunci, diperbarui: stored.UpdatedAt}
+		}
+	}
+	return hasil
+}
+
+// tulisUlangKeyEnv membangun ulang ~/.routex/key.env dari seluruh
+// konfigurasi tersimpan, dengan konfigurasi tool yang sedang diterapkan
+// sebagai lapisan teratas (ia belum ada di database — Put terjadi terakhir).
+func (m *Manager) tulisUlangKeyEnv(ctx context.Context, keyEnvPath, toolID, apiKey string, stored StoredConfig) error {
+	perTool := m.semuaKunciTersimpan(ctx)
+
+	kunciKini := apiKey
+	if kunciKini == "" && stored.APIKeyEncrypted != "" && m.cipher != nil {
+		if dec, err := m.cipher.Decrypt(stored.APIKeyEncrypted, security.CLIToolAAD(toolID)); err == nil {
+			kunciKini = string(dec)
+		}
+	}
+	if kunciKini != "" {
+		perTool[toolID] = kunciTersimpan{kunci: kunciKini, diperbarui: stored.UpdatedAt}
+	} else {
+		delete(perTool, toolID)
+	}
+
+	konten, err := susunKontenKeyEnv(perTool)
+	if err != nil {
+		return err
+	}
+	if err := tulisAtomik(keyEnvPath, []byte(konten), 0600); err != nil {
+		return fmt.Errorf("menulis %s: %w", keyEnvPath, err)
+	}
+	return nil
+}
+
+// susunKontenKeyEnv merakit isi key.env: satu baris `export <VAR>=<kunci>`
+// per variabel API key tool yang terkonfigurasi, ditambah empat nama
+// generik yang diisi kunci tool yang PALING BARU dikonfigurasi.
+//
+// Versi lama berkas ini hanya memuat empat nama generik dari tool terakhir
+// yang membawa kunci: variabel khas 10 dari 20 tool (OLLAMA_API_KEY,
+// GOOSE_API_KEY, SRC_ACCESS_TOKEN, dst.) tidak pernah terisi sama sekali
+// (audit3 V-LN-24), dan mengonfigurasi tool B menghapus jejak tool A.
+func susunKontenKeyEnv(perTool map[string]kunciTersimpan) (string, error) {
+	type entriVar struct {
+		nilai string
+		pada  time.Time
+	}
+	vars := make(map[string]entriVar)
+	set := func(nama, nilai string, pada time.Time) {
+		if nama == "" || nilai == "" {
+			return
+		}
+		if lama, ok := vars[nama]; !ok || !pada.Before(lama.pada) {
+			vars[nama] = entriVar{nilai: nilai, pada: pada}
+		}
+	}
+
+	var terbaru *kunciTersimpan
+	for toolID, kt := range perTool {
+		kt := kt
+		if terbaru == nil || kt.diperbarui.After(terbaru.diperbarui) {
+			salin := kt
+			terbaru = &salin
+		}
+		if def, ok := cariToolDef(toolID); ok {
+			set(def.EnvVarAPIKey, kt.kunci, kt.diperbarui)
+		}
+	}
+	if terbaru != nil {
+		for _, nama := range namaVarKunciGenerik {
+			set(nama, terbaru.kunci, terbaru.diperbarui)
+		}
+	}
+
+	namaVars := make([]string, 0, len(vars))
+	for nama := range vars {
+		namaVars = append(namaVars, nama)
+	}
+	sort.Strings(namaVars)
+
+	var b strings.Builder
+	b.WriteString("# Route-X — API key per tool CLI (dibangun ulang otomatis; jangan edit manual)\n")
+	for _, nama := range namaVars {
+		q, err := shellQuote(vars[nama].nilai)
+		if err != nil {
+			return "", fmt.Errorf("mengutip API key untuk berkas env: %w", err)
+		}
+		fmt.Fprintf(&b, "export %s=%s\n", nama, q)
+	}
+	return b.String(), nil
+}
+
+// cariToolDef adalah pembungkus paket atas daftar tool yang didukung.
+func cariToolDef(id string) (ToolDef, bool) {
+	for _, t := range SupportedTools() {
+		if t.ID == id {
+			return t, true
+		}
+	}
+	return ToolDef{}, false
 }
 
 // migrateLegacyAPIKey mengganti field api_key plaintext dari versi lama dengan
@@ -340,20 +548,90 @@ func (m *Manager) findBinary(binaryNames []string, homeDir string) string {
 			}
 		}
 
-		// 3. Cek direktori Node nvm jika ada
+		// 3. Cek direktori Node nvm jika ada. Yang dipilih adalah versi
+		// Node TERTINGGI secara semver, bukan hasil glob terakhir secara
+		// leksikografis — urutan leksikografis menempatkan "v9.x" di atas
+		// "v22.x" (audit3 V-LN-36).
 		nvmPattern := filepath.Join(homeDir, ".nvm", "versions", "node", "*", "bin", name)
 		if matches, err := filepath.Glob(nvmPattern); err == nil && len(matches) > 0 {
-			return matches[len(matches)-1] // ambil versi node terbaru
+			terbaik := matches[0]
+			for _, cocok := range matches[1:] {
+				if bandingVersiNode(cocok, terbaik) > 0 {
+					terbaik = cocok
+				}
+			}
+			return terbaik
 		}
 	}
 	return ""
 }
 
+// versiNodeDariPath mengekstrak komponen versi Node ("v22.11.0") dari path
+// biner nvm. Kosong bila tidak ditemukan.
+func versiNodeDariPath(path string) string {
+	for _, bagian := range strings.Split(filepath.ToSlash(path), "/") {
+		if len(bagian) > 1 && bagian[0] == 'v' && bagian[1] >= '0' && bagian[1] <= '9' {
+			return bagian
+		}
+	}
+	return ""
+}
+
+// bandingVersiNode membandingkan dua path biner nvm berdasarkan versi Node
+// di path-nya secara numerik per komponen (mayor, minor, patch). Mengembalikan
+// >0 bila a lebih baru. Versi yang tak terurai diperlakukan paling tua dan
+// seri di antara keduanya diputus secara leksikografis agar deterministik.
+func bandingVersiNode(a, b string) int {
+	urai := func(v string) [3]int {
+		var out [3]int
+		for i, s := range strings.Split(strings.TrimPrefix(v, "v"), ".") {
+			if i >= 3 {
+				break
+			}
+			n, _ := strconv.Atoi(s)
+			out[i] = n
+		}
+		return out
+	}
+	va, vb := urai(versiNodeDariPath(a)), urai(versiNodeDariPath(b))
+	for i := 0; i < 3; i++ {
+		if va[i] != vb[i] {
+			return va[i] - vb[i]
+		}
+	}
+	return strings.Compare(a, b)
+}
+
 // detectVersion menjalankan perintah versi untuk biner yang terdeteksi.
+// Hasilnya (termasuk kegagalan) ditahan ttlCacheVersi per path+argumen
+// supaya Scan tidak mengeksekusi ulang ±20 biner pada setiap panggilan
+// (audit3 V-LN-37).
 func (m *Manager) detectVersion(ctx context.Context, path string, versionArg string) string {
 	if path == "" || versionArg == "" {
 		return ""
 	}
+
+	kunciCache := path + "\x00" + versionArg
+	m.cacheVersiMu.Lock()
+	if m.cacheVersi != nil {
+		if e, ok := m.cacheVersi[kunciCache]; ok && time.Since(e.pada) < ttlCacheVersi {
+			m.cacheVersiMu.Unlock()
+			return e.versi
+		}
+	}
+	m.cacheVersiMu.Unlock()
+	versi := m.detectVersionLangsung(ctx, path, versionArg)
+	m.cacheVersiMu.Lock()
+	if m.cacheVersi == nil {
+		m.cacheVersi = make(map[string]entriVersi)
+	}
+	m.cacheVersi[kunciCache] = entriVersi{versi: versi, pada: time.Now()}
+	m.cacheVersiMu.Unlock()
+	return versi
+}
+
+// detectVersionLangsung adalah eksekusi versi yang sebenarnya, tanpa cache.
+func (m *Manager) detectVersionLangsung(ctx context.Context, path string, versionArg string) string {
 
 	tctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()
@@ -494,22 +772,41 @@ func (m *Manager) ensureShellAutoLoad(homeDir string) error {
 	}
 	hook := "\n# >>> Route-X AI Gateway CLI Auto-Loader >>>\nif [ -f \"$HOME/.routex/cli-env.sh\" ]; then\n    . \"$HOME/.routex/cli-env.sh\"\nfi\n# <<< Route-X AI Gateway CLI Auto-Loader <<<\n"
 
-	bashrcPath := filepath.Join(homeDir, ".bashrc")
-	if data, err := os.ReadFile(bashrcPath); err == nil {
-		if !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
-			if err := tulisAtomik(bashrcPath, []byte(hook+"\n"+string(data)), 0644); err != nil {
-				return fmt.Errorf("memasang hook di %s: %w", bashrcPath, err)
-			}
+	// Berkas rc ditulis ulang dengan MODE ASLINYA dan mengikuti symlink
+	// (audit3 V-LN-33): versi lama memaksa 0644 (menurunkan 0600 milik
+	// pengguna) dan tulisAtomik menimpa symlink itu sendiri dengan berkas
+	// reguler, memutus tautan ke target yang dikelola dotfiles pengguna.
+	pasangHook := func(rcPath string, prepend bool) error {
+		data, err := os.ReadFile(rcPath)
+		if err != nil {
+			return nil // berkas tidak ada: tidak dibuatkan.
 		}
+		if strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
+			return nil
+		}
+		target := rcPath
+		if terurai, errEval := filepath.EvalSymlinks(rcPath); errEval == nil {
+			target = terurai
+		}
+		perm := os.FileMode(0644)
+		if fi, errStat := os.Stat(target); errStat == nil {
+			perm = fi.Mode().Perm()
+		}
+		konten := string(data) + hook
+		if prepend {
+			konten = hook + "\n" + string(data)
+		}
+		if err := tulisAtomik(target, []byte(konten), perm); err != nil {
+			return fmt.Errorf("memasang hook di %s: %w", rcPath, err)
+		}
+		return nil
 	}
 
-	zshrcPath := filepath.Join(homeDir, ".zshrc")
-	if data, err := os.ReadFile(zshrcPath); err == nil {
-		if !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
-			if err := tulisAtomik(zshrcPath, []byte(string(data)+hook), 0644); err != nil {
-				return fmt.Errorf("memasang hook di %s: %w", zshrcPath, err)
-			}
-		}
+	if err := pasangHook(filepath.Join(homeDir, ".bashrc"), true); err != nil {
+		return err
+	}
+	if err := pasangHook(filepath.Join(homeDir, ".zshrc"), false); err != nil {
+		return err
 	}
 
 	profilePath := "/etc/profile.d/routex.sh"
@@ -625,6 +922,11 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 			opts["baseURL"] = gwURL
 			if apiKey != "" {
 				opts["apiKey"] = apiKey
+			} else {
+				// Konfigurasi ulang tanpa kunci tidak boleh meninggalkan
+				// kunci LAMA yang pernah ditulis versi sebelumnya di berkas
+				// ini (kredensial hantu — audit3 V-LN-26).
+				delete(opts, "apiKey")
 			}
 		}
 		models, ok := routexProv["models"].(map[string]any)
@@ -638,7 +940,10 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 		if err != nil {
 			return fmt.Errorf("mengkodekan opencode.json: %w", err)
 		}
-		if err := tulisAtomik(configPath, data, 0644); err != nil {
+		// 0600, bukan 0644: berkas ini bisa memuat apiKey plaintext
+		// (opts.apiKey di atas) — versi lama membuatnya terbaca seluruh
+		// pengguna lokal (audit3 V-LN-25).
+		if err := tulisAtomik(configPath, data, 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", configPath, err)
 		}
 	}
@@ -664,13 +969,25 @@ func (m *Manager) GetExportScript(homeDir string) (string, error) {
 	return m.redactAPIKeysInScript(string(data)), nil
 }
 
-func (m *Manager) removeAPIKeysFromScript(content string) string {
+// himpunanVarKunci adalah seluruh nama variabel yang membawa API key:
+// variabel khas tiap tool DITAMBAH nama generik key.env. Versi lama hanya
+// memakai variabel tool, sehingga ROUTEX_API_KEY sendiri — nama yang
+// paling utama — tidak pernah dibersihkan/diredaksi (audit3 V-LN-34).
+func himpunanVarKunci() map[string]bool {
 	keyVars := map[string]bool{}
 	for _, t := range SupportedTools() {
 		if t.EnvVarAPIKey != "" {
 			keyVars[t.EnvVarAPIKey] = true
 		}
 	}
+	for _, nama := range namaVarKunciGenerik {
+		keyVars[nama] = true
+	}
+	return keyVars
+}
+
+func (m *Manager) removeAPIKeysFromScript(content string) string {
+	keyVars := himpunanVarKunci()
 	lines := strings.Split(content, "\n")
 	kept := lines[:0]
 	for _, line := range lines {
@@ -686,20 +1003,14 @@ func (m *Manager) removeAPIKeysFromScript(content string) string {
 }
 
 // redactAPIKeysInScript mengganti nilai variabel API key yang dikenali dalam
-// skrip export dengan tampilan tersamar.
+// skrip export dengan tampilan tersamar. Baris TANPA prefiks `export ` ikut
+// ditangani (audit3 V-LN-34): berkas warisan yang ditulis tangan bisa memuat
+// penugasan polos `NAMA=nilai` yang sama berbahayanya.
 func (m *Manager) redactAPIKeysInScript(content string) string {
-	keyVars := map[string]bool{}
-	for _, t := range SupportedTools() {
-		if t.EnvVarAPIKey != "" {
-			keyVars[t.EnvVarAPIKey] = true
-		}
-	}
+	keyVars := himpunanVarKunci()
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "export ") {
-			continue
-		}
 		rest := strings.TrimPrefix(trimmed, "export ")
 		eq := strings.Index(rest, "=")
 		if eq <= 0 {

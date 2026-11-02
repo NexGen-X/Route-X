@@ -144,6 +144,11 @@ type Factory struct {
 	// sampai worker berkala memulihkannya.
 	penyegar OAuthRefresher
 
+	// timeoutBawaan adalah UPSTREAM_TIMEOUT dari config; dipakai saat
+	// kandidat tidak menentukan timeout-nya sendiri (TimeoutMS<=0). Nol
+	// berarti fallback terakhir ke providers.DefaultTimeout.
+	timeoutBawaan time.Duration
+
 	// jumlah adalah ukuran cache yang bisa dibaca tanpa lock. Ada supaya LogValue tidak
 	// perlu mengambil mu: LogValue dipanggil dari dalam pemanggilan slog, dan slog bisa
 	// dipanggil dari mana pun — termasuk, suatu hari, dari jalur yang sudah memegang mu.
@@ -202,6 +207,38 @@ func WithCredentialUseMarker(m CredentialUseMarker) FactoryOption {
 func WithOAuthRefresher(r OAuthRefresher) FactoryOption {
 	return func(f *Factory) {
 		f.penyegar = r
+	}
+}
+
+// WithDefaultTimeout memasang timeout upstream bawaan dari konfigurasi
+// (UPSTREAM_TIMEOUT). Tanpa opsi ini knob config itu tidak berpengaruh sama
+// sekali — dulu setiap kandidat tanpa timeout eksplisit memakai konstanta
+// kode dan mengubah env tidak mengubah apa pun (audit3 V-LN-19). Nilai
+// <= 0 diabaikan (fallback terakhir tetap providers.DefaultTimeout).
+func WithDefaultTimeout(d time.Duration) FactoryOption {
+	return func(f *Factory) {
+		if d > 0 {
+			f.timeoutBawaan = d
+		}
+	}
+}
+
+// penutupKoneksiNganggur dipenuhi adapter yang memegang http.Client sendiri
+// (transport/proxy per kredensial). Dipanggil saat adapter dibuang dari
+// cache supaya koneksi nganggurnya ditutup, bukan menumpuk sampai proses
+// mati (audit3 V-GW-50).
+type penutupKoneksiNganggur interface {
+	CloseIdleConnections()
+}
+
+// tutupKoneksiAdapter menutup koneksi nganggur sebuah adapter bila ia
+// mendukungnya; adapter tanpa client sendiri dilewati diam-diam.
+func tutupKoneksiAdapter(p providers.Provider) {
+	if p == nil {
+		return
+	}
+	if penutup, ok := p.(penutupKoneksiNganggur); ok {
+		penutup.CloseIdleConnections()
 	}
 }
 
@@ -531,6 +568,12 @@ func (f *Factory) buatTarget(
 		rahasia = cred.Secret
 	}
 	timeout := time.Duration(t.TimeoutMS) * time.Millisecond
+	if timeout <= 0 {
+		// Kandidat tanpa timeout eksplisit memakai UPSTREAM_TIMEOUT dari
+		// config (dulu knob itu mati total — audit3 V-LN-19); konstanta
+		// kode tetap menjadi fallback terakhir di dalam adapter.
+		timeout = f.timeoutBawaan
+	}
 
 	// Kebijakan SSRF dihitung SEKALI untuk semua kind: BYOK selalu memakai
 	// kebijakan paling ketat (DefaultSSRFPolicy) karena base URL-nya diketik
@@ -721,6 +764,10 @@ func (f *Factory) keCache(kunci string, p providers.Provider) providers.Provider
 	f.tik++
 	if e, ok := f.cache[kunci]; ok {
 		e.dipakai = f.tik
+		// Adapter yang baru saja dibuat kalah dari yang sudah tercache:
+		// adapter ini tidak akan dipakai siapa pun, jadi koneksi
+		// nganggurnya ditutup sekarang juga (audit3 V-GW-50).
+		tutupKoneksiAdapter(p)
 		return e.provider
 	}
 	f.cache[kunci] = &entriAdapter{provider: p, dipakai: f.tik}
@@ -735,9 +782,10 @@ func (f *Factory) keCache(kunci string, p providers.Provider) providers.Provider
 // pemindaian hanya terjadi saat ada entri baru yang melewati batas. Daftar berkait yang
 // dijaga di dua tempat akan lebih cepat dan jauh lebih mudah salah.
 //
-// Adapter yang dibuang tidak ditutup paksa karena kontrak providers.Provider tidak
-// menyediakan jalan untuk itu; koneksi menganggurnya dilepas transport sendiri ketika
-// IdleConnTimeout habis. Yang penting: tidak ada yang tertahan selamanya.
+// Adapter yang dibuang kini menutup koneksi nganggurnya bila mendukung
+// CloseIdleConnections (ketiga adapter bawaan mendukungnya — audit3
+// V-GW-50); adapter lain tanpa client sendiri tetap mengandalkan
+// IdleConnTimeout transport-nya.
 func (f *Factory) buangYangUsang() {
 	for len(f.cache) > f.maks {
 		var (
@@ -750,7 +798,9 @@ func (f *Factory) buangYangUsang() {
 				kunciTertua, tertua, pertama = k, e.dipakai, false
 			}
 		}
+		yangDibuang := f.cache[kunciTertua].provider
 		delete(f.cache, kunciTertua)
+		tutupKoneksiAdapter(yangDibuang)
 	}
 }
 

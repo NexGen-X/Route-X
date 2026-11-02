@@ -109,6 +109,11 @@ if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER
     sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
     echo "   User database '${DB_USER}' berhasil dibuat."
 fi
+# Selalu selaraskan password role dengan yang tercatat di routex.env
+# (audit3 V-DP-06): versi lama hanya menyetel password saat CREATE, jadi
+# instalasi ulang sesudah rotasi manual membuat role dan env berbeda dan
+# gateway gagal login selamanya.
+sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';" >/dev/null
 if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
     sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
     echo "   Database '${DB_NAME}' berhasil dibuat."
@@ -129,16 +134,27 @@ echo ""
 echo "🔒 [4/6] Memeriksa dan memasang Caddy Web Server..."
 if ! command -v caddy &>/dev/null; then
     apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
-    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg --yes 2>/dev/null || true
-    echo "deb [trusted=yes] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" > /etc/apt/sources.list.d/caddy-stable.list
-    apt-get update -y --allow-insecure-repositories || true
-    apt-get install -y --allow-unauthenticated caddy
+    # Verifikasi GPG WAJIB (audit3 V-DP-07): versi lama menandai repo
+    # [trusted=yes], membungkam kegagalan gpg, dan memasang paket dengan
+    # --allow-unauthenticated — rantai pasok tanpa verifikasi apa pun.
+    # Kegagalan di sini menghentikan instalasi, bukan ditelan.
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg --yes
+    echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" > /etc/apt/sources.list.d/caddy-stable.list
+    apt-get update -y
+    apt-get install -y caddy
 fi
 
 mkdir -p /etc/caddy
 # Route-X mengharuskan HTTPS pada host publik (PUBLIC_URL produksi wajib https
 # dan CSRF membandingkan origin), jadi Caddy melayani ${ROUTEX_HOST} langsung
 # dengan TLS: Let's Encrypt untuk domain, CA internal untuk IP.
+if [ -f /etc/caddy/Caddyfile ] && grep -q "127.0.0.1:8080" /etc/caddy/Caddyfile 2>/dev/null; then
+    # Caddyfile yang ada bisa memuat penyesuaian operator: JANGAN timpa
+    # senyap (audit3 V-DP-04). Cadangkan dulu dengan cap waktu.
+    SALINAN_CADDY="/etc/caddy/Caddyfile.bak-$(date +%Y%m%d%H%M%S)"
+    cp /etc/caddy/Caddyfile "$SALINAN_CADDY"
+    echo "   ⚠️ Caddyfile lama dicadangkan ke $SALINAN_CADDY sebelum ditulis ulang."
+fi
 if [ ! -f /etc/caddy/Caddyfile ] || grep -q "127.0.0.1:8080" /etc/caddy/Caddyfile 2>/dev/null; then
     # Belum ada Caddyfile, atau berisi blok Route-X versi lama: tulis ulang.
     cat << EOF > /etc/caddy/Caddyfile
@@ -149,11 +165,6 @@ if [ ! -f /etc/caddy/Caddyfile ] || grep -q "127.0.0.1:8080" /etc/caddy/Caddyfil
 http://${ROUTEX_HOST}, :80 {
     encode zstd gzip
 
-    @apk path /routex.apk
-    handle @apk {
-        root * /usr/share/caddy
-        file_server
-    }
 
     handle {
         reverse_proxy 127.0.0.1:8080 {
@@ -171,11 +182,6 @@ ${ROUTEX_HOST} {
 ${CADDY_TLS_LINE}
     encode zstd gzip
 
-    @apk path /routex.apk
-    handle @apk {
-        root * /usr/share/caddy
-        file_server
-    }
 
     handle {
         reverse_proxy 127.0.0.1:8080 {
@@ -211,9 +217,12 @@ fi
 systemctl enable caddy
 systemctl restart caddy || true
 
-# 8. Memasang Biner Route-X Core (Menggunakan Biner Rilis Resmi v1.5.1)
+# 8. Memasang Biner Route-X Core dari rilis resmi.
+# RELEASE_TAG adalah satu-satunya tempat versi rilis disebut di installer
+# ini — perbarui di sini saat menerbitkan rilis baru.
+RELEASE_TAG="v1.5.1"
 echo ""
-echo "🛠️ [5/6] Menyiapkan biner resmi Route-X Gateway v1.5.1..."
+echo "🛠️ [5/6] Menyiapkan biner resmi Route-X Gateway ${RELEASE_TAG}..."
 mkdir -p "$INSTALL_DIR"
 
 INSTALLED_FROM_RELEASE=0
@@ -222,23 +231,50 @@ if [ -f "$SRC_DIR/bin/ai-gateway" ]; then
     install -m 755 "$SRC_DIR/bin/ai-gateway" "$INSTALL_DIR/ai-gateway"
     INSTALLED_FROM_RELEASE=1
 else
-    RELEASE_TAG="v1.5.1"
+    # Arsitektur dipilih dari uname -m (audit3 V-DP-01): versi lama selalu
+    # mengambil tarball amd64 — di mesin ARM64 unduhan "berhasil" tetapi
+    # binernya tidak bisa dieksekusi sama sekali. Arsitektur tak dikenal
+    # tidak ditebak: lewati unduhan dan pakai fallback kompilasi sumber.
     ARCH="$(uname -m)"
+    TARBALL_NAME=""
     case "$ARCH" in
-        x86_64) TARBALL_NAME="routex-${RELEASE_TAG}-linux-amd64.tar.gz" ;;
-        *) TARBALL_NAME="routex-${RELEASE_TAG}-linux-amd64.tar.gz" ;;
+        x86_64|amd64) TARBALL_NAME="routex-${RELEASE_TAG}-linux-amd64.tar.gz" ;;
+        aarch64|arm64) TARBALL_NAME="routex-${RELEASE_TAG}-linux-arm64.tar.gz" ;;
+        *) echo "   ⚠️ Arsitektur '${ARCH}' tidak dikenal; melewati unduhan biner rilis." ;;
     esac
 
-    DOWNLOAD_URL="https://github.com/NexGen-X/Route-X/releases/download/${RELEASE_TAG}/${TARBALL_NAME}"
-    echo "   Mengunduh biner rilis statis resmi dari GitHub: ${DOWNLOAD_URL}..."
-    if curl -fsSL "$DOWNLOAD_URL" -o /tmp/routex-release.tar.gz 2>/dev/null; then
-        tar -xzf /tmp/routex-release.tar.gz -C "$INSTALL_DIR" ai-gateway
-        chmod 755 "$INSTALL_DIR/ai-gateway"
-        rm -f /tmp/routex-release.tar.gz
-        echo "   Biner Route-X ${RELEASE_TAG} berhasil dipasang (bebas kompilasi)!"
-        INSTALLED_FROM_RELEASE=1
-    else
-        echo "   Peringatan: Gagal mengunduh biner rilis. Beralih ke fallback kompilasi dari sumber..."
+    if [ -n "$TARBALL_NAME" ]; then
+        DOWNLOAD_URL="https://github.com/NexGen-X/Route-X/releases/download/${RELEASE_TAG}/${TARBALL_NAME}"
+        echo "   Mengunduh biner rilis statis resmi dari GitHub: ${DOWNLOAD_URL}..."
+        # Tarball disimpan dengan NAMA ASLINYA: berkas .sha256 di sisi
+        # rilis merekam nama itu, dan sha256sum -c mencocokkan berdasarkannya.
+        if curl -fsSL "$DOWNLOAD_URL" -o "/tmp/${TARBALL_NAME}" 2>/dev/null; then
+            # Verifikasi checksum dari berkas .sha256 DI SISI RILIS yang
+            # sama (audit3 V-DP-02) — bukan dari tarball yang kebetulan ada
+            # di repo lokal. Checksum tersedia tetapi TIDAK COCOK = batalkan
+            # instalasi; checksum belum diterbitkan rilis lama = peringatan
+            # keras, instalasi lanjut dengan mata terbuka.
+            if curl -fsSL "${DOWNLOAD_URL}.sha256" -o "/tmp/${TARBALL_NAME}.sha256" 2>/dev/null; then
+                if ! (cd /tmp && sha256sum -c "${TARBALL_NAME}.sha256" >/dev/null 2>&1); then
+                    echo "❌ Checksum tarball rilis TIDAK COCOK — unduhan dibuang, instalasi dibatalkan." >&2
+                    rm -f "/tmp/${TARBALL_NAME}" "/tmp/${TARBALL_NAME}.sha256"
+                    exit 1
+                fi
+                echo "   Checksum SHA-256 tarball terverifikasi dari sisi rilis."
+            else
+                echo "   ⚠️ PERINGATAN KERAS: rilis ${RELEASE_TAG} tidak menerbitkan berkas .sha256;"
+                echo "      integritas tarball TIDAK terverifikasi. Lanjutkan hanya bila Anda"
+                echo "      memercayai jalur unduhan ini."
+            fi
+            rm -f "/tmp/${TARBALL_NAME}.sha256"
+            tar -xzf "/tmp/${TARBALL_NAME}" -C "$INSTALL_DIR" ai-gateway
+            chmod 755 "$INSTALL_DIR/ai-gateway"
+            rm -f "/tmp/${TARBALL_NAME}"
+            echo "   Biner Route-X ${RELEASE_TAG} (${ARCH}) berhasil dipasang (bebas kompilasi)!"
+            INSTALLED_FROM_RELEASE=1
+        else
+            echo "   Peringatan: Gagal mengunduh biner rilis. Beralih ke fallback kompilasi dari sumber..."
+        fi
     fi
 fi
 
@@ -258,7 +294,7 @@ if [ "$INSTALLED_FROM_RELEASE" -eq 0 ]; then
         case "$ARCH" in
             x86_64) GO_ARCH="amd64" ;;
             aarch64|arm64) GO_ARCH="arm64" ;;
-            *) GO_ARCH="amd64" ;;
+            *) echo "❌ Arsitektur '${ARCH}' tidak didukung untuk fallback kompilasi." >&2; exit 1 ;;
         esac
         wget -q "https://dl.google.com/go/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" -O /tmp/go.tar.gz
         rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz
@@ -273,7 +309,10 @@ if [ "$INSTALLED_FROM_RELEASE" -eq 0 ]; then
     cd "$SRC_DIR"
 
     echo "   Membangun Biner Core Route-X (go build)..."
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${RELEASE_TAG:-v1.5.1}" -o ai-gateway ./cmd/ai-gateway
+    # Cap versi build sumber adalah dev-<sha pendek>: mencap ${RELEASE_TAG}
+    # pada biner hasil kompilasi lokal adalah klaim palsu (audit3 V-DP-03).
+    CAP_VERSI="dev-$(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${CAP_VERSI}" -o ai-gateway ./cmd/ai-gateway
     install -m 755 ai-gateway "$INSTALL_DIR/ai-gateway"
 fi
 
@@ -304,6 +343,8 @@ METRICS_TOKEN="${METRICS_TOKEN}"
 RATE_LIMIT_FAIL_CLOSED=false
 UPSTREAM_ALLOW_HTTP=false
 UPSTREAM_ALLOWED_PRIVATE_ADDRS=127.0.0.1,::1,127.0.0.0/8
+TRUSTED_PROXIES=127.0.0.1,::1
+ANTIGRAVITY_CLIENT_SECRET=
 INITIAL_ADMIN_EMAIL=admin@routex.local
 INITIAL_ADMIN_PASSWORD="${ADMIN_PASS}"
 EOF
@@ -326,7 +367,38 @@ else
     fi
     grep -q "UPSTREAM_ALLOWED_PRIVATE_ADDRS" /etc/routex/routex.env || \
         echo "UPSTREAM_ALLOWED_PRIVATE_ADDRS=127.0.0.1,::1,127.0.0.0/8" >> /etc/routex/routex.env
+    # TRUSTED_PROXIES tidak pernah disetel installer native versi lama
+    # (audit3 V-DP-20): Caddy di host yang sama adalah proxy satu-satunya,
+    # jadi loopback adalah nilai yang tepat dan sempit.
+    grep -q "^TRUSTED_PROXIES=" /etc/routex/routex.env || \
+        echo "TRUSTED_PROXIES=127.0.0.1,::1" >> /etc/routex/routex.env
+    grep -q "^ANTIGRAVITY_CLIENT_SECRET=" /etc/routex/routex.env || \
+        echo "ANTIGRAVITY_CLIENT_SECRET=" >> /etc/routex/routex.env
+    # PUBLIC_URL https dengan host LAMA (audit3 V-DP-05): hanya diperbarui
+    # bila operator menjalankan installer ini dengan DOMAIN/PUBLIC_URL_HOST
+    # eksplisit — tanpa itu perbedaan host bisa jadi domain sah pilihan
+    # operator dan hanya diperingatkan, tidak ditimpa.
+    if grep -Eq '^PUBLIC_URL=https://' /etc/routex/routex.env && \
+       ! grep -q "^PUBLIC_URL=https://${ROUTEX_HOST}" /etc/routex/routex.env; then
+        if [ -n "${DOMAIN:-${PUBLIC_URL_HOST:-}}" ]; then
+            sed -i -E "s|^PUBLIC_URL=.*|PUBLIC_URL=https://${ROUTEX_HOST}|" /etc/routex/routex.env
+            echo "   PUBLIC_URL diperbarui ke host yang diminta: https://${ROUTEX_HOST}."
+        else
+            echo "   ⚠️ PUBLIC_URL di routex.env menunjuk host selain ${ROUTEX_HOST}; dibiarkan apa adanya."
+            echo "      Bila host itu sudah usang, jalankan ulang dengan DOMAIN=<host-baru> untuk memperbaruinya."
+        fi
+    fi
 fi
+
+# Pengguna sistem khusus untuk service (audit3 V-DP-22): unit systemd
+# menjalankan gateway sebagai 'routex', bukan root.
+if ! id routex &>/dev/null; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin routex
+    echo "   Pengguna sistem 'routex' dibuat."
+fi
+mkdir -p /var/lib/route-x
+chown -R routex:routex "$INSTALL_DIR" /etc/routex /var/lib/route-x
+chmod 600 /etc/routex/routex.env
 
 # Pasang routex.service
 if [ -f "$SRC_DIR/deploy/systemd/routex.service" ]; then
@@ -334,7 +406,8 @@ if [ -f "$SRC_DIR/deploy/systemd/routex.service" ]; then
 fi
 
 # Jalankan migrasi database
-echo "   Menjalankan migrasi skema database (0001 - 0010)..."
+MIG_TERAKHIR="$(ls "$SRC_DIR/internal/database/migrations" 2>/dev/null | sort | tail -n 1 || true)"
+echo "   Menjalankan migrasi skema database (idempoten; migrasi terakhir di sumber: ${MIG_TERAKHIR:-tidak diketahui})..."
 set -a
 # shellcheck disable=SC1091
 source /etc/routex/routex.env
@@ -346,6 +419,25 @@ cd "$INSTALL_DIR"
 systemctl daemon-reload
 systemctl enable routex
 systemctl restart routex
+
+# Klaim BERHASIL hanya sesudah /healthz benar-benar menjawab (audit3
+# V-DP-08): service yang crash-loop tidak boleh dilaporkan sebagai
+# instalasi selesai.
+echo "   Memeriksa kesehatan gateway (http://127.0.0.1:8080/healthz)..."
+SEHAT=0
+for _try in $(seq 1 30); do
+    if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+        SEHAT=1
+        break
+    fi
+    sleep 2
+done
+if [ "$SEHAT" -ne 1 ]; then
+    echo "❌ Gateway tidak menjawab /healthz sesudah ±60 detik — instalasi TIDAK dinyatakan berhasil." >&2
+    echo "   Periksa: journalctl -u routex -n 100 --no-pager" >&2
+    exit 1
+fi
+echo "   Gateway sehat (/healthz menjawab)."
 
 echo ""
 echo "=================================================================="

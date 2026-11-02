@@ -159,10 +159,11 @@ func (t *keyTool) create(ctx context.Context, args []string) int {
 	fs.SetOutput(t.errOut)
 
 	var (
-		name  = fs.String("name", "", "Nama deskriptif key, mis. \"ci-pipeline\" (wajib)")
-		live  = fs.Bool("live", false, "Buat key produksi dengan prefix sk_live_; tanpa flag ini dipakai sk_test_")
-		owner = fs.String("owner", "", "ID pengguna pemilik key; kosong berarti pengguna pertama yang terdaftar")
-		dbURL = fs.String("db-url", "", "URL basis data PostgreSQL (menimpa DATABASE_URL)")
+		name        = fs.String("name", "", "Nama deskriptif key, mis. \"ci-pipeline\" (wajib)")
+		live        = fs.Bool("live", false, "Buat key produksi dengan prefix sk_live_; tanpa flag ini dipakai sk_test_")
+		owner       = fs.String("owner", "", "ID pengguna pemilik key; kosong berarti pengguna pertama yang terdaftar")
+		dbURL       = fs.String("db-url", "", "URL basis data PostgreSQL (menimpa DATABASE_URL)")
+		expiresDays = fs.Int("expires-days", 0, "Umur key dalam hari (1–730); 0 berarti tanpa kedaluwarsa — jalur admin punya field ini sejak lama, CLI sebelumnya tidak bisa menyetelnya sama sekali (audit3 V-LN-32)")
 	)
 
 	var scopes scopeFlag
@@ -178,10 +179,11 @@ func (t *keyTool) create(ctx context.Context, args []string) int {
 	}
 
 	opts := createOptions{
-		name:   *name,
-		live:   *live,
-		scopes: scopes,
-		owner:  *owner,
+		name:        *name,
+		live:        *live,
+		scopes:      scopes,
+		owner:       *owner,
+		expiresDays: *expiresDays,
 	}
 	if err := opts.validate(); err != nil {
 		fmt.Fprintf(t.errOut, "Error: %v\n", err)
@@ -204,12 +206,17 @@ func (t *keyTool) create(ctx context.Context, args []string) int {
 		}
 	}
 
-	created, err := t.repo.Create(ctx, keys.CreateParams{
+	params := keys.CreateParams{
 		Name:        opts.name,
 		OwnerUserID: ownerID,
 		Live:        opts.live,
 		Scopes:      opts.scopes,
-	})
+	}
+	if opts.expiresDays > 0 {
+		kedaluwarsa := time.Now().AddDate(0, 0, opts.expiresDays)
+		params.ExpiresAt = &kedaluwarsa
+	}
+	created, err := t.repo.Create(ctx, params)
 	if err != nil {
 		fmt.Fprintf(t.errOut, "Error: gagal membuat API key: %v\n", err)
 		return 1
@@ -286,10 +293,11 @@ func (t *keyTool) list(ctx context.Context, args []string) int {
 
 // createOptions adalah masukan subcommand create.
 type createOptions struct {
-	name   string
-	live   bool
-	scopes []string
-	owner  string
+	name        string
+	live        bool
+	scopes      []string
+	owner       string
+	expiresDays int
 }
 
 // validate memeriksa masukan create sebelum menyentuh database.
@@ -305,6 +313,10 @@ func (o createOptions) validate() error {
 			return fmt.Errorf("cakupan %q tidak dikenali; yang valid: %s",
 				s, strings.Join(keys.KnownScopes, ", "))
 		}
+	}
+	// Selaras batas validasi jalur admin (1–730 hari); 0 = tanpa kedaluwarsa.
+	if o.expiresDays < 0 || o.expiresDays > 730 {
+		return fmt.Errorf("--expires-days harus 0 (tanpa kedaluwarsa) atau 1–730, diberikan %d", o.expiresDays)
 	}
 	return nil
 }

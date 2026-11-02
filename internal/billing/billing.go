@@ -107,6 +107,11 @@ type Enforcer struct {
 	// query ActiveBudgets per permintaan yang datang dalam jendela pemuatan —
 	// persis saat database paling tidak butuh tambahan beban.
 	pemuatan sync.Mutex
+	// gagalMuat adalah waktu kegagalan pemuatan terakhir (dijaga mu), dasar
+	// cache negatif di muat: sesudah gagal, percobaan berikutnya menunggu
+	// jedaGagalMuat alih-alih mengantre di mutex yang sama pada SETIAP
+	// request (audit3 V-LN-11).
+	gagalMuat time.Time
 }
 
 // Option adalah penyetel opsional penegak anggaran.
@@ -442,11 +447,24 @@ func (e *Enforcer) Remaining(ctx context.Context, targets []policy.Target) (upst
 	return sisa, ada
 }
 
+// tenggatMuatKebijakan membatasi satu query pemuatan ulang kebijakan, dan
+// jedaGagalMuat adalah umur cache negatif sesudah kegagalan (audit3 V-LN-11).
+const (
+	tenggatMuatKebijakan = 5 * time.Second
+	jedaGagalMuat        = 5 * time.Second
+)
+
 // muat memuat ulang salinan bila sudah kedaluwarsa.
 //
-// Kegagalan pembacaan mempertahankan salinan lama dan tidak memperbarui waktu muat, dengan
-// alasan yang sama seperti di internal/ratelimit: percobaan berikutnya tidak perlu menunggu
-// satu TTL penuh.
+// Kegagalan pembacaan mempertahankan salinan lama. Dua perbaikan atas pola
+// lama (audit3 V-LN-11): (1) querynya memakai context LEPAS dari pemanggil
+// pertama dengan tenggat sendiri — dulu ctx request pemanggil pertama
+// dipakai di bawah mutex global, jadi disconnect satu pemuat membatalkan
+// pemuatan bagi semua yang mengantre, dan query yang macet menyeret seluruh
+// request gateway; (2) kegagalan dicatat sebagai cache negatif berumur
+// jedaGagalMuat — dulu waktu muat sengaja tidak diperbarui sehingga SETIAP
+// request berikutnya mengantre di mutex dan mengulang query yang sama ke
+// database yang sedang sakit. Jedanya pendek supaya pemulihan tetap cepat.
 func (e *Enforcer) muat(ctx context.Context) {
 	if e.source == nil {
 		return
@@ -467,13 +485,19 @@ func (e *Enforcer) muat(ctx context.Context) {
 
 	e.mu.RLock()
 	segar = !e.dimuat.IsZero() && e.now().Sub(e.dimuat) < e.ttl
+	baruGagal := !e.gagalMuat.IsZero() && e.now().Sub(e.gagalMuat) < jedaGagalMuat
 	e.mu.RUnlock()
-	if segar {
+	if segar || baruGagal {
 		return
 	}
 
-	rows, err := e.source.ActiveBudgets(ctx)
+	qctx, batal := context.WithTimeout(context.WithoutCancel(ctx), tenggatMuatKebijakan)
+	defer batal()
+	rows, err := e.source.ActiveBudgets(qctx)
 	if err != nil {
+		e.mu.Lock()
+		e.gagalMuat = e.now()
+		e.mu.Unlock()
 		e.logger.WarnContext(ctx, "anggaran gagal dibaca, memakai salinan sebelumnya", "error", err)
 		return
 	}
@@ -495,5 +519,6 @@ func (e *Enforcer) muat(ctx context.Context) {
 
 	e.mu.Lock()
 	e.global, e.perCakupan, e.dimuat = global, perCakupan, e.now()
+	e.gagalMuat = time.Time{}
 	e.mu.Unlock()
 }

@@ -109,15 +109,15 @@ fetch_and_parse() {
   # 2. Ketahanan & Failover
   echo -e "${COLOR_BOLD}2. Ketahanan & Failover:${COLOR_RESET}"
   local failovers retries rate_limits circuit_breakers
-  failovers=$(echo "$raw_metrics" | grep '^routex_resilience_failovers_total' | awk '{sum+=$NF} END {print sum+0}')
-  retries=$(echo "$raw_metrics" | grep '^routex_resilience_retries_total' | awk '{sum+=$NF} END {print sum+0}')
-  rate_limits=$(echo "$raw_metrics" | grep '^routex_resilience_rate_limit_rejected_total' | awk '{sum+=$NF} END {print sum+0}')
+  failovers=$(echo "$raw_metrics" | grep '^routex_gateway_failovers_total' | awk '{sum+=$NF} END {print sum+0}')
+  retries=$(echo "$raw_metrics" | grep '^routex_gateway_retries_total' | awk '{sum+=$NF} END {print sum+0}')
+  rate_limits=$(echo "$raw_metrics" | grep '^routex_rate_limit_rejected_total' | awk '{sum+=$NF} END {print sum+0}')
   
   echo -e "  • Total Retries             : ${COLOR_CYAN}${retries}${COLOR_RESET}"
   echo -e "  • Total Failovers           : ${COLOR_YELLOW}${failovers}${COLOR_RESET}"
   echo -e "  • Rate Limit Ditolak        : ${COLOR_RED}${rate_limits}${COLOR_RESET}"
 
-  circuit_breakers=$(echo "$raw_metrics" | grep '^routex_resilience_circuit_breaker_state' || true)
+  circuit_breakers=$(echo "$raw_metrics" | grep '^routex_circuit_breaker_state' || true)
   if [[ -n "$circuit_breakers" ]]; then
     echo "  • Status Circuit Breaker:"
     echo "$circuit_breakers" | while read -r line; do
@@ -125,6 +125,8 @@ fetch_and_parse() {
       pval=$(echo "$line" | awk '{print $NF}')
       local provider
       provider=$(echo "$line" | sed -E 's/.*provider="([^"]+)".*/\1/')
+      local model
+      model=$(echo "$line" | sed -E 's/.*model="([^"]+)".*/\1/')
       local state_str="Closed (Normal)"
       if [[ "$pval" == "1" ]]; then
         state_str="${COLOR_YELLOW}Half-Open (Testing)${COLOR_RESET}"
@@ -133,7 +135,7 @@ fetch_and_parse() {
       else
         state_str="${COLOR_GREEN}Closed (Normal)${COLOR_RESET}"
       fi
-      echo -e "    - Provider [${provider}]: ${state_str}"
+      echo -e "    - Provider [${provider}] Model [${model}]: ${state_str}"
     done
   fi
   echo ""
@@ -163,7 +165,7 @@ fetch_and_parse() {
   echo -e "${COLOR_BOLD}4. Konsumsi Token & Biaya Komputasi:${COLOR_RESET}"
   local tokens cost
   tokens=$(echo "$raw_metrics" | grep '^routex_gateway_tokens_total' | awk '{sum+=$NF} END {print sum+0}')
-  cost=$(echo "$raw_metrics" | grep '^routex_gateway_cost_total_usd' | awk '{sum+=$NF} END {printf "%.6f", sum}')
+  cost=$(echo "$raw_metrics" | grep '^routex_gateway_cost_usd_total' | awk '{sum+=$NF} END {printf "%.6f", sum}')
   echo -e "  • Akumulasi Token           : ${COLOR_CYAN}${tokens}${COLOR_RESET}"
   echo -e "  • Akumulasi Biaya Est.      : ${COLOR_GREEN}\$${cost} USD${COLOR_RESET}"
   echo ""

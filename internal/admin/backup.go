@@ -21,6 +21,7 @@ import (
 
 	"github.com/NexGen-X/Route-X/internal/database"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/observability"
 )
 
 // getBackupStatus mengembalikan ringkasan statistik ukuran database dan info berkas cadangan lokal.
@@ -194,7 +195,9 @@ func (h *Handlers) exportDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		if err := cmd.Run(); err != nil {
-			h.logger.ErrorContext(ctx, "gagal mengekspor database", slog.String("error", stderr.String()), slog.Any("err", err))
+			// stderr pg_dump bisa memuat baris \connect yang menyisipkan DSN dan
+			// token sesi: jangan catat mentah ke log (audit3 V-EM-34).
+			h.logger.ErrorContext(ctx, "gagal mengekspor database", slog.String("error", observability.ScrubLogText(stderr.String())), slog.Any("err", err))
 			httpx.InternalError(w, r)
 			return
 		}
@@ -490,7 +493,10 @@ func (h *Handlers) jalankanRestore(ctx context.Context, berkasSQL, connStr strin
 		cmd.Stderr = &stderr
 		cmd.Stdout = &bytes.Buffer{}
 		if err := cmd.Run(); err != nil {
-			return nil, fmt.Errorf("psql restore skratch gagal: %w (stderr: %s)", err, strings.TrimSpace(stderr.String()))
+			// stderr psql mentah tidak boleh tertanam di error yang mengalir
+			// ke log/pemanggil — bisa memuat DSN & token sesi (audit3
+			// V-EM-34). Versi tersanitasi tetap memberi konteks kegagalan.
+			return nil, fmt.Errorf("psql restore skratch gagal: %w (stderr: %s)", err, observability.ScrubLogText(strings.TrimSpace(stderr.String())))
 		}
 	}
 

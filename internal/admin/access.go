@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/NexGen-X/Route-X/internal/auth"
+	"github.com/NexGen-X/Route-X/internal/cache"
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 	"github.com/NexGen-X/Route-X/internal/database/repo/keys"
@@ -435,6 +436,42 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// bersihkanCounterRateLimitKey menghapus seluruh counter rate limit Redis
+// milik satu API key (pola routex:rl:apikey:<id>:*).
+//
+// Tanpa ini, mencabut/merotasi/menonaktifkan kunci meninggalkan counter
+// yatim sampai TTL jendelanya habis (audit3 V-LN-16) — paling lama jendela
+// bulanan — dan kunci BARU hasil rotasi yang kebetulan mewarisi id yang sama
+// di masa depan akan mewarisi pula hitungan kunci lama. Best-effort:
+// kegagalan Redis hanya dicatat, tidak menggagalkan operasi kunci yang
+// sudah berhasil di database.
+func (h *Handlers) bersihkanCounterRateLimitKey(ctx context.Context, id string) {
+	if h.redis == nil || id == "" {
+		return
+	}
+	pola := cache.Key(cache.NamespaceRateLimit, "apikey", id) + ":*"
+	var cursor uint64
+	for {
+		kunci, berikut, err := h.redis.Scan(ctx, cursor, pola, 100).Result()
+		if err != nil {
+			h.logger.WarnContext(ctx, "gagal memindai counter rate limit kunci yang dicabut",
+				"api_key_id", id, "error", err)
+			return
+		}
+		if len(kunci) > 0 {
+			if err := h.redis.Del(ctx, kunci...).Err(); err != nil {
+				h.logger.WarnContext(ctx, "gagal menghapus counter rate limit kunci yang dicabut",
+					"api_key_id", id, "error", err)
+				return
+			}
+		}
+		cursor = berikut
+		if cursor == 0 {
+			return
+		}
+	}
+}
+
 func (h *Handlers) rotateAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -450,6 +487,7 @@ func (h *Handlers) rotateAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.bersihkanCounterRateLimitKey(ctx, id)
 	h.writeAudit(ctx, r, "rotate", "api_key", id, map[string]any{"new_key_id": created.Key.ID})
 	// Rotasi adalah pencabutan + pembuatan dalam satu tindakan: kedua event
 	// diproduksi supaya pelanggan tidak melewatkan salah satunya.
@@ -494,6 +532,7 @@ func (h *Handlers) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.bersihkanCounterRateLimitKey(ctx, id)
 	h.writeAudit(ctx, r, "revoke", "api_key", id, map[string]any{"reason": reason})
 	h.pancarkanEvent(ctx, "api_key.revoked", map[string]any{
 		"api_key_id": id,
@@ -523,6 +562,9 @@ func (h *Handlers) toggleAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Status == "disabled" {
+		h.bersihkanCounterRateLimitKey(ctx, id)
+	}
 	h.writeAudit(ctx, r, "toggle", "api_key", id, map[string]any{"status": req.Status})
 	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
 		Key:    toKeyDTO(k, nil, nil),

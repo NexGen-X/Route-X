@@ -52,6 +52,11 @@ type Config struct {
 	LogLevel  slog.Level
 	PublicURL string
 
+	// Warnings memuat peringatan konfigurasi yang tidak menggagalkan start
+	// tetapi tidak boleh lewat diam-diam (mis. APP_ENV absen total).
+	// Pemanggil (main) mencatatnya ke log sesudah logger siap.
+	Warnings []string
+
 	DatabaseURL security.Secret
 	DBMaxConns  int32
 	DBMinConns  int32
@@ -278,6 +283,34 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 		cfg.MetricsAllowLoopback = !cfg.AppEnv.IsProduction()
 	} else {
 		cfg.MetricsAllowLoopback = r.boolean("METRICS_ALLOW_LOOPBACK", false)
+	}
+
+	// Peringatan untuk keadaan yang sah tetapi berbahaya bila diam-diam
+	// (audit3 V-LN-20, V-LN-21). APP_ENV yang SALAH KETIK sudah ditolak
+	// oneOf di atas; yang lolos di sini adalah APP_ENV yang HILANG TOTAL —
+	// dan hilang total dulu berarti mode development tanpa satu pun tanda,
+	// padahal konsekuensinya pengerasan produksi mati semua.
+	if _, ok := r.lookup("APP_ENV"); !ok {
+		cfg.Warnings = append(cfg.Warnings,
+			"APP_ENV tidak disetel: mode development diasumsikan dan pengerasan produksi (PUBLIC_URL wajib https, METRICS_TOKEN wajib, larangan sslmode=disable) TIDAK aktif — setel APP_ENV=production untuk instalasi nyata")
+	}
+	// Nilai 0 pada knob durasi tidak seragam maknanya di codebase ini:
+	// SHUTDOWN_GRACE=0 diganti bawaan oleh server, sedangkan
+	// READ/WRITE_TIMEOUT=0 dihormati sebagai "tanpa batas". Keduanya
+	// dinyatakan eksplisit di sini supaya operator tidak menebak.
+	if v, ok := r.raw("SHUTDOWN_GRACE"); ok {
+		if d, err := time.ParseDuration(v); err == nil && d == 0 {
+			cfg.Warnings = append(cfg.Warnings,
+				"SHUTDOWN_GRACE=0 diabaikan: memakai bawaan 25 detik (0 tidak berarti tanpa batas untuk knob ini)")
+		}
+	}
+	if v, ok := r.raw("READ_TIMEOUT"); ok && v == "0s" {
+		cfg.Warnings = append(cfg.Warnings,
+			"READ_TIMEOUT=0s berarti TANPA batas waktu baca — berbeda dari SHUTDOWN_GRACE yang 0-nya diganti bawaan")
+	}
+	if v, ok := r.raw("WRITE_TIMEOUT"); ok && v == "0s" {
+		cfg.Warnings = append(cfg.Warnings,
+			"WRITE_TIMEOUT=0s berarti TANPA batas waktu tulis — berbeda dari SHUTDOWN_GRACE yang 0-nya diganti bawaan")
 	}
 
 	cfg.validate(r)

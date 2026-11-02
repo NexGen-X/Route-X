@@ -542,7 +542,7 @@ func TestRunScriptMengembalikanErrorSkrip(t *testing.T) {
 
 func TestApplyProductionDefaults(t *testing.T) {
 	opt := &redis.Options{Addr: "127.0.0.1:6379"}
-	applyProductionDefaults(opt)
+	applyProductionDefaults(opt, nil)
 
 	if opt.PoolSize < minPoolSize || opt.PoolSize > maxPoolSize {
 		t.Fatalf("PoolSize = %d, mau di dalam [%d,%d]", opt.PoolSize, minPoolSize, maxPoolSize)
@@ -600,7 +600,7 @@ func TestParseOptionsMenghormatiQueryDSN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseOptions: %v", err)
 	}
-	applyProductionDefaults(opt)
+	applyProductionDefaults(opt, nil)
 
 	tests := []struct {
 		name string

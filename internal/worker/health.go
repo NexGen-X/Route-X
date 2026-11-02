@@ -52,6 +52,12 @@ type HealthCheckerJob struct {
 	// terkini (audit3 V-EO-05).
 	egress       EgressHealthSource
 	egressPolicy security.SSRFPolicy
+
+	// muSeri menjaga namaSeriTerakhir: nama provider yang seri metriknya
+	// dipasang pada putaran sebelumnya, supaya seri milik provider yang
+	// sudah dihapus bisa ikut dihapus (audit3 V-EM-24).
+	muSeri           sync.Mutex
+	namaSeriTerakhir map[string]struct{}
 }
 
 // SetEgressSource memasang pemeriksaan kesehatan egress pool berkala.
@@ -127,6 +133,8 @@ func (h *HealthCheckerJob) Run(ctx context.Context) error {
 	}
 	wg.Wait()
 
+	h.bersihkanSeriProviderHilang(list)
+
 	// Kesehatan egress pool diperbarui pada putaran yang sama, bukan hanya
 	// dari tombol Tes manual (audit3 V-EO-05).
 	if h.egress != nil {
@@ -134,6 +142,33 @@ func (h *HealthCheckerJob) Run(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// bersihkanSeriProviderHilang menghapus seri ProviderUp/ProviderLatencyMS
+// milik provider yang tidak lagi ada di daftar aktif. Tanpa ini, provider
+// yang dihapus meninggalkan seri hantu abadi di /metrics — Prometheus terus
+// menyajikan angka kesehatan terakhirnya seolah provider itu masih ada
+// (audit3 V-EM-24).
+func (h *HealthCheckerJob) bersihkanSeriProviderHilang(list []*upstream.Provider) {
+	if h.metrics == nil {
+		return
+	}
+	saatIni := make(map[string]struct{}, len(list))
+	for _, p := range list {
+		if p.Enabled {
+			saatIni[p.Name] = struct{}{}
+		}
+	}
+
+	h.muSeri.Lock()
+	defer h.muSeri.Unlock()
+	for nama := range h.namaSeriTerakhir {
+		if _, ada := saatIni[nama]; !ada {
+			h.metrics.ProviderUp.DeleteLabelValues(nama)
+			h.metrics.ProviderLatencyMS.DeleteLabelValues(nama)
+		}
+	}
+	h.namaSeriTerakhir = saatIni
 }
 
 // checkOne memeriksa satu provider dan mencatat perubahannya.

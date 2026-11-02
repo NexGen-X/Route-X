@@ -205,6 +205,17 @@ func (p *Provider) Kind() string { return p.kind }
 // Name mengembalikan nama provider.
 func (p *Provider) Name() string { return p.name }
 
+// CloseIdleConnections menutup koneksi nganggur kedua client milik adapter
+// ini. Dipanggil factory saat adapter dibuang dari cache (audit3 V-GW-50).
+func (p *Provider) CloseIdleConnections() {
+	if p.client != nil {
+		p.client.CloseIdleConnections()
+	}
+	if p.streamClient != nil {
+		p.streamClient.CloseIdleConnections()
+	}
+}
+
 // String menyamarkan seluruh isi Provider.
 //
 // security.Secret pada field credential TIDAK cukup di sini. fmt tidak boleh memanggil

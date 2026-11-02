@@ -913,8 +913,18 @@ func (l *Limiter) TokensExceeded(ctx context.Context, keyID string, limits Token
 	return l.run(ctx, modePeek, 0, tokenWindows(ScopeAPIKey, keyID, limits, now), now, "peek")
 }
 
+// batasPerintahLimiter adalah tenggat keseluruhan SATU perintah limiter,
+// termasuk seluruh retry di dalamnya. Tanpa ini, brownout Redis "menerima
+// tapi tak menjawab" dilunasi berlapis: ±(1+MaxRetries)×ReadTimeout ≈ 13
+// detik per perintah, dikalikan 3–6 skrip serial per request /v1
+// (audit3 V-LN-12). Dengan ContextTimeoutEnabled di klien Redis, tenggat
+// context ini memotong seluruh lapisan itu sekaligus.
+const batasPerintahLimiter = 5 * time.Second
+
 // run menjalankan skrip untuk sekumpulan jendela dan menerjemahkan hasilnya.
 func (l *Limiter) run(ctx context.Context, mode int, cost int64, windows []window, now time.Time, op string) Decision {
+	ctx, cancel := context.WithTimeout(ctx, batasPerintahLimiter)
+	defer cancel()
 	if len(windows) == 0 {
 		// Tidak ada batas yang aktif. Redis tidak disentuh, dan tidak ada header kuota
 		// yang dipasang: LimitValue nol.
@@ -959,6 +969,13 @@ func (l *Limiter) run(ctx context.Context, mode int, cost int64, windows []windo
 func (l *Limiter) failOpenDecision(ctx context.Context, op string, err error) Decision {
 	l.failOpen.WithLabelValues(op).Inc()
 	if l != nil && l.failClosed {
+		// Penolakan fail-closed adalah penolakan sungguhan dan wajib terlihat
+		// di metrik penolakan yang sama dengan penolakan kuota — versi lama
+		// hanya menaikkan penghitung fail-open, sehingga mode fail-closed
+		// tampak tidak pernah menolak apa pun (audit3 V-EM-28).
+		if l.rejected != nil {
+			l.rejected.WithLabelValues("infrastruktur", "redis-tidak-tersedia").Inc()
+		}
 		l.log(ctx).LogAttrs(ctx, slog.LevelError,
 			"batas laju tidak bisa diperiksa, request ditolak (fail-closed)",
 			slog.String("op", op),

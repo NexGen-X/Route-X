@@ -27,5 +27,9 @@ export const formatTimeAgo = (dateStr: string): string => {
   const m = Math.floor(diff / 60);
   if (m < 60) return `${m}m lalu`;
   const h = Math.floor(m / 60);
-  return `${h}j lalu`;
+  if (h < 24) return `${h}j lalu`;
+  // Satuan hari (audit3 B-053): tanpa ini umur beberapa hari tampil
+  // sebagai jam raksasa yang menyesatkan ("73j lalu").
+  const d = Math.floor(h / 24);
+  return `${d} hari lalu`;
 };

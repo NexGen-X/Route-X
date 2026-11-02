@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -170,12 +171,26 @@ func (h *Handlers) provisionDenoRelay(w http.ResponseWriter, r *http.Request) {
 		actorID = &p.User.ID
 	}
 
+	// Token relay ditanam sebagai password userinfo pada URL pool yang
+	// tersimpan: factory membacanya dari sana dan mengirimnya sebagai header
+	// x-relay-token (lihat gateway.buatTarget). Menyimpannya di kolom
+	// terenkripsi yang sama dengan URL berarti token tidak butuh skema atau
+	// kolom baru, dan masked hint pool menyamarkannya seperti kredensial
+	// proxy biasa.
+	poolURL := res.RelayURL
+	if res.RelayToken != "" {
+		if u, perr := url.Parse(res.RelayURL); perr == nil && u != nil {
+			u.User = url.UserPassword("relay", res.RelayToken)
+			poolURL = u.String()
+		}
+	}
+
 	enabled := true
 	weight := 1
 	ep, err := h.egressRepo.Create(ctx, upstream.CreateEgressParams{
 		Name:      poolName,
 		Kind:      "https",
-		ProxyURL:  security.Secret(res.RelayURL),
+		ProxyURL:  security.Secret(poolURL),
 		Enabled:   &enabled,
 		Weight:    &weight,
 		Region:    &region,

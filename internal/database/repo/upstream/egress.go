@@ -176,15 +176,41 @@ func (r *EgressRepo) List(ctx context.Context, enabledOnly bool) ([]*EgressPool,
 
 // ProxyURL mengembalikan URL proxy yang sudah didekripsi, siap dipakai membentuk
 // transport HTTP. Hasilnya tidak boleh masuk log maupun respons API.
+//
+// Hanya pool yang AKTIF yang dilayani: saklar "nonaktifkan" di dashboard harus
+// benar-benar memutus jalur keluar. Versi lama mengambil URL tanpa memeriksa
+// kolom enabled dan tidak ada satu pun pemanggil yang memeriksanya, sehingga
+// pool nonaktif tetap dipakai gateway, refresh OAuth, dan semua jalur lalu
+// lintas (audit3 V-EO-01). Pool nonaktif di sini tampak persis seperti pool
+// yang tidak ada (ErrNotFound) — pemanggil jalur lalu lintas tidak perlu tahu
+// bedanya, dan tidak boleh diam-diam jatuh ke koneksi langsung.
 func (r *EgressRepo) ProxyURL(ctx context.Context, id string) (security.Secret, error) {
+	return r.proxyURLDenganStatus(ctx, id, true)
+}
+
+// ProxyURLDiagnostik sama seperti ProxyURL tetapi TANPA syarat aktif.
+//
+// Khusus permukaan diagnostik (tombol Tes admin): menguji pool yang sedang
+// dinonaktifkan adalah tindakan sah operator, dan menolaknya akan membuat
+// saklar nonaktif tidak bisa diverifikasi sebelum dinyalakan lagi. Jangan
+// pakai metode ini di jalur lalu lintas — di sanalah bug V-EO-01 tinggal.
+func (r *EgressRepo) ProxyURLDiagnostik(ctx context.Context, id string) (security.Secret, error) {
+	return r.proxyURLDenganStatus(ctx, id, false)
+}
+
+func (r *EgressRepo) proxyURLDenganStatus(ctx context.Context, id string, wajibAktif bool) (security.Secret, error) {
 	const op = "membuka URL proxy jalur keluar"
 	if !idOK(id) {
 		return "", fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 
+	syaratAktif := ""
+	if wajibAktif {
+		syaratAktif = " and enabled"
+	}
 	var ciphertext string
 	if err := r.q.QueryRow(ctx,
-		`select proxy_url_encrypted from egress_pool where id = $1`, id).Scan(&ciphertext); err != nil {
+		`select proxy_url_encrypted from egress_pool where id = $1`+syaratAktif, id).Scan(&ciphertext); err != nil {
 		return "", repo.Err(op, err)
 	}
 

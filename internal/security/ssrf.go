@@ -70,6 +70,15 @@ var blockedPrefixes = []netip.Prefix{
 	// 64:ff9b::/96 memetakan seluruh IPv4 ke IPv6 (NAT64) dan bisa dipakai menjangkau
 	// alamat privat lewat alamat yang tampak publik.
 	netip.MustParsePrefix("64:ff9b::/96"),
+	// NAT64 local-use (64:ff9b:1::/48) adalah saudara 64:ff9b::/96 di atas untuk
+	// jaringan lokal: 64:ff9b:1:7f00:1:: adalah 127.0.0.1 yang diterjemahkan.
+	// Melewatkannya berarti seluruh daftar IPv4 bisa dihindari lewat satu
+	// penulisan ulang (audit3 V-EO-12).
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	// IPv4-compatible (::/96) menanam IPv4 di 32 bit terakhir: ::7f00:1 adalah
+	// 127.0.0.1. Bentuk ini memang usang, tetapi resolver dan tumpukan jaringan
+	// masih menerimanya (audit3 V-EO-12).
+	netip.MustParsePrefix("::/96"),
 	// 6to4 (2002::/16) menanam alamat IPv4 utuh di bit 16-48: 2002:7f00:1:: adalah
 	// 127.0.0.1 yang ditulis ulang, dan tidak tersentuh satu pun prefix IPv4 di
 	// atas maupun jaring pengaman IsLoopback (keluarga alamatnya IPv6).
@@ -367,6 +376,53 @@ type DialContextFunc func(ctx context.Context, network, address string) (net.Con
 // GuardedDialContext mengembalikan fungsi dial berpenjaga untuk http.Transport.
 func GuardedDialContext(policy SSRFPolicy, base *net.Dialer) DialContextFunc {
 	return NewSSRFDialer(policy, base).DialContext
+}
+
+// PeriksaHostTujuan meresolusi nama host sebuah URL dan memeriksa SETIAP alamat
+// hasil resolusi terhadap kebijakan.
+//
+// Lapisan ini ada untuk jalur yang TIDAK bisa dilindungi Dialer: bila lalu
+// lintas keluar lewat forward proxy, yang didial gateway hanyalah proxy-nya —
+// alamat tujuan sebenarnya tidak pernah terlihat di lapisan dial, sehingga
+// nama yang beresolusi ke alamat privat (atau dibelokkan ke sana) lolos tanpa
+// pemeriksaan apa pun (audit3 V-EO-11). Pemeriksaan ini sengaja gagal-tertutup:
+// nama yang tidak bisa diresolusi dari gateway juga tidak bisa diverifikasi,
+// jadi ditolak dengan pesan yang menyebut sebabnya.
+//
+// Ia BUKAN pengganti Dialer untuk jalur langsung (di sana Dialer memeriksa
+// alamat yang benar-benar didial, yang selalu lebih kuat dari resolusi awal
+// yang bisa berubah — DNS rebinding tetap wilayah Dialer).
+func PeriksaHostTujuan(ctx context.Context, raw string, policy SSRFPolicy) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("%w", ErrInvalidBaseURL)
+	}
+	host := strings.TrimSuffix(u.Hostname(), ".")
+	if host == "" {
+		return fmt.Errorf("%w: tidak ada host", ErrInvalidBaseURL)
+	}
+	if addr, err := netip.ParseAddr(host); err == nil {
+		return CheckAddr(addr, policy)
+	}
+
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return fmt.Errorf("%w: nama host %q tidak bisa diresolusi dari gateway untuk diverifikasi: %v",
+			ErrBlockedAddress, host, err)
+	}
+	if len(addrs) == 0 {
+		return fmt.Errorf("%w: nama host %q tidak menghasilkan alamat apa pun", ErrBlockedAddress, host)
+	}
+	for _, a := range addrs {
+		addr, ok := netip.AddrFromSlice(a.IP)
+		if !ok {
+			return fmt.Errorf("%w: hasil resolusi %q tidak terbaca", ErrBlockedAddress, host)
+		}
+		if err := CheckAddr(addr, policy); err != nil {
+			return fmt.Errorf("nama host %q beresolusi ke alamat terlarang: %w", host, err)
+		}
+	}
+	return nil
 }
 
 // ValidateProxyURL memeriksa URL proxy egress sebelum disimpan.

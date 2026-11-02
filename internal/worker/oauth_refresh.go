@@ -10,7 +10,6 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/oauth"
-	"github.com/NexGen-X/Route-X/internal/security"
 )
 
 // OAuthRefreshWorker adalah background worker berkala yang memantau dan me-refresh
@@ -47,7 +46,24 @@ func NewOAuthRefreshWorker(
 		egressRepo:  egressRepo,
 		oauthClient: oauthClient,
 		logger:      logger,
-		threshold:   15 * time.Minute, // Refresh token yang tersisa <= 15 menit
+		// Ambang 30 menit terhadap interval putaran 10 menit: versi lama
+		// memakai 15 menit tanpa percobaan ulang dalam putaran, sehingga
+		// satu kegagalan transien menggeser refresh berikutnya ke SETELAH
+		// kedaluwarsa dan membuka jendela mati (audit3 V-EO-16). Ambang
+		// yang lebih lebar dari dua kali interval + percobaan ulang di
+		// RefreshSesiOAuth menutup jendela itu.
+		threshold: 30 * time.Minute,
+	}
+}
+
+// deps menyusun dependensi refresh bersama dari field worker.
+func (w *OAuthRefreshWorker) deps() OAuthRefreshDeps {
+	return OAuthRefreshDeps{
+		OAuth:  w.oauthRepo,
+		Creds:  w.credRepo,
+		Egress: w.egressRepo,
+		Client: w.oauthClient,
+		Logger: w.logger,
 	}
 }
 
@@ -76,22 +92,12 @@ func (w *OAuthRefreshWorker) Run(ctx context.Context) error {
 
 	w.logger.Info("menemukan sesi oauth yang perlu diperbarui", "count", len(sessions))
 
+	// Logika per sesi tinggal di RefreshSesiOAuth (oauth_refresh_sesi.go),
+	// dipakai bersama refresh manual admin dan refresh on-demand jalur
+	// request — dulu ketiganya (yang ketiga: tidak ada) berperilaku beda.
+	deps := w.deps()
 	for _, sess := range sessions {
-		var proxyURL security.Secret
-		if sess.EgressPoolID != nil && *sess.EgressPoolID != "" && w.egressRepo != nil {
-			pURL, err := w.egressRepo.ProxyURL(ctx, *sess.EgressPoolID)
-			if err != nil {
-				w.logger.Warn("gagal mengambil URL proxy untuk refresh sesi oauth",
-					"session_id", sess.ID, "egress_pool_id", *sess.EgressPoolID, "error", err)
-			} else {
-				proxyURL = pURL
-			}
-		}
-
-		res, err := w.oauthClient.RefreshAccessTokenWithProxy(ctx, sess.RefreshToken.Reveal(), sess.ClientID, "", proxyURL)
-		if err != nil {
-			errStr := err.Error()
-			_ = w.oauthRepo.UpdateRefreshStatus(ctx, sess.ID, &errStr)
+		if err := RefreshSesiOAuth(ctx, deps, sess); err != nil {
 			w.logger.Warn("gagal memperbarui token oauth upstream",
 				"session_id", sess.ID,
 				"provider_id", sess.ProviderID,
@@ -100,24 +106,10 @@ func (w *OAuthRefreshWorker) Run(ctx context.Context) error {
 			)
 			continue
 		}
-
-		expiresAt := time.Now().Add(time.Duration(res.ExpiresIn) * time.Second)
-		if err := w.credRepo.UpdateSecret(ctx, sess.CredentialID, res.AccessToken, &expiresAt); err != nil {
-			errStr := "gagal menyimpan token baru: " + err.Error()
-			_ = w.oauthRepo.UpdateRefreshStatus(ctx, sess.ID, &errStr)
-			w.logger.Error("gagal menyimpan token access oauth baru ke database",
-				"session_id", sess.ID,
-				"error", err,
-			)
-			continue
-		}
-
-		_ = w.oauthRepo.UpdateRefreshStatus(ctx, sess.ID, nil)
 		w.logger.Info("berhasil memperbarui token oauth upstream",
 			"session_id", sess.ID,
 			"provider_id", sess.ProviderID,
 			"email", sess.AccountEmail,
-			"expires_in_sec", res.ExpiresIn,
 		)
 	}
 

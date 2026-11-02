@@ -119,7 +119,8 @@ func NewRotator(cfg Config) (*Rotator, error) {
 // 1. provider_credentials
 // 2. webhooks
 // 3. egress_pool
-// 4. settings cli:config:*
+// 4. provider_oauth_sessions
+// 5. settings cli:config:*
 //
 // Aturan Arsitektur & Keamanan:
 //   - Wajib SATU transaksi tunggal yang melingkupi KETIGA tabel. security.Cipher hanya
@@ -139,7 +140,7 @@ func (r *Rotator) Execute(ctx context.Context) (*Result, error) {
 		DryRun:   r.dryRun,
 		OldKeyID: r.oldCipher.KeyID(),
 		NewKeyID: r.newCipher.KeyID(),
-		Tables:   make([]TableResult, 0, 4),
+		Tables:   make([]TableResult, 0, 5),
 	}
 
 	// Buka SATU transaksi basis data tunggal yang melingkupi KETIGA tabel.
@@ -171,6 +172,18 @@ func (r *Rotator) Execute(ctx context.Context) (*Result, error) {
 			keyIdColumn:  "encryption_key_id",
 			// AAD egress_pool mengikuti kode aplikasi di internal/database/repo/upstream/egress.go
 			buildAAD: func(id string) string { return security.CredentialAAD(id) },
+		},
+		{
+			name:         "provider_oauth_sessions",
+			idColumn:     "id",
+			cipherColumn: "refresh_token_encrypted",
+			keyIdColumn:  "encryption_key_id",
+			// AAD sesi OAuth mengikuti kode aplikasi di
+			// internal/database/repo/upstream/oauth.go. Tabel ini dulu
+			// terlewat dari daftar rotasi: sesudah ENCRYPTION_KEY diganti,
+			// refresh token OAuth tidak bisa didekripsi permanen dan
+			// kegagalannya senyap (audit3 V-EO-13).
+			buildAAD: func(id string) string { return security.OAuthSessionAAD(id) },
 		},
 	}
 

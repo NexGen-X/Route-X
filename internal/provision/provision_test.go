@@ -85,6 +85,14 @@ func TestCloudflareProvisionAIGateway_Success(t *testing.T) {
 
 func TestCloudflareProvisionAIGateway_AlreadyExists(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			// Verifikasi keberadaan gateway yang diklaim "already exists".
+			resp := cfGatewayResp{Success: true}
+			resp.Result.ID = "my-existing-gateway"
+			_ = json.NewEncoder(w).Encode(resp)
+			return
+		}
 		resp := cfGatewayResp{
 			Success: false,
 			Errors: []struct {
@@ -94,7 +102,6 @@ func TestCloudflareProvisionAIGateway_AlreadyExists(t *testing.T) {
 				{Code: 1000, Message: "Gateway with id already exists"},
 			},
 		}
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(resp)
 	}))

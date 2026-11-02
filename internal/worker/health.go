@@ -11,6 +11,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/providers"
+	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
 
@@ -38,6 +39,23 @@ type HealthCheckerJob struct {
 	enqueuer webhooks.EnqueueSink
 	metrics  *observability.Metrics
 	logger   *slog.Logger
+
+	// egress adalah sumber pemeriksaan kesehatan egress pool; nil berarti
+	// pemeriksaan egress tidak dipasang. Dulu kesehatan egress HANYA berubah
+	// saat operator menekan tombol Tes manual — stempelnya membeku
+	// berhari-hari sementara dashboard menampilkannya sebagai keadaan
+	// terkini (audit3 V-EO-05).
+	egress       EgressHealthSource
+	egressPolicy security.SSRFPolicy
+}
+
+// SetEgressSource memasang pemeriksaan kesehatan egress pool berkala.
+// Kebijakan SSRF-nya adalah kebijakan operator yang sama dengan yang
+// dipegang factory, agar probe tidak menjangkau alamat yang lalu lintas
+// produksi sendiri tidak boleh jangkau.
+func (h *HealthCheckerJob) SetEgressSource(src EgressHealthSource, policy security.SSRFPolicy) {
+	h.egress = src
+	h.egressPolicy = policy
 }
 
 // NewHealthCheckerJob membuat instance baru HealthCheckerJob.
@@ -87,6 +105,12 @@ func (h *HealthCheckerJob) Run(ctx context.Context) error {
 			continue
 		}
 		h.checkOne(ctx, p)
+	}
+
+	// Kesehatan egress pool diperbarui pada putaran yang sama, bukan hanya
+	// dari tombol Tes manual (audit3 V-EO-05).
+	if h.egress != nil {
+		h.periksaEgress(ctx)
 	}
 
 	return nil

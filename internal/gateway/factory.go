@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -104,8 +105,24 @@ type CredentialUseMarker interface {
 }
 
 // EgressSource memasok URL proxy satu egress pool. Dipenuhi *upstream.EgressRepo.
+//
+// ProxyURL di repo hanya melayani pool yang AKTIF: kandidat yang menunjuk pool
+// nonaktif gagal di sini dengan ErrNotFound, bukan diam-diam keluar lewat pool
+// yang sudah dimatikan operator atau jatuh ke koneksi langsung (audit3 V-EO-01).
 type EgressSource interface {
 	ProxyURL(ctx context.Context, id string) (security.Secret, error)
+}
+
+// OAuthRefresher me-refresh sesi OAuth sebuah provider atas permintaan.
+// Dipenuhi *worker.PenyegarOAuth.
+//
+// Dipasang lewat WithOAuthRefresher, bukan disimpulkan dari CredentialSource,
+// dengan alasan yang sama seperti CredentialUseMarker: memasangnya MENGUBAH
+// perilaku jalur request (kegagalan "tidak ada kredensial aktif" kini bisa
+// memicu panggilan keluar ke penyedia OAuth), dan perubahan seperti itu harus
+// terlihat di tempat perakitannya.
+type OAuthRefresher interface {
+	RefreshProvider(ctx context.Context, providerID string) error
 }
 
 // Factory membuat dan menyimpan adapter provider.
@@ -121,6 +138,11 @@ type Factory struct {
 	// tandai mencatat pemakaian kredensial di luar jalur permintaan. nil berarti
 	// last_used_at tidak pernah ditulis, dan Active akan terus memilih kredensial yang sama.
 	tandai *penandaPemakaian
+
+	// penyegar me-refresh sesi OAuth saat Active tidak menemukan kredensial
+	// yang bisa dipakai. nil berarti perilaku lama: kegagalan itu final
+	// sampai worker berkala memulihkannya.
+	penyegar OAuthRefresher
 
 	// jumlah adalah ukuran cache yang bisa dibaca tanpa lock. Ada supaya LogValue tidak
 	// perlu mengambil mu: LogValue dipanggil dari dalam pemanggilan slog, dan slog bisa
@@ -169,6 +191,17 @@ func WithCredentialUseMarker(m CredentialUseMarker) FactoryOption {
 				akhir:  map[string]time.Time{},
 			}
 		}
+	}
+}
+
+// WithOAuthRefresher memasang refresh OAuth on-demand di jalur request:
+// saat Active tidak menemukan satu pun kredensial yang bisa dipakai untuk
+// provider (kasus khas: satu-satunya kredensial adalah access token OAuth
+// yang baru kedaluwarsa), factory meminta satu kali refresh lalu mencoba
+// Active sekali lagi sebelum menyerah (audit3 V-EO-15).
+func WithOAuthRefresher(r OAuthRefresher) FactoryOption {
+	return func(f *Factory) {
+		f.penyegar = r
 	}
 }
 
@@ -284,7 +317,7 @@ func (f *Factory) ProviderForTarget(ctx context.Context, t ProviderTarget) (prov
 		return p, nil
 	}
 
-	p, err := f.buatTarget(t, cred, proxy)
+	p, err := f.buatTarget(ctx, t, cred, proxy)
 	if err != nil {
 		return nil, err
 	}
@@ -376,6 +409,20 @@ func (f *Factory) kredensialTarget(ctx context.Context, t ProviderTarget) (*upst
 	// sedikit gagal autentikasi lebih dulu — sehingga kunci yang sedang ditolak upstream
 	// tidak dicoba terus-menerus selama masih ada yang lain.
 	cred, err := f.creds.Active(ctx, t.ID)
+	if err != nil && errors.Is(err, repo.ErrNotFound) && f.penyegar != nil {
+		// Tidak ada kredensial yang bisa dipakai. Bila provider ini ditopang
+		// sesi OAuth, keadaan itu paling sering berarti access token-nya
+		// baru kedaluwarsa — dan dulu request ini langsung gagal 502
+		// menunggu worker berkala, yang mungkin juga sedang gagal
+		// (audit3 V-EO-15). Minta satu refresh, lalu coba Active sekali
+		// lagi; hasil refresh yang gagal tidak mengubah vonis akhir.
+		if rerr := f.penyegar.RefreshProvider(ctx, t.ID); rerr != nil {
+			f.logger.WarnContext(ctx, "refresh oauth on-demand gagal",
+				"provider_id", t.ID, "provider_name", t.Name, "error", rerr)
+		} else if cred2, err2 := f.creds.Active(ctx, t.ID); err2 == nil {
+			return cred2, nil
+		}
+	}
 	if err == nil {
 		return cred, nil
 	}
@@ -443,8 +490,38 @@ func kunciAdapterTarget(t ProviderTarget, cred *upstream.ActiveCredential, proxy
 	return t.ID + ":" + hex.EncodeToString(h.Sum(nil))
 }
 
+// hostDariURL mengembalikan hostname (huruf kecil, tanpa port) dari URL
+// mentah, atau string kosong bila tidak terurai.
+func hostDariURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u == nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+}
+
+// targetRelayDeno menyusun base URL + header untuk sebuah target yang keluar
+// lewat relay Deno: base menjadi host relay ditambah path base URL asal, dan
+// host tujuan asli dikirim lewat x-target-host. Token relay yang disimpan
+// pool sebagai password userinfo URL-nya diteruskan sebagai x-relay-token.
+func targetRelayDeno(baseURLAsal string, urlRelay *url.URL) (string, map[string]string, error) {
+	uAsal, err := url.Parse(strings.TrimSpace(baseURLAsal))
+	if err != nil || uAsal == nil || uAsal.Hostname() == "" {
+		return "", nil, errors.New("base URL asal tidak sah")
+	}
+	header := map[string]string{"x-target-host": uAsal.Hostname()}
+	if urlRelay.User != nil {
+		if token, ok := urlRelay.User.Password(); ok && token != "" {
+			header["x-relay-token"] = token
+		}
+	}
+	base := urlRelay.Scheme + "://" + urlRelay.Host + strings.TrimRight(uAsal.Path, "/")
+	return base, header, nil
+}
+
 // buatTarget membuat adapter baru dari ProviderTarget.
 func (f *Factory) buatTarget(
+	ctx context.Context,
 	t ProviderTarget,
 	cred *upstream.ActiveCredential,
 	proxy security.Secret,
@@ -473,30 +550,80 @@ func (f *Factory) buatTarget(
 
 	baseURL := t.BaseURL
 	proxyURL := proxy
+	// headerRelay adalah header kendali untuk relay reverse proxy (Deno):
+	// host tujuan asli dan token autentikasi relay. Adapter menerapkannya
+	// pada setiap request lewat Config.ExtraHeaders.
+	var headerRelay map[string]string
 
 	if !proxy.IsZero() {
 		rawProxy := proxy.Reveal()
-		if strings.Contains(rawProxy, "gateway.ai.cloudflare.com") {
+		// Klasifikasi relay dari HOST hasil uraian, tidak pernah dari
+		// substring string mentah: URL proxy biasa yang mengandung
+		// ".deno.dev" di path/userinfo dulu salah dikenali sebagai relay
+		// dan base URL provider ditimpa olehnya (audit3 V-EO-08).
+		jenisRelay, urlProxy := security.KlasifikasiRelay(rawProxy)
+		switch jenisRelay {
+		case security.RelayCloudflare:
 			// Cloudflare AI Gateway adalah AI reverse proxy, bukan forward proxy HTTP CONNECT.
 			// Alih-alih membungkus koneksi via HTTP CONNECT tunnel yang ditolak oleh gateway edge,
 			// base URL provider diarahkan langsung ke endpoint Cloudflare AI Gateway per provider.
+			//
+			// Pengarahan HANYA sah bila host base URL provider adalah host
+			// vendor yang dipetakan gateway itu. Versi lama menimpa SEMUA
+			// kind OpenAI-compatible/custom ke <cf>/openai membabi buta:
+			// provider DeepSeek dkk. diam-diam salah vendor dan kuncinya
+			// terkirim ke OpenAI (audit3 V-EO-04). Provider yang host-nya
+			// tidak dipetakan gateway kini DITOLAK keras di sini — pool
+			// Cloudflare memang tidak bisa melayaninya, dan menolak dengan
+			// pesan jelas lebih jujur daripada salah kirim kredensial.
 			cfBase := strings.TrimRight(rawProxy, "/")
-			switch t.Kind {
-			case providers.KindOpenAI, providers.KindOpenAICompatible, providers.KindCustom:
+			if urlProxy != nil && urlProxy.User != nil {
+				// URL gateway tidak membawa kredensial; buang userinfo agar
+				// tidak terbawa ke base URL adapter.
+				u := *urlProxy
+				u.User = nil
+				cfBase = strings.TrimRight(u.String(), "/")
+			}
+			hostAsal := hostDariURL(t.BaseURL)
+			switch {
+			case (t.Kind == providers.KindOpenAI || t.Kind == providers.KindOpenAICompatible || t.Kind == providers.KindCustom) && hostAsal == "api.openai.com":
 				baseURL = cfBase + "/openai"
 				proxyURL = ""
-			case providers.KindAnthropic:
+			case t.Kind == providers.KindAnthropic && hostAsal == "api.anthropic.com":
 				baseURL = cfBase + "/anthropic"
 				proxyURL = ""
-			case providers.KindGoogle:
-				if strings.Contains(t.BaseURL, "generativelanguage.googleapis.com") {
-					baseURL = cfBase + "/google-ai-studio"
-					proxyURL = ""
-				}
+			case t.Kind == providers.KindGoogle && hostAsal == "generativelanguage.googleapis.com":
+				baseURL = cfBase + "/google-ai-studio"
+				proxyURL = ""
+			default:
+				return nil, fmt.Errorf("egress pool Cloudflare AI Gateway tidak bisa melayani provider %q dengan base URL host %q: gateway hanya memetakan api.openai.com, api.anthropic.com, dan generativelanguage.googleapis.com", t.Name, hostAsal)
 			}
-		} else if strings.Contains(rawProxy, ".deno.dev") {
-			baseURL = strings.TrimRight(rawProxy, "/")
+		case security.RelayDeno:
+			// Relay Deno adalah reverse proxy: base URL menjadi URL relay
+			// DITAMBAH path base URL asal (mis. /v1), dan host tujuan asli
+			// dikirim lewat header x-target-host. Tanpa header itu relay
+			// meneruskan SEMUA provider ke bawaan api.openai.com — termasuk
+			// provider Anthropic/Google beserta kredensialnya
+			// (audit3 V-EO-02). Token relay (bila pool menyimpannya sebagai
+			// password userinfo) dikirim sebagai x-relay-token (V-EO-03).
+			baseRelay, header, errRelay := targetRelayDeno(t.BaseURL, urlProxy)
+			if errRelay != nil {
+				return nil, fmt.Errorf("base URL provider %q tidak sah untuk relay Deno", t.Name)
+			}
+			headerRelay = header
+			baseURL = baseRelay
 			proxyURL = ""
+		}
+	}
+
+	if !proxyURL.IsZero() {
+		// Forward proxy sungguhan: yang didial gateway hanyalah proxy, jadi
+		// penjaga dial tidak pernah melihat alamat tujuan sebenarnya. Nama
+		// host tujuan karena itu diresolusi dan diperiksa di sini — nama
+		// yang beresolusi ke alamat privat/terlarang ditolak sebelum
+		// request apa pun keluar (audit3 V-EO-11).
+		if err := security.PeriksaHostTujuan(ctx, t.BaseURL, kebijakan); err != nil {
+			return nil, fmt.Errorf("tujuan provider %q di balik egress proxy tidak lolos pemeriksaan: %w", t.Name, err)
 		}
 	}
 
@@ -521,13 +648,14 @@ func (f *Factory) buatTarget(
 			return nil, fmt.Errorf("base URL provider %q tidak sah: %w", t.Name, err)
 		}
 		return openai.New(openai.Config{
-			Name:       t.Name,
-			Kind:       t.Kind,
-			BaseURL:    baseURL,
-			Credential: rahasia,
-			Timeout:    timeout,
-			SSRFPolicy: kebijakan,
-			ProxyURL:   proxyURL,
+			Name:         t.Name,
+			Kind:         t.Kind,
+			BaseURL:      baseURL,
+			Credential:   rahasia,
+			Timeout:      timeout,
+			SSRFPolicy:   kebijakan,
+			ProxyURL:     proxyURL,
+			ExtraHeaders: headerRelay,
 		})
 
 	case providers.KindAnthropic:
@@ -536,24 +664,26 @@ func (f *Factory) buatTarget(
 		// menyalin pemeriksaan yang sudah ada di tempatnya membuat dua tempat yang harus
 		// berubah bersamaan.
 		return anthropic.New(anthropic.Config{
-			Name:       t.Name,
-			Kind:       t.Kind,
-			BaseURL:    baseURL,
-			Credential: rahasia,
-			Timeout:    timeout,
-			SSRFPolicy: kebijakan,
-			ProxyURL:   proxyURL,
+			Name:         t.Name,
+			Kind:         t.Kind,
+			BaseURL:      baseURL,
+			Credential:   rahasia,
+			Timeout:      timeout,
+			SSRFPolicy:   kebijakan,
+			ProxyURL:     proxyURL,
+			ExtraHeaders: headerRelay,
 		})
 
 	case providers.KindGoogle:
 		return google.New(google.Config{
-			Name:       t.Name,
-			Kind:       t.Kind,
-			BaseURL:    baseURL,
-			Credential: rahasia,
-			Timeout:    timeout,
-			SSRFPolicy: kebijakan,
-			ProxyURL:   proxyURL,
+			Name:         t.Name,
+			Kind:         t.Kind,
+			BaseURL:      baseURL,
+			Credential:   rahasia,
+			Timeout:      timeout,
+			SSRFPolicy:   kebijakan,
+			ProxyURL:     proxyURL,
+			ExtraHeaders: headerRelay,
 		})
 
 	default:

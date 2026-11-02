@@ -49,6 +49,16 @@ const (
 
 	// defaultAttemptTimeout dipakai bila kandidat tidak menyebut timeout sendiri.
 	defaultAttemptTimeout = 60 * time.Second
+
+	// tenggatDiamAliran adalah batas maksimum aliran yang sudah terbuka boleh
+	// membisu di antara dua peristiwa. Aliran terbuka tidak punya tenggat lain:
+	// PrepareSSE melepas tenggat baca/tulis server, dan pengawas pembukaan
+	// hanya menjaga fase membuka — upstream yang mengirim satu chunk lalu diam
+	// memarkir goroutine + koneksi klien + koneksi upstream tanpa batas
+	// (audit3 V-GW-14). Nilainya sengaja longgar, dua kali tenggat percobaan
+	// bawaan: tujuannya hanya memanen aliran yang benar-benar mati, bukan
+	// memutus model yang jeda penalarannya lama.
+	tenggatDiamAliran = 120 * time.Second
 )
 
 // CircuitGuard adalah penjaga arus per (provider, model), dipenuhi *Breaker.
@@ -448,6 +458,20 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 			return out
 		}
 	}
+
+	// Tidak satu pun kandidat berhasil dan tidak satu pun kegagalan tercatat.
+	// Satu-satunya jalan sampai ke sini adalah semua kandidat dilewati pemutus
+	// arus (percobaan yang dicoba selalu meninggalkan Err pada Outcome).
+	// Outcome tanpa Err dan tanpa Value TIDAK boleh keluar dari sini:
+	// pemanggil membacanya sebagai sukses lalu men-dereference Value yang nil —
+	// panic 500 persis pada keadaan "semua provider bermasalah", yang seharusnya
+	// dijawab 503 (audit3 V-GW-11).
+	if out.Err == nil {
+		out.Err = &providers.Error{
+			Kind:    providers.ErrKindOverloaded,
+			Message: "semua provider untuk model ini sedang tidak tersedia karena pemutus arusnya terbuka",
+		}
+	}
 	return out
 }
 
@@ -813,14 +837,145 @@ func bungkusPencatatAliran(
 		if err != nil || str == nil {
 			return str, err
 		}
+
+		// Penjaga diam dipasang paling dalam, di bawah pencatat: error tenggat
+		// diam yang ia hasilkan harus mengalir LEWAT aliranPencatat supaya
+		// tercatat sebagai kegagalan aliran, bukan penutupan yang sehat
+		// (audit3 V-GW-14).
+		dijaga := &aliranPenjagaDiam{Stream: str, batas: tenggatDiamAliran}
+		dijaga.mulai()
+
+		// Peristiwa pertama dibaca SEKARANG, selagi kegagalannya masih bisa
+		// dialihkan (audit3 V-GW-12). Keputusan routing dulu ditutup saat
+		// aliran berhasil DIBUKA, jadi kegagalan Recv pertama — event
+		// overloaded, chunk pertama rusak, aliran langsung mati — sampai ke
+		// klien sebagai satu-satunya jawaban walau kandidat sehat berikutnya
+		// menganggur dan belum satu byte pun terkirim ke klien. Dengan
+		// intipan ini kegagalan itu menjadi kegagalan MEMBUKA, dan executor
+		// mengulang/mengalihkannya seperti kegagalan pembukaan lain.
+		// Peristiwa yang berhasil dibaca ditahan dan diputar ulang sebagai
+		// peristiwa pertama aliran.
+		ev, err := dijaga.Recv()
+		if err != nil {
+			_ = dijaga.Close()
+			if errors.Is(err, io.EOF) {
+				// Aliran kosong: upstream menutup dengan rapi tanpa satu pun
+				// peristiwa. Itu bukan jawaban — tidak ada konten, tidak ada
+				// usage, tidak ada alasan berhenti — jadi ia kegagalan server
+				// yang boleh dialihkan, bukan penyelesaian bersih.
+				err = providers.Newf(providers.ErrKindServer, c.ProviderName,
+					"upstream menutup aliran tanpa mengirim satu pun peristiwa")
+			}
+			return nil, err
+		}
+
 		return &aliranPencatat{
-			Stream: str,
+			Stream: &aliranPeristiwaPertama{Stream: dijaga, ev: ev},
 			ctx:    ctx,
 			catat: func(sukses bool) {
 				e.catat(ctx, c, plan.Model, sukses, plan.BreakerCfg)
 			},
 		}, nil
 	}
+}
+
+// aliranPeristiwaPertama memutar ulang satu peristiwa yang sudah dibaca —
+// lihat intipan peristiwa pertama di bungkusPencatatAliran — sebelum
+// meneruskan pembacaan ke aliran di bawahnya.
+//
+// Recv tidak aman untuk panggilan konkuren; sama seperti aliran lain di
+// berkas ini, satu-satunya konsumennya adalah satu goroutine loop pembacaan.
+type aliranPeristiwaPertama struct {
+	providers.Stream
+	ev    *providers.StreamEvent
+	sudah bool
+}
+
+func (a *aliranPeristiwaPertama) Recv() (*providers.StreamEvent, error) {
+	if !a.sudah {
+		a.sudah = true
+		return a.ev, nil
+	}
+	return a.Stream.Recv()
+}
+
+// aliranPenjagaDiam membatalkan aliran yang berhenti mengirim peristiwa
+// melewati batasnya (audit3 V-GW-14).
+//
+// Timer di-reset setiap peristiwa berhasil diterima. Bila timer menembak,
+// aliran di bawah ditutup dari goroutine timer — Close adapter memang
+// dirancang aman dipanggil bersamaan dengan Recv yang menggantung — dan
+// Recv yang sedang menunggu menerima error penutupan itu, yang di sini
+// diterjemahkan menjadi ErrKindTimeout. Klasifikasi itu penting: error
+// mentahnya terbaca "aliran ditutup/dibatalkan", dan mencatat kematian
+// upstream sebagai pembatalan klien akan menyembunyikannya dari pemutus
+// arus dan statistik kegagalan.
+type aliranPenjagaDiam struct {
+	providers.Stream
+
+	batas time.Duration
+
+	mu       sync.Mutex
+	timer    *time.Timer
+	menembak bool
+	berakhir bool
+	terkirim int64
+}
+
+// mulai menyalakan timer. Dipanggil sekali, tepat sesudah aliran dibuka:
+// waktu menuju peristiwa pertama ikut dijaga, bukan hanya jeda antarperistiwa.
+func (a *aliranPenjagaDiam) mulai() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.timer = time.AfterFunc(a.batas, a.tembak)
+}
+
+// tembak menandai tenggat diam terlampaui lalu menutup aliran di bawahnya.
+func (a *aliranPenjagaDiam) tembak() {
+	a.mu.Lock()
+	a.menembak = true
+	a.mu.Unlock()
+	_ = a.Stream.Close()
+}
+
+func (a *aliranPenjagaDiam) Recv() (*providers.StreamEvent, error) {
+	ev, err := a.Stream.Recv()
+
+	a.mu.Lock()
+	if err == nil {
+		a.terkirim += int64(len(ev.Raw))
+		if !a.berakhir && a.timer != nil {
+			a.timer.Reset(a.batas)
+		}
+		a.mu.Unlock()
+		return ev, nil
+	}
+	menembak := a.menembak
+	a.berakhir = true
+	if a.timer != nil {
+		a.timer.Stop()
+	}
+	terkirim := a.terkirim
+	a.mu.Unlock()
+
+	if menembak && !errors.Is(err, io.EOF) {
+		return nil, &providers.Error{
+			Kind:          providers.ErrKindTimeout,
+			Message:       "upstream berhenti mengirim aliran terlalu lama",
+			StreamedBytes: terkirim,
+		}
+	}
+	return nil, err
+}
+
+func (a *aliranPenjagaDiam) Close() error {
+	a.mu.Lock()
+	a.berakhir = true
+	if a.timer != nil {
+		a.timer.Stop()
+	}
+	a.mu.Unlock()
+	return a.Stream.Close()
 }
 
 // aliranPencatat adalah providers.Stream yang melaporkan hasil akhirnya
@@ -896,7 +1051,21 @@ func denganTenggatPembukaan(
 		// Pengawas dimatikan lebih dulu, sebelum apa pun diputuskan: kalau tidak, aliran
 		// yang berhasil dibuka tepat sebelum tenggat tetap akan dibatalkan beberapa saat
 		// kemudian, di tengah pembacaan klien.
-		pengawas.Stop()
+		//
+		// Nilai kembali Stop DIPERIKSA (audit3 V-GW-16): false berarti callback
+		// sudah terlanjur menembak atau sedang menembak, jadi konteks aliran ini
+		// sudah — atau sebentar lagi — dibatalkan berpenyebab DeadlineExceeded.
+		// Aliran yang "berhasil dibuka" dalam keadaan itu tidak bisa dipakai:
+		// ia akan mati pada pembacaan pertama. Buang dan laporkan sebagai
+		// tenggat pembukaan habis, sama seperti pembukaan yang memang terlambat.
+		berhenti := pengawas.Stop()
+
+		if err == nil && str != nil && !berhenti {
+			_ = str.Close()
+			batalkan(nil)
+			return nil, providers.Newf(providers.ErrKindTimeout, c.ProviderName,
+				"upstream tidak mulai mengirim aliran sebelum batas waktu percobaan")
+		}
 
 		if err != nil {
 			perr := jadikanProviderError(c.ProviderName, err)

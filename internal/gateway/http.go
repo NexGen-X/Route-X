@@ -279,7 +279,7 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 		Tokens:       EstimateTokens(req),
 	}
 
-	cands, ok := h.kandidat(w, r, rreq, p)
+	cands, dilarangKey, ok := h.kandidat(w, r, rreq, p)
 	if !ok {
 		return nil, false
 	}
@@ -345,7 +345,7 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 	}
 
 	if len(keputusan.Candidates) == 0 {
-		h.tolakTanpaKandidat(w, r, rreq, model, cands)
+		h.tolakTanpaKandidat(w, r, rreq, model, cands, dilarangKey)
 		return nil, false
 	}
 
@@ -429,24 +429,59 @@ func (h *Handlers) kebijakan(
 
 // teksPermintaan menggabungkan seluruh teks pesan untuk diperiksa penyaring konten.
 //
-// Yang digabungkan hanya bagian TEKS: data URI gambar dan audio base64 bukan teks yang
-// bermakna bagi pola konten, dan menyertakannya berarti setiap aturan pola dijalankan atas
-// megabyte base64 pada setiap permintaan multimodal. providers.Message.Text() yang
-// memutuskan bagian mana yang ikut.
+// Cakupannya adalah semua yang DITERUSKAN ke upstream sebagai teks bermakna:
+// isi pesan, argumen tool_calls pada riwayat, URL pada bagian non-teks, dan
+// definisi tools (nama, deskripsi, skema parameter). Versi lama hanya membaca
+// Message.Text(), sehingga kata terlarang yang bersembunyi di argumen
+// tool_call atau deskripsi tool lolos dari penyaring sepenuhnya walau payload
+// yang sama persis diteruskan ke upstream (audit3 V-GW-49).
+//
+// Yang tetap TIDAK ikut adalah muatan biner mentah: data URI gambar dan audio
+// base64 bukan teks yang bermakna bagi pola konten, dan menyertakannya berarti
+// setiap aturan pola dijalankan atas megabyte base64 pada setiap permintaan
+// multimodal. URL gambar ikut karena ia teks yang dipilih peminta dan dibaca
+// upstream; datanya tidak.
 func teksPermintaan(req *providers.ChatRequest) string {
-	if req == nil || len(req.Messages) == 0 {
+	if req == nil {
 		return ""
 	}
 	var b strings.Builder
-	for i := range req.Messages {
-		t := req.Messages[i].Text()
-		if t == "" {
-			continue
+	tambah := func(s string) {
+		if s == "" {
+			return
 		}
 		if b.Len() > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(t)
+		b.WriteString(s)
+	}
+
+	for i := range req.Messages {
+		m := &req.Messages[i]
+		tambah(m.Text())
+		// Argumen tool_call adalah teks JSON yang disusun model/peminta dan
+		// dikirim apa adanya ke upstream; nama fungsinya ikut diperiksa.
+		for _, tc := range m.ToolCalls {
+			tambah(tc.Function.Name)
+			tambah(tc.Function.Arguments)
+		}
+		// Bagian non-teks: yang bermakna bagi pola hanyalah URL-nya.
+		for _, p := range m.Parts {
+			if p.ImageURL != nil {
+				tambah(p.ImageURL.URL)
+			}
+		}
+	}
+
+	// Definisi tools adalah teks yang ditulis peminta dan dibaca model;
+	// deskripsi dan skema parameternya permukaan suntikan yang sama seperti
+	// isi pesan.
+	for _, t := range req.Tools {
+		tambah(t.Function.Name)
+		tambah(t.Function.Description)
+		if len(t.Function.Parameters) > 0 {
+			tambah(string(t.Function.Parameters))
+		}
 	}
 	return b.String()
 }
@@ -570,7 +605,14 @@ func (h *Handlers) izinModel(w http.ResponseWriter, r *http.Request, p *apikey.P
 // ketika API admin Fase 11 membuat pembatasan ini benar-benar banyak dipakai. Yang tidak
 // dilakukan adalah melewatkan pemeriksaannya: key yang dibatasi ke satu provider tidak
 // boleh dirutekan ke provider lain hanya karena pemeriksaannya mahal.
-func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.Request, p *apikey.Principal) ([]*upstream.RouteCandidate, bool) {
+//
+// Nilai kedua, dilarangKey, melaporkan keadaan yang harus dibedakan pemanggil:
+// model PUNYA pemetaan provider, tetapi semuanya gugur KHUSUS karena
+// pembatasan provider pada API key (bukan penyaring kebijakan/anggaran).
+// Keadaan itu milik klien — 403 — dan menyamakannya dengan "tidak ada
+// provider yang dikonfigurasi" (503) mengirim operator maupun pemegang key
+// mencari konfigurasi yang sebenarnya tidak rusak (audit3 V-GW-42).
+func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.Request, p *apikey.Principal) (terpilih []*upstream.RouteCandidate, dilarangKey bool, ok bool) {
 	cands, err := h.candidates.RouteCandidates(r.Context(), upstream.RouteQuery{
 		ModelID:     rreq.ModelID,
 		OwnerUserID: rreq.OwnerUserID,
@@ -579,12 +621,17 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 		h.logger.ErrorContext(r.Context(), "pengambilan kandidat rute gagal",
 			"model", rreq.ModelName, "error", err)
 		httpx.InternalError(w, r)
-		return nil, false
+		return nil, false, false
 	}
 
 	periksaKey := h.restrict != nil && p.ID() != ""
 
 	diingat := make(map[string]bool, len(cands))
+	// sebabGugur mengingat MENGAPA satu provider gugur: "key" bila ia lolos
+	// penyaring kebijakan/anggaran tetapi ditolak pembatasan key, "lain"
+	// untuk sisanya. Tanpa beda ini dilarangKey tidak bisa ditentukan.
+	sebabGugur := make(map[string]string, len(cands))
+	var gugurKey, gugurLain int
 	out := make([]*upstream.RouteCandidate, 0, len(cands))
 	for _, c := range cands {
 		boleh, ada := diingat[c.ProviderID]
@@ -598,6 +645,9 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 			// (audit3 V-AB-04): ia tidak bisa diperiksa sebelum provider dipilih.
 			boleh = !h.guard.ProviderDilarang(r.Context(), c.ProviderID) &&
 				!h.guard.ProviderAnggaranHabis(r.Context(), c.ProviderID)
+			if !boleh {
+				sebabGugur[c.ProviderID] = "lain"
+			}
 			if boleh && periksaKey {
 				var err error
 				boleh, err = h.restrict.AllowsProvider(r.Context(), p.ID(), c.ProviderID)
@@ -605,16 +655,24 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 					h.logger.ErrorContext(r.Context(), "pemeriksaan pembatasan provider gagal",
 						"api_key", p.Masked(), "error", err)
 					httpx.InternalError(w, r)
-					return nil, false
+					return nil, false, false
+				}
+				if !boleh {
+					sebabGugur[c.ProviderID] = "key"
 				}
 			}
 			diingat[c.ProviderID] = boleh
 		}
 		if boleh {
 			out = append(out, c)
+		} else if sebabGugur[c.ProviderID] == "key" {
+			gugurKey++
+		} else {
+			gugurLain++
 		}
 	}
-	return out, true
+	dilarangKey = len(cands) > 0 && len(out) == 0 && gugurKey > 0 && gugurLain == 0
+	return out, dilarangKey, true
 }
 
 // kandidatCombo mengumpulkan kandidat dari seluruh model dalam resep combo pipeline,
@@ -723,10 +781,21 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 func (h *Handlers) tolakTanpaKandidat(
 	w http.ResponseWriter, r *http.Request,
 	rreq router.Request, model *upstream.Model, sebelumDisaring []*upstream.RouteCandidate,
+	dilarangKey bool,
 ) {
 	nama := kutip(model.ModelID)
 
-	// Tidak ada pemetaan provider sama sekali, atau semuanya tersaring pembatasan key.
+	// Model punya pemetaan provider, tetapi API key ini dilarang memakai
+	// semuanya. Itu penolakan kewenangan milik klien (403), bukan kekosongan
+	// konfigurasi: menjawabnya 503 "tidak ada provider yang dikonfigurasi"
+	// mengklaim hal yang salah tentang instalasi ini (audit3 V-GW-42).
+	if dilarangKey {
+		httpx.WriteError(w, r, http.StatusForbidden, httpx.ErrTypePermission, "provider_not_allowed",
+			"API key ini tidak diizinkan memakai provider mana pun untuk model "+nama)
+		return
+	}
+
+	// Tidak ada pemetaan provider sama sekali.
 	if len(sebelumDisaring) == 0 {
 		h.logger.WarnContext(r.Context(), "tidak ada pemetaan provider untuk model yang aktif",
 			"model", model.ModelID, "api_key_dibatasi", h.restrict != nil)
@@ -739,6 +808,15 @@ func (h *Handlers) tolakTanpaKandidat(
 	// dengan tepat, dan itu satu-satunya bentuk pesan yang membuat operator bisa
 	// memperbaikinya tanpa menebak.
 	switch {
+	case perluEmbeddings(rreq):
+		// Keputusan kosong untuk permintaan embeddings padahal kandidat ada:
+		// aturan routing membatasi provider untuk permintaan berkemampuan
+		// ini. (Model yang sama sekali bukan model embeddings sudah ditolak
+		// lebih dulu di handler Embeddings dari capabilities modelnya.)
+		// Keadaan permintaan/konfigurasi yang pantas 400, bukan diratakan
+		// menjadi 503 seperti model yatim (audit3 V-GW-43).
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "embeddings_not_supported",
+			"tidak ada provider yang bisa melayani embeddings untuk model "+nama)
 	case rreq.Streaming && tidakAdaYangMendukung(sebelumDisaring, func(c *upstream.RouteCandidate) bool { return c.SupportsStreaming }):
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "streaming_not_supported",
 			"tidak ada provider untuk model "+nama+" yang mendukung streaming; kirim ulang dengan \"stream\": false")
@@ -751,6 +829,16 @@ func (h *Handlers) tolakTanpaKandidat(
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "context_length_exceeded",
 			"permintaan melebihi jendela konteks setiap provider yang melayani model "+nama)
 	}
+}
+
+// perluEmbeddings melaporkan apakah permintaan ini menuntut kemampuan embeddings.
+func perluEmbeddings(rreq router.Request) bool {
+	for _, c := range rreq.Capabilities {
+		if c == upstream.CapEmbeddings {
+			return true
+		}
+	}
+	return false
 }
 
 // tidakAdaYangMendukung melaporkan bahwa tidak satu pun kandidat memenuhi syarat.
@@ -1453,8 +1541,7 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 			}
 			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, tokenHIT)
 			if err := httpx.PrepareSSE(w, r); err != nil {
-				h.logger.ErrorContext(r.Context(), "penyiapan SSE gagal", "error", err)
-				httpx.InternalError(w, r)
+				h.gagalSiapkanSSE(w, r, j, err)
 				return
 			}
 			rc := http.NewResponseController(w)
@@ -1534,8 +1621,7 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 
 	// Titik tanpa jalan kembali: setelah ini status HTTP terkunci di 200.
 	if err := httpx.PrepareSSE(w, r); err != nil {
-		h.logger.ErrorContext(r.Context(), "penyiapan SSE gagal", "error", err)
-		httpx.InternalError(w, r)
+		h.gagalSiapkanSSE(w, r, j, err)
 		return
 	}
 
@@ -1667,6 +1753,29 @@ func tulisPeristiwa(w http.ResponseWriter, raw []byte) (int64, error) {
 	return int64(n), nil
 }
 
+// gagalSiapkanSSE menangani kegagalan PrepareSSE di semua permukaan streaming.
+//
+// Dua keadaan dibedakan oleh httpx.ErrHeaderSSETerkirim (audit3 V-GW-15):
+//   - Header BELUM terkirim (tenggat tidak bisa dilepas): envelope error
+//     biasa masih sah dan memang itulah jawabannya.
+//   - Header SUDAH terkirim (flush gagal): status 200 terkunci dan aliran
+//     sudah dimulai; menulis envelope JSON di sini menempelkan JSON mentah
+//     tanpa framing ke aliran SSE dan merusak parser klien. Yang dilakukan
+//     hanya mencatat kegagalan di jejak — status yang terkirim dengan
+//     error_type terisi, pola yang sama seperti kegagalan di tengah aliran —
+//     lalu kembali supaya koneksi ditutup oleh server.
+func (h *Handlers) gagalSiapkanSSE(w http.ResponseWriter, r *http.Request, j *jejak, err error) {
+	h.logger.ErrorContext(r.Context(), "penyiapan SSE gagal", "error", err)
+	if errors.Is(err, httpx.ErrHeaderSSETerkirim) {
+		j.pasangKegagalanUpstream(&providers.Error{
+			Kind:    providers.ErrKindServer,
+			Message: "penyiapan aliran SSE gagal setelah header terkirim",
+		})
+		return
+	}
+	httpx.InternalError(w, r)
+}
+
 // tutupAliran mengirim penanda penutup yang diharapkan klien OpenAI.
 //
 // "data: [DONE]" bukan hiasan: klien resmi OpenAI memakainya untuk membedakan aliran yang
@@ -1791,6 +1900,17 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Model yang capabilities-nya tidak menyatakan embeddings ditolak di
+	// sini, dari data modelnya sendiri (audit3 V-GW-43): tanpa pemeriksaan
+	// ini permintaan diteruskan ke provider chat dan kegagalan upstream
+	// (404 model tidak tersedia) bocor ke klien sebagai jawaban gateway,
+	// padahal sebabnya diketahui pasti sebelum upstream disentuh.
+	if !slices.Contains(model.Capabilities, upstream.CapEmbeddings) {
+		httpx.WriteError(w, r, http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "embeddings_not_supported",
+			"model "+kutip(model.ModelID)+" tidak melayani embeddings")
+		return
+	}
+
 	clientIP, _ := httpx.ClientIPFrom(r.Context())
 	targets := TargetsFor(p, model.ID, clientIP)
 	j.pasangKebijakan(p, targets)
@@ -1807,7 +1927,7 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 		OwnerUserID:  p.OwnerUserID(),
 		Capabilities: []string{upstream.CapEmbeddings},
 	}
-	cands, ok := h.kandidat(w, r, rreq, p)
+	cands, dilarangKey, ok := h.kandidat(w, r, rreq, p)
 	if !ok {
 		return
 	}
@@ -1815,8 +1935,11 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 	keputusan := h.engine.Route(r.Context(), rreq, cands)
 	j.pasangKeputusan(keputusan, false)
 	if len(keputusan.Candidates) == 0 {
-		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.ErrTypeAPI, "no_provider_for_model",
-			"tidak ada provider yang dikonfigurasi untuk model embedding "+kutip(model.ModelID))
+		// Penolakan yang sama seperti jalur chat (audit3 V-GW-43): sebab
+		// dibedakan — 403 bila key dilarang ke semua provider, 503 bila
+		// memang tidak ada pemetaan, 400 bila aturan menyaring semuanya —
+		// bukan satu 503 untuk segala keadaan.
+		h.tolakTanpaKandidat(w, r, rreq, model, cands, dilarangKey)
 		return
 	}
 	plan := PlanFromRule(keputusan.Rule, model.ModelID, keputusan.Candidates)

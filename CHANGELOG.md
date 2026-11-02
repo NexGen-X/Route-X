@@ -6,6 +6,50 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+Rangkaian perubahan sesudah v1.5.1 yang belum ditag sebagai rilis: kampanye hardening **audit3** (15 grup fix atas 314 temuan terverifikasi dari audit 50 area, PR #204–#215), batch sisa A1/A2/B1/B2 (PR #225–#228), fitur Batch C (PR #229–#230), dan batch penutup (PR #231). Termasuk migrasi skema **0017–0019**; jalur upgrade dari database v1.5.1 (skema 0016) terverifikasi tanpa kehilangan data.
+
+### Breaking Changes
+- **Tanda tangan webhook diganti** (audit3 grup 7, PR #210): delivery kini ditandatangani HMAC-SHA256 atas `"<timestamp>.<deliveryID>.<body final>"` dan dikirim lewat header **`X-RouteX-Signature`** (`sha256=<hex>`). Header warisan `X-Hub-Signature-256` **dibuang** — penerima webhook harus memverifikasi skema baru. Secret webhook kini wajib non-kosong; webhook tanpa secret ditolak `400`.
+- **`ANTIGRAVITY_CLIENT_SECRET` wajib dari environment** (audit3 grup 8, PR #211): client secret Antigravity tidak lagi tertanam di biner (fallback obfuskasi dihapus). Tanpa env ini, provider Antigravity/Google OAuth berhenti dengan error eksplisit.
+
+### Added
+- **Response cache bisa diaktifkan dengan aman** (Batch C1, PR #229): penolakan `cache_policy_unsafe` dicabut. Sidik kunci cache = hash identitas API key terpisah domain + request kanonik penuh + permukaan + sidik rute, sehingga entri terisolasi per kunci dan perubahan routing membuat entri lama tak terjangkau. Tahap awal hanya respons sukses non-streaming tanpa tool call; streaming tidak pernah di-cache. Tombol Aktifkan di Pengaturan → Performa & Cache kini berfungsi.
+- **Block `document` Anthropic didukung** (Batch C2, PR #230): dokumen teks & base64 `text/plain` menjadi teks kanonik di posisi block-nya (terkirim ke semua upstream); PDF base64 diteruskan setia sebagai block native ke upstream Anthropic (tanpa kandidat Anthropic → `400 unsupported_document_upstream` sebelum jaringan). Maksimum 10 MiB per dokumen; sumber URL tetap ditolak (SSRF).
+- **Zona waktu operator untuk periode anggaran** (Batch B1, PR #227): env `BUDGET_TIMEZONE` (bawaan `UTC`, nama IANA tak sah menggagalkan boot). Batas weekly/monthly dihitung di zona operator; daily tetap 24 jam bergulir. Mengubah setelan tidak menulis ulang `period_end` yang sedang berjalan.
+- **Tarif cache-creation Anthropic terurai** (Batch B1, PR #227): rincian `cache_creation` kini dihargai per pecahan — 1 jam = 2× harga input, 5 menit/sisa = 1,25×; tanpa rincian dari upstream, perilaku lama (semua 1,25×) berlaku persis.
+- **Endpoint + UI buka kunci pengguna** (batch penutup, PR #231): `POST /api/admin/access/users/{id}/unlock` dan tombol Buka Kunci di halaman Pengguna untuk akun terkunci (menutup B-076).
+- **Endpoint acuan harga** `GET /api/admin/upstreams/models/mappings/{mapping_id}/pricing/reference` (audit3 grup 2) dan cadangan `.sha256` per tarball pada rilis (installer memverifikasinya) (grup 15).
+- **Perintah CLI `routex-apikey create --expires-days`** (1–730 hari) (audit3 grup 15).
+
+### Changed
+- **Anggaran menegakkan secara atomik** (audit3 grup 1–2): `period_end` selalu terisi dan selaras kalender (migrasi 0017 menyembuhkan baris warisan), estimasi biaya **direservasi sebelum request berjalan** (`Enforcer.Tahan`), scope model disimpan sebagai UUID, dan kandidat yang anggarannya habis disisihkan dari failover.
+- **Backup/restore ditulis ulang atomik** (audit3 grup 10, entri Kritis B-045): restore skratch-swap — unggahan dipindai anti meta-command psql, direstore ke database skratch `--single-transaction`, dicek ledger skema, lalu ditukar nama (database lama dipertahankan sebagai `<db>_pre_restore`). Migrasi 0018 memperbaiki akar "cadangan tidak bisa dipulihkan sejak 0007" (search_path fungsi histogram). Ekspor kini `POST` streaming. Catatan audit aksi restore kini ditulis lewat koneksi segar sesudah swap (batch penutup, PR #231).
+- **`/healthz` & `/readyz` hanya mengembalikan status** (audit3 grup 15): field version/commit/uptime dicabut dari respons publik; `/readyz` di-cache 2 detik.
+- **Installer & deploy diperkeras** (audit3 grup 15): arsitektur dipilih dari `uname -m` (ARM64 tidak lagi mengambil tarball amd64), checksum rilis diverifikasi, Caddyfile dicadangkan sebelum ditimpa, `TRUSTED_PROXIES` disetel eksplisit (loopback di native; subnet compose terpaku `172.30.0.0/16`), `UPSTREAM_TIMEOUT` terpasang ujung-ke-ujung.
+- **Sesi & autentikasi diperketat** (audit3 grup 9): batas 10 sesi bersamaan per pengguna, plafon mutlak 7 hari di atas TTL geser, saklar revoke-all, penjaga admin-terakhir ber-advisory-lock.
+- **Cache statistik akurat**: `entry_count` direkonsiliasi berkala terhadap kedaluwarsa TTL alami (Batch A2); event usage yang ter-drop dari antrean recorder kini tetap ditagih dengan kalkulator yang sama (Batch A2).
+- **Routing menyisihkan egress pool tak sehat** (Batch A2): pool berstatus `unhealthy` segar (≤5 menit) dilewati selama ada alternatif sehat; fail-open tercatat di log bila semua pool tak sehat.
+- **Invalidasi kebijakan seketika** (Batch B2): perubahan batas laju & filter konten dari admin kini menginvalidasi salinan gateway seketika (`Invalidate`), bukan menunggu TTL 5 detik.
+- **Halaman web lebih jujur & aksesibel** (audit3 grup 12–13 + Batch A1): kontrak agregasi FE↔BE selaras (`window` dihormati, persen breakdown dari total keseluruhan + baris "Lainnya"), penanda daftar terpotong tampil di UI, feed Dashboard satu tombol asli (axe `nested-interactive` 0), jenjang heading diperbaiki, dan ringkasan provider menampilkan penanda gagal-muat, bukan daftar kosong.
+- **Dokumentasi repo dirombak** (PR dokumentasi): README ditulis ulang profesional; `CONTRIBUTING.md` dan `SECURITY.md` dibuat; klaim basi (enkripsi API key, hitungan migrasi, perilaku anggaran pra-reservasi) dikoreksi ke kondisi kode.
+
+### Fixed
+- **RCE via restore backup (Kritis, B-045)**: meta-command psql (`\!`) dari berkas unggahan tidak lagi bisa tereksekusi — pemindai lexer menolaknya sebelum psql (lihat Changed di atas).
+- **Bypass CSRF**: satu header `Authorization` sampah tidak lagi mengalahkan cookie sah; pengecualian CSRF hanya berasal dari `Principal.ViaHeader` (audit3 grup 9).
+- **API key pemilik nonaktif/wajib-ganti-password** kini ditolak 401 di permukaan inferensi (audit3 grup 9).
+- **Panic gateway** saat semua kandidat ter-skip breaker: kini 503 `upstream_overloaded` yang rapi dan tercatat dengan status yang sama seperti yang diterima klien (bukan 499) (audit3 grup 3).
+- **Slot konkurensi streaming bocor**: limit `max_concurrent` kini dipegang sampai aliran berakhir (audit3 grup 6).
+- **Webhook retry abadi ±1×/detik**: delivery kini mencapai status terminal `abandoned`; token Telegram/Discord disamarkan dari error DB/log (audit3 grup 7).
+- **SSRF saat simpan provider & sync model**: `base_url` divalidasi (alamat metadata cloud ditolak `400 invalid_base_url`) dan ada gerbang resolusi nama tujuan (audit3 grup 8).
+- **Endpoint ikatan provider aturan routing** yang selalu menjawab 500 (`ErrNeedsTx`) kini 200 untuk ikatan sah; penegakan "provider wajib memetakan model" di server (audit3 grup 13).
+- **Paginasi kunci kehilangan baris** (20 dari 30 tak terjangkau): kursor kini tuple `(created_at, id)`; pola pencarian `%`/`_` di-escape (audit3 grup 11).
+- **Penolakan middleware 401/429** kini tercatat di tabel requests, dan parameter dashboard yang sebelumnya diabaikan backend (`window`, filter status/provider) kini bekerja (audit3 grup 12).
+- **Restore cadangan sendiri mustahil dipulihkan sejak migrasi 0007** — akar diperbaiki migrasi 0018 (audit3 grup 10).
+- **Manifest PWA disajikan `text/plain` di mode native**: Content-Type kini eksplisit per aset, `sw.js`/manifest `no-cache`, `favicon.ico` & `robots.txt` tersedia (audit3 grup 14).
+- **Constraint pipeline** melempar 22P02 untuk bentuk buruk: ditulis ulang migrasi 0019 sehingga ditolak 23514; indeks ganda warisan dibuang (audit3 grup 11).
+- **`UPSTREAM_TIMEOUT` mati** dan gauge circuit breaker yatim: keduanya kini terpasang ujung-ke-ujung (audit3 grup 15).
+- **Berkas CLI tidak aman**: `opencode.json` kini 0600 tanpa kredensial hantu; `key.env` dibangun ulang dari semua tool (audit3 grup 15).
+
 ## [1.5.1] - 2026-11-02
 
 Rilis patch: satu perbaikan kebocoran kuota token pada jalur streaming, dilabuhkan dari PR #137 yang tidak dapat di-merge langsung (branch-nya bercabang dari era PR #136 dan akan merevert Fase 2–7). Tidak ada perubahan skema, API, atau antarmuka dari v1.5.0.

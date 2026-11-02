@@ -688,6 +688,12 @@ export const api = {
     list: () => request<{ items: Session[] }>('/api/admin/access/sessions'),
     revoke: (id: string) =>
       request<void>(`/api/admin/access/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    // Saklar respons insiden: mencabut SELURUH sesi aktif semua pengguna,
+    // termasuk sesi pemanggil sendiri (request berikutnya wajib masuk ulang).
+    revokeAll: () =>
+      request<{ status: string; count: number }>('/api/admin/access/sessions/revoke-all', {
+        method: 'POST',
+      }),
   },
 
   // Automation

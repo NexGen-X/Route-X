@@ -36,10 +36,11 @@ func PrincipalFrom(ctx context.Context) (*Principal, bool) {
 	return p, ok && p != nil
 }
 
-// RequireSession mewajibkan cookie sesi yang berlaku.
+// RequireSession mewajibkan sesi yang berlaku (cookie atau token header).
 //
-// Alurnya: ambil token dari cookie, tukar menjadi principal lewat Authenticate, taruh
-// principal di context, lalu segarkan jejak last_seen_at bila sudah cukup tua.
+// Alurnya: tukar kredensial request menjadi principal lewat authenticateRequest
+// (token header dicoba lebih dulu, cookie sebagai cadangan), taruh principal di
+// context, lalu segarkan jejak last_seen_at bila sudah cukup tua.
 //
 // Pembaruan last_seen_at TIDAK dilakukan pada setiap request — lihat touchIfStale untuk
 // alasan lengkapnya. Ringkasnya: satu UPDATE per request dashboard berarti satu versi baris
@@ -60,7 +61,7 @@ func (s *Service) RequireSession() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			principal, err := s.Authenticate(ctx, s.cookies.SessionToken(r))
+			principal, err := s.authenticateRequest(ctx, r)
 			if err != nil {
 				if !errors.Is(err, ErrNoSession) {
 					observability.LoggerFrom(ctx).LogAttrs(ctx, slog.LevelError,
@@ -119,16 +120,13 @@ func (s *Service) RequireSessionOrBearer(validToken string, allowLoopback bool) 
 				}
 			}
 
-			// 3. Periksa sesi cookie admin
+			// 3. Periksa sesi admin (token header lebih dulu, cookie cadangan —
+			// jalur yang sama dengan RequireSession).
 			if s != nil && s.cookies != nil {
-				token := s.cookies.SessionToken(r)
-				if !token.IsZero() {
-					principal, err := s.Authenticate(ctx, token)
-					if err == nil && principal != nil {
-						s.touchIfStale(ctx, principal)
-						next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principal)))
-						return
-					}
+				if principal, err := s.authenticateRequest(ctx, r); err == nil && principal != nil {
+					s.touchIfStale(ctx, principal)
+					next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principal)))
+					return
 				}
 			}
 

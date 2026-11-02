@@ -452,16 +452,28 @@ func (h *Handlers) CaddyTLSCheck(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "domain not authorized", http.StatusForbidden)
 }
 
-// resolveGatewayURL mengembalikan URL kanonikal /v1 dengan preferensi domain kustom jika ada.
+// resolveGatewayURL mengembalikan URL kanonikal /v1 yang ditulis ke berkas
+// konfigurasi perkakas CLI di host (ANTHROPIC_BASE_URL, ~/.routex/cli-env.sh).
+//
+// Sumbernya berjenjang menurut kepercayaan, dari yang paling tepercaya:
+//
+//  1. Setting domain kustom di database (SettingKeyPublicURL) — ditulis
+//     operator lewat alur konfigurasi domain. Selalu dipakai.
+//  2. PUBLIC_URL dari env (h.publicURL) — konfigurasi operator saat deploy.
+//  3. Turunan dari request, dengan gerbang ketat: skema https dari
+//     X-Forwarded-Proto dan host dari X-Forwarded-Host HANYA dipercaya bila
+//     koneksi datang dari proxy terdaftar (TRUSTED_PROXIES); selain itu
+//     skema dari r.TLS dan host dari r.Host apa adanya.
+//
+// Versi lama membaca Host dan X-Forwarded-Proto mentah tanpa gerbang apa pun
+// (audit3 V-AU-19, terbukti live): satu request admin membawa
+// "Host: evil.example" + "X-Forwarded-Proto: https" membuat URL yang
+// teracuni itu ditulis ke berkas konfigurasi CLI di host, dan setting DB
+// hanya menolong untuk skema http sehingga tidak menutupinya. Nilai dari
+// konfigurasi operator sekarang selalu menang atas turunan request.
 func (h *Handlers) resolveGatewayURL(r *http.Request) string {
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
-	reqGWURL := fmt.Sprintf("%s://%s/v1", scheme, r.Host)
-
-	// Jika domain publik terdaftar di database dan request belum memakai HTTPS
-	if scheme == "http" && h.settingsRepo != nil {
+	// 1. Setting domain kustom operator di database.
+	if h.settingsRepo != nil {
 		if s, err := h.settingsRepo.Get(r.Context(), SettingKeyPublicURL); err == nil && len(s.Value) > 0 {
 			var pubURL string
 			if err := json.Unmarshal(s.Value, &pubURL); err == nil && pubURL != "" {
@@ -469,5 +481,23 @@ func (h *Handlers) resolveGatewayURL(r *http.Request) string {
 			}
 		}
 	}
-	return reqGWURL
+
+	// 2. PUBLIC_URL dari konfigurasi env.
+	if h.publicURL != "" {
+		return strings.TrimRight(h.publicURL, "/") + "/v1"
+	}
+
+	// 3. Turunan request dengan gerbang proxy tepercaya.
+	trusted := httpx.IsTrustedProxy(r, h.trustedProxies)
+	scheme := "http"
+	if r.TLS != nil || (trusted && r.Header.Get("X-Forwarded-Proto") == "https") {
+		scheme = "https"
+	}
+	host := r.Host
+	if trusted {
+		if fh := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Host"), ",")[0]); fh != "" {
+			host = fh
+		}
+	}
+	return fmt.Sprintf("%s://%s/v1", scheme, host)
 }

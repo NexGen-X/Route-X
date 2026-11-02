@@ -51,8 +51,11 @@ const MaxLineageDepth = 64
 // dipasang sebagai penggantinya. Pakai RotateKey bila pemanggil hanya memegang pool.
 //
 // Yang diwarisi: nama, pemilik, cakupan, seluruh batas laju dan token, ip_allowlist,
-// expires_at, metadata, serta daftar putih model dan provider. Yang TIDAK diwarisi:
-// status — pengganti selalu lahir aktif — riwayat pemakaian, dan seluruh kolom
+// expires_at, metadata, serta daftar putih model dan provider. Status ikut diwarisi
+// dalam satu-satunya bentuk yang aman: key 'disabled' menghasilkan pengganti yang
+// juga 'disabled' (audit3 V-AU-09) — versi lama membuat pengganti selalu 'active',
+// sehingga memutar key yang sengaja dimatikan justru menghidupkannya kembali tanpa
+// terlihat di UI. Yang TIDAK diwarisi: riwayat pemakaian dan seluruh kolom
 // pencabutan. Key baru bukan kelanjutan riwayat key lama, hanya salinan setelannya.
 // created_by adalah pelaku rotasi, bukan pembuat key lama.
 //
@@ -84,20 +87,33 @@ func (r *Repo) Rotate(ctx context.Context, id string, createdBy *string) (*Creat
 	// mencabutnya, dan memberikan prefix yang menentukan apakah penggantinya key live
 	// atau test. Urutannya tidak terlihat dari luar — keduanya commit bersama — dan
 	// kalau pembuatan pengganti gagal, pencabutan ini ikut dibatalkan.
-	var prefix string
+	//
+	// Status lama dibaca lewat CTE pada snapshot yang sama, sebelum UPDATE menimpanya:
+	// pengganti key 'disabled' wajib lahir 'disabled' juga (lihat komentar Rotate).
+	var prefix, statusLama string
 	err := r.q.QueryRow(ctx, `
+		with prev as (
+			select status as status_lama from api_keys where id = $1
+		)
 		update api_keys set
 			status = 'revoked', revoked_at = now(), revoked_by = $2, revoke_reason = $3
 		where id = $1 and status <> 'revoked'
-		returning key_prefix`,
+		returning key_prefix, (select status_lama from prev)`,
 		id, createdBy, RevokeReasonRotated,
-	).Scan(&prefix)
+	).Scan(&prefix, &statusLama)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, r.notFoundOrRevoked(ctx, op, id,
 				"key sudah dicabut, sedangkan rotasi hanya untuk key yang masih hidup")
 		}
 		return nil, repo.Err(op, err)
+	}
+
+	// Hanya dua status yang bisa sampai di sini: 'active' dan 'disabled' ('revoked'
+	// disaring pagar di atas). Selain 'disabled', pengganti lahir 'active'.
+	statusBaru := StatusActive
+	if statusLama == StatusDisabled {
+		statusBaru = StatusDisabled
 	}
 
 	generated, err := security.GenerateAPIKey(prefix == security.KeyPrefixLive, r.pepper)
@@ -116,18 +132,18 @@ func (r *Repo) Rotate(ctx context.Context, id string, createdBy *string) (*Creat
 			name, key_hash, key_prefix, last4, owner_user_id, scopes,
 			rate_limit_rps, rate_limit_rpm, rate_limit_tpm,
 			daily_request_limit, monthly_request_limit, daily_token_limit, monthly_token_limit,
-			ip_allowlist, expires_at, metadata, rotated_from, created_by
+			ip_allowlist, expires_at, metadata, rotated_from, created_by, status
 		)
 		select
 			src.name, $2, $3, $4, src.owner_user_id, src.scopes,
 			src.rate_limit_rps, src.rate_limit_rpm, src.rate_limit_tpm,
 			src.daily_request_limit, src.monthly_request_limit,
 			src.daily_token_limit, src.monthly_token_limit,
-			src.ip_allowlist, src.expires_at, src.metadata, src.id, $5
+			src.ip_allowlist, src.expires_at, src.metadata, src.id, $5, $6
 		from api_keys src
 		where src.id = $1
 		returning `+keyColumns,
-		id, generated.Hash, generated.Prefix, generated.Last4, createdBy,
+		id, generated.Hash, generated.Prefix, generated.Last4, createdBy, statusBaru,
 	)
 
 	key, err := scanKey(row)

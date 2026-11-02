@@ -94,7 +94,7 @@ func TestSessionsIntegration(t *testing.T) {
 	})
 
 	t.Run("Touch memajukan last_seen_at", func(t *testing.T) {
-		if err := sessions.Touch(ctx, created.ID); err != nil {
+		if err := sessions.Touch(ctx, created.ID, 0); err != nil {
 			t.Fatalf("Touch: %v", err)
 		}
 		got, err := sessions.Lookup(ctx, created.Token)
@@ -153,13 +153,13 @@ func TestSessionsIntegration(t *testing.T) {
 
 	t.Run("sesi yang tidak ada", func(t *testing.T) {
 		const missing = "8b1f4a2c-0d3e-4f5a-9b8c-7d6e5f4a3b2c"
-		if err := sessions.Touch(ctx, missing); !errors.Is(err, repo.ErrNotFound) {
+		if err := sessions.Touch(ctx, missing, 0); !errors.Is(err, repo.ErrNotFound) {
 			t.Errorf("Touch = %v, ingin ErrNotFound", err)
 		}
 		if err := sessions.Revoke(ctx, missing); !errors.Is(err, repo.ErrNotFound) {
 			t.Errorf("Revoke = %v, ingin ErrNotFound", err)
 		}
-		if err := sessions.Touch(ctx, "bukan-uuid"); !errors.Is(err, repo.ErrNotFound) {
+		if err := sessions.Touch(ctx, "bukan-uuid", 0); !errors.Is(err, repo.ErrNotFound) {
 			t.Errorf("Touch dengan ID bukan UUID = %v, ingin ErrNotFound", err)
 		}
 	})
@@ -260,7 +260,7 @@ func TestSessionsExpiredAndRevokedAreNeverValidIntegration(t *testing.T) {
 			}
 		})
 		t.Run("Touch menolak sesi "+name, func(t *testing.T) {
-			if err := sessions.Touch(ctx, s.ID); !errors.Is(err, repo.ErrNotFound) {
+			if err := sessions.Touch(ctx, s.ID, 0); !errors.Is(err, repo.ErrNotFound) {
 				t.Errorf("Touch = %v, ingin ErrNotFound", err)
 			}
 		})

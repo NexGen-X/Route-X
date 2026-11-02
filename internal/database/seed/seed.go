@@ -204,7 +204,7 @@ func WarnDefaultAdminPending(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 	pesan := fmt.Sprintf(
 		"ADMIN PERTAMA %q MASIH MEMAKAI PASSWORD AWAL: instance ini belum aman sampai kata sandinya diganti. "+
 			"Dalam arsitektur single-admin, siapa pun yang memegang kredensial ini memiliki kendali penuh. "+
-			"Ganti sekarang lewat dashboard (wajib ganti setelah login) atau perintah: routex-rotate set-admin-password",
+			"Ganti sekarang lewat dashboard: masuk dengan kredensial awal, lalu ganti password (sistem mewajibkannya pada login pertama).",
 		email)
 
 	// Bukan first-run tetapi kredensial default publik masih aktif: instance telah

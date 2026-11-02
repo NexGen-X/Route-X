@@ -63,9 +63,21 @@ func NewCookies(cfg *config.Config, ttl time.Duration) *Cookies {
 	}
 	secure := false
 	if cfg != nil {
-		secure = cfg.AppEnv.IsProduction() || strings.HasPrefix(cfg.PublicURL, "https://")
+		secure = cfg.AppEnv.IsProduction() || isHTTPSPublicURL(cfg.PublicURL)
 	}
 	return &Cookies{secure: secure, ttl: ttl}
+}
+
+// isHTTPSPublicURL melaporkan apakah URL mentah memakai skema https, tanpa
+// memedulikan huruf besar/kecil.
+//
+// Pemeriksaan awalan peka huruf yang lama membuat PUBLIC_URL "HTTPS://…" di
+// lingkungan non-produksi menghasilkan cookie TANPA Secure dan tanpa prefiks
+// __Host- (audit3 V-AU-07): satu huruf kapital di berkas env cukup untuk
+// menurunkan perlindungan cookie secara diam-diam.
+func isHTTPSPublicURL(raw string) bool {
+	i := strings.Index(raw, "://")
+	return i > 0 && strings.EqualFold(raw[:i], "https")
 }
 
 // SessionName mengembalikan nama cookie sesi untuk environment ini.
@@ -133,8 +145,26 @@ func (c *Cookies) ClearCSRF(w http.ResponseWriter) {
 // SessionToken membaca token sesi dari request. Secret kosong berarti tidak ada cookie atau token.
 //
 // Mendukung header Authorization: Bearer <token> dan X-Session-Token: <token> untuk
-// aplikasi native mobile companion APK & CLI, serta cookie sesi browser.
+// aplikasi native mobile companion APK & CLI, serta cookie sesi browser. Header
+// didahulukan; gunakan SessionTokenFromHeader/SessionTokenFromCookie bila sumber
+// tokennya penting — jalur autentikasi utama (Service.authenticateRequest) memakai
+// keduanya secara terpisah supaya header yang tidak sah tidak mengalahkan cookie
+// yang sah.
 func (c *Cookies) SessionToken(r *http.Request) security.Secret {
+	if token := c.SessionTokenFromHeader(r); !token.IsZero() {
+		return token
+	}
+	return c.SessionTokenFromCookie(r)
+}
+
+// SessionTokenFromHeader membaca token sesi HANYA dari header: Authorization
+// Bearer atau X-Session-Token. Secret kosong berarti tidak ada header kredensial.
+//
+// Nilai yang dikembalikan belum tentu sesi yang sah — ia hanya kandidat. Apakah
+// kandidat ini yang benar-benar mengautentikasi request diputuskan Service, dan
+// perbedaan itu penting: kehadiran header semata tidak boleh diperlakukan sebagai
+// bukti apa pun (lihat CSRF.Protect dan audit3 V-AU-03/V-AU-04).
+func (c *Cookies) SessionTokenFromHeader(r *http.Request) security.Secret {
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 		token := strings.TrimPrefix(auth, "Bearer ")
 		if token != "" {
@@ -144,7 +174,11 @@ func (c *Cookies) SessionToken(r *http.Request) security.Secret {
 	if token := r.Header.Get("X-Session-Token"); token != "" {
 		return security.Secret(token)
 	}
+	return ""
+}
 
+// SessionTokenFromCookie membaca token sesi HANYA dari cookie sesi.
+func (c *Cookies) SessionTokenFromCookie(r *http.Request) security.Secret {
 	ck, err := r.Cookie(c.SessionName())
 	if err != nil || ck.Value == "" {
 		return ""

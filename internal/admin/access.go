@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -48,8 +50,34 @@ func (h *Handlers) accessRoutes(r chi.Router) {
 	// 3. Sessions
 	r.Route("/sessions", func(sr chi.Router) {
 		sr.With(auth.RequirePermission(seed.PermUsersRead)).Get("/", h.listSessions)
+		sr.With(auth.RequirePermission(seed.PermUsersWrite)).Post("/revoke-all", h.revokeAllSessions)
 		sr.With(auth.RequirePermission(seed.PermUsersWrite)).Delete("/{id}", h.revokeSession)
 	})
+}
+
+// errAdminAktifTerakhir menandai penolakan mutasi yang akan menghilangkan
+// admin aktif terakhir. Dipisah sebagai sentinel supaya handler bisa
+// membedakannya dari kegagalan database dan menjawab 400 berkode tetap.
+var errAdminAktifTerakhir = errors.New("pengguna adalah admin aktif terakhir")
+
+// kunciPenjagaAdmin adalah kunci advisory Postgres (di luar rentang kunci
+// aplikasi lain; "RTXADMIN" dalam ASCII) yang menserialkan SEMUA mutasi yang
+// menjaga invariansi "selalu ada minimal satu admin aktif".
+//
+// Invariansi itu sebelumnya ditegakkan pola periksa-lalu-tulis tanpa kunci:
+// baca daftar admin aktif, hitung, lalu ubah status/hapus. Dua penonaktifan
+// pengguna BERBEDA yang berjalan bersamaan masing-masing melihat hitungan 2
+// dan sama-sama lolos — hasilnya nol admin aktif dan lockout total (audit3
+// V-AU-10). Dengan pg_advisory_xact_lock di awal transaksi, pemeriksaan dan
+// mutasinya menjadi satu rangkaian yang tidak bisa disela mutasi penjaga lain;
+// kunci terlepas otomatis saat transaksi selesai.
+const kunciPenjagaAdmin int64 = 0x52545841444d494e
+
+// kunciPenjagaAdminTx mengambil kunci advisory penjaga admin di dalam
+// transaksi q. Wajib dipanggil sebelum pemeriksaan jumlah admin aktif.
+func kunciPenjagaAdminTx(ctx context.Context, q repo.Querier) error {
+	_, err := q.Exec(ctx, `select pg_advisory_xact_lock($1)`, kunciPenjagaAdmin)
+	return err
 }
 
 // -----------------------------------------------------------------------------
@@ -655,24 +683,50 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			// Menonaktifkan admin aktif TERAKHIR DITOLAK: mencegah lockout sistem.
-			// Pemeriksaan ini FAIL-CLOSED (audit F5): kegagalan query List
-			// menggagalkan mutasi, bukan melewatkan penolakan — versi lama
-			// membungkusnya dalam `err == nil` sehingga DB hiccup sesaat
-			// bisa mengunci operator keluar dari sistemnya sendiri.
-			activePage, listErr := h.usersRepo.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2})
-			if listErr != nil {
-				mapRepoError(w, r, listErr, "pengguna")
-				return
-			}
-			if len(activePage.Users) <= 1 {
+			// Pemeriksaan dan mutasinya berjalan dalam SATU transaksi berkunci
+			// advisory (lihat kunciPenjagaAdmin): pola periksa-lalu-tulis tanpa
+			// kunci bisa dilewati dua penonaktifan bersamaan (audit3 V-AU-10).
+			// Pemeriksaan tetap FAIL-CLOSED (audit F5): kegagalan query di
+			// dalam transaksi membatalkan mutasi.
+			//
+			// Penolakan hanya berlaku bila TARGET saat ini benar-benar aktif:
+			// menonaktifkan akun yang sudah nonaktif tidak mengurangi jumlah
+			// admin aktif dan tidak perlu ditolak.
+			err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+				if err := kunciPenjagaAdminTx(ctx, q); err != nil {
+					return err
+				}
+				users := identity.NewUsers(q)
+				target, err := users.GetByID(ctx, id)
+				if err != nil {
+					return err
+				}
+				if target.Status == identity.UserStatusActive {
+					activePage, err := users.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2})
+					if err != nil {
+						return err
+					}
+					if len(activePage.Users) <= 1 {
+						return errAdminAktifTerakhir
+					}
+				}
+				_, err = users.SetStatus(ctx, id, identity.UserStatus(req.Status))
+				return err
+			})
+			if errors.Is(err, errAdminAktifTerakhir) {
 				httpx.BadRequest(w, r, "last_admin_forbidden", "pengguna ini admin aktif terakhir; buat admin lain dulu sebelum menonaktifkannya")
 				return
 			}
-		}
-		_, err := h.usersRepo.SetStatus(ctx, id, identity.UserStatus(req.Status))
-		if err != nil {
-			mapRepoError(w, r, err, "status pengguna")
-			return
+			if err != nil {
+				mapRepoError(w, r, err, "status pengguna")
+				return
+			}
+		} else {
+			_, err := h.usersRepo.SetStatus(ctx, id, identity.UserStatus(req.Status))
+			if err != nil {
+				mapRepoError(w, r, err, "status pengguna")
+				return
+			}
 		}
 	}
 
@@ -700,18 +754,36 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Menghapus admin aktif TERAKHIR DITOLAK untuk mencegah lockout sistem.
-	// FAIL-CLOSED seperti di updateUser (audit F5): error List = mutasi batal.
-	activePage, listErr := h.usersRepo.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2})
-	if listErr != nil {
-		mapRepoError(w, r, listErr, "pengguna")
-		return
-	}
-	if len(activePage.Users) <= 1 {
+	// Pemeriksaan dan penghapusannya satu transaksi berkunci advisory, sama
+	// seperti penonaktifan di updateUser — pola periksa-lalu-hapus tanpa kunci
+	// dapat dilewati penghapusan/penonaktifan bersamaan (audit3 V-AU-10).
+	// FAIL-CLOSED seperti sebelumnya (audit F5): error di dalam transaksi =
+	// mutasi batal.
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		if err := kunciPenjagaAdminTx(ctx, q); err != nil {
+			return err
+		}
+		users := identity.NewUsers(q)
+		target, err := users.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if target.Status == identity.UserStatusActive {
+			activePage, err := users.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2})
+			if err != nil {
+				return err
+			}
+			if len(activePage.Users) <= 1 {
+				return errAdminAktifTerakhir
+			}
+		}
+		return users.Delete(ctx, id)
+	})
+	if errors.Is(err, errAdminAktifTerakhir) {
 		httpx.BadRequest(w, r, "last_admin_forbidden", "pengguna ini admin aktif terakhir; buat admin lain dulu sebelum menghapusnya")
 		return
 	}
-
-	if err := h.usersRepo.Delete(ctx, id); err != nil {
+	if err != nil {
 		mapRepoError(w, r, err, "pengguna")
 		return
 	}
@@ -808,4 +880,26 @@ func (h *Handlers) revokeSession(w http.ResponseWriter, r *http.Request) {
 
 	h.writeAudit(ctx, r, "revoke", "session", id, nil)
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "revoked"})
+}
+
+// revokeAllSessions menangani POST /api/admin/access/sessions/revoke-all:
+// mencabut SELURUH sesi aktif semua pengguna sekaligus.
+//
+// Ini saklar respons insiden yang selama ini tidak ada (audit3 V-AU-06):
+// daftar sesi hanya bisa dicabut satu per satu atau per pengguna, dan
+// runbook lama keliru menyarankan rotasi SESSION_SECRET — padahal keabsahan
+// sesi adalah baris database dan secret itu hanya menandatangani token CSRF.
+// Sesi operator yang memanggil ikut tercabut (respons ini tetap terkirim;
+// request berikutnya wajib masuk ulang) — memang itulah tujuannya.
+func (h *Handlers) revokeAllSessions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	count, err := h.sessionsRepo.RevokeAll(ctx)
+	if err != nil {
+		mapRepoError(w, r, err, "sesi")
+		return
+	}
+
+	h.writeAudit(ctx, r, "revoke_all_sessions", "session", "", map[string]any{"count": count})
+	_ = h.respond(w, r, http.StatusOK, StatusCountResponse{Status: "revoked", Count: int64(count)})
 }

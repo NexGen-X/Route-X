@@ -26,6 +26,15 @@ const sessionTokenBytes = 32
 // DefaultSessionTTL adalah masa berlaku sesi bila pemanggil tidak menentukan sendiri.
 const DefaultSessionTTL = 12 * time.Hour
 
+// MaxSessionLifetime adalah batas mutlak umur sebuah sesi dihitung dari
+// pembuatannya: perpanjangan geser lewat Touch tidak pernah melewati ini.
+//
+// Tanpa batas mutlak, sesi yang terus dipakai tidak akan pernah mati — token
+// yang bocor bisa dipertahankan hidup selamanya hanya dengan terus
+// menggunakannya. Tujuh hari memberi ruang pemakaian harian yang wajar untuk
+// instalasi single-user sambil tetap memaksa masuk ulang berkala.
+const MaxSessionLifetime = 7 * 24 * time.Hour
+
 // Session adalah satu baris tabel sessions. Token maupun hash-nya tidak ikut: hash
 // tidak berguna bagi pemanggil, dan membawanya keliling hanya menambah tempat ia bisa
 // bocor.
@@ -166,22 +175,38 @@ func (r *Sessions) Lookup(ctx context.Context, token security.Secret) (Session, 
 	return s, nil
 }
 
-// Touch memperbarui last_seen_at sebuah sesi yang masih berlaku.
+// Touch memperbarui last_seen_at sebuah sesi yang masih berlaku DAN menggeser
+// kedaluwarsanya selama ttl dari sekarang.
 //
 // Dipisah dari Lookup dan tidak dilakukan otomatis di sana: Lookup terjadi pada setiap
 // request dashboard, dan menuliskan satu baris pada setiap request akan menghasilkan
 // WAL serta baris mati yang sepenuhnya tidak sebanding dengan nilai datanya. Pemanggil
 // memutuskan sendiri seberapa sering jejak ini disegarkan.
-func (r *Sessions) Touch(ctx context.Context, id string) error {
+//
+// Penggeseran adalah perubahan perilaku yang disengaja (audit3 V-AU-11): sebelumnya
+// kedaluwarsa dihitung mutlak dari pembuatan, sehingga pengguna yang sedang aktif
+// bekerja tetap diputus tepat pada jamnya. Sekarang sesi yang dipakai terus
+// diperpanjang — tetapi tidak pernah melewati created_at + MaxSessionLifetime, dan
+// tidak pernah dimundurkan di bawah nilai yang sudah ada, supaya token yang dicuri
+// tetap punya umur maksimum yang tegas. ttl ≤ 0 berarti tidak menggeser (hanya jejak).
+func (r *Sessions) Touch(ctx context.Context, id string, ttl time.Duration) error {
 	const op = "memperbarui jejak sesi"
 	if !validUUID(id) {
 		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 
-	const query = `update sessions set last_seen_at = now()
+	const query = `update sessions set
+		last_seen_at = now(),
+		expires_at = case
+			when $2::double precision > 0 then least(
+				created_at + make_interval(secs => $3),
+				greatest(expires_at, now() + make_interval(secs => $2))
+			)
+			else expires_at
+		end
 	where id = $1 and revoked_at is null and expires_at > now()`
 
-	tag, err := r.q.Exec(ctx, query, id)
+	tag, err := r.q.Exec(ctx, query, id, seconds(ttl), seconds(MaxSessionLifetime))
 	if err != nil {
 		return repo.Err(op, err)
 	}
@@ -227,6 +252,55 @@ func (r *Sessions) RevokeAllOfUser(ctx context.Context, userID string) (int, err
 
 	const query = `update sessions set revoked_at = now() where user_id = $1 and revoked_at is null`
 	tag, err := r.q.Exec(ctx, query, userID)
+	if err != nil {
+		return 0, repo.Err(op, err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// RevokeOldestBeyond mencabut sesi aktif tertua seorang pengguna sampai jumlah
+// sesi aktifnya tidak melebihi keep, dan mengembalikan jumlah yang dicabut.
+//
+// Dipakai saat login untuk menegakkan batas sesi bersamaan (audit3 V-AU-05:
+// sebelumnya setiap login menambah satu kredensial hidup dan tidak ada yang
+// membersihkan yang lama). Yang bertahan adalah yang terbaru menurut
+// created_at, dengan id sebagai penentu seri yang deterministik.
+func (r *Sessions) RevokeOldestBeyond(ctx context.Context, userID string, keep int) (int, error) {
+	const op = "membatasi jumlah sesi aktif pengguna"
+	if !validUUID(userID) {
+		return 0, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	if keep < 0 {
+		keep = 0
+	}
+
+	const query = `update sessions set revoked_at = now()
+	where id in (
+		select id from sessions
+		where user_id = $1 and revoked_at is null and expires_at > now()
+		order by created_at desc, id desc
+		offset $2
+	)`
+	tag, err := r.q.Exec(ctx, query, userID, keep)
+	if err != nil {
+		return 0, repo.Err(op, err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// RevokeAll mencabut SELURUH sesi aktif semua pengguna dan mengembalikan
+// jumlahnya.
+//
+// Ini saklar respons insiden (audit3 V-AU-06): keabsahan sesi adalah baris
+// database, jadi inilah satu-satunya cara memaksa semua perangkat masuk
+// ulang sekaligus. Merotasi SESSION_SECRET tidak mencabut sesi apa pun —
+// ia hanya kunci HMAC token CSRF.
+func (r *Sessions) RevokeAll(ctx context.Context) (int, error) {
+	const op = "mencabut seluruh sesi"
+
+	const query = `update sessions set revoked_at = now()
+	where revoked_at is null and expires_at > now()`
+	tag, err := r.q.Exec(ctx, query)
 	if err != nil {
 		return 0, repo.Err(op, err)
 	}

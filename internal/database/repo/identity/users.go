@@ -508,6 +508,32 @@ func (r *Users) RecordLoginSuccess(ctx context.Context, id, ip string) error {
 	return nil
 }
 
+// ResetFailedAttempts menolkan penghitung kegagalan login dan melepas penguncian
+// sementara TANPA menyentuh jejak login terakhir.
+//
+// Dipakai jalur ganti password: verifikasi password lama yang berhasil adalah
+// bukti kepemilikan yang sama kuatnya dengan login yang berhasil, jadi sisa
+// tebakan gagal sebelumnya tidak boleh terus menggantung di atas akun.
+// RecordLoginSuccess tidak dipakai di sana karena ia juga menulis
+// last_login_at/last_login_ip — jejak login tidak boleh berubah oleh operasi
+// yang bukan login.
+func (r *Users) ResetFailedAttempts(ctx context.Context, id string) error {
+	const op = "menolkan penghitung kegagalan login"
+	if !validUUID(id) {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	const query = `update users set failed_login_attempts = 0, locked_until = null where id = $1`
+	tag, err := r.q.Exec(ctx, query, id)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	return nil
+}
+
 // RecordLoginFailure menaikkan penghitung kegagalan login dan mengunci akun sementara
 // begitu ambang terlampaui.
 //

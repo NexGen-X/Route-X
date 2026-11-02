@@ -152,19 +152,30 @@ func (c *CSRF) Protect() func(http.Handler) http.Handler {
 				return
 			}
 
-			// Klien non-browser (Mobile APK, CLI, SDK) yang menggunakan header Authorization
-			// Bearer atau X-Session-Token kebal dari eksploitasi CSRF lintas situs browser.
-			if r.Header.Get("Authorization") != "" || r.Header.Get("X-Session-Token") != "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-
 			principal, ok := PrincipalFrom(r.Context())
 			if !ok {
 				observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelError,
 					"middleware CSRF dipasang tanpa RequireSession di depannya",
 					slog.String("method", r.Method), slog.String("path", r.URL.Path))
 				c.reject(w, r, "tidak ada sesi terautentikasi")
+				return
+			}
+
+			// Klien non-browser (mobile companion, CLI, SDK) yang terautentikasi
+			// lewat token header kebal dari eksploitasi CSRF lintas situs browser:
+			// browser tidak pernah melampirkan header itu secara otomatis.
+			//
+			// Yang menentukan adalah principal.ViaHeader — token header yang
+			// BENAR-BENAR tervalidasi oleh RequireSession — bukan kehadiran
+			// headernya. Versi lama melewatkan seluruh pemeriksaan ini hanya
+			// karena header Authorization/X-Session-Token ADA, bernilai apa pun:
+			// terbukti live (audit3 V-AU-03), satu header sampah
+			// "Authorization: Basic eHl6" pada request ber-cookie sah mematikan
+			// cek Origin, double-submit, dan ikatan sesi sekaligus, dan mutasinya
+			// tereksekusi. Header tanpa sesi yang sah di belakangnya sekarang
+			// tidak membuktikan apa pun.
+			if principal.ViaHeader {
+				next.ServeHTTP(w, r)
 				return
 			}
 

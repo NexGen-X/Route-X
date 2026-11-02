@@ -168,7 +168,10 @@ func run(migrateOnly bool) error {
 	// boleh membuat tidak seorang pun bisa masuk untuk memperbaikinya, sementara
 	// penguncian per akun tetap ditegakkan di database.
 	authSvc := auth.NewService(db.Pool, cfg, logger,
-		auth.WithLoginLimiter(auth.NewLoginLimiter(rdb, logger)))
+		auth.WithLoginLimiter(auth.NewLoginLimiter(rdb, logger)),
+		// TTL sesi dari konfigurasi (SESSION_TTL): opsi ini sebelumnya tidak
+		// pernah dipasang sehingga nilainya terkunci di bawaan kode.
+		auth.WithSessionTTL(cfg.SessionTTL))
 
 	// Permukaan /v1: inilah yang dilihat aplikasi klien. Dirakit sebelum router supaya
 	// kegagalan perakitannya menghentikan start, bukan muncul sebagai 404 pada permintaan
@@ -340,7 +343,9 @@ func buildGatewaySurface(
 	rdb *cache.Redis,
 	authSvc *auth.Service,
 ) (http.Handler, *admin.Handlers, func(context.Context) error, error) {
-	cipher, err := security.NewCipher(cfg.EncryptionKey)
+	// ENCRYPTION_KEY_PREVIOUS (bila disetel) menjadi kunci warisan baca-saja:
+	// masa tenggang rotasi kunci, lihat config.EncryptionKeyPrevious.
+	cipher, err := security.NewCipherWithLegacy(cfg.EncryptionKey, cfg.EncryptionKeyPrevious)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("menyiapkan cipher kredensial: %w", err)
 	}
@@ -628,11 +633,19 @@ func buildGatewaySurface(
 	settingsRepo := identity.NewSettings(db.Pool)
 	cliMgr := cliconfig.NewManager(settingsRepo, cipher, logger)
 
+	// Daftar proxy tepercaya untuk admin.resolveGatewayURL: TRUSTED_PROXIES
+	// yang tidak bisa diurai berarti daftar kosong (gagal-tertutup — header
+	// Forwarded-* tidak dipercaya sama sekali). Parse utama di buildRouter
+	// tetap menjadi yang berteriak saat start bila konfigurasinya cacat.
+	trustedProxies, _ := httpx.ParseTrustedProxies(cfg.TrustedProxies)
+
 	adminHandlers := admin.NewHandlers(admin.Config{
 		Pool:           db.Pool,
 		Redis:          rdb.Client(),
 		AuthSvc:        authSvc,
 		Logger:         logger,
+		PublicURL:      cfg.PublicURL,
+		TrustedProxies: trustedProxies,
 		ProviderRepo:   providersRepo,
 		CredentialRepo: creds,
 		OAuthRepo:      oauthRepo,

@@ -18,8 +18,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -606,37 +609,6 @@ func teksDariRawJawaban(raw json.RawMessage) string {
 			b.WriteByte('\n')
 		}
 		b.WriteString(t)
-	}
-	return b.String()
-}
-
-// teksDariChunkAliran menggabungkan teks jawaban dari chunk streaming yang
-// ditampung untuk cache, supaya entri streaming ikut menyimpan teks jawaban
-// (audit3 V-GW-04) — sebelumnya hanya entri non-streaming yang punya Teks.
-//
-// Dua bentuk potongan dikenali: delta.content dialek OpenAI dan text_delta
-// dialek Anthropic. Chunk yang tidak terurai dilewati; hasil gabungan ini
-// bahan audit & penyaring, bukan rekonstruksi byte respons.
-func teksDariChunkAliran(chunks []string) string {
-	var b strings.Builder
-	for _, chunk := range chunks {
-		var wire struct {
-			Choices []struct {
-				Delta struct {
-					Content json.RawMessage `json:"content"`
-				} `json:"delta"`
-			} `json:"choices"`
-			Delta struct {
-				Text string `json:"text"`
-			} `json:"delta"`
-		}
-		if err := json.Unmarshal([]byte(chunk), &wire); err != nil {
-			continue
-		}
-		for _, c := range wire.Choices {
-			b.WriteString(teksDariKontenWire(c.Delta.Content))
-		}
-		b.WriteString(wire.Delta.Text)
 	}
 	return b.String()
 }
@@ -1500,14 +1472,52 @@ func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier,
 	return out, nil
 }
 
+// sidikRuteCache meng-hash keputusan routing yang berlaku untuk request
+// ini: aturan terpilih (ID + strategi) dan daftar kandidat TERURUT dengan
+// identitas yang menentukan jawaban (provider, pemetaan model, nama model
+// hulu, jenis, base URL, prioritas, bobot).
+//
+// Inilah jawaban atas keberatan historis V-GW-02/03 yang dulu menahan
+// aktivasi cache (cache_policy_unsafe): jawaban fallback combo tersimpan
+// di bawah kunci model yang diminta dan tetap tersaji sesudah routing
+// berubah, dan tidak ada invalidasi saat provider/routing berubah. Dengan
+// sidik ini di dalam kunci, setiap perubahan provider, pemetaan, aturan,
+// atau urutan kandidat membuat kunci baru — entri lama yatim dan gugur
+// oleh TTL. Keadaan yang berubah-ubah per detik (kesehatan, latensi,
+// kegagalan beruntun) sengaja TIDAK ikut: itu bukan identitas jawaban,
+// dan memasukkannya akan membuat cache tidak pernah hit.
+func sidikRuteCache(pr *persiapan) string {
+	if pr == nil {
+		return ""
+	}
+	var b strings.Builder
+	if pr.decision.Rule != nil {
+		b.WriteString(pr.decision.Rule.ID)
+		b.WriteByte('|')
+		b.WriteString(string(pr.decision.Rule.Strategy))
+	}
+	b.WriteByte('#')
+	for _, c := range pr.decision.Candidates {
+		if c == nil {
+			continue
+		}
+		fmt.Fprintf(&b, "%s/%s/%s/%s/%s/%d/%d;", c.ProviderID, c.ProviderModelID,
+			c.UpstreamModelName, c.Kind, c.BaseURL, c.Priority, c.Weight)
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}
+
 // cakupanCache menyusun konteks pemilik untuk kunci response cache.
 //
 // Tanpa ini dua penyewa berbagi satu entri: tenant B menerima respons milik
 // tenant A, kuotanya tidak termakan, dan biayanya tercatat nol padahal
 // informasinya bocor. ModelID-nya ID kanonik (models.id), bukan nama mentah
 // dari klien, supaya dua alias ke model yang sama tetap berbagi entri secara
-// sah — respons upstream-nya identik.
-func cakupanCache(pr *persiapan) responsecache.Scope {
+// sah — respons upstream-nya identik. Permukaan ikut membedakan entri:
+// tubuh respons dialek OpenAI dan Anthropic berbeda untuk request kanonik
+// yang sama.
+func cakupanCache(pr *persiapan, permukaan string) responsecache.Scope {
 	var s responsecache.Scope
 	if pr == nil {
 		return s
@@ -1519,7 +1529,33 @@ func cakupanCache(pr *persiapan) responsecache.Scope {
 		s.OwnerUserID = pr.principal.OwnerUserID()
 		s.KeyID = pr.principal.ID()
 	}
+	s.Permukaan = permukaan
+	s.SidikRute = sidikRuteCache(pr)
 	return s
+}
+
+// Permukaan-permukaan yang melayani cache respons tahap awal (Batch C1).
+const (
+	permukaanOpenAI    = "openai"
+	permukaanAnthropic = "anthropic"
+)
+
+// layakCacheRespons melaporkan apakah request ini boleh dibaca dari /
+// disimpan ke response cache pada tahap awal aktivasi (Batch C1).
+//
+// Batas tahap awal yang konservatif: hanya request non-streaming tanpa
+// tool. Tool didefinisikan klien dan semantiknya (termasuk efek samping
+// baca-eksternal) tidak bisa diverifikasi gateway — bila ragu, jangan
+// cache. Streaming disaring di pemanggil (hanya jalur non-streaming yang
+// memanggil ini), dan di sini Stream tetap diperiksa sebagai pengaman.
+func layakCacheRespons(req *providers.ChatRequest) bool {
+	if req == nil || req.Stream {
+		return false
+	}
+	if len(req.Tools) > 0 {
+		return false
+	}
+	return true
 }
 
 // terapkanLantaiPemakaian mengisi sisi pemakaian yang TIDAK dilaporkan upstream.
@@ -1565,8 +1601,8 @@ func terapkanLantaiPemakaian(req *providers.ChatRequest, u providers.Usage, byte
 // chatSekali melayani completion non-streaming.
 func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
 	var cacheKey string
-	if h.respCache != nil && h.respCache.IsEnabled() {
-		cacheKey = h.respCache.ComputeScopedKey(pr.req, cakupanCache(pr))
+	if h.respCache != nil && h.respCache.IsEnabled() && layakCacheRespons(pr.req) {
+		cacheKey = h.respCache.ComputeScopedKey(pr.req, cakupanCache(pr, permukaanOpenAI))
 		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.Raw) > 0 {
 			// HIT tetap memakan kuota token: tanpa ini prompt yang di-cache bisa
 			// diulang tanpa batas melewati token limit. Biayanya tetap nol —
@@ -1804,42 +1840,12 @@ var (
 // berhenti tanpa sebab. Harganya: klien menunggu tanpa header sampai upstream menjawab,
 // yang persis perilaku OpenAI sendiri.
 func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
-	var cacheKey string
-	if h.respCache != nil && h.respCache.IsEnabled() {
-		cacheKey = h.respCache.ComputeScopedKey(pr.req, cakupanCache(pr))
-		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.StreamChunks) > 0 {
-			// Seperti jalur non-streaming: HIT tetap memakan kuota token,
-			// dengan lantai taksiran yang sama untuk entri lama bertoken nol,
-			// dan pemakaian yang ditagih sama dengan yang dicatat
-			// (pemakaianCacheHIT, audit3 V-GW-09). Baris requests juga
-			// menyebut provider asal jawaban lewat kandidatCacheHIT.
-			// Penyaring jawaban TIDAK dijalankan di sini — jawaban streaming
-			// memang tidak disaring (lihat Guard.SaringJawaban), dan memeriksa
-			// ulang potongan yang sudah terkirim tidak mungkin.
-			pemakaian := pemakaianCacheHIT(pr.req, entry)
-			j.pasangPemakaian(pemakaian)
-			if menang := kandidatCacheHIT(pr, entry); menang != nil {
-				j.pasangPercobaan(nil, menang)
-			}
-			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(pemakaian.TotalTokens))
-			if err := httpx.PrepareSSE(w, r); err != nil {
-				h.gagalSiapkanSSE(w, r, j, err)
-				return
-			}
-			rc := http.NewResponseController(w)
-			for _, chunk := range entry.StreamChunks {
-				if _, err := tulisPeristiwa(w, []byte(chunk)); err != nil {
-					return
-				}
-				if err := rc.Flush(); err != nil {
-					return
-				}
-			}
-			h.tutupAliran(r, w, rc)
-			return
-		}
-	}
-
+	// Response cache TIDAK melayani maupun menyimpan streaming pada tahap
+	// awal aktivasi (Batch C1): aliran yang berakhir tanpa [DONE] pernah
+	// ter-cache sebagai jawaban lengkap (V-GW-01 laten), dan HIT streaming
+	// ber-usage nol hanya menagih taksiran input (V-GW-05 laten). Sampai
+	// ada penanda kelengkapan aliran yang bisa diverifikasi, jalur ini
+	// selalu ke upstream.
 	out := ExecuteStream(h.guard.DenganMemoBatas(r.Context()), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
@@ -1908,13 +1914,8 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 
 	rc := http.NewResponseController(w)
 	var (
-		terkirim     int64
-		usage        providers.Usage
-		streamChunks []string
-		// totalChunk/tampungJenuh membatasi penampungan chunk untuk cache
-		// (audit F4); lihat titik append di bawah.
-		totalChunk   int
-		tampungJenuh bool
+		terkirim int64
+		usage    providers.Usage
 	)
 	// Pencatatan token dijalankan lewat defer, bukan hanya di jalur selesai-normal: aliran
 	// bisa berakhir karena klien menutup koneksi atau upstream terputus di tengah, dan token
@@ -1942,19 +1943,6 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		ev, err := out.Value.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				if cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() && len(streamChunks) > 0 {
-					// ProviderID dan teks jawaban ikut disimpan, sejajar
-					// jalur non-streaming (audit3 V-GW-04): tanpa keduanya
-					// provenance entri streaming hilang dari audit.
-					_ = h.respCache.Set(r.Context(), cacheKey, &responsecache.Entry{
-						Model:        out.Candidate.UpstreamModelName,
-						ProviderID:   out.Candidate.ProviderID,
-						Usage:        usage,
-						StreamChunks: streamChunks,
-						Teks:         teksDariChunkAliran(streamChunks),
-						CachedAt:     time.Now(),
-					})
-				}
 				h.tutupAliran(r, w, rc)
 				return
 			}
@@ -1972,22 +1960,6 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		// "data: \n\n" ia akan diurai klien sebagai chunk kosong yang tidak sah.
 		if len(ev.Raw) == 0 {
 			continue
-		}
-
-		// Chunk hanya ditampung bila response cache AKTIF untuk request
-		// ini (audit F4): satu-satunya konsumen streamChunks adalah
-		// pengisian cache di akhir aliran, jadi menampungnya selalu
-		// berarti seluruh respons streaming diduplikasi di memori tanpa
-		// batas — termasuk saat cache mati (bawaan sejak audit F3).
-		// Batas total 2 MB: aliran yang melewatinya tidak di-cache.
-		if !tampungJenuh && cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() {
-			if totalChunk+len(ev.Raw) <= 2<<20 {
-				streamChunks = append(streamChunks, string(ev.Raw))
-				totalChunk += len(ev.Raw)
-			} else {
-				tampungJenuh = true
-				streamChunks = nil
-			}
 		}
 
 		n, err := tulisPeristiwa(w, ev.Raw)

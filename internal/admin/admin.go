@@ -385,6 +385,25 @@ func (h *Handlers) invalidateContentFilters() {
 	}
 }
 
+// kosongkanCacheRespons membuang seluruh entri response cache bila engine
+// terpasang dan sedang aktif. Dipanggil sesudah mutasi kredensial (buat/
+// hapus/toggle): himpunan kredensial menentukan akun hulu yang melayani,
+// dan sidik rute di kunci cache tidak memuat identitas kredensial — jadi
+// perubahan kredensial adalah satu-satunya perubahan konteks jawaban yang
+// tidak menghasilkan kunci baru dengan sendirinya (sisa V-GW-03, Batch
+// C1). Perubahan provider/routing/pemetaan tidak memerlukan ini karena
+// sidik rute mengubah kuncinya sendiri. Best-effort mengikuti pola
+// invalidate* di atas: kegagalan dicatat, tidak menggagalkan mutasi yang
+// sudah berhasil.
+func (h *Handlers) kosongkanCacheRespons(ctx context.Context) {
+	if h.responseCache == nil || !h.responseCache.IsEnabled() {
+		return
+	}
+	if _, err := h.responseCache.Flush(ctx); err != nil {
+		h.logger.WarnContext(ctx, "gagal mengosongkan response cache sesudah mutasi kredensial", "error", err)
+	}
+}
+
 // errBodyJSON adalah satu-satunya kesalahan yang boleh keluar dari decodeJSON.
 // Teks error mentah encoding/json memuat nama struct & field Go serta cuplikan
 // body ("json: cannot unmarshal string into Go struct field

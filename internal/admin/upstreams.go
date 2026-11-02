@@ -1139,6 +1139,7 @@ func (h *Handlers) createCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.kosongkanCacheRespons(ctx)
 	_ = h.respond(w, r, http.StatusCreated, toCredentialMetaDTO(cred))
 }
 
@@ -1166,6 +1167,7 @@ func (h *Handlers) deleteCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.kosongkanCacheRespons(ctx)
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
@@ -1204,6 +1206,7 @@ func (h *Handlers) toggleCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.kosongkanCacheRespons(ctx)
 	_ = h.respond(w, r, http.StatusOK, toCredentialMetaDTO(cred))
 }
 

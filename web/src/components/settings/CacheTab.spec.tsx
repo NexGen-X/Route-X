@@ -4,9 +4,10 @@ import { CacheTab } from './CacheTab';
 import { ApiError } from '../../api/client';
 
 // CacheTab (Fase 2 R3): kontrol cache respons tinggal di Settings.
-// Uji ini mengunci perilaku jujurnya: tidak ada tombol aktifkan yang
-// pasti gagal, TTL tersimpan dengan enabled apa adanya, dan penolakan
-// cache_policy_unsafe tampil sebagai penjelasan — bukan toast gagal.
+// Uji ini mengunci perilaku sesudah Batch C1: aktivasi DITERIMA server
+// (kebijakan sidik kunci sudah diterapkan), jadi tombol Aktifkan ada dan
+// berfungsi; TTL tersimpan dengan enabled apa adanya; menonaktifkan
+// memanggil update dengan enabled=false.
 
 const mockStatsFn = vi.fn();
 const mockUpdateFn = vi.fn();
@@ -57,17 +58,40 @@ describe('CacheTab — Performa & Cache (Settings)', () => {
     mockFlushFn.mockResolvedValue({ deleted: 5, message: 'Berhasil menghapus 5 entri' });
   });
 
-  it('menampilkan statistik dan penjelasan kebijakan tanpa tombol aktifkan', async () => {
+  it('menampilkan statistik, banner batas tahap awal, dan tombol aktifkan saat nonaktif', async () => {
     render(<CacheTab />);
 
     await waitFor(() => {
       expect(screen.getByText('Cache Respons Redis')).toBeInTheDocument();
     });
     expect(screen.getByText('NONAKTIF')).toBeInTheDocument();
-    expect(screen.getByText(/belum dapat diaktifkan dari panel ini/i)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /aktifkan cache/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/Cache nonaktif — aktifkan/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /aktifkan cache/i })).toBeInTheDocument();
     // Rasio hit: 12/(12+8) = 60.0%
     expect(screen.getByText('60.0%')).toBeInTheDocument();
+  });
+
+  it('mengaktifkan cache dengan TTL dari kolom (menit -> detik)', async () => {
+    render(<CacheTab />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /aktifkan cache/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateFn).toHaveBeenCalledWith(true, 3600);
+    });
+    expect(mockToastSuccess).toHaveBeenCalled();
+  });
+
+  it('menampilkan tombol nonaktifkan dan banner aktif saat cache menyala', async () => {
+    mockStatsFn.mockResolvedValue({ ...STATS_NONAKTIF, enabled: true });
+    render(<CacheTab />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /nonaktifkan cache/i }));
+
+    await waitFor(() => {
+      expect(mockUpdateFn).toHaveBeenCalledWith(false, 3600);
+    });
+    expect(screen.getByText(/Cache aktif — hanya respons sukses non-streaming/i)).toBeInTheDocument();
   });
 
   it('menyimpan TTL dengan enabled apa adanya (nonaktif) dalam detik', async () => {
@@ -100,23 +124,16 @@ describe('CacheTab — Performa & Cache (Settings)', () => {
     expect(mockToastError).toHaveBeenCalled();
   });
 
-  it('menampilkan penolakan cache_policy_unsafe sebagai penjelasan menetap', async () => {
-    mockStatsFn.mockResolvedValue({ ...STATS_NONAKTIF, enabled: true });
-    mockUpdateFn.mockRejectedValue(
-      new ApiError(
-        400,
-        'cache_policy_unsafe',
-        'Response cache dinonaktifkan sampai fingerprint tenant, routing, dan policy diterapkan',
-      ),
-    );
+  it('kegagalan simpan tampil sebagai toast, bukan penjelasan kebijakan menetap', async () => {
+    mockUpdateFn.mockRejectedValue(new ApiError(500, 'internal_error', 'server bermasalah'));
 
     render(<CacheTab />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Simpan TTL' }));
 
     await waitFor(() => {
-      expect(screen.getByText(/Server menolak perubahan ini/i)).toBeInTheDocument();
+      expect(mockToastError).toHaveBeenCalled();
     });
-    expect(mockToastError).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Server menolak perubahan ini/i)).not.toBeInTheDocument();
   });
 });

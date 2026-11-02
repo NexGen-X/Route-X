@@ -37,10 +37,14 @@ type Entry struct {
 	Model string `json:"model"`
 	// ProviderID adalah providers.id yang melayani, dipakai menegakkan
 	// penyaring jawaban berlingkup provider pada jalur HIT.
-	ProviderID   string          `json:"provider_id,omitempty"`
-	Raw          json.RawMessage `json:"raw"`
-	Usage        providers.Usage `json:"usage"`
-	StreamChunks []string        `json:"stream_chunks,omitempty"`
+	ProviderID string          `json:"provider_id,omitempty"`
+	Raw        json.RawMessage `json:"raw"`
+	Usage      providers.Usage `json:"usage"`
+	// StreamChunks adalah warisan skema entri streaming pra-Batch C1.
+	// Tahap awal aktivasi tidak lagi menyimpan maupun menyajikan
+	// streaming, jadi field ini tidak pernah diisi kode saat ini; ia
+	// dipertahankan hanya supaya payload entri lama tetap terbaca.
+	StreamChunks []string `json:"stream_chunks,omitempty"`
 	// Teks adalah teks jawaban yang sudah diekstrak saat menyimpan, supaya
 	// jalur HIT non-streaming tetap bisa menjalankan penyaring jawaban tanpa
 	// mengurai ulang Raw. Entri streaming ikut mengisinya dari gabungan
@@ -87,9 +91,14 @@ type PersistedSettings struct {
 // (cache_policy_unsafe) dan setelan admin tidak dipersistensikan — jadi
 // setiap restart diam-diam menyalakan lagi fitur yang oleh sistem sendiri
 // dinyatakan belum aman. Kini cache hanya menyala dari setelan yang
-// dipersistensikan secara eksplisit (pemulihan saat boot di cmd), dan
-// jalur admin tetap menolak aktivasi sampai kebijakan fingerprint-nya
-// diterapkan.
+// dipersistensikan secara eksplisit (pemulihan saat boot di cmd).
+//
+// Penolakan aktivasi itu dicabut pada Batch C1, sesudah kebijakan sidik
+// kunci yang dituntutnya benar-benar diterapkan di ComputeScopedKey:
+// isolasi per API key (identitas pemilik & kunci ter-hash terpisah
+// domain), model kanonik, permukaan (OpenAI/Anthropic), dan sidik rute —
+// perubahan routing/provider/pemetaan mengubah kunci sehingga entri lama
+// yatim dan kedaluwarsa oleh TTL, bukan tersaji ke konteks yang berubah.
 func NewEngine(r *cache.Redis, logger *slog.Logger) *Engine {
 	if logger == nil {
 		logger = slog.Default()
@@ -145,7 +154,7 @@ func (e *Engine) ComputeKey(req *providers.ChatRequest) string {
 
 // Scope adalah konteks pemilik yang ikut membentuk kunci cache.
 //
-// Ketiganya string polos, bukan tipe internal, supaya paket ini tidak bergantung
+// Semuanya string polos, bukan tipe internal, supaya paket ini tidak bergantung
 // pada paket apikey maupun upstream: arah ketergantungannya adalah gateway yang
 // memakai paket ini, bukan sebaliknya.
 type Scope struct {
@@ -154,11 +163,42 @@ type Scope struct {
 	// justru itu yang benar, karena respons upstream-nya identik.
 	ModelID string
 	// OwnerUserID adalah pemilik API key peminta (string kosong = tanpa pemilik).
+	// Di dalam ComputeScopedKey nilai ini di-hash terpisah domain sebelum
+	// dicampur ke kunci — tidak pernah tampil sebagai nilai mentah.
 	OwnerUserID string
 	// KeyID adalah UUID baris api_keys peminta. Ikut dimasukkan supaya key yang
 	// dibatasi model/provider-nya tidak memakan entri milik key yang longgar,
-	// dan sebaliknya.
+	// dan sebaliknya. Sama seperti OwnerUserID, nilainya di-hash terpisah
+	// domain di dalam ComputeScopedKey.
 	KeyID string
+	// Permukaan adalah dialek permukaan yang melayani ("openai" atau
+	// "anthropic"). Tubuh respons kedua permukaan berbeda bentuk untuk
+	// request kanonik yang sama, jadi entri satu permukaan tidak boleh
+	// melayani permukaan lain.
+	Permukaan string
+	// SidikRute adalah hash keputusan routing saat kunci dihitung (aturan +
+	// daftar kandidat terurut: provider, pemetaan model, base URL). Ia
+	// menjawab keberatan historis V-GW-02/03: jawaban fallback combo dulu
+	// tersimpan di bawah kunci model yang diminta dan tetap tersaji walau
+	// routing berubah. Kini perubahan provider/routing/pemetaan mengubah
+	// sidik ini, sehingga entri lama tidak terjangkau lagi dan kedaluwarsa
+	// oleh TTL — invalidasi implisit tanpa pemindaian.
+	SidikRute string
+}
+
+// sidikIdentitas meng-hash satu nilai identitas (pemilik / ID kunci API)
+// dengan pemisah domain, supaya identitas ikut membentuk kunci cache tanpa
+// pernah menjadi bagian yang terbaca dari bahan kunci. Kunci akhir memang
+// sudah SHA-256 atas seluruh bahan, tetapi meng-hash identitas secara
+// terpisah memastikan nilai mentahnya tidak bergantung pada lapisan itu
+// saja (pertahanan berlapis, Batch C1) — dan dua konteks berbeda tidak
+// bisa bertabrakan lewat penyusunan ulang field lain.
+func sidikIdentitas(nilai string) string {
+	if nilai == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte("routex-responsecache-identitas-v1\x00" + nilai))
+	return hex.EncodeToString(sum[:])
 }
 
 // ComputeScopedKey menghitung kunci cache dengan konteks pemilik.
@@ -186,8 +226,15 @@ func (e *Engine) ComputeScopedKey(req *providers.ChatRequest, scope Scope) strin
 		ModelID         string                 `json:"model_id,omitempty"`
 		OwnerUserID     string                 `json:"owner_user_id,omitempty"`
 		KeyID           string                 `json:"key_id,omitempty"`
+		Permukaan       string                 `json:"permukaan,omitempty"`
+		SidikRute       string                 `json:"sidik_rute,omitempty"`
 	}{Request: req, MessageContents: contents,
-		ModelID: scope.ModelID, OwnerUserID: scope.OwnerUserID, KeyID: scope.KeyID})
+		ModelID: scope.ModelID,
+		// Identitas pemilik & kunci masuk sebagai HASH terpisah domain,
+		// bukan nilai mentah (Batch C1): isolasi per API key adalah syarat
+		// aktivasi, dan kunci lain tidak pernah menerima entri kunci ini.
+		OwnerUserID: sidikIdentitas(scope.OwnerUserID), KeyID: sidikIdentitas(scope.KeyID),
+		Permukaan: scope.Permukaan, SidikRute: scope.SidikRute})
 	if err != nil {
 		return ""
 	}

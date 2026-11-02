@@ -222,6 +222,59 @@ func TestComputeScopedKeyIsolasiPemilik(t *testing.T) {
 	}
 }
 
+// TestComputeScopedKeyPermukaanDanSidikRute (Batch C1): permukaan dan
+// sidik rute ikut membentuk kunci. Tubuh respons OpenAI tidak boleh
+// melayani permukaan Anthropic, dan jawaban yang disimpan di bawah satu
+// keputusan routing tidak boleh tersaji sesudah routing berubah
+// (jawaban atas V-GW-02/03 yang dulu menahan aktivasi).
+func TestComputeScopedKeyPermukaanDanSidikRute(t *testing.T) {
+	e := NewEngine(nil, nil)
+	req := func() *providers.ChatRequest {
+		return &providers.ChatRequest{
+			Model:    "gpt-4o",
+			Messages: []providers.Message{{Role: "user", Content: "halo"}},
+		}
+	}
+	dasar := Scope{ModelID: "m-1", OwnerUserID: "u-a", KeyID: "k-1", Permukaan: "openai", SidikRute: "rute-1"}
+	basis := e.ComputeScopedKey(req(), dasar)
+
+	bedaPermukaan := dasar
+	bedaPermukaan.Permukaan = "anthropic"
+	if got := e.ComputeScopedKey(req(), bedaPermukaan); got == basis {
+		t.Error("permukaan berbeda berbagi kunci: tubuh dialek bisa tersaji lintas permukaan")
+	}
+
+	bedaRute := dasar
+	bedaRute.SidikRute = "rute-2"
+	if got := e.ComputeScopedKey(req(), bedaRute); got == basis {
+		t.Error("sidik rute berbeda berbagi kunci: entri lama tersaji sesudah routing berubah")
+	}
+
+	// Deterministik: scope yang sama menghasilkan kunci yang sama.
+	if got := e.ComputeScopedKey(req(), dasar); got != basis {
+		t.Error("scope identik menghasilkan kunci berbeda")
+	}
+}
+
+// TestSidikIdentitas: identitas pemilik/kunci masuk ke kunci sebagai
+// hash terpisah domain, bukan nilai mentah — kosong tetap kosong supaya
+// Scope{} kompatibel dengan ComputeKey lama.
+func TestSidikIdentitas(t *testing.T) {
+	if sidikIdentitas("") != "" {
+		t.Error("identitas kosong harus menghasilkan string kosong")
+	}
+	h := sidikIdentitas("k-1")
+	if h == "k-1" || len(h) != 64 {
+		t.Errorf("sidikIdentitas = %q, mau hash hex 64 karakter", h)
+	}
+	if sidikIdentitas("k-1") != h {
+		t.Error("sidikIdentitas tidak deterministik")
+	}
+	if sidikIdentitas("k-2") == h {
+		t.Error("identitas berbeda menghasilkan sidik sama")
+	}
+}
+
 func newTestEngine(t *testing.T) (*Engine, *miniredis.Miniredis) {
 	t.Helper()
 	mr := miniredis.RunT(t)

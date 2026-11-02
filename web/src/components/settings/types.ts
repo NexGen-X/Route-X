@@ -53,7 +53,8 @@ export interface BackupTabProps {
   onRefresh: () => void;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onOpenRestoreModal: () => void;
-  exportUrl: string;
+  onExport: () => void;
+  isExporting: boolean;
 }
 
 export interface AdvancedSettingsTabProps {

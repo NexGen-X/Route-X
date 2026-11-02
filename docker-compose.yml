@@ -27,7 +27,14 @@ services:
       - routex-network
 
   routex:
-    build: .
+    # VERSION diteruskan ke ARG VERSION Dockerfile agar biner Docker tercap
+    # versi rilis, bukan selalu "dev" (audit3 V-DP-12). deploy.sh mengisinya
+    # dari web/package.json (sumber versi tunggal repo); build manual boleh
+    # menyetel env VERSION sendiri, dan tanpa itu cap "dev" adalah jujur.
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
     container_name: routex-core
     restart: unless-stopped
     environment:

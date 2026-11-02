@@ -88,7 +88,7 @@ vi.mock('../api/client', () => ({
       },
       backup: {
         status: vi.fn(async () => MOCK_BACKUP_STATUS),
-        exportUrl: vi.fn((format: string = 'sql.gz') => `/api/admin/system/backup/export?format=${format}`),
+        download: vi.fn(async () => {}),
         restore: vi.fn(async () => ({ status: 'ok' })),
       },
     },
@@ -155,11 +155,16 @@ describe('Settings — Pengujian Halaman Modular & Terisolasi', () => {
     expect(screen.getByText('24 Tabel')).toBeInTheDocument();
     expect(screen.getByText(/8 Model · 4 Provider/i)).toBeInTheDocument();
 
-    // Cek opsi format dan tombol download
+    // Cek opsi format dan tombol download — sejak audit3 B-045 ekspor adalah
+    // POST lewat API client (bukan tautan GET), jadi yang dirender tombol
+    // yang memanggil api.system.backup.download.
     expect(screen.getAllByText('.sql.gz').length).toBeGreaterThan(0);
     expect(screen.getAllByText('.sql').length).toBeGreaterThan(0);
-    const downloadLink = screen.getByRole('link', { name: /Unduh Cadangan SQL/i });
-    expect(downloadLink).toHaveAttribute('href', '/api/admin/system/backup/export?format=sql.gz');
+    const downloadBtn = screen.getByRole('button', { name: /Unduh Cadangan SQL/i });
+    fireEvent.click(downloadBtn);
+    await waitFor(() => {
+      expect(api.system.backup.download).toHaveBeenCalledWith('sql.gz');
+    });
 
     // Tombol restore dalam keadaan belum ada berkas terpilih
     const restoreBtn = screen.getByRole('button', { name: /Pilih Berkas Dahulu/i });

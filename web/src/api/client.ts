@@ -787,7 +787,55 @@ export const api = {
     },
     backup: {
       status: () => request<BackupStatusResponse>('/api/admin/system/backup/status'),
-      exportUrl: (format: 'sql.gz' | 'sql' = 'sql.gz') => `/api/admin/system/backup/export?format=${format}`,
+      // download mengunduh dump lewat POST — sejak audit3 B-045 ekspor bukan
+      // lagi GET (dump penuh wajib melewati CSRF, tautan polos tidak boleh
+      // memicunya). Respons biner disimpan sebagai berkas lewat object URL;
+      // respons error JSON diurai menjadi ApiError, TIDAK terunduh sebagai
+      // berkas "cadangan" berisi JSON.
+      download: async (format: 'sql.gz' | 'sql' = 'sql.gz'): Promise<void> => {
+        const headers = new Headers();
+        const csrf = getCsrfToken();
+        if (csrf) {
+          headers.set('X-CSRF-Token', csrf);
+        }
+        const res = await fetch(`/api/admin/system/backup/export?format=${format}`, {
+          method: 'POST',
+          headers,
+          credentials: 'same-origin',
+        }).catch(() => {
+          throw new ApiError(0, 'network_error', 'Tidak dapat menghubungi server Route-X. Periksa koneksi jaringan.');
+        });
+        if (!res.ok) {
+          if (res.status === 401) {
+            window.dispatchEvent(new CustomEvent('routex:unauthorized'));
+          }
+          let code = 'unknown_error';
+          let message = 'Terjadi kesalahan sistem.';
+          try {
+            const data: unknown = await res.json();
+            const errObj = (data && typeof data === 'object' && 'error' in data && data.error && typeof data.error === 'object')
+              ? (data.error as Record<string, unknown>)
+              : undefined;
+            if (typeof errObj?.code === 'string') code = errObj.code;
+            if (typeof errObj?.message === 'string') message = errObj.message;
+          } catch {
+            // Badan error bukan JSON — pertahankan pesan generik.
+          }
+          throw new ApiError(res.status, code, message);
+        }
+        const blob = await res.blob();
+        const disposition = res.headers.get('content-disposition') || '';
+        const cocok = disposition.match(/filename="?([^";]+)"?/);
+        const fileName = cocok ? cocok[1] : `routex_backup.${format}`;
+        const objectUrl = URL.createObjectURL(blob);
+        const tautan = document.createElement('a');
+        tautan.href = objectUrl;
+        tautan.download = fileName;
+        document.body.appendChild(tautan);
+        tautan.click();
+        tautan.remove();
+        URL.revokeObjectURL(objectUrl);
+      },
       restore: async (file: File) => {
         const formData = new FormData();
         formData.append('file', file);

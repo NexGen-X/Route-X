@@ -632,8 +632,9 @@ func TestAdminBackupEndpoints(t *testing.T) {
 		t.Errorf("total_tables harus > 0, dapat: %d", statusResp.TotalTables)
 	}
 
-	// 2. Ekspor Cadangan Format .sql.gz
-	resGz, bodyGz := client.do(http.MethodGet, "/api/admin/system/backup/export?format=sql.gz", nil, false)
+	// 2. Ekspor Cadangan Format .sql.gz — sejak audit3 B-045 ekspor adalah
+	// POST ber-CSRF (bukan GET).
+	resGz, bodyGz := client.do(http.MethodPost, "/api/admin/system/backup/export?format=sql.gz", nil, true)
 	if resGz.StatusCode != http.StatusOK {
 		t.Fatalf("backup export gzip status = %d, body: %s", resGz.StatusCode, string(bodyGz))
 	}
@@ -656,12 +657,19 @@ func TestAdminBackupEndpoints(t *testing.T) {
 	}
 
 	// 3. Ekspor Cadangan Format Plain .sql
-	resSql, bodySql := client.do(http.MethodGet, "/api/admin/system/backup/export?format=sql", nil, false)
+	resSql, bodySql := client.do(http.MethodPost, "/api/admin/system/backup/export?format=sql", nil, true)
 	if resSql.StatusCode != http.StatusOK {
 		t.Fatalf("backup export sql status = %d, body: %s", resSql.StatusCode, string(bodySql))
 	}
 	if !strings.Contains(string(bodySql), "PostgreSQL database dump") {
 		t.Errorf("ekspor SQL mentah tidak mengandung header dump: %q", string(bodySql))
+	}
+
+	// 3b. Ekspor lewat GET tidak ada lagi (audit3 B-045): metode salah pada
+	// rute yang terdaftar menjawab 405 ber-envelope.
+	resGetExport, _ := client.do(http.MethodGet, "/api/admin/system/backup/export?format=sql", nil, false)
+	if resGetExport.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("ekspor via GET status = %d, diharapkan 405", resGetExport.StatusCode)
 	}
 
 	// 4. Validasi Pemulihan Ekstensi File Tidak Sah

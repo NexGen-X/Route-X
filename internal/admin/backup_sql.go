@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -331,3 +332,93 @@ func potongBaris(s string) string {
 	}
 	return s
 }
+
+// polaSetTransactionTimeout mengenali baris tunggal "SET transaction_timeout
+// = ...;" persis seperti yang diterbitkan pg_dump di pembuka dump.
+var polaSetTransactionTimeout = regexp.MustCompile(`(?i)^\s*set\s+transaction_timeout\s*=`)
+
+// siapkanBerkasRestore menyalin dump hasil spool ke berkas efektif yang
+// diserahkan ke psql, sambil membuang baris pembuka yang tidak dikenal
+// server tujuan.
+//
+// Masalahnya (terbukti di CI): pg_dump 17+ menerbitkan baris
+// "SET transaction_timeout = 0;" di pembuka dump, tetapi GUC
+// transaction_timeout baru ada di server PostgreSQL 17 — di server yang
+// lebih lama baris itu adalah ERROR, dan dengan ON_ERROR_STOP restore gugur
+// sebelum pernyataan pertama. Client pg_dump/psql di mesin gateway boleh
+// lebih baru daripada servernya (runner CI, image Docker, host campuran),
+// jadi jalur restore tidak boleh mengasumsikan keduanya seversi.
+//
+// Membuang baris itu aman di semua versi: satu-satunya nilai yang pernah
+// diterbitkan pg_dump adalah 0 (tanpa batas), yang juga merupakan nilai
+// bawaan server. Penyaringan HANYA berlaku di wilayah pembuka dump (baris
+// kosong, komentar --, SET ..., set_config, \restrict) — begitu pernyataan
+// isi pertama muncul, seluruh sisa berkas disalin apa adanya, sehingga
+// baris serupa di dalam badan fungsi tidak pernah tersentuh.
+func siapkanBerkasRestore(pathSpool string) (string, error) {
+	src, err := os.Open(pathSpool)
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+
+	dst, err := os.CreateTemp("", "routex-restore-efektif-*.sql")
+	if err != nil {
+		return "", err
+	}
+	pathDst := dst.Name()
+	selesai := false
+	defer func() {
+		_ = dst.Close()
+		if !selesai {
+			_ = os.Remove(pathDst)
+		}
+	}()
+
+	br := bufio.NewReaderSize(src, 64*1024)
+	bw := bufio.NewWriterSize(dst, 64*1024)
+	pembuka := true
+	for {
+		baris, errBaca := br.ReadString('\n')
+		if baris != "" {
+			buang := false
+			if pembuka {
+				trim := strings.TrimSpace(baris)
+				switch {
+				case trim == "" || strings.HasPrefix(trim, "--"):
+					// Masih pembuka.
+				case polaSetTransactionTimeout.MatchString(baris):
+					buang = true
+				case polaPembukaDump.MatchString(baris):
+					// SET/set_config/\restrict lain: masih pembuka.
+				default:
+					pembuka = false
+				}
+			}
+			if !buang {
+				if _, err := bw.WriteString(baris); err != nil {
+					return "", err
+				}
+			}
+		}
+		if errBaca == io.EOF {
+			break
+		}
+		if errBaca != nil {
+			return "", errBaca
+		}
+	}
+	if err := bw.Flush(); err != nil {
+		return "", err
+	}
+	if err := dst.Close(); err != nil {
+		return "", err
+	}
+	selesai = true
+	return pathDst, nil
+}
+
+// polaPembukaDump mengenali baris-baris pembuka lain yang diterbitkan
+// pg_dump sebelum pernyataan isi pertama: SET <guc> ..., pemanggilan
+// set_config, serta \restrict dari pg_dump berpatches keamanan.
+var polaPembukaDump = regexp.MustCompile(`(?i)^\s*(set\s+|select\s+pg_catalog\.set_config\(|\\restrict\s)`)

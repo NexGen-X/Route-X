@@ -5,10 +5,10 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 ## Struktur
 - `cmd/ai-gateway/` — binary utama gateway; `cmd/routex-rotate/` — rotasi kredensial
 - `internal/` — admin, apikey, auth, billing, cache, config, database (+migrations, repo, seed), gateway, models, providers, router, worker, dsb.
-- `web/` — dashboard React 18 + Vite + TS (`routex-dashboard`); `docs/` — openapi.yaml + embed docs
+- `web/` — dashboard React 18 + Vite + TS (`routex-dashboard`); `docs/` — openapi.yaml + embed docs, panduan pengguna & runbook operasi
 
 ## Perintah
-- Build: `cd /root/Route-X && go build ./...`
+- Build: `go build ./...` (dari root repo)
 - Test Go: `go test ./...` (butuh `TEST_DATABASE_URL` atau `DATABASE_URL` postgres:// menunjuk DB sekali pakai)
 - Format: `gofmt -l .` harus kosong sebelum commit
 - Web: `cd web && npm install && npm run build` (tsc + vite)
@@ -16,8 +16,6 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 ## Database & Redis
 - Postgres utama: localhost:5432, DB `routex` (owner `routex`), Redis utama: localhost:6379
 - Test integrasi memakai schema sekali pakai (`test_*`) + `search_path` di DSN, dibersihkan otomatis — JANGAN menulis ke schema `public` maupun DB development saat test
-- Role terbatas tersedia: `hermes_reader` (SELECT-only di `routex`), `hermes_tester` (CREATEDB, DB `routex_test`)
-- Smoke env ephemeral lama ada di `/var/tmp/routex-m8-local-20260908/` (pg 51885, redis 45193) — jangan dipakai untuk kerja baru
 
 ## Konfigurasi app & Arsitektur Identitas
 - Wajib: `DATABASE_URL` (postgres://), `REDIS_URL` (redis://), `SESSION_SECRET`, `ENCRYPTION_KEY`, `API_KEY_PEPPER`
@@ -51,26 +49,26 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
   - **Pelaporan Kejanggalan di Luar Scope**: Jika menemukan kejanggalan, anomali, kode usang/rapuh, atau risiko regresi di luar cakupan tugas saat ini, agent WAJIB mencatat dan menyajikannya dalam seksi khusus *[TEMUAN DI LUAR SCOPE & KEJANGGALAN SISTEM]* pada laporan.
   - **Konsultasi Antar-Agent**: Komunikasi antar-agent (coder, tester, reviewer, orchestrator) wajib menggunakan format baku, bertukar temuan empiris, dan tidak membuat asumsi sepihak tanpa validasi lintas peran.
 - Jangan commit secret; jangan ubah `go.mod` tanpa alasan.
-- MCP Resmi yang terpasang untuk repo ini:
+- MCP yang biasa terpasang di lingkungan kerja repo ini (ketersediaan bergantung mesin — verifikasi sebelum mengandalkan):
   - `codebase-memory-mcp`: Knowledge Graph & AST indeks kode Go & TS (`search_graph`, `trace_path`, `get_code_snippet`)
   - `postgres`: Akses langsung inspeksi DB `routex` (localhost:5432)
   - `redis`: Akses langsung inspeksi cache & sliding-window rate limit (localhost:6379)
   - `puppeteer`: Browser headless untuk validasi UI konsol web React (`web/`)
 
-## Prosedur Rilis & Patch Modern Route-X (v1.4.x Checklist Pra-Rilis)
-Sebelum mempublikasikan patch atau rilis `v1.4.x`, lakukan verifikasi berurutan berikut:
+## Prosedur Rilis & Patch Modern Route-X (Checklist Pra-Rilis)
+Sebelum mempublikasikan patch atau rilis baru, lakukan verifikasi berurutan berikut:
 1. **Audit Data Race**: Jalankan `go test -race ./...` (wajib 0 data race terdeteksi).
 2. **Formatting Go**: Jalankan `gofmt -l .` (wajib kosong/bersih).
 3. **Integritas Database**: Pastikan berkas migrasi `internal/database/migrations/` berurutan rapi (saat ini 0001 sampai 0019) dan tidak merusak skema produksi.
-4. **Build Frontend**: Jalankan `cd /root/Route-X/web && npm run build && npm test` (wajib kompilasi `tsc`, `vite build`, dan unit test lolos tanpa error).
+4. **Build Frontend**: Jalankan `cd web && npm run build && npm test` (wajib kompilasi `tsc`, `vite build`, dan unit test lolos tanpa error).
 5. **Uji Probing Gateway E2E**: Jalankan `./scripts/probe_e2e_gateway.sh` untuk memvalidasi rute `/v1/chat/completions` (non-stream & SSE stream) serta `/v1/messages` native Anthropic.
 6. **Validasi Observabilitas**: Jalankan `./scripts/check_metrics.sh` untuk memverifikasi endpoint `/metrics` tidak merekam kegagalan terselubung.
 7. **Sinkronisasi Versi**:
-   - Perbarui versi pada `web/package.json` sesuai target rilis (misal `1.4.0`).
-   - Tambahkan catatan perubahan rilis pada `CHANGELOG.md` di bawah seksi versi terkait.
+   - Perbarui versi pada `web/package.json` sesuai target rilis (misal `1.5.2`).
+   - Tambahkan catatan perubahan rilis pada `CHANGELOG.md` di bawah seksi versi terkait (pindahkan isi `[Unreleased]` yang relevan).
    - Perbarui badge versi di `README.md` dan fallback versi di `Makefile` serta skrip instalasi/operasional.
 8. **Git Tagging & Publikasi**:
-   - Lakukan commit perubahan: `git commit -m "release: v1.4.x - ..."`
-   - Buat tag git: `git tag -a v1.4.x -m "Release v1.4.x"`
-   - Buat release via GitHub CLI: `gh release create v1.4.x --title "v1.4.x" --notes-file ...`
-   - Terbitkan checksum SATU berkas per tarball di rilis yang sama: `sha256sum routex-v1.4.x-linux-amd64.tar.gz > routex-v1.4.x-linux-amd64.tar.gz.sha256` (ulangi untuk arm64), lalu unggah tiap `.sha256` sebagai aset rilis — installer native mengunduh `<tarball>.sha256` dari rilis dan memverifikasinya; tanpa berkas ini installer hanya memperingatkan keras.
+   - Lakukan commit perubahan: `git commit -m "release: vX.Y.Z - ..."`
+   - Buat tag git: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
+   - Buat release via GitHub CLI: `gh release create vX.Y.Z --title "vX.Y.Z" --notes-file ...`
+   - Terbitkan checksum SATU berkas per tarball di rilis yang sama: `sha256sum routex-vX.Y.Z-linux-amd64.tar.gz > routex-vX.Y.Z-linux-amd64.tar.gz.sha256` (ulangi untuk arm64), lalu unggah tiap `.sha256` sebagai aset rilis — installer native mengunduh `<tarball>.sha256` dari rilis dan memverifikasinya; tanpa berkas ini installer hanya memperingatkan keras.

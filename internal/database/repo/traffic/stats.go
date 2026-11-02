@@ -328,8 +328,8 @@ func rencanakan(op string, q Query) (rencana, error) {
 		from = to.Add(-DefaultWindow)
 	}
 	if !to.After(from) {
-		return rencana{}, fmt.Errorf("%s: rentang kosong (%s..%s)", op,
-			from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339))
+		return rencana{}, fmt.Errorf("%s: rentang kosong (%s..%s): %w", op,
+			from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339), repo.ErrInvalidParameter)
 	}
 
 	src := q.Source
@@ -372,7 +372,7 @@ func rencanakan(op string, q Query) (rencana, error) {
 	case SourceDaily:
 		p.tabel, p.waktu, p.agg = "usage_daily", "bucket", agregatRollup
 	default:
-		return rencana{}, fmt.Errorf("%s: sumber %q tidak dikenal", op, q.Source)
+		return rencana{}, fmt.Errorf("%s: sumber %q tidak dikenal: %w", op, q.Source, repo.ErrInvalidParameter)
 	}
 
 	gran := q.Granularity
@@ -387,11 +387,11 @@ func rencanakan(op string, q Query) (rencana, error) {
 		// usage_daily tidak menyimpan jam, dan menaikkannya menjadi hari secara diam-diam
 		// akan menghasilkan grafik dengan sumbu x yang bukan diminta pemanggil.
 		if src == SourceDaily {
-			return rencana{}, fmt.Errorf("%s: granularitas jam tidak bisa dibaca dari usage_daily", op)
+			return rencana{}, fmt.Errorf("%s: granularitas jam tidak bisa dibaca dari usage_daily: %w", op, repo.ErrInvalidParameter)
 		}
 	case GranularityDay:
 	default:
-		return rencana{}, fmt.Errorf("%s: granularitas %q tidak dikenal", op, q.Granularity)
+		return rencana{}, fmt.Errorf("%s: granularitas %q tidak dikenal: %w", op, q.Granularity, repo.ErrInvalidParameter)
 	}
 	p.gran = gran
 
@@ -505,7 +505,7 @@ func (r *Repo) Breakdown(ctx context.Context, q Query, dim Dimension, limit int)
 
 	kolom, ok := kolomDimensi[dim]
 	if !ok {
-		return nil, fmt.Errorf("%s: dimensi %q tidak dikenal", op, dim)
+		return nil, fmt.Errorf("%s: dimensi %q tidak dikenal: %w", op, dim, repo.ErrInvalidParameter)
 	}
 	p, err := rencanakan(op, q)
 	if err != nil {

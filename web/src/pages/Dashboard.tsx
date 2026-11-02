@@ -93,7 +93,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Dua state banner TERPISAH (audit3 V-FJ-13): pollError hanya ditulis
+  // loadData (poll 30 dtk) dan liveError hanya ditulis refreshOverview
+  // (poll 5 dtk). Versi lama berbagi satu state sehingga kedua poller
+  // saling menimpa & menghapus pesan satu sama lain — banner berkedip dan
+  // kegagalan yang masih berlangsung tampak sembuh setiap 5 detik.
   const [pollError, setPollError] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
   // Panduan Cepat: Dashboard pemilik tunggal keadaannya (R1 Fase 2).
   // Preferensi operator (dismiss/ciut manual) disimpan lewat quickstartPrefs;
   // selama operator belum mengatur manual, keadaan ciut mengikuti status
@@ -235,13 +241,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       }
 
       if (overRes.status === 'rejected' && reqRes.status === 'rejected') {
-        setPollError('Pembaruan live gagal: Gateway overview dan recent requests tidak merespons.');
+        setLiveError('Gateway overview dan recent requests tidak merespons.');
       } else {
-        setPollError(null);
+        setLiveError(null);
       }
     } catch (err: unknown) {
       if (!mountedRef.current || seq !== refreshSeqRef.current) return;
-      setPollError(err instanceof Error ? err.message : String(err));
+      setLiveError(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
@@ -321,16 +327,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
   return (
     <div className="space-y-6 pb-12 animate-fade-in">
-      {pollError && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 flex items-center gap-2"
-        >
-          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" aria-hidden="true" />
-          <span>Pembaruan live gagal: {pollError}. Data terakhir tetap ditampilkan.</span>
-        </div>
-      )}
+      {[pollError, liveError]
+        .filter((pesan): pesan is string => Boolean(pesan))
+        .map((pesan) => (
+          <div
+            key={pesan}
+            role="status"
+            aria-live="polite"
+            className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 flex items-center gap-2"
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" aria-hidden="true" />
+            <span>Pembaruan live gagal: {pesan}. Data terakhir tetap ditampilkan.</span>
+          </div>
+        ))}
 
       {/* 1. HERO OPERATIONAL STATUS & ACTION BAR */}
       <DashboardHero

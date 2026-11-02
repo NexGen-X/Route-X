@@ -3,11 +3,35 @@ package httpx
 import (
 	"net/http"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/go-chi/chi/v5"
 )
+
+// gatewayDalamPenerbangan menghitung request /v1 yang SEDANG dilayani saat
+// ini juga. Inilah angka yang dijanjikan label "in-flight" di ringkasan
+// sistem — bukan jumlah koneksi database yang sedang terpakai, yang dulu
+// dilaporkan di bawah nama itu (audit3 V-FJ-06): koneksi pool mencakup
+// worker latar dan query admin, dan tidak pernah nol walau gateway menganggur.
+var gatewayDalamPenerbangan atomic.Int64
+
+// TrackGatewayInFlight menaikkan penghitung selama handler melayani, lalu
+// menurunkannya — termasuk saat handler panik (defer tetap berjalan sebelum
+// middleware pemulih di atasnya menjawab 500).
+func TrackGatewayInFlight(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gatewayDalamPenerbangan.Add(1)
+		defer gatewayDalamPenerbangan.Add(-1)
+		next.ServeHTTP(w, r)
+	})
+}
+
+// GatewayInFlight mengembalikan jumlah request gateway yang sedang dilayani.
+func GatewayInFlight() int64 {
+	return gatewayDalamPenerbangan.Load()
+}
 
 // MetricsRecorder adalah middleware untuk mencatat request HTTP ke Prometheus.
 // Membaca path rute asli dari Chi (mis. /api/users/{id}) untuk mencegah ledakan kardinalitas.

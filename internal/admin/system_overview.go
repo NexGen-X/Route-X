@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/NexGen-X/Route-X/internal/httpx"
 )
 
 // systemSampler mencatat titik ukur metrik sebelumnya untuk menghitung laju transfer jaringan dan CPU.
@@ -87,37 +89,65 @@ func (s *systemSampler) sampleMetrics(recvBytes, sentBytes uint64, procTicks, to
 }
 
 // readHostRAM membaca memori fisik host dari /proc/meminfo pada sistem Linux.
+//
+// Mengembalikan (0, 0) bila sumbernya tidak bisa dibaca atau isinya tidak
+// lengkap: nol adalah jawaban jujur "tidak diketahui" yang oleh dashboard
+// ditampilkan sebagai tanda hubung. Versi lama mengarang total 8 GiB dan
+// terpakai 2 GiB saat gagal baca, serta "setengah dari total" saat
+// MemAvailable cacat (audit3 V-EM-23) — angka karangan yang tampak seperti
+// pengukuran host sungguhan.
 func readHostRAM() (uint64, uint64) {
 	file, err := os.Open("/proc/meminfo")
 	if err != nil {
-		// Fallback nilai wajar jika /proc/meminfo tidak dapat diakses
-		return 8 * 1024 * 1024 * 1024, 2 * 1024 * 1024 * 1024
+		return 0, 0
 	}
 	defer file.Close()
 
-	var totalKB, availKB uint64
+	var totalKB, availKB, freeKB, buffersKB, cachedKB uint64
+	baca := func(line, awalan string, dst *uint64) {
+		if !strings.HasPrefix(line, awalan) {
+			return
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			*dst, _ = strconv.ParseUint(fields[1], 10, 64)
+		}
+	}
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "MemTotal:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				totalKB, _ = strconv.ParseUint(fields[1], 10, 64)
-			}
-		} else if strings.HasPrefix(line, "MemAvailable:") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				availKB, _ = strconv.ParseUint(fields[1], 10, 64)
-			}
-		}
+		baca(line, "MemTotal:", &totalKB)
+		baca(line, "MemAvailable:", &availKB)
+		baca(line, "MemFree:", &freeKB)
+		baca(line, "Buffers:", &buffersKB)
+		baca(line, "Cached:", &cachedKB)
 	}
 
+	if totalKB == 0 {
+		return 0, 0
+	}
 	totalBytes := totalKB * 1024
 	var usedBytes uint64
-	if totalKB > availKB {
+	switch {
+	case availKB > 0 && availKB <= totalKB:
 		usedBytes = (totalKB - availKB) * 1024
-	} else {
-		usedBytes = totalBytes / 2
+	case availKB == 0 && freeKB > 0:
+		// MemAvailable tidak diterbitkan kernel sangat lama: terpakai
+		// diturunkan dari besaran yang benar-benar terbaca (total dikurangi
+		// bebas, buffer, dan cache), bukan separuh karangan.
+		usedKB := totalKB
+		for _, bagian := range []uint64{freeKB, buffersKB, cachedKB} {
+			if bagian >= usedKB {
+				usedKB = 0
+				break
+			}
+			usedKB -= bagian
+		}
+		usedBytes = usedKB * 1024
+	default:
+		// MemAvailable cacat (>= total): terpakai tidak bisa diturunkan
+		// dengan jujur dari data yang ada; laporkan 0.
+		usedBytes = 0
 	}
 	return totalBytes, usedBytes
 }
@@ -243,11 +273,12 @@ func (h *Handlers) getSystemOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// In-flight connection proxy
-	var inFlight int64
-	if h.pool != nil {
-		inFlight = int64(h.pool.Stat().AcquiredConns())
-	}
+	// In-flight adalah request gateway yang benar-benar sedang dilayani,
+	// dihitung middleware permukaan /v1. Dulu angka ini diisi koneksi
+	// database yang sedang terpakai (h.pool.Stat().AcquiredConns) — mencakup
+	// worker latar dan query admin, dan praktis tidak pernah nol walau
+	// gateway menganggur (audit3 V-FJ-06).
+	inFlight := httpx.GatewayInFlight()
 
 	overview := SystemOverviewDTO{
 		PID:               os.Getpid(),

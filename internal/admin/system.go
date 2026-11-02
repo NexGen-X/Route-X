@@ -219,7 +219,10 @@ func (h *Handlers) runJob(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) listAuditLogs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	from, to := parseTimeRange(r)
+	from, to, ok := rentangAtau400(w, r)
+	if !ok {
+		return
+	}
 
 	page := repo.Page{
 		Limit:  repo.DefaultPageLimit,

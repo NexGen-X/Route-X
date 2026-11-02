@@ -27,7 +27,7 @@ type Querier interface {
 
 // Sentinel error yang dipakai seluruh repository. Lapisan HTTP memetakannya ke kode
 // status: ErrNotFound → 404, ErrConflict → 409, ErrInvalidReference → 400,
-// ErrConstraint → 400.
+// ErrConstraint → 400, ErrInvalidParameter → 400.
 var (
 	// ErrNotFound berarti baris yang diminta tidak ada.
 	ErrNotFound = errors.New("data tidak ditemukan")
@@ -37,6 +37,11 @@ var (
 	ErrInvalidReference = errors.New("referensi ke data yang tidak ada")
 	// ErrConstraint berarti nilai melanggar aturan tabel.
 	ErrConstraint = errors.New("nilai melanggar aturan tabel")
+	// ErrInvalidParameter berarti parameter permintaan di luar himpunan yang sah
+	// (rentang kosong, sumber/granularitas/dimensi tak dikenal, status bukan kode
+	// atau kelas). Ini kesalahan klien, bukan kegagalan server: tanpa sentinel ini
+	// cabang default pemeta error menjawabnya 500 (audit3 V-EM-31).
+	ErrInvalidParameter = errors.New("parameter tidak sah")
 )
 
 // Kode error PostgreSQL yang diterjemahkan. Lihat

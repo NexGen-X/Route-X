@@ -10,6 +10,10 @@ export interface RequestFilterBarProps {
   onSearchSubmit?: () => void;
   providerFilter?: string;
   onProviderFilterChange?: (provider: string) => void;
+  // Provider nyata milik operator (id + nama) dari API. Nilainya ID yang
+  // dikirim sebagai provider_id — menggantikan daftar slug vendor karangan
+  // lama yang tidak cocok dengan filter backend mana pun (audit3 V-FJ-03).
+  providers?: Array<{ id: string; name: string }>;
   statusFilter?: string;
   onStatusFilterChange?: (status: string) => void;
   timeRangeFilter?: string;
@@ -23,15 +27,7 @@ const TABS: Array<{ id: RequestTabFilter; label: string }> = [
   { id: 'errors', label: 'Error (4xx/5xx)' },
 ];
 
-const PROVIDER_OPTIONS = [
-  { value: '', label: 'Semua Provider' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'google', label: 'Google Gemini' },
-  { value: 'groq', label: 'Groq Cloud' },
-  { value: 'mistral', label: 'Mistral AI' },
-  { value: 'ollama', label: 'Ollama Local' },
-];
+
 
 const STATUS_OPTIONS = [
   { value: '', label: 'Semua Status' },
@@ -60,6 +56,7 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
   onSearchSubmit,
   providerFilter = '',
   onProviderFilterChange,
+  providers = [],
   statusFilter = '',
   onStatusFilterChange,
   timeRangeFilter = '',
@@ -177,9 +174,12 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
               aria-label="Filter berdasarkan upstream provider"
               className="min-h-[44px] sm:min-h-[32px] pl-7 pr-7 py-1 bg-bg-surface-2 border border-border rounded-inner text-[11px] font-mono text-text-primary focus:outline-none focus:border-accent appearance-none cursor-pointer hover:border-border-hover transition-colors"
             >
-              {PROVIDER_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value} className="bg-bg-surface text-text-primary">
-                  {opt.label}
+              <option value="" className="bg-bg-surface text-text-primary">
+                Semua Provider
+              </option>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id} className="bg-bg-surface text-text-primary">
+                  {p.name}
                 </option>
               ))}
             </select>

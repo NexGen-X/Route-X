@@ -178,6 +178,10 @@ type TrafficSliceDTO struct {
 type TrafficBreakdownResponse struct {
 	Dimension string            `json:"dimension"`
 	Items     []TrafficSliceDTO `json:"items"`
+	// TotalRequests adalah jumlah request KESELURUHAN rentang (semua kelompok,
+	// termasuk yang teragregasi ke baris "Lainnya") — penyebut Percentage yang
+	// sebenarnya, dilaporkan agar klien tidak menebaknya dari subtotal items.
+	TotalRequests int64 `json:"total_requests"`
 }
 
 func (TrafficBreakdownResponse) adalahDTO() {}

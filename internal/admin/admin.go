@@ -399,6 +399,11 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 		httpx.Conflict(w, r, fmt.Sprintf("%s sudah ada atau melanggar keunikan", resource))
 	case errors.Is(err, repo.ErrInvalidReference):
 		httpx.BadRequest(w, r, "invalid_reference", fmt.Sprintf("referensi data untuk %s tidak valid", resource))
+	case errors.Is(err, repo.ErrInvalidParameter):
+		// Kesalahan parameter klien (rentang kosong, sumber/dimensi tak dikenal)
+		// adalah 400, bukan 500: cabang default di bawah mengubahnya menjadi
+		// internal_error dan menyembunyikan kesalahan pemanggil (audit3 V-EM-31).
+		httpx.BadRequest(w, r, "invalid_parameter", fmt.Sprintf("parameter untuk %s tidak sah", resource))
 	case errors.Is(err, repo.ErrConstraint):
 		cName := repo.ConstraintName(err)
 		observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelWarn,

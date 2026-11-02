@@ -17,6 +17,11 @@ import {
   type RequestTabFilter,
 } from '../components/requests';
 
+// Awal rentang untuk pilihan "Semua Waktu": dikirim sebagai from eksplisit
+// agar backend tidak diam-diam memakai bawaan 24 jamnya di balik label itu
+// (audit3 V-FJ-03). Epoch cukup lama untuk mencakup seluruh riwayat.
+const AWAL_SEMUA_WAKTU = '1970-01-01T00:00:00Z';
+
 export const Requests: React.FC = () => {
   const [requests, setRequests] = useState<RequestLog[]>([]);
   const [nextCursor, setNextCursor] = useState<string | undefined>();
@@ -25,6 +30,10 @@ export const Requests: React.FC = () => {
   const [providerFilter, setProviderFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [timeRangeFilter, setTimeRangeFilter] = useState('');
+  // Opsi dropdown provider adalah provider NYATA milik operator dari API —
+  // bukan daftar slug vendor karangan yang tidak pernah cocok dengan
+  // provider_id mana pun (audit3 V-FJ-03).
+  const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedReq, setSelectedReq] = useState<RequestLog | null>(null);
   const [reqEvents, setReqEvents] = useState<RequestEvent[]>([]);
   const [reqPayload, setReqPayload] = useState<RequestPayload | null>(null);
@@ -61,18 +70,39 @@ export const Requests: React.FC = () => {
       if (activeTab === 'errors') params.status_class = 'error';
       if (activeTab === 'success') params.status_class = '2xx';
       if (search) params.search = search;
-      if (providerFilter) params.provider = providerFilter;
+      // provider_id adalah filter kanonis backend; nilai dropdown kini ID
+      // provider operator, bukan slug vendor (audit3 V-FJ-03).
+      if (providerFilter) params.provider_id = providerFilter;
       if (statusFilter) params.status_code = statusFilter;
-      if (timeRangeFilter) params.time_range = timeRangeFilter;
+      if (timeRangeFilter) {
+        params.time_range = timeRangeFilter;
+      } else {
+        // "Semua Waktu" harus benar-benar tanpa batas bawah.
+        params.from = AWAL_SEMUA_WAKTU;
+      }
 
       const res = await api.requests.list(params);
       if (listReqRef.current !== reqId) return;
-      if (cursor) {
+      if (silent) {
+        // Mode Live (audit3 V-FJ-14): GABUNGKAN halaman pertama yang segar
+        // ke daftar yang sudah tampil, jangan menggantinya — versi lama
+        // mereset daftar ke 25 baris setiap 4 detik dan membuang halaman
+        // "Muat Lebih Banyak" yang sudah dimuat operator. Kursor lama
+        // dipertahankan: ia menunjuk sesudah halaman terdalam yang dimuat,
+        // dan halaman segar hanya berisi item yang lebih baru darinya.
+        const fresh = res.items || [];
+        setRequests((prev) => {
+          const kunci = (x: RequestLog) => x.id || x.request_id;
+          const freshKeys = new Set(fresh.map(kunci));
+          return [...fresh, ...prev.filter((x) => !freshKeys.has(kunci(x)))];
+        });
+      } else if (cursor) {
         setRequests((prev) => [...prev, ...(res.items || [])]);
+        setNextCursor(res.next_cursor);
       } else {
         setRequests(res.items || []);
+        setNextCursor(res.next_cursor);
       }
-      setNextCursor(res.next_cursor);
       setLoadError(null);
     } catch (err: unknown) {
       if (listReqRef.current !== reqId) return;
@@ -81,6 +111,25 @@ export const Requests: React.FC = () => {
       if (listReqRef.current === reqId && !silent) setIsLoading(false);
     }
   };
+
+  // Muat daftar provider operator untuk dropdown filter (sekali).
+  useEffect(() => {
+    let aktif = true;
+    api.providers
+      .list({ limit: 100 })
+      .then((res) => {
+        if (aktif) {
+          setProviders((res.items || []).map((p) => ({ id: p.id, name: p.name })));
+        }
+      })
+      .catch(() => {
+        // Gagal memuat daftar provider: dropdown tinggal "Semua Provider"
+        // (tanpa filter) — bukan daftar karangan.
+      });
+    return () => {
+      aktif = false;
+    };
+  }, []);
 
   useEffect(() => {
     void loadRequests();
@@ -197,6 +246,7 @@ export const Requests: React.FC = () => {
           onSearchSubmit={() => void loadRequests()}
           providerFilter={providerFilter}
           onProviderFilterChange={setProviderFilter}
+          providers={providers}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
           timeRangeFilter={timeRangeFilter}

@@ -170,6 +170,26 @@ func NotFound(w http.ResponseWriter, r *http.Request, message string) {
 		orDefault(message, msgNotFound))
 }
 
+// Conflict membalas 409: sumber daya sudah ada atau melanggar keunikan. Konflik
+// bukan kesalahan bentuk masukan, jadi memetakannya ke 400 (perilaku lama
+// mapRepoError admin) menyuruh klien memperbaiki body yang sebenarnya sudah
+// benar bentuknya — yang perlu ia lakukan adalah memakai nama lain atau
+// mengambil yang sudah ada (audit3 V-EM-04).
+func Conflict(w http.ResponseWriter, r *http.Request, message string) {
+	WriteError(w, r, http.StatusConflict, ErrTypeInvalidRequest, "conflict",
+		orDefault(message, "sumber daya sudah ada atau melanggar keunikan"))
+}
+
+// MethodNotAllowedHandler membalas 405 dalam envelope error standar, lengkap
+// dengan request_id. chi menjawab metode yang salah dengan body KOSONG bila
+// handler ini tidak didaftarkan, dan klien tidak punya apa pun untuk diurai
+// selain statusnya (audit3 V-EM-06). Daftarkan lewat r.MethodNotAllowed(...)
+// pada setiap router permukaan API.
+func MethodNotAllowedHandler(w http.ResponseWriter, r *http.Request) {
+	WriteError(w, r, http.StatusMethodNotAllowed, ErrTypeInvalidRequest, CodeMethodNotAllowed,
+		"metode "+r.Method+" tidak didukung untuk endpoint ini")
+}
+
 // TooManyRequests membalas 429. Bila retryAfter positif, header Retry-After ikut
 // dipasang supaya klien resmi OpenAI bisa menunggu dengan benar alih-alih menebak.
 func TooManyRequests(w http.ResponseWriter, r *http.Request, message string, retryAfter time.Duration) {

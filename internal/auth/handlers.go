@@ -85,6 +85,10 @@ func NewHandlers(svc *Service) *Handlers {
 func (h *Handlers) Routes() http.Handler {
 	r := chi.NewRouter()
 
+	// Metode salah menjawab envelope error standar, bukan body kosong
+	// bawaan chi (audit3 V-EM-06).
+	r.MethodNotAllowed(httpx.MethodNotAllowedHandler)
+
 	r.Post("/login", h.Login)
 	r.Get("/setup-hint", h.SetupHint)
 

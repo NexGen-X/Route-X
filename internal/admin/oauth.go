@@ -1,7 +1,6 @@
 package admin
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -38,9 +37,9 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 	providerID := chi.URLParam(r, "id")
 
 	// Penjaga nil (audit F5): dependensi opsional yang tidak terpasang
-	// harus menjadi 400 yang bersih, bukan panic per-request.
+	// harus menjadi jawaban bersih (kini 503, audit3 V-EM-05), bukan panic per-request.
 	if h.oauthClient == nil {
-		httpx.BadRequest(w, r, "oauth_unavailable", "Klien OAuth tidak tersedia pada instalasi ini")
+		tidakTersedia(w, r, "oauth_unavailable", "Klien OAuth tidak tersedia pada instalasi ini")
 		return
 	}
 
@@ -68,7 +67,9 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 		if h.egressRepo != nil {
 			pURL, err := h.egressRepo.ProxyURL(ctx, *poolID)
 			if err != nil {
-				httpx.BadRequest(w, r, "invalid_egress_pool", "Gagal memuat URL proxy egress pool: "+err.Error())
+				// Lewat mapRepoError: teks error repo tidak pernah terpantul,
+				// dan pool yang tidak ada menjadi 404, bukan 400 generik.
+				mapRepoError(w, r, err, "egress pool")
 				return
 			}
 			proxyURL = pURL
@@ -78,7 +79,11 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 	// Backend mengatur penukaran langsung ke Google Token Endpoint (lewat proxy bila ditentukan)
 	tokenRes, err := h.oauthClient.ExchangeAuthCodeWithProxy(ctx, req.Code, req.RedirectURI, "", "", proxyURL)
 	if err != nil {
-		httpx.BadRequest(w, r, "oauth_exchange_failed", err.Error())
+		// Kegagalan dependensi eksternal: 502 + pesan umum. Teks aslinya adalah
+		// string *url.Error Go utuh (URL endpoint token + rincian timeout
+		// internal) dan hanya boleh sampai ke log (audit3 V-EM-01).
+		h.gagalHulu(w, r, "penukaran kode otorisasi oauth gagal", "oauth_exchange_failed",
+			"Gagal menukarkan kode otorisasi dengan penyedia OAuth; periksa koneksi ke penyedia lalu coba lagi", err)
 		return
 	}
 
@@ -95,7 +100,7 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 	var credID string
 	existingCreds, err := h.credentialRepo.List(ctx, providerID)
 	if err != nil {
-		httpx.BadRequest(w, r, "credential_list_failed", "Gagal memeriksa kredensial provider: "+err.Error())
+		mapRepoError(w, r, err, "kredensial provider")
 		return
 	}
 	for _, c := range existingCreds {
@@ -108,7 +113,7 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 	if credID != "" {
 		// Update rahasia yang ada
 		if err := h.credentialRepo.UpdateSecret(ctx, credID, tokenRes.AccessToken, &expiresAt); err != nil {
-			httpx.BadRequest(w, r, "credential_update_failed", "Gagal memperbarui kredensial provider: "+err.Error())
+			mapRepoError(w, r, err, "kredensial provider")
 			return
 		}
 		if poolID != nil {
@@ -116,7 +121,7 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 			// (audit F5): menelannya berarti trafik OAuth keluar lewat
 			// jalur lain dari yang dikonfigurasi, tanpa sinyal apa pun.
 			if err := h.credentialRepo.SetCredentialEgressPool(ctx, credID, poolID); err != nil {
-				httpx.BadRequest(w, r, "credential_egress_failed", "Gagal memasang egress pool ke kredensial: "+err.Error())
+				mapRepoError(w, r, err, "kredensial provider")
 				return
 			}
 		}
@@ -130,7 +135,7 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 			EgressPoolID: poolID,
 		})
 		if err != nil {
-			httpx.BadRequest(w, r, "credential_create_failed", "Gagal menyimpan kredensial provider: "+err.Error())
+			mapRepoError(w, r, err, "kredensial provider")
 			return
 		}
 		credID = credMeta.ID
@@ -146,7 +151,7 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: tokenRes.RefreshToken,
 	})
 	if err != nil {
-		httpx.BadRequest(w, r, "session_save_failed", "Gagal menyimpan sesi oauth: "+err.Error())
+		mapRepoError(w, r, err, "sesi oauth")
 		return
 	}
 
@@ -206,7 +211,7 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 	providerID := chi.URLParam(r, "id")
 
 	if h.oauthClient == nil {
-		httpx.BadRequest(w, r, "oauth_unavailable", "Klien OAuth tidak tersedia pada instalasi ini")
+		tidakTersedia(w, r, "oauth_unavailable", "Klien OAuth tidak tersedia pada instalasi ini")
 		return
 	}
 
@@ -276,7 +281,10 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if refreshedCount == 0 && lastErr != nil {
-		httpx.BadRequest(w, r, "refresh_failed", fmt.Sprintf("Gagal me-refresh token: %v", lastErr))
+		// Sama seperti penukaran kode: sebab asli (error jaringan/token dari
+		// penyedia) hanya untuk log; klien menerima 502 berkode tetap.
+		h.gagalHulu(w, r, "refresh token oauth gagal untuk semua sesi", "refresh_failed",
+			"Gagal me-refresh token dari penyedia OAuth; periksa koneksi ke penyedia lalu coba lagi", lastErr)
 		return
 	}
 

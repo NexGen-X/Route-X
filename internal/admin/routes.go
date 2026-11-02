@@ -8,11 +8,16 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/NexGen-X/Route-X/internal/auth"
+	"github.com/NexGen-X/Route-X/internal/httpx"
 )
 
 // Routes mengembalikan router chi yang memuat seluruh 7 grup endpoint admin.
 func (h *Handlers) Routes() http.Handler {
 	r := chi.NewRouter()
+
+	// Metode salah pada rute yang ada menjawab envelope error standar, bukan
+	// body kosong bawaan chi (audit3 V-EM-06).
+	r.MethodNotAllowed(httpx.MethodNotAllowedHandler)
 
 	// Batas waktu operasi admin: 60 detik mencegah query agregasi atau database lambat
 	// menahan koneksi dan goroutine server tanpa batas waktu.

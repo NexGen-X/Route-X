@@ -221,6 +221,11 @@ func buildRouter(
 	}
 
 	r := chi.NewRouter()
+	// Metode salah pada rute yang dikenal (mis. POST /healthz) menjawab envelope
+	// error standar, bukan body kosong bawaan chi (audit3 V-EM-06). Router anak
+	// (/v1, /api/admin, /api/auth) mendaftarkan handler yang sama pada routernya
+	// masing-masing, karena chi memakai milik router pemilik rute.
+	r.MethodNotAllowed(httpx.MethodNotAllowedHandler)
 
 	// Urutan rantai ini disengaja: ID request dulu supaya semua log setelahnya bisa
 	// dikorelasikan; RealIP sebelum AccessLog supaya IP yang tercatat sudah benar;
@@ -316,8 +321,10 @@ func buildRouter(
 // Urutan rantainya menentukan kebenaran, bukan kerapian:
 //
 //  1. Authenticate lebih dulu — pemilik kuota adalah key yang sudah terverifikasi.
-//  2. Limit sesudahnya — tanpa principal di context tidak ada yang bisa dibatasi, dan
-//     Limiter memang menolak rute yang dipasang tanpa Authenticate di depannya.
+//  2. Limit sesudahnya, DI DALAM gateway.Routes (HandlersDeps.PembatasLaju) dan
+//     hanya pada rute inferensi — tanpa principal di context tidak ada yang bisa
+//     dibatasi, dan Limiter memang menolak rute yang dipasang tanpa Authenticate
+//     di depannya. Katalog model sengaja di luar jangkauannya (audit3 V-GW-38).
 //  3. Handler gateway paling dalam.
 //
 // CSRF sengaja TIDAK ada di rantai ini, dan itu bukan kelalaian: rute ini berautentikasi
@@ -519,7 +526,10 @@ func buildGatewaySurface(
 		}),
 		Usage:         recorder,
 		ResponseCache: respCache,
-		Logger:        logger,
+		// Pembatas laju inferensi: dipasang Routes hanya pada rute inferensi,
+		// bukan katalog model (audit3 V-GW-38).
+		PembatasLaju: limiter.Limit(),
+		Logger:       logger,
 	})
 	if err != nil {
 		return nil, nil, nil, err
@@ -594,7 +604,12 @@ func buildGatewaySurface(
 	// CORS wajib dipasang sebelum autentikasi agar preflight OPTIONS dari browser direspons langsung
 	// tanpa ditolak oleh validator Authorization header.
 	r.Use(httpx.CORS(nil))
-	r.Use(authn.Authenticate(), limiter.Limit())
+	// Pembatas laju TIDAK lagi dipasang di sini: ia sekarang tinggal di dalam
+	// gateway.Routes lewat HandlersDeps.PembatasLaju dan hanya membungkus rute
+	// inferensi. Memasangnya pada seluruh permukaan membuat polling katalog
+	// model dan bahkan path tak dikenal ikut membakar kuota chat (audit3
+	// V-GW-38, V-EM-06). Autentikasi tetap di sini untuk semua rute.
+	r.Use(authn.Authenticate())
 	r.Mount("/", handlers.Routes())
 
 	// --- REST API Admin Handlers (Fase 11) ---

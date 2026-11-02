@@ -32,7 +32,7 @@ func (h *Handlers) listDetectedCLIs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if h.cliManager == nil {
-		httpx.BadRequest(w, r, "cli_manager_unavailable", "Manajer integrasi CLI belum diinisialisasi pada server")
+		tidakTersedia(w, r, "cli_manager_unavailable", "Manajer integrasi CLI belum diinisialisasi pada server")
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *Handlers) configureCLI(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if h.cliManager == nil {
-		httpx.BadRequest(w, r, "cli_manager_unavailable", "Manajer integrasi CLI belum diinisialisasi")
+		tidakTersedia(w, r, "cli_manager_unavailable", "Manajer integrasi CLI belum diinisialisasi")
 		return
 	}
 
@@ -169,7 +169,7 @@ func (h *Handlers) configureCLI(w http.ResponseWriter, r *http.Request) {
 // getCLIExportScript menyajikan konten lengkap berkas shell script ~/.routex/cli-env.sh.
 func (h *Handlers) getCLIExportScript(w http.ResponseWriter, r *http.Request) {
 	if h.cliManager == nil {
-		httpx.BadRequest(w, r, "cli_manager_unavailable", "Manajer integrasi CLI belum diinisialisasi")
+		tidakTersedia(w, r, "cli_manager_unavailable", "Manajer integrasi CLI belum diinisialisasi")
 		return
 	}
 

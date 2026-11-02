@@ -127,7 +127,10 @@ func (c *GoogleOAuthClient) httpClientForProxy(proxyURL security.Secret) (*http.
 	}
 	u, err := url.Parse(proxyURL.Reveal())
 	if err != nil {
-		return nil, fmt.Errorf("URL proxy tidak sah: %w", err)
+		// Detail parse dibuang: *url.Error memuat URL proxy mentah beserta
+		// kredensialnya, dan error ini bisa mengalir ke respons/log pemanggil
+		// (audit3 V-EO-23).
+		return nil, errors.New("URL proxy tidak sah")
 	}
 	tr := &http.Transport{
 		Proxy:               http.ProxyURL(u),

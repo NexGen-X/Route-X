@@ -15,13 +15,18 @@
 package gateway
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,7 +99,10 @@ type Handlers struct {
 	usage      UsageSink
 	respCache  *responsecache.Engine
 	penaksir   router.CostSource
-	logger     *slog.Logger
+	// pembatasLaju adalah middleware pembatas laju inferensi; lihat
+	// HandlersDeps.PembatasLaju soal mengapa ia hanya membungkus rute inferensi.
+	pembatasLaju func(http.Handler) http.Handler
+	logger       *slog.Logger
 }
 
 // HandlersDeps mengumpulkan dependensi Handlers.
@@ -123,6 +131,16 @@ type HandlersDeps struct {
 	// pemakaian anggaran yang naik — sah untuk test, tetapi di produksi berarti halaman
 	// Requests kosong dan setiap anggaran menegakkan angka yang tidak bergerak.
 	Usage UsageSink
+	// PembatasLaju adalah middleware pembatas laju inferensi (apikey.Limiter.Limit
+	// di produksi). Ia dipasang DI DALAM Routes, hanya pada rute inferensi — bukan
+	// pada seluruh permukaan seperti sebelumnya. Alasannya terbukti di audit3
+	// V-GW-38/V-EM-06: pembatas yang membungkus seluruh router ikut memakan kuota
+	// untuk polling GET /v1/models (klien seperti Open WebUI melakukannya berkala)
+	// sampai jatah chat ikut habis, dan membakar kuota untuk path yang bahkan
+	// tidak dikenal (404). Katalog model adalah bacaan murah yang tidak menyentuh
+	// upstream; yang dilindungi kuota adalah inferensinya. nil berarti tanpa
+	// pembatas (test yang menyuntik principal langsung ke context).
+	PembatasLaju func(http.Handler) http.Handler
 	// ResponseCache opsional; jika terpasang, menghemat latensi dan biaya untuk prompt berulang.
 	ResponseCache *responsecache.Engine
 	Logger        *slog.Logger
@@ -166,7 +184,8 @@ func NewHandlers(d HandlersDeps) (*Handlers, error) {
 		models: d.Models, lister: d.Lister, candidates: d.Candidates,
 		restrict: d.Restrict, factory: d.Factory,
 		engine: engine, exec: d.Executor, guard: guard, usage: d.Usage,
-		respCache: d.ResponseCache, penaksir: d.Penaksir, logger: logger,
+		respCache: d.ResponseCache, penaksir: d.Penaksir,
+		pembatasLaju: d.PembatasLaju, logger: logger,
 	}, nil
 }
 
@@ -184,21 +203,33 @@ func (h *Handlers) Routes() http.Handler {
 	// CORS diizinkan untuk rute API /v1 agar aplikasi frontend eksternal (Open WebUI, LibreChat, dsb.)
 	// dapat melakukan panggilan inferensi langsung tanpa terblokir preflight OPTIONS oleh browser.
 	r.Use(httpx.CORS(nil))
-	r.Post("/chat/completions", h.ChatCompletions)
-	// /v1/responses adalah nama baru OpenAI untuk permukaan yang sama pada pemakaian
-	// percakapan biasa. Dilayani handler yang sama supaya klien yang sudah pindah ke nama
-	// itu tetap bekerja; perbedaan bentuk body-nya yang belum didukung diteruskan lewat
-	// ChatRequest.Extra, bukan ditelan diam-diam.
-	r.Post("/responses", h.ChatCompletions)
-	// /v1/messages melayani Anthropic Messages API (Claude Code, dsb.)
-	r.Post("/messages", h.AnthropicMessages)
-	r.Post("/v1/messages", h.AnthropicMessages)
-	// count_tokens adalah pendamping wajib permukaan messages pada kontrak
-	// Anthropic; klien resmi memanggilnya sebelum mengirim percakapan besar.
-	r.Post("/messages/count_tokens", h.AnthropicCountTokens)
-	r.Post("/v1/messages/count_tokens", h.AnthropicCountTokens)
-	r.Post("/embeddings", h.Embeddings)
+	// Metode yang salah pada rute yang ada wajib menjawab envelope error, bukan
+	// body kosong bawaan chi (audit3 V-EM-06).
+	r.MethodNotAllowed(httpx.MethodNotAllowedHandler)
+
+	// Rute inferensi dibungkus pembatas laju; katalog model di luar grup ini.
+	// Lihat HandlersDeps.PembatasLaju untuk alasan pemisahannya (audit3 V-GW-38).
+	r.Group(func(r chi.Router) {
+		if h.pembatasLaju != nil {
+			r.Use(h.pembatasLaju)
+		}
+		r.Post("/chat/completions", h.ChatCompletions)
+		// /v1/responses adalah nama baru OpenAI untuk permukaan yang sama pada pemakaian
+		// percakapan biasa. Dilayani handler yang sama supaya klien yang sudah pindah ke nama
+		// itu tetap bekerja; perbedaan bentuk body-nya yang belum didukung diteruskan lewat
+		// ChatRequest.Extra, bukan ditelan diam-diam.
+		r.Post("/responses", h.ChatCompletions)
+		// /v1/messages melayani Anthropic Messages API (Claude Code, dsb.)
+		r.Post("/messages", h.AnthropicMessages)
+		r.Post("/v1/messages", h.AnthropicMessages)
+		// count_tokens adalah pendamping wajib permukaan messages pada kontrak
+		// Anthropic; klien resmi memanggilnya sebelum mengirim percakapan besar.
+		r.Post("/messages/count_tokens", h.AnthropicCountTokens)
+		r.Post("/v1/messages/count_tokens", h.AnthropicCountTokens)
+		r.Post("/embeddings", h.Embeddings)
+	})
 	r.Get("/models", h.Models)
+	r.Get("/models/{model}", h.ModelDetail)
 	return r
 }
 
@@ -509,14 +540,47 @@ func teksJawaban(resp *providers.ChatResponse) string {
 	return b.String()
 }
 
-// bacaBody membaca body permintaan dengan batas.
+// bacaBody membaca body permintaan dengan batas, sambil menegakkan kontrak
+// header yang dijanjikan permukaan ini:
+//
+//   - Content-Type yang DIKIRIM klien wajib application/json. Header yang salah
+//     label (text/plain, form) sebelumnya diproses penuh seolah JSON — klien
+//     yang salah konfigurasi tidak pernah tahu (audit3 V-GW-45). Header yang
+//     TIDAK dikirim sama sekali tetap diterima: klien non-browser yang sah ada
+//     yang tidak menyetelnya, dan menolaknya tidak membeli keamanan apa pun
+//     di permukaan Bearer-token ini (beda dengan permukaan auth berbasis
+//     cookie, yang mewajibkannya sebagai penutup CSRF struktural).
+//   - Content-Encoding gzip dibuka; pengkodean lain ditolak 415. Sebelumnya
+//     header ini tidak pernah diperiksa: JSON tergzip ditolak sebagai "bukan
+//     JSON yang sah" dan header gzip bohong di atas body polos diabaikan
+//     diam-diam (audit3 V-GW-44).
+//   - Body yang melewati batas ukuran dijawab 413 juga pada pengiriman
+//     chunked. Jalur Content-Length sudah 413 dari middleware, tetapi pada
+//     chunked kesalahan MaxBytesReader dari lapisan yang sama sebelumnya
+//     tersapu menjadi 400 generik (audit3 V-GW-41).
 func (h *Handlers) bacaBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if r.Body == nil {
 		httpx.BadRequest(w, r, httpx.CodeInvalidRequest, "body permintaan kosong")
 		return nil, false
 	}
+
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		mediaType, _, err := mime.ParseMediaType(ct)
+		if err != nil || mediaType != "application/json" {
+			httpx.WriteError(w, r, http.StatusUnsupportedMediaType, httpx.ErrTypeInvalidRequest,
+				"unsupported_media_type", "Content-Type harus application/json")
+			return nil, false
+		}
+	}
+
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
 	if err != nil {
+		var terlalu *http.MaxBytesError
+		if errors.As(err, &terlalu) {
+			httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, httpx.ErrTypeInvalidRequest,
+				httpx.CodePayloadTooLarge, "ukuran body request melebihi batas yang diizinkan")
+			return nil, false
+		}
 		// Kegagalan membaca body hampir selalu berarti klien memutus koneksi di tengah
 		// pengiriman. Tidak ada yang bisa dilaporkan ke pihak yang sudah pergi, tetapi
 		// status tetap ditulis supaya log mencatat sebabnya.
@@ -527,11 +591,64 @@ func (h *Handlers) bacaBody(w http.ResponseWriter, r *http.Request) ([]byte, boo
 		httpx.PayloadTooLarge(w, r, maxBodyBytes)
 		return nil, false
 	}
+
+	switch enc := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Encoding"))); enc {
+	case "", "identity":
+	case "gzip":
+		gz, err := gzip.NewReader(bytes.NewReader(body))
+		if err != nil {
+			httpx.BadRequest(w, r, httpx.CodeInvalidRequest,
+				"body dinyatakan tergzip tetapi tidak bisa dibuka")
+			return nil, false
+		}
+		terbuka, err := io.ReadAll(io.LimitReader(gz, maxBodyBytes+1))
+		_ = gz.Close()
+		if err != nil {
+			httpx.BadRequest(w, r, httpx.CodeInvalidRequest,
+				"body tergzip tidak bisa dibaca sampai selesai")
+			return nil, false
+		}
+		if len(terbuka) > maxBodyBytes {
+			httpx.PayloadTooLarge(w, r, maxBodyBytes)
+			return nil, false
+		}
+		body = terbuka
+	default:
+		httpx.WriteError(w, r, http.StatusUnsupportedMediaType, httpx.ErrTypeInvalidRequest,
+			"unsupported_media_type",
+			"Content-Encoding "+kutip(enc)+" tidak didukung; kirim tanpa pengkodean atau dengan gzip")
+		return nil, false
+	}
+
 	if len(body) == 0 {
 		httpx.BadRequest(w, r, httpx.CodeInvalidRequest, "body permintaan kosong")
 		return nil, false
 	}
 	return body, true
+}
+
+// bentukUUID melaporkan apakah s berbentuk UUID baku (36 karakter, tanda
+// hubung pada posisi baku, sisanya heksadesimal). Duplikasi sadar dari
+// pemeriksaan yang sama di repo upstream (idOK): di sini ia dipakai untuk
+// menolak pengenal internal di batas klien, bukan untuk validasi database.
+func bentukUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // selesaikanModel mengubah nama yang diminta klien menjadi model kanonik.
@@ -541,6 +658,17 @@ func (h *Handlers) bacaBody(w http.ResponseWriter, r *http.Request) ([]byte, boo
 // usang. Menyamakan ketiganya menjadi "model tidak ditemukan" membuat pengguna mengganti
 // nama model yang sebenarnya sudah benar.
 func (h *Handlers) selesaikanModel(w http.ResponseWriter, r *http.Request, diminta string) (*upstream.Model, bool) {
+	// Nama model dari klien adalah nama kanonik atau alias — tidak pernah UUID
+	// baris internal. Resolve di lapisan repo memang menerima UUID, tetapi itu
+	// untuk pemanggil internal yang memegang pengenal baris (target aturan
+	// routing, normalisasi cakupan admin); meneruskannya ke permukaan klien
+	// membocorkan pengenal internal sebagai "nama model" yang bisa dipakai
+	// siapa pun yang mengetahuinya (audit3 V-GW-39).
+	if bentukUUID(diminta) {
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.ErrTypeInvalidRequest, "model_not_found",
+			"model "+kutip(diminta)+" tidak dikenal gateway ini; lihat GET /v1/models")
+		return nil, false
+	}
 	model, err := h.models.Resolve(r.Context(), diminta)
 	if errors.Is(err, repo.ErrNotFound) && h.engine != nil {
 		if targetModelID := h.engine.FindRuleTargetModelID(r.Context(), diminta); targetModelID != "" {
@@ -1998,14 +2126,26 @@ type modelEntry struct {
 	OwnedBy string `json:"owned_by"`
 }
 
-// modelList adalah envelope daftar model.
+// modelList adalah envelope daftar model, mengikuti bentuk paginasi OpenAI:
+// first_id/last_id menandai tepi halaman yang dikembalikan dan has_more
+// menyatakan masih ada entri sesudahnya. Keduanya nil pada daftar kosong.
 type modelList struct {
-	Object string       `json:"object"`
-	Data   []modelEntry `json:"data"`
+	Object  string       `json:"object"`
+	Data    []modelEntry `json:"data"`
+	FirstID *string      `json:"first_id"`
+	LastID  *string      `json:"last_id"`
+	HasMore bool         `json:"has_more"`
 }
 
 // maxModelsPerPage membatasi satu halaman daftar model.
 const maxModelsPerPage = 500
+
+// daftarAlias adalah kemampuan opsional ModelLister untuk menyebut alias tiap
+// model. Dipenuhi *upstream.ModelRepo. Tanpa ini daftar hanya memuat nama
+// kanonik — alias adalah tambahan katalog, bukan syarat daftar bisa disusun.
+type daftarAlias interface {
+	ListAliases(ctx context.Context, modelID string) ([]*upstream.Alias, error)
+}
 
 // Models melayani GET /v1/models.
 //
@@ -2014,12 +2154,29 @@ const maxModelsPerPage = 500
 // model yang tidak punya pemetaan di sini dan tidak menyebut alias yang justru ditambahkan
 // operator, sehingga klien akan meminta nama yang gagal dan tidak menemukan nama yang
 // berhasil. Daftar ini juga menghormati pembatasan model pada API key pemanggil.
+//
+// Sejak audit3 (V-GW-34/35/37) daftar ini menepati tiga janji tambahan:
+//
+//   - Hanya model yang benar-benar bisa dilayani yang tampil: model tanpa satu
+//     pun kandidat rute — yatim tanpa pemetaan provider — tidak lagi terdaftar
+//     hanya untuk menjawab 503 saat dipakai, dan untuk key terbatas-provider,
+//     model yang seluruh providernya terlarang bagi key itu ikut tersisih.
+//   - Alias tampil sebagai entri sendiri, seperti yang dijanjikan dokumen:
+//     alias bisa dipakai chat, jadi ia harus bisa ditemukan dari daftar.
+//   - Paginasi limit/after_id OpenAI bekerja, dengan first_id/last_id/has_more
+//     pada envelope. Tanpa parameter, seluruh katalog dikembalikan seperti
+//     sebelumnya — klien yang sudah berjalan tidak berubah perilakunya.
 func (h *Handlers) Models(w http.ResponseWriter, r *http.Request) {
 	if h.lister == nil {
 		// Daftar tidak bisa disusun tanpa sumbernya, dan membalas daftar KOSONG akan
 		// membuat klien menyimpulkan gateway ini tidak melayani model apa pun.
 		h.logger.ErrorContext(r.Context(), "GET /v1/models dipanggil tanpa ModelLister terpasang")
 		httpx.InternalError(w, r)
+		return
+	}
+
+	limit, afterID, ok := uraikanPaginasiModel(w, r)
+	if !ok {
 		return
 	}
 
@@ -2034,19 +2191,116 @@ func (h *Handlers) Models(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p, _ := apikey.PrincipalFrom(r.Context())
-	data := make([]modelEntry, 0, len(models))
+	entri, ok := h.entriModelTerlihat(w, r, p, models)
+	if !ok {
+		return
+	}
+
+	// Kanonik dan alias diurutkan bersama menurut id: kursor after_id menunjuk
+	// id entri, jadi urutan gabungan yang stabil adalah syarat paginasi yang
+	// tidak melewatkan atau mengulang entri di antara dua halaman.
+	sort.Slice(entri, func(i, j int) bool { return entri[i].ID < entri[j].ID })
+
+	halaman, hasMore, ok := potongHalamanModel(w, r, entri, limit, afterID)
+	if !ok {
+		return
+	}
+	keluaran := modelList{Object: "list", Data: halaman, HasMore: hasMore}
+	if len(halaman) > 0 {
+		keluaran.FirstID = &halaman[0].ID
+		keluaran.LastID = &halaman[len(halaman)-1].ID
+	}
+
+	if err := httpx.JSON(w, http.StatusOK, keluaran); err != nil {
+		h.logger.DebugContext(r.Context(), "penulisan daftar model gagal", "error", err)
+	}
+}
+
+// ModelDetail melayani GET /v1/models/{model} (audit3 V-GW-36).
+//
+// Aturan tampilnya sama persis dengan daftar: nama kanonik maupun alias
+// diterima, tetapi model yang tidak akan tampil di daftar — dimatikan, yatim
+// tanpa kandidat, atau terlarang bagi key pemanggil — dijawab 404
+// model_not_found, bukan diterangkan. Detail yang membocorkan keberadaan
+// model yang tidak boleh dipakai key adalah daftar yang berbohong lewat
+// pintu lain.
+func (h *Handlers) ModelDetail(w http.ResponseWriter, r *http.Request) {
+	diminta := chi.URLParam(r, "model")
+	tidakDitemukan := func() {
+		httpx.WriteError(w, r, http.StatusNotFound, httpx.ErrTypeInvalidRequest, "model_not_found",
+			"model "+kutip(diminta)+" tidak dikenal gateway ini; lihat GET /v1/models")
+	}
+
+	// Konsisten dengan jalur chat: UUID baris internal bukan nama model.
+	if bentukUUID(diminta) {
+		tidakDitemukan()
+		return
+	}
+	model, err := h.models.Resolve(r.Context(), diminta)
+	if errors.Is(err, repo.ErrNotFound) {
+		tidakDitemukan()
+		return
+	}
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "resolusi model untuk detail gagal", "model", diminta, "error", err)
+		httpx.InternalError(w, r)
+		return
+	}
+	if !model.Enabled {
+		tidakDitemukan()
+		return
+	}
+
+	p, _ := apikey.PrincipalFrom(r.Context())
+	entri, ok := h.entriModelTerlihat(w, r, p, []*upstream.Model{model})
+	if !ok {
+		return
+	}
+	for _, e := range entri {
+		if e.ID == diminta {
+			if err := httpx.JSON(w, http.StatusOK, e); err != nil {
+				h.logger.DebugContext(r.Context(), "penulisan detail model gagal", "error", err)
+			}
+			return
+		}
+	}
+	tidakDitemukan()
+}
+
+// entriModelTerlihat menyusun entri katalog (kanonik + alias) untuk model yang
+// lolos seluruh saringan keterlihatan bagi key pemanggil. ok=false berarti
+// jawaban error sudah ditulis.
+func (h *Handlers) entriModelTerlihat(w http.ResponseWriter, r *http.Request, p *apikey.Principal, models []*upstream.Model) ([]modelEntry, bool) {
+	ctx := r.Context()
+	var aliaser daftarAlias
+	if la, ok := h.lister.(daftarAlias); ok {
+		aliaser = la
+	}
+
+	entri := make([]modelEntry, 0, len(models))
 	for _, m := range models {
-		boleh, err := h.bolehLihatModel(r.Context(), p, m)
+		boleh, err := h.bolehLihatModel(ctx, p, m)
 		if err != nil {
-			h.logger.ErrorContext(r.Context(), "pemeriksaan pembatasan model gagal saat mendaftar",
+			h.logger.ErrorContext(ctx, "pemeriksaan pembatasan model gagal saat mendaftar",
 				"api_key", p.Masked(), "model", m.ModelID, "error", err)
 			httpx.InternalError(w, r)
-			return
+			return nil, false
 		}
 		if !boleh {
 			continue
 		}
-		data = append(data, modelEntry{
+		bisa, err := h.modelBisaDilayani(ctx, p, m)
+		if err != nil {
+			h.logger.ErrorContext(ctx, "pemeriksaan kandidat model gagal saat mendaftar",
+				"api_key", p.Masked(), "model", m.ModelID, "error", err)
+			httpx.InternalError(w, r)
+			return nil, false
+		}
+		if !bisa {
+			continue
+		}
+
+		e := modelEntry{
 			ID:     m.ModelID,
 			Object: "model",
 			// Unix detik, mengikuti bentuk OpenAI. CreatedAt kami bertipe timestamptz;
@@ -2056,12 +2310,117 @@ func (h *Handlers) Models(w http.ResponseWriter, r *http.Request) {
 			// daripada menebak nama vendor dari nama model — tebakan seperti itu akan salah
 			// tepat pada model dari penyedia yang jarang, yaitu yang paling perlu dikenali.
 			OwnedBy: pemilikModel(m),
-		})
-	}
+		}
+		entri = append(entri, e)
 
-	if err := httpx.JSON(w, http.StatusOK, modelList{Object: "list", Data: data}); err != nil {
-		h.logger.DebugContext(r.Context(), "penulisan daftar model gagal", "error", err)
+		if aliaser != nil {
+			alias, err := aliaser.ListAliases(ctx, m.ID)
+			if err != nil {
+				h.logger.ErrorContext(ctx, "pengambilan alias model gagal saat mendaftar",
+					"model", m.ModelID, "error", err)
+				httpx.InternalError(w, r)
+				return nil, false
+			}
+			for _, a := range alias {
+				salinan := e
+				salinan.ID = a.Alias
+				entri = append(entri, salinan)
+			}
+		}
 	}
+	return entri, true
+}
+
+// modelBisaDilayani melaporkan apakah model punya setidaknya satu kandidat
+// rute yang providernya boleh dipakai key pemanggil.
+//
+// Kandidat rute adalah sumber kebenaran yang sama dengan jalur chat: model
+// tanpa pemetaan provider menghasilkan daftar kandidat kosong di sana dan
+// 503 di sini bila tetap didaftarkan (audit3 V-GW-34). Penyaring kebijakan
+// dinamis (anggaran, larangan penyaring konten) sengaja TIDAK diterapkan di
+// sini — katalog menyatakan kemampuan struktural gateway, bukan keadaan
+// anggaran sore ini.
+func (h *Handlers) modelBisaDilayani(ctx context.Context, p *apikey.Principal, m *upstream.Model) (bool, error) {
+	if h.candidates == nil {
+		return true, nil
+	}
+	cands, err := h.candidates.RouteCandidates(ctx, upstream.RouteQuery{
+		ModelID:     m.ID,
+		OwnerUserID: p.OwnerUserID(),
+	})
+	if err != nil {
+		return false, err
+	}
+	if len(cands) == 0 {
+		return false, nil
+	}
+	if h.restrict == nil || p.ID() == "" {
+		return true, nil
+	}
+	for _, c := range cands {
+		boleh, err := h.restrict.AllowsProvider(ctx, p.ID(), c.ProviderID)
+		if err != nil {
+			return false, err
+		}
+		if boleh {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// uraikanPaginasiModel membaca limit & after_id gaya OpenAI.
+//
+// limit yang tidak sah ditolak 400, bukan diabaikan diam-diam: paginasi yang
+// rusak tanpa suara adalah bug asal butir ini (audit3 V-GW-37) — parameter
+// yang dikirim klien tetapi tidak berlaku membuat klien menyimpulkan katalog
+// lebih kecil dari sebenarnya.
+func uraikanPaginasiModel(w http.ResponseWriter, r *http.Request) (limit int, afterID string, ok bool) {
+	q := r.URL.Query()
+	afterID = q.Get("after_id")
+	if mentah := q.Get("limit"); mentah != "" {
+		n, err := strconv.Atoi(mentah)
+		if err != nil || n <= 0 {
+			httpx.BadRequest(w, r, httpx.CodeInvalidRequest,
+				"parameter limit harus bilangan bulat positif")
+			return 0, "", false
+		}
+		limit = n
+	}
+	return limit, afterID, true
+}
+
+// potongHalamanModel menerapkan after_id & limit pada entri yang sudah
+// terurut. after_id yang tidak dikenal ditolak 400: melompat dari kursor
+// yang tidak ada hanya bisa berarti halaman yang salah, dan menjawab dari
+// awal akan mengulang entri yang sudah diterima klien.
+func potongHalamanModel(w http.ResponseWriter, r *http.Request, entri []modelEntry, limit int, afterID string) ([]modelEntry, bool, bool) {
+	mulai := 0
+	if afterID != "" {
+		idx := -1
+		for i, e := range entri {
+			if e.ID == afterID {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			httpx.BadRequest(w, r, httpx.CodeInvalidRequest,
+				"parameter after_id tidak dikenal dalam katalog model")
+			return nil, false, false
+		}
+		mulai = idx + 1
+	}
+	sisa := entri[mulai:]
+	hasMore := false
+	if limit > 0 && len(sisa) > limit {
+		sisa = sisa[:limit]
+		hasMore = true
+	}
+	if sisa == nil {
+		sisa = []modelEntry{}
+	}
+	return sisa, hasMore, true
 }
 
 // bolehLihatModel melaporkan apakah pemanggil boleh memakai model ini.

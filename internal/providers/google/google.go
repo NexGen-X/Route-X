@@ -455,6 +455,13 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 // Embeddings memanggil :embedContent untuk satu masukan, atau :batchEmbedContents untuk
 // beberapa masukan sekaligus.
 func (p *Provider) Embeddings(ctx context.Context, req *providers.EmbeddingsRequest) (*providers.EmbeddingsResponse, error) {
+	if req != nil && len(req.TokenInput) > 0 {
+		// Gemini hanya menerima teks. Token milik tokenizer model lain tidak
+		// bisa diterjemahkan di sini, dan menebak teksnya akan menghasilkan
+		// vektor untuk isi yang berbeda tanpa satu pun error (audit3 V-GW-40).
+		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,
+			"masukan berbentuk token hanya bisa dilayani provider berdialek OpenAI; provider ini memerlukan teks")
+	}
 	if req == nil || len(req.Input) == 0 {
 		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "permintaan embeddings tanpa masukan")
 	}

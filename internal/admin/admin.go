@@ -267,16 +267,63 @@ func (h *Handlers) invalidateRules(ctx context.Context) {
 	h.engine.Invalidate()
 }
 
+// errBodyJSON adalah satu-satunya kesalahan yang boleh keluar dari decodeJSON.
+// Teks error mentah encoding/json memuat nama struct & field Go serta cuplikan
+// body ("json: cannot unmarshal string into Go struct field
+// createAPIKeyReq.rate_limit_rpm of type int") — rincian internal yang tidak
+// membantu klien dan membocorkan bentuk kode (audit3 V-EM-09). Permukaan auth
+// sudah lama menelan teks parser dengan alasan yang sama; di sini alasannya
+// ditambah: body admin bisa memuat rahasia (kredensial provider, token), dan
+// cuplikannya tidak boleh terpantul. Rincian asli dicatat pemanggil lewat log
+// bila perlu, tidak lewat respons.
+var errBodyJSON = errors.New("body request bukan JSON yang sah, memuat field yang tidak dikenal, atau tipe nilainya tidak sesuai")
+
 // decodeJSON membaca request body JSON dengan batas ukuran aman maxAdminBodyBytes.
+// Body wajib memuat TEPAT satu nilai JSON: data berlebih sesudah nilai pertama
+// ditolak, sama seperti field tak dikenal — body yang ditafsirkan sebagian lalu
+// sisanya dibuang diam-diam adalah kontrak yang ambigu.
 func decodeJSON(r *http.Request, v any) error {
 	defer r.Body.Close()
 	limited := io.LimitReader(r.Body, maxAdminBodyBytes)
 	dec := json.NewDecoder(limited)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		return fmt.Errorf("membaca body JSON: %w", err)
+		return errBodyJSON
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errBodyJSON
 	}
 	return nil
+}
+
+// tidakTersedia membalas 503 untuk dependensi internal yang tidak terpasang
+// pada instalasi ini (manajer CLI, klien OAuth, dispatcher, supervisor, engine
+// cache, pabrik provider, pemutus arus). Keadaan itu bukan kesalahan masukan
+// klien, jadi 400 — petanya sebelumnya — menyuruh klien memperbaiki sesuatu
+// yang tidak ia kendalikan (audit3 V-EM-05).
+func tidakTersedia(w http.ResponseWriter, r *http.Request, code, message string) {
+	httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.ErrTypeOverloaded, code, message)
+}
+
+// gagalHulu mencatat error mentah dependensi EKSTERNAL (endpoint OAuth,
+// Cloudflare, Deno, adapter provider) ke log server lalu membalas 502 dengan
+// pesan umum berkode tetap. Teks error aslinya — string *url.Error utuh berisi
+// URL endpoint internal dan rincian timeout, atau pesan API pihak ketiga —
+// tidak pernah mencapai klien (audit3 V-EM-01, V-EM-03); yang menerimanya
+// hanya perlu tahu aksi apa yang gagal dan bahwa sebabnya ada di hulu.
+func (h *Handlers) gagalHulu(w http.ResponseWriter, r *http.Request, aksi, code, pesan string, err error) {
+	h.logger.ErrorContext(r.Context(), aksi, "error", err)
+	httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, code, pesan)
+}
+
+// gagalInternal mencatat error kegagalan internal (database dan sejenisnya)
+// lalu membalas 500 generik lewat httpx.InternalError, dengan kode khusus
+// aksi dipertahankan pada log — bukan pada respons, agar klien tidak menerima
+// teks driver mentah yang dibungkus pesan "Gagal ..." seperti sebelumnya
+// (audit3 V-EM-01).
+func (h *Handlers) gagalInternal(w http.ResponseWriter, r *http.Request, aksi string, err error) {
+	h.logger.ErrorContext(r.Context(), aksi, "error", err)
+	httpx.InternalError(w, r)
 }
 
 // mapRepoError memetakan error repository ke respons HTTP standar httpx.
@@ -288,7 +335,9 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 	case errors.Is(err, repo.ErrNotFound):
 		httpx.NotFound(w, r, fmt.Sprintf("%s tidak ditemukan", resource))
 	case errors.Is(err, repo.ErrConflict):
-		httpx.BadRequest(w, r, "conflict", fmt.Sprintf("%s sudah ada atau melanggar keunikan", resource))
+		// 409, bukan 400: konflik keunikan bukan kesalahan bentuk masukan, dan
+		// komentar pemanggil memang menjanjikan 409 sejak lama (audit3 V-EM-04).
+		httpx.Conflict(w, r, fmt.Sprintf("%s sudah ada atau melanggar keunikan", resource))
 	case errors.Is(err, repo.ErrInvalidReference):
 		httpx.BadRequest(w, r, "invalid_reference", fmt.Sprintf("referensi data untuk %s tidak valid", resource))
 	case errors.Is(err, repo.ErrConstraint):

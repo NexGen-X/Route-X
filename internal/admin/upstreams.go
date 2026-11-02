@@ -436,13 +436,14 @@ func (h *Handlers) probeProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.factory == nil {
-		httpx.BadRequest(w, r, "factory_unavailable", "pabrik provider tidak tersedia")
+		tidakTersedia(w, r, "factory_unavailable", "pabrik provider tidak tersedia")
 		return
 	}
 
 	adapter, err := h.factory.ProviderFor(ctx, p)
 	if err != nil {
-		httpx.BadRequest(w, r, "adapter_error", err.Error())
+		h.gagalHulu(w, r, "gagal menyiapkan adapter untuk probe provider", "adapter_error",
+			"Gagal menyiapkan adapter provider untuk pemeriksaan kesehatan", err)
 		return
 	}
 
@@ -605,7 +606,7 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		MaxIdleConnsPerHost: 2,
 	}, false)
 	if err != nil {
-		httpx.BadRequest(w, r, "http_client_error", err.Error())
+		h.gagalInternal(w, r, "gagal membuat klien HTTP discovery model", err)
 		return
 	}
 
@@ -637,7 +638,10 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 
 	req, err := http.NewRequestWithContext(ctx, method, discoveryURL, reqBody)
 	if err != nil {
-		httpx.BadRequest(w, r, "invalid_url", err.Error())
+		// err adalah *url.Error yang memuat URL tersimpan apa adanya; yang
+		// diterima klien hanya pernyataan bahwa URL-nya tidak sah.
+		h.logger.WarnContext(ctx, "URL discovery provider tidak sah", "provider_id", p.ID, "error", err)
+		httpx.BadRequest(w, r, "invalid_url", "base_url provider tidak membentuk URL discovery yang sah")
 		return
 	}
 	req.Header.Set("Accept", "application/json")
@@ -666,7 +670,7 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		h.logger.WarnContext(ctx, "panggilan discovery model gagal, mencoba katalog fallback terkurasi", "error", webhooks.SanitizeErrorMessage(err.Error()))
 		rawIDs = getCuratedProviderModels(lowerKind, lowerName)
 		if len(rawIDs) == 0 {
-			httpx.BadRequest(w, r, "upstream_unreachable", "Gagal menghubungi endpoint discovery provider")
+			httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_unreachable", "Gagal menghubungi endpoint discovery provider")
 			return
 		}
 	} else {
@@ -677,7 +681,7 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 			h.logger.WarnContext(ctx, "upstream mengembalikan status non-2xx saat discovery model, mencoba fallback", "status", resp.StatusCode)
 			rawIDs = getCuratedProviderModels(lowerKind, lowerName)
 			if len(rawIDs) == 0 {
-				httpx.BadRequest(w, r, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d", resp.StatusCode))
+				httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d", resp.StatusCode))
 				return
 			}
 		} else {
@@ -945,13 +949,14 @@ func (h *Handlers) testProviderModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.factory == nil {
-		httpx.BadRequest(w, r, "factory_unavailable", "pabrik provider tidak tersedia")
+		tidakTersedia(w, r, "factory_unavailable", "pabrik provider tidak tersedia")
 		return
 	}
 
 	adapter, err := h.factory.ProviderFor(ctx, p)
 	if err != nil {
-		httpx.BadRequest(w, r, "adapter_error", err.Error())
+		h.gagalHulu(w, r, "gagal menyiapkan adapter untuk uji model provider", "adapter_error",
+			"Gagal menyiapkan adapter provider untuk pengujian model", err)
 		return
 	}
 
@@ -1890,7 +1895,11 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 
 	parsedProxy, err := url.Parse(proxyRaw)
 	if err != nil {
-		httpx.BadRequest(w, r, "invalid_proxy_url", "Format URL proxy tidak valid: "+err.Error())
+		// err memuat URL proxy mentah beserta kredensialnya (*url.Error);
+		// klien hanya menerima pernyataan bahwa formatnya tidak valid
+		// (audit3 V-EO-23).
+		h.logger.WarnContext(ctx, "URL proxy tersimpan tidak bisa diurai saat probe egress", "error", err)
+		httpx.BadRequest(w, r, "invalid_proxy_url", "Format URL proxy tidak valid")
 		return
 	}
 

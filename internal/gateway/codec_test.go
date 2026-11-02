@@ -671,6 +671,29 @@ func TestDecodeEmbeddingsRequestInputStringTunggal(t *testing.T) {
 	}
 }
 
+// TestDecodeEmbeddingsRequestInputToken: bentuk array token adalah bagian sah
+// kontrak OpenAI (audit3 V-GW-40). Ia diterima sebagai TokenInput yang terpisah
+// dari teks — bukan diterjemahkan — supaya adapter yang bisa meneruskannya
+// apa adanya yang melakukannya, dan yang tidak bisa menolak dengan jelas.
+func TestDecodeEmbeddingsRequestInputToken(t *testing.T) {
+	tunggal, err := DecodeEmbeddingsRequest([]byte(`{"model":"m","input":[1,2,3]}`))
+	if err != nil {
+		t.Fatalf("DecodeEmbeddingsRequest: %v", err)
+	}
+	if len(tunggal.Input) != 0 || len(tunggal.TokenInput) != 1 ||
+		len(tunggal.TokenInput[0]) != 3 || tunggal.TokenInput[0][2] != 3 {
+		t.Errorf("TokenInput tunggal = %#v", tunggal.TokenInput)
+	}
+
+	batch, err := DecodeEmbeddingsRequest([]byte(`{"model":"m","input":[[1,2],[3]]}`))
+	if err != nil {
+		t.Fatalf("DecodeEmbeddingsRequest: %v", err)
+	}
+	if len(batch.TokenInput) != 2 || len(batch.TokenInput[0]) != 2 || len(batch.TokenInput[1]) != 1 {
+		t.Errorf("TokenInput batch = %#v", batch.TokenInput)
+	}
+}
+
 func TestDecodeEmbeddingsRequestPenolakan(t *testing.T) {
 	for _, tc := range []struct {
 		nama     string
@@ -683,10 +706,12 @@ func TestDecodeEmbeddingsRequestPenolakan(t *testing.T) {
 		{"input string kosong", `{"model":"m","input":""}`, `"input"`},
 		{"input array kosong", `{"model":"m","input":[]}`, `"input"`},
 		{"input memuat string kosong", `{"model":"m","input":["a",""]}`, `"input[1]"`},
-		// Array token hanya bermakna terhadap tokenizer yang menghasilkannya. Meneruskannya
-		// ke provider lain akan menghasilkan vektor untuk teks yang berbeda, tanpa error.
-		{"input array token", `{"model":"m","input":[1,2,3]}`, `"input"`},
-		{"input array token bersarang", `{"model":"m","input":[[1,2],[3]]}`, `"input"`},
+		// Array token DITERIMA sejak audit3 V-GW-40 (lihat
+		// TestDecodeEmbeddingsRequestInputToken); yang tetap ditolak adalah
+		// bentuk token yang tidak bermakna: urutan kosong dan id negatif.
+		{"input array token kosong", `{"model":"m","input":[[]]}`, `"input[0]"`},
+		{"input token negatif", `{"model":"m","input":[1,-2]}`, `"input"`},
+		{"input campuran teks dan token", `{"model":"m","input":["a",1]}`, `"input"`},
 		{"bukan objek", `[]`, "objek JSON"},
 	} {
 		t.Run(tc.nama, func(t *testing.T) {

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -14,6 +15,10 @@ import (
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
+
+// healthCheckConcurrency membatasi jumlah probe provider yang berjalan
+// bersamaan dalam satu putaran health checker.
+const healthCheckConcurrency = 8
 
 // ProviderSource menyediakan daftar provider dan pencatatan riwayat kesehatan.
 type ProviderSource interface {
@@ -99,13 +104,28 @@ func (h *HealthCheckerJob) Run(ctx context.Context) error {
 		return repo.Err("mengambil daftar provider aktif", err)
 	}
 
+	// Probe dijalankan paralel terbatas (audit3 V-DT-11). Versi sekuensial
+	// membuat satu putaran berdurasi JUMLAH seluruh timeout provider: enam
+	// provider blackhole membakar 10 detik masing-masing dan putaran menyebar
+	// >80 detik — melewati intervalnya sendiri, tick berikutnya terlewat, dan
+	// irama cek menipis tepat saat outage massal. Dengan paralel terbatas,
+	// satu putaran berdurasi ±timeout TERLAMBAT satu provider, dan batas
+	// konkurensinya menjaga probe tidak membanjiri pool/upstream.
+	sem := make(chan struct{}, healthCheckConcurrency)
+	var wg sync.WaitGroup
 	for _, p := range list {
-
 		if !p.Enabled {
 			continue
 		}
-		h.checkOne(ctx, p)
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(p *upstream.Provider) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			h.checkOne(ctx, p)
+		}(p)
 	}
+	wg.Wait()
 
 	// Kesehatan egress pool diperbarui pada putaran yang sama, bukan hanya
 	// dari tombol Tes manual (audit3 V-EO-05).

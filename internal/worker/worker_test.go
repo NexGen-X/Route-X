@@ -626,6 +626,10 @@ func (d *dummyRollupRepo) RollupRange(context.Context, time.Time, time.Time) (in
 	return 10, 1, nil
 }
 
+func (d *dummyRollupRepo) RollupDaily(context.Context, time.Time) (int64, error) {
+	return 0, nil
+}
+
 type dummyRetentionCleaner struct {
 	cleaned int64
 	mu      sync.Mutex
@@ -647,7 +651,7 @@ func TestRetentionWorkerUrutanRollupDanPembersihan(t *testing.T) {
 	rRepo := &dummyRollupRepo{}
 	wRepo := &dummyRetentionCleaner{}
 
-	worker := NewRetentionWorker(pool, wRepo, rRepo, 30, 7, nil)
+	worker := NewRetentionWorker(pool, wRepo, rRepo, 30, 7, 365, nil)
 	if err := worker.Run(ctx); err != nil {
 		t.Fatalf("Run retention worker: %v", err)
 	}

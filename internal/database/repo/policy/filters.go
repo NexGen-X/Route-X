@@ -379,12 +379,23 @@ func (r *Repo) UpdateFilter(ctx context.Context, id string, p UpdateFilterParams
 		args = append(args, *p.MaxEvalMS)
 		setClauses = append(setClauses, fmt.Sprintf("max_eval_ms = $%d", len(args)))
 	}
+	// Cakupan model/provider mengikuti aturan CreateFilter (audit3 V-DT-25):
+	// string kosong berarti "kosongkan cakupan" dan disimpan sebagai NULL lewat
+	// nullIfEmpty — versi lama menulis "" mentah ke kolom uuid, yang melempar
+	// 22P02 di driver; nilai non-kosong yang bukan UUID ditolak bersih di sini,
+	// bukan dibiarkan meledak di database.
 	if p.ModelID != nil {
-		args = append(args, *p.ModelID)
+		if *p.ModelID != "" && !idOK(*p.ModelID) {
+			return nil, fmt.Errorf("%s: %w: model_id bukan UUID", op, repo.ErrInvalidReference)
+		}
+		args = append(args, nullIfEmpty(*p.ModelID))
 		setClauses = append(setClauses, fmt.Sprintf("model_id = $%d", len(args)))
 	}
 	if p.ProviderID != nil {
-		args = append(args, *p.ProviderID)
+		if *p.ProviderID != "" && !idOK(*p.ProviderID) {
+			return nil, fmt.Errorf("%s: %w: provider_id bukan UUID", op, repo.ErrInvalidReference)
+		}
+		args = append(args, nullIfEmpty(*p.ProviderID))
 		setClauses = append(setClauses, fmt.Sprintf("provider_id = $%d", len(args)))
 	}
 	if p.MaxRequestBytes != nil {

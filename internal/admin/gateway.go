@@ -1179,7 +1179,17 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	var req createFilterReq
+	// model_id/provider_id dibaca sebagai penunjuk lewat struct pembungkus
+	// (audit3 V-DT-25): pada DTO biasa, "" tak bisa dibedakan dari "field tidak
+	// dikirim", sehingga mengosongkan cakupan filter mustahil lewat API — repo
+	// sudah memetakan "" menjadi NULL, handler wajib meneruskannya apa adanya.
+	// Field pembungkus yang lebih dangkal menaungi field DTO untuk dua kunci
+	// JSON itu; sisa field tetap dari createFilterReq.
+	var req struct {
+		createFilterReq
+		ModelID    *string `json:"model_id"`
+		ProviderID *string `json:"provider_id"`
+	}
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
@@ -1214,11 +1224,11 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 	if req.MaxEvalMS > 0 {
 		p.MaxEvalMS = &req.MaxEvalMS
 	}
-	if req.ModelID != "" {
-		p.ModelID = &req.ModelID
+	if req.ModelID != nil {
+		p.ModelID = req.ModelID
 	}
-	if req.ProviderID != "" {
-		p.ProviderID = &req.ProviderID
+	if req.ProviderID != nil {
+		p.ProviderID = req.ProviderID
 	}
 	if req.MaxRequestBytes != nil {
 		p.MaxRequestBytes = req.MaxRequestBytes

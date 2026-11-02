@@ -686,10 +686,49 @@ type ListFilter struct {
 	Search      string
 }
 
+// cursorSep memisahkan dua bagian kursor keyset (waktu|pengenal), bentuk yang
+// sama dengan paket repo lain.
+const cursorSep = "|"
+
+// encodeCursor merakit kursor keyset dari waktu dan pengenal baris terakhir.
+//
+// Waktu saja tidak cukup (audit3 V-DT-22): now() adalah waktu transaksi, jadi
+// key yang dibuat dalam satu transaksi — impor massal, seed, rotasi batch —
+// berbagi created_at yang identik. Kursor yang hanya berisi waktu melewatkan
+// seluruh baris seri itu di batas halaman, selamanya. Pengenal barislah yang
+// memutus seri.
+func encodeCursor(ts time.Time, id string) string {
+	return ts.UTC().Format(time.RFC3339Nano) + cursorSep + id
+}
+
+// decodeCursor memecah kursor keyset. Kursor warisan yang hanya berisi waktu
+// (diterbitkan sebelum kursor bertuple) tetap diterima: pengenalnya kosong dan
+// pemanggil jatuh ke syarat waktu saja untuk satu putaran itu, supaya paginasi
+// yang sedang berjalan saat deploy tidak putus.
+func decodeCursor(op, cursor string) (time.Time, string, error) {
+	ts, id, ok := strings.Cut(cursor, cursorSep)
+	if !ok {
+		parsed, err := time.Parse(time.RFC3339Nano, cursor)
+		if err != nil {
+			return time.Time{}, "", fmt.Errorf("%s: kursor tidak valid", op)
+		}
+		return parsed, "", nil
+	}
+	if id == "" {
+		return time.Time{}, "", fmt.Errorf("%s: kursor tidak valid", op)
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return time.Time{}, "", fmt.Errorf("%s: kursor tidak valid", op)
+	}
+	return parsed, id, nil
+}
+
 // List mengembalikan key berpaginasi keyset, terbaru dulu.
 //
-// Kursornya adalah created_at baris terakhir yang sudah diberikan; keyset dipakai
-// daripada OFFSET agar biaya per halaman tetap sama seberapa jauh pun halamannya.
+// Kursornya adalah pasangan (created_at, id) baris terakhir yang sudah
+// diberikan; keyset dipakai daripada OFFSET agar biaya per halaman tetap sama
+// seberapa jauh pun halamannya.
 func (r *Repo) List(ctx context.Context, f ListFilter, page repo.Page) ([]*Key, string, error) {
 	const op = "mendaftar API key"
 	limit := page.Normalize()
@@ -711,18 +750,31 @@ func (r *Repo) List(ctx context.Context, f ListFilter, page repo.Page) ([]*Key, 
 	}
 	if f.Search != "" {
 		// Pencarian pada nama dan empat karakter terakhir; keduanya bukan rahasia.
-		// Satu argumen dipakai dua kali, jadi kondisinya dirakit langsung dan bukan
-		// lewat add() yang mengasumsikan satu placeholder per argumen.
-		args = append(args, f.Search)
-		n := len(args)
-		conds = append(conds, fmt.Sprintf("(name ilike '%%' || $%d || '%%' or last4 = $%d)", n, n))
+		// Kondisinya dirakit langsung dan bukan lewat add() yang mengasumsikan
+		// satu placeholder per argumen.
+		// DUA argumen sengaja dikirim (audit3 V-DT-23): nilai MENTAH untuk
+		// cabang kesetaraan last4, dan nilai TER-ESCAPE untuk pola ILIKE —
+		// mencampur keduanya dalam satu argumen merusak cabang kesetaraan
+		// setiap kali teks mengandung %, _, atau \.
+		args = append(args, f.Search, repo.EscapeLikePattern(f.Search))
+		nMentah, nPola := len(args)-1, len(args)
+		conds = append(conds, fmt.Sprintf("(name ilike '%%' || $%d || '%%' or last4 = $%d)", nPola, nMentah))
 	}
 	if page.Cursor != "" {
-		cursor, err := time.Parse(time.RFC3339Nano, page.Cursor)
+		ts, id, err := decodeCursor(op, page.Cursor)
 		if err != nil {
-			return nil, "", fmt.Errorf("%s: kursor tidak valid", op)
+			return nil, "", err
 		}
-		add("created_at < $%d", cursor)
+		if id == "" {
+			// Kursor warisan waktu-saja: satu putaran dengan syarat lama.
+			add("created_at < $%d", ts)
+		} else {
+			if !idOK(id) {
+				return nil, "", fmt.Errorf("%s: %w: bagian pengenal pada kursor bukan UUID", op, repo.ErrConstraint)
+			}
+			args = append(args, ts, id)
+			conds = append(conds, fmt.Sprintf("(created_at, id) < ($%d::timestamptz, $%d::uuid)", len(args)-1, len(args)))
+		}
 	}
 
 	where := ""
@@ -732,7 +784,7 @@ func (r *Repo) List(ctx context.Context, f ListFilter, page repo.Page) ([]*Key, 
 	args = append(args, limit+1) // satu baris lebih untuk mengetahui ada halaman lagi
 
 	rows, err := r.q.Query(ctx, `select `+keyColumns+` from api_keys`+where+
-		fmt.Sprintf(` order by created_at desc limit $%d`, len(args)), args...)
+		fmt.Sprintf(` order by created_at desc, id desc limit $%d`, len(args)), args...)
 	if err != nil {
 		return nil, "", repo.Err(op, err)
 	}
@@ -752,8 +804,9 @@ func (r *Repo) List(ctx context.Context, f ListFilter, page repo.Page) ([]*Key, 
 
 	next := ""
 	if len(out) > limit {
-		next = out[limit-1].CreatedAt.Format(time.RFC3339Nano)
 		out = out[:limit]
+		last := out[limit-1]
+		next = encodeCursor(last.CreatedAt, last.ID)
 	}
 	return out, next, nil
 }

@@ -261,11 +261,12 @@ func TestRoutingPipelineConstraintIntegration(t *testing.T) {
 		}
 	})
 
-	// Constraint memakai cast (pipeline->>'attempts')::int, jadi attempts non-numerik
-	// ditolak saat CAST — sebelum CHECK sempat dievaluasi. Hasil akhirnya sama dengan
-	// pelanggaran constraint (pipeline tidak tersimpan), tapi laporannya SQLSTATE
-	// 22P02, bukan 23514. Test terpisah ini menjaga kedua jawaban itu tidak tertukar.
-	t.Run("attempts non-numerik ditolak saat cast, bukan saat check", func(t *testing.T) {
+	// Sejak migrasi 0019 (audit3 V-DT-17), attempts non-numerik ditolak oleh
+	// CHECK itu sendiri — 23514 — bukan oleh cast rapuh yang melempar 22P02
+	// dari dalam ekspresi constraint. Test versi 0014 di sini justru MENEGASKAN
+	// 22P02 sebagai perilaku yang diinginkan; perilaku itulah temuan auditnya,
+	// jadi penegasannya dibalik: yang dijaga sekarang adalah 23514.
+	t.Run("attempts non-numerik ditolak saat check, bukan saat cast", func(t *testing.T) {
 		_, err := pool.Exec(ctx, `
 			insert into routing_rules (name, pipeline)
 			values ('attempts teks', '{"strategy":"priority","attempts":"banyak","models":["a","b"]}'::jsonb)`)
@@ -276,8 +277,8 @@ func TestRoutingPipelineConstraintIntegration(t *testing.T) {
 		if !errors.As(err, &pgErr) {
 			t.Fatalf("error bukan PgError: %v", err)
 		}
-		if pgErr.Code != "22P02" {
-			t.Errorf("SQLSTATE = %q, ingin 22P02 (invalid input syntax for type integer): %v",
+		if pgErr.Code != "23514" {
+			t.Errorf("SQLSTATE = %q, ingin 23514 (check_violation): %v",
 				pgErr.Code, err)
 		}
 	})

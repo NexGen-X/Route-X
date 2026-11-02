@@ -23,31 +23,43 @@ type WebhookRetentionCleaner interface {
 // RetentionWorker membersihkan data historis yang sudah melewati batas retensi.
 //
 // Aturan 5:
-// a. requests, request_events, usage_hourly dibersihkan dengan MEMBUANG PARTISI (hanya jika
+// a. requests, request_events, usage_hourly, dan request_payloads dibersihkan
+// dengan MEMBUANG PARTISI (hanya jika seluruh rentang partisi lebih tua dari
+// cutoff DAN penjaga kelengkapan masing-masing lolos). Mencegah bloat tabel
+// raksasa.
 //
-//	seluruh rentang partisi lebih tua dari cutoff). Mencegah bloat tabel raksasa.
+// b. Sisa baris request_payloads (partisi DEFAULT, partisi bulan berjalan
+// retensi), webhook_deliveries, health_checks, dan audit_logs dibersihkan
+// dengan PENGHAPUSAN BERBATCH berbatas iterasi. Diberi jeda 50ms antar batch
+// agar tidak memonopoli I/O disk database.
 //
-// b. request_payloads dan webhook_deliveries dibersihkan dengan PENGHAPUSAN BERBATCH.
-//
-//	Diberi jeda 50ms antar batch agar tidak memonopoli I/O disk database.
+// c. Baris yang mengendap di partisi DEFAULT direlokasi dulu ke partisi
+// bulannya (migrasi 0019) agar ikut jalur drop terpenjaga; tanpa ini baris
+// DEFAULT tidak pernah terhapus oleh mekanisme apa pun (audit3 V-DT-06).
 type RetentionWorker struct {
 	pool        *pgxpool.Pool
 	webhookRepo WebhookRetentionCleaner
 	rollupRepo  RollupRepo
 	logDays     int
 	payloadDays int
+	auditDays   int
 	batchSize   int
 	batchPause  time.Duration
 	logger      *slog.Logger
 }
 
 // NewRetentionWorker membuat instance baru RetentionWorker.
+//
+// auditDays adalah masa retensi audit_logs — tabel jejak audit yang
+// sebelumnya tidak dibersihkan oleh siapa pun dan tumbuh tanpa batas
+// (audit3 V-DT-20).
 func NewRetentionWorker(
 	pool *pgxpool.Pool,
 	webhookRepo WebhookRetentionCleaner,
 	rollupRepo RollupRepo,
 	logDays int,
 	payloadDays int,
+	auditDays int,
 	logger *slog.Logger,
 ) *RetentionWorker {
 	if logDays <= 0 {
@@ -55,6 +67,9 @@ func NewRetentionWorker(
 	}
 	if payloadDays <= 0 {
 		payloadDays = 7
+	}
+	if auditDays <= 0 {
+		auditDays = 365
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -65,6 +80,7 @@ func NewRetentionWorker(
 		rollupRepo:  rollupRepo,
 		logDays:     logDays,
 		payloadDays: payloadDays,
+		auditDays:   auditDays,
 		batchSize:   500,
 		batchPause:  50 * time.Millisecond,
 		logger:      logger,
@@ -74,6 +90,13 @@ func NewRetentionWorker(
 func (w *RetentionWorker) Name() string { return "retention_cleaner" }
 
 // Run mengeksekusi siklus pembersihan retensi.
+//
+// Setiap langkah tetap dicoba walau langkah lain gagal, tetapi kegagalan
+// TIDAK lagi ditelan: versi lama mencatat log lalu mengembalikan nil,
+// sehingga supervisor mencatat putaran yang langkah intinya gagal — bahkan
+// putaran yang DITOLAK penjaga kelengkapan — sebagai "success" (audit3
+// V-DT-09). Kini semua kegagalan digabung dan dikembalikan; hanya
+// keberhasilan penuh yang tercatat sukses.
 func (w *RetentionWorker) Run(ctx context.Context) error {
 	unlock, ok, err := TryAdvisoryLock(ctx, w.pool, LockRetention)
 	if err != nil {
@@ -85,46 +108,189 @@ func (w *RetentionWorker) Run(ctx context.Context) error {
 	defer unlock()
 
 	now := time.Now().UTC()
+	var errs []error
 
 	// Aturan 4: ROLLUP DULU, RETENSI KEMUDIAN.
-	// Sebelum membuang baris mentah, pastikan rollup jam-jam lampau sudah tuntas dihitung
+	// Sebelum membuang baris mentah, pastikan rollup jam-jam lampau sudah tuntas dihitung.
+	// Kegagalannya dicatat sebagai kegagalan putaran (langkah lain tetap jalan —
+	// penjaga kelengkapan di dropOldPartitions adalah garis pertahanan datanya).
 	if w.rollupRepo != nil {
 		from := now.Add(-3 * time.Hour).Truncate(time.Hour)
 		to := now.Add(time.Hour).Truncate(time.Hour)
 		if _, _, err := w.rollupRepo.RollupRange(ctx, from, to); err != nil {
-			w.logger.WarnContext(ctx, "rollup pra-retensi gagal, retensi tetap berhati-hati", "error", err)
+			errs = append(errs, repo.Err("rollup pra-retensi", err))
 		}
 	}
 
-	// 1. Pembersihan partisi kedaluwarsa untuk requests, request_events, dan usage_hourly
 	cutoffLog := now.AddDate(0, 0, -w.logDays)
-	for _, table := range []string{"requests", "request_events", "usage_hourly"} {
-		if err := w.dropOldPartitions(ctx, table, cutoffLog); err != nil {
-			w.logger.WarnContext(ctx, "gagal membuang partisi kedaluwarsa", "table", table, "error", err)
+	cutoffPayload := now.AddDate(0, 0, -w.payloadDays)
+
+	// 1. Relokasi baris partisi DEFAULT yang sudah melewati masa retensinya
+	// (audit3 V-DT-06): pindahkan ke partisi bulannya lewat fungsi partisi
+	// migrasi 0019, supaya langkah drop di bawah menilai mereka dengan
+	// penjaga kelengkapan yang sama seperti baris partisi biasa. Urutannya
+	// wajib sebelum drop; kolom kunci tiap tabel mengikuti definisi partisinya.
+	for _, reloc := range []struct {
+		parent, kolomKunci string
+		cutoff             time.Time
+	}{
+		{"requests", "created_at", cutoffLog},
+		{"request_events", "created_at", cutoffLog},
+		{"usage_hourly", "bucket", cutoffLog},
+		{"request_payloads", "created_at", cutoffPayload},
+	} {
+		if err := w.relokasiBarisDefault(ctx, reloc.parent, reloc.kolomKunci, reloc.cutoff); err != nil {
+			errs = append(errs, err)
 		}
 	}
 
-	// 2. Penghapusan berbatch untuk request_payloads (retensi body lebih singkat, default 7 hari)
-	cutoffPayload := now.AddDate(0, 0, -w.payloadDays)
-	if err := w.deletePayloadsBatch(ctx, cutoffPayload); err != nil {
-		w.logger.WarnContext(ctx, "gagal menghapus batch request_payloads", "error", err)
+	// 2. Pembersihan partisi kedaluwarsa. requests/request_events/usage_hourly
+	// memakai cutoff log; request_payloads memakai cutoff body yang lebih
+	// singkat — partisinya sebelumnya TIDAK PERNAH dibuang (audit3 V-DT-07),
+	// hanya barisnya yang di-DELETE berbatch, jadi file partisinya menumpuk
+	// permanen walau isinya sudah kosong.
+	for _, drop := range []struct {
+		table  string
+		cutoff time.Time
+	}{
+		{"requests", cutoffLog},
+		{"request_events", cutoffLog},
+		{"usage_hourly", cutoffLog},
+		{"request_payloads", cutoffPayload},
+	} {
+		if err := w.dropOldPartitions(ctx, drop.table, drop.cutoff); err != nil {
+			errs = append(errs, repo.Err("membuang partisi kedaluwarsa "+drop.table, err))
+		}
 	}
 
-	// 3. Penghapusan berbatch untuk webhook_deliveries (delivered/abandoned lewat batas)
+	// 3. Penghapusan berbatch untuk sisa request_payloads (partisi DEFAULT dan
+	// partisi yang rentangnya belum seluruhnya melewati cutoff).
+	if err := w.deletePayloadsBatch(ctx, cutoffPayload); err != nil {
+		errs = append(errs, err)
+	}
+
+	// 4. Penghapusan berbatch untuk webhook_deliveries (delivered/abandoned lewat batas)
 	if w.webhookRepo != nil {
 		if err := w.deleteWebhookDeliveriesBatch(ctx, cutoffPayload); err != nil {
-			w.logger.WarnContext(ctx, "gagal membersihkan batch webhook_deliveries", "error", err)
+			errs = append(errs, err)
 		}
 	}
 
-	// 4. Retensi health_checks (audit F6): tabel ini bertambah 1 baris per
+	// 5. Retensi health_checks (audit F6): tabel ini bertambah 1 baris per
 	// provider per interval health check SELAMANYA — sebelumnya tidak ada
 	// DELETE untuknya di seluruh repo. Riwayat kesehatan 7 hari cukup
 	// untuk diagnosis; sisanya hanya membebani indeks.
 	if err := w.deleteHealthChecksBatch(ctx, now.AddDate(0, 0, -7)); err != nil {
-		w.logger.WarnContext(ctx, "gagal membersihkan batch health_checks", "error", err)
+		errs = append(errs, err)
 	}
 
+	// 6. Retensi audit_logs (audit3 V-DT-20): jejak audit tidak lagi disimpan
+	// selamanya; masa simpannya diatur AUDIT_LOG_RETENTION_DAYS.
+	if err := w.deleteAuditLogsBatch(ctx, now.AddDate(0, 0, -w.auditDays)); err != nil {
+		errs = append(errs, err)
+	}
+
+	return errors.Join(errs...)
+}
+
+// batasRelokasiPerPutaran membatasi bulan DEFAULT yang direlokasi per tabel
+// per putaran, agar putaran pertama sesudah downtime panjang tidak berubah
+// menjadi migrasi data raksasa; sisanya dicicil putaran berikutnya.
+const batasRelokasiPerPutaran = 3
+
+// relokasiBarisDefault memindahkan baris partisi DEFAULT yang bulannya sudah
+// melewati cutoff ke partisi bulanan mereka, dengan memanggil fungsi partisi
+// migrasi 0019 (yang sejak 0019 menyelamatkan baris DEFAULT, bukan gagal).
+// Bulan yang direntangkan cutoff ikut dibuat partisinya; keputusan membuang
+// tetap milik dropOldPartitions beserta penjaganya.
+func (w *RetentionWorker) relokasiBarisDefault(ctx context.Context, parentTable, kolomKunci string, cutoff time.Time) error {
+	defTable := parentTable + "_default"
+	var ada bool
+	if err := w.pool.QueryRow(ctx, "select to_regclass($1) is not null", defTable).Scan(&ada); err != nil {
+		return repo.Err("memeriksa partisi default "+parentTable, err)
+	}
+	if !ada {
+		return nil
+	}
+
+	// Nama tabel/kolom berasal dari daftar tetap di Run — bukan masukan
+	// pengguna — jadi aman dirangkai ke SQL.
+	rows, err := w.pool.Query(ctx, fmt.Sprintf(
+		`select distinct date_trunc('month', %s)::date from %s where %s < $1 order by 1 asc limit $2`,
+		kolomKunci, defTable, kolomKunci), cutoff, batasRelokasiPerPutaran)
+	if err != nil {
+		return repo.Err("membaca bulan partisi default "+parentTable, err)
+	}
+	var bulan []time.Time
+	for rows.Next() {
+		var b time.Time
+		if err := rows.Scan(&b); err != nil {
+			rows.Close()
+			return err
+		}
+		bulan = append(bulan, b)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return repo.Err("membaca bulan partisi default "+parentTable, err)
+	}
+
+	for _, b := range bulan {
+		var dibuat string
+		if err := w.pool.QueryRow(ctx, "select create_monthly_partition($1, $2::date)", parentTable, b).Scan(&dibuat); err != nil {
+			return repo.Err(fmt.Sprintf("relokasi baris default %s bulan %s", parentTable, b.Format("2006-01")), err)
+		}
+		w.logger.InfoContext(ctx, "baris partisi DEFAULT direlokasi ke partisi bulannya",
+			"parent", parentTable, "partisi", dibuat)
+	}
+	return nil
+}
+
+// hariRollupLengkap melaporkan apakah usage_daily untuk satu hari kalender
+// UTC sudah sama totalnya dengan usage_hourly hari itu — penjaga sebelum
+// partisi usage_hourly dibuang (audit3 V-DT-04): retensi versi lama membuang
+// usage_hourly murni berdasarkan umur, padahal baris per jam itulah SATU-
+// SATUNYA bahan untuk memperbaiki hari yang agregat hariannya hilang/basi.
+// Selisih sekecil apa pun berarti harian belum mencerminkan jamnya.
+func (w *RetentionWorker) hariRollupLengkap(ctx context.Context, hari time.Time) (bool, error) {
+	var lengkap bool
+	err := w.pool.QueryRow(ctx, `
+		select (select coalesce(sum(request_count), 0) from usage_hourly
+		        where bucket >= $1 and bucket < $2)
+		     = (select coalesce(sum(request_count), 0) from usage_daily
+		        where bucket >= $1 and bucket < $2)`,
+		hari, hari.AddDate(0, 0, 1)).Scan(&lengkap)
+	if err != nil {
+		return false, err
+	}
+	return lengkap, nil
+}
+
+// deleteAuditLogsBatch menghapus baris audit_logs yang lebih tua dari cutoff
+// secara berbatch terbatas, meniru pola deleteHealthChecksBatch.
+func (w *RetentionWorker) deleteAuditLogsBatch(ctx context.Context, cutoff time.Time) error {
+	for i := 0; i < 50; i++ {
+		tag, err := w.pool.Exec(ctx, `
+			delete from audit_logs
+			where ctid in (
+				select ctid from audit_logs
+				where occurred_at < $1
+				limit 5000
+			)`, cutoff)
+		if err != nil {
+			return repo.Err("menghapus audit_logs kedaluwarsa", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(w.batchPause):
+		}
+	}
+	w.logger.WarnContext(ctx, "penghapusan audit_logs mencapai batas iterasi; sisa dilanjutkan putaran berikutnya",
+		"cutoff", cutoff.Format(time.RFC3339))
 	return nil
 }
 
@@ -247,6 +413,59 @@ func (w *RetentionWorker) dropOldPartitions(ctx context.Context, parentTable str
 			}
 		}
 
+		// Penjaga kelengkapan HARIAN untuk usage_hourly (audit3 V-DT-04):
+		// partisi per jam hanya boleh dibuang bila SETIAP hari di rentangnya
+		// sudah tercermin penuh di usage_daily. Tanpa penjaga ini retensi
+		// membuang bahan baku perbaikan harian murni berdasarkan umur —
+		// padahal kelengkapan harian sebelumnya tidak dideteksi di mana pun,
+		// jadi hari yang basi/hilang terkubur permanen bersama partisinya.
+		// Fail-closed: selisih ATAU error pemeriksaan = drop ditolak.
+		if parentTable == "usage_hourly" {
+			ditolak := false
+			for hari := startDate; hari.Before(endDate); hari = hari.AddDate(0, 0, 1) {
+				lengkap, errHari := w.hariRollupLengkap(ctx, hari)
+				if errHari != nil {
+					w.logger.ErrorContext(ctx, "PENOLAKAN DROP PARTISI: pemeriksaan kelengkapan harian gagal, drop dibatalkan demi keamanan data",
+						"table", parentTable, "partition", partName, "error", errHari)
+					ditolak = true
+					break
+				}
+				if !lengkap {
+					w.logger.ErrorContext(ctx, "PENOLAKAN DROP PARTISI: ada hari yang belum tercermin penuh di usage_daily",
+						"table", parentTable, "partition", partName, "hari", hari.Format("2006-01-02"))
+					ditolak = true
+					break
+				}
+			}
+			if ditolak {
+				unrolledPartitions = append(unrolledPartitions, partName)
+				continue
+			}
+		}
+
+		// Sinkronisasi events dengan requests (audit3 V-DT-05): kedua tabel
+		// sebelumnya dibuang independen, jadi partisi events sebulan bisa
+		// hilang sementara request-nya masih ada (tertolak penjaganya sendiri)
+		// — jejak audit per request lenyap dari data yang masih disimpan.
+		// Partisi events hanya dibuang bila partisi requests bulan yang sama
+		// sudah tidak ada. Urutan pemrosesan Run (requests sebelum events)
+		// membuat partisi yang lolos penjaga terbuang lebih dulu di putaran
+		// yang sama.
+		if parentTable == "request_events" {
+			var requestsMasihAda bool
+			if err := w.pool.QueryRow(ctx, "select to_regclass($1) is not null", "requests_"+dateStr).Scan(&requestsMasihAda); err != nil {
+				w.logger.ErrorContext(ctx, "PENOLAKAN DROP PARTISI: pemeriksaan partisi requests pendamping gagal, drop dibatalkan demi keamanan data",
+					"table", parentTable, "partition", partName, "error", err)
+				unrolledPartitions = append(unrolledPartitions, partName)
+				continue
+			}
+			if requestsMasihAda {
+				w.logger.InfoContext(ctx, "drop partisi events ditunda: partisi requests bulan yang sama masih ada",
+					"table", parentTable, "partition", partName)
+				continue
+			}
+		}
+
 		toDrop = append(toDrop, partName)
 	}
 	if err := rows.Err(); err != nil {
@@ -264,15 +483,26 @@ func (w *RetentionWorker) dropOldPartitions(ctx context.Context, parentTable str
 	}
 
 	if len(unrolledPartitions) > 0 {
-		return fmt.Errorf("partisi %v ditolak untuk dibuang karena masih memuat data yang belum ter-rollup ke usage_hourly", unrolledPartitions)
+		return fmt.Errorf("partisi %v ditolak untuk dibuang karena penjaga kelengkapan rollup belum lolos", unrolledPartitions)
 	}
 
 	return nil
 }
 
+// batasBatchPayloads membatasi iterasi penghapusan berbatch per putaran
+// (audit3 V-DT-12): versi lama berputar `for {}` tanpa batas, jadi tunggakan
+// raksasa dari downtime panjang membuat satu putaran retensi berjalan
+// berjam-jam dan mengunci worker. Dengan batas ini satu putaran menghapus
+// maksimal batasBatchPayloads × batchSize baris; sisa dicicil putaran
+// berikutnya dan cap yang tercapai dicatat sebagai peringatan.
+const batasBatchPayloads = 400
+
+// batasBatchWebhook sama seperti batasBatchPayloads, untuk delivery webhook.
+const batasBatchWebhook = 200
+
 // deletePayloadsBatch menghapus isi request_payloads bertahap dengan jeda kecil antar batch.
 func (w *RetentionWorker) deletePayloadsBatch(ctx context.Context, cutoff time.Time) error {
-	for {
+	for i := 0; i < batasBatchPayloads; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -294,18 +524,20 @@ func (w *RetentionWorker) deletePayloadsBatch(ctx context.Context, cutoff time.T
 		}
 
 		if tag.RowsAffected() == 0 {
-			break
+			return nil
 		}
 
 		// Jeda antar batch untuk memberi napas pada disk I/O dan autovacuum
 		time.Sleep(w.batchPause)
 	}
+	w.logger.WarnContext(ctx, "penghapusan request_payloads mencapai batas iterasi; sisa dilanjutkan putaran berikutnya",
+		"cutoff", cutoff.Format(time.RFC3339), "batas_iterasi", batasBatchPayloads)
 	return nil
 }
 
 // deleteWebhookDeliveriesBatch menghapus delivery lama (delivered/abandoned) bertahap.
 func (w *RetentionWorker) deleteWebhookDeliveriesBatch(ctx context.Context, cutoff time.Time) error {
-	for {
+	for i := 0; i < batasBatchWebhook; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -318,10 +550,12 @@ func (w *RetentionWorker) deleteWebhookDeliveriesBatch(ctx context.Context, cuto
 		}
 
 		if n == 0 {
-			break
+			return nil
 		}
 
 		time.Sleep(w.batchPause)
 	}
+	w.logger.WarnContext(ctx, "penghapusan webhook_deliveries mencapai batas iterasi; sisa dilanjutkan putaran berikutnya",
+		"cutoff", cutoff.Format(time.RFC3339), "batas_iterasi", batasBatchWebhook)
 	return nil
 }

@@ -99,6 +99,22 @@ export default {
           from: { opacity: '0', transform: 'translateY(4px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
+        // Pengganti kelas mati ala tailwindcss-animate (audit3 B-008):
+        // plugin itu tidak terpasang, jadi `animate-in fade-in/zoom-in-95/
+        // slide-in-from-*` selama ini no-op. Keyframes di bawah memberi
+        // semantik yang sama dengan pola config yang sudah ada.
+        'opacity-in': {
+          from: { opacity: '0' },
+          to: { opacity: '1' },
+        },
+        'zoom-in': {
+          from: { opacity: '0', transform: 'scale(0.95)' },
+          to: { opacity: '1', transform: 'scale(1)' },
+        },
+        'slide-in-right': {
+          from: { opacity: '0', transform: 'translateX(32px)' },
+          to: { opacity: '1', transform: 'translateX(0)' },
+        },
         'sheet-up': {
           from: { opacity: '0', transform: 'translateY(28px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
@@ -121,6 +137,9 @@ export default {
       animation: {
         'toast-progress': 'toast-progress linear forwards',
         'fade-in': 'fade-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'opacity-in': 'opacity-in 0.2s ease-out forwards',
+        'zoom-in': 'zoom-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'slide-in-right': 'slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         'sheet-up': 'sheet-up 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         'pulse-subtle': 'pulse-subtle 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'ping-subtle': 'ping-subtle 2s cubic-bezier(0, 0, 0.2, 1) infinite',

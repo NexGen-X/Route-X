@@ -11,6 +11,7 @@ import {
   ArrowRight,
   Shield,
   Zap,
+  AlertTriangle,
 } from 'lucide-react';
 import { ProviderBrandIcon } from './ProviderIcons';
 
@@ -20,6 +21,10 @@ export interface ProviderCardProps {
   poolSummary?: {
     credentials: Credential[];
     oauthSessions: OAuthSession[];
+    // Penanda gagal-muat ringkasan (audit3 B-075): true bila daftar
+    // kredensial/sesi OAuth provider ini gagal dibaca — kartu wajib
+    // menampilkannya sebagai kegagalan, bukan keadaan kosong.
+    gagalMuat?: boolean;
   };
   isCustom: boolean;
   onOpenDrawer: (provider: Provider, tab?: 'models' | 'credentials' | 'settings') => void;
@@ -98,9 +103,9 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h4 className="font-semibold text-white text-sm sm:text-base truncate">
+            <h3 className="font-semibold text-white text-sm sm:text-base truncate">
               {p.display_name || p.name}
-            </h4>
+            </h3>
             {isCustom && (
               <span className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-bg-surface-2 text-text-secondary border border-border flex-shrink-0">
                 Custom
@@ -148,33 +153,43 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
           {egressPool ? egressPool.name : 'Direct Outbound'}
         </span>
 
-        <span className="inline-flex items-center gap-2 text-text-secondary">
-          <Users className="w-3.5 h-3.5 text-text-muted shrink-0" aria-hidden="true" />
-          <span className="font-medium">
-            {totalAccounts === 0
-              ? 'Belum ada kredensial'
-              : `${activeAccounts} Kredensial Aktif · ${
-                  p.credential_strategy === 'priority'
-                    ? 'Priority Failover'
-                    : 'Round Robin'
-                }`}
+        {pool.gagalMuat ? (
+          // Ringkasan gagal dibaca: tampilkan kegagalannya secara jujur.
+          // Mengklaim "Belum ada kredensial" di sini menyesatkan operator
+          // (audit3 B-075) — kredensial bisa saja ada, hanya tak terbaca.
+          <span className="inline-flex items-center gap-2 text-amber-300/90" role="status">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span className="font-medium">Ringkasan kredensial gagal dimuat</span>
           </span>
-          {totalAccounts === 0 ? (
-            <button
-              type="button"
-              onClick={() => onQuickAddAccount(p)}
-              aria-label={`Tambah API key untuk ${p.display_name || p.name}`}
-              className="text-[11px] text-accent-text hover:underline shrink-0 font-medium cursor-pointer min-h-[32px] flex items-center"
-            >
-              + Tambah Key
-            </button>
-          ) : (
-            <span className="text-[10px] text-text-muted font-mono flex items-center gap-1 shrink-0">
-              <Shield className="w-3 h-3 text-emerald-400/80" aria-hidden="true" />
-              AES-GCM
+        ) : (
+          <span className="inline-flex items-center gap-2 text-text-secondary">
+            <Users className="w-3.5 h-3.5 text-text-muted shrink-0" aria-hidden="true" />
+            <span className="font-medium">
+              {totalAccounts === 0
+                ? 'Belum ada kredensial'
+                : `${activeAccounts} Kredensial Aktif · ${
+                    p.credential_strategy === 'priority'
+                      ? 'Priority Failover'
+                      : 'Round Robin'
+                  }`}
             </span>
-          )}
-        </span>
+            {totalAccounts === 0 ? (
+              <button
+                type="button"
+                onClick={() => onQuickAddAccount(p)}
+                aria-label={`Tambah API key untuk ${p.display_name || p.name}`}
+                className="text-[11px] text-accent-text hover:underline shrink-0 font-medium cursor-pointer min-h-[32px] flex items-center"
+              >
+                + Tambah Key
+              </button>
+            ) : (
+              <span className="text-[10px] text-text-muted font-mono flex items-center gap-1 shrink-0">
+                <Shield className="w-3 h-3 text-emerald-400/80" aria-hidden="true" />
+                AES-GCM
+              </span>
+            )}
+          </span>
+        )}
 
         <span className="flex items-center gap-2 ml-auto">
           <Button

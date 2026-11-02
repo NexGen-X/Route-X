@@ -8,6 +8,7 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Coins, Plus, Sparkles, Gauge } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
 import {
   type BudgetTab,
   type BudgetFormData,
@@ -43,6 +44,10 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
   const [models, setModels] = useState<Model[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Sumber referensi formulir (kunci/model) yang terpotong saat dimuat
+  // (sisa V-FF-28): pilihan cakupan anggaran/batas yang tidak terbaca
+  // utuh wajib menampilkan peringatan.
+  const [sumberTerpotong, setSumberTerpotong] = useState<string[]>([]);
 
   // Drawer States
   const [isCreateBudgetOpen, setIsCreateBudgetOpen] = useState(false);
@@ -79,6 +84,11 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
       if (mRes.status === 'fulfilled' && mRes.value) {
         setModels(mRes.value.items || []);
       }
+
+      const terpotong: string[] = [];
+      if (kRes.status === 'fulfilled' && kRes.value?.terpotong) terpotong.push('kunci API');
+      if (mRes.status === 'fulfilled' && mRes.value?.terpotong) terpotong.push('model');
+      setSumberTerpotong(terpotong);
 
       if (bRes.status === 'rejected') {
         setLoadError(getErrorMessage(bRes.reason));
@@ -307,6 +317,10 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
       </div>
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
+
+      {sumberTerpotong.length > 0 && (
+        <PeringatanDaftarTerpotong sumber={sumberTerpotong.join(', ')} className="mb-4" />
+      )}
 
       {/* ===================== TAB 1: BATAS ANGGARAN (USD) ===================== */}
       {activeTab === 'budgets' && (

@@ -36,6 +36,7 @@ import { ProviderCard } from '../components/providers/ProviderCard';
 import type { ModelTestResult } from '../components/providers/types';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
 import { copyTextToClipboard } from '../utils/clipboard';
 
 export { matchPresetForProvider, matchExistingProvider };
@@ -45,15 +46,19 @@ export const Providers: React.FC = () => {
 
   const queryClient = useQueryClient();
 
-  // Data Utama (TanStack Query)
-  const { data: provsData = [], isLoading: isProvidersLoading, isError: isProvidersError, error: providersError, refetch: refetchProviders } = useQuery({
+  // Data Utama (TanStack Query). Penanda `terpotong` dari listAll ikut
+  // dipertahankan (sisa V-FF-28): daftar yang tidak terbaca utuh wajib
+  // menampilkan peringatan, bukan tampil seolah lengkap.
+  const { data: provsData, isLoading: isProvidersLoading, isError: isProvidersError, error: providersError, refetch: refetchProviders } = useQuery({
     queryKey: ['providers'],
     queryFn: async () => {
       const res = await api.providers.listAll();
-      return Array.isArray(res) ? res : (res as { items?: Provider[] }).items || [];
+      const items = Array.isArray(res) ? res : (res as { items?: Provider[] }).items || [];
+      return { items, terpotong: !Array.isArray(res) && !!(res as { terpotong?: boolean }).terpotong };
     },
   });
-  const providers: Provider[] = provsData;
+  const providers: Provider[] = provsData?.items ?? [];
+  const providersTerpotong = !!provsData?.terpotong;
 
   const { data: poolsData = [], isError: isPoolsError, error: poolsError } = useQuery({
     queryKey: ['egressPools'],
@@ -64,30 +69,37 @@ export const Providers: React.FC = () => {
   });
   const egressPools: EgressPool[] = poolsData;
 
-  // Ringkasan Pool Terpadu (Kredensial & Sesi OAuth untuk setiap Provider)
+  // Ringkasan Pool Terpadu (Kredensial & Sesi OAuth untuk setiap Provider).
+  // Kegagalan memuat salah satu sumber TIDAK lagi ditelan menjadi daftar
+  // kosong (audit3 B-075): entri ditandai `gagalMuat` dan ProviderCard
+  // menampilkan penanda gagal-muat, bukan "Belum ada kredensial".
   const { data: poolsSummary = {} } = useQuery({
     queryKey: ['providersPoolSummary', providers.map((p) => p.id).join(',')],
     enabled: providers.length > 0,
     queryFn: async () => {
       const summaryMap: Record<
         string,
-        { credentials: Credential[]; oauthSessions: OAuthSession[] }
+        { credentials: Credential[]; oauthSessions: OAuthSession[]; gagalMuat?: boolean }
       > = {};
 
       await Promise.all(
         providers.map(async (p) => {
-          try {
-            const [credsRes, oauthRes] = await Promise.all([
-              api.credentials.list(p.id).catch(() => ({ items: [] })),
-              api.providers.listOAuthSessions(p.id).catch(() => ({ items: [] })),
-            ]);
-            summaryMap[p.id] = {
-              credentials: credsRes.items || [],
-              oauthSessions: oauthRes.items || [],
-            };
-          } catch {
-            summaryMap[p.id] = { credentials: [], oauthSessions: [] };
-          }
+          let gagalMuat = false;
+          const [credsRes, oauthRes] = await Promise.all([
+            api.credentials.list(p.id).catch(() => {
+              gagalMuat = true;
+              return { items: [] as Credential[] };
+            }),
+            api.providers.listOAuthSessions(p.id).catch(() => {
+              gagalMuat = true;
+              return { items: [] as OAuthSession[] };
+            }),
+          ]);
+          summaryMap[p.id] = {
+            credentials: credsRes.items || [],
+            oauthSessions: oauthRes.items || [],
+            ...(gagalMuat ? { gagalMuat: true } : {}),
+          };
         })
       );
 
@@ -468,9 +480,9 @@ export const Providers: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5" />
             </div>
             <div>
-              <h4 className="text-xs font-semibold text-white">
+              <h3 className="text-xs font-semibold text-white">
                 Katalog Preset Provider
-              </h4>
+              </h3>
             </div>
           </div>
           <Button
@@ -536,6 +548,7 @@ export const Providers: React.FC = () => {
       {/* ------------------------------------------------------------------- */}
       {/* 3. DAFTAR KARTU PROVIDER (RINGKAS & BERSIH)                         */}
       {/* ------------------------------------------------------------------- */}
+      {providersTerpotong && <PeringatanDaftarTerpotong sumber="provider" />}
       {isProvidersError ? (
         <QueryError
           message={providersError instanceof Error ? providersError.message : 'Daftar provider tidak tersedia.'}

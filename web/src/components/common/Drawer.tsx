@@ -103,14 +103,14 @@ export const Drawer: React.FC<DrawerProps> = ({
       >
         {/* Backdrop */}
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity animate-opacity-in"
           onClick={onClose}
         />
 
         {/* Sheet dinamis: mobile bottom-sheet mengambang dengan safe-area, desktop dialog tengah */}
         <div className="fixed inset-0 flex items-end justify-center sm:items-center px-2 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-6 pointer-events-none">
           <div
-            className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border border-border shadow-surface-elevated flex flex-col h-auto max-h-[92dvh] sm:max-h-[88vh] min-h-0 animate-in slide-in-from-bottom sm:slide-in-from-right sm:zoom-in-95 duration-300 ease-out rounded-card overflow-hidden backdrop-blur-sm`}
+            className={`pointer-events-auto w-full sm:w-screen ${maxW} bg-bg-surface border border-border shadow-surface-elevated flex flex-col h-auto max-h-[92dvh] sm:max-h-[88vh] min-h-0 animate-sheet-up sm:animate-slide-in-right rounded-card overflow-hidden backdrop-blur-sm`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Drawer Header */}

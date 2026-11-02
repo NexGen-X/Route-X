@@ -103,10 +103,10 @@ export const Modal: React.FC<ModalProps> = ({
         aria-labelledby={titleId}
         aria-describedby={subtitle ? subtitleId : ariaDescribedBy}
         onClick={onClose}
-        className={`fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer ${sheetOnMobile ? 'items-end p-0 sm:items-center sm:p-4' : 'items-center p-4'}`}
+        className={`fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-sm animate-opacity-in cursor-pointer ${sheetOnMobile ? 'items-end p-0 sm:items-center sm:p-4' : 'items-center p-4'}`}
       >
         <div
-          className={`w-full ${maxW} bg-bg-surface border border-border shadow-surface-elevated flex flex-col overflow-hidden cursor-default backdrop-blur-sm ${sheetOnMobile ? 'rounded-t-[20px] sm:rounded-card max-h-[92dvh] sm:max-h-[90dvh] animate-sheet-up sm:animate-fade-in' : 'rounded-card max-h-[90dvh] animate-in zoom-in-95 duration-200'}`}
+          className={`w-full ${maxW} bg-bg-surface border border-border shadow-surface-elevated flex flex-col overflow-hidden cursor-default backdrop-blur-sm ${sheetOnMobile ? 'rounded-t-[20px] sm:rounded-card max-h-[92dvh] sm:max-h-[90dvh] animate-sheet-up sm:animate-fade-in' : 'rounded-card max-h-[90dvh] animate-zoom-in'}`}
           onClick={(e) => e.stopPropagation()}
         >
           {sheetOnMobile && (

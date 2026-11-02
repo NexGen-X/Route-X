@@ -82,9 +82,21 @@ type Message struct {
 	ToolCalls []ToolCall
 	// ToolCallID mengikat pesan berperan tool ke permintaan yang dijawabnya.
 	ToolCallID string
+	// IsError menandai hasil tool yang GAGAL. Hanya bermakna pada pesan
+	// berperan tool; padanannya di dialek Anthropic adalah is_error pada
+	// block tool_result. Tanpa field ini penanda itu hilang di terjemahan
+	// dan model membaca kegagalan sebagai keberhasilan (audit3 V-GW-24).
+	IsError bool
 	// ReasoningContent adalah jejak penalaran yang dikembalikan sebagian model.
 	// Disimpan terpisah dari Content karena penagihannya juga terpisah.
 	ReasoningContent string
+	// ReasoningSignature adalah tanda tangan kriptografis atas ReasoningContent
+	// yang diterbitkan Anthropic bersama block thinking. Anthropic hanya
+	// menerima block thinking yang dikirim balik BILA tanda tangannya utuh,
+	// jadi keduanya harus berjalan bersama: adapter yang tidak bisa menyertakan
+	// tanda tangan ini wajib membuang jejak penalarannya juga, bukan
+	// mengirimkannya telanjang (audit3 V-GW-23).
+	ReasoningSignature string
 }
 
 // IsMultimodal melaporkan apakah pesan ini memakai bentuk array bagian.
@@ -106,6 +118,16 @@ func (m *Message) Text() string {
 		}
 	}
 	return string(b)
+}
+
+// ThinkingParam adalah parameter extended thinking bergaya Anthropic.
+//
+// Type "enabled" menyalakan penalaran dengan anggaran BudgetTokens; "disabled"
+// mematikannya secara eksplisit. Nilai lain tidak diteruskan — permukaan yang
+// mengurai permintaan menolaknya sebelum sampai ke sini.
+type ThinkingParam struct {
+	Type         string
+	BudgetTokens int
 }
 
 // FunctionDef mendeskripsikan satu fungsi yang boleh dipanggil model.
@@ -153,8 +175,21 @@ type ChatRequest struct {
 	MaxTokens   *int
 	Temperature *float64
 	TopP        *float64
-	Stop        []string
-	Stream      bool
+	// TopK membatasi penarikan sampel ke K token teratas. Parameter ini milik
+	// dialek Anthropic (dan sebagian penyedia lain); adapter yang tidak
+	// mengenalnya mengabaikannya sesuai kontrak Extra di bawah.
+	TopK   *int
+	Stop   []string
+	Stream bool
+
+	// Thinking adalah parameter extended thinking bergaya Anthropic yang
+	// diminta klien secara eksplisit. Ia berbeda dari ReasoningEffort:
+	// ReasoningEffort adalah intensitas abstrak yang diterjemahkan tiap
+	// adapter, sedangkan Thinking membawa budget token persis seperti yang
+	// ditulis klien — menerjemahkannya ke effort akan mengubah angka yang
+	// diminta. Adapter Anthropic memakainya apa adanya dan ia menang atas
+	// terjemahan ReasoningEffort (audit3 V-GW-17).
+	Thinking *ThinkingParam
 
 	Tools      []Tool
 	ToolChoice json.RawMessage
@@ -200,6 +235,10 @@ type Choice struct {
 	Index        int
 	Message      Message
 	FinishReason string
+	// StopSequence adalah urutan berhenti yang benar-benar memicu penghentian,
+	// terisi hanya bila FinishReason adalah FinishStopSequence. Dialek OpenAI
+	// tidak melaporkannya, dialek Anthropic mewajibkannya utuh (audit3 V-GW-28).
+	StopSequence string
 }
 
 // Alasan berhenti dalam bentuk kanonik (mengikuti OpenAI).
@@ -208,6 +247,14 @@ const (
 	FinishLength        = "length"
 	FinishToolCalls     = "tool_calls"
 	FinishContentFilter = "content_filter"
+	// FinishStopSequence dan FinishPauseTurn adalah alasan berhenti khas
+	// Anthropic yang TIDAK dilipat ke FinishStop: klien Anthropic membedakan
+	// ketiganya, dan melipatkannya berarti memberi tahu klien hal yang salah
+	// tentang mengapa model berhenti (audit3 V-GW-28). Permukaan berdialek
+	// OpenAI memetakan keduanya kembali ke "stop" saat menulis finish_reason,
+	// karena kosakata OpenAI memang tidak punya padanannya.
+	FinishStopSequence = "stop_sequence"
+	FinishPauseTurn    = "pause_turn"
 )
 
 // ChatResponse adalah respons completion non-streaming.
@@ -237,6 +284,9 @@ type StreamEvent struct {
 	ToolCalls []ToolCall
 	// FinishReason terisi pada peristiwa terakhir satu choice.
 	FinishReason string
+	// StopSequence menyertai FinishReason FinishStopSequence pada peristiwa
+	// penutup, sejajar dengan Choice.StopSequence pada jalur non-streaming.
+	StopSequence string
 	// Usage terisi pada peristiwa penutup bila provider melaporkannya.
 	Usage *Usage
 	// Raw adalah MUATAN satu peristiwa SSE dalam dialek OpenAI — objek

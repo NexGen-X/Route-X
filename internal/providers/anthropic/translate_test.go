@@ -88,9 +88,11 @@ func TestPermintaanKanonikDiterjemahkanFieldPerField(t *testing.T) {
 		},
 		MaxTokens:   ptrInt(256),
 		Temperature: ptrFloat(0.25),
-		TopP:        ptrFloat(0.9),
-		Stop:        []string{"STOP"},
-		User:        "pengguna-42",
+		// TopP tidak ikut di fixture ini: menentukan temperature DAN top_p
+		// bersamaan kini ditolak adapter (audit3 V-GW-31); penerjemahan top_p
+		// sendirian dan penolakan konfliknya diuji di translate_audit3_test.go.
+		Stop: []string{"STOP"},
+		User: "pengguna-42",
 		// Field bergaya OpenAI tanpa padanan di Anthropic tidak boleh diteruskan.
 		Seed:           ptrInt(7),
 		ResponseFormat: json.RawMessage(`{"type":"json_object"}`),
@@ -113,8 +115,8 @@ func TestPermintaanKanonikDiterjemahkanFieldPerField(t *testing.T) {
 	if body.Temperature == nil || *body.Temperature != 0.25 {
 		t.Errorf("temperature = %v", body.Temperature)
 	}
-	if body.TopP == nil || *body.TopP != 0.9 {
-		t.Errorf("top_p = %v", body.TopP)
+	if body.TopP != nil {
+		t.Errorf("top_p = %v, mau tidak terkirim pada fixture ini", body.TopP)
 	}
 	if len(body.StopSequences) != 1 || body.StopSequences[0] != "STOP" {
 		t.Errorf("stop_sequences = %v (Anthropic memakai stop_sequences, bukan stop)", body.StopSequences)
@@ -734,9 +736,12 @@ func TestUsageMenjumlahkanTokenCacheSendiri(t *testing.T) {
 
 func TestPemetaanStopReason(t *testing.T) {
 	tests := map[string]string{
-		"end_turn":      providers.FinishStop,
-		"stop_sequence": providers.FinishStop,
-		"pause_turn":    providers.FinishStop,
+		"end_turn": providers.FinishStop,
+		// stop_sequence dan pause_turn TIDAK lagi dilipat ke FinishStop:
+		// permukaan Anthropic membedakannya dan nilainya harus sampai utuh
+		// (audit3 V-GW-28).
+		"stop_sequence": providers.FinishStopSequence,
+		"pause_turn":    providers.FinishPauseTurn,
 		"max_tokens":    providers.FinishLength,
 		"tool_use":      providers.FinishToolCalls,
 		"refusal":       providers.FinishContentFilter,

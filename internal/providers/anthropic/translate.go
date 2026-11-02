@@ -30,6 +30,7 @@ type messagesRequest struct {
 	System        string            `json:"system,omitempty"`
 	Temperature   *float64          `json:"temperature,omitempty"`
 	TopP          *float64          `json:"top_p,omitempty"`
+	TopK          *int              `json:"top_k,omitempty"`
 	StopSequences []string          `json:"stop_sequences,omitempty"`
 	Stream        bool              `json:"stream,omitempty"`
 	Tools         []upstreamTool    `json:"tools,omitempty"`
@@ -64,6 +65,7 @@ type block struct {
 	// tool_result
 	ToolUseID string  `json:"tool_use_id,omitempty"`
 	Content   []block `json:"content,omitempty"`
+	IsError   bool    `json:"is_error,omitempty"`
 }
 
 type imageSource struct {
@@ -108,13 +110,14 @@ type upstreamUsage struct {
 
 // messagesResponse adalah respons non-streaming /v1/messages.
 type messagesResponse struct {
-	ID         string        `json:"id"`
-	Type       string        `json:"type"`
-	Role       string        `json:"role"`
-	Model      string        `json:"model"`
-	Content    []block       `json:"content"`
-	StopReason string        `json:"stop_reason"`
-	Usage      upstreamUsage `json:"usage"`
+	ID           string        `json:"id"`
+	Type         string        `json:"type"`
+	Role         string        `json:"role"`
+	Model        string        `json:"model"`
+	Content      []block       `json:"content"`
+	StopReason   string        `json:"stop_reason"`
+	StopSequence string        `json:"stop_sequence"`
+	Usage        upstreamUsage `json:"usage"`
 }
 
 // buildMessagesRequest menerjemahkan permintaan kanonik menjadi body Anthropic.
@@ -151,6 +154,7 @@ func (p *Provider) buildMessagesRequest(req *providers.ChatRequest, stream bool)
 		Stream:        stream,
 		Temperature:   req.Temperature,
 		TopP:          req.TopP,
+		TopK:          req.TopK,
 	}
 
 	body.MaxTokens = p.maxTokens
@@ -158,17 +162,47 @@ func (p *Provider) buildMessagesRequest(req *providers.ChatRequest, stream bool)
 		body.MaxTokens = *req.MaxTokens
 	}
 
-	// Penalaran diaktifkan hanya bila klien memintanya lewat ReasoningEffort. Anthropic
-	// menolak temperature maupun top_p saat extended thinking menyala, dan menuntut
-	// max_tokens lebih besar dari budget — keduanya diperbaiki di sini agar permintaan
-	// yang sah di bentuk kanonik tidak berubah menjadi 400 di upstream.
-	if budget := thinkingBudget(req.ReasoningEffort); budget > 0 {
+	// Extended thinking diaktifkan oleh permintaan eksplisit klien
+	// (ChatRequest.Thinking, dari field thinking permukaan messages) atau oleh
+	// ReasoningEffort kanonik. Yang eksplisit menang: ia membawa budget token
+	// persis, dan menerjemahkannya dari effort akan mengubah angka itu.
+	// Anthropic menolak temperature maupun top_p saat thinking menyala, dan
+	// menuntut max_tokens lebih besar dari budget — keduanya diperbaiki di
+	// sini agar permintaan yang sah di bentuk kanonik tidak berubah menjadi
+	// 400 di upstream.
+	budget := 0
+	switch {
+	case req.Thinking != nil && req.Thinking.Type == "enabled":
+		budget = req.Thinking.BudgetTokens
+		if budget < 1024 {
+			// 1024 adalah budget minimum yang diterima Anthropic; enabled
+			// tanpa budget (atau di bawahnya) dinaikkan ke minimum itu.
+			budget = 1024
+		}
+	case req.Thinking != nil && req.Thinking.Type == "disabled":
+		// Mati secara eksplisit: ReasoningEffort tidak boleh menyalakannya
+		// kembali di belakang keputusan klien.
+		budget = 0
+	default:
+		budget = thinkingBudget(req.ReasoningEffort)
+	}
+	if budget > 0 {
 		body.Thinking = &thinkingConfig{Type: "enabled", BudgetTokens: budget}
 		if body.MaxTokens <= budget {
 			body.MaxTokens = budget + p.maxTokens
 		}
 		body.Temperature = nil
 		body.TopP = nil
+	} else if req.Temperature != nil && req.TopP != nil {
+		// Anthropic menolak temperature dan top_p yang ditentukan BERSAMAAN.
+		// Meneruskan keduanya apa adanya hanya memindahkan penolakan itu ke
+		// upstream, dan membuang salah satunya diam-diam berarti menjalankan
+		// parameter yang bukan parameter klien — jadi konfliknya ditolak
+		// eksplisit di sini, sebelum jaringan disentuh (audit3 V-GW-31). Saat
+		// thinking menyala cabang ini tidak dicapai: keduanya sudah distrip
+		// di atas, persis seperti yang dituntut Anthropic.
+		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,
+			"temperature dan top_p tidak boleh ditentukan bersamaan untuk Anthropic; pilih salah satu")
 	}
 
 	tools, err := p.buildTools(req.Tools)
@@ -266,10 +300,19 @@ func (p *Provider) blocksFor(m *providers.Message) (string, []block, error) {
 		if err != nil {
 			return "", nil, err
 		}
-		// ReasoningContent sengaja TIDAK dikirim ulang. Anthropic hanya menerima block
-		// thinking bila disertai signature kriptografisnya, dan bentuk kanonik tidak
-		// membawa signature itu — mengirimkannya tanpa signature membuat seluruh
-		// permintaan ditolak.
+		// Block thinking riwayat dikirim ulang HANYA bila tanda tangannya ikut
+		// terbawa (ReasoningSignature): Anthropic mengesahkan isi thinking dari
+		// signature itu, dan mengirim thinking telanjang membuat seluruh
+		// permintaan ditolak. Tanpa signature, jejak penalarannya dibuang —
+		// tetapi isinya tidak hilang dari percakapan secara makna, karena
+		// jawaban teks assistant tetap terkirim (audit3 V-GW-23).
+		if m.ReasoningContent != "" && m.ReasoningSignature != "" {
+			blocks = append([]block{{
+				Type:      blockThinking,
+				Thinking:  m.ReasoningContent,
+				Signature: m.ReasoningSignature,
+			}}, blocks...)
+		}
 		for i := range m.ToolCalls {
 			tc := &m.ToolCalls[i]
 			input, err := p.toolInput(tc)
@@ -293,7 +336,7 @@ func (p *Provider) blocksFor(m *providers.Message) (string, []block, error) {
 			return "", nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,
 				"pesan berperan tool tidak menyertakan tool_call_id, sehingga hasilnya tidak bisa dikaitkan ke panggilan tool")
 		}
-		result := block{Type: blockToolResult, ToolUseID: m.ToolCallID}
+		result := block{Type: blockToolResult, ToolUseID: m.ToolCallID, IsError: m.IsError}
 		if text := m.Text(); text != "" {
 			result.Content = []block{{Type: blockText, Text: text}}
 		}
@@ -556,9 +599,15 @@ func mapStopReason(reason string) string {
 		return providers.FinishToolCalls
 	case "refusal":
 		return providers.FinishContentFilter
+	case "stop_sequence":
+		// TIDAK dilipat ke FinishStop: permukaan Anthropic membedakannya, dan
+		// nilai urutannya sendiri dibawa Choice.StopSequence (audit3 V-GW-28).
+		return providers.FinishStopSequence
+	case "pause_turn":
+		return providers.FinishPauseTurn
 	default:
-		// end_turn, stop_sequence, pause_turn, dan alasan baru apa pun: dari sisi klien
-		// artinya sama — model berhenti dengan sendirinya.
+		// end_turn dan alasan baru apa pun: dari sisi klien artinya sama —
+		// model berhenti dengan sendirinya.
 		return providers.FinishStop
 	}
 }
@@ -567,6 +616,8 @@ func mapStopReason(reason string) string {
 func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatResponse {
 	var text, reasoning strings.Builder
 	var calls []providers.ToolCall
+	var signature string
+	jumlahThinking := 0
 
 	for i := range u.Content {
 		b := &u.Content[i]
@@ -578,6 +629,8 @@ func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatRespo
 			text.WriteString(b.Text)
 		case blockThinking:
 			reasoning.WriteString(b.Thinking)
+			jumlahThinking++
+			signature = b.Signature
 		case blockRedactedThink:
 			// Muatannya terenkripsi dan hanya berguna bila dikirim balik ke Anthropic;
 			// tidak ada yang bisa ditampilkan ke klien.
@@ -595,6 +648,11 @@ func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatRespo
 			})
 		}
 	}
+	if jumlahThinking != 1 {
+		// Tanda tangan hanya sah untuk block-nya sendiri; gabungan beberapa
+		// block tidak bisa dipasangi salah satu tanda tangan mereka.
+		signature = ""
+	}
 
 	resp := &providers.ChatResponse{
 		ID:    u.ID,
@@ -606,12 +664,14 @@ func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatRespo
 		Choices: []providers.Choice{{
 			Index: 0,
 			Message: providers.Message{
-				Role:             providers.RoleAssistant,
-				Content:          text.String(),
-				ToolCalls:        calls,
-				ReasoningContent: reasoning.String(),
+				Role:               providers.RoleAssistant,
+				Content:            text.String(),
+				ToolCalls:          calls,
+				ReasoningContent:   reasoning.String(),
+				ReasoningSignature: signature,
 			},
 			FinishReason: mapStopReason(u.StopReason),
+			StopSequence: u.StopSequence,
 		}},
 		Usage: toCanonicalUsage(u.Usage),
 	}

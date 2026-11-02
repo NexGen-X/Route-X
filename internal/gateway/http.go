@@ -193,6 +193,10 @@ func (h *Handlers) Routes() http.Handler {
 	// /v1/messages melayani Anthropic Messages API (Claude Code, dsb.)
 	r.Post("/messages", h.AnthropicMessages)
 	r.Post("/v1/messages", h.AnthropicMessages)
+	// count_tokens adalah pendamping wajib permukaan messages pada kontrak
+	// Anthropic; klien resmi memanggilnya sebelum mengirim percakapan besar.
+	r.Post("/messages/count_tokens", h.AnthropicCountTokens)
+	r.Post("/v1/messages/count_tokens", h.AnthropicCountTokens)
 	r.Post("/embeddings", h.Embeddings)
 	r.Get("/models", h.Models)
 	return r

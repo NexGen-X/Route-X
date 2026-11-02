@@ -403,12 +403,26 @@ func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 			continue
 		}
 		info := providers.ModelInfo{ID: m.ID, OwnedBy: providers.KindAnthropic}
-		if t, err := time.Parse(time.RFC3339, m.CreatedAt); err == nil {
-			info.Created = t.Unix()
-		}
+		info.Created = parseWaktuModel(m.CreatedAt)
 		out = append(out, info)
 	}
 	return out, nil
+}
+
+// parseWaktuModel mengurai created_at daftar model Anthropic.
+//
+// Lebih dari satu tata letak dicoba: timestamp yang menyimpang dari RFC3339
+// ketat (pecahan detik tanpa zona, tanggal saja) sebelumnya gagal urai dan
+// galatnya DITELAN sehingga model masuk katalog dengan Created = 0 — epoch
+// 1970 yang tampak seperti data (audit3 V-LN-42). Nol kini hanya berarti
+// "format yang benar-benar tidak dikenal", bukan "tidak dicoba cukup jauh".
+func parseWaktuModel(s string) int64 {
+	for _, tata := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05", "2006-01-02"} {
+		if t, err := time.Parse(tata, s); err == nil {
+			return t.Unix()
+		}
+	}
+	return 0
 }
 
 // HealthCheck memeriksa provider lewat GET /v1/models, bukan lewat completion.

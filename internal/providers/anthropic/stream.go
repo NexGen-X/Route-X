@@ -1,6 +1,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -45,11 +46,12 @@ type streamEnvelope struct {
 }
 
 type streamDelta struct {
-	Type        string `json:"type"`
-	Text        string `json:"text"`
-	PartialJSON string `json:"partial_json"`
-	Thinking    string `json:"thinking"`
-	StopReason  string `json:"stop_reason"`
+	Type         string `json:"type"`
+	Text         string `json:"text"`
+	PartialJSON  string `json:"partial_json"`
+	Thinking     string `json:"thinking"`
+	StopReason   string `json:"stop_reason"`
+	StopSequence string `json:"stop_sequence"`
 }
 
 // ChatCompletionStream membuka aliran SSE ke /v1/messages.
@@ -122,6 +124,10 @@ type stream struct {
 	// berada di block index 1 sementara klien mengharapkan tool_calls index 0.
 	toolIndex map[int]int
 	nextTool  int
+
+	// stopSequence adalah urutan berhenti dari peristiwa message_delta, dibawa
+	// ke StreamEvent penutup lewat field StopSequence.
+	stopSequence string
 }
 
 // String menyamarkan seluruh isi stream.
@@ -227,6 +233,7 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 		reason := ""
 		if env.Delta != nil {
 			reason = mapStopReason(env.Delta.StopReason)
+			s.stopSequence = env.Delta.StopSequence
 		}
 		var usage *providers.Usage
 		if s.usageSeen {
@@ -234,7 +241,9 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 			usage = &u
 			s.usageSent = true
 		}
-		return s.event(&oaDelta{}, reason, usage), nil
+		out := s.event(&oaDelta{}, reason, usage)
+		out.StopSequence = s.stopSequence
+		return out, nil
 
 	case evMessageStop:
 		s.done = true
@@ -264,12 +273,19 @@ func (s *stream) blockStart(env *streamEnvelope) *providers.StreamEvent {
 	case blockToolUse:
 		idx := s.toolIndexFor(env.Index)
 		call := providers.ToolCall{
-			Index: idx,
-			ID:    env.ContentBlock.ID,
-			Type:  "function",
-			// Argumen menyusul lewat input_json_delta; potongan pembuka hanya membawa
-			// id dan nama, persis seperti potongan tool_calls pertama milik OpenAI.
+			Index:    idx,
+			ID:       env.ContentBlock.ID,
+			Type:     "function",
 			Function: providers.FunctionCall{Name: env.ContentBlock.Name},
+		}
+		// Sebagian upstream mengirim argumen UTUH di dalam content_block_start
+		// dan tidak pernah mengirim input_json_delta. Mengabaikannya — seperti
+		// yang dilakukan di sini sebelumnya — membuat tool_use sampai ke klien
+		// ber-input {} (audit3 V-GW-32). Argumen utuh itu dibawa sebagai
+		// potongan argumen pertama; input {} yang memang kosong tidak
+		// menghasilkan potongan apa pun.
+		if masukan := string(bytes.TrimSpace(env.ContentBlock.Input)); masukan != "" && masukan != "{}" && masukan != "null" {
+			call.Function.Arguments = masukan
 		}
 		out := s.event(&oaDelta{ToolCalls: encodeToolCalls([]providers.ToolCall{call}, true)}, "", nil)
 		out.ToolCalls = []providers.ToolCall{call}

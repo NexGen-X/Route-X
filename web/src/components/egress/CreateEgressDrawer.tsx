@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
+import { InputBilangan } from '../common/InputBilangan';
 import { Select } from '../common/Select';
 import { Eye, EyeOff } from 'lucide-react';
 import { api } from '../../api/client';
@@ -139,13 +140,12 @@ export const CreateEgressDrawer: React.FC<CreateEgressDrawerProps> = ({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-text-secondary mb-1.5">Bobot Alokasi</label>
-            <input
-              type="number"
-              min="1"
-              max="1000"
+            <InputBilangan
+              ariaLabel="Bobot Alokasi"
               value={formData.weight}
-              onChange={(e) => setFormData({ ...formData, weight: parseInt(e.target.value) || 100 })}
-              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+              onChange={(n) => setFormData({ ...formData, weight: n })}
+              min={1}
+              max={1000}
             />
           </div>
           <div>

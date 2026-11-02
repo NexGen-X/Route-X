@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Model, Provider, RoutingRule } from '../../types';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
+import { InputBilangan } from '../common/InputBilangan';
 import { Select } from '../common/Select';
 import { ComboBuilder } from './ComboBuilder';
 import { useToast } from '../../context/ToastContext';
@@ -107,11 +108,29 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
         const selModel = models.find((m) => m.id === targetModelId);
         const selProv = providers.find((p) => p.id === targetProviderId);
         const modelName = selModel?.model_id || targetModelId;
+        // Cermin penolakan server (V-FF-11): provider yang diikat wajib
+        // memetakan model target. Daftar pemetaan model diketahui dari
+        // data registry yang sudah dimuat; bila datanya tidak tersedia,
+        // server tetap menegakkan aturan yang sama.
+        if (
+          targetProviderId &&
+          selModel?.providers &&
+          !selModel.providers.some((mp) => mp.provider_id === targetProviderId)
+        ) {
+          toast.error(
+            `Provider "${selProv?.display_name || selProv?.name || targetProviderId}" tidak memetakan model ${modelName} — ikatan itu akan ditolak server. Pilih provider yang menyediakan model ini atau kosongkan target provider.`
+          );
+          setIsSubmitting(false);
+          return;
+        }
         payload = {
           ...payload,
           name: newRule.name || `direct-${modelName.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
           strategy: 'priority',
-          max_attempts: 1,
+          // V-FF-10: hormati isian "Maksimal Percobaan" operator. Versi lama
+          // menimpanya menjadi 1 secara diam-diam untuk mode model_only,
+          // padahal field-nya bisa diedit dan server menerima nilai lain.
+          max_attempts: newRule.max_attempts,
           match_model_id: targetModelId,
           provider_ids: targetProviderId ? [targetProviderId] : undefined,
           pipeline: null,
@@ -360,14 +379,12 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
                   <label className="block text-xs font-medium text-text-secondary mb-1">
                     Maksimal Percobaan
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="10"
+                  <InputBilangan
+                    ariaLabel="Maksimal Percobaan"
                     value={newRule.max_attempts}
-                    onChange={(e) =>
-                      setNewRule({ ...newRule, max_attempts: parseInt(e.target.value) || 3 })
-                    }
+                    onChange={(n) => setNewRule({ ...newRule, max_attempts: n })}
+                    min={1}
+                    max={10}
                     className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
                 </div>
@@ -375,13 +392,11 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
                   <label className="block text-xs font-medium text-text-secondary mb-1">
                     Jeda Backoff (ms)
                   </label>
-                  <input
-                    type="number"
-                    min="0"
+                  <InputBilangan
+                    ariaLabel="Jeda Backoff (ms)"
                     value={newRule.backoff_ms}
-                    onChange={(e) =>
-                      setNewRule({ ...newRule, backoff_ms: parseInt(e.target.value) || 200 })
-                    }
+                    onChange={(n) => setNewRule({ ...newRule, backoff_ms: n })}
+                    min={0}
                     className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
                 </div>
@@ -389,12 +404,11 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
                   <label className="block text-xs font-medium text-text-secondary mb-1">
                     Prioritas Evaluasi
                   </label>
-                  <input
-                    type="number"
+                  <InputBilangan
+                    ariaLabel="Prioritas Evaluasi"
                     value={newRule.priority}
-                    onChange={(e) =>
-                      setNewRule({ ...newRule, priority: parseInt(e.target.value) || 100 })
-                    }
+                    onChange={(n) => setNewRule({ ...newRule, priority: n })}
+                    min={0}
                     className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
                 </div>
@@ -402,12 +416,11 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
                   <label className="block text-xs font-medium text-text-secondary mb-1">
                     Ambang Circuit Breaker
                   </label>
-                  <input
-                    type="number"
+                  <InputBilangan
+                    ariaLabel="Ambang Circuit Breaker"
                     value={newRule.failure_threshold}
-                    onChange={(e) =>
-                      setNewRule({ ...newRule, failure_threshold: parseInt(e.target.value) || 5 })
-                    }
+                    onChange={(n) => setNewRule({ ...newRule, failure_threshold: n })}
+                    min={1}
                     className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
                 </div>

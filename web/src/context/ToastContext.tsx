@@ -306,15 +306,32 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [showToast]
   );
 
+  // Penanda janji konfirmasi yang masih menggantung (audit3 V-FF-24):
+  // pemanggilan confirmModal kedua dulu menimpa state beserta resolve
+  // pertama, sehingga promise pertama tidak pernah selesai dan alur
+  // pemanggilnya (mis. simpan yang menunggu konfirmasi) macet selamanya.
+  // Sekarang janji tertunda sebelumnya diselesaikan sebagai "batal" (false)
+  // sebelum dialog baru ditampilkan.
+  const confirmTertundaRef = useRef<((val: boolean) => void) | null>(null);
+
   const confirmModal = useCallback((options: ConfirmOptions): Promise<boolean> => {
+    if (confirmTertundaRef.current) {
+      confirmTertundaRef.current(false);
+      confirmTertundaRef.current = null;
+    }
     return new Promise((resolve) => {
+      const selesaikan = (val: boolean) => {
+        if (confirmTertundaRef.current === selesaikan) {
+          confirmTertundaRef.current = null;
+        }
+        setConfirmState(null);
+        resolve(val);
+      };
+      confirmTertundaRef.current = selesaikan;
       setConfirmState({
         isOpen: true,
         options,
-        resolve: (val: boolean) => {
-          setConfirmState(null);
-          resolve(val);
-        },
+        resolve: selesaikan,
       });
     });
   }, []);
@@ -381,14 +398,14 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               <button
                 type="button"
                 onClick={() => handleConfirmClose(false)}
-                className="px-4 py-2 rounded-lg bg-bg-surface-2 hover:bg-bg-surface-3 text-xs font-semibold text-text-primary border border-border transition-all"
+                className="px-4 py-2 min-h-[44px] rounded-lg bg-bg-surface-2 hover:bg-bg-surface-3 text-xs font-semibold text-text-primary border border-border transition-all"
               >
                 {confirmState.options.cancelText || 'Batal'}
               </button>
               <button
                 type="button"
                 onClick={() => handleConfirmClose(true)}
-                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all shadow-md ${
+                className={`px-4 py-2 min-h-[44px] rounded-lg text-xs font-semibold transition-all shadow-md ${
                   confirmState.options.danger
                     ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-900/30'
                     : 'bg-accent hover:bg-accent-hover text-black shadow-accent/20'

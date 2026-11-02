@@ -371,7 +371,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         fallbackFocus: () => inputRef.current || document.body,
       }}
     >
-      <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4">
+      {/* Pembungkus bisa menggulir vertikal (audit3 V-FF-36): di layar
+          pendek palet dulu meluber keluar viewport tanpa bisa dijangkau. */}
+      <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 pb-4 overflow-y-auto">
         {/* Backdrop glassmorphism */}
         <div
           className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
@@ -384,7 +386,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           role="dialog"
           aria-modal="true"
           aria-label="Palette Perintah Cepat"
-          className="relative w-full max-w-2xl bg-bg-surface-1 border border-border rounded-xl shadow-2xl shadow-black/60 overflow-hidden z-10 animate-fade-in"
+          className="relative w-full max-w-2xl bg-bg-surface-1 border border-border rounded-xl shadow-2xl shadow-black/60 overflow-hidden z-10 animate-fade-in flex flex-col max-h-[calc(100dvh-5rem)] sm:max-h-[calc(100dvh-7rem)]"
         >
           {/* Search Bar */}
           <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border">
@@ -418,7 +420,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             id="command-palette-results"
             role="listbox"
             ref={listRef}
-            className="max-h-[380px] overflow-y-auto p-2 space-y-1 scrollbar-thin"
+            className="flex-1 min-h-0 max-h-[380px] overflow-y-auto p-2 space-y-1 scrollbar-thin"
           >
             {filteredItems.length === 0 ? (
               <div className="py-12 text-center text-xs text-text-muted space-y-2">

@@ -8,6 +8,7 @@ import { KeyRound, Plus, RefreshCw, Search } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { getErrorMessage } from '../utils/error';
+import { parseJumlahUsd } from '../utils/money';
 import type { Model, APIKey } from '../types';
 import {
   APIKeyCard,
@@ -34,7 +35,7 @@ export const APIKeys: React.FC = () => {
   });
   const keys = keysData?.items || [];
 
-  const { data: modelsData, isLoading: isLoadingModels } = useQuery({
+  const { data: modelsData } = useQuery({
     queryKey: ['models'],
     queryFn: () => api.models.listAll(),
   });
@@ -80,7 +81,6 @@ export const APIKeys: React.FC = () => {
   const [selectedKey, setSelectedKey] = useState<APIKey | null>(null);
   const [selectedScopeIds, setSelectedScopeIds] = useState<string[]>([]);
   const [scopeSearch, setScopeSearch] = useState('');
-  const [isLoadingAllowed, setIsLoadingAllowed] = useState(false);
 
   // Format list item: Provider / Model
   const scopeOptions = useMemo<ScopeOption[]>(() => {
@@ -164,6 +164,21 @@ export const APIKeys: React.FC = () => {
       return;
     }
 
+    // Anggaran diurai dan divalidasi SEBELUM kunci dibuat (audit3 V-FF-07):
+    // Number("10,5") = NaN versi lama membuat anggaran terlewat diam-diam
+    // di balik toast sukses polos. Kini format tak sah menghentikan seluruh
+    // proses — kunci tidak jadi dibuat dengan janji anggaran yang hilang.
+    const anggaranTeks = formData.monthlyBudgetUsd.trim();
+    let budgetNum: number | null = null;
+    if (anggaranTeks !== '') {
+      const hasil = parseJumlahUsd(anggaranTeks);
+      if (!hasil.ok) {
+        toast.error(hasil.pesan, 'Anggaran Tidak Valid');
+        return;
+      }
+      budgetNum = hasil.nilai;
+    }
+
     setIsSubmittingCreate(true);
     try {
       const res = await api.apiKeys.create({
@@ -177,9 +192,8 @@ export const APIKeys: React.FC = () => {
       });
 
       const keyId = res.id;
-      const budgetNum = Number(formData.monthlyBudgetUsd);
       let budgetWarning: string | null = null;
-      if (keyId && Number.isFinite(budgetNum) && budgetNum > 0) {
+      if (keyId && budgetNum !== null) {
         try {
           await api.budgets.create({
             name: `Anggaran ${formData.name}`,
@@ -205,7 +219,7 @@ export const APIKeys: React.FC = () => {
         );
       } else {
         toast.success(
-          budgetNum > 0
+          budgetNum !== null
             ? `Kunci API dan alokasi anggaran $${budgetNum.toFixed(2)}/bulan berhasil dibuat.`
             : 'Kunci API baru berhasil dibuat.',
           'API Key Dibuat'
@@ -262,9 +276,20 @@ export const APIKeys: React.FC = () => {
   // Penjaga urutan untuk drawer scope (audit F7): respons getAllowed key
   // sebelumnya tidak boleh menimpa pilihan key yang sedang dibuka.
   const allowedReqRef = React.useRef(0);
+  // Penanda operator sudah mengedit seleksi pada key yang SEDANG dibuka
+  // (audit3 V-FF-04): penjaga urutan di atas hanya melindungi perpindahan
+  // key; respons getAllowed yang terlambat untuk key yang sama dulu tetap
+  // menimpa centang yang baru saja diubah operator.
+  const allowedEditedRef = React.useRef(false);
+  // Status MENYIMPAN khusus tombol Simpan drawer scope (V-FF-04): dulu
+  // tombol itu menerima status MEMUAT (isLoadingAllowed/isLoadingModels),
+  // jadi ia berputar selama data dimuat dan justru bebas diklik saat
+  // penyimpanan berlangsung.
+  const [isSavingAllowed, setIsSavingAllowed] = useState(false);
 
   const handleOpenAllowed = async (k: APIKey) => {
     const reqId = ++allowedReqRef.current;
+    allowedEditedRef.current = false;
     setSelectedKey(k);
     setIsAllowedOpen(true);
     setScopeSearch('');
@@ -287,19 +312,15 @@ export const APIKeys: React.FC = () => {
     setSelectedScopeIds(resolveSelected(initialModels, initialProviders));
 
     try {
-      setIsLoadingAllowed(true);
       const res = await api.apiKeys.getAllowed(k.id);
       // Buang respons basi: drawer sudah berpindah ke key lain.
       if (allowedReqRef.current !== reqId) return;
-      if (res) {
+      // Hormati edit operator yang terjadi selagi memuat (V-FF-04).
+      if (res && !allowedEditedRef.current) {
         setSelectedScopeIds(resolveSelected(res.model_ids || [], res.provider_ids || []));
       }
     } catch {
       // Pertahankan initial value jika endpoint gagal
-    } finally {
-      if (allowedReqRef.current === reqId) {
-        setIsLoadingAllowed(false);
-      }
     }
   };
 
@@ -318,6 +339,7 @@ export const APIKeys: React.FC = () => {
       );
     }
 
+    setIsSavingAllowed(true);
     try {
       await api.apiKeys.setAllowed(selectedKey.id, {
         model_ids: modelIds,
@@ -328,20 +350,29 @@ export const APIKeys: React.FC = () => {
       void queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
     } catch (err: unknown) {
       toast.error('Gagal menyimpan allowed scope: ' + getErrorMessage(err));
+    } finally {
+      setIsSavingAllowed(false);
     }
   };
 
   const toggleScopeItem = (id: string) => {
+    allowedEditedRef.current = true;
     setSelectedScopeIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
   };
 
   const handleSelectAllScopes = () => {
-    setSelectedScopeIds(filteredScopeOptions.map((opt) => opt.id));
+    allowedEditedRef.current = true;
+    // Gabung (union), bukan ganti (audit3 V-FF-05): "Pilih Semua" pada hasil
+    // filter dulu membuang pilihan dari filter sebelumnya.
+    setSelectedScopeIds((prev) =>
+      Array.from(new Set([...prev, ...filteredScopeOptions.map((opt) => opt.id)]))
+    );
   };
 
   const handleDeselectAllScopes = () => {
+    allowedEditedRef.current = true;
     setSelectedScopeIds([]);
   };
 
@@ -490,7 +521,7 @@ export const APIKeys: React.FC = () => {
         onSelectAll={handleSelectAllScopes}
         onDeselectAll={handleDeselectAllScopes}
         onSave={handleSaveAllowed}
-        isLoading={isLoadingAllowed || isLoadingModels}
+        isLoading={isSavingAllowed}
       />
     </div>
   );

@@ -20,6 +20,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
   inputMode,
   isDomainLoading,
   isDomainSaving,
+  isDomainDeleting,
   domainFeedback,
   serverIP,
   setInputDomain,
@@ -198,7 +199,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
                 variant="secondary"
                 size="sm"
                 onClick={onDeleteDomain}
-                isLoading={isDomainSaving}
+                isLoading={isDomainDeleting}
                 icon={<Trash2 className="w-3.5 h-3.5 text-red-400" />}
                 className="w-full sm:w-auto text-red-400 hover:text-red-300 justify-center"
               >

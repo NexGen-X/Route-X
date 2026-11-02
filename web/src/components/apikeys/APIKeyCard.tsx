@@ -38,11 +38,23 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
   const displayKey = isRevealed && apiKey.raw_key ? apiKey.raw_key : apiKey.masked_key;
 
   const handleCopy = async () => {
+    // Kejujuran salin (audit3 V-FJ-10): kunci penuh hanya tersedia sesaat
+    // sesudah pembuatan/rotasi (raw_key). Di luar itu yang ada hanya nilai
+    // bertopeng — menyalinnya tetap boleh, tetapi toast TIDAK boleh
+    // menyatakan "kunci berhasil disalin" seolah nilai penuh yang tersalin.
+    const punyaRaw = Boolean(apiKey.raw_key);
     const textToCopy = apiKey.raw_key || apiKey.masked_key;
     try {
       await copyTextToClipboard(textToCopy);
       setCopied(true);
-      toast.success('Kunci API berhasil disalin ke clipboard.');
+      if (punyaRaw) {
+        toast.success('Kunci API berhasil disalin ke clipboard.');
+      } else {
+        toast.warn(
+          'Yang disalin hanya nilai bertopeng (masked) — kunci penuh hanya tampil satu kali saat pembuatan atau rotasi.',
+          'Menyalin Nilai Bertopeng'
+        );
+      }
       setTimeout(() => setCopied(false), 2000);
     } catch (err: unknown) {
       toast.error('Gagal menyalin kunci API: ' + getErrorMessage(err));
@@ -141,7 +153,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
               </Tooltip>
             )}
 
-            <Tooltip content={copied ? 'Tersalin ke clipboard!' : 'Salin Kunci API'} position="top">
+            <Tooltip content={copied ? 'Tersalin ke clipboard!' : apiKey.raw_key ? 'Salin Kunci API' : 'Salin nilai bertopeng (kunci penuh hanya tampil saat pembuatan/rotasi)'} position="top">
               <button
                 type="button"
                 onClick={handleCopy}

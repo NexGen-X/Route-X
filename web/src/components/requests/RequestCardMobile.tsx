@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import { StatusDot } from '../common/StatusDot';
+import { formatUSD } from '../../utils/money';
 import type { RequestLog } from '../../types';
 import {
   getHttpStatusDotVariant,
@@ -54,7 +55,15 @@ export const RequestCardMobile: React.FC<RequestCardMobileProps> = ({
           </span>
         </div>
         <span className="text-[10px] text-text-muted font-mono whitespace-nowrap">
-          {new Date(request.created_at).toLocaleTimeString()}
+          {/* Tanggal + jam (audit3 V-FF-35): dulu hanya jam, sehingga
+              permintaan kemarin dan hari ini tak bisa dibedakan. */}
+          {new Date(request.created_at).toLocaleString('id-ID', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          })}
         </span>
       </div>
 
@@ -84,7 +93,17 @@ export const RequestCardMobile: React.FC<RequestCardMobileProps> = ({
         </div>
       </div>
 
-      {/* Baris 3: ID Request & Tombol Aksi */}
+      {/* Baris 3: Biaya, TTFT, & Klien — kolom yang dulu hanya ada di tabel
+          desktop (V-FF-35), padahal kartu ini satu-satunya tampilan mobile. */}
+      <div className="flex items-center justify-between text-[11px] font-mono text-text-secondary gap-2">
+        <span className="text-accent-text font-semibold">{formatUSD(request.cost_usd, 6)}</span>
+        <span className="text-text-muted">
+          {request.ttft_ms ? `TTFT ${request.ttft_ms} ms` : 'TTFT -'}
+        </span>
+        <span className="text-text-muted truncate max-w-[110px]">{request.client_ip || '-'}</span>
+      </div>
+
+      {/* Baris 4: ID Request & Tombol Aksi */}
       <div className="flex items-center justify-between text-[10px] text-text-muted font-mono pt-1.5 border-t border-border/60">
         <span className="truncate max-w-[200px]">ID: {request.request_id}</span>
         <span className="text-accent-text flex items-center gap-0.5 font-medium min-h-[32px] items-center">

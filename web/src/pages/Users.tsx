@@ -9,6 +9,7 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Users, Plus, Trash2, KeyRound, LogOut, Pencil, UserCheck, Eye, EyeOff, Shield } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { validasiPassword, validasiSpasiTepiKataSandi } from '../utils/password';
 import {
   DataTableShell,
   kelasSelKepala,
@@ -64,6 +65,16 @@ export const UsersPage: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Validasi kata sandi mencerminkan kebijakan server persis (audit3
+    // V-FF-12): form ini dulu TANPA validasi sama sekali, jadi sandi lemah
+    // baru ditolak server sesudah submit. Spasi tepi ditolak eksplisit
+    // (V-FF-13) karena nilai dikirim mentah apa adanya.
+    const galatSandi =
+      validasiSpasiTepiKataSandi(newUser.password) ?? validasiPassword(newUser.password);
+    if (galatSandi) {
+      toast.error(galatSandi, 'Kata Sandi Tidak Memenuhi Kebijakan');
+      return;
+    }
     try {
       await api.users.create({
         email: newUser.email.trim(),
@@ -115,12 +126,19 @@ export const UsersPage: React.FC = () => {
   };
 
   const handleForceReset = async (u: User) => {
-    if (!resetPw || resetPw.userId !== u.id || !resetPw.temp.trim()) {
+    if (!resetPw || resetPw.userId !== u.id || !resetPw.temp) {
       toast.error('Kata sandi sementara wajib diisi.');
       return;
     }
-    if (resetPw.temp.trim().length < 8) {
-      toast.error('Password sementara minimal 8 karakter.');
+    // Audit3 V-FF-13: versi lama memvalidasi nilai yang SUDAH di-trim
+    // (min 8) lalu mengirim nilai MENTAH — sandi berspasi tepi lolos dan
+    // tersimpan apa adanya, tak akan pernah cocok saat diketik ulang.
+    // Kini nilai mentah yang dinilai, dengan kebijakan server yang sama
+    // (min 12 + kelas karakter), dan spasi tepi ditolak secara eksplisit.
+    const galatSandi =
+      validasiSpasiTepiKataSandi(resetPw.temp) ?? validasiPassword(resetPw.temp);
+    if (galatSandi) {
+      toast.error(galatSandi, 'Kata Sandi Tidak Memenuhi Kebijakan');
       return;
     }
     const ok = await confirmModal({
@@ -434,6 +452,9 @@ export const UsersPage: React.FC = () => {
                 {showNewUserPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
               </button>
             </div>
+            <p className="text-[11px] text-text-muted mt-1.5">
+              Minimal 12 karakter dan memuat minimal 2 dari: huruf, angka, simbol. Tanpa spasi di awal/akhir.
+            </p>
           </div>
         </form>
       </Drawer>
@@ -519,7 +540,7 @@ export const UsersPage: React.FC = () => {
                   Reset
                 </Button>
               </div>
-              <p className="mt-1.5 text-[11px] text-text-muted">Mengirim password baru dan mencabut seluruh sesi login pengguna.</p>
+              <p className="mt-1.5 text-[11px] text-text-muted">Mengirim password baru dan mencabut seluruh sesi login pengguna. Kebijakan: minimal 12 karakter, minimal 2 dari huruf/angka/simbol, tanpa spasi di awal/akhir.</p>
             </div>
 
             <div className="pt-3 border-t border-border flex items-center justify-between">

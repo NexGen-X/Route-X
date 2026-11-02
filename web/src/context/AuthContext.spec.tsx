@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { AuthProvider, useAuth } from './AuthContext';
 import type { Principal } from '../types';
 
@@ -157,5 +157,106 @@ describe('AuthContext — Provider & Value Memoization Spec', () => {
       });
       expect(screen.getByTestId('auth-user')).toHaveTextContent('admin@routex.internal');
     });
+  });
+
+  // Audit3 V-FF-26: event 401 global TIDAK lagi membuang sesi seketika —
+  // sesi diverifikasi lewat /me; hanya 401 dari /me sendiri yang logout.
+  it('event unauthorized memverifikasi sesi dulu: /me sehat berarti tetap masuk', async () => {
+    mockMe.mockResolvedValue({
+      principal: MOCK_PRINCIPAL,
+      csrf_token: 'token-abc',
+    });
+
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-user')).toHaveTextContent('admin@routex.internal');
+    });
+    expect(mockMe).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('routex:unauthorized'));
+    });
+
+    await waitFor(() => {
+      expect(mockMe).toHaveBeenCalledTimes(2);
+    });
+    // Sesi terverifikasi sehat: principal TIDAK dibuang.
+    expect(screen.getByTestId('auth-user')).toHaveTextContent('admin@routex.internal');
+  });
+
+  it('event unauthorized dengan /me menjawab 401 membersihkan sesi', async () => {
+    mockMe
+      .mockResolvedValueOnce({
+        principal: MOCK_PRINCIPAL,
+        csrf_token: 'token-abc',
+      })
+      // Objek berbentuk ApiError berstatus numerik — extractHttpStatus
+      // membaca status dari instance ApiError maupun objek sejenis.
+      .mockRejectedValueOnce(Object.assign(new Error('Sesi berakhir'), { status: 401 }));
+
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-user')).toHaveTextContent('admin@routex.internal');
+    });
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('routex:unauthorized'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-user')).toHaveTextContent('anonymous');
+    });
+  });
+
+  // Audit3 V-FF-25: refresh yang dimulai sebelum logout tidak boleh
+  // menghidupkan kembali principal ketika ia selesai belakangan.
+  it('refresh basi yang selesai sesudah logout tidak menghidupkan sesi lagi', async () => {
+    let selesaikanMe: (v: unknown) => void = () => {};
+    mockMe
+      .mockResolvedValueOnce({
+        principal: MOCK_PRINCIPAL,
+        csrf_token: 'token-abc',
+      })
+      .mockImplementationOnce(
+        () => new Promise((resolve) => { selesaikanMe = resolve; })
+      );
+    mockLogout.mockResolvedValueOnce(undefined);
+
+    render(
+      <AuthProvider>
+        <TestConsumer />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-user')).toHaveTextContent('admin@routex.internal');
+    });
+
+    // Picu refresh verifikasi yang menggantung.
+    act(() => {
+      window.dispatchEvent(new CustomEvent('routex:unauthorized'));
+    });
+
+    // Logout di tengah refresh itu.
+    fireEvent.click(screen.getByText('Logout'));
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-user')).toHaveTextContent('anonymous');
+    });
+
+    // Refresh basi selesai dengan principal yang sah — harus dibuang.
+    await act(async () => {
+      selesaikanMe({ principal: MOCK_PRINCIPAL, csrf_token: 'token-abc' });
+    });
+    expect(screen.getByTestId('auth-user')).toHaveTextContent('anonymous');
   });
 });

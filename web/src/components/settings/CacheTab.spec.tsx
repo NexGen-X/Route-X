@@ -83,6 +83,23 @@ describe('CacheTab — Performa & Cache (Settings)', () => {
     expect(mockToastSuccess).toHaveBeenCalled();
   });
 
+  // Audit3 V-FF-18: TTL di luar rentang dulu dijepit diam-diam saat simpan
+  // (ketik 2000 -> tersimpan 1440). Kini ditolak dengan pesan dan API tidak
+  // dipanggil sama sekali.
+  it('menolak TTL di atas 1440 menit tanpa memanggil API', async () => {
+    render(<CacheTab />);
+
+    const input = await screen.findByLabelText(/durasi simpan cache dalam menit/i);
+    fireEvent.change(input, { target: { value: '2000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Simpan TTL' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/antara 1 dan 1440 menit/);
+    });
+    expect(mockUpdateFn).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalled();
+  });
+
   it('menampilkan penolakan cache_policy_unsafe sebagai penjelasan menetap', async () => {
     mockStatsFn.mockResolvedValue({ ...STATS_NONAKTIF, enabled: true });
     mockUpdateFn.mockRejectedValue(

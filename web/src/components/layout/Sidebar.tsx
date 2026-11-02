@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  X,
   Code2,
   Users,
   Webhook,
@@ -47,6 +48,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setIsMobileOpen,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  // Ciut HANYA berlaku di desktop (audit3 V-FF-39): satu state isCollapsed
+  // dulu dipakai bersama oleh sidebar desktop dan drawer mobile, jadi
+  // sidebar yang diciutkan di desktop ikut tampil sebagai rel ikon 64px
+  // saat dibuka sebagai drawer di ponsel. Drawer mobile selalu melebar.
+  const efektifCiut = isCollapsed && !isMobileOpen;
   // Badge CLI dihitung dari registri backend (bukan konstanta): memuat
   // sekali per sesi lewat cache bersama di lib/cliCount.
   const [jumlahToolCli, setJumlahToolCli] = useState<number | null>(null);
@@ -98,10 +104,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Mobile backdrop */}
+      {/* Mobile backdrop — z di atas MobileNav (z-40) dan di bawah aside
+          (z-50) (audit3 V-FF-33): z yang sama dulu membuat urutan lukis
+          menentukan pemenang sehingga ketukan bisa jatuh ke MobileNav. */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[45] lg:hidden"
           onClick={() => setIsMobileOpen(false)}
           aria-hidden="true"
         />
@@ -109,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <aside
         className={`fixed lg:static top-0 left-0 bottom-0 z-50 flex flex-col bg-bg-sidebar border-r border-border transition-all duration-200 select-none ${
-          isCollapsed ? 'w-[64px]' : 'w-[240px]'
+          efektifCiut ? 'w-[64px]' : 'w-[240px]'
         } ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
         aria-label="Sidebar Navigasi"
       >
@@ -123,7 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <RouteXLogo size={24} glow={false} className="shrink-0" />
 
-            {!isCollapsed && (
+            {!efektifCiut && (
               <div className="flex items-center gap-2 truncate">
                 <span className="font-semibold tracking-tight text-white text-sm leading-none">
                   Route-X
@@ -131,18 +139,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             )}
           </button>
+
+          {/* Tombol tutup drawer khusus mobile (V-FF-33): header drawer
+              dulu tanpa tombol tutup sama sekali — satu-satunya jalan
+              keluar adalah mengetuk backdrop. */}
+          {isMobileOpen && (
+            <button
+              type="button"
+              onClick={() => setIsMobileOpen(false)}
+              aria-label="Tutup menu navigasi"
+              className="lg:hidden shrink-0 inline-flex items-center justify-center min-w-[44px] min-h-[44px] rounded-md text-text-secondary hover:text-white hover:bg-bg-surface-2 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
+            >
+              <X className="w-5 h-5" aria-hidden="true" />
+            </button>
+          )}
         </div>
 
         {/* Navigation List */}
         <nav aria-label="Navigasi Utama" className="flex-1 overflow-y-auto px-2 py-3 space-y-4 scrollbar-thin">
           {navGroups.map((group, gIdx) => (
             <div key={gIdx} className="space-y-0.5">
-              {!isCollapsed && (
+              {!efektifCiut && (
                 <div className="px-2.5 pb-1 text-[11px] font-medium tracking-wider text-text-muted uppercase">
                   {group.title}
                 </div>
               )}
-              {isCollapsed && <div className="h-px bg-border my-1.5 mx-1" aria-hidden="true" />}
+              {efektifCiut && <div className="h-px bg-border my-1.5 mx-1" aria-hidden="true" />}
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentPath === item.path;
@@ -159,7 +181,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       isActive
                         ? 'bg-bg-surface-2 text-white font-medium'
                         : 'text-text-secondary hover:text-white hover:bg-bg-surface-1'
-                    } ${isCollapsed ? 'justify-center px-0' : ''}`}
+                    } ${efektifCiut ? 'justify-center px-0' : ''}`}
                   >
                     <Icon
                       aria-hidden="true"
@@ -167,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         isActive ? 'text-white' : 'text-text-muted group-hover:text-white'
                       }`}
                     />
-                    {!isCollapsed && (
+                    {!efektifCiut && (
                       <div className="flex-1 flex items-center justify-between min-w-0">
                         <span className="truncate">{item.name}</span>
                         {item.badge && (
@@ -180,7 +202,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 );
 
-                return isCollapsed ? (
+                return efektifCiut ? (
                   <Tooltip key={item.path} content={item.name} position="right" className="w-full">
                     {buttonContent}
                   </Tooltip>
@@ -196,7 +218,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Compact Unified Footer: user info, gateway status, logout, and collapse */}
         <div className="p-2 border-t border-border bg-bg-sidebar flex flex-col gap-1.5">
-          {!isCollapsed && user ? (
+          {!efektifCiut && user ? (
             <div className="flex items-center justify-between px-2 py-1.5 rounded-md bg-bg-surface-1/60 border border-border text-xs">
               {/* User details */}
               <div className="flex items-center gap-2 min-w-0">
@@ -228,14 +250,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     type="button"
                     onClick={logout}
                     aria-label="Keluar dari akun"
-                    className="p-1 text-text-secondary hover:text-rose-400 rounded-full hover:bg-bg-surface-2 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
+                    className="p-1 min-w-[44px] min-h-[44px] lg:min-w-[28px] lg:min-h-[28px] inline-flex items-center justify-center text-text-secondary hover:text-rose-400 rounded-full hover:bg-bg-surface-2 transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
                   >
                     <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 </Tooltip>
               </div>
             </div>
-          ) : isCollapsed && user ? (
+          ) : efektifCiut && user ? (
             <div className="flex flex-col items-center gap-2 py-1">
               <Tooltip content={`${user.display_name} (${principal?.roles[0] || 'User'})`} position="right">
                 <div

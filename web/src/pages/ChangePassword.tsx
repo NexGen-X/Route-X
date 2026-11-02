@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { validasiPassword } from '../utils/password';
 import { Button } from '../components/common/Button';
 import { AlertCircle, KeyRound, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 
@@ -37,8 +38,13 @@ export const ChangePassword: React.FC = () => {
       return;
     }
 
-    if (newPassword.length < 12) {
-      setError('Kata sandi baru minimal 12 karakter.');
+    // Kebijakan penuh server (audit3 V-FF-12): dulu halaman ini hanya
+    // memeriksa panjang >= 12, sehingga sandi satu kelas (mis. hanya huruf)
+    // lolos UI lalu ditolak server. validasiPassword mencerminkan
+    // internal/security/password.go persis, termasuk daftar sandi umum.
+    const galatSandi = validasiPassword(newPassword);
+    if (galatSandi) {
+      setError(galatSandi);
       return;
     }
 
@@ -122,7 +128,7 @@ export const ChangePassword: React.FC = () => {
 
           <div>
             <label htmlFor="new-password" className="block text-xs font-medium text-text-secondary mb-1.5">
-              Kata Sandi Baru (Minimal 12 Karakter)
+              Kata Sandi Baru (Minimal 12 Karakter, 2 dari Huruf/Angka/Simbol)
             </label>
             <div className="relative">
               <input

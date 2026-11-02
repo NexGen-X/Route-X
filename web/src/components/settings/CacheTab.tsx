@@ -31,7 +31,12 @@ export const CacheTab: React.FC = () => {
   const [cache, setCache] = useState<ResponseCacheStats | null>(null);
   const [memuat, setMemuat] = useState<boolean>(true);
   const [gagalMuat, setGagalMuat] = useState<string | null>(null);
-  const [ttlMinutes, setTtlMinutes] = useState<number>(60);
+  // TTL dipegang sebagai TEKS mentah (audit3 V-FF-18): versi lama menjepit
+  // nilai di luar rentang secara diam-diam saat simpan (ketik 2000 -> 1440)
+  // dan mengosongkan kolom pun mustahil. Kini nilai di luar 1..1440 DITOLAK
+  // dengan pesan galat yang terlihat; yang tersimpan selalu yang diketik.
+  const [ttlTeks, setTtlTeks] = useState<string>('60');
+  const [ttlGalat, setTtlGalat] = useState<string | null>(null);
   const [menyimpan, setMenyimpan] = useState<boolean>(false);
   const [mengosongkan, setMengosongkan] = useState<boolean>(false);
   const [penolakanKebijakan, setPenolakanKebijakan] = useState<string | null>(null);
@@ -41,7 +46,8 @@ export const CacheTab: React.FC = () => {
     try {
       const stats = await api.system.cacheStats();
       setCache(stats);
-      setTtlMinutes(Math.max(1, Math.round((stats.ttl_seconds || 0) / 60) || 60));
+      setTtlTeks(String(Math.max(1, Math.round((stats.ttl_seconds || 0) / 60) || 60)));
+      setTtlGalat(null);
       setGagalMuat(null);
     } catch (err: unknown) {
       setGagalMuat(getErrorMessage(err));
@@ -64,9 +70,30 @@ export const CacheTab: React.FC = () => {
     toast.error(`${konteks}: ${getErrorMessage(err)}`);
   };
 
+  // Mengurai teks TTL menjadi menit yang sah, atau pesan galat. Tidak ada
+  // penjepitan senyap: di luar rentang berarti ditolak (V-FF-18).
+  const uraiTtl = (): { ttl: number } | { galat: string } => {
+    const t = ttlTeks.trim();
+    if (!/^\d+$/.test(t)) {
+      return { galat: 'TTL harus berupa bilangan bulat menit (tanpa desimal).' };
+    }
+    const ttl = Number(t);
+    if (ttl < 1 || ttl > TTL_MAKS_MENIT) {
+      return { galat: `TTL harus antara 1 dan ${TTL_MAKS_MENIT} menit (maks 24 jam) — nilai ${ttl} menit tidak disimpan.` };
+    }
+    return { ttl };
+  };
+
   const handleSimpanTTL = async () => {
     if (!cache) return;
-    const ttl = Math.min(TTL_MAKS_MENIT, Math.max(1, Math.floor(Number(ttlMinutes) || 60)));
+    const hasil = uraiTtl();
+    if ('galat' in hasil) {
+      setTtlGalat(hasil.galat);
+      toast.error(hasil.galat, 'TTL Tidak Valid');
+      return;
+    }
+    const ttl = hasil.ttl;
+    setTtlGalat(null);
     setMenyimpan(true);
     setPenolakanKebijakan(null);
     try {
@@ -87,7 +114,7 @@ export const CacheTab: React.FC = () => {
     setMenyimpan(true);
     setPenolakanKebijakan(null);
     try {
-      await api.system.updateCacheSettings(false, cache?.ttl_seconds ?? ttlMinutes * 60);
+      await api.system.updateCacheSettings(false, cache?.ttl_seconds ?? 3600);
       toast.info('Cache respons dinonaktifkan.', 'Pengaturan Cache');
       void muat();
     } catch (err: unknown) {
@@ -226,8 +253,12 @@ export const CacheTab: React.FC = () => {
                 type="number"
                 min="1"
                 max={TTL_MAKS_MENIT}
-                value={ttlMinutes}
-                onChange={(e) => setTtlMinutes(Math.max(1, parseInt(e.target.value) || 1))}
+                value={ttlTeks}
+                aria-invalid={ttlGalat !== null}
+                onChange={(e) => {
+                  setTtlTeks(e.target.value);
+                  setTtlGalat(null);
+                }}
                 className="w-16 bg-bg-base border border-border/80 rounded px-1.5 py-0.5 text-xs text-text-primary font-mono focus:border-accent focus:outline-none"
               />
               <span className="text-xs text-text-secondary">menit</span>
@@ -244,11 +275,23 @@ export const CacheTab: React.FC = () => {
               </Tooltip>
             </div>
           </div>
-          <span className="text-[10px] text-text-muted mt-1 block">
-            {ttlMinutes >= 60
-              ? `Sekitar ${(ttlMinutes / 60).toFixed(1)} jam masa berlaku (maks ${TTL_MAKS_MENIT / 60} jam)`
-              : `Sekitar ${ttlMinutes} menit masa berlaku`}
-          </span>
+          {ttlGalat ? (
+            <span role="alert" className="text-[10px] text-red-400 mt-1 block">
+              {ttlGalat}
+            </span>
+          ) : (
+            <span className="text-[10px] text-text-muted mt-1 block">
+              {(() => {
+                const n = Number(ttlTeks);
+                if (!Number.isInteger(n) || n < 1) {
+                  return `Rentang sah 1–${TTL_MAKS_MENIT} menit (maks 24 jam)`;
+                }
+                return n >= 60
+                  ? `Sekitar ${(n / 60).toFixed(1)} jam masa berlaku (rentang sah 1–${TTL_MAKS_MENIT} menit)`
+                  : `Sekitar ${n} menit masa berlaku`;
+              })()}
+            </span>
+          )}
         </div>
       </div>
     </div>

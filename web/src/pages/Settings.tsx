@@ -5,6 +5,7 @@ import { PageHeader } from '../components/common/PageHeader';
 import { QueryError } from '../components/common/QueryError';
 import { Globe, Sliders, Database, Zap } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
+import { validasiDomain } from '../utils/domain';
 import {
   DomainTab,
   CacheTab,
@@ -45,6 +46,10 @@ export const Settings: React.FC = () => {
   const [inputMode, setInputMode] = useState<SSLProviderMode>('letsencrypt');
   const [isDomainLoading, setIsDomainLoading] = useState(false);
   const [isDomainSaving, setIsDomainSaving] = useState(false);
+  // Flag lepas-domain terpisah (audit3 V-FF-19): tombol Simpan dan Lepas
+  // dulu berbagi satu flag, jadi keduanya berputar bersama dan yang tidak
+  // diklik pun tampak sibuk/disabled.
+  const [isDomainDeleting, setIsDomainDeleting] = useState(false);
   const [domainFeedback, setDomainFeedback] = useState<DomainFeedback>(null);
 
   // Backup & Disaster Recovery state
@@ -229,10 +234,35 @@ export const Settings: React.FC = () => {
       toast.error('Kunci awalan "cli:config:" dan "system:" dicadangkan untuk modul internal.');
       return;
     }
+    // Nilai kosong ditolak (audit3 V-FF-15): parameter baru bernilai kosong
+    // hampir pasti kesalahan tempel, dan server menerimanya tanpa bunyi.
+    if (!newSetting.value.trim()) {
+      toast.error('Nilai parameter tidak boleh kosong — isi nilai yang akan disimpan, atau batalkan pembuatan.');
+      return;
+    }
+    // Upsert senyap ditutup (V-FF-15): endpoint yang sama dipakai untuk
+    // membuat dan memperbarui, jadi kunci yang SUDAH ada akan menimpa nilai
+    // lama. Dulu toast tetap berkata "berhasil dibuat". Kini penimpaan
+    // meminta konfirmasi eksplisit dan toast-nya berkata "diperbarui".
+    const sudahAda = settings.some((s) => s.key === key);
+    if (sudahAda) {
+      const ok = await confirmModal({
+        title: 'Parameter Sudah Ada',
+        message: `Parameter "${key}" sudah ada — melanjutkan akan MENIMPA nilai lamanya dengan nilai baru ini. Lanjutkan?`,
+        confirmText: 'Ya, Timpa Nilainya',
+        cancelText: 'Batal',
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setIsCreatingSetting(true);
     try {
       await api.system.updateSetting(key, newSetting.value, newSetting.description.trim() || undefined);
-      toast.success(`Parameter "${key}" berhasil dibuat.`);
+      toast.success(
+        sudahAda
+          ? `Parameter "${key}" berhasil diperbarui (nilai lama tertimpa).`
+          : `Parameter "${key}" berhasil dibuat.`
+      );
       setIsCreateSettingOpen(false);
       setNewSetting({ key: '', value: '', description: '' });
       void loadSettings();
@@ -246,8 +276,12 @@ export const Settings: React.FC = () => {
   const handleSaveDomain = async (e: React.FormEvent) => {
     e.preventDefault();
     const domain = inputDomain.trim().toLowerCase();
-    if (!domain || !/^(?!-)(?!.*--)([a-z0-9-]{1,63}\.)+[a-z]{2,}$/.test(domain)) {
-      setDomainFeedback({ type: 'error', message: 'Nama domain tidak valid (contoh: gateway.example.com).' });
+    // Validasi per label (V-FF-19): regex lama menolak semua label ber-"--"
+    // termasuk punycode sah seperti xn--mnchen-3ya.de. validasiDomain
+    // memberi pesan spesifik per pelanggaran.
+    const galatDomain = validasiDomain(domain);
+    if (galatDomain) {
+      setDomainFeedback({ type: 'error', message: galatDomain });
       return;
     }
 
@@ -284,7 +318,7 @@ export const Settings: React.FC = () => {
       return;
     }
 
-    setIsDomainSaving(true);
+    setIsDomainDeleting(true);
     setDomainFeedback(null);
     try {
       await api.system.domain.delete();
@@ -300,7 +334,7 @@ export const Settings: React.FC = () => {
         message: 'Gagal menghapus domain: ' + getErrorMessage(err),
       });
     } finally {
-      setIsDomainSaving(false);
+      setIsDomainDeleting(false);
     }
   };
 
@@ -376,6 +410,7 @@ export const Settings: React.FC = () => {
           inputMode={inputMode}
           isDomainLoading={isDomainLoading}
           isDomainSaving={isDomainSaving}
+          isDomainDeleting={isDomainDeleting}
           domainFeedback={domainFeedback}
           serverIP={serverIP}
           setInputDomain={setInputDomain}

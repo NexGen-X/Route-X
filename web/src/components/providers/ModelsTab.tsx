@@ -131,7 +131,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
                       copyTimersRef.current.push(setTimeout(() => setCopiedModelId(null), 2000));
                     })}
                     aria-label={`Salin ID model ${model.upstream_model_name}`}
-                    className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer flex-shrink-0"
+                    className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer flex-shrink-0 min-w-[44px] min-h-[44px] sm:min-w-[28px] sm:min-h-[28px] inline-flex items-center justify-center"
                   >
                     {copiedModelId === model.id ? <Check className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
                   </button>
@@ -140,7 +140,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
                     onClick={() => handleTestModel(model)}
                     disabled={isTesting}
                     aria-label={`Uji inferensi model ${model.upstream_model_name}`}
-                    className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer disabled:opacity-50 flex-shrink-0"
+                    className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer disabled:opacity-50 flex-shrink-0 min-w-[44px] min-h-[44px] sm:min-w-[28px] sm:min-h-[28px] inline-flex items-center justify-center"
                   >
                     {isTesting ? <RefreshCw className="w-3.5 h-3.5 animate-spin text-accent-text" aria-hidden="true" /> : <FlaskConical className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />}
                   </button>
@@ -148,7 +148,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
                     type="button"
                     onClick={() => handleDeleteModel(model)}
                     aria-label={`Hapus model ${model.upstream_model_name}`}
-                    className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer flex-shrink-0"
+                    className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer flex-shrink-0 min-w-[44px] min-h-[44px] sm:min-w-[28px] sm:min-h-[28px] inline-flex items-center justify-center"
                   >
                     <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>

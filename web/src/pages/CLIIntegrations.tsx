@@ -309,6 +309,11 @@ export const CLIIntegrations: React.FC = () => {
       cfg?.target || tool.active_target || models[0]?.model_id || 'Atria-Dawn-Preview';
     const effectiveKey = cfg?.apiKey || userApiKey || '';
 
+    // Tenggat uji koneksi (audit3 V-FF-30): fetch mentah versi lama tanpa
+    // timeout — gateway yang menggantung membuat status "menguji..." tidak
+    // pernah selesai. 20 detik cukup untuk ping max_tokens=5.
+    const kontroler = new AbortController();
+    const timerBatal = setTimeout(() => kontroler.abort(), 20_000);
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -324,6 +329,7 @@ export const CLIIntegrations: React.FC = () => {
         res = await fetch('/v1/messages', {
           method: 'POST',
           headers,
+          signal: kontroler.signal,
           body: JSON.stringify({
             model: targetModel,
             max_tokens: 5,
@@ -334,6 +340,7 @@ export const CLIIntegrations: React.FC = () => {
         res = await fetch('/v1/chat/completions', {
           method: 'POST',
           headers,
+          signal: kontroler.signal,
           body: JSON.stringify({
             model: targetModel,
             max_tokens: 5,
@@ -377,9 +384,16 @@ export const CLIIntegrations: React.FC = () => {
           testing: false,
           latency: 0,
           ok: false,
-          message: err instanceof Error ? err.message : 'Koneksi gagal',
+          message:
+            err instanceof Error && err.name === 'AbortError'
+              ? 'Uji koneksi melewati batas waktu 20 detik — gateway tidak menjawab.'
+              : err instanceof Error
+                ? err.message
+                : 'Koneksi gagal',
         },
       }));
+    } finally {
+      clearTimeout(timerBatal);
     }
   };
 

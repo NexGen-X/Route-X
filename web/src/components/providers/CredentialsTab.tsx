@@ -716,7 +716,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                       copyTimersRef.current.push(setTimeout(() => setCopiedTokenId(null), 2000));
                     })}
                     aria-label="Salin petunjuk token"
-                    className="text-text-muted hover:text-white flex-shrink-0 min-h-[32px] min-w-[32px] flex items-center justify-center cursor-pointer"
+                    className="text-text-muted hover:text-white flex-shrink-0 min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] flex items-center justify-center cursor-pointer"
                   >
                     {copiedTokenId === cred.id ? <Check className="w-3 h-3 text-emerald-400" aria-hidden="true" /> : <Copy className="w-3 h-3" aria-hidden="true" />}
                   </button>
@@ -727,7 +727,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                     onClick={() => handleToggleKey(cred)}
                     title={cred.enabled ? 'Alihkan ke Standby' : 'Aktifkan'}
                     aria-label={cred.enabled ? "Nonaktifkan API key ke mode standby" : "Aktifkan API key"}
-                    className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-[11px] min-h-[36px] ${
+                    className={`p-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-[11px] min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-0 justify-center ${
                       cred.enabled
                         ? 'text-amber-400 hover:bg-amber-500/10'
                         : 'text-emerald-400 hover:bg-emerald-500/10'
@@ -740,7 +740,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
                     type="button"
                     onClick={() => handleDeleteKey(cred)}
                     aria-label="Hapus API key"
-                    className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+                    className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] flex items-center justify-center"
                   >
                     <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>

@@ -77,43 +77,174 @@ export function getCsrfToken(): string {
   return cachedCsrfToken;
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
+// ---------------------------------------------------------------------------
+// Inti klien (audit3 grup 13 — B-057). Perilaku yang dulu cacat dan kini
+// diperbaiki:
+// - V-FF-23: tidak ada timeout — fetch yang macet (proxy diam, server
+//   setengah mati) menggantung selamanya. Sekarang setiap request punya
+//   tenggat (bawaan 30 detik) yang digabung dengan signal pemanggil.
+// - V-FF-27: normalisasi error rusak — badan error non-JSON (mis. halaman
+//   502 dari proxy) dilempar mentah sebagai pesan toast, dan kegagalan
+//   parse JSON menutupi status HTTP sebenarnya. Sekarang status selalu
+//   diperiksa dan error selalu berbentuk ApiError bermakna.
+// - V-FF-26: pengecualian 401 membandingkan string path PERSIS, sehingga
+//   '/api/auth/me?x=1' lolos dan memicu logout; perbandingan kini atas
+//   pathname tanpa query string.
+// - V-FF-31: 403 csrf_invalid tidak pernah dipulihkan — token basi membuat
+//   SEMUA mutasi gagal sampai muat ulang manual. Sekarang token disegarkan
+//   dari /api/auth/me dan request diulang tepat satu kali.
+// - V-FF-32: tidak ada dedup — efek ganda/polling tumpang tindih mengirim
+//   GET identik berkali-kali. GET identik yang sedang terbang kini berbagi
+//   satu promise.
+// - V-FF-28: fetchAllPages berhenti DIAM-DIAM di batas pengaman — kini
+//   hasilnya membawa penanda `terpotong` (dan peringatan konsol), termasuk
+//   bila kursor berputar.
+// ---------------------------------------------------------------------------
+
+const TIMEOUT_BAWAAN_MS = 30_000;
+const METODE_MUTASI = ['POST', 'PUT', 'DELETE', 'PATCH'];
+
+export interface OpsiRequest extends RequestInit {
+  /** Tenggat per request dalam milidetik; bawaan 30 detik. */
+  timeoutMs?: number;
+}
+
+interface SinyalGabungan {
+  signal: AbortSignal;
+  kenaTimeout: () => boolean;
+  bersihkan: () => void;
+}
+
+// Menggabungkan tenggat internal dengan AbortSignal milik pemanggil:
+// mana pun yang lebih dulu membatalkan fetch.
+function buatSinyalGabungan(timeoutMs: number, sinyalPemanggil?: AbortSignal | null): SinyalGabungan {
+  const controller = new AbortController();
+  let timeout = false;
+  const timer = setTimeout(() => {
+    timeout = true;
+    controller.abort();
+  }, timeoutMs);
+  const onBatalPemanggil = () => controller.abort();
+  if (sinyalPemanggil) {
+    if (sinyalPemanggil.aborted) {
+      controller.abort();
+    } else {
+      sinyalPemanggil.addEventListener('abort', onBatalPemanggil, { once: true });
+    }
+  }
+  return {
+    signal: controller.signal,
+    kenaTimeout: () => timeout,
+    bersihkan: () => {
+      clearTimeout(timer);
+      sinyalPemanggil?.removeEventListener('abort', onBatalPemanggil);
+    },
+  };
+}
+
+// fetch dengan tenggat; semua kegagalan jaringan/abort dinormalisasi
+// menjadi ApiError agar pemanggil menerima satu bentuk error saja.
+async function fetchBertenggat(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const gabungan = buatSinyalGabungan(timeoutMs, init.signal);
+  try {
+    return await fetch(url, { ...init, signal: gabungan.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      if (gabungan.kenaTimeout()) {
+        throw new ApiError(
+          0,
+          'request_timeout',
+          `Permintaan ke server melewati batas waktu ${Math.round(timeoutMs / 1000)} detik. Server mungkin sibuk — coba lagi.`
+        );
+      }
+      throw new ApiError(0, 'request_aborted', 'Permintaan dibatalkan.');
+    }
+    // Jaringan mati/DNS gagal/CORS: fetch melempar TypeError mentah. Bungkus
+    // menjadi ApiError agar seluruh pemanggil mendapat bentuk error yang sama
+    // dan bisa membedakan gangguan jaringan dari respons server.
+    throw new ApiError(0, 'network_error', 'Tidak dapat menghubungi server Route-X. Periksa koneksi jaringan.');
+  } finally {
+    gabungan.bersihkan();
+  }
+}
+
+function ekstrakError(data: unknown, status: number): { code: string; message: string; param?: string } {
+  const errObj = (data && typeof data === 'object' && 'error' in data && data.error && typeof data.error === 'object')
+    ? (data.error as Record<string, unknown>)
+    : undefined;
+  const code = typeof errObj?.code === 'string' ? errObj.code : 'unknown_error';
+  if (typeof errObj?.message === 'string' && errObj.message !== '') {
+    return { code, message: errObj.message, param: typeof errObj?.param === 'string' ? errObj.param : undefined };
+  }
+  // Badan non-JSON singkat yang bukan markup boleh ditampilkan apa adanya;
+  // halaman error HTML dari proxy/upstream TIDAK — dulu teks mentahnya
+  // menjadi pesan toast (V-FF-27).
+  if (typeof data === 'string') {
+    const ringkas = data.trim();
+    if (ringkas !== '' && ringkas.length <= 200 && !ringkas.startsWith('<')) {
+      return { code, message: ringkas };
+    }
+  }
+  return {
+    code,
+    message: status >= 500
+      ? 'Terjadi kesalahan sistem.'
+      : `Permintaan gagal dengan status ${status}.`,
+  };
+}
+
+// Menyegarkan token CSRF dari /api/auth/me memakai fetch mentah (bukan
+// request()) agar tidak rekursif dan tidak memicu penanganan 401 global.
+async function segarkanCsrfToken(): Promise<boolean> {
+  try {
+    const res = await fetchBertenggat('/api/auth/me', { credentials: 'same-origin' }, 10_000);
+    if (!res.ok) return false;
+    const data: unknown = await res.json();
+    if (data && typeof data === 'object' && 'csrf_token' in data) {
+      const token = (data as Record<string, unknown>).csrf_token;
+      if (typeof token === 'string' && token !== '') {
+        setCsrfToken(token);
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+async function lakukanRequest<T>(path: string, options: OpsiRequest, sudahUlangCsrf: boolean): Promise<T> {
+  const { timeoutMs = TIMEOUT_BAWAAN_MS, ...init } = options;
+  const headers = new Headers(init.headers);
+  if (!headers.has('Content-Type') && init.body && typeof init.body === 'string') {
     headers.set('Content-Type', 'application/json');
   }
 
   // Double-submit CSRF protection untuk metode mutasi
-  const method = (options.method || 'GET').toUpperCase();
-  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+  const method = (init.method || 'GET').toUpperCase();
+  const mutasi = METODE_MUTASI.includes(method);
+  if (mutasi) {
     const csrf = getCsrfToken();
     if (csrf) {
       headers.set('X-CSRF-Token', csrf);
     }
   }
 
-  const res = await fetch(path, {
-    ...options,
-    headers,
-    credentials: 'same-origin',
-  }).catch(() => {
-    // Jaringan mati/DNS gagal/CORS: fetch melempar TypeError mentah. Bungkus
-    // menjadi ApiError agar seluruh pemanggil mendapat bentuk error yang sama
-    // dan bisa membedakan gangguan jaringan dari respons server.
-    throw new ApiError(0, 'network_error', 'Tidak dapat menghubungi server Route-X. Periksa koneksi jaringan.');
-  });
+  const res = await fetchBertenggat(path, { ...init, headers, credentials: 'same-origin' }, timeoutMs);
 
   if (res.status === 204) {
     return {} as T;
   }
 
   let data: unknown;
+  let jsonCacat = false;
   const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     try {
       data = await res.json();
     } catch {
-      throw new ApiError(res.status, 'invalid_json_response', 'Respons server bukan JSON yang valid.');
+      jsonCacat = true;
+      data = undefined;
     }
   } else {
     data = await res.text();
@@ -128,32 +259,62 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    // Penanganan 401 global: beri tahu AuthContext agar logout, kecuali untuk
-    // endpoint identitas/login sendiri supaya tidak memicu loop logout.
-    if (
-      res.status === 401 &&
-      path !== '/api/auth/me' &&
-      path !== '/api/auth/login'
-    ) {
+    const galat = ekstrakError(data, res.status);
+
+    // Pemulihan CSRF (V-FF-31): token basi (rotasi sesi, muat ulang sebagian)
+    // tidak boleh membunuh semua mutasi sampai akhir sesi. Segarkan token
+    // lalu ulangi request yang sama tepat satu kali.
+    if (res.status === 403 && galat.code === 'csrf_invalid' && mutasi && !sudahUlangCsrf) {
+      if (await segarkanCsrfToken()) {
+        return lakukanRequest<T>(path, options, true);
+      }
+    }
+
+    // Penanganan 401 global: beri tahu AuthContext, kecuali untuk endpoint
+    // identitas/login sendiri supaya tidak memicu loop logout. Perbandingan
+    // memakai pathname — query string tidak boleh mengelabui pengecualian
+    // ini (V-FF-26).
+    const pathname = path.split('?')[0];
+    if (res.status === 401 && pathname !== '/api/auth/me' && pathname !== '/api/auth/login') {
       window.dispatchEvent(new CustomEvent('routex:unauthorized'));
     }
-    const errObj = (data && typeof data === 'object' && 'error' in data && data.error && typeof data.error === 'object')
-      ? (data.error as Record<string, unknown>)
-      : undefined;
-    const errCode = typeof errObj?.code === 'string' ? errObj.code : 'unknown_error';
-    const errMsg = typeof errObj?.message === 'string'
-      ? errObj.message
-      : (typeof data === 'string' ? data : 'Terjadi kesalahan sistem.');
-    const errParam = typeof errObj?.param === 'string' ? errObj.param : undefined;
-    throw new ApiError(
-      res.status,
-      errCode,
-      errMsg,
-      errParam
-    );
+    throw new ApiError(res.status, galat.code, galat.message, galat.param);
+  }
+
+  if (jsonCacat) {
+    // Status sukses tetapi badan JSON tidak terbaca dan tidak kosong:
+    // datanya tidak bisa dikarang, jadi ini tetap kesalahan — bedanya dari
+    // versi lama, kesalahan pada respons ERROR kini selalu melaporkan
+    // status/kode aslinya, bukan invalid_json_response (V-FF-27).
+    throw new ApiError(res.status, 'invalid_json_response', 'Respons server bukan JSON yang valid.');
   }
 
   return data as T;
+}
+
+// GET identik yang sedang dalam penerbangan berbagi satu promise (V-FF-32).
+const getSedangTerbang = new Map<string, Promise<unknown>>();
+
+async function request<T>(path: string, options: OpsiRequest = {}): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
+  const bisaDedup = method === 'GET' && !options.body && !options.signal;
+  if (!bisaDedup) {
+    return lakukanRequest<T>(path, options, false);
+  }
+  const kunci = `${method} ${path}`;
+  const ada = getSedangTerbang.get(kunci);
+  if (ada) {
+    return ada as Promise<T>;
+  }
+  const janji = lakukanRequest<T>(path, options, false);
+  getSedangTerbang.set(kunci, janji as Promise<unknown>);
+  const bersihkan = () => {
+    if (getSedangTerbang.get(kunci) === (janji as Promise<unknown>)) {
+      getSedangTerbang.delete(kunci);
+    }
+  };
+  void janji.then(bersihkan, bersihkan);
+  return janji;
 }
 
 // fetchAllPages mengikuti rantai next_cursor sampai habis (audit F7):
@@ -161,18 +322,41 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 // halaman yang hanya membaca halaman pertama diam-diam menyembunyikan
 // data ke-51 dan seterusnya. Batas 25 halaman x 200 baris (5.000 item)
 // adalah pengaman, bukan perilaku normal untuk instalasi pribadi.
+// Audit3 V-FF-28: mencapai pengaman itu tidak lagi senyap — hasil membawa
+// penanda `terpotong: true` (dan peringatan konsol), termasuk bila kursor
+// dari server berputar ke nilai yang sudah pernah dipakai.
+export interface HasilSemuaHalaman<T> {
+  items: T[];
+  terpotong?: boolean;
+}
+
 async function fetchAllPages<T>(
   fetchPage: (cursor?: string) => Promise<{ items: T[]; next_cursor?: string }>
-): Promise<{ items: T[] }> {
+): Promise<HasilSemuaHalaman<T>> {
   const items: T[] = [];
+  const kursorPernah = new Set<string>();
   let cursor: string | undefined;
+  let terpotong = false;
   for (let page = 0; page < 25; page++) {
     const res = await fetchPage(cursor);
     items.push(...(res.items || []));
     if (!res.next_cursor) break;
+    if (kursorPernah.has(res.next_cursor)) {
+      terpotong = true;
+      break;
+    }
+    kursorPernah.add(res.next_cursor);
     cursor = res.next_cursor;
+    if (page === 24) {
+      terpotong = true;
+    }
   }
-  return { items };
+  if (terpotong) {
+    console.warn(
+      `fetchAllPages berhenti sebelum seluruh data terbaca (terkumpul ${items.length} item) — daftar mungkin tidak lengkap.`
+    );
+  }
+  return { items, terpotong: terpotong || undefined };
 }
 
 export const api = {
@@ -798,13 +982,18 @@ export const api = {
         if (csrf) {
           headers.set('X-CSRF-Token', csrf);
         }
-        const res = await fetch(`/api/admin/system/backup/export?format=${format}`, {
-          method: 'POST',
-          headers,
-          credentials: 'same-origin',
-        }).catch(() => {
-          throw new ApiError(0, 'network_error', 'Tidak dapat menghubungi server Route-X. Periksa koneksi jaringan.');
-        });
+        // Ekspor cadangan bisa lama (dump penuh), jadi tenggatnya lebih
+        // longgar dari request biasa — tetapi tetap ada (V-FF-23): unduhan
+        // yang macet tidak boleh menggantung tanpa batas.
+        const res = await fetchBertenggat(
+          `/api/admin/system/backup/export?format=${format}`,
+          {
+            method: 'POST',
+            headers,
+            credentials: 'same-origin',
+          },
+          120_000
+        );
         if (!res.ok) {
           if (res.status === 401) {
             window.dispatchEvent(new CustomEvent('routex:unauthorized'));

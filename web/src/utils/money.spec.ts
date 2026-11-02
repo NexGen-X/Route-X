@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatUSD, percentageOfDecimal } from './money';
+import { formatUSD, percentageOfDecimal, parseJumlahUsd } from './money';
 
 describe('money utility', () => {
   describe('formatUSD', () => {
@@ -110,6 +110,31 @@ describe('money utility', () => {
       expect(percentageOfDecimal('abc', '100')).toBe(0);
       expect(percentageOfDecimal('100', 'xyz')).toBe(0);
       expect(percentageOfDecimal('-10', '100')).toBe(0);
+    });
+  });
+
+  // Audit3 V-FF-07: Number("10,5") = NaN dulu membuat anggaran hilang
+  // diam-diam di balik toast sukses.
+  describe('parseJumlahUsd', () => {
+    it('menerima titik dan koma sebagai pemisah desimal', () => {
+      expect(parseJumlahUsd('10.5')).toEqual({ ok: true, nilai: 10.5 });
+      expect(parseJumlahUsd('10,5')).toEqual({ ok: true, nilai: 10.5 });
+      expect(parseJumlahUsd(' 25 ')).toEqual({ ok: true, nilai: 25 });
+      expect(parseJumlahUsd('0.01')).toEqual({ ok: true, nilai: 0.01 });
+    });
+
+    it('menolak masukan tak sah dengan pesan, bukan NaN senyap', () => {
+      expect(parseJumlahUsd('').ok).toBe(false);
+      expect(parseJumlahUsd('abc').ok).toBe(false);
+      expect(parseJumlahUsd('1e3').ok).toBe(false);
+      expect(parseJumlahUsd('1.000.000').ok).toBe(false);
+      expect(parseJumlahUsd('10,5,2').ok).toBe(false);
+      expect(parseJumlahUsd('-5').ok).toBe(false);
+    });
+
+    it('menolak nol dan negatif sebagai anggaran', () => {
+      expect(parseJumlahUsd('0').ok).toBe(false);
+      expect(parseJumlahUsd('0.0').ok).toBe(false);
     });
   });
 });

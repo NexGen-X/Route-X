@@ -25,7 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onOpenMobileMenu}
-          className="lg:hidden min-w-[36px] min-h-[36px] flex items-center justify-center p-1.5 text-text-secondary hover:text-white rounded-full bg-bg-surface-1 border border-border hover:bg-bg-surface-2 shrink-0 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
+          className="lg:hidden min-w-[44px] min-h-[44px] flex items-center justify-center p-1.5 text-text-secondary hover:text-white rounded-full bg-bg-surface-1 border border-border hover:bg-bg-surface-2 shrink-0 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
           aria-label="Buka menu navigasi"
         >
           <Menu className="w-4 h-4" aria-hidden="true" />
@@ -71,7 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={onOpenCommandPalette}
-                className="sm:hidden min-w-[36px] min-h-[36px] flex items-center justify-center p-2 rounded-full bg-bg-surface-1 hover:bg-bg-surface-2 border border-border text-text-secondary hover:text-white transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
+                className="sm:hidden min-w-[44px] min-h-[44px] flex items-center justify-center p-2 rounded-full bg-bg-surface-1 hover:bg-bg-surface-2 border border-border text-text-secondary hover:text-white transition-colors cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
                 aria-label="Buka Command Palette"
               >
                 <Search className="w-3.5 h-3.5" aria-hidden="true" />

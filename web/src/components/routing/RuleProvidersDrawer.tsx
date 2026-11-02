@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import type { RoutingRule, Model, Provider } from '../../types';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
+import { InputBilangan } from '../common/InputBilangan';
 import { Checkbox } from '../common/Checkbox';
 import { useToast } from '../../context/ToastContext';
 import { api } from '../../api/client';
@@ -55,6 +56,29 @@ export const RuleProvidersDrawer: React.FC<RuleProvidersDrawerProps> = ({
   const handleSaveProviders = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rule) return;
+    // Cermin penolakan server (V-FF-11): provider terpilih yang tidak
+    // memetakan model target aturan akan ditolak — sampaikan di sini dengan
+    // nama providernya, bukan menunggu error umum dari server. Lencana
+    // "Model tidak tersedia" di daftar sudah menunjukkan hal yang sama.
+    const targetM = models.find(
+      (m) => m.id === rule.match_model_id || m.model_id === rule.match_model_id,
+    );
+    if (targetM?.providers) {
+      const tanpaPemetaan = ruleProviders
+        .map((pid) => providers.find((p) => p.id === pid))
+        .filter(
+          (p): p is Provider =>
+            !!p && !targetM.providers!.some((mp) => mp.provider_id === p.id),
+        );
+      if (tanpaPemetaan.length > 0) {
+        toast.error(
+          `Provider berikut tidak memetakan model ${targetM.model_id}: ${tanpaPemetaan
+            .map((p) => p.display_name || p.name)
+            .join(', ')}. Lepas centangnya atau petakan dulu modelnya di halaman Penyedia.`
+        );
+        return;
+      }
+    }
     setIsSubmitting(true);
     try {
       await api.routing.setProviders(rule.id, {
@@ -139,13 +163,15 @@ export const RuleProvidersDrawer: React.FC<RuleProvidersDrawerProps> = ({
                 {isChecked && (
                   <div className="pl-6 flex items-center gap-2 mt-2 pt-2 border-t border-border/40">
                     <label className="text-[11px] text-text-secondary">Bobot (Weight):</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={ruleWeights[p.id] || 1}
-                      onChange={(e) => updateWeight(p.id, parseInt(e.target.value) || 1)}
-                      className="w-20 px-2 py-0.5 bg-bg-surface-2 border border-border rounded text-white text-xs font-mono focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
-                    />
+                    <div className="w-24">
+                      <InputBilangan
+                        ariaLabel={`Bobot ${p.display_name || p.name}`}
+                        value={ruleWeights[p.id] ?? 1}
+                        onChange={(n) => updateWeight(p.id, n)}
+                        min={1}
+                        className="w-full px-2 py-0.5 bg-bg-surface-2 border border-border rounded text-white text-xs font-mono focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-400"
+                      />
+                    </div>
                   </div>
                 )}
               </div>

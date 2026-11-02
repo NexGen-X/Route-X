@@ -1,7 +1,8 @@
-import React, { useEffect, useId } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import FocusTrap from 'focus-trap-react';
 import { X } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { buatPenandaOverlay } from '../../lib/tumpukanOverlay';
 
 declare global {
   interface Window {
@@ -55,17 +56,27 @@ export const Modal: React.FC<ModalProps> = ({
   const titleId = `modal-title-${generatedTitleId.replace(/:/g, '')}`;
   const subtitleId = `modal-subtitle-${generatedTitleId.replace(/:/g, '')}`;
 
+  // Penanda tumpukan overlay (V-FF-20): Escape hanya menutup lapisan
+  // TERATAS. Tanpa ini satu tekanan Escape menutup modal sekaligus drawer
+  // yang terbuka di atasnya, karena keduanya mendengarkan window.
+  const penandaRef = useRef(buatPenandaOverlay());
+
   // Kunci body bersama lintas Modal/Drawer; restore nilai overflow asli.
   useEffect(() => {
+    const penanda = penandaRef.current;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      // defaultPrevented: lapisan dalam (mis. dropdown Select) sudah
+      // memakai Escape ini dan menghentikan rambatannya.
+      if (e.key === 'Escape' && !e.defaultPrevented && penanda.teratas()) onClose();
     };
     if (isOpen) {
+      penanda.masuk();
       __acquireBodyLock();
       window.addEventListener('keydown', handleKeyDown);
       return () => {
         window.removeEventListener('keydown', handleKeyDown);
         __releaseBodyLock();
+        penanda.keluar();
       };
     }
     return () => {
@@ -95,7 +106,7 @@ export const Modal: React.FC<ModalProps> = ({
         className={`fixed inset-0 z-50 flex justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 cursor-pointer ${sheetOnMobile ? 'items-end p-0 sm:items-center sm:p-4' : 'items-center p-4'}`}
       >
         <div
-          className={`w-full ${maxW} bg-bg-surface border border-border shadow-surface-elevated flex flex-col overflow-hidden cursor-default backdrop-blur-sm ${sheetOnMobile ? 'rounded-t-[20px] sm:rounded-card max-h-[92vh] sm:max-h-[90vh] animate-sheet-up sm:animate-fade-in' : 'rounded-card max-h-[90vh] animate-in zoom-in-95 duration-200'}`}
+          className={`w-full ${maxW} bg-bg-surface border border-border shadow-surface-elevated flex flex-col overflow-hidden cursor-default backdrop-blur-sm ${sheetOnMobile ? 'rounded-t-[20px] sm:rounded-card max-h-[92dvh] sm:max-h-[90dvh] animate-sheet-up sm:animate-fade-in' : 'rounded-card max-h-[90dvh] animate-in zoom-in-95 duration-200'}`}
           onClick={(e) => e.stopPropagation()}
         >
           {sheetOnMobile && (
@@ -130,9 +141,11 @@ export const Modal: React.FC<ModalProps> = ({
           {/* Body */}
           <div className="p-5 overflow-y-auto flex-1 scrollbar-thin">{children}</div>
 
-          {/* Sticky Footer */}
+          {/* Sticky Footer — wadah flex berjarak (V-FF-40): footer yang
+              berupa fragment telanjang (beberapa tombol bersaudara) dulu
+              menempel tanpa jarak karena wadah ini div blok polos. */}
           {footer && (
-            <div className="px-5 py-3.5 border-t border-border bg-bg-surface-1/70 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10">
+            <div className="px-5 py-3.5 border-t border-border bg-bg-surface-1/70 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10 flex items-center gap-3 flex-wrap">
               {footer}
             </div>
           )}

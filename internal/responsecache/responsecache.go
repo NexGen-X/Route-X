@@ -22,6 +22,13 @@ import (
 // DefaultTTL bawaan untuk entri cache respons (1 jam).
 const DefaultTTL = 1 * time.Hour
 
+// MaxEntryBytes adalah batas ukuran satu entri terserialisasi yang boleh
+// disimpan ke Redis (2 MB). Jalur streaming sudah membatasi penampungan
+// chunk pada angka yang sama; tanpa batas di titik simpan bersama ini,
+// respons non-streaming sebesar apa pun tersalin utuh ke Redis
+// (audit3 V-GW-08).
+const MaxEntryBytes = 2 << 20
+
 // DefaultStatsTTL bawaan untuk metrik statistik cache respons (30 hari).
 const DefaultStatsTTL = 30 * 24 * time.Hour
 
@@ -36,7 +43,9 @@ type Entry struct {
 	StreamChunks []string        `json:"stream_chunks,omitempty"`
 	// Teks adalah teks jawaban yang sudah diekstrak saat menyimpan, supaya
 	// jalur HIT non-streaming tetap bisa menjalankan penyaring jawaban tanpa
-	// mengurai ulang Raw. Kosong pada entri lama maupun entri streaming.
+	// mengurai ulang Raw. Entri streaming ikut mengisinya dari gabungan
+	// chunk (audit3 V-GW-04); kosong hanya pada entri warisan yang disimpan
+	// sebelum teks mulai direkam — jalur HIT mengekstraknya dari Raw.
 	Teks     string    `json:"teks,omitempty"`
 	CachedAt time.Time `json:"cached_at"`
 }
@@ -211,6 +220,20 @@ func (e *Engine) Get(ctx context.Context, key string) (*Entry, bool, error) {
 	return &entry, true, nil
 }
 
+// skripSetEntri menulis entri sekaligus memelihara counter ringkas
+// meta:entry_count secara atomik: counter hanya naik bila kuncinya BARU,
+// sehingga penulisan ulang entri yang sama tidak menghitung ganda dan
+// jalur cepat Stats() benar-benar hidup (audit3 V-GW-07 — sebelumnya
+// counter ini tidak pernah ditulis oleh siapa pun sehingga Stats()
+// selalu jatuh ke SCAN).
+var skripSetEntri = redis.NewScript(`
+if redis.call('EXISTS', KEYS[1]) == 0 then
+  redis.call('INCR', KEYS[2])
+end
+redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
+return 1
+`)
+
 // Set menyimpan respons inferensi ke Redis dengan TTL aktif.
 func (e *Engine) Set(ctx context.Context, key string, entry *Entry) error {
 	if !e.IsEnabled() || key == "" || entry == nil {
@@ -222,9 +245,18 @@ func (e *Engine) Set(ctx context.Context, key string, entry *Entry) error {
 	if err != nil {
 		return fmt.Errorf("serialize cache entry: %w", err)
 	}
+	if len(data) > MaxEntryBytes {
+		// Entri raksasa tidak disimpan: Redis bukan tempat menampung
+		// respons tanpa batas, dan request berikutnya cukup menjadi MISS.
+		e.logger.DebugContext(ctx, "entri response cache melewati batas ukuran, tidak disimpan",
+			"key", key, "ukuran", len(data), "batas", MaxEntryBytes)
+		return nil
+	}
 
+	entryCountKey := cache.Key(cache.NamespaceResponseCache, "meta", "entry_count")
 	ttl := e.TTL()
-	if err := e.redis.Client().Set(ctx, rKey, data, ttl).Err(); err != nil {
+	if err := skripSetEntri.Run(ctx, e.redis.Client(), []string{rKey, entryCountKey},
+		data, ttl.Milliseconds()).Err(); err != nil {
 		e.logger.WarnContext(ctx, "gagal menulis response cache", "key", key, "error", err)
 		return err
 	}
@@ -264,8 +296,14 @@ func (e *Engine) Flush(ctx context.Context) (int64, error) {
 		}
 	}
 
-	// Reset counter ringkas entry_count setelah flush berhasil
-	_ = client.Del(ctx, entryCountKey)
+	// Reset counter ringkas entry_count setelah flush berhasil, beserta
+	// counter hits/misses: Flush adalah titik awal statistik yang baru,
+	// bukan hanya pengosongan entri (audit3 V-GW-07 — sebelumnya hits dan
+	// misses tetap kumulatif sesudah flush sehingga angka "sejak flush"
+	// yang dibayangkan operator tidak pernah ada).
+	hitsKey := cache.Key(cache.NamespaceResponseCache, "stats", "hits")
+	missesKey := cache.Key(cache.NamespaceResponseCache, "stats", "misses")
+	_ = client.Del(ctx, entryCountKey, hitsKey, missesKey)
 
 	return deletedCount, nil
 }
@@ -331,18 +369,27 @@ func (e *Engine) Stats(ctx context.Context) (Stats, error) {
 	return s, nil
 }
 
+// skripCatatStatistik menaikkan counter dan memasang TTL 30 hari HANYA
+// saat counter lahir (nilai menjadi 1). Versi pipeline sebelumnya memasang
+// ulang Expire pada setiap kenaikan, jadi jendela 30 hari bergeser terus
+// selama cache aktif dipakai dan "counter 30 hari" tidak pernah berarti
+// 30 hari (audit3 V-GW-07).
+var skripCatatStatistik = redis.NewScript(`
+local v = redis.call('INCR', KEYS[1])
+if v == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return v
+`)
+
 func (e *Engine) recordStat(ctx context.Context, metric string) {
 	if e.redis == nil {
 		return
 	}
 	key := cache.Key(cache.NamespaceResponseCache, "stats", metric)
-	client := e.redis.Client()
 
-	// Pasang TTL 30 hari via pipeline agar counter statistik tidak tersimpan selamanya di Redis.
-	pipe := client.Pipeline()
-	pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, DefaultStatsTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
+	if err := skripCatatStatistik.Run(ctx, e.redis.Client(), []string{key},
+		int64(DefaultStatsTTL.Seconds())).Err(); err != nil {
 		// AUDIT FIX: gagal Incr tidak lagi senyap; hit/miss statistic bisa meleset
 		// tanpa jejak. Warning sekali per kejadian cukup — jangan banjiri log.
 		e.logger.WarnContext(ctx, "gagal menaikkan counter response cache", "metric", metric, "error", err)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -342,5 +343,129 @@ func TestFlushResetsEntryCount(t *testing.T) {
 
 	if mr.Exists(entryCountKey) {
 		t.Errorf("entry_count masih ada setelah Flush")
+	}
+}
+
+// TestSetMemeliharaEntryCount adalah regresi audit3 V-GW-07: Set WAJIB
+// menulis meta:entry_count (sebelumnya tidak ada penulisnya sama sekali
+// sehingga jalur cepat Stats selalu mati). Penulisan ulang kunci yang
+// sama tidak boleh menghitung ganda.
+func TestSetMemeliharaEntryCount(t *testing.T) {
+	e, mr := newTestEngine(t)
+	ctx := context.Background()
+
+	entry := &Entry{Model: "gpt-4o", Raw: json.RawMessage(`{"text":"ok"}`)}
+	for _, kunci := range []string{"sig1", "sig2", "sig1"} {
+		if err := e.Set(ctx, kunci, entry); err != nil {
+			t.Fatalf("Set %s: %v", kunci, err)
+		}
+	}
+
+	entryCountKey := cache.Key(cache.NamespaceResponseCache, "meta", "entry_count")
+	val, err := mr.Get(entryCountKey)
+	if err != nil {
+		t.Fatalf("entry_count tidak tertulis sesudah Set: %v", err)
+	}
+	if val != "2" {
+		t.Errorf("entry_count = %q, mau \"2\" (dua kunci unik, satu ditulis ulang)", val)
+	}
+
+	stats, err := e.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.TotalEntries != 2 {
+		t.Errorf("Stats.TotalEntries = %d, mau 2", stats.TotalEntries)
+	}
+}
+
+// TestRecordStatTTLTidakBergeser adalah regresi audit3 V-GW-07: TTL
+// counter statistik dipasang sekali saat counter lahir; kenaikan
+// berikutnya tidak boleh menggeser jendela 30 hari dari awal lagi.
+func TestRecordStatTTLTidakBergeser(t *testing.T) {
+	e, mr := newTestEngine(t)
+	ctx := context.Background()
+
+	hitsKey := cache.Key(cache.NamespaceResponseCache, "stats", "hits")
+	e.recordStat(ctx, "hits")
+
+	mr.FastForward(10 * 24 * time.Hour)
+	e.recordStat(ctx, "hits")
+
+	ttl := mr.TTL(hitsKey)
+	if ttl > 21*24*time.Hour {
+		t.Errorf("TTL counter sesudah kenaikan kedua = %v; jendela bergeser (harusnya sisa ±20 hari)", ttl)
+	}
+	if ttl <= 0 {
+		t.Errorf("TTL counter = %v; counter tidak boleh kehilangan TTL-nya", ttl)
+	}
+	val, err := mr.Get(hitsKey)
+	if err != nil || val != "2" {
+		t.Errorf("hits counter = %q, err = %v, mau \"2\"", val, err)
+	}
+}
+
+// TestFlushMeresetStatistik adalah regresi audit3 V-GW-07: Flush memulai
+// statistik dari nol — hits dan misses ikut direset, bukan hanya entri
+// dan entry_count.
+func TestFlushMeresetStatistik(t *testing.T) {
+	e, mr := newTestEngine(t)
+	ctx := context.Background()
+
+	e.recordStat(ctx, "hits")
+	e.recordStat(ctx, "misses")
+	entry := &Entry{Model: "gpt-4o", Raw: json.RawMessage(`{"text":"ok"}`)}
+	if err := e.Set(ctx, "sig1", entry); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	if _, err := e.Flush(ctx); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	for _, kunci := range []string{
+		cache.Key(cache.NamespaceResponseCache, "stats", "hits"),
+		cache.Key(cache.NamespaceResponseCache, "stats", "misses"),
+		cache.Key(cache.NamespaceResponseCache, "meta", "entry_count"),
+	} {
+		if mr.Exists(kunci) {
+			t.Errorf("kunci statistik %q masih ada setelah Flush", kunci)
+		}
+	}
+
+	stats, err := e.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.Hits != 0 || stats.Misses != 0 || stats.TotalEntries != 0 {
+		t.Errorf("Stats sesudah Flush = %+v, mau semua nol", stats)
+	}
+}
+
+// TestSetMenolakEntriRaksasa adalah regresi audit3 V-GW-08: entri
+// terserialisasi di atas MaxEntryBytes tidak disimpan ke Redis (dulu
+// respons non-streaming sebesar apa pun disalin utuh), dan tidak ikut
+// terhitung di entry_count.
+func TestSetMenolakEntriRaksasa(t *testing.T) {
+	e, _ := newTestEngine(t)
+	ctx := context.Background()
+
+	raksasa := &Entry{
+		Model: "gpt-4o",
+		Raw:   json.RawMessage(`"` + strings.Repeat("a", MaxEntryBytes) + `"`),
+	}
+	if err := e.Set(ctx, "sig-besar", raksasa); err != nil {
+		t.Fatalf("Set entri raksasa: %v", err)
+	}
+	if _, hit, err := e.Get(ctx, "sig-besar"); err != nil || hit {
+		t.Errorf("Get entri raksasa: hit = %v, err = %v; mau tidak tersimpan", hit, err)
+	}
+
+	stats, err := e.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if stats.TotalEntries != 0 {
+		t.Errorf("Stats.TotalEntries = %d, mau 0 (entri raksasa tidak terhitung)", stats.TotalEntries)
 	}
 }

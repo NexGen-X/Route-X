@@ -344,7 +344,18 @@ func (h *Handlers) restoreDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasil, err := h.jalankanRestore(ctx, berkasSQL, connStr)
+	// Siapkan berkas efektif untuk psql: saring baris pembuka yang hanya
+	// dikenal server PostgreSQL yang lebih baru daripada server tujuan
+	// (lihat siapkanBerkasRestore).
+	berkasEfektif, err := siapkanBerkasRestore(berkasSQL)
+	if err != nil {
+		h.logger.ErrorContext(ctx, "gagal menyiapkan berkas restore efektif", slog.Any("err", err))
+		httpx.InternalError(w, r)
+		return
+	}
+	defer os.Remove(berkasEfektif)
+
+	hasil, err := h.jalankanRestore(ctx, berkasEfektif, connStr)
 	if err != nil {
 		h.logger.ErrorContext(ctx, "gagal memulihkan database dari backup sql",
 			slog.String("filename", header.Filename), slog.Any("err", err))

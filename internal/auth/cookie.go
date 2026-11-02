@@ -97,6 +97,7 @@ func (c *Cookies) CSRFName() string {
 }
 
 // TTL mengembalikan masa berlaku cookie sesi.
+// Akses baca (triage B-005): jalur produksi memakai field internal langsung; method ini dipertahankan untuk test dan paket lain.
 func (c *Cookies) TTL() time.Duration { return c.ttl }
 
 // SetSession memasang cookie sesi berisi token mentah.
@@ -150,6 +151,7 @@ func (c *Cookies) ClearCSRF(w http.ResponseWriter) {
 // tokennya penting — jalur autentikasi utama (Service.authenticateRequest) memakai
 // keduanya secara terpisah supaya header yang tidak sah tidak mengalahkan cookie
 // yang sah.
+// Status (triage B-005): pembungkus gabungan header+cookie. Jalur produksi memakai SessionTokenFromHeader/SessionTokenFromCookie secara terpisah (penegakan CSRF berbasis sumber, grup 9 audit3); fungsi ini dipertahankan untuk pembacaan gabungan yang tidak sensitif sumber.
 func (c *Cookies) SessionToken(r *http.Request) security.Secret {
 	if token := c.SessionTokenFromHeader(r); !token.IsZero() {
 		return token

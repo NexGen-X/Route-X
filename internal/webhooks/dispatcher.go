@@ -447,6 +447,7 @@ func SignPayload(secret []byte, timestamp string, deliveryID int64, body []byte)
 // payload adalah body yang diterima, timestamp dan deliveryID adalah nilai
 // header X-RouteX-Timestamp dan X-RouteX-Delivery yang menyertainya.
 // Menggunakan hmac.Equal agar kebal terhadap serangan timing attack.
+// Status (triage B-005): implementasi acuan verifikasi untuk PENERIMA webhook. Route-X sendiri adalah pengirim (SignPayload); fungsi ini adalah kontrak sisi penerima yang teruji.
 func VerifySignature(payload []byte, secret []byte, timestamp string, deliveryID int64, sigHeader string) bool {
 	sig := strings.TrimSpace(sigHeader)
 	sig = strings.TrimPrefix(sig, "sha256=")

@@ -170,6 +170,7 @@ func RequirePermission(permission string) func(http.Handler) http.Handler {
 // selalu menolak: "tanpa syarat izin" harus ditulis dengan tidak memasang middleware ini,
 // bukan dengan memanggilnya tanpa argumen, supaya tidak ada rute yang tampak terlindungi
 // padahal tidak memeriksa apa pun.
+// Status (triage B-005): varian any-of dari RequirePermission yang hidup di rute admin. Belum ada rute yang membutuhkan semantik any-of; dipertahankan sebagai anggota keluarga middleware izin yang teruji.
 func RequireAnyPermission(permissions ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

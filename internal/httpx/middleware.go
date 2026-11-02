@@ -24,6 +24,7 @@ import (
 // Chain menggabungkan beberapa middleware menjadi satu. Yang pertama di daftar
 // berada paling luar, jadi urutannya sama dengan urutan pemanggilan chi.Use.
 // Elemen nil dilewati supaya middleware opsional bisa ditulis tanpa percabangan.
+// Status (triage B-005): komposer middleware generik. Produksi menyusun middleware lewat chi dan pemasangan manual di main; fungsi ini dipertahankan sebagai utilitas komposisi yang teruji.
 func Chain(middlewares ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
 	// Salin agar perubahan pada slice pemanggil tidak mengubah rantai yang sudah jadi.
 	stack := slices.Clone(middlewares)
@@ -715,6 +716,7 @@ func ParseTrustedProxies(values []string) ([]netip.Prefix, error) {
 //
 // Jangan dipakai bila gateway menerima koneksi langsung dari internet: setiap
 // alamat di rentang ini akan diizinkan memalsukan X-Forwarded-For.
+// Status (triage B-005): daftar kanonis prefiks privat untuk test dan verifikasi konfigurasi proxy. Jalur produksi membangun prefiks dari setelan TRUSTED_PROXIES.
 func PrivateProxyPrefixes() []netip.Prefix {
 	return []netip.Prefix{
 		netip.MustParsePrefix("127.0.0.0/8"),

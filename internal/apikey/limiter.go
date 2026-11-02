@@ -480,6 +480,7 @@ type LimiterOption func(*Limiter)
 // pembacaannya sendiri di internal/ratelimit, batas cakupan yang lebih luas datang dari sana,
 // dan resolver menyerahkan daftar cakupan yang sudah lengkap. Opsi ini tetap ada untuk
 // pemasangan yang tidak memakai tabel itu sama sekali.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithKeyLimitDefaults(l Limits) LimiterOption {
 	return func(lim *Limiter) { lim.keyDefaults = l }
 }
@@ -497,6 +498,7 @@ func WithKeyLimitDefaults(l Limits) LimiterOption {
 // Batas per IP layak lebih longgar daripada batas per key: satu alamat bisa mewakili
 // seluruh kantor di belakang NAT. Nilai seperti Limits{RPS: 20, RPM: 600} menahan satu
 // klien yang lepas kendali tanpa mengganggu pemakaian normal.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithIPLimits(l Limits) LimiterOption {
 	return func(lim *Limiter) { lim.ipLimits = l }
 }
@@ -888,15 +890,12 @@ func (l *Limiter) RefundRequest(ctx context.Context, p *Principal, ip netip.Addr
 // apa pun; yang hilang adalah ketepatan penghitung, bukan responsnya.
 //
 // tokens <= 0 tidak menulis apa pun dan hanya melaporkan keadaan sekarang.
+//
+// Pembungkus satu cakupan atas RecordTokensScopes (triage B-005): jalur
+// produksi gateway memakai varian Scopes multi-cakupan; method ini untuk
+// pemanggil satu key dan tidak lagi menduplikasi logika jendela token.
 func (l *Limiter) RecordTokens(ctx context.Context, keyID string, limits TokenLimits, tokens int64) Decision {
-	if l == nil || l.redis == nil {
-		return Decision{Allowed: true}
-	}
-	if tokens <= 0 {
-		return l.TokensExceeded(ctx, keyID, limits)
-	}
-	now := l.now()
-	return l.run(ctx, modeRecord, tokens, tokenWindows(ScopeAPIKey, keyID, limits, now), now, "record")
+	return l.RecordTokensScopes(ctx, []ScopeTokenLimits{{Scope: ScopeAPIKey, ID: keyID, Limits: limits}}, tokens)
 }
 
 // TokensExceeded melaporkan apakah anggaran token key ini sudah habis, tanpa mengubah
@@ -905,12 +904,11 @@ func (l *Limiter) RecordTokens(ctx context.Context, keyID string, limits TokenLi
 // Dimaksudkan sebagai gerbang sebelum request diteruskan ke upstream, jadi hasil "habis"
 // ikut dihitung sebagai penolakan pada metrik. Allowed false berarti request berikutnya
 // layak dibalas 429 dengan ResetAt sebagai waktu pulihnya kuota.
+//
+// Pembungkus satu cakupan atas TokensExceededScopes (triage B-005), pasangan
+// RecordTokens di atas.
 func (l *Limiter) TokensExceeded(ctx context.Context, keyID string, limits TokenLimits) Decision {
-	if l == nil || l.redis == nil {
-		return Decision{Allowed: true}
-	}
-	now := l.now()
-	return l.run(ctx, modePeek, 0, tokenWindows(ScopeAPIKey, keyID, limits, now), now, "peek")
+	return l.TokensExceededScopes(ctx, []ScopeTokenLimits{{Scope: ScopeAPIKey, ID: keyID, Limits: limits}})
 }
 
 // batasPerintahLimiter adalah tenggat keseluruhan SATU perintah limiter,

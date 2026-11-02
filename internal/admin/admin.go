@@ -81,6 +81,10 @@ type Handlers struct {
 	// priceCache adalah cuplikan harga milik pencatat/router; nil bila tidak
 	// di-injeksi (lihat Config.PriceCache).
 	priceCache PriceCache
+	// rateLimits & contentFilters adalah salinan kebijakan milik gateway;
+	// nil bila tidak di-injeksi (lihat Config.RateLimits/Config.ContentFilters).
+	rateLimits     PolicyCache
+	contentFilters PolicyCache
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	version string
 	commit  string
@@ -103,6 +107,17 @@ type Handlers struct {
 // method-nya: membatalkan cuplikan sesudah harga diubah lewat API, supaya
 // harga baru berlaku seketika di instance ini (audit3 V-AB-09).
 type PriceCache interface {
+	Invalidate()
+}
+
+// PolicyCache adalah salinan kebijakan di memori (batas laju atau filter
+// konten) yang bisa dibatalkan sesudah mutasi admin, supaya perubahan
+// berlaku seketika di instance ini tanpa menunggu TTL 5 detik. Dipenuhi
+// *ratelimit.Engine dan *contentfilter.Engine (triage B-005: kedua method
+// Invalidate itu sebelumnya tidak dipanggil jalur produksi mana pun).
+// Lintas instance tetap menunggu TTL — belum ada pub/sub antar instance,
+// sama seperti batasan yang didokumentasikan pada kedua Engine.
+type PolicyCache interface {
 	Invalidate()
 }
 
@@ -147,6 +162,16 @@ type Config struct {
 	// sesudah setPricing berhasil, supaya harga baru tidak menunggu TTL cuplikan
 	// 30 detik untuk menagih. Opsional: nil berarti tidak ada invalidasi instan.
 	PriceCache PriceCache
+	// RateLimits adalah mesin kebijakan batas laju gateway. Dipakai
+	// membatalkan salinan kebijakannya sesudah mutasi batas laju lewat API
+	// admin, supaya perubahan segera efektif tanpa menunggu TTL 5 detik.
+	// Opsional: nil berarti tidak ada invalidasi instan (triage B-005).
+	RateLimits PolicyCache
+	// ContentFilters adalah mesin penyaring konten gateway. Dipakai
+	// membatalkan salinan aturannya sesudah mutasi filter konten lewat API
+	// admin, dengan alasan yang sama seperti RateLimits. Opsional: nil
+	// berarti tidak ada invalidasi instan (triage B-005).
+	ContentFilters PolicyCache
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	Version string
 	Commit  string
@@ -219,6 +244,8 @@ func NewHandlers(cfg Config) *Handlers {
 		cliManager:     cfg.CLIManager,
 		engine:         cfg.Engine,
 		priceCache:     cfg.PriceCache,
+		rateLimits:     cfg.RateLimits,
+		contentFilters: cfg.ContentFilters,
 		oauthRepo:      cfg.OAuthRepo,
 		oauthClient:    cfg.OAuthClient,
 		version:        cfg.Version,
@@ -335,6 +362,27 @@ func (h *Handlers) invalidateRules(ctx context.Context) {
 		return
 	}
 	h.engine.Invalidate()
+}
+
+// invalidateRateLimits membatalkan salinan kebijakan batas laju gateway bila
+// engine di-injeksi. Dipanggil sesudah mutasi batas laju (create/update/
+// delete/toggle) supaya perubahan segera efektif di instance ini, mengikuti
+// pola invalidateRules (triage B-005). Best-effort: instance lain tetap
+// menyegarkan salinannya lewat TTL 5 detik.
+func (h *Handlers) invalidateRateLimits() {
+	if h.rateLimits != nil {
+		h.rateLimits.Invalidate()
+	}
+}
+
+// invalidateContentFilters membatalkan salinan aturan filter konten gateway
+// bila engine di-injeksi. Dipanggil sesudah mutasi filter konten (create/
+// update/delete/toggle) dengan alasan yang sama seperti
+// invalidateRateLimits (triage B-005).
+func (h *Handlers) invalidateContentFilters() {
+	if h.contentFilters != nil {
+		h.contentFilters.Invalidate()
+	}
 }
 
 // errBodyJSON adalah satu-satunya kesalahan yang boleh keluar dari decodeJSON.

@@ -67,6 +67,7 @@ func WithCostSource(src CostSource) SelectorOption {
 // Ada untuk test: weighted yang tidak bisa dibuat deterministik hanya bisa diuji secara
 // statistik, dan uji statistik pada satu proses test selalu punya pilihan buruk antara
 // lambat dan rapuh.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithRandFunc(f func() float64) SelectorOption {
 	return func(s *Selector) {
 		if f != nil {
@@ -340,6 +341,7 @@ func hashTieBreak(salt uint64, pmID, pID string) uint64 {
 
 // DeterministicTieBreaker menghitung nilai jitter deterministik FNV-1a untuk memutus
 // seri antara kandidat dengan nilai bobot identik. Bebas alokasi memori (0 allocs).
+// Status (triage B-005): pembungkus ekspor hashTieBreak untuk test dan paket lain; strategi internal memanggil hashTieBreak langsung.
 func DeterministicTieBreaker(salt uint64, pmID, pID string) uint64 {
 	return hashTieBreak(salt, pmID, pID)
 }

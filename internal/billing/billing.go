@@ -125,6 +125,7 @@ func WithWebhookEnqueuer(enqueuer WebhookEnqueuer) Option {
 }
 
 // WithTTL mengubah umur salinan anggaran. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithTTL(d time.Duration) Option {
 	return func(e *Enforcer) {
 		if d > 0 {
@@ -134,6 +135,7 @@ func WithTTL(d time.Duration) Option {
 }
 
 // WithClock mengganti sumber waktu, untuk test kedaluwarsa salinan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithClock(now func() time.Time) Option {
 	return func(e *Enforcer) {
 		if now != nil {
@@ -143,6 +145,7 @@ func WithClock(now func() time.Time) Option {
 }
 
 // WithHoldTTL mengubah umur tahanan reservasi anggaran. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithHoldTTL(d time.Duration) Option {
 	return func(e *Enforcer) {
 		if d > 0 {
@@ -415,8 +418,13 @@ func (e *Enforcer) Announce(ctx context.Context, budgets []*policy.Budget) {
 // Remaining mengembalikan sisa anggaran paling sedikit di antara yang berlaku, dan apakah
 // ada anggaran yang berlaku sama sekali.
 //
-// Dipakai pencatat usage Fase 9 dan dashboard: "sisa 3,12 USD" jauh lebih berguna daripada
-// daftar anggaran yang harus dijumlahkan sendiri pembacanya.
+// Status (triage B-005): saat ini TIDAK dipanggil jalur produksi — dashboard
+// menghitung sisa per anggaran dari baris repo (policy.Budget.Remaining),
+// bukan dari salinan memori Enforcer. Method ini dipertahankan sebagai API
+// baca yang teruji atas salinan yang sama dengan yang dipakai penegakan
+// (Check/Tahan), untuk pemanggil yang membutuhkan sisa gabungan tanpa query
+// baru; klaim lama bahwa ia dipakai pencatat usage dan dashboard sudah
+// tidak benar dan dihapus.
 func (e *Enforcer) Remaining(ctx context.Context, targets []policy.Target) (upstream.USD, bool) {
 	e.muat(ctx)
 

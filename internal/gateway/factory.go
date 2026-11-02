@@ -172,6 +172,7 @@ type entriAdapter struct {
 type FactoryOption func(*Factory)
 
 // WithAdapterCacheSize mengubah jumlah adapter yang ditahan. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithAdapterCacheSize(n int) FactoryOption {
 	return func(f *Factory) {
 		if n > 0 {

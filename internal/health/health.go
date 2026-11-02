@@ -250,6 +250,7 @@ func (h *Handler) periksa(ctxProbe context.Context) (int, readyResponse) {
 }
 
 // Routes memasang kedua endpoint pada mux apa pun yang menerima http.HandlerFunc.
+// Status (triage B-005): pendaftar ringkas untuk test dan pemakaian sederhana. Produksi mendaftarkan /healthz dan /readyz secara manual di main demi envelope jawaban metode-salah.
 func (h *Handler) Routes(mux interface {
 	HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request))
 }) {

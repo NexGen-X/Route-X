@@ -138,6 +138,7 @@ func (e *Engine) TTL() time.Duration {
 // dan biaya tetap dicatat penuh padahal tidak ada panggilan upstream. Kunci
 // TIDAK memakai nama model mentah dari klien (alias bisa berbeda antar
 // penyewa untuk model yang sama), melainkan ID kanonik dari parameter.
+// Status (triage B-005): pintu kompatibilitas mundur — mendelegasikan ke ComputeScopedKey dengan Scope kosong. Jalur produksi selalu memakai ComputeScopedKey dengan konteks pemilik terisi.
 func (e *Engine) ComputeKey(req *providers.ChatRequest) string {
 	return e.ComputeScopedKey(req, Scope{})
 }

@@ -79,6 +79,7 @@ type LoginLimiter struct {
 type LimiterOption func(*LoginLimiter)
 
 // WithLoginRateWindow mengubah lebar jendela penghitungan. Nilai ≤ 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithLoginRateWindow(d time.Duration) LimiterOption {
 	return func(l *LoginLimiter) {
 		if d > 0 {
@@ -89,6 +90,7 @@ func WithLoginRateWindow(d time.Duration) LimiterOption {
 
 // WithLoginRateLimits mengubah batas per IP dan per email. Nilai ≤ 0 mematikan batas yang
 // bersangkutan tanpa mematikan yang lain.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithLoginRateLimits(perIP, perEmail int) LimiterOption {
 	return func(l *LoginLimiter) {
 		l.ipLimit = perIP

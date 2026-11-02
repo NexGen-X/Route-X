@@ -100,6 +100,7 @@ type Index struct {
 type IndexOption func(*Index)
 
 // WithIndexWindow mengubah lebar jendela pengukuran. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithIndexWindow(d time.Duration) IndexOption {
 	return func(ix *Index) {
 		if d > 0 {
@@ -109,6 +110,7 @@ func WithIndexWindow(d time.Duration) IndexOption {
 }
 
 // WithIndexInterval mengubah jeda penyegaran. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithIndexInterval(d time.Duration) IndexOption {
 	return func(ix *Index) {
 		if d > 0 {
@@ -118,6 +120,7 @@ func WithIndexInterval(d time.Duration) IndexOption {
 }
 
 // WithIndexMinSamples mengubah jumlah sampel minimum. Nilai < 1 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithIndexMinSamples(n int) IndexOption {
 	return func(ix *Index) {
 		if n >= 1 {

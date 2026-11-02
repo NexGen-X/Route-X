@@ -151,6 +151,7 @@ func (b batas) kosong() bool { return b.requests.IsZero() && b.tokens.IsZero() }
 type EngineOption func(*Engine)
 
 // WithTTL mengubah umur salinan di memori. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithTTL(d time.Duration) EngineOption {
 	return func(e *Engine) {
 		if d > 0 {
@@ -161,6 +162,7 @@ func WithTTL(d time.Duration) EngineOption {
 
 // WithClock mengganti sumber waktu, untuk test yang memeriksa kedaluwarsa salinan tanpa
 // menunggu waktu nyata berjalan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithClock(now func() time.Time) EngineOption {
 	return func(e *Engine) {
 		if now != nil {
@@ -189,9 +191,12 @@ func NewEngine(source Source, logger *slog.Logger, opts ...EngineOption) *Engine
 
 // Invalidate memaksa pembacaan ulang pada pemakaian berikutnya.
 //
-// Untuk API admin Fase 11: operator yang baru mengubah batas ingin melihat akibatnya
-// sekarang, bukan setelah TTL habis. Hanya berlaku pada instance ini — lintas instance
-// tetap menunggu TTL, dan tempat memperbaikinya adalah pub/sub Redis.
+// Dipanggil API admin sesudah mutasi batas laju (create/update/delete/
+// toggle), supaya operator yang baru mengubah batas melihat akibatnya
+// sekarang, bukan setelah TTL habis (triage B-005: sebelumnya method ini
+// tidak dipanggil jalur produksi mana pun). Hanya berlaku pada instance
+// ini — lintas instance tetap menunggu TTL, dan tempat memperbaikinya
+// adalah pub/sub Redis.
 func (e *Engine) Invalidate() {
 	if e == nil {
 		return
@@ -430,6 +435,7 @@ type MemoryLimiter struct {
 
 // NewMemoryLimiter membuat pembatas laju token bucket baru di memori dengan laju
 // (rate token/detik) dan kapasitas burst maksimum.
+// Status (triage B-005): implementasi pembatas in-memory mandiri yang teruji. Jalur produksi memakai limiter Redis (apikey.Limiter) dan Engine kebijakan di paket ini; MemoryLimiter dipertahankan sebagai alternatif lokal, BUKAN penegak batas produksi.
 func NewMemoryLimiter(rate float64, burst int) *MemoryLimiter {
 	if rate <= 0 {
 		rate = 1
@@ -448,11 +454,13 @@ func NewMemoryLimiter(rate float64, burst int) *MemoryLimiter {
 // Allow mengevaluasi dan mengonsumsi 1 token dari ember jika kuota mencukupi.
 // Mengembalikan true jika request diizinkan, atau false jika kuota habis.
 // Operasi ini thread-safe dan 0 alokasi memori (0 B/op, 0 allocs/op).
+// Lihat catatan status MemoryLimiter pada NewMemoryLimiter (triage B-005).
 func (l *MemoryLimiter) Allow() bool {
 	return l.AllowN(time.Now(), 1.0)
 }
 
 // AllowN mengevaluasi dan mengonsumsi n token pada waktu now.
+// Lihat catatan status MemoryLimiter pada NewMemoryLimiter (triage B-005).
 func (l *MemoryLimiter) AllowN(now time.Time, n float64) bool {
 	if l == nil {
 		return true

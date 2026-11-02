@@ -436,6 +436,7 @@ func (r *Users) SetStatus(ctx context.Context, id string, status UserStatus) (Us
 // Status 'locked' sekalian dikembalikan ke 'active' karena itulah maksud admin yang
 // menekan "buka kunci". Akun 'disabled' tetap disabled — membuka kunci bukan izin
 // untuk menghidupkan kembali akun yang sengaja dimatikan.
+// Status (triage B-005): kapabilitas repo yang belum punya endpoint admin maupun UI — dicatat sebagai B-076. Penguncian login bersifat sementara (locked_until), jadi tidak ada akun yang terkunci permanen selama menunggu endpoint itu.
 func (r *Users) Unlock(ctx context.Context, id string) (User, error) {
 	const op = "membuka kunci pengguna"
 	if !validUUID(id) {

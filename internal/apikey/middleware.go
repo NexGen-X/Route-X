@@ -81,6 +81,7 @@ type Option func(*Authenticator)
 
 // WithTouchInterval mengubah selang minimum pembaruan last_used_at. Nilai <= 0
 // mematikan pencatatan pemakaian sama sekali.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithTouchInterval(d time.Duration) Option {
 	return func(a *Authenticator) { a.touchInterval = d }
 }
@@ -265,6 +266,7 @@ func (a *Authenticator) Authenticate() func(http.Handler) http.Handler {
 // dari dokumentasi API, dan pemegang key bisa melihat cakupan key-nya sendiri di
 // dashboard. Menyebutkannya membuat pengembang bisa memperbaiki sendiri — membuat key
 // baru dengan cakupan yang benar — alih-alih menebak-nebak lewat dukungan.
+// Status (triage B-005): gerbang siap pasang yang belum dipasang di rute mana pun. Penegakan cakupan produksi saat ini berbasis provider lewat AllowsProvider, dan satu-satunya cakupan yang dikenal ("inference") diberikan oleh semua permukaan pembuatan kunci.
 func RequireScope(scope string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

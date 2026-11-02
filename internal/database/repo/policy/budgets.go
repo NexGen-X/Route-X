@@ -206,6 +206,7 @@ func (r *Repo) ExpiredBudgets(ctx context.Context, asOf time.Time) ([]*Budget, e
 // dengan batas kalender berpatokan UTC. Ia adalah AkhirPeriodeDi dengan zona
 // UTC — perilaku bawaan sebelum ada konfigurasi zona waktu operator
 // (env BUDGET_TIMEZONE, sisa audit3 V-AB-24).
+// Status (triage B-005): pembungkus UTC yang dipertahankan sebagai pintu ringkas dan rujukan ekuivalensi test; jalur produksi memakai AkhirPeriodeDi dengan zona waktu operator.
 func AkhirPeriode(period string, dari time.Time) (akhir time.Time, ok bool) {
 	return AkhirPeriodeDi(period, dari, time.UTC)
 }

@@ -556,6 +556,7 @@ type Opt[T any] struct {
 func Set[T any](v T) Opt[T] { return Opt[T]{Set: true, Value: &v} }
 
 // Clear menandai sebuah field untuk dikosongkan (NULL).
+// Status (triage B-005): pelengkap Set pada API Opt. Belum ada mutasi produksi yang mengosongkan field; dipertahankan agar API pembaruan parsial lengkap dan teruji.
 func Clear[T any]() Opt[T] { return Opt[T]{Set: true} }
 
 // arg mengembalikan nilai yang siap dikirim ke pgx: pointer nil menjadi NULL.

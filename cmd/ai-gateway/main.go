@@ -735,6 +735,8 @@ func buildGatewaySurface(
 		CLIManager:     cliMgr,
 		Engine:         ruleEngine,
 		PriceCache:     pricer,
+		RateLimits:     rates,
+		ContentFilters: filters,
 		Version:        version,
 		Commit:         commit,
 		BuiltAt:        builtAt,

@@ -256,6 +256,7 @@ func (r *PricingRepo) Set(ctx context.Context, p SetPriceParams) (*Price, error)
 //
 // Disediakan supaya pemanggil yang hanya memegang pool tidak perlu merakit transaksi
 // sendiri — dan supaya tidak ada yang tergoda memanggil Set di luar transaksi.
+// Status (triage B-005): pembungkus berbasis pool, pola yang sama dengan SetRuleProviders. Jalur admin memakai PricingRepo.Set di dalam transaksinya sendiri, jadi pembungkus ini belum terpakai produksi.
 func SetPrice(ctx context.Context, pool *pgxpool.Pool, p SetPriceParams) (*Price, error) {
 	var out *Price
 	err := repo.InTx(ctx, pool, func(q repo.Querier) error {

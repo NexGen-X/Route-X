@@ -134,6 +134,7 @@ type Engine struct {
 type Option func(*Engine)
 
 // WithTTL mengubah umur salinan aturan. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithTTL(d time.Duration) Option {
 	return func(e *Engine) {
 		if d > 0 {
@@ -143,6 +144,7 @@ func WithTTL(d time.Duration) Option {
 }
 
 // WithClock mengganti sumber waktu, untuk test kedaluwarsa salinan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithClock(now func() time.Time) Option {
 	return func(e *Engine) {
 		if now != nil {
@@ -171,6 +173,11 @@ func NewEngine(source Source, logger *slog.Logger, opts ...Option) *Engine {
 }
 
 // Invalidate memaksa pembacaan ulang pada pemakaian berikutnya.
+//
+// Dipanggil API admin sesudah mutasi filter konten (create/update/delete/
+// toggle), supaya aturan baru berlaku sekarang di instance ini, bukan
+// setelah TTL salinan habis (triage B-005: sebelumnya method ini tidak
+// dipanggil jalur produksi mana pun). Lintas instance tetap menunggu TTL.
 func (e *Engine) Invalidate() {
 	e.mu.Lock()
 	e.dimuat = time.Time{}

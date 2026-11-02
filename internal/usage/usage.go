@@ -323,6 +323,7 @@ type Recorder struct {
 type Option func(*Recorder)
 
 // WithQueueSize mengubah panjang antrean. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithQueueSize(n int) Option {
 	return func(r *Recorder) {
 		if n > 0 {
@@ -332,6 +333,7 @@ func WithQueueSize(n int) Option {
 }
 
 // WithWorkers mengubah jumlah penulis. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithWorkers(n int) Option {
 	return func(r *Recorder) {
 		if n > 0 {

@@ -299,6 +299,7 @@ func PrincipalFrom(ctx context.Context) (*Principal, bool) {
 
 // FormatKey memformat kunci API menjadi representasi masking hint yang aman untuk audit log,
 // tampilan dashboard, dan telemetri tanpa membocorkan nilai rahasia.
+// Status (triage B-005): belum dipanggil jalur produksi — masking tampilan memakai prefix+last4 yang tersimpan di baris kunci. Dipertahankan sebagai pemformat kunci mentah untuk log/telemetri, teruji sebagai spesifikasi.
 func FormatKey(key string) string {
 	if len(key) == 0 {
 		return "****"

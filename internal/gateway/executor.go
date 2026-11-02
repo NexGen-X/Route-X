@@ -250,6 +250,7 @@ type Attempt struct {
 }
 
 // Berhasil melaporkan apakah percobaan ini berhasil.
+// Status (triage B-005): akses semantik tipe hasil eksekusi. Jalur produksi membaca field Attempt/Outcome langsung; metode ini dipertahankan sebagai API baca yang teruji.
 func (a Attempt) Berhasil() bool { return a.Err == nil && a.SkipReason == "" }
 
 // Outcome adalah hasil eksekusi beserta jejaknya.
@@ -265,6 +266,7 @@ type Outcome[T any] struct {
 }
 
 // Percobaan mengembalikan jumlah percobaan yang benar-benar menghubungi upstream.
+// Status (triage B-005): lihat catatan pada Attempt.Berhasil — akses semantik Outcome yang dipertahankan sebagai API baca teruji.
 func (o *Outcome[T]) Percobaan() int {
 	var n int
 	for _, a := range o.Attempts {
@@ -283,6 +285,7 @@ func (o *Outcome[T]) Percobaan() int {
 // gangguan hulu yang pantas dijawab 502 atau 503. Menyamakan keduanya membuat operator
 // mencari gangguan yang tidak ada, atau sebaliknya menganggap gangguan sebagai salah
 // konfigurasi.
+// Status (triage B-005): lihat catatan pada Attempt.Berhasil — akses semantik Outcome yang dipertahankan sebagai API baca teruji.
 func (o *Outcome[T]) TanpaKandidat() bool { return o.Percobaan() == 0 }
 
 // Executor menjalankan permintaan terhadap rencana eksekusi.
@@ -338,6 +341,7 @@ const ambangBasiKesehatanEgress = 5 * time.Minute
 type ExecutorOption func(*Executor)
 
 // WithJitterFunc mengganti sumber jitter backoff.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithJitterFunc(f func(n int64) int64) ExecutorOption {
 	return func(e *Executor) {
 		if f != nil {
@@ -365,6 +369,7 @@ func WithEgressHealth(src EgressHealthSource) ExecutorOption {
 // Ada untuk test: menguji urutan backoff dengan tidur sungguhan berarti setiap test
 // membayar jedanya, dan jeda yang dipercepat "sedikit saja" untuk test membuat yang diuji
 // bukan lagi angka yang dipakai produksi.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithSleepFunc(f func(ctx context.Context, d time.Duration) error) ExecutorOption {
 	return func(e *Executor) {
 		if f != nil {

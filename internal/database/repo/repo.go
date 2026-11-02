@@ -144,6 +144,7 @@ func ConstraintName(err error) string {
 }
 
 // Code mengambil SQLSTATE dari error, "" bila tidak berasal dari server.
+// Status (triage B-005): helper ekstraksi SQLSTATE yang teruji. Jalur produksi membaca kode lewat repo.Error; fungsi ini dipertahankan untuk pemanggil yang hanya memegang error mentah.
 func Code(err error) string {
 	var dbErr *Error
 	if errors.As(err, &dbErr) {

@@ -214,6 +214,7 @@ func InternalError(w http.ResponseWriter, r *http.Request) {
 
 // ServiceUnavailable membalas 503 dengan tipe overloaded_error, yang oleh klien
 // OpenAI diperlakukan sebagai kegagalan sementara yang layak diulang.
+// Status (triage B-005): penulis 503 tingkat httpx. Jalur gateway menulis 503 lewat jalur envelope-nya sendiri (grup 3 audit3); fungsi ini dipertahankan sebagai anggota keluarga respond yang teruji.
 func ServiceUnavailable(w http.ResponseWriter, r *http.Request, retryAfter time.Duration) {
 	setRetryAfter(w, retryAfter)
 	WriteError(w, r, http.StatusServiceUnavailable, ErrTypeOverloaded, CodeServiceUnavailable, msgServiceUnavailable)

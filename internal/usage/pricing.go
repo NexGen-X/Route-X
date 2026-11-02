@@ -80,6 +80,7 @@ type Pricer struct {
 type PricerOption func(*Pricer)
 
 // WithPriceTTL mengubah umur cuplikan harga. Nilai <= 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithPriceTTL(d time.Duration) PricerOption {
 	return func(p *Pricer) {
 		if d > 0 {
@@ -89,6 +90,7 @@ func WithPriceTTL(d time.Duration) PricerOption {
 }
 
 // WithPriceClock mengganti sumber waktu, untuk test kedaluwarsa cuplikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithPriceClock(now func() time.Time) PricerOption {
 	return func(p *Pricer) {
 		if now != nil {

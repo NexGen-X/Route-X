@@ -159,6 +159,7 @@ func ReferencePriceFor(providerKind, upstreamModelName string) *ReferencePrice {
 }
 
 // ReferencePrices mengembalikan seluruh harga acuan, untuk ditampilkan di dashboard.
+// Status (triage B-005): akses daftar katalog acuan. Endpoint pricing/reference produksi memakai ReferencePriceFor per model; fungsi ini dipertahankan untuk pemanggil yang membutuhkan seluruh daftar.
 func ReferencePrices() []ReferencePrice {
 	out := make([]ReferencePrice, len(referencePrices))
 	copy(out, referencePrices)
@@ -166,6 +167,7 @@ func ReferencePrices() []ReferencePrice {
 }
 
 // CatalogModels mengembalikan katalog bawaan.
+// Status (triage B-005): akses baca katalog bawaan. Penanaman produksi memakai SeedCatalog yang membaca slice internal langsung.
 func CatalogModels() []CatalogModel {
 	out := make([]CatalogModel, len(catalogModels))
 	copy(out, catalogModels)

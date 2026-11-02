@@ -294,6 +294,7 @@ func StatusLabel(code int) string { return strconv.Itoa(code) }
 
 // StatusClass mengelompokkan kode status menjadi kelas (2xx, 4xx, 5xx) untuk panel
 // yang tidak butuh detail per kode.
+// Status (triage B-005): helper label metrik yang teruji; jalur pencatatan produksi menghitung label kelas status di tempat.
 func StatusClass(code int) string {
 	switch {
 	case code >= 500:
@@ -318,6 +319,7 @@ const (
 )
 
 // BoolGauge mengubah kondisi boolean menjadi nilai gauge Prometheus.
+// Status (triage B-005): helper nilai gauge boolean yang teruji; jalur produksi menulis nilai gauge-nya di tempat.
 func BoolGauge(ok bool) float64 {
 	if ok {
 		return 1

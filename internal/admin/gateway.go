@@ -740,6 +740,7 @@ func (h *Handlers) createRateLimit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "rate_limit", l.ID, map[string]any{"scope": l.Scope, "scope_id": l.ScopeID})
+	h.invalidateRateLimits()
 	_ = h.respond(w, r, http.StatusCreated, toRateLimitDTO(l))
 }
 
@@ -778,6 +779,7 @@ func (h *Handlers) updateRateLimit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "rate_limit", id, nil)
+	h.invalidateRateLimits()
 	_ = h.respond(w, r, http.StatusOK, toRateLimitDTO(l))
 }
 
@@ -791,6 +793,7 @@ func (h *Handlers) deleteRateLimit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "rate_limit", id, nil)
+	h.invalidateRateLimits()
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
@@ -813,6 +816,7 @@ func (h *Handlers) toggleRateLimit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "rate_limit", id, map[string]any{"enabled": req.Enabled})
+	h.invalidateRateLimits()
 	_ = h.respond(w, r, http.StatusOK, toRateLimitDTO(l))
 }
 
@@ -1265,6 +1269,7 @@ func (h *Handlers) createContentFilter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "content_filter", f.ID, map[string]any{"name": f.Name, "kind": f.Kind})
+	h.invalidateContentFilters()
 	_ = h.respond(w, r, http.StatusCreated, toContentFilterDTO(f))
 }
 
@@ -1335,6 +1340,7 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "content_filter", id, map[string]any{"name": f.Name})
+	h.invalidateContentFilters()
 	_ = h.respond(w, r, http.StatusOK, toContentFilterDTO(f))
 }
 
@@ -1348,6 +1354,7 @@ func (h *Handlers) deleteContentFilter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "content_filter", id, nil)
+	h.invalidateContentFilters()
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
@@ -1370,6 +1377,7 @@ func (h *Handlers) toggleContentFilter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "content_filter", id, map[string]any{"enabled": req.Enabled})
+	h.invalidateContentFilters()
 	_ = h.respond(w, r, http.StatusOK, toContentFilterDTO(f))
 }
 

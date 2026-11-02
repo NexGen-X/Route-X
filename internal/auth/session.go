@@ -102,6 +102,7 @@ func WithSessionTTL(d time.Duration) Option {
 
 // WithTouchInterval mengubah selang minimum pembaruan last_seen_at. Nol mematikan
 // pembaruan sepenuhnya, yang berguna bila jejak "terakhir terlihat" tidak dipakai.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithTouchInterval(d time.Duration) Option {
 	return func(s *Service) {
 		if d >= 0 {
@@ -112,6 +113,7 @@ func WithTouchInterval(d time.Duration) Option {
 
 // WithLoginLockout mengubah ambang dan lama penguncian akun. Nilai ≤ 0 memakai bawaan
 // lapisan data (identity.DefaultLoginFailureThreshold dan DefaultLoginLockDuration).
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithLoginLockout(threshold int, lockFor time.Duration) Option {
 	return func(s *Service) {
 		s.lockThreshold = threshold
@@ -137,6 +139,7 @@ const DefaultMaxSessionsPerUser = 10
 
 // WithMaxSessionsPerUser mengubah batas sesi aktif bersamaan per pengguna.
 // Nilai ≤ 0 diabaikan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithMaxSessionsPerUser(n int) Option {
 	return func(s *Service) {
 		if n > 0 {
@@ -187,9 +190,11 @@ func (s *Service) Cookies() *Cookies { return s.cookies }
 func (s *Service) CSRF() *CSRF { return s.csrf }
 
 // SessionTTL mengembalikan masa berlaku sesi yang dipakai.
+// Akses baca (triage B-005): jalur produksi memakai field internal langsung; method ini dipertahankan untuk test dan paket lain.
 func (s *Service) SessionTTL() time.Duration { return s.sessionTTL }
 
 // TouchInterval mengembalikan selang minimum pembaruan last_seen_at.
+// Akses baca (triage B-005): jalur produksi memakai field internal langsung; method ini dipertahankan untuk test dan paket lain.
 func (s *Service) TouchInterval() time.Duration { return s.touchInterval }
 
 // --- Principal ---------------------------------------------------------------

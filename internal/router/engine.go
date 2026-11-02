@@ -57,6 +57,7 @@ type Engine struct {
 type EngineOption func(*Engine)
 
 // WithRuleTTL mengubah masa berlaku cache aturan.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithRuleTTL(d time.Duration) EngineOption {
 	return func(e *Engine) {
 		if d > 0 {
@@ -66,6 +67,7 @@ func WithRuleTTL(d time.Duration) EngineOption {
 }
 
 // WithClock mengganti sumber waktu Engine. Ada untuk test.
+// Seam pengujian yang disengaja (triage B-005): produksi memakai nilai bawaan; opsi ini ada agar test dapat menyetel perilaku secara deterministik.
 func WithClock(f func() time.Time) EngineOption {
 	return func(e *Engine) {
 		if f != nil {

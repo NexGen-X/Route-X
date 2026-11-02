@@ -101,6 +101,7 @@ func HashAPIKey(raw string, pepper []byte) string {
 }
 
 // VerifyAPIKey membandingkan key dari request dengan hash tersimpan dalam waktu konstan.
+// Status (triage B-005): primitif verifikasi waktu-konstan yang teruji. Autentikasi produksi mencari baris kunci lewat hash deterministik (HashAPIKey) di repo, bukan membandingkan memakai fungsi ini.
 func VerifyAPIKey(raw, storedHash string, pepper []byte) bool {
 	if len(pepper) == 0 || storedHash == "" {
 		return false

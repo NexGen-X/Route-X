@@ -57,7 +57,7 @@ func TestRotasiDibatalkanOlehKeyIDAsing(t *testing.T) {
 		t.Fatalf("NewCredentialRepo(lama): %v", err)
 	}
 	metaLama, err := credLama.Create(ctx, upstream.CreateCredentialParams{
-		ProviderID: prov.ID, Label: "lama", Secret: security.Secret("sk-lama-untuk-rotasi-0000000001"),
+		ProviderID: prov.ID, Label: "lama", Secret: security.Secret("uji-lama-untuk-rotasi-0000000001"),
 	})
 	if err != nil {
 		t.Fatalf("Create(lama): %v", err)
@@ -68,7 +68,7 @@ func TestRotasiDibatalkanOlehKeyIDAsing(t *testing.T) {
 		t.Fatalf("NewCredentialRepo(asing): %v", err)
 	}
 	asing, err := credAsing.Create(ctx, upstream.CreateCredentialParams{
-		ProviderID: prov.ID, Label: "asing", Secret: security.Secret("sk-asing-untuk-rotasi-0000000002"),
+		ProviderID: prov.ID, Label: "asing", Secret: security.Secret("uji-asing-untuk-rotasi-0000000002"),
 	})
 	if err != nil {
 		t.Fatalf("Create(asing): %v", err)
@@ -97,7 +97,7 @@ func TestRotasiDibatalkanOlehKeyIDAsing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reveal(lama) sesudah rotasi batal: %v — rotasi parsial terjadi?", err)
 	}
-	if sisa.Reveal() != "sk-lama-untuk-rotasi-0000000001" {
+	if sisa.Reveal() != "uji-lama-untuk-rotasi-0000000001" {
 		t.Errorf("kredensial lama berubah: %q", sisa.Reveal())
 	}
 	if _, err := credLama.Reveal(ctx, asing.ID); err == nil {
@@ -107,7 +107,7 @@ func TestRotasiDibatalkanOlehKeyIDAsing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reveal(asing) sesudah rotasi batal: %v", err)
 	}
-	if terbaca.Reveal() != "sk-asing-untuk-rotasi-0000000002" {
+	if terbaca.Reveal() != "uji-asing-untuk-rotasi-0000000002" {
 		t.Errorf("kredensial asing berubah: %q", terbaca.Reveal())
 	}
 }
@@ -145,7 +145,7 @@ func TestRotasiMelaporkanSudahBaru(t *testing.T) {
 		t.Fatalf("NewCredentialRepo(baru): %v", err)
 	}
 	if _, err := credRepo.Create(ctx, upstream.CreateCredentialParams{
-		ProviderID: prov.ID, Label: "baru", Secret: security.Secret("sk-sudah-baru-00000000000003"),
+		ProviderID: prov.ID, Label: "baru", Secret: security.Secret("uji-sudah-baru-00000000000003"),
 	}); err != nil {
 		t.Fatalf("Create(baru): %v", err)
 	}

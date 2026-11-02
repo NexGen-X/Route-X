@@ -464,12 +464,14 @@ func (j *jejak) selesai(ctx context.Context) {
 
 		Stream: j.stream,
 
-		InputTokens:              j.pemakaian.InputTokens,
-		CachedInputTokens:        j.pemakaian.CachedInputTokens,
-		CacheCreationInputTokens: j.pemakaian.CacheCreationInputTokens,
-		OutputTokens:             j.pemakaian.OutputTokens,
-		ReasoningTokens:          j.pemakaian.ReasoningTokens,
-		TotalTokens:              j.pemakaian.TotalTokens,
+		InputTokens:                j.pemakaian.InputTokens,
+		CachedInputTokens:          j.pemakaian.CachedInputTokens,
+		CacheCreationInputTokens:   j.pemakaian.CacheCreationInputTokens,
+		CacheCreation1hInputTokens: j.pemakaian.CacheCreation1hInputTokens,
+		CacheCreation5mInputTokens: j.pemakaian.CacheCreation5mInputTokens,
+		OutputTokens:               j.pemakaian.OutputTokens,
+		ReasoningTokens:            j.pemakaian.ReasoningTokens,
+		TotalTokens:                j.pemakaian.TotalTokens,
 
 		// Saat permintaan selesai: penagihan menagih harga yang berlaku pada
 		// saat ini, bukan harga saat pencatat memproses antrean (audit3 V-AB-09).

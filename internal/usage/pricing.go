@@ -347,15 +347,30 @@ func TokensFor(u providers.Usage) upstream.TokenUsage {
 	if creation > input-cached {
 		creation = input - cached
 	}
+	// Pecahan TTL tulis cache dijepit ke dalam creation yang sudah dijepit
+	// di atas: laporan yang jumlah pecahannya melewati totalnya (atau
+	// negatif) tidak boleh menagih creation lebih dari yang dilaporkan.
+	// Pecahan 1 jam dijepit lebih dulu; 5 menit mendapat sisanya, dan sisa
+	// terakhir tanpa atribusi ditagih tarif 5 menit oleh Cost.
+	creation1h := int64(max(u.CacheCreation1hInputTokens, 0))
+	if creation1h > creation {
+		creation1h = creation
+	}
+	creation5m := int64(max(u.CacheCreation5mInputTokens, 0))
+	if creation5m > creation-creation1h {
+		creation5m = creation - creation1h
+	}
 	output, reasoning := int64(max(u.OutputTokens, 0)), int64(max(u.ReasoningTokens, 0))
 	if reasoning > output {
 		reasoning = output
 	}
 	return upstream.TokenUsage{
-		Input:         input - cached - creation,
-		CachedInput:   cached,
-		CacheCreation: creation,
-		Output:        output - reasoning,
-		Reasoning:     reasoning,
+		Input:           input - cached - creation,
+		CachedInput:     cached,
+		CacheCreation:   creation,
+		CacheCreation1h: creation1h,
+		CacheCreation5m: creation5m,
+		Output:          output - reasoning,
+		Reasoning:       reasoning,
 	}
 }

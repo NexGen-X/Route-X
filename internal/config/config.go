@@ -74,6 +74,17 @@ type Config struct {
 	EncryptionKey []byte
 	APIKeyPepper  []byte
 
+	// BudgetTimezone adalah zona waktu operator (nama IANA dari env
+	// BUDGET_TIMEZONE) yang menjadi patokan batas kalender periode anggaran
+	// weekly/monthly: reset jatuh pada Senin 00:00 dan tanggal 1 00:00 DI
+	// ZONA INI, bukan UTC. Bawaan UTC — persis perilaku sebelum knob ini ada
+	// (sisa audit3 V-AB-24). Nama tak sah menggagalkan boot lewat reader:
+	// jatuh diam-diam ke UTC akan menggeser seluruh reset anggaran tanpa
+	// satu pun tanda, jadi kesalahan ketik harus berteriak sejak start.
+	// Periode daily tidak terpengaruh: ia durasi 24 jam bergulir, bukan
+	// batas kalender.
+	BudgetTimezone *time.Location
+
 	// SessionTTL adalah masa berlaku sesi sejak sentuhan terakhir (kedaluwarsa
 	// geser), dari env SESSION_TTL. Bawaan 12 jam. Sebelumnya opsi kode
 	// auth.WithSessionTTL ada tetapi tidak pernah dipasang dari konfigurasi —
@@ -243,6 +254,7 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 		EncryptionKeyPrevious: r.optionalKeyBytes("ENCRYPTION_KEY_PREVIOUS", encryptionKeyLen),
 		APIKeyPepper:          r.requiredKeyBytesMin("API_KEY_PEPPER", minAPIKeyPepperLen),
 		SessionTTL:            r.duration("SESSION_TTL", 12*time.Hour),
+		BudgetTimezone:        r.timezone("BUDGET_TIMEZONE", "UTC"),
 
 		// Token metrik dibaca lewat Secret agar tidak bocor ke log; validasi
 		// panjang minimum khusus produksi ada di validate.
@@ -445,6 +457,21 @@ func (r *reader) duration(key string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// timezone membaca nama zona waktu IANA (mis. "Asia/Makassar"). Nama yang
+// tak sah dicatat sebagai kesalahan konfigurasi sehingga boot GAGAL, bukan
+// diganti bawaan secara diam-diam: zona yang salah ketik berarti seluruh
+// reset anggaran bergeser dan tidak ada yang menyadarinya sampai pagu
+// seseorang ter-reset di jam yang salah.
+func (r *reader) timezone(key, def string) *time.Location {
+	v := r.str(key, def)
+	loc, err := time.LoadLocation(v)
+	if err != nil {
+		r.fail("%s=%q bukan nama zona waktu IANA yang sah (contoh: UTC, Asia/Makassar)", key, v)
+		return time.UTC
+	}
+	return loc
 }
 
 func (r *reader) logLevel(key string, def slog.Level) slog.Level {

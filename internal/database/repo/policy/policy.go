@@ -98,10 +98,38 @@ const (
 )
 
 // Repo adalah repository kebijakan pembatasan lalu lintas.
-type Repo struct{ q repo.Querier }
+type Repo struct {
+	q repo.Querier
+	// zonaWaktu adalah zona waktu operator untuk batas kalender periode
+	// anggaran (env BUDGET_TIMEZONE, lihat DenganZonaWaktuOperator). Selalu
+	// non-nil sesudah New; bawaannya UTC, yaitu perilaku historis.
+	zonaWaktu *time.Location
+}
+
+// Opsi mengubah Repo saat dibuat lewat New.
+type Opsi func(*Repo)
+
+// DenganZonaWaktuOperator menetapkan zona waktu yang menjadi patokan batas
+// kalender periode anggaran yang dibuat repo ini (weekly Senin 00:00 dan
+// monthly tanggal 1 00:00 di zona itu, lewat AkhirPeriodeDi). Zona yang sama
+// WAJIB diberikan ke BudgetResetterJob dan reset manual admin supaya satu
+// anggaran tidak dihitung dengan dua kalender berbeda. Nil berarti UTC.
+func DenganZonaWaktuOperator(loc *time.Location) Opsi {
+	return func(r *Repo) {
+		if loc != nil {
+			r.zonaWaktu = loc
+		}
+	}
+}
 
 // New membuat repository di atas Querier apa pun — pool maupun transaksi.
-func New(q repo.Querier) *Repo { return &Repo{q: q} }
+func New(q repo.Querier, opsi ...Opsi) *Repo {
+	r := &Repo{q: q, zonaWaktu: time.UTC}
+	for _, o := range opsi {
+		o(r)
+	}
+	return r
+}
 
 // idOK memeriksa bentuk UUID sebelum menyentuh database.
 //

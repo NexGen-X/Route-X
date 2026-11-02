@@ -1061,7 +1061,7 @@ func (h *Handlers) resetBudget(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	var end *time.Time
-	if e, ok := policy.AkhirPeriode(ada.Period, now); ok {
+	if e, ok := policy.AkhirPeriodeDi(ada.Period, now, h.budgetTimezone); ok {
 		end = &e
 	}
 	b, err := h.policyRepo.ResetPeriod(ctx, id, now, end)

@@ -388,6 +388,20 @@ func (s *stream) mergeUsage(u *upstreamUsage) {
 	if u.CacheCreationInputTokens > 0 {
 		s.usage.CacheCreationInputTokens = u.CacheCreationInputTokens
 	}
+	// Rincian TTL tulis cache digabung dengan aturan yang sama (nilai
+	// terbaru menang per field). message_start lazimnya yang membawanya;
+	// message_delta jarang memuatnya.
+	if u.CacheCreation != nil {
+		if s.usage.CacheCreation == nil {
+			s.usage.CacheCreation = &rincianCacheCreation{}
+		}
+		if u.CacheCreation.Ephemeral1hInputTokens > 0 {
+			s.usage.CacheCreation.Ephemeral1hInputTokens = u.CacheCreation.Ephemeral1hInputTokens
+		}
+		if u.CacheCreation.Ephemeral5mInputTokens > 0 {
+			s.usage.CacheCreation.Ephemeral5mInputTokens = u.CacheCreation.Ephemeral5mInputTokens
+		}
+	}
 	if u.InputTokens > 0 || u.OutputTokens > 0 || u.CacheReadInputTokens > 0 || u.CacheCreationInputTokens > 0 {
 		s.usageSeen = true
 	}

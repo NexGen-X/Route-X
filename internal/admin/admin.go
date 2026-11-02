@@ -92,6 +92,10 @@ type Handlers struct {
 	// trustedProxies adalah prefix proxy tepercaya untuk gerbang header
 	// Forwarded-* di resolveGatewayURL. Kosong = tidak percaya sama sekali.
 	trustedProxies []netip.Prefix
+	// budgetTimezone adalah zona waktu operator untuk batas kalender
+	// periode anggaran pada reset manual (lihat Config.BudgetTimezone).
+	// Nil berarti UTC; AkhirPeriodeDi menormalkannya.
+	budgetTimezone *time.Location
 }
 
 // PriceCache adalah cuplikan harga di memori yang dipakai pencatat pemakaian
@@ -157,6 +161,12 @@ type Config struct {
 	// header X-Forwarded-Proto/Host di resolveGatewayURL (dari env
 	// TRUSTED_PROXIES). Kosong berarti header itu tidak pernah dipercaya.
 	TrustedProxies []netip.Prefix
+	// BudgetTimezone adalah zona waktu operator untuk batas kalender
+	// periode anggaran (dari env BUDGET_TIMEZONE lewat konfigurasi utama).
+	// Dipakai reset manual anggaran; pembuatan (policy repo) dan worker
+	// reset menerima nilai yang sama dari sumber yang sama, supaya satu
+	// anggaran tidak dihitung dengan dua kalender berbeda. Nil berarti UTC.
+	BudgetTimezone *time.Location
 }
 
 // NewHandlers menginisialisasi controller REST API admin.
@@ -216,6 +226,7 @@ func NewHandlers(cfg Config) *Handlers {
 		builtAt:        cfg.BuiltAt,
 		publicURL:      cfg.PublicURL,
 		trustedProxies: cfg.TrustedProxies,
+		budgetTimezone: cfg.BudgetTimezone,
 	}
 }
 

@@ -225,9 +225,19 @@ type Usage struct {
 	// dan dipisahkan karena tarifnya berbeda dari input biasa: Anthropic
 	// menagihnya 1,25× harga input. Hanya adaptor Anthropic yang mengisinya.
 	CacheCreationInputTokens int
-	OutputTokens             int
-	ReasoningTokens          int
-	TotalTokens              int
+	// CacheCreation1hInputTokens dan CacheCreation5mInputTokens adalah
+	// PECAHAN CacheCreationInputTokens menurut TTL tulisnya, dari objek
+	// cache_creation pada usage Anthropic: tulis 1 jam ditagih 2× harga
+	// input, tulis 5 menit 1,25×. Keduanya BAGIAN dari
+	// CacheCreationInputTokens (bukan tambahan di atasnya) dan nol bila
+	// upstream tidak melaporkan pecahan — penagihan lalu memperlakukan
+	// seluruh creation sebagai tarif 5 menit, persis perilaku sebelum
+	// pecahan ini diurai (sisa B-011).
+	CacheCreation1hInputTokens int
+	CacheCreation5mInputTokens int
+	OutputTokens               int
+	ReasoningTokens            int
+	TotalTokens                int
 }
 
 // Choice adalah satu kandidat jawaban.

@@ -434,7 +434,7 @@ func buildGatewaySurface(
 	//
 	// Ketiganya membaca tabelnya sendiri dan menyimpan salinan ber-TTL. Repository yang sama
 	// dipakai bersama supaya hanya ada satu jalur pembacaan untuk keempat tabel kebijakan.
-	policyRepo := policy.New(db.Pool)
+	policyRepo := policy.New(db.Pool, policy.DenganZonaWaktuOperator(cfg.BudgetTimezone))
 
 	// --- Pemakaian, biaya, dan angka terukur -------------------------------
 	//
@@ -618,7 +618,7 @@ func buildGatewaySurface(
 	workerSup.Register(partitionJob, 12*time.Hour, 15*time.Second)
 
 	// 5. Budget period resetter: memajukan periode anggaran kedaluwarsa dan menghitung ulang pemakaian
-	budgetJob := worker.NewBudgetResetterJob(db.Pool, policyRepo, logger)
+	budgetJob := worker.NewBudgetResetterJob(db.Pool, policyRepo, cfg.BudgetTimezone, logger)
 	workerSup.Register(budgetJob, 1*time.Minute, 5*time.Second)
 
 	// 6. Webhook delivery worker: memproses antrean pengiriman webhook dengan FOR UPDATE SKIP LOCKED
@@ -708,6 +708,7 @@ func buildGatewaySurface(
 		Logger:         logger,
 		PublicURL:      cfg.PublicURL,
 		TrustedProxies: trustedProxies,
+		BudgetTimezone: cfg.BudgetTimezone,
 		ProviderRepo:   providersRepo,
 		CredentialRepo: creds,
 		OAuthRepo:      oauthRepo,

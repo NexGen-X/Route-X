@@ -70,6 +70,39 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadBudgetTimezone membuktikan knob zona waktu operator (sisa
+// V-AB-24): bawaan UTC persis perilaku lama, nama IANA sah diterima, dan
+// nama tak sah MENGGAGALKAN muat konfigurasi — bukan jatuh diam-diam ke UTC.
+func TestLoadBudgetTimezone(t *testing.T) {
+	cfg, err := loadEnv(t, valid())
+	if err != nil {
+		t.Fatalf("konfigurasi valid ditolak: %v", err)
+	}
+	if cfg.BudgetTimezone == nil || cfg.BudgetTimezone.String() != "UTC" {
+		t.Errorf("BudgetTimezone bawaan = %v, mau UTC", cfg.BudgetTimezone)
+	}
+
+	if _, err := time.LoadLocation("Asia/Makassar"); err == nil {
+		env := valid()
+		env["BUDGET_TIMEZONE"] = "Asia/Makassar"
+		cfg, err := loadEnv(t, env)
+		if err != nil {
+			t.Fatalf("BUDGET_TIMEZONE=Asia/Makassar ditolak: %v", err)
+		}
+		if cfg.BudgetTimezone.String() != "Asia/Makassar" {
+			t.Errorf("BudgetTimezone = %v, mau Asia/Makassar", cfg.BudgetTimezone)
+		}
+	}
+
+	env := valid()
+	env["BUDGET_TIMEZONE"] = "Bukan/Zona"
+	if _, err := loadEnv(t, env); err == nil {
+		t.Fatal("BUDGET_TIMEZONE tak sah diterima, mau error")
+	} else if !strings.Contains(err.Error(), "BUDGET_TIMEZONE") {
+		t.Errorf("error tidak menyebut BUDGET_TIMEZONE: %v", err)
+	}
+}
+
 // Semua masalah harus dilaporkan sekaligus, bukan satu per restart.
 func TestLoadAggregatesAllErrors(t *testing.T) {
 	_, err := loadEnv(t, map[string]string{})

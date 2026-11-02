@@ -104,3 +104,17 @@ Hasil 2026-09-09: go mod verify bersih, npm prod 0 vuln.
 2 vuln dev-only (esbuild via vite, GHSA dev-server) DITERIMA:
 hanya memengaruhi `vite dev`, tidak ikut build produksi.
 Jangan `npm audit fix --force` (naik ke vite 8, breaking change).
+
+## 6. Zona waktu periode anggaran
+
+Batas kalender periode anggaran weekly/monthly (Senin 00:00 dan tanggal 1
+00:00) berpatokan pada env `BUDGET_TIMEZONE` (nama IANA, mis.
+`Asia/Makassar`). Bawaan `UTC` — persis perilaku sebelum knob ini ada.
+Periode daily tidak terpengaruh: ia 24 jam bergulir, bukan batas kalender.
+
+Mengubahnya tidak menulis ulang jendela anggaran yang sedang berjalan:
+anggaran yang sudah punya `period_end` mempertahankannya sampai reset
+berikutnya, dan mulai periode sesudahnya seluruh pembuatan, reset worker,
+dan reset manual memakai zona baru secara konsisten (satu sumber
+konfigurasi yang sama). Nama zona yang salah ketik membuat gateway
+menolak boot — sengaja, supaya pergeseran reset tidak terjadi diam-diam.

@@ -202,40 +202,60 @@ func (r *Repo) ExpiredBudgets(ctx context.Context, asOf time.Time) ([]*Budget, e
 	return out, nil
 }
 
-// AkhirPeriode menghitung batas akhir periode yang dimulai pada waktu `dari`.
+// AkhirPeriode menghitung batas akhir periode yang dimulai pada waktu `dari`,
+// dengan batas kalender berpatokan UTC. Ia adalah AkhirPeriodeDi dengan zona
+// UTC — perilaku bawaan sebelum ada konfigurasi zona waktu operator
+// (env BUDGET_TIMEZONE, sisa audit3 V-AB-24).
+func AkhirPeriode(period string, dari time.Time) (akhir time.Time, ok bool) {
+	return AkhirPeriodeDi(period, dari, time.UTC)
+}
+
+// AkhirPeriodeDi menghitung batas akhir periode yang dimulai pada waktu `dari`,
+// dengan batas kalender berpatokan zona waktu `loc` (zona waktu operator).
 //
 // Batasnya SELARAS KALENDER untuk weekly dan monthly, persis seperti yang dijanjikan
 // label UI ("Reset pagu setiap awal pekan" / "setiap tanggal 1 bulan"): weekly berakhir
-// pada Senin 00:00 UTC berikutnya, monthly pada tanggal 1 bulan berikutnya 00:00 UTC.
+// pada Senin 00:00 berikutnya DI ZONA ITU, monthly pada tanggal 1 bulan berikutnya
+// 00:00 di zona itu. Dengan loc UTC hasilnya persis perilaku historis; dengan zona
+// operator (mis. Asia/Makassar) reset anggaran jatuh pada tengah malam waktu
+// operator, bukan tengah malam UTC yang baginya pukul 08:00 pagi.
+//
 // Daily adalah pengecualian yang disengaja: labelnya "setiap 24 jam", jadi batasnya
-// `dari` + 24 jam bergulir.
+// `dari` + 24 jam bergulir — sebuah DURASI, bukan batas kalender, sehingga zona
+// waktu tidak mengubahnya di zona mana pun.
 //
 // Keselarasan kalender ini juga yang membunuh drift jangkar (audit3 V-AB-05): rantai
 // AddDate(0,1,0) dari tanggal 31 melompat ke tanggal 3 bulan berikutnya dan menggeser
 // jangkar selamanya, sedangkan tanggal 1 selalu ada di setiap bulan sehingga rantai
 // batas monthly tidak pernah bergeser dan tidak pernah melompati satu bulan pun.
 //
-// ok false berarti periodenya tidak punya batas akhir (PeriodTotal atau nilai tak
-// dikenal): anggaran seperti itu memang tidak pernah direset worker.
-func AkhirPeriode(period string, dari time.Time) (akhir time.Time, ok bool) {
-	dari = dari.UTC()
+// loc nil berarti UTC. ok false berarti periodenya tidak punya batas akhir
+// (PeriodTotal atau nilai tak dikenal): anggaran seperti itu memang tidak pernah
+// direset worker.
+func AkhirPeriodeDi(period string, dari time.Time, loc *time.Location) (akhir time.Time, ok bool) {
+	if loc == nil {
+		loc = time.UTC
+	}
 	switch period {
 	case PeriodDaily:
 		return dari.Add(24 * time.Hour), true
 	case PeriodWeekly:
-		// Senin berikutnya pukul 00:00 UTC, selalu tegas sesudah `dari`.
-		tengahMalam := time.Date(dari.Year(), dari.Month(), dari.Day(), 0, 0, 0, 0, time.UTC)
+		// Senin berikutnya pukul 00:00 di zona operator, selalu tegas sesudah `dari`.
+		lokal := dari.In(loc)
+		tengahMalam := time.Date(lokal.Year(), lokal.Month(), lokal.Day(), 0, 0, 0, 0, loc)
 		// Weekday: Minggu=0 … Sabtu=6; Senin=1. Jarak ke Senin terdekat (hari ini
 		// bila Senin) adalah (8-weekday)%7 hari dari tengah malam ini.
-		kandidat := tengahMalam.AddDate(0, 0, (8-int(dari.Weekday()))%7)
+		kandidat := tengahMalam.AddDate(0, 0, (8-int(lokal.Weekday()))%7)
 		if !kandidat.After(dari) {
 			kandidat = kandidat.AddDate(0, 0, 7)
 		}
 		return kandidat, true
 	case PeriodMonthly:
-		// Tanggal 1 bulan berikutnya pukul 00:00 UTC. Hari ke-1 selalu sah di semua
-		// bulan, jadi AddDate di sini tidak bisa meluap ke bulan berikutnya lagi.
-		awalBulan := time.Date(dari.Year(), dari.Month(), 1, 0, 0, 0, 0, time.UTC)
+		// Tanggal 1 bulan berikutnya pukul 00:00 di zona operator. Hari ke-1 selalu
+		// sah di semua bulan, jadi AddDate di sini tidak bisa meluap ke bulan
+		// berikutnya lagi.
+		lokal := dari.In(loc)
+		awalBulan := time.Date(lokal.Year(), lokal.Month(), 1, 0, 0, 0, 0, loc)
 		return awalBulan.AddDate(0, 1, 0), true
 	default:
 		return time.Time{}, false
@@ -293,7 +313,7 @@ func (r *Repo) CreateBudget(ctx context.Context, p CreateBudgetParams) (*Budget,
 	}
 	end := p.PeriodEnd
 	if end == nil {
-		if e, ok := AkhirPeriode(p.Period, start); ok {
+		if e, ok := AkhirPeriodeDi(p.Period, start, r.zonaWaktu); ok {
 			end = &e
 		}
 	}

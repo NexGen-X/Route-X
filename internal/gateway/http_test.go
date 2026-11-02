@@ -766,7 +766,11 @@ func TestEmbeddingsMeneruskanBodyUpstreamApaAdanya(t *testing.T) {
 			return &providers.EmbeddingsResponse{Raw: json.RawMessage(raw)}, nil
 		},
 	}
-	s := susun(t, prov, nil)
+	s := susun(t, prov, func(s *susunan, _ *HandlersDeps) {
+		// Model uji harus MENYATAKAN kemampuan embeddings: sejak audit3
+		// V-GW-43 model tanpa capabilities itu ditolak 400 di handler.
+		s.models.model.Capabilities = []string{upstream.CapEmbeddings}
+	})
 	w := s.panggil(t, http.MethodPost, "/embeddings", `{"model":"gpt-4o-mini","input":"halo"}`, nil)
 
 	if w.Code != http.StatusOK {
@@ -870,16 +874,19 @@ func TestPemeriksaanKewenanganGagalTertutup(t *testing.T) {
 	}
 }
 
+// Sejak audit3 V-GW-42 keadaan ini adalah 403 provider_not_allowed, bukan
+// 503: modelnya PUNYA provider, key-nya saja yang dilarang memakainya, dan
+// 503 "tidak ada provider yang dikonfigurasi" adalah klaim yang salah.
 func TestPembatasanProviderMenyaringKandidat(t *testing.T) {
 	s := susun(t, providerSukses(), func(s *susunan, d *HandlersDeps) {
 		s.batas = &pembatasKey{model: true, provider: false}
 		d.Restrict = s.batas
 	})
 	w := s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, ctxDenganKey("k-1", "u-1"))
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, mau 503 (body: %s)", w.Code, w.Body.String())
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, mau 403 (body: %s)", w.Code, w.Body.String())
 	}
-	if got := kodeGalat(galat(t, w)); got != "no_provider_for_model" {
+	if got := kodeGalat(galat(t, w)); got != "provider_not_allowed" {
 		t.Errorf("code = %q", got)
 	}
 }

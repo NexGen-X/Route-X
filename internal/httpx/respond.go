@@ -259,7 +259,19 @@ func PrepareSSE(w http.ResponseWriter, r *http.Request) error {
 
 	w.WriteHeader(http.StatusOK)
 	if err := rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
-		return fmt.Errorf("mengirim header SSE: %w", err)
+		// Header sudah terkirim pada titik ini: status 200 terkunci dan aliran
+		// SSE sudah dimulai dari sudut pandang klien. Errornya ditandai
+		// ErrHeaderSSETerkirim supaya pemanggil TIDAK menjawabnya dengan
+		// envelope JSON — JSON mentah tanpa framing yang menempel di aliran
+		// SSE merusak parser klien (audit3 V-GW-15). Satu-satunya tindakan
+		// yang sah adalah mencatat kegagalan lalu menutup aliran.
+		return fmt.Errorf("%w: %w", ErrHeaderSSETerkirim, err)
 	}
 	return nil
 }
+
+// ErrHeaderSSETerkirim menandai kegagalan PrepareSSE yang terjadi SESUDAH
+// header respons terkirim ke klien. Bedakan dari kegagalan lain PrepareSSE
+// (tenggat tidak bisa dilepas), yang terjadi sebelum satu byte pun terkirim
+// dan masih boleh dijawab envelope error biasa.
+var ErrHeaderSSETerkirim = errors.New("header SSE sudah terkirim")

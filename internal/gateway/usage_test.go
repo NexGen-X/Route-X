@@ -348,6 +348,8 @@ func TestJejakMencatatEmbeddings(t *testing.T) {
 	}
 	s, sink := susunDenganPencatat(t, prov, func(su *susunan, _ *HandlersDeps) {
 		su.cands.cands = []*upstream.RouteCandidate{kandidatRute("utama", "embed-1")}
+		// Sejak audit3 V-GW-43 model tanpa kemampuan embeddings ditolak 400.
+		su.models.model.Capabilities = []string{upstream.CapEmbeddings}
 	})
 
 	w := s.panggil(t, http.MethodPost, "/embeddings", `{"model":"gpt-4o-mini","input":"hai"}`, nil)

@@ -99,6 +99,32 @@ type chatResponse struct {
 	Usage *wireUsage `json:"usage"`
 }
 
+// jenisGalatAliran mengklasifikasikan objek error di dalam aliran.
+//
+// Tidak ada status HTTP di tengah aliran, jadi klasifikasinya bertumpu pada
+// type/code upstream. Yang tidak dikenali jatuh ke ErrKindServer: aman
+// diulang dan aman dialihkan selama belum ada byte yang terkirim.
+func jenisGalatAliran(tipe, kode string) providers.ErrorKind {
+	switch {
+	case strings.Contains(tipe, "overloaded"):
+		return providers.ErrKindOverloaded
+	case strings.Contains(tipe, "rate_limit") || strings.Contains(kode, "rate_limit"):
+		return providers.ErrKindRateLimit
+	case strings.Contains(tipe, "authentication") || strings.Contains(tipe, "auth"):
+		return providers.ErrKindAuth
+	case strings.Contains(tipe, "permission"):
+		return providers.ErrKindPermission
+	case strings.Contains(tipe, "invalid"):
+		return providers.ErrKindInvalidRequest
+	case strings.Contains(tipe, "not_found"):
+		return providers.ErrKindModelNotFound
+	}
+	if k := providers.Classify(0, kode); k != providers.ErrKindUnknown {
+		return k
+	}
+	return providers.ErrKindServer
+}
+
 // chatChunk adalah satu chunk pada respons streaming.
 type chatChunk struct {
 	Choices []struct {
@@ -113,6 +139,17 @@ type chatChunk struct {
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage *wireUsage `json:"usage"`
+
+	// Error adalah objek galat yang dikirim upstream DI DALAM aliran
+	// (mis. {"error":{"type":"overloaded_error",...}} sebagai peristiwa
+	// pertama atau di tengah aliran). Ia bukan chunk: meneruskannya apa
+	// adanya menyerahkan pesan galat mentah ke klien sebagai "jawaban",
+	// dan mesin routing tidak pernah tahu aliran ini gagal (audit3 V-GW-12).
+	Error *struct {
+		Message string          `json:"message"`
+		Type    string          `json:"type"`
+		Code    json.RawMessage `json:"code"`
+	} `json:"error"`
 }
 
 // ChatCompletion menjalankan satu completion non-streaming.
@@ -421,6 +458,13 @@ type chatStream struct {
 	ended    error
 	streamed int64
 
+	// adaPenutup mencatat bahwa upstream sudah menyatakan aliran selesai:
+	// ada chunk yang membawa finish_reason. Bersama penanda [DONE] — yang
+	// menutup aliran lebih dulu di Recv — inilah satu-satunya bukti bahwa
+	// EOF dari koneksi adalah akhir yang sah, bukan putus di tengah
+	// (audit3 V-GW-13).
+	adaPenutup bool
+
 	closed    atomic.Bool
 	closeOnce sync.Once
 	closeErr  error
@@ -457,7 +501,21 @@ func (s *chatStream) Recv() (*providers.StreamEvent, error) {
 
 		out, perr := parseChunk(data)
 		if perr != nil {
+			var pe *providers.Error
+			if errors.As(perr, &pe) {
+				// Objek error dari upstream, bukan chunk yang rusak:
+				// klasifikasinya dibawa error itu sendiri, di sini hanya
+				// konteks alirannya yang ditambahkan. StreamedBytes yang
+				// lebih dari nol menahan retry/failover — klien sudah
+				// menerima sebagian jawaban (audit3 V-GW-12).
+				pe.Provider = s.provider
+				pe.StreamedBytes = s.streamed
+				return nil, s.end(pe)
+			}
 			return nil, s.end(s.chunkFailure())
+		}
+		if out.FinishReason != "" {
+			s.adaPenutup = true
 		}
 		// Yang dihitung adalah byte yang benar-benar diserahkan ke pemanggil: begitu satu
 		// chunk keluar dari Recv, ia dianggap sudah sampai ke klien.
@@ -474,11 +532,27 @@ func (s *chatStream) end(err error) error {
 
 // readFailure mengubah kegagalan pembacaan menjadi hasil yang tepat untuk mesin routing.
 func (s *chatStream) readFailure(err error) error {
-	// EOF bersih berarti aliran habis. Tidak semua provider berdialek OpenAI mengirim
-	// [DONE] sebelum menutup, dan menganggap ini kegagalan akan menghasilkan error palsu
-	// pada setiap request ke provider yang sebenarnya menjawab lengkap.
+	// EOF dari koneksi HANYA akhir yang bersih bila upstream sudah menyatakan
+	// selesai (penanda [DONE] — ditangani langsung di Recv — atau chunk
+	// ber-finish_reason). EOF telanjang tanpa keduanya adalah jawaban yang
+	// TERPOTONG (audit3 V-GW-13): adapter Anthropic dan Google menolak EOF
+	// yang sama persis, dan menganggapnya sukses di sini membuat pemutus
+	// arus mencatat provider pemutus aliran sebagai sehat sementara klien
+	// menerima [DONE] sintetis atas jawaban yang tidak utuh.
 	if errors.Is(err, io.EOF) {
-		return io.EOF
+		if s.adaPenutup {
+			return io.EOF
+		}
+		kind := providers.ErrKindServer
+		if s.streamed > 0 {
+			kind = providers.ErrKindStreamAborted
+		}
+		return &providers.Error{
+			Kind:          kind,
+			Provider:      s.provider,
+			Message:       "aliran upstream berakhir tanpa penanda selesai",
+			StreamedBytes: s.streamed,
+		}
 	}
 
 	kind := providers.ClassifyTransport(err)
@@ -547,6 +621,24 @@ func parseChunk(data []byte) (*providers.StreamEvent, error) {
 	var wire chatChunk
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return nil, err
+	}
+
+	// Objek error di dalam aliran menjadi *providers.Error, bukan StreamEvent:
+	// Recv yang membedakannya dari chunk rusak dan menambahkan konteks aliran.
+	// Pesan mentah upstream TIDAK diteruskan (kontrak providers.Error: Message
+	// harus aman untuk log dan klien) — yang dibawa hanya klasifikasinya dan
+	// kode upstream yang sudah disanitasi.
+	if wire.Error != nil && wire.Error.Message != "" {
+		var kode string
+		if len(wire.Error.Code) > 0 {
+			_ = json.Unmarshal(wire.Error.Code, &kode)
+		}
+		kode = sanitizeCode(kode)
+		return nil, &providers.Error{
+			Kind:         jenisGalatAliran(wire.Error.Type, kode),
+			Message:      withCode("upstream melaporkan galat di tengah aliran", kode),
+			UpstreamCode: kode,
+		}
 	}
 
 	out := &providers.StreamEvent{

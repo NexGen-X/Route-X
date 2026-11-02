@@ -514,8 +514,7 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 
 	w.Header().Set("anthropic-version", "2023-06-01")
 	if err := httpx.PrepareSSE(w, r); err != nil {
-		h.logger.ErrorContext(r.Context(), "penyiapan SSE gagal", "error", err)
-		httpx.InternalError(w, r)
+		h.gagalSiapkanSSE(w, r, j, err)
 		return
 	}
 

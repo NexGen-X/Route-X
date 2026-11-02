@@ -147,13 +147,15 @@ var tipeKesalahan = map[string]string{
 	CodeBudgetExceeded: "budget",
 	CodeRateLimited:    "rate_limit",
 
-	"model_not_found":         "model_not_found",
-	"model_disabled":          "model_disabled",
-	"model_not_allowed":       "permission",
-	"no_provider_for_model":   "no_provider",
-	"streaming_not_supported": "invalid_request",
-	"tools_not_supported":     "invalid_request",
-	"context_length_exceeded": "invalid_request",
+	"model_not_found":          "model_not_found",
+	"model_disabled":           "model_disabled",
+	"model_not_allowed":        "permission",
+	"provider_not_allowed":     "permission",
+	"embeddings_not_supported": "invalid_request",
+	"no_provider_for_model":    "no_provider",
+	"streaming_not_supported":  "invalid_request",
+	"tools_not_supported":      "invalid_request",
+	"context_length_exceeded":  "invalid_request",
 
 	httpx.CodeInvalidRequest:   "invalid_request",
 	httpx.CodeInvalidAPIKey:    "auth",
@@ -406,14 +408,36 @@ func (j *jejak) selesai(ctx context.Context) {
 		return
 	}
 
+	// Panic yang sedang mengurai tumpukan harus terlihat di sini (audit3
+	// V-GW-48): defer inilah satu-satunya titik yang pasti berjalan pada
+	// jalur itu, dan middleware Recover — yang menjawab 500 ke klien —
+	// menulis ke writer DI LUAR pencatat respons jejak, jadi tanpa
+	// pemeriksaan ini panic terbaca sebagai "tidak satu byte pun tertulis"
+	// dan tercatat 499 canceled, berlawanan dengan yang diterima klien.
+	// Panic diteruskan lagi sesudah mencatat: memulihkannya di sini akan
+	// mencuri tugas Recover dan mengubah perilaku koneksi.
+	panik := recover()
+	if panik != nil {
+		defer func() { panic(panik) }()
+	}
+
 	status := j.w.status
-	if !j.w.ditulis {
+	kode, pesan := j.w.envelope()
+	switch {
+	case panik != nil && !j.w.ditulis:
+		// Recover akan menulis 500; catatan harus mengatakan hal yang sama.
+		status = http.StatusInternalServerError
+		kode, pesan = httpx.CodeInternalError, ""
+	case panik != nil:
+		// Panic di tengah respons yang sudah mulai terkirim: status yang
+		// terkirim tidak berubah, tetapi kegagalannya internal, bukan sukses.
+		kode, pesan = httpx.CodeInternalError, ""
+	case !j.w.ditulis:
 		// Tidak satu byte pun tertulis. Satu-satunya cara ini terjadi adalah klien menutup
 		// koneksi sebelum jawaban dimulai; 499 dari konvensi nginx menyatakan itu tanpa
 		// menaikkan tingkat kesalahan gateway atas hal yang bukan kesalahannya.
 		status = statusClientClosed
 	}
-	kode, pesan := j.w.envelope()
 
 	ev := usage.Event{
 		RequestID: observability.RequestIDFrom(ctx),

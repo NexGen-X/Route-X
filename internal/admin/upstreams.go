@@ -105,6 +105,7 @@ func (h *Handlers) upstreamsRoutes(r chi.Router) {
 		// Pricing
 		mr.With(auth.RequirePermission(seed.PermModelsWrite)).Post("/mappings/{mapping_id}/pricing", h.setPricing)
 		mr.With(auth.RequirePermission(seed.PermModelsRead)).Get("/mappings/{mapping_id}/pricing/history", h.listPricingHistory)
+		mr.With(auth.RequirePermission(seed.PermModelsRead)).Get("/mappings/{mapping_id}/pricing/reference", h.getPricingReference)
 	})
 
 	// 3. Egress Pools
@@ -1566,9 +1567,15 @@ func (h *Handlers) detachProviderModel(w http.ResponseWriter, r *http.Request) {
 }
 
 type setPriceReq struct {
-	InputPer1MUSD       string `json:"input_per_1m_usd"`
-	OutputPer1MUSD      string `json:"output_per_1m_usd"`
-	CachedInputPer1MUSD string `json:"cached_input_per_1m_usd"`
+	InputPer1MUSD  string `json:"input_per_1m_usd"`
+	OutputPer1MUSD string `json:"output_per_1m_usd"`
+	// CachedInputPer1MUSD OPSIONAL: tidak diisi (atau string kosong) berarti
+	// harga cache-read mengikuti harga input — semantik nil pada repo. Versi
+	// lama mewajibkannya, sehingga keadaan "ikuti input" tidak bisa dinyatakan
+	// sama sekali, dan "0" yang diketik operator tersimpan sebagai harga
+	// eksplisit nol yang membuat seluruh cache-read tertagih $0 (audit3 V-AB-13).
+	// Nilai "0" yang DIISI tetap dihormati sebagai nol eksplisit.
+	CachedInputPer1MUSD *string `json:"cached_input_per_1m_usd"`
 }
 
 func (h *Handlers) setPricing(w http.ResponseWriter, r *http.Request) {
@@ -1591,10 +1598,14 @@ func (h *Handlers) setPricing(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "invalid_price", "output_per_1m_usd tidak valid: "+err.Error())
 		return
 	}
-	cachedUSD, err := upstream.ParseUSD(req.CachedInputPer1MUSD)
-	if err != nil {
-		httpx.BadRequest(w, r, "invalid_price", "cached_input_per_1m_usd tidak valid: "+err.Error())
-		return
+	var cachedUSD *upstream.USD
+	if req.CachedInputPer1MUSD != nil && strings.TrimSpace(*req.CachedInputPer1MUSD) != "" {
+		v, err := upstream.ParseUSD(*req.CachedInputPer1MUSD)
+		if err != nil {
+			httpx.BadRequest(w, r, "invalid_price", "cached_input_per_1m_usd tidak valid: "+err.Error())
+			return
+		}
+		cachedUSD = &v
 	}
 
 	var price *upstream.Price
@@ -1604,7 +1615,7 @@ func (h *Handlers) setPricing(w http.ResponseWriter, r *http.Request) {
 			ProviderModelID: mappingID,
 			Input:           inUSD,
 			Output:          outUSD,
-			CachedInput:     &cachedUSD,
+			CachedInput:     cachedUSD,
 		})
 		if err != nil {
 			return err
@@ -1618,10 +1629,59 @@ func (h *Handlers) setPricing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeAudit(ctx, r, "set_pricing", "provider_model", mappingID, map[string]any{
-		"input": inUSD.String(), "output": outUSD.String(), "cached": cachedUSD.String(),
-	})
+	// Cuplikan harga di memori dibatalkan supaya harga baru menagih seketika di
+	// instance ini, bukan sampai 30 detik kemudian (audit3 V-AB-09; Pricer.
+	// Invalidate sebelumnya tidak punya satu pun pemanggil).
+	if h.priceCache != nil {
+		h.priceCache.Invalidate()
+	}
+
+	auditData := map[string]any{"input": inUSD.String(), "output": outUSD.String()}
+	if cachedUSD != nil {
+		auditData["cached"] = cachedUSD.String()
+	}
+	h.writeAudit(ctx, r, "set_pricing", "provider_model", mappingID, auditData)
 	_ = h.respond(w, r, http.StatusCreated, toPriceDTO(price))
+}
+
+// getPricingReference menawarkan harga acuan resmi untuk satu pemetaan.
+//
+// Harga acuan katalog seed (seed.ReferencePriceFor) sebelumnya yatim: tidak
+// ada satu pun pemanggil produksi, jadi operator yang memasang harga tidak
+// pernah ditawari angka resmi beserta asalnya dan harus mengetik dari ingatan
+// (audit3 V-AB-12). Endpoint ini hanya MENAWARKAN — memasangnya tetap
+// keputusan operator lewat setPricing, karena harga acuan bisa berubah dan
+// menanamnya otomatis adalah persis kesalahan yang dihindari katalog itu.
+func (h *Handlers) getPricingReference(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	mappingID := chi.URLParam(r, "mapping_id")
+
+	pm, err := h.modelRepo.GetProviderModel(ctx, mappingID)
+	if err != nil {
+		mapRepoError(w, r, err, "pemetaan provider model")
+		return
+	}
+	prov, err := h.providerRepo.Get(ctx, pm.ProviderID)
+	if err != nil {
+		mapRepoError(w, r, err, "provider")
+		return
+	}
+
+	dto := ReferencePriceDTO{ProviderKind: prov.Kind, UpstreamModel: pm.UpstreamModelName}
+	if ref := seed.ReferencePriceFor(prov.Kind, pm.UpstreamModelName); ref != nil {
+		dto.Available = true
+		input := ref.Input.Decimal()
+		output := ref.Output.Decimal()
+		dto.InputPer1MUSD = &input
+		dto.OutputPer1MUSD = &output
+		if ref.CachedInput != nil {
+			cached := ref.CachedInput.Decimal()
+			dto.CachedInputPer1MUSD = &cached
+		}
+		dto.Source = ref.Source
+		dto.FetchedOn = ref.FetchedOn
+	}
+	_ = h.respond(w, r, http.StatusOK, dto)
 }
 
 func (h *Handlers) listPricingHistory(w http.ResponseWriter, r *http.Request) {

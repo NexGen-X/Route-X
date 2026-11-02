@@ -452,6 +452,24 @@ type PriceDTO struct {
 
 func (PriceDTO) adalahDTO() {}
 
+// ReferencePriceDTO adalah tawaran harga acuan resmi untuk satu pemetaan
+// model-provider, dari katalog seed yang asal angkanya tercatat. Available
+// false berarti tidak ada acuan yang bisa dipertanggungjawabkan untuk
+// pasangan jenis provider + model upstream ini — operator mengisi sendiri,
+// dan gateway TIDAK mengarang angka pengganti (audit3 V-AB-12).
+type ReferencePriceDTO struct {
+	Available           bool    `json:"available"`
+	ProviderKind        string  `json:"provider_kind"`
+	UpstreamModel       string  `json:"upstream_model"`
+	InputPer1MUSD       *string `json:"input_per_1m_usd"`
+	OutputPer1MUSD      *string `json:"output_per_1m_usd"`
+	CachedInputPer1MUSD *string `json:"cached_input_per_1m_usd"`
+	Source              string  `json:"source,omitempty"`
+	FetchedOn           string  `json:"fetched_on,omitempty"`
+}
+
+func (ReferencePriceDTO) adalahDTO() {}
+
 // EgressPoolDTO adalah konfigurasi proxy pool keluar.
 // Catatan Keamanan: encryption_key_id dan proxy_url_encrypted DILARANG dipublikasikan ke API admin.
 type EgressPoolDTO struct {

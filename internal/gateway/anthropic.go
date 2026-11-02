@@ -298,6 +298,10 @@ func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	j, w := h.mulaiJejak(w, r)
 	defer j.selesai(r.Context())
 
+	// Penolakan pra-upstream mengembalikan kuota Limit() (audit3 V-AB-17).
+	jaga := h.jagaKuotaPraUpstream(r)
+	defer jaga.tutup()
+
 	body, ok := h.bacaBody(w, r)
 	if !ok {
 		return
@@ -313,6 +317,7 @@ func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	jaga.lolos()
 
 	if pr.req.Stream {
 		h.anthropicChatMengalir(w, r, pr, j)
@@ -371,9 +376,12 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	j.pasangPemakaian(out.Value.Usage)
-	h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(out.Value.Usage.TotalTokens))
-	h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(out.Value.Usage.TotalTokens))
+	// Lantai pemakaian yang sama seperti permukaan OpenAI (audit3 V-GW-10):
+	// respons tanpa usage tetap memakan kuota dan tertagih.
+	pemakaian := terapkanLantaiPemakaian(pr.req, out.Value.Usage, int64(len(teksJawaban(out.Value))))
+	j.pasangPemakaian(pemakaian)
+	h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(pemakaian.TotalTokens))
+	h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(pemakaian.TotalTokens))
 
 	if rj := h.guard.SaringJawaban(r.Context(), teksJawaban(out.Value),
 		pr.model.ID, out.Candidate.ProviderID); rj != nil {
@@ -513,7 +521,13 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 
 	rc := http.NewResponseController(w)
 	var (
-		terkirim   int64
+		terkirim int64
+		// byteKonten hanya menghitung byte KONTEN (teks delta + argumen tool),
+		// BUKAN byte aliran terbingkai. Lantai taksiran output memakai angka ini:
+		// menaksir dari terkirim (yang memuat baris event:, envelope JSON, dan
+		// peristiwa buka/tutup blok) menggelembungkan taksiran belasan kali
+		// lipat dari token konten sebenarnya (audit3 V-AB-15).
+		byteKonten int64
 		usage      providers.Usage
 		msgID      = randomMsgID()
 		modelName  = pr.model.ModelID
@@ -561,14 +575,10 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 	}
 
 	defer func() {
-		if usage.TotalTokens <= 0 && terkirim > 0 {
-			lantai := int(terkirim / bytePerToken)
-			if lantai < 1 {
-				lantai = 1
-			}
-			usage.OutputTokens = lantai
-			usage.TotalTokens = usage.InputTokens + lantai
-		}
+		// Lantai dua sisi dari byte KONTEN (audit3 V-AB-14, V-AB-15): input
+		// dari prompt, output dari konten yang benar-benar dihasilkan —
+		// bukan dari byte aliran terbingkai.
+		usage = terapkanLantaiPemakaian(pr.req, usage, byteKonten)
 		h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(usage.TotalTokens))
 		h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(usage.TotalTokens))
 		j.pasangPemakaian(usage)
@@ -644,6 +654,7 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 		// Potongan teks: buka blok text bila belum ada blok text yang terbuka.
 		// Transisi tool -> text menutup blok tool lama lebih dulu.
 		if ev.Delta != "" {
+			byteKonten += int64(len(ev.Delta))
 			if tipeBlokSekarang != "text" {
 				tutupBlok()
 				indexBlokSekarang = blokBerikutnya
@@ -711,6 +722,7 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 			// model kadang menghasilkan JSON tidak sah yang harus tetap sampai ke
 			// klien utuh (lihat dokumentasi providers.FunctionCall.Arguments).
 			if tc.Function.Arguments != "" {
+				byteKonten += int64(len(tc.Function.Arguments))
 				deltaPayload, _ := json.Marshal(map[string]any{
 					"type":  "content_block_delta",
 					"index": idx,
@@ -733,7 +745,10 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 	// 4. Kirim message_delta
 	outputTokens := usage.OutputTokens
 	if outputTokens <= 0 {
-		outputTokens = int(terkirim / bytePerToken)
+		// Taksiran dari byte KONTEN, bukan byte terbingkai (audit3 V-AB-15):
+		// angka ini yang dilihat klien sebagai output_tokens, jadi menggelem-
+		// bungkannya berarti klien mencatat pemakaian yang tidak pernah ada.
+		outputTokens = int(byteKonten / bytePerToken)
 		if outputTokens < 1 {
 			outputTokens = 1
 		}

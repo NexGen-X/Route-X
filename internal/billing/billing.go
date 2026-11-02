@@ -37,6 +37,17 @@ import (
 // defaultTTL adalah umur salinan anggaran di memori.
 const defaultTTL = 5 * time.Second
 
+// defaultHoldTTL adalah umur satu tahanan reservasi anggaran (lihat Tahan).
+//
+// Tahanan adalah jembatan antara pemeriksaan pra-permintaan dan pencatatan
+// pasca-bayar: ia harus hidup lebih lama dari permintaan terlama yang sah
+// (termasuk aliran streaming yang berjalan menit), tetapi cukup pendek supaya
+// tahanan yang bocor — permintaan yang lolos gerbang lalu mati sebelum
+// tercatat — tidak menahan anggaran selamanya. Dua menit memenuhi keduanya;
+// pencatatan nyata biasanya mendarat dalam milidetik dan sesudah itu angka
+// spent di salinan yang berbicara, bukan tahanannya.
+const defaultHoldTTL = 2 * time.Minute
+
 // Source memasok anggaran aktif dan menandai peringatan. Dipenuhi *policy.Repo.
 type Source interface {
 	ActiveBudgets(ctx context.Context) ([]*policy.Budget, error)
@@ -62,6 +73,13 @@ type WebhookEnqueuer interface {
 	Enqueue(ctx context.Context, event string, payload any) (int, error)
 }
 
+// tahanan adalah satu reservasi anggaran: estimasi biaya satu permintaan yang
+// sudah lolos gerbang tetapi belum tercatat sebagai spent.
+type tahanan struct {
+	jumlah upstream.USD
+	sampai time.Time
+}
+
 // Enforcer menyimpan salinan anggaran dan menjawab apakah permintaan boleh jalan.
 //
 // Aman dipakai bersamaan oleh banyak goroutine.
@@ -70,6 +88,7 @@ type Enforcer struct {
 	enqueuer WebhookEnqueuer
 	logger   *slog.Logger
 	ttl      time.Duration
+	ttlTahan time.Duration
 	now      func() time.Time
 
 	mu     sync.RWMutex
@@ -78,6 +97,11 @@ type Enforcer struct {
 	global []*policy.Budget
 	// perCakupan diindeks per [scope][scope_id].
 	perCakupan map[string]map[string][]*policy.Budget
+	// tahan adalah reservasi per anggaran (kunci: budget ID) dari permintaan
+	// yang sedang berjalan. Dijaga mutex yang sama dengan salinan, karena
+	// keputusan "boleh jalan + tahan" harus atomik terhadap keputusan
+	// bersamaan lain — itulah seluruh gunanya (lihat Tahan).
+	tahan map[string][]tahanan
 	// pemuatan menyatukan pemuatan ulang yang bersamaan menjadi satu query:
 	// tanpa ini, salinan yang kedaluwarsa di bawah beban menghasilkan satu
 	// query ActiveBudgets per permintaan yang datang dalam jendela pemuatan —
@@ -113,6 +137,15 @@ func WithClock(now func() time.Time) Option {
 	}
 }
 
+// WithHoldTTL mengubah umur tahanan reservasi anggaran. Nilai <= 0 diabaikan.
+func WithHoldTTL(d time.Duration) Option {
+	return func(e *Enforcer) {
+		if d > 0 {
+			e.ttlTahan = d
+		}
+	}
+}
+
 // NewEnforcer membuat penegak anggaran.
 //
 // source nil sah dan berarti tidak ada anggaran yang ditegakkan — keadaan yang benar untuk
@@ -121,7 +154,7 @@ func NewEnforcer(source Source, logger *slog.Logger, opts ...Option) *Enforcer {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	e := &Enforcer{source: source, logger: logger, ttl: defaultTTL, now: time.Now}
+	e := &Enforcer{source: source, logger: logger, ttl: defaultTTL, ttlTahan: defaultHoldTTL, now: time.Now}
 	for _, o := range opts {
 		if o != nil {
 			o(e)
@@ -174,6 +207,116 @@ func (e *Enforcer) Check(ctx context.Context, targets []policy.Target) Verdict {
 		}
 	}
 	return v
+}
+
+// Tahan memeriksa anggaran DAN menahan estimasi biaya permintaan ini dalam
+// satu langkah atomik.
+//
+// Check saja tidak cukup untuk lalu lintas bersamaan (audit3 V-AB-16):
+// pemeriksaan bersifat pra-permintaan atas spent yang dicatat pasca-bayar,
+// jadi sepuluh permintaan paralel membaca sisa yang sama, semuanya lolos, dan
+// pagu terlampaui sebesar konkurensinya (terbukti 6,3×). Tahan menutup celah
+// itu dengan RESERVASI: permintaan yang lolos mengunci estimasi biayanya pada
+// setiap anggaran blokir yang berlaku, dan pemeriksaan berikutnya menghitung
+// spent + tahanan aktif sebagai pemakaian. Keputusan dan pemasangan tahanan
+// berjalan di bawah satu kunci tulis — memeriksa lalu menahan dalam dua
+// langkah terpisah akan membuka kembali celah yang sama.
+//
+// Tahanan berumur ttlTahan lalu gugur sendiri. Sesudah AddSpend nyata
+// mendarat dan salinan menyegar, satu permintaan bisa terhitung dua kali
+// (spent + tahanannya) sampai tahanannya gugur — arah salahnya konservatif
+// (menolak lebih awal di dekat pagu, tidak pernah meloloskan melewatinya)
+// dan jendelanya dibatasi umur tahanan.
+//
+// jumlah <= 0 berarti pemanggil tidak punya estimasi (mis. pemetaan belum
+// dihargai — yang memang menagih nol): jawabannya persis Check, tanpa tahanan.
+func (e *Enforcer) Tahan(ctx context.Context, targets []policy.Target, jumlah upstream.USD) Verdict {
+	if jumlah <= 0 {
+		return e.Check(ctx, targets)
+	}
+	e.muat(ctx)
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	sekarang := e.now()
+	e.sapuTahanTerkunci(sekarang)
+
+	var (
+		v             Verdict
+		sisaPemblokir upstream.USD
+		berlaku       []*policy.Budget
+	)
+	periksa := func(b *policy.Budget) {
+		berlaku = append(berlaku, b)
+		if b.ShouldAlertThreshold() || b.ShouldAlertExceeded() {
+			v.Alerts = append(v.Alerts, b)
+		}
+		if !b.Enabled || b.ActionOnExceed != policy.ActionBlock {
+			return
+		}
+		sisa := b.LimitUSD - b.SpentUSD - e.totalTahanTerkunci(b.ID, sekarang)
+		if sisa < jumlah && (v.Budget == nil || sisa < sisaPemblokir) {
+			v.Blocked, v.Budget = true, b
+			sisaPemblokir = sisa
+		}
+	}
+	for _, b := range e.global {
+		periksa(b)
+	}
+	for _, t := range targets {
+		if t.Scope == policy.ScopeGlobal || t.ID == "" {
+			continue
+		}
+		for _, b := range e.perCakupan[t.Scope][t.ID] {
+			periksa(b)
+		}
+	}
+	if v.Blocked {
+		return v
+	}
+
+	t := tahanan{jumlah: jumlah, sampai: sekarang.Add(e.ttlTahan)}
+	for _, b := range berlaku {
+		if !b.Enabled || b.ActionOnExceed != policy.ActionBlock {
+			continue
+		}
+		if e.tahan == nil {
+			e.tahan = make(map[string][]tahanan)
+		}
+		e.tahan[b.ID] = append(e.tahan[b.ID], t)
+	}
+	return v
+}
+
+// sapuTahanTerkunci membuang tahanan yang sudah kedaluwarsa. Pemanggil WAJIB
+// memegang e.mu (tulis).
+func (e *Enforcer) sapuTahanTerkunci(sekarang time.Time) {
+	for id, daftar := range e.tahan {
+		hidup := daftar[:0]
+		for _, t := range daftar {
+			if t.sampai.After(sekarang) {
+				hidup = append(hidup, t)
+			}
+		}
+		if len(hidup) == 0 {
+			delete(e.tahan, id)
+		} else {
+			e.tahan[id] = hidup
+		}
+	}
+}
+
+// totalTahanTerkunci menjumlahkan tahanan yang masih hidup untuk satu
+// anggaran. Pemanggil WAJIB memegang e.mu dan sudah menyapu.
+func (e *Enforcer) totalTahanTerkunci(id string, sekarang time.Time) upstream.USD {
+	var total upstream.USD
+	for _, t := range e.tahan[id] {
+		if t.sampai.After(sekarang) {
+			total += t.jumlah
+		}
+	}
+	return total
 }
 
 // Announce menandai anggaran yang melewati ambang atau batas sebagai sudah diberitahukan,

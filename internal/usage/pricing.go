@@ -2,10 +2,12 @@ package usage
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/router"
@@ -27,6 +29,15 @@ const defaultPriceTTL = 30 * time.Second
 // PriceSource memasok seluruh harga yang sedang berlaku. Dipenuhi *upstream.PricingRepo.
 type PriceSource interface {
 	CurrentAll(ctx context.Context) ([]*upstream.Price, error)
+}
+
+// priceAtSource adalah kemampuan tambahan sumber harga: harga yang berlaku pada
+// satu titik waktu lampau. Dipenuhi *upstream.PricingRepo lewat method At-nya.
+// Sengaja antarmuka terpisah supaya sumber harga tiruan (test, pemasangan
+// sebagian) yang tidak bisa menjawab pertanyaan lampau tetap sah — PriceAt
+// jatuh ke cuplikan berjalan untuk sumber seperti itu.
+type priceAtSource interface {
+	At(ctx context.Context, providerModelID string, t time.Time) (*upstream.Price, error)
 }
 
 // Pricer menjawab dua pertanyaan dari satu cuplikan harga: berapa biaya request yang sudah
@@ -144,6 +155,41 @@ func (p *Pricer) Price(ctx context.Context, providerModelID string) (*upstream.P
 	defer p.mu.RUnlock()
 	pr, ok := p.harga[providerModelID]
 	return pr, ok
+}
+
+// PriceAt mengembalikan harga yang berlaku pada titik waktu t untuk satu pemetaan.
+//
+// Inilah yang dipakai penagihan: biaya satu permintaan harus dihitung dengan
+// harga yang berlaku KETIKA PERMINTAAN ITU SELESAI, bukan harga berjalan saat
+// pencatat asinkron memproses antreannya — kalau tidak, pergantian harga di
+// antara keduanya mengubah biaya permintaan yang sudah lewat (audit3 V-AB-09),
+// dan laporan bulan lalu ikut berubah setiap kali harga diganti. Jalur ini
+// MEMANG menyentuh database per panggilan; pemanggilnya pencatat, yang berjalan
+// sesudah jawaban terkirim dan boleh membayar satu query (lihat catatan Pricer).
+//
+// ok false berarti pemetaan itu belum punya harga pada waktu t. Sumber yang
+// tidak mendukung pertanyaan lampau dijawab dari cuplikan berjalan.
+func (p *Pricer) PriceAt(ctx context.Context, providerModelID string, t time.Time) (*upstream.Price, bool) {
+	if p == nil || providerModelID == "" {
+		return nil, false
+	}
+	src, ok := p.source.(priceAtSource)
+	if !ok || t.IsZero() {
+		return p.Price(ctx, providerModelID)
+	}
+	price, err := src.At(ctx, providerModelID, t)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return nil, false
+		}
+		// Kegagalan membaca (bukan "tidak ada") tidak boleh menjadi biaya nol
+		// yang senyap: jatuh ke cuplikan berjalan dan catat, supaya angka yang
+		// keluar tetap angka terbaik yang tersedia dan kegagalannya terlihat.
+		p.logger.WarnContext(ctx, "harga pada waktu permintaan gagal dibaca, memakai cuplikan berjalan",
+			"error", err, "provider_model_id", providerModelID)
+		return p.Price(ctx, providerModelID)
+	}
+	return price, true
 }
 
 // Cost memenuhi router.CostSource: biaya perkiraan menjalankan est pada satu pemetaan.
@@ -293,14 +339,23 @@ func TokensFor(u providers.Usage) upstream.TokenUsage {
 	if cached > input {
 		cached = input
 	}
+	// Token tulis cache juga bersarang di dalam InputTokens (lihat
+	// providers.Usage), jadi ia dikurangkan dari input biasa dan ditagih dengan
+	// tarifnya sendiri. Jepitannya sesudah cached: yang dipotong lebih dulu
+	// adalah token baca cache, sisanya baru boleh disebut tulis cache.
+	creation := int64(max(u.CacheCreationInputTokens, 0))
+	if creation > input-cached {
+		creation = input - cached
+	}
 	output, reasoning := int64(max(u.OutputTokens, 0)), int64(max(u.ReasoningTokens, 0))
 	if reasoning > output {
 		reasoning = output
 	}
 	return upstream.TokenUsage{
-		Input:       input - cached,
-		CachedInput: cached,
-		Output:      output - reasoning,
-		Reasoning:   reasoning,
+		Input:         input - cached - creation,
+		CachedInput:   cached,
+		CacheCreation: creation,
+		Output:        output - reasoning,
+		Reasoning:     reasoning,
 	}
 }

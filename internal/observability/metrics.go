@@ -87,6 +87,18 @@ type Metrics struct {
 	// metrik gagal-terbuka pada pembatas laju.
 	UsageRecords    *prometheus.CounterVec
 	UsageQueueDepth prometheus.Gauge
+
+	// UsageEventFailures menghitung kegagalan menulis timeline percobaan
+	// (request_events) sesudah baris requests-nya berhasil. Tanpa angka ini
+	// timeline inspector bisa hilang massal sementara UsageRecords tampak
+	// hijau (audit3 V-AB-23).
+	UsageEventFailures prometheus.Counter
+	// UsageUnpriced menghitung catatan yang biayanya tercatat NOL karena
+	// pemetaan model-provider belum punya harga. Labelnya provider dan model
+	// dari registry operator (kardinalitas terbatas, sama seperti CostTotal).
+	// Tanpa angka ini keadaan itu hanya terlihat dari satu baris WARN per
+	// cuplikan harga, padahal akibatnya anggaran USD membeku (audit3 V-AB-10).
+	UsageUnpriced *prometheus.CounterVec
 }
 
 // NewMetrics membuat registry baru berisi seluruh metrik aplikasi, plus kolektor
@@ -224,6 +236,16 @@ func NewMetrics() *Metrics {
 			Name: "routex_usage_queue_depth",
 			Help: "Jumlah catatan pemakaian yang menunggu ditulis ke database.",
 		}),
+
+		UsageEventFailures: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "routex_usage_event_failures_total",
+			Help: "Jumlah kegagalan menulis timeline percobaan (request_events) oleh pencatat pemakaian.",
+		}),
+
+		UsageUnpriced: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "routex_usage_unpriced_total",
+			Help: "Jumlah catatan pemakaian yang tercatat berbiaya nol karena pemetaan model-provider belum punya harga.",
+		}, []string{"provider", "model"}),
 	}
 
 	reg.MustRegister(
@@ -235,6 +257,7 @@ func NewMetrics() *Metrics {
 		m.WorkerRunsTotal, m.WorkerDuration, m.PoolConnections,
 		m.DBEmptyAcquireTotal, m.DBAcquireWaitDuration,
 		m.UsageRecords, m.UsageQueueDepth,
+		m.UsageEventFailures, m.UsageUnpriced,
 	)
 	return m
 }

@@ -6,6 +6,13 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-11-02
+
+Rilis patch: satu perbaikan kebocoran kuota token pada jalur streaming, dilabuhkan dari PR #137 yang tidak dapat di-merge langsung (branch-nya bercabang dari era PR #136 dan akan merevert Fase 2–7). Tidak ada perubahan skema, API, atau antarmuka dari v1.5.0.
+
+### Fixed
+- **Pencatatan token aliran SSE yang diputus klien** (PR #202, pelabuhan PR #137): pencatatan pemakaian token setelah respons selesai kini memakai context yang dilepas dari pembatalan request (`context.WithoutCancel` + tenggat 5 detik via helper `ctxCatatToken`). Sebelumnya, bila klien menutup koneksi di tengah aliran, context request yang sudah batal membuat operasi Redis ditolak dan token yang sudah dibayar ke upstream tidak pernah memakan kuota — klien yang selalu memutus aliran sebelum token terakhir dapat memakai token secara gratis. Perbaikan yang sama diterapkan ke `CatatTokenKolomProvider` (penghitung kolom `rate_limit_tpm` provider), yang dipanggil berpasangan pada jalur yang sama dan memiliki cacat identik. Test regresi `TestCatatTokenTetapJalanSaatKlienMemutusAliran` dilabuhkan dari #137.
+
 ## [1.5.0] - 2026-11-02
 
 Rilis penyelarasan penuh Calm Console: seluruh antarmuka kini mengikuti bahasa desain sampel secara utuh — Pengaturan tanpa panel, palet perintah berkelompok, Observabilitas tanpa kartu, lembar bawah detail Permintaan di mobile, dan batang anggaran per kunci dari data nyata — di atas fondasi konsolidasi Fase 2 dan perombakan UI/UX Fase 3–4. Installer native kini mematok tag rilis v1.5.0 sehingga unduhan biner resmi dan fallback kompilasi sama-sama menghasilkan versi ini.

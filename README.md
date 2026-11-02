@@ -6,7 +6,7 @@
   <strong>A self-hosted, single-admin AI Gateway for personal use and small trusted teams — with native dual-protocol ingestion (OpenAI & Anthropic), intelligent multi-model combo routing, fast in-memory routing decisions, precise budget accounting, and instant developer CLI synchronization.</strong>
 </p>
 
-[![Release](https://img.shields.io/badge/Release-v1.5.0-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.5.0)
+[![Release](https://img.shields.io/badge/Release-v1.5.1-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.5.1)
 [![Go Version](https://img.shields.io/badge/Go-1.27.3+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com)
@@ -237,11 +237,11 @@ Historical benchmark results measured on a dedicated **Intel(R) Xeon(R) Platinum
 Download and run the official static Linux binary with zero build steps:
 
 ```bash
-# 1. Download official v1.5.0 release
-curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.5.0/routex-v1.5.0-linux-amd64.tar.gz
+# 1. Download official v1.5.1 release
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.5.1/routex-v1.5.1-linux-amd64.tar.gz
 
 # 2. Extract archive
-tar -xzvf routex-v1.5.0-linux-amd64.tar.gz
+tar -xzvf routex-v1.5.1-linux-amd64.tar.gz
 
 # 3. Apply schema migrations & run gateway
 ./ai-gateway -migrate

@@ -369,6 +369,52 @@ func (e *Engine) Stats(ctx context.Context) (Stats, error) {
 	return s, nil
 }
 
+// RekonsiliasiJumlahEntri menghitung ulang jumlah entri yang BENAR-BENAR
+// ada di Redis dan mengoreksi counter ringkas meta:entry_count ke angka itu.
+//
+// Set memelihara counter secara atomik pada penulisan dan Flush
+// meresetnya, tetapi entri yang kedaluwarsa alami oleh TTL tidak pernah
+// menguranginya — Redis membuang kunci itu tanpa memberi tahu siapa pun —
+// sehingga sesudah banyak entri kedaluwarsa total_entries bisa terbaca
+// lebih besar dari isi Redis sebenarnya (sisa audit3 B-023). Satu-satunya
+// cara membuatnya akurat lagi adalah menghitung ulang dari kuncinya
+// sendiri secara berkala: SCAN berpola yang sama seperti jalur fallback
+// Stats(), dalam batch terbatas (500), lalu counter DITIMPA hasilnya.
+//
+// Perlombaan dengan Set yang berjalan bersamaan diterima apa adanya:
+// koreksi berikutnya (atau Flush) memperbaikinya lagi. Yang dijanjikan
+// fungsi ini bukan ketepatan di setiap milidetik, melainkan statistik
+// yang tidak berbohong tanpa batas waktu — penyimpangan maksimalnya satu
+// interval rekonsiliasi. Dipanggil berkala dari worker di cmd.
+func (e *Engine) RekonsiliasiJumlahEntri(ctx context.Context) (int64, error) {
+	if e.redis == nil {
+		return 0, nil
+	}
+
+	client := e.redis.Client()
+	pattern := cache.Key(cache.NamespaceResponseCache, "entry") + ":*"
+
+	var count int64
+	var cursor uint64
+	for {
+		keys, next, err := client.Scan(ctx, cursor, pattern, 500).Result()
+		if err != nil {
+			return 0, fmt.Errorf("scan rekonsiliasi response cache: %w", err)
+		}
+		count += int64(len(keys))
+		cursor = next
+		if cursor == 0 {
+			break
+		}
+	}
+
+	entryCountKey := cache.Key(cache.NamespaceResponseCache, "meta", "entry_count")
+	if err := client.Set(ctx, entryCountKey, count, 0).Err(); err != nil {
+		return count, fmt.Errorf("menulis koreksi entry_count response cache: %w", err)
+	}
+	return count, nil
+}
+
 // skripCatatStatistik menaikkan counter dan memasang TTL 30 hari HANYA
 // saat counter lahir (nilai menjadi 1). Versi pipeline sebelumnya memasang
 // ulang Expire pada setiap kenaikan, jadi jendela 30 hari bergeser terus

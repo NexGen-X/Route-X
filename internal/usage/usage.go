@@ -388,33 +388,80 @@ func (r *Recorder) Record(ctx context.Context, ev Event) {
 	// terpisah tanpa kunci menyisakan jendela: pemeriksaan lolos, lalu Close
 	// menutup dan penulis selesai menguras, lalu pengiriman mendarat di antrean
 	// yang tak lagi dilayani — catatan hilang tanpa terhitung sebagai dropped.
+	// Keputusan kirim/buang diambil di bawah kunci baca kirimMu, tetapi
+	// penyelesaian akuntansi catatan yang dibuang (catatDibuang) berjalan
+	// SESUDAH kunci dilepas: ia boleh menyentuh database lewat query harga,
+	// dan menahannya di bawah kunci akan menahan Close yang menunggu kunci
+	// tulis hanya demi catatan yang sudah pasti dibuang.
+	dibuang := ""
 	r.kirimMu.RLock()
-	defer r.kirimMu.RUnlock()
-
 	// Sinyal berhenti diperiksa SENDIRI lebih dulu, bukan sebagai satu cabang select
 	// bersama pengiriman ke antrean. Kalau digabung, keduanya siap pada saat yang sama
 	// setelah Close dan Go memilih salah satunya secara acak — sehingga sebagian catatan
 	// masuk ke antrean yang sudah tidak dilayani siapa pun lalu hilang tanpa terhitung.
 	select {
 	case <-r.mati:
+		dibuang = "ditutup"
+	default:
+		select {
+		case r.antre <- ev:
+			r.metrikKedalaman(r.dalam.Add(1))
+		default:
+			// Antrean penuh: catatan dibuang, permintaan TIDAK ditahan. Menahan permintaan
+			// demi kelengkapan log adalah pertukaran yang salah arah — yang hilang di sini
+			// satu baris log, yang hilang di sana jawaban bagi pengguna.
+			dibuang = "penuh"
+		}
+	}
+	r.kirimMu.RUnlock()
+
+	switch dibuang {
+	case "":
+		return
+	case "ditutup":
 		r.hasil(OutcomeDropped)
 		r.logger.WarnContext(ctx, "catatan pemakaian dibuang karena pencatat sudah ditutup",
 			"request_id", ev.RequestID)
-		return
 	default:
-	}
-
-	select {
-	case r.antre <- ev:
-		r.metrikKedalaman(r.dalam.Add(1))
-	default:
-		// Antrean penuh: catatan dibuang, permintaan TIDAK ditahan. Menahan permintaan
-		// demi kelengkapan log adalah pertukaran yang salah arah — yang hilang di sini
-		// satu baris log, yang hilang di sana jawaban bagi pengguna.
 		r.hasil(OutcomeDropped)
 		r.logger.WarnContext(ctx, "antrean pencatat pemakaian penuh, catatan dibuang",
 			"request_id", ev.RequestID, "kapasitas", r.ukuran)
 	}
+	r.catatDibuang(ctx, ev)
+}
+
+// catatDibuang menyelesaikan akuntansi satu catatan yang DIBUANG (antrean
+// penuh atau pencatat sudah ditutup).
+//
+// Baris requests-nya memang hilang — itulah arti dibuang — tetapi metrik
+// requests/tokens sudah terlanjur dihitung di catatMetrik sebelum antrean,
+// dan biaya upstream-nya nyata sudah keluar. Tanpa penyelesaian di sini,
+// event yang dibuang terhitung di requests/tokens tetapi tidak di biaya
+// dan tidak di pemakaian anggaran: total biaya dashboard lebih kecil dari
+// jumlah barisnya, dan anggaran justru bocor tepat saat sistem sedang
+// tertekan (audit3 V-EM-25 bagian b). Kini biayanya dihitung dengan
+// kalkulator yang SAMA seperti jalur normal — biaya(), yang memakai
+// PriceAt pada waktu event beserta premi cache di dalam Price.Cost — lalu
+// dinaikkan ke anggaran lewat tambahPemakaian.
+//
+// Hitung ganda tidak mungkin: catatan yang dibuang tidak pernah masuk
+// antrean, jadi tulis() tidak akan pernah melihatnya; catatan yang masuk
+// antrean tidak pernah melewati fungsi ini. Kedua langkah memakai konteks
+// bertenggat sendiri (konteksLangkah), jadi penyelesaian ini tidak bisa
+// menggantung pemanggil tanpa batas.
+func (r *Recorder) catatDibuang(ctx context.Context, ev Event) {
+	ctxBiaya, batalBiaya := r.konteksLangkah()
+	biaya := r.biaya(ctxBiaya, ev)
+	batalBiaya()
+	if biaya <= 0 {
+		return
+	}
+	r.logger.WarnContext(ctx, "biaya catatan yang dibuang tetap dihitung dan dinaikkan ke anggaran",
+		"request_id", ev.RequestID, "biaya_usd", biaya.String())
+
+	ctxSpend, batalSpend := r.konteksLangkah()
+	defer batalSpend()
+	r.tambahPemakaian(ctxSpend, ev, biaya)
 }
 
 // RecordRejection mencatat penolakan middleware (401 autentikasi, 429 pembatas

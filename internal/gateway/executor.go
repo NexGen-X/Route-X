@@ -293,6 +293,11 @@ type Executor struct {
 	guard  CircuitGuard
 	logger *slog.Logger
 
+	// egressHealth adalah sumber cuplikan kesehatan egress pool untuk
+	// penyisihan kandidat (lihat saringKandidatEgress). nil berarti
+	// penyisihan tidak berjalan — perilaku sebelum fitur ini ada.
+	egressHealth EgressHealthSource
+
 	// slotMu/slotAktif menegakkan kolom providers.max_concurrent secara
 	// in-proses (audit F4): Route-X adalah satu biner, jadi penghitung
 	// konkurensi per provider cukup di memori proses ini. Slot diambil
@@ -307,6 +312,28 @@ type Executor struct {
 	tidur func(ctx context.Context, d time.Duration) error
 }
 
+// EgressHealthSource membaca cuplikan kesehatan terakhir satu egress pool.
+// Dipenuhi *upstream.EgressRepo lewat Get-nya.
+//
+// Dipasang lewat WithEgressHealth, bukan disimpulkan dari ketersediaan repo:
+// memasangnya MENGUBAH pemilihan kandidat (pool yang tercatat tak sehat
+// disisihkan), dan perubahan perilaku seperti itu harus terlihat di tempat
+// perakitannya — pola yang sama seperti OAuthRefresher di factory.
+type EgressHealthSource interface {
+	Get(ctx context.Context, id string) (*upstream.EgressPool, error)
+}
+
+// ambangBasiKesehatanEgress adalah umur maksimal cuplikan kesehatan egress
+// yang masih boleh dipakai menyisihkan kandidat.
+//
+// Probe egress berjalan bersama health checker (bawaan 60 detik), jadi
+// lima menit berarti lima putaran probe terlewat berturut-turut — keadaan
+// yang jauh lebih mungkin berarti pen-probe-nya sendiri yang mati daripada
+// pool-nya yang masih sakit. Kesehatan yang lebih tua dari ini TIDAK
+// dipakai: menyisihkan kandidat berdasar kabar lama sama buruknya dengan
+// tidak memeriksanya sama sekali.
+const ambangBasiKesehatanEgress = 5 * time.Minute
+
 // ExecutorOption menyetel Executor.
 type ExecutorOption func(*Executor)
 
@@ -315,6 +342,20 @@ func WithJitterFunc(f func(n int64) int64) ExecutorOption {
 	return func(e *Executor) {
 		if f != nil {
 			e.acakJitter = f
+		}
+	}
+}
+
+// WithEgressHealth memasang penyisihan kandidat berdasar kesehatan egress
+// pool: kandidat yang pool-nya tercatat tak sehat (dan catatannya segar)
+// dilewati selama masih ada kandidat lain, menutup sisa grup 8 audit3 —
+// kesehatan egress sudah diprobe dan dicatat berkala oleh worker, tetapi
+// pemilihan rute tidak pernah membacanya. Tanpa opsi ini perilaku executor
+// persis seperti sebelumnya.
+func WithEgressHealth(src EgressHealthSource) ExecutorOption {
+	return func(e *Executor) {
+		if src != nil {
+			e.egressHealth = src
 		}
 	}
 }
@@ -404,6 +445,11 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 			"tidak ada provider yang bisa melayani model %q", plan.Model)
 		return out
 	}
+
+	// Penyisihan egress: kandidat yang pool egress-nya tercatat tak sehat
+	// dikeluarkan dari rencana SEBELUM loop berjalan, selama masih ada
+	// kandidat lain (lihat saringKandidatEgress untuk aturan fail-open-nya).
+	plan.Candidates = e.saringKandidatEgress(ctx, plan.Candidates)
 
 	// Anggaran waktu total rencana (audit3 V-BR-08) — lihat catatan
 	// batasTotalRencana. Dipasang sebagai turunan context request, jadi
@@ -512,6 +558,90 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 		}
 	}
 	return out
+}
+
+// saringKandidatEgress mengeluarkan kandidat yang egress pool-nya tercatat
+// tak sehat dari rencana, selama masih ada kandidat yang tersisa.
+//
+// Kesehatannya adalah cuplikan yang ditulis probe berkala worker
+// (RecordHealth grup 8 audit3): dulu cuplikan itu hanya dibaca dashboard,
+// sementara pemilihan rute tetap mengirim lalu lintas ke pool yang sudah
+// diketahui mati. Tiga aturan menjaga penyisihan ini tetap jujur:
+//
+//   - Hanya status "unhealthy" yang SEGAR yang menyisihkan (lihat
+//     ambangBasiKesehatanEgress). Status sehat, belum pernah diprobe,
+//     gagal dibaca, atau basi → kandidat lolos: ketidakpastian tidak
+//     boleh berubah menjadi penolakan.
+//   - Kandidat tanpa egress pool (koneksi langsung) selalu lolos dan
+//     dihitung sebagai alternatif sehat.
+//   - FAIL-OPEN: bila SEMUA kandidat tersisih, daftar dikembalikan utuh
+//     dan kejadiannya dicatat sebagai Warn. Pool yang "tak sehat" menurut
+//     probe bisa jadi salah vonis (jalur probe berbeda dari jalur
+//     provider, target probe sedang bermasalah, dsb.); mengunci total
+//     berdasar satu sinyal tidak langsung menukar gangguan sebagian
+//     menjadi pemadaman penuh. Pola yang sama seperti izinkan() di
+//     pemutus arus: penjaga yang bermasalah meloloskan, bukan menahan.
+func (e *Executor) saringKandidatEgress(ctx context.Context, cands []*upstream.RouteCandidate) []*upstream.RouteCandidate {
+	if e.egressHealth == nil || len(cands) < 2 {
+		return cands
+	}
+
+	// Satu pembacaan per pool per permintaan: beberapa kandidat boleh
+	// berbagi pool yang sama.
+	takSehat := make(map[string]bool)
+	poolTakSehat := func(id string) bool {
+		if v, ada := takSehat[id]; ada {
+			return v
+		}
+		v := e.poolEgressTakSehat(ctx, id)
+		takSehat[id] = v
+		return v
+	}
+
+	lolos := make([]*upstream.RouteCandidate, 0, len(cands))
+	var tersisih []*upstream.RouteCandidate
+	for _, c := range cands {
+		if c.EgressPoolID == nil || *c.EgressPoolID == "" || !poolTakSehat(*c.EgressPoolID) {
+			lolos = append(lolos, c)
+			continue
+		}
+		tersisih = append(tersisih, c)
+	}
+	if len(tersisih) == 0 {
+		return cands
+	}
+	if len(lolos) == 0 {
+		e.logger.WarnContext(ctx, "semua kandidat memakai egress pool yang tercatat tak sehat; fail-open, kandidat tetap dicoba",
+			"jumlah_kandidat", len(cands))
+		return cands
+	}
+	for _, c := range tersisih {
+		e.logger.InfoContext(ctx, "kandidat disisihkan karena egress pool tercatat tak sehat",
+			"provider_id", c.ProviderID, "provider_name", c.ProviderName,
+			"egress_pool_id", *c.EgressPoolID)
+	}
+	return lolos
+}
+
+// poolEgressTakSehat melaporkan apakah cuplikan kesehatan terakhir satu
+// pool menyatakan tak sehat DAN masih segar. Segala bentuk ketidakpastian
+// — pool tak ditemukan, status kosong, waktu periksa kosong, pembacaan
+// gagal — dijawab false: yang menyisihkan kandidat hanyalah vonis tak
+// sehat yang jelas dan baru.
+func (e *Executor) poolEgressTakSehat(ctx context.Context, id string) bool {
+	pool, err := e.egressHealth.Get(ctx, id)
+	if err != nil {
+		e.logger.WarnContext(ctx, "kesehatan egress pool gagal dibaca; kandidat tidak disisihkan",
+			"egress_pool_id", id, "error", err)
+		return false
+	}
+	if pool == nil || pool.LastHealthStatus == nil || *pool.LastHealthStatus != "unhealthy" {
+		return false
+	}
+	if pool.LastHealthAt == nil {
+		return false
+	}
+	return time.Since(*pool.LastHealthAt) <= ambangBasiKesehatanEgress
 }
 
 // izinkan menanyakan pemutus arus, dan meloloskan permintaan bila penjaganya sendiri

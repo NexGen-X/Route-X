@@ -50,17 +50,23 @@ services:
       # Kosong = seed TIDAK membuat admin (tidak ada password default).
       # deploy.sh mengisi nilai acak unik ke .env sebelum start pertama.
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      # Client secret Antigravity diteruskan dari .env host (audit3
+      # V-EO-24): tanpa baris ini env yang didokumentasikan di .env.example
+      # tidak pernah sampai ke kontainer. Kosong = integrasi nonaktif.
+      - ANTIGRAVITY_CLIENT_SECRET=${ANTIGRAVITY_CLIENT_SECRET:-}
       - METRICS_TOKEN=${METRICS_TOKEN}
       # Caddy adalah satu-satunya proxy di depan gateway pada topologi ini;
       # tanpa ini semua IP klien terbaca sebagai IP Caddy sehingga
-      # rate-limit/ban per-IP dan access log tidak berguna. Rentang
-      # 172.16.0.0/12 adalah jaringan bridge internal compose ini.
-      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-172.16.0.0/12}
+      # rate-limit/ban per-IP dan access log tidak berguna. Subnet jaringan
+      # compose ini TERPAKU (lihat networks di bawah) supaya bawaannya
+      # persis seluas jaringan itu — bukan lagi seluruh rentang privat
+      # 172.16.0.0/12 (audit3 B-047).
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-172.30.0.0/16}
       # PERINGATAN: daftar ini mengizinkan upstream/egress ke alamat privat
       # (provider lokal seperti Ollama di host yang sama adalah kasus pakai
       # yang sah untuk instalasi pribadi). Perketat lewat env
       # UPSTREAM_ALLOWED_PRIVATE_ADDRS bila tidak memakai provider lokal.
-      - UPSTREAM_ALLOWED_PRIVATE_ADDRS=${UPSTREAM_ALLOWED_PRIVATE_ADDRS:-127.0.0.1,::1,127.0.0.0/8,172.16.0.0/12}
+      - UPSTREAM_ALLOWED_PRIVATE_ADDRS=${UPSTREAM_ALLOWED_PRIVATE_ADDRS:-127.0.0.1,::1,127.0.0.0/8}
     depends_on:
       db:
         condition: service_healthy
@@ -76,7 +82,9 @@ services:
     restart: unless-stopped
     environment:
       - POSTGRES_USER=routex
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # :? menggagalkan compose dengan pesan jelas bila belum disetel di .env,
+      # alih-alih diam-diam memakai kata sandi bawaan (audit3 V-LN-39).
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?SETEL_POSTGRES_PASSWORD_DI_ENV}
       - POSTGRES_DB=routex_prod
     volumes:
       - routex_pgdata:/var/lib/postgresql/data
@@ -113,3 +121,9 @@ volumes:
 networks:
   routex-network:
     driver: bridge
+    # Subnet TERPAKU (audit3 B-047): tanpa ini Docker memilih subnet
+    # privat bergiliran antar instalasi, dan bawaan TRUSTED_PROXIES tidak
+    # bisa menunjuk jaringan ini secara tepat.
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

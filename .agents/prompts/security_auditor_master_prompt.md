@@ -39,7 +39,7 @@ Sebelum menyatakan sistem aman, Anda WAJIB memvalidasi:
    ```bash
    curl -i -X POST http://localhost:8080/api/auth/login \
      -H "Content-Type: application/json" \
-     -d '{"email":"admin@routex.local","password":"admin"}'
+     -d '{"email":"admin@routex.local","password":"GANTI_DENGAN_PASSWORD_UJI_ANDA"}'
    ```
    Pastikan token sesi berada di header `Set-Cookie` dan **TIDAK ADA** token mentah di body JSON respons.
 3. Audit endpoint onboarding:

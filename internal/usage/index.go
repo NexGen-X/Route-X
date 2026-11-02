@@ -232,6 +232,12 @@ func (ix *Index) Refresh(ctx context.Context) error {
 		if p.ID == "" {
 			continue
 		}
+		// Ambang sampel minimum yang sama dengan latensi: rasio dari satu-dua
+		// request (0% atau 100%) bukan ketersediaan, melainkan derau — dan
+		// gauge-nya dibaca sebagai kesehatan provider (audit3 V-EM-28).
+		if p.Requests < int64(ix.minSamples) {
+			continue
+		}
 		if rasio, ada := p.Availability(); ada {
 			tersedia[p.ID] = rasio
 			// Nama provider bisa kosong pada baris yang sangat lama, dan label kosong tidak

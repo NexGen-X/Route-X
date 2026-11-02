@@ -134,6 +134,9 @@ type Engine struct {
 	// kedaluwarsa di bawah beban menghasilkan satu query ActiveRateLimits per
 	// permintaan dalam jendela pemuatan.
 	pemuatan sync.Mutex
+	// gagalMuat adalah waktu kegagalan pemuatan terakhir (dijaga mu), dasar
+	// cache negatif di muat (audit3 V-LN-11).
+	gagalMuat time.Time
 }
 
 // batas adalah batas gabungan satu entitas, dalam bentuk yang dipakai mesin penegakan.
@@ -286,9 +289,23 @@ func idUntuk(t policy.Target) string {
 	return t.ID
 }
 
+// tenggatMuatKebijakan membatasi satu query pemuatan ulang kebijakan, dan
+// jedaGagalMuat adalah umur cache negatif sesudah kegagalan (audit3 V-LN-11).
+const (
+	tenggatMuatKebijakan = 5 * time.Second
+	jedaGagalMuat        = 5 * time.Second
+)
+
 // muat memuat ulang salinan bila sudah kedaluwarsa.
 //
-// Kegagalan pembacaan MEMPERTAHANKAN salinan lama dan hanya dicatat. Lihat catatan paket.
+// Kegagalan pembacaan MEMPERTAHANKAN salinan lama dan hanya dicatat. Dua
+// perbaikan atas pola lama (audit3 V-LN-11): querynya memakai context lepas
+// dari pemanggil pertama dengan tenggat sendiri (bukan ctx request pemanggil
+// di bawah mutex global), dan kegagalan menjadi cache negatif berumur
+// jedaGagalMuat — versi lama sengaja tidak memperbarui waktu muat sehingga
+// SETIAP request berikutnya mengantre di mutex dan mengulang query yang
+// sama ke database yang sedang sakit; jeda pendek ini menjaga pemulihan
+// tetap cepat tanpa menserialkan kegagalan ke seluruh gateway.
 func (e *Engine) muat(ctx context.Context) {
 	if e == nil || e.source == nil {
 		return
@@ -306,18 +323,21 @@ func (e *Engine) muat(ctx context.Context) {
 
 	e.mu.RLock()
 	segar = !e.dimuat.IsZero() && e.now().Sub(e.dimuat) < e.ttl
+	baruGagal := !e.gagalMuat.IsZero() && e.now().Sub(e.gagalMuat) < jedaGagalMuat
 	e.mu.RUnlock()
-	if segar {
+	if segar || baruGagal {
 		return
 	}
 
-	rows, err := e.source.ActiveRateLimits(ctx)
+	qctx, batal := context.WithTimeout(context.WithoutCancel(ctx), tenggatMuatKebijakan)
+	defer batal()
+	rows, err := e.source.ActiveRateLimits(qctx)
 	if err != nil {
+		e.mu.Lock()
+		e.gagalMuat = e.now()
+		e.mu.Unlock()
 		e.logger.WarnContext(ctx, "batas laju gagal dibaca, memakai salinan sebelumnya",
 			"error", err, "pernah_terbaca", e.pernahTerbacaAman())
-		// Waktu muat TIDAK diperbarui: pembacaan berikutnya mencoba lagi alih-alih menunggu
-		// satu TTL penuh. Tabel yang sedang tidak bisa dibaca biasanya pulih dalam hitungan
-		// detik, dan menunda percobaan berikutnya hanya memperpanjang masa tanpa penegakan.
 		return
 	}
 
@@ -346,6 +366,7 @@ func (e *Engine) muat(ctx context.Context) {
 	e.mu.Lock()
 	e.perCakupan, e.global = perCakupan, global
 	e.dimuat, e.pernahTerbaca = e.now(), true
+	e.gagalMuat = time.Time{}
 	e.mu.Unlock()
 }
 

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/security"
 )
 
@@ -180,8 +181,12 @@ func ReadErrorBody(body io.Reader) (code, message string) {
 	}
 	// Urutan pemilihan kode: "code" milik OpenAI paling spesifik, lalu "type", lalu
 	// "status" milik Google.
+	//
+	// Pesan disaring ScrubLogText SEBELUM dipotong (audit3 V-EM-33): pesan
+	// upstream bisa memantulkan URL berkredensial atau token dari permintaan,
+	// dan pesan ini mengalir ke log gateway serta requests.error_message.
 	return firstNonEmpty(unquote(shape.Error.Code), shape.Error.Type, shape.Error.Status),
-		truncate(shape.Error.Message, 200)
+		truncate(observability.ScrubLogText(shape.Error.Message), 200)
 }
 
 func unquote(raw json.RawMessage) string {

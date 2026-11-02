@@ -54,11 +54,11 @@ func TestLiveIgnoresDependencies(t *testing.T) {
 	if body.Status != StatusOK {
 		t.Errorf("status = %q, mau %q", body.Status, StatusOK)
 	}
-	if body.Version != "1.2.3" || body.Commit != "abc1234" {
-		t.Errorf("version/commit = %q/%q", body.Version, body.Commit)
-	}
-	if body.UptimeSec < 0 {
-		t.Errorf("uptime negatif: %d", body.UptimeSec)
+	// V-LN-06: endpoint publik tidak boleh membocorkan versi/commit/uptime.
+	for _, bocor := range []string{"version", "commit", "uptime", "1.2.3", "abc1234"} {
+		if strings.Contains(rec.Body.String(), bocor) {
+			t.Errorf("respons /healthz membocorkan %q: %s", bocor, rec.Body.String())
+		}
 	}
 }
 
@@ -201,6 +201,85 @@ func TestReadyWithoutCheckers(t *testing.T) {
 	}
 	if len(body.Checks) != 0 {
 		t.Errorf("checks = %v, mau kosong", body.Checks)
+	}
+}
+
+// V-LN-01: panic di dalam Checker tidak boleh menjatuhkan proses — ia menjadi
+// kegagalan dependensi itu sendiri (503 untuk checker kritis).
+func TestReadyCheckerPanicTidakMenjatuhkanProses(t *testing.T) {
+	panik := NewChecker("panik", func(context.Context) error { panic("ledakan uji") })
+	h := New("1.0.0", "c0ffee", quietLogger(), okChecker("postgres"), panik)
+
+	rec := doRequest(t, h.Ready, "/readyz")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, mau 503", rec.Code)
+	}
+	var body readyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body bukan JSON: %v", err)
+	}
+	if body.Checks["panik"].Status != StatusDown {
+		t.Errorf("check panik status = %q, mau down", body.Checks["panik"].Status)
+	}
+	if body.Checks["postgres"].Status != StatusOK {
+		t.Errorf("postgres status = %q, mau ok", body.Checks["postgres"].Status)
+	}
+}
+
+// V-LN-03: kegagalan checker NON-kritis menurunkan status ke degraded tetapi
+// HTTP tetap 200 — instance tidak dikeluarkan dari rotasi untuk dependensi
+// yang memang ditoleransi desain gateway.
+func TestReadyNonKritisDegraded(t *testing.T) {
+	gagalNonKritis := NewCheckerNonKritis("redis", func(context.Context) error {
+		return errors.New("redis tidak menjawab")
+	})
+	h := New("1.0.0", "c0ffee", quietLogger(), okChecker("postgres"), gagalNonKritis)
+
+	rec := doRequest(t, h.Ready, "/readyz")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, mau 200 (degraded)", rec.Code)
+	}
+	var body readyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body bukan JSON: %v", err)
+	}
+	if body.Status != StatusDegraded {
+		t.Errorf("status keseluruhan = %q, mau %q", body.Status, StatusDegraded)
+	}
+	if body.Checks["redis"].Status != StatusDown {
+		t.Errorf("redis status = %q, mau down", body.Checks["redis"].Status)
+	}
+}
+
+// V-LN-02: hasil readyz disajikan dari cache dalam jendela TTL — probe
+// beruntun tidak boleh menjalankan round-trip dependensi setiap kali.
+func TestReadyMemakaiCache(t *testing.T) {
+	var panggilan int
+	hitung := NewChecker("postgres", func(context.Context) error {
+		panggilan++
+		return nil
+	})
+	h := New("1.0.0", "c0ffee", quietLogger(), hitung)
+
+	for i := 0; i < 5; i++ {
+		rec := doRequest(t, h.Ready, "/readyz")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("probe %d: status = %d, mau 200", i, rec.Code)
+		}
+	}
+	if panggilan != 1 {
+		t.Errorf("checker dipanggil %d kali untuk 5 probe beruntun, mau 1 (cache)", panggilan)
+	}
+}
+
+// V-LN-06: respons readyz tidak memuat versi/commit/uptime/latensi.
+func TestReadyTidakMembocorkanInfoOperasional(t *testing.T) {
+	h := New("9.9.9", "deadbeefcafe", quietLogger(), okChecker("postgres"))
+	rec := doRequest(t, h.Ready, "/readyz")
+	for _, bocor := range []string{"version", "commit", "uptime", "latency", "9.9.9", "deadbeefcafe"} {
+		if strings.Contains(rec.Body.String(), bocor) {
+			t.Errorf("respons /readyz membocorkan %q: %s", bocor, rec.Body.String())
+		}
 	}
 }
 

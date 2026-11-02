@@ -64,7 +64,7 @@ func RefreshSesiOAuth(ctx context.Context, d OAuthRefreshDeps, sess *upstream.Ac
 		}
 		if uerr := d.OAuth.UpdateRefreshStatus(ctx, sess.ID, errStr); uerr != nil {
 			logger.WarnContext(ctx, "gagal mencatat status refresh sesi oauth",
-				"session_id", sess.ID, "error", uerr)
+				"session_id", sess.ID, "provider_id", sess.ProviderID, "email", sess.AccountEmail, "error", uerr)
 		}
 	}
 
@@ -99,7 +99,7 @@ func RefreshSesiOAuth(ctx context.Context, d OAuthRefreshDeps, sess *upstream.Ac
 			jeda = jedaPercobaanRefresh[percobaan-1]
 		}
 		logger.WarnContext(ctx, "refresh token oauth gagal, mencoba lagi",
-			"session_id", sess.ID, "percobaan", percobaan, "error", err)
+			"session_id", sess.ID, "provider_id", sess.ProviderID, "email", sess.AccountEmail, "percobaan", percobaan, "error", err)
 		select {
 		case <-ctx.Done():
 			err = ctx.Err()
@@ -117,7 +117,7 @@ func RefreshSesiOAuth(ctx context.Context, d OAuthRefreshDeps, sess *upstream.Ac
 			// Menghubungkan ulang akun adalah satu-satunya jalan pulih.
 			if serr := d.OAuth.SetEnabled(ctx, sess.ID, false); serr != nil {
 				logger.ErrorContext(ctx, "gagal menonaktifkan sesi oauth yang ditolak permanen",
-					"session_id", sess.ID, "error", serr)
+					"session_id", sess.ID, "provider_id", sess.ProviderID, "email", sess.AccountEmail, "error", serr)
 			} else {
 				logger.ErrorContext(ctx, "sesi oauth dinonaktifkan: refresh token ditolak permanen, hubungkan ulang akun",
 					"session_id", sess.ID, "provider_id", sess.ProviderID, "email", sess.AccountEmail)

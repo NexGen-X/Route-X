@@ -3,6 +3,7 @@ package httpx
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -33,6 +34,31 @@ func GatewayInFlight() int64 {
 	return gatewayDalamPenerbangan.Load()
 }
 
+// jalurTanpaMetrikHTTP adalah jalur yang tidak dicatat metrik HTTP admin:
+// probe kesehatan dan endpoint metrik itu sendiri. Mencatatnya mencemari
+// histogram admin (bucket maksimum 5 detik) dan membuat metrik tentang
+// metrik — derau yang menutupi sinyal dashboard (audit3 V-EM-26).
+var jalurTanpaMetrikHTTP = map[string]bool{
+	"/healthz": true,
+	"/readyz":  true,
+	"/metrics": true,
+}
+
+// tanpaMetrikHTTP melaporkan apakah satu request dilewati pencatatan metrik
+// HTTP admin/dashboard. Selain jalur probe di atas, SELURUH permukaan /v1
+// dilewati: middleware ini terpasang di router akar sehingga ikut mencatat
+// lalu lintas gateway, padahal histogramnya dinyatakan untuk "request HTTP
+// admin dan dashboard" (bucket maksimum 5 detik) — setiap stream LLM yang
+// sah berdurasi >5 detik menumpuk di bucket +Inf dan mengaburkan latensi
+// admin yang sebenarnya (audit3 V-EM-26). Lalu lintas /v1 punya keluarga
+// metriknya sendiri (routex_gateway_*).
+func tanpaMetrikHTTP(path string) bool {
+	if jalurTanpaMetrikHTTP[path] {
+		return true
+	}
+	return path == "/v1" || strings.HasPrefix(path, "/v1/")
+}
+
 // MetricsRecorder adalah middleware untuk mencatat request HTTP ke Prometheus.
 // Membaca path rute asli dari Chi (mis. /api/users/{id}) untuk mencegah ledakan kardinalitas.
 func MetricsRecorder(m *observability.Metrics) func(http.Handler) http.Handler {
@@ -43,6 +69,10 @@ func MetricsRecorder(m *observability.Metrics) func(http.Handler) http.Handler {
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if tanpaMetrikHTTP(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			m.HTTPInFlight.Inc()
 			defer m.HTTPInFlight.Dec()
 

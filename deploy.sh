@@ -40,10 +40,29 @@ detect_host() {
     printf '%s' "$host"
 }
 
+if [ -z "${DOMAIN:-}" ]; then
+    echo "⚠️ DOMAIN tidak disetel: PUBLIC_URL akan memakai alamat IP publik utama server"
+    echo "   dan sertifikat Caddy untuk IP adalah CA internal (tidak tepercaya publik)."
+    echo "   Untuk produksi nyata, jalankan ulang dengan DOMAIN=domainanda.com."
+fi
+
 # 1. Pastikan folder konfigurasi tersedia
 mkdir -p deploy/caddy
 
-# 2. Otomatis inisialisasi file .env bila belum ada
+# 2. Otomatis inisialisasi file .env bila belum ada.
+# PENJAGA DATA LAMA (audit3 V-DP-10): .env hilang TETAPI volume data
+# PostgreSQL masih ada berarti ini BUKAN instalasi baru — menghasilkan
+# rahasia baru di atas data lama membuat gateway tidak bisa membaca
+# databasenya sendiri (password & kunci enkripsi berubah). Berhenti dan
+# minta operator memulihkan .env dari cadangannya.
+if [ ! -f .env ] && docker volume ls -q 2>/dev/null | grep -q 'routex_pgdata$'; then
+    echo "❌ DITEMUKAN volume data PostgreSQL lama (routex_pgdata) tetapi file .env HILANG." >&2
+    echo "   Membuat .env baru akan menghasilkan kunci enkripsi & password DB baru yang" >&2
+    echo "   TIDAK cocok dengan data lama. Pulihkan .env dari cadangan Anda, letakkan di" >&2
+    echo "   direktori ini, lalu jalankan ulang. Untuk instalasi yang BENAR-BENAR baru," >&2
+    echo "   hapus volume lama dulu: docker volume rm <nama>_routex_pgdata" >&2
+    exit 1
+fi
 if [ ! -f .env ]; then
     echo "🔑 Membuat file konfigurasi .env baru dengan kunci rahasia unik..."
     if [ -f .env.example ]; then
@@ -110,11 +129,14 @@ fi
 export VERSION="${VERSION:-dev}"
 echo "🏷️  Versi biner: ${VERSION}"
 
+# Build SEBELUM down (audit3 V-DP-09): versi lama mematikan layanan dulu
+# baru membangun, jadi kegagalan build memperpanjang downtime tanpa alasan.
 echo "📦 Membangun image Docker (Kompilasi Frontend & Backend)..."
+docker compose build
+
 echo "🧹 Membersihkan kontainer lama..."
 docker compose down --remove-orphans
-docker rm -f routex-postgres routex-gateway routex-caddy routex-redis 2>/dev/null || true
-docker compose build
+docker rm -f routex-postgres routex-core routex-caddy routex-redis 2>/dev/null || true
 
 echo "🛠️ Menjalankan layanan infrastruktur dasar (PostgreSQL, Redis)..."
 docker compose up -d db redis
@@ -138,6 +160,24 @@ docker compose run --rm routex ./ai-gateway -migrate
 
 echo "🌐 Menyalakan Route-X Core dan Caddy Edge Router..."
 docker compose up -d routex caddy
+
+# Klaim BERHASIL hanya sesudah /healthz menjawab lewat Caddy (audit3
+# V-DP-08) — kontainer 'up' bukan bukti aplikasi sehat.
+PROBE_HOST="${DOMAIN:-localhost}"
+echo "⏳ Memeriksa kesehatan gateway (https://${PROBE_HOST}/healthz)..."
+SEHAT=0
+for _try in $(seq 1 30); do
+    if curl -fsSk --resolve "${PROBE_HOST}:443:127.0.0.1" "https://${PROBE_HOST}/healthz" >/dev/null 2>&1; then
+        SEHAT=1
+        break
+    fi
+    sleep 2
+done
+if [ "$SEHAT" -ne 1 ]; then
+    echo "❌ Gateway tidak menjawab /healthz sesudah ±60 detik — deployment TIDAK dinyatakan berhasil." >&2
+    echo "   Periksa: docker compose logs routex" >&2
+    exit 1
+fi
 
 echo ""
 echo "✅ DEPLOYMENT BERHASIL!"

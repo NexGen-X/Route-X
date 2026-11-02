@@ -18,8 +18,11 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/routex}"
 ENV_FILE="${ENV_FILE:-/etc/routex/routex.env}"
 SERVICE_NAME="${SERVICE_NAME:-routex}"
 GATEWAY_PORT="${PORT:-8080}"
-MAX_RETRIES="${MAX_RETRIES:-15}"
-RETRY_DELAY="${RETRY_DELAY:-1}"
+# Jendela probe kesehatan: bawaan 60 x 2 detik = ±120 detik (V-DP-16).
+# Bawaan lama 15x1 detik terlalu pendek untuk start dingin + migrasi,
+# sehingga update yang sehat pun dinyatakan gagal dan di-rollback.
+MAX_RETRIES="${MAX_RETRIES:-60}"
+RETRY_DELAY="${RETRY_DELAY:-2}"
 
 # State tracking untuk safe rollback & cleanup
 ROLLBACK_REQUIRED=0
@@ -74,6 +77,12 @@ rollback_service() {
     echo "🚨 =============================================================="
     echo " ⚠️ MEMULAI PROSEDUR ROLLBACK OTOMATIS (SAFE ROLLBACK)"
     echo "=================================================================="
+
+    echo "ℹ️ CATATAN SKEMA: rollback ini HANYA memulihkan biner. Skema database TIDAK"
+    echo "   ikut dipulihkan (versi skema sebelum update: ${SKEMA_SEBELUM:-tidak tercatat};"
+    echo "   sesudah migrasi update ini: ${SKEMA_SESUDAH:-tidak tercatat}). Migrasi maju"
+    echo "   umumnya tetap bisa dibaca biner lama untuk satu rilis; bila tidak, pulihkan"
+    echo "   database dari cadangan — jangan berharap rollback biner memperbaikinya."
 
     if [ "$BACKUP_CREATED" -eq 1 ] && [ -f "${INSTALL_DIR}/ai-gateway.bak" ]; then
         echo "🔄 [Rollback 1/3] Mengembalikan biner sebelumnya dari ${INSTALL_DIR}/ai-gateway.bak..."
@@ -174,11 +183,24 @@ cd "$SRC_DIR"
 BUILD_WEB="${BUILD_WEB:-auto}"
 SHOULD_BUILD_WEB=0
 
+# Berkas state mencatat commit yang terakhir BERHASIL dideploy oleh skrip
+# ini. Deteksi perubahan web membandingkan state itu dengan HEAD — versi
+# lama memakai reflog HEAD@{1} yang isinya bergantung riwayat lokal repo
+# dan bisa menunjuk commit yang salah (audit3 V-DP-14).
+STATE_FILE="${INSTALL_DIR}/.routex-last-deployed"
+LAST_DEPLOYED=""
+if [ -f "$STATE_FILE" ]; then
+    LAST_DEPLOYED="$(tr -d '[:space:]' < "$STATE_FILE" 2>/dev/null || true)"
+fi
+
 if [ "$BUILD_WEB" = "always" ] || [ ! -d "$SRC_DIR/web/dist" ]; then
     SHOULD_BUILD_WEB=1
 elif [ "$BUILD_WEB" = "auto" ] && command -v git &>/dev/null; then
-    # Cek jika ada perubahan pada folder web/ pada commit terakhir
-    if git diff --name-only HEAD@{1} HEAD 2>/dev/null | grep -q "^web/"; then
+    if [ -z "$LAST_DEPLOYED" ]; then
+        # Tanpa state tidak ada dasar perbandingan yang bisa dipercaya:
+        # bangun selalu (aman), jangan menebak dari reflog.
+        SHOULD_BUILD_WEB=1
+    elif git -C "$SRC_DIR" diff --name-only "$LAST_DEPLOYED" HEAD 2>/dev/null | grep -q "^web/"; then
         SHOULD_BUILD_WEB=1
     fi
 fi
@@ -231,7 +253,19 @@ set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
+
+# Rekam versi skema sebelum & sesudah migrasi supaya pesan rollback jujur
+# tentang apa yang tidak dipulihkannya (audit3 V-DP-15). Best-effort: psql
+# tidak selalu ada di host native; ketiadaannya tidak menggagalkan update.
+versi_skema() {
+    if command -v psql >/dev/null 2>&1 && [ -n "${DATABASE_URL:-}" ]; then
+        psql "$DATABASE_URL" -tAc "SELECT COALESCE(MAX(version),0) FROM schema_migrations" 2>/dev/null | tr -d '[:space:]' || true
+    fi
+}
+SKEMA_SEBELUM="$(versi_skema)"
 "${INSTALL_DIR}/ai-gateway.new" -migrate
+SKEMA_SESUDAH="$(versi_skema)"
+echo "   Versi skema: ${SKEMA_SEBELUM:-tidak tercatat} -> ${SKEMA_SESUDAH:-tidak tercatat}"
 
 # ------------------------------------------------------------------------------
 # 7. Penukaran Biner Atomik & Restart Layanan
@@ -274,6 +308,8 @@ echo ""
 if [ "$HEALTHY" -eq 1 ]; then
     # Penukaran berhasil dan layanan sehat, batalkan kebutuhan rollback
     ROLLBACK_REQUIRED=0
+    # Catat commit yang terdeploy untuk deteksi perubahan berikutnya.
+    git -C "$SRC_DIR" rev-parse HEAD > "$STATE_FILE" 2>/dev/null || true
 
     echo "=================================================================="
     echo " ✅ LIVE UPDATE SUKSES & ONLINE!"
@@ -288,7 +324,7 @@ if [ "$HEALTHY" -eq 1 ]; then
     echo "=================================================================="
 else
     echo "=================================================================="
-    echo " ❌ PERINGATAN: Layanan belum merespons 200 OK di /healthz setelah ${MAX_RETRIES} detik."
+    echo " ❌ PERINGATAN: Layanan belum merespons 200 OK di /healthz setelah ±$((MAX_RETRIES * RETRY_DELAY)) detik."
     echo " Memulai safe rollback otomatis ke versi sebelumnya..."
     echo "=================================================================="
     rollback_service

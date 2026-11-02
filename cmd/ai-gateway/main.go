@@ -113,6 +113,12 @@ func run(migrateOnly bool) error {
 		"version", version, "commit", commit, "built_at", builtAt,
 		"env", string(cfg.AppEnv), "go_version", runtimeVersion())
 
+	// Peringatan konfigurasi yang dikumpulkan config.Load (mis. APP_ENV
+	// absen) dicatat keras di sini, sesudah logger siap (audit3 V-LN-20/21).
+	for _, w := range cfg.Warnings {
+		logger.Warn(w)
+	}
+
 	// Context ini dibatalkan saat SIGINT/SIGTERM dan menjadi sinyal shutdown untuk
 	// server maupun seluruh worker.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -182,8 +188,19 @@ func run(migrateOnly bool) error {
 	}
 
 	mux, err := buildRouter(cfg, logger, metrics, authSvc, adminHandlers, v1,
-		health.NewChecker("postgres", db.Ping),
-		health.NewChecker("redis", rdb.Ping),
+		// Postgres adalah checker KRITIS dan kini juga memverifikasi versi
+		// skema: database hasil restore lama yang bisa di-Ping tetapi
+		// skemanya tertinggal harus terbaca belum siap, bukan siap
+		// (audit3 V-LN-07). Redis NON-kritis: kehilangannya menurunkan
+		// mutu (degraded), bukan kesiapan — limiter fail-open dan breaker
+		// memang dirancang bertahan tanpanya (audit3 V-LN-03).
+		health.NewChecker("postgres", func(ctx context.Context) error {
+			if err := db.Ping(ctx); err != nil {
+				return err
+			}
+			return db.CheckSchemaVersion(ctx)
+		}),
+		health.NewCheckerNonKritis("redis", rdb.Ping),
 	)
 	if err != nil {
 		return err
@@ -388,6 +405,12 @@ func buildGatewaySurface(
 	// Pasang pemantau perpindahan status circuit breaker untuk memproduksi event
 	// circuit.opened dan circuit.closed ke antrean webhook.
 	breaker.SetStateChangeListener(func(ctx context.Context, providerID, model string, state gateway.State, total, failures int64) {
+		// Gauge keadaan breaker diperbarui di sini, satu-satunya tempat
+		// transisi state benar-benar terjadi: sebelumnya gauge
+		// routex_circuit_breaker_state terdaftar tetapi nilainya yatim
+		// permanen karena tidak pernah ada yang memanggil Set padanya
+		// (audit3 V-EM-20).
+		metrics.CircuitBreaker.WithLabelValues(providerID, model).Set(state.Gauge())
 		ev := "circuit.opened"
 		if state == gateway.StateClosed {
 			ev = "circuit.closed"
@@ -518,7 +541,10 @@ func buildGatewaySurface(
 	// worker, menegakkan kebijakan SSRF dan cache instance yang konsisten (Aturan 14).
 	factory := gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
 		gateway.WithCredentialUseMarker(creds),
-		gateway.WithOAuthRefresher(penyegarOAuth))
+		gateway.WithOAuthRefresher(penyegarOAuth),
+		// UPSTREAM_TIMEOUT dari config akhirnya benar-benar terpasang
+		// (audit3 V-LN-19).
+		gateway.WithDefaultTimeout(cfg.UpstreamTimeout))
 
 	// Engine router gateway. Satu instance untuk seluruh proses: dipakai handler
 	// gateway untuk resolusi aturan, dan di-injeksikan ke API admin agar mutasi
@@ -791,12 +817,36 @@ func collectPoolStats(ctx context.Context, m *observability.Metrics, db *databas
 	ticker := time.NewTicker(poolStatsInterval)
 	defer ticker.Stop()
 
+	// Dua counter pool yatim (routex_db_empty_acquire_total &
+	// routex_db_acquire_wait_seconds_total) diumpan dari statistik
+	// kumulatif pgxpool sebagai delta antar-sampel (audit3 V-EM-20):
+	// EmptyAcquireCount menghitung akuisisi yang menemukan pool kosong
+	// (harus menunggu koneksi baru/bebas), AcquireDuration total waktu
+	// menunggu akuisisi — keduanya sinyal jenuh pool yang nyata.
+	var (
+		emptyAcquireTerakhir int64
+		durasiTungguTerakhir time.Duration
+		pertamaKali          = true
+	)
+
 	update := func() {
 		ds := db.Stat()
 		m.PoolConnections.WithLabelValues("postgres", "total").Set(float64(ds.TotalConns))
 		m.PoolConnections.WithLabelValues("postgres", "idle").Set(float64(ds.IdleConns))
 		m.PoolConnections.WithLabelValues("postgres", "in_use").Set(float64(ds.AcquiredConns))
 		m.PoolConnections.WithLabelValues("postgres", "max").Set(float64(ds.MaxConns))
+
+		emptyAcquire := ds.EmptyAcquireCount
+		durasiTunggu := ds.AcquireDuration
+		if !pertamaKali {
+			if d := emptyAcquire - emptyAcquireTerakhir; d > 0 {
+				m.DBEmptyAcquireTotal.Add(float64(d))
+			}
+			if d := durasiTunggu - durasiTungguTerakhir; d > 0 {
+				m.DBAcquireWaitDuration.Add(d.Seconds())
+			}
+		}
+		emptyAcquireTerakhir, durasiTungguTerakhir, pertamaKali = emptyAcquire, durasiTunggu, false
 
 		rs := rdb.Stat()
 		m.PoolConnections.WithLabelValues("redis", "total").Set(float64(rs.TotalConns))

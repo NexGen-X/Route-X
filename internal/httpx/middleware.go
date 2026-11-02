@@ -350,6 +350,13 @@ const (
 // diperlakukan sebagai non-produksi.
 func SecurityHeaders(cfg *config.Config) func(http.Handler) http.Handler {
 	production := cfg != nil && cfg.AppEnv.IsProduction()
+	// HTTPS yang benar-benar disajikan juga mengaktifkan HSTS &
+	// upgrade-insecure-requests, walau APP_ENV bukan production (audit3
+	// V-LN-22): pemasangan HTTPS staging/manual dulu memperoleh cookie
+	// Secure (cookie.go menilai dari PUBLIC_URL) tetapi tanpa HSTS secara
+	// diam-diam. Penilaian skemanya tidak peka huruf, sama seperti cookie.
+	httpsDisajikan := production ||
+		(cfg != nil && strings.HasPrefix(strings.ToLower(cfg.PublicURL), "https://"))
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -370,19 +377,20 @@ func SecurityHeaders(cfg *config.Config) func(http.Handler) http.Handler {
 			// total di Safari. Di produksi risikonya tidak ada karena validasi
 			// config mewajibkan PUBLIC_URL https.
 			csp := cspSPA
-			if !production {
+			if !httpsDisajikan {
 				csp = strings.Replace(csp, "upgrade-insecure-requests; ", "", 1)
 			}
 			h.Set("Content-Security-Policy", csp)
 
-			// HSTS hanya di produksi, dan ini bukan sekadar kerapian.
+			// HSTS hanya bila HTTPS benar-benar disajikan (produksi, atau
+			// PUBLIC_URL https), dan ini bukan sekadar kerapian.
 			//
 			// Di development gateway diakses lewat http://localhost:8080. HSTS berlaku
 			// per host tanpa memandang port, jadi satu respons saja akan membuat
 			// browser memaksa https untuk SELURUH proyek lain di localhost, dan
 			// pinning itu bertahan sampai operator membersihkan state browser secara
 			// manual. Biayanya nyata, manfaatnya nol karena tidak ada TLS di dev.
-			if production {
+			if httpsDisajikan {
 				h.Set("Strict-Transport-Security", hstsValue)
 			}
 

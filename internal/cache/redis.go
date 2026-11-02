@@ -128,7 +128,14 @@ func Connect(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*Red
 	if err != nil {
 		return nil, err
 	}
-	applyProductionDefaults(opt)
+	// Query DSN diteruskan supaya nilai yang disebut EKSPLISIT oleh operator
+	// bisa dibedakan dari yang absen — untuk max_retries keduanya sama-sama
+	// terbaca 0 sesudah ParseURL (audit3 V-LN-13).
+	var queryDSN url.Values
+	if u, perr := url.Parse(dsn); perr == nil {
+		queryDSN = u.Query()
+	}
+	applyProductionDefaults(opt, queryDSN)
 
 	client := redis.NewClient(opt)
 
@@ -177,6 +184,13 @@ func (r *Redis) Client() *redis.Client { return r.client }
 // lebih buruk daripada probe yang melaporkan gagal, karena orchestrator jadi tidak
 // pernah mendapat jawaban.
 func (r *Redis) Ping(ctx context.Context) error {
+	// Penjaga nil simetris dengan Close(): Checker kesehatan memanggil ini
+	// lewat goroutine-nya sendiri, dan penerima/klien nil di sana adalah
+	// panic yang menjatuhkan proses, bukan error yang bisa dilaporkan
+	// (audit3 V-LN-01).
+	if r == nil || r.client == nil {
+		return errors.New("cache: klien redis belum terpasang")
+	}
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, pingFallbackTimeout)
@@ -284,7 +298,14 @@ func parseOptions(dsn string, secrets []string) (*redis.Options, error) {
 // Semua field diperiksa nol lebih dulu karena redis.ParseURL menuliskan nilai dari query
 // string DSN ke field yang sama; nol berarti "tidak disebut di DSN". Dengan begitu nilai
 // eksplisit dari operator selalu menang atas bawaan di sini.
-func applyProductionDefaults(opt *redis.Options) {
+//
+// query adalah query string DSN mentah (boleh nil). Ia diperlukan untuk satu
+// pengecualian: max_retries. go-redis menafsirkan MaxRetries=0 sebagai
+// "pakai bawaan", jadi nilai 0 EKSPLISIT dari DSN tidak bisa dibedakan dari
+// ketiadaan hanya dari field-nya. Bila operator menulis max_retries=0, yang
+// ia maksud adalah "jangan retry" — diterjemahkan ke -1, satu-satunya nilai
+// yang menonaktifkan retry di go-redis (audit3 V-LN-13).
+func applyProductionDefaults(opt *redis.Options, query url.Values) {
 	if opt.PoolSize == 0 {
 		opt.PoolSize = clamp(connsPerCPU*runtime.GOMAXPROCS(0), minPoolSize, maxPoolSize)
 	}
@@ -317,7 +338,10 @@ func applyProductionDefaults(opt *redis.Options) {
 	if opt.ConnMaxLifetime == 0 {
 		opt.ConnMaxLifetime = defaultConnMaxLifetime
 	}
-	if opt.MaxRetries == 0 {
+	if _, disebut := query["max_retries"]; disebut && opt.MaxRetries == 0 {
+		// max_retries=0 eksplisit: nonaktifkan retry (lihat komentar fungsi).
+		opt.MaxRetries = -1
+	} else if opt.MaxRetries == 0 {
 		opt.MaxRetries = defaultMaxRetries
 	}
 	if opt.MinRetryBackoff == 0 {

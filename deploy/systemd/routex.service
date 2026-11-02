@@ -1,11 +1,14 @@
 [Unit]
 Description=Route-X AI Gateway
 After=network-online.target postgresql.service redis-server.service
-Wants=network-online.target
+Wants=network-online.target postgresql.service redis-server.service
 
 [Service]
 Type=simple
-User=root
+# Pengguna sistem khusus (dibuat installer native), BUKAN root (audit3
+# V-DP-22): gateway hanya butuh membaca env-nya dan menulis /var/lib/route-x.
+User=routex
+Group=routex
 WorkingDirectory=/opt/routex
 EnvironmentFile=/etc/routex/routex.env
 ExecStart=/opt/routex/ai-gateway

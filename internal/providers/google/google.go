@@ -179,6 +179,17 @@ func (p *Provider) Kind() string { return p.kind }
 // Name mengembalikan nama provider.
 func (p *Provider) Name() string { return p.name }
 
+// CloseIdleConnections menutup koneksi nganggur kedua client milik adapter
+// ini. Dipanggil factory saat adapter dibuang dari cache (audit3 V-GW-50).
+func (p *Provider) CloseIdleConnections() {
+	if p.client != nil {
+		p.client.CloseIdleConnections()
+	}
+	if p.streamClient != nil {
+		p.streamClient.CloseIdleConnections()
+	}
+}
+
 // isAntigravity memeriksa apakah provider ini menargetkan backend Google Antigravity Cloud Code.
 func (p *Provider) isAntigravity() bool {
 	return strings.Contains(p.baseURL, "cloudcode-pa.googleapis.com") ||

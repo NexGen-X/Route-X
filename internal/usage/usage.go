@@ -94,10 +94,11 @@ const (
 	// OutcomeDropped berarti catatan dibuang karena antrean penuh atau pencatat sudah
 	// ditutup. Angka ini yang membuat batas antrean bisa dipertanggungjawabkan.
 	OutcomeDropped = "dropped"
-	// OutcomeSpendFailed berarti barisnya tertulis tetapi penambahan pemakaian anggaran
-	// gagal. Dipisah karena akibatnya berbeda dan lebih serius: penegakan anggaran
-	// berhenti bergerak tanpa satu pun permintaan yang terlihat gagal.
-	OutcomeSpendFailed = "spend_failed"
+	// Kegagalan penambahan pemakaian anggaran BUKAN outcome di sini: barisnya
+	// bisa tertulis (written) DAN pemakaiannya gagal pada event yang sama,
+	// jadi menghitungnya sebagai outcome membuat label ini bukan partisi
+	// kejadian. Ia punya counter sendiri, routex_usage_spend_failures_total
+	// (audit3 V-EM-25).
 )
 
 // Attempt adalah satu percobaan ke upstream di dalam satu permintaan.
@@ -681,7 +682,9 @@ func (r *Recorder) tambahPemakaian(ctx context.Context, ev Event, biaya upstream
 		targets = append(targets, policy.Target{Scope: policy.ScopeProvider, ID: ev.ProviderID})
 	}
 	if _, err := r.spend.AddSpend(ctx, targets, biaya); err != nil {
-		r.hasil(OutcomeSpendFailed)
+		if r.metrics != nil {
+			r.metrics.UsageSpendFailures.Inc()
+		}
 		r.logger.ErrorContext(ctx, "pemakaian anggaran gagal dinaikkan, penegakan anggaran tidak bergerak",
 			"request_id", ev.RequestID, "biaya_usd", biaya.String(), "error", err)
 	}

@@ -19,9 +19,15 @@ const keySeparator = ":"
 const (
 	NamespaceRateLimit      = "rl"
 	NamespaceCircuitBreaker = "cb"
-	NamespaceHealth         = "health"
 	NamespaceResponseCache  = "rc"
 )
+
+// Namespace "health" (routex:health:*) pernah dideklarasikan beserta
+// konstruktor HealthKey-nya dengan klaim hasil health check dibagi antar
+// instance, tetapi tidak pernah ada satu pun penulis/pembaca produksi —
+// kesehatan provider hidup di database (upstream.HealthReport), bukan di
+// Redis. Deklarasi dan konstruktornya dihapus agar tidak ada lagi namespace
+// mati yang terdokumentasi seolah berfungsi (audit3 V-EM-29).
 
 // Key menggabungkan beberapa bagian menjadi satu kunci Redis bernamespace:
 //
@@ -151,10 +157,4 @@ func RateLimitKey(scope, id, window string) string {
 // model boleh kosong (mis. breaker level provider); Key() akan melewatinya.
 func CircuitBreakerKey(providerID, model string) string {
 	return Key(NamespaceCircuitBreaker, providerID, model)
-}
-
-// HealthKey menyusun kunci hasil health check terakhir sebuah provider, yang dibagi
-// antar instance gateway supaya tidak setiap instance memeriksa provider yang sama.
-func HealthKey(providerID string) string {
-	return Key(NamespaceHealth, providerID)
 }

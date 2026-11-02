@@ -20,8 +20,10 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NexGen-X/Route-X/internal/config"
@@ -90,6 +92,14 @@ type DB struct {
 	// dsn disimpan untuk membersihkan pesan error dari jejak connection string.
 	// Bertipe security.Secret supaya tetap tersamar kalau DB ikut ter-log.
 	dsn security.Secret
+
+	// ditutup menandai Close() sudah dipanggil. Ping memeriksanya karena
+	// Ping kini memakai koneksi khusus di luar pool (audit3 V-LN-04) dan
+	// pool yang ditutup tidak lagi bisa menjadi penanda keadaan itu.
+	// Pointer supaya DB tetap lolos vet copylocks (String/GoString/LogValue
+	// DB ber-receiver nilai dengan sengaja) dan salinan DB berbagi penanda
+	// yang sama. Boleh nil pada DB rakitan tangan (diperlakukan belum tutup).
+	ditutup *atomic.Bool
 }
 
 // Connect membangun pool koneksi dan memastikan database benar-benar menjawab.
@@ -115,11 +125,31 @@ func Connect(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*DB,
 	}
 	applyPoolSettings(poolCfg, cfg)
 
+	// Selaraskan ukuran pool dengan max_connections server SEBELUM pool
+	// dibuat (audit3 V-LN-15): DB_MAX_CONNS divalidasi sampai 1000 tanpa
+	// mengetahui batas server (bawaan PostgreSQL 100), jadi operator bisa
+	// menyetel pool yang pasti ditolak server (53300) tepat saat beban
+	// puncak. Satu koneksi tunggal dipakai membaca setelan itu; kegagalan
+	// membacanya tidak menggagalkan start — nilainya hanya untuk penjepitan
+	// dan peringatan.
+	if serverMax, errMax := bacaMaxConnectionsServer(ctx, poolCfg); errMax == nil && serverMax > 0 {
+		if int64(poolCfg.MaxConns) > serverMax {
+			logger.Warn("DB_MAX_CONNS melebihi max_connections server; ukuran pool dijepit",
+				slog.Int("db_max_conns", int(poolCfg.MaxConns)),
+				slog.Int64("server_max_connections", serverMax),
+			)
+			poolCfg.MaxConns = int32(serverMax)
+			if poolCfg.MinConns > poolCfg.MaxConns {
+				poolCfg.MinConns = poolCfg.MaxConns
+			}
+		}
+	}
+
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("%w: menyiapkan pool: %s", ErrUnavailable, scrubDSN(err.Error(), dsn))
 	}
-	db := &DB{Pool: pool, dsn: cfg.DatabaseURL}
+	db := &DB{Pool: pool, dsn: cfg.DatabaseURL, ditutup: &atomic.Bool{}}
 
 	// pgxpool membuka koneksi secara lazy, jadi host mati atau password salah baru
 	// terasa saat query pertama. Satu round-trip dipaksa di sini supaya aplikasi
@@ -175,6 +205,20 @@ func applyPoolSettings(poolCfg *pgxpool.Config, cfg *config.Config) {
 	if poolCfg.ConnConfig.RuntimeParams["application_name"] == "" {
 		poolCfg.ConnConfig.RuntimeParams["application_name"] = "route-x"
 	}
+
+	// Batas waktu sisi server (audit3 V-LN-09): tanpa keduanya, query yang
+	// menunggu lock menahan koneksi pool TANPA batas — pool habis oleh
+	// penantian, bukan oleh pekerjaan. statement_timeout dibuat longgar
+	// (query analitik/rollup yang sah bisa berjalan puluhan detik), sedangkan
+	// lock_timeout yang ketat adalah pemutus penantian lock-nya. DSN operator
+	// yang sudah menentukan nilainya sendiri selalu menang. Koneksi migrasi
+	// melepaskan kedua batas ini secara eksplisit di Migrate().
+	if poolCfg.ConnConfig.RuntimeParams["statement_timeout"] == "" {
+		poolCfg.ConnConfig.RuntimeParams["statement_timeout"] = "120s"
+	}
+	if poolCfg.ConnConfig.RuntimeParams["lock_timeout"] == "" {
+		poolCfg.ConnConfig.RuntimeParams["lock_timeout"] = "15s"
+	}
 }
 
 // String menyamarkan seluruh isi DB.
@@ -205,20 +249,84 @@ func (db *DB) Close() {
 	if db == nil || db.Pool == nil {
 		return
 	}
+	if db.ditutup != nil {
+		db.ditutup.Store(true)
+	}
 	db.Pool.Close()
+}
+
+// bacaMaxConnectionsServer membaca setelan max_connections server lewat satu
+// koneksi tunggal (di luar pool yang belum terbentuk).
+func bacaMaxConnectionsServer(ctx context.Context, poolCfg *pgxpool.Config) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, verifyTimeout)
+	defer cancel()
+	conn, err := pgx.ConnectConfig(ctx, poolCfg.ConnConfig)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close(ctx)
+	var maxConns int64
+	if err := conn.QueryRow(ctx, "SHOW max_connections").Scan(&maxConns); err != nil {
+		return 0, err
+	}
+	return maxConns, nil
 }
 
 // Ping memastikan database masih menjawab, dipakai probe /readyz.
 //
+// Sengaja memakai koneksi KHUSUS sekali pakai, bukan Pool.Ping: Ping-nya
+// pgxpool harus mengakuisisi satu koneksi dari pool, jadi pool yang jenuh
+// oleh beban nyata melaporkan postgres "down" padahal servernya sehat
+// (audit3 V-LN-04). Koneksi khusus ini hanya membuktikan server menjawab.
+//
 // Batas waktunya selalu dipasang (paling lama pingTimeout, atau lebih cepat kalau
 // ctx punya deadline sendiri) supaya probe tidak pernah menggantung.
 func (db *DB) Ping(ctx context.Context) error {
+	if db == nil || db.Pool == nil || (db.ditutup != nil && db.ditutup.Load()) {
+		return ErrClosed
+	}
+	ctx, cancel := context.WithTimeout(ctx, pingTimeout)
+	defer cancel()
+	conn, err := pgx.ConnectConfig(ctx, db.Pool.Config().ConnConfig)
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrUnavailable, db.scrub(err))
+	}
+	defer conn.Close(ctx)
+	if err := conn.Ping(ctx); err != nil {
+		return fmt.Errorf("%w: %s", ErrUnavailable, db.scrub(err))
+	}
+	return nil
+}
+
+// CheckSchemaVersion memastikan versi skema yang teraplikasi di database
+// sama dengan versi migrasi terakhir yang dikenal biner ini.
+//
+// Ping saja tidak cukup untuk /readyz: database hasil restore lama tetap
+// bisa di-Ping tetapi query nyata gagal karena skemanya tertinggal
+// (audit3 V-LN-07). Selisih ke arah mana pun dilaporkan sebagai belum siap:
+// skema lebih baru berarti biner ini yang tertinggal.
+func (db *DB) CheckSchemaVersion(ctx context.Context) error {
 	if db == nil || db.Pool == nil {
 		return ErrClosed
 	}
 	ctx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
-	return db.ping(ctx)
+
+	terbaru, err := LatestMigrationVersion()
+	if err != nil {
+		return fmt.Errorf("membaca daftar migrasi tertanam: %w", err)
+	}
+	var teraplikasi int64
+	err = db.Pool.QueryRow(ctx,
+		"SELECT COALESCE(MAX(version), 0) FROM "+ledgerTable).Scan(&teraplikasi)
+	if err != nil {
+		return fmt.Errorf("%w: membaca versi skema teraplikasi: %s", ErrUnavailable, db.scrub(err))
+	}
+	if teraplikasi != terbaru {
+		return fmt.Errorf("%w: versi skema database %d, biner mengharapkan %d",
+			ErrUnavailable, teraplikasi, terbaru)
+	}
+	return nil
 }
 
 // ping menjalankan round-trip tanpa memasang batas waktunya sendiri, supaya

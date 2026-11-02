@@ -227,6 +227,17 @@ func Migrate(ctx context.Context, db *DB, logger *slog.Logger) (applied int, err
 	}
 	defer conn.Release()
 
+	// Pool memasang statement_timeout/lock_timeout untuk jalur aplikasi
+	// (audit3 V-LN-09), tetapi migrasi adalah pekerjaan boot yang sah
+	// berjalan lama (pembangunan indeks di tabel besar) dan justru HARUS
+	// menunggu lock sampai dapat — melepaskan kedua batas pada koneksi
+	// migrasi ini saja.
+	for _, setelan := range []string{"statement_timeout", "lock_timeout"} {
+		if _, err := conn.Exec(ctx, "SET "+setelan+" = '0'"); err != nil {
+			return 0, fmt.Errorf("melepaskan batas waktu koneksi migrasi (%s): %w", setelan, err)
+		}
+	}
+
 	// AUDIT FIX: guard versi — migrasi 0007 memakai UNIQUE NULLS NOT DISTINCT yang
 	// hanya tersedia di PostgreSQL 15+. Gagal cepat dengan pesan jelas daripada
 	// rantai migrasi patah di tengah pada PG 13/14.

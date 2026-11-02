@@ -38,7 +38,7 @@ func SupportedTools() []ToolDef {
 			Category:      "Coding Agent",
 			Description:   "Terminal coding assistant opensource dengan dukungan multi-provider model AI.",
 			BinaryNames:   []string{"opencode", "opencode-cli"},
-			ConfigPaths:   []string{".config/opencode/config.json"},
+			ConfigPaths:   []string{".config/opencode/opencode.json"},
 			VersionArg:    "--version",
 			EnvVarBaseURL: "OPENCODE_API_BASE",
 			EnvVarAPIKey:  "OPENCODE_API_KEY",

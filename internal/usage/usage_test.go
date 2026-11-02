@@ -291,8 +291,13 @@ func TestRecorderMelaporkanKegagalanAnggaranTerpisah(t *testing.T) {
 	if !strings.Contains(body, `routex_usage_records_total{outcome="written"} 1`) {
 		t.Error("baris log seharusnya tetap tertulis")
 	}
-	if !strings.Contains(body, `routex_usage_records_total{outcome="spend_failed"} 1`) {
-		t.Error("kegagalan menaikkan pemakaian anggaran tidak dihitung terpisah")
+	// V-EM-25: kegagalan pemakaian anggaran di counter SENDIRI — sebagai
+	// outcome UsageRecords ia membuat satu event terhitung dua kali.
+	if !strings.Contains(body, `routex_usage_spend_failures_total 1`) {
+		t.Error("kegagalan menaikkan pemakaian anggaran tidak dihitung di counter terpisah")
+	}
+	if strings.Contains(body, `spend_failed`) {
+		t.Error("outcome spend_failed tidak boleh lagi muncul di routex_usage_records_total")
 	}
 }
 

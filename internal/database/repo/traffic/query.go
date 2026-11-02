@@ -190,7 +190,7 @@ func (r *Repo) List(ctx context.Context, f Filter, p repo.Page) (Result, error) 
 		default:
 			code, err := strconv.Atoi(f.Status)
 			if err != nil {
-				return Result{}, fmt.Errorf("%s: status %q bukan kode atau kelas yang sah", op, f.Status)
+				return Result{}, fmt.Errorf("%s: status %q bukan kode atau kelas yang sah: %w", op, f.Status, repo.ErrInvalidParameter)
 			}
 			add("status_code = $%d", code)
 		}

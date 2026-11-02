@@ -412,32 +412,6 @@ func buildGatewaySurface(
 	// Ketiganya membaca tabelnya sendiri dan menyimpan salinan ber-TTL. Repository yang sama
 	// dipakai bersama supaya hanya ada satu jalur pembacaan untuk keempat tabel kebijakan.
 	policyRepo := policy.New(db.Pool)
-	rates := ratelimit.NewEngine(policyRepo, logger)
-	budgets := billing.NewEnforcer(policyRepo, logger, billing.WithWebhookEnqueuer(webhookRepo))
-	filters := contentfilter.NewEngine(policyRepo, logger)
-
-	// Cakupan pembatasan untuk middleware: key, pengguna, IP, dan global. Cakupan MODEL
-	// sengaja tidak di sini — modelnya baru diketahui setelah body diurai, dan memeriksanya
-	// dua kali berarti setiap permintaan memakan dua jatah kuota pada penghitung yang sama.
-	limiter := apikey.NewLimiter(rdb, metrics, logger,
-		apikey.WithScopeResolver(func(ctx context.Context, p *apikey.Principal, ip netip.Addr) []apikey.ScopeLimits {
-			return rates.Requests(ctx, gateway.TargetsFor(p, "", ip), p.RequestLimits())
-		}),
-		// RATE_LIMIT_FAIL_CLOSED=true berarti pemadaman Redis menolak 429
-		// alih-alih meloloskan tanpa batas. Default tetap fail-open supaya
-		// login tidak mati saat Redis mati.
-		apikey.WithFailClosed(cfg.RateLimitFailClosed),
-	)
-	if err := limiter.Warm(ctx); err != nil {
-		logger.Warn("pemanasan skrip pembatas laju gagal", "error", err)
-	}
-
-	if inert := filters.Inert(); len(inert) > 0 {
-		// Penyaring yang aktif di database tetapi tidak menegakkan apa pun adalah kegagalan
-		// yang paling mahal yang bisa dimiliki tabel itu: operator melihatnya "enabled" dan
-		// menyangka perlindungannya berjalan. Dilaporkan saat start, bukan hanya di dashboard.
-		logger.Warn("ada penyaring konten aktif yang TIDAK menegakkan apa pun", "penyaring", inert)
-	}
 
 	// --- Pemakaian, biaya, dan angka terukur -------------------------------
 	//
@@ -451,6 +425,10 @@ func buildGatewaySurface(
 	// sebagai "belum diketahui" — yang menurut aturan paket router diurutkan paling belakang,
 	// sehingga hasilnya sama dengan priority. Itu aman, tetapi berarti kedua strategi itu
 	// tidak melakukan apa pun.
+	//
+	// Blok ini dirakit SEBELUM pembatas laju dan autentikator karena recorder
+	// juga menjadi sink penolakan keduanya (audit3 V-GW-46): penolakan 401/429
+	// di middleware harus bisa dicatat sebagai baris requests.
 	trafficRepo := traffic.New(db.Pool)
 	pricer := usage.NewPricer(upstream.NewPricingRepo(db.Pool), logger)
 	if err := pricer.Warm(ctx); err != nil {
@@ -469,6 +447,36 @@ func buildGatewaySurface(
 		Metrics: metrics,
 		Logger:  logger,
 	})
+
+	rates := ratelimit.NewEngine(policyRepo, logger)
+	budgets := billing.NewEnforcer(policyRepo, logger, billing.WithWebhookEnqueuer(webhookRepo))
+	filters := contentfilter.NewEngine(policyRepo, logger)
+
+	// Cakupan pembatasan untuk middleware: key, pengguna, IP, dan global. Cakupan MODEL
+	// sengaja tidak di sini — modelnya baru diketahui setelah body diurai, dan memeriksanya
+	// dua kali berarti setiap permintaan memakan dua jatah kuota pada penghitung yang sama.
+	limiter := apikey.NewLimiter(rdb, metrics, logger,
+		apikey.WithScopeResolver(func(ctx context.Context, p *apikey.Principal, ip netip.Addr) []apikey.ScopeLimits {
+			return rates.Requests(ctx, gateway.TargetsFor(p, "", ip), p.RequestLimits())
+		}),
+		// RATE_LIMIT_FAIL_CLOSED=true berarti pemadaman Redis menolak 429
+		// alih-alih meloloskan tanpa batas. Default tetap fail-open supaya
+		// login tidak mati saat Redis mati.
+		apikey.WithFailClosed(cfg.RateLimitFailClosed),
+		// Penolakan 429 dicatat sebagai baris requests lewat recorder yang
+		// sama dengan jalur handler (audit3 V-GW-46).
+		apikey.WithLimiterRejectionSink(recorder),
+	)
+	if err := limiter.Warm(ctx); err != nil {
+		logger.Warn("pemanasan skrip pembatas laju gagal", "error", err)
+	}
+
+	if inert := filters.Inert(); len(inert) > 0 {
+		// Penyaring yang aktif di database tetapi tidak menegakkan apa pun adalah kegagalan
+		// yang paling mahal yang bisa dimiliki tabel itu: operator melihatnya "enabled" dan
+		// menyangka perlindungannya berjalan. Dilaporkan saat start, bukan hanya di dashboard.
+		logger.Warn("ada penyaring konten aktif yang TIDAK menegakkan apa pun", "penyaring", inert)
+	}
 
 	models := upstream.NewModelRepo(db.Pool)
 	providersRepo := upstream.NewProviderRepo(db.Pool)
@@ -615,12 +623,18 @@ func buildGatewaySurface(
 
 	workerSup.Start(ctx)
 
-	authn := apikey.NewAuthenticator(keyRepo, metrics, logger)
+	// Penolakan 401 autentikator dicatat sebagai baris requests lewat
+	// recorder yang sama dengan jalur handler (audit3 V-GW-46).
+	authn := apikey.NewAuthenticator(keyRepo, metrics, logger, apikey.WithRejectionSink(recorder))
 
 	r := chi.NewRouter()
 	// CORS wajib dipasang sebelum autentikasi agar preflight OPTIONS dari browser direspons langsung
 	// tanpa ditolak oleh validator Authorization header.
 	r.Use(httpx.CORS(nil))
+	// Penghitung request yang sedang dilayani — sumber angka "in-flight"
+	// ringkasan sistem (audit3 V-FJ-06). Paling luar rantai permukaan ini
+	// agar penolakan singkat pun terhitung selama ia dilayani.
+	r.Use(httpx.TrackGatewayInFlight)
 	// Pembatas laju TIDAK lagi dipasang di sini: ia sekarang tinggal di dalam
 	// gateway.Routes lewat HandlersDeps.PembatasLaju dan hanya membungkus rute
 	// inferensi. Memasangnya pada seluruh permukaan membuat polling katalog

@@ -65,6 +65,10 @@ type Authenticator struct {
 	repo   KeyAuthenticator
 	logger *slog.Logger
 
+	// sink menerima penolakan untuk log request; nil berarti tidak dicatat
+	// (perilaku lama, hanya untuk test dan perakitan tanpa recorder).
+	sink RejectionSink
+
 	// rejected dipecah per alasan. Inilah satu-satunya tempat alasan penolakan bisa
 	// dihitung, karena responsnya sengaja tidak membedakannya.
 	rejected *prometheus.CounterVec
@@ -79,6 +83,45 @@ type Option func(*Authenticator)
 // mematikan pencatatan pemakaian sama sekali.
 func WithTouchInterval(d time.Duration) Option {
 	return func(a *Authenticator) { a.touchInterval = d }
+}
+
+// RejectionInfo adalah satu penolakan middleware yang harus terlihat di log
+// request: status yang diterima klien, kategori & kode error yang stabil, dan
+// — bila kredensialnya sempat terverifikasi (penolakan pembatas laju) — key
+// pemiliknya. Untuk penolakan autentikasi APIKeyID sengaja kosong: key yang
+// gagal verifikasi tidak boleh ditautkan ke baris mana pun hanya dari klaim
+// pengirimnya.
+type RejectionInfo struct {
+	Request      *http.Request
+	StatusCode   int
+	ErrorType    string
+	ErrorCode    string
+	ErrorMessage string
+	APIKeyID     string
+	APIKeyName   string
+}
+
+// RejectionSink menerima penolakan middleware untuk dicatat ke log request.
+//
+// Penolakan 401/429 terjadi DI LUAR handler gateway, jadi tanpa sink ini ia
+// tidak pernah menjadi baris requests: upaya memakai key mati/dicabut dan
+// badai 429 tidak terlihat sama sekali di dashboard (audit3 V-GW-46).
+// Implementasi produksi menjembatani ke usage.Recorder; sink tidak boleh
+// menghalangi atau menggagalkan penolakan itu sendiri.
+type RejectionSink interface {
+	RecordRejection(ctx context.Context, info RejectionInfo)
+}
+
+// WithRejectionSink memasang pencatat penolakan autentikasi ke log request.
+func WithRejectionSink(s RejectionSink) Option {
+	return func(a *Authenticator) { a.sink = s }
+}
+
+// WithLimiterRejectionSink memasang pencatat penolakan pembatas laju ke log
+// request. Nama berbeda dari WithRejectionSink karena keduanya Option untuk
+// tipe berbeda dalam paket yang sama.
+func WithLimiterRejectionSink(s RejectionSink) LimiterOption {
+	return func(l *Limiter) { l.sink = s }
 }
 
 // NewAuthenticator membuat middleware autentikasi.
@@ -281,6 +324,18 @@ func (a *Authenticator) reject(w http.ResponseWriter, r *http.Request, reason st
 	a.log(ctx).LogAttrs(ctx, slog.LevelWarn, "autentikasi API key gagal", attrs...)
 
 	httpx.Unauthorized(w, r, MessageInvalidKey)
+
+	// Penolakan ini juga menjadi baris log request (audit3 V-GW-46): respons
+	// ke klien tetap seragam, tetapi operator bisa melihat upayanya.
+	if a.sink != nil {
+		a.sink.RecordRejection(ctx, RejectionInfo{
+			Request:      r,
+			StatusCode:   http.StatusUnauthorized,
+			ErrorType:    "auth",
+			ErrorCode:    httpx.CodeInvalidAPIKey,
+			ErrorMessage: MessageInvalidKey,
+		})
+	}
 }
 
 // credentialReason menerjemahkan kegagalan Credential menjadi label.

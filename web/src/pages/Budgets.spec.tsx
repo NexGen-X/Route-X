@@ -1,8 +1,19 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Budgets } from './Budgets';
 import type { Budget, RateLimit, APIKey, Model } from '../types';
+
+// Budgets kini memakai useQueryClient untuk menginvalidasi cache
+// ['budgets'] sesudah mutasi (audit3 V-FJ-09), jadi render uji dibungkus
+// QueryClientProvider seperti aplikasi nyata (main.tsx).
+const renderBudgets = (node: React.ReactNode) =>
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      {node}
+    </QueryClientProvider>
+  );
 
 // Mock focus-trap-react untuk lingkungan jsdom
 vi.mock('focus-trap-react', () => ({
@@ -167,7 +178,7 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
   });
 
   it('merender daftar alokasi anggaran beserta progress bar dan metrik spend USD', async () => {
-    render(<Budgets />);
+    renderBudgets(<Budgets />);
 
     await waitFor(() => {
       expect(screen.getByText('Budget Tim Internal')).toBeInTheDocument();
@@ -193,7 +204,7 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
   });
 
   it('beralih ke tab Rate Limits dan memverifikasi daftar aturan trafik', async () => {
-    render(<Budgets />);
+    renderBudgets(<Budgets />);
 
     await waitFor(() => {
       expect(screen.getByText('Budget Tim Internal')).toBeInTheDocument();
@@ -218,7 +229,7 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
   });
 
   it('melakukan toggle status aktif anggaran (handleToggleBudget)', async () => {
-    render(<Budgets />);
+    renderBudgets(<Budgets />);
 
     await waitFor(() => {
       expect(screen.getByText('Budget Tim Internal')).toBeInTheDocument();
@@ -237,7 +248,7 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
   });
 
   it('melakukan reset pemakaian anggaran dengan konfirmasi modal', async () => {
-    render(<Budgets />);
+    renderBudgets(<Budgets />);
 
     await waitFor(() => {
       expect(screen.getByText('Budget Tim Internal')).toBeInTheDocument();
@@ -262,7 +273,7 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
   });
 
   it('membuka drawer Buat Anggaran dan mengirim formulir dengan valid', async () => {
-    render(<Budgets />);
+    renderBudgets(<Budgets />);
 
     await waitFor(() => {
       expect(screen.getByText('Budget Tim Internal')).toBeInTheDocument();
@@ -301,7 +312,7 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
   });
 
   it('membuka drawer Buat Rate Limit dan mengirim formulir dengan valid', async () => {
-    render(<Budgets initialTab="limits" />);
+    renderBudgets(<Budgets initialTab="limits" />);
 
     await waitFor(() => {
       expect(screen.getByText('Dev Key Riset')).toBeInTheDocument();
@@ -339,7 +350,7 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
   });
 
   it('menangani dialog konfirmasi dan penghapusan anggaran serta rate limit', async () => {
-    render(<Budgets />);
+    renderBudgets(<Budgets />);
 
     await waitFor(() => {
       expect(screen.getByText('Budget Tim Internal')).toBeInTheDocument();
@@ -389,7 +400,7 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
   it('menangani error pemuatan API dengan menampilkan QueryError dan tombol retry', async () => {
     mockListBudgets.mockRejectedValueOnce(new Error('Koneksi database PostgreSQL terputus'));
 
-    render(<Budgets />);
+    renderBudgets(<Budgets />);
 
     await waitFor(() => {
       expect(screen.getByText(/Koneksi database PostgreSQL terputus/i)).toBeInTheDocument();
@@ -406,7 +417,7 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
   });
 
   it('menangani error notifikasi toast saat aksi toggle atau hapus gagal', async () => {
-    render(<Budgets />);
+    renderBudgets(<Budgets />);
 
     await waitFor(() => {
       expect(screen.getByText('Budget Tim Internal')).toBeInTheDocument();
@@ -421,6 +432,30 @@ describe('Budgets Page — Modular Architecture & Unit Tests', () => {
       expect(mockToastError).toHaveBeenCalledWith(
         expect.stringContaining('Sinkronisasi Redis gagal')
       );
+    });
+  });
+
+  it('mutasi anggaran menginvalidasi cache React Query [budgets] (audit3 V-FJ-09)', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spyInvalidate = vi.spyOn(client, 'invalidateQueries');
+    render(
+      <QueryClientProvider client={client}>
+        <Budgets />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Budget Tim Internal')).toBeInTheDocument();
+    });
+
+    const deleteBudgetBtns = screen.getAllByLabelText('Hapus anggaran');
+    fireEvent.click(deleteBudgetBtns[0]);
+
+    await waitFor(() => {
+      expect(mockDeleteBudget).toHaveBeenCalledWith('b-1');
+    });
+    await waitFor(() => {
+      expect(spyInvalidate).toHaveBeenCalledWith({ queryKey: ['budgets'] });
     });
   });
 });

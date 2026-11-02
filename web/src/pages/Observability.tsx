@@ -20,6 +20,7 @@ import {
 import { QueryError } from '../components/common/QueryError';
 import { SystemHealthSection } from '../components/observability/SystemHealthSection';
 import { formatUSD } from '../utils/money';
+import { bucketSecondsFromSeries } from '../utils/series';
 
 export const Observability: React.FC = () => {
   const [windowTime, setWindowTime] = useState('24h');
@@ -158,7 +159,9 @@ export const Observability: React.FC = () => {
   const totalTokensFromSeries = series.reduce((acc, p) => acc + (p.tokens || 0), 0);
   const errorRate = summary?.error_rate ?? (totalRequestsFromSeries > 0 ? (series.reduce((acc, p) => acc + (p.errors || 0), 0) / totalRequestsFromSeries) * 100 : 0);
 
-  // Perhitungan Throughput rata-rata (req/s)
+  // Perhitungan Throughput rata-rata (req/s). Penyebutnya rentang jendela
+  // nominal — kini jujur karena backend menghormati parameter window
+  // (audit3 V-FJ-01); sebelumnya backend selalu menjawab 24 jam.
   const windowSeconds = windowTime === '1h' ? 3600 : windowTime === '24h' ? 86400 : windowTime === '7d' ? 604800 : 2592000;
   const avgThroughputRps = (summary?.total_requests ?? totalRequestsFromSeries) / windowSeconds;
 
@@ -166,15 +169,19 @@ export const Observability: React.FC = () => {
   const totalCacheReqs = (cacheStats?.hits ?? 0) + (cacheStats?.misses ?? 0);
   const cacheHitRatio = totalCacheReqs > 0 ? (((cacheStats?.hits ?? 0) / totalCacheReqs) * 100).toFixed(1) : '0.0';
 
+  // Throughput per titik memakai lebar bucket NYATA dari jarak timestamp
+  // series (backend: 1 jam untuk rentang <= 48 jam), bukan konstanta
+  // per-jendela yang membengkakkan angka sampai 60x (audit3 V-FJ-12).
+  const bucketSec = bucketSecondsFromSeries(series);
+
   // Data series yang diperkaya untuk Recharts (mendukung throughput & error rate dinamis)
   const chartData = series.map((p) => {
     const reqs = p.requests || 0;
     const errs = p.errors || 0;
-    const intervalSec = windowTime === '1h' ? 60 : windowTime === '24h' ? 900 : 3600;
     return {
       ...p,
       cost_usd: Number(p.cost_usd ?? 0),
-      throughput: Number((reqs / intervalSec).toFixed(3)),
+      throughput: Number((reqs / bucketSec).toFixed(3)),
       error_rate: reqs > 0 ? Number(((errs / reqs) * 100).toFixed(2)) : 0,
     };
   });
@@ -286,9 +293,8 @@ export const Observability: React.FC = () => {
             <span className="text-2xl sm:text-[28px] leading-none font-semibold tabular-nums tracking-tight text-emerald-400">
               {cacheHitRatio}%
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/30">
-              &lt; 2ms
-            </span>
+            {/* Lencana "< 2ms" lama adalah konstanta statis tanpa data latensi
+                cache apa pun di baliknya — dihapus (audit3 V-FJ-05). */}
           </div>
           <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
             {cacheStats?.hits ?? 0} hits / {cacheStats?.total_entries ?? 0} entri

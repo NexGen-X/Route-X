@@ -23,6 +23,35 @@ export interface TrafficChartProps {
 interface MemoizedChartInnerProps {
   series: TimeSeriesPoint[];
   metricType: 'requests' | 'latency' | 'tokens';
+  timeWindow: '1h' | '6h' | '24h' | '7d';
+}
+
+// Sumbu dan tooltip menampilkan waktu LOKAL operator, bukan string RFC3339
+// UTC mentah dari API (audit3 V-FJ-07) — pola yang sama dengan halaman
+// Observabilitas.
+export function formatWaktuSumbu(tickItem: string, timeWindow: string): string {
+  try {
+    if (!tickItem) return '';
+    const d = new Date(tickItem);
+    if (isNaN(d.getTime())) return tickItem;
+    if (timeWindow === '7d') {
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  } catch {
+    return tickItem;
+  }
+}
+
+export function formatLabelTooltip(label: string): string {
+  try {
+    if (!label) return '';
+    const d = new Date(label);
+    if (isNaN(d.getTime())) return label;
+    return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return label;
+  }
 }
 
 const CustomDarkTooltip: React.FC<TooltipProps<number, string>> = ({ active, payload, label }) => {
@@ -33,7 +62,7 @@ const CustomDarkTooltip: React.FC<TooltipProps<number, string>> = ({ active, pay
 
     return (
       <div className="bg-bg-surface-1/95 backdrop-blur-md border border-border rounded-md px-3 py-2 shadow-lg text-xs font-mono space-y-1">
-        <p className="text-[10px] text-text-muted">{label}</p>
+        <p className="text-[10px] text-text-muted">{formatLabelTooltip(String(label ?? ''))}</p>
         <div className="flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-accent-hover" aria-hidden="true" />
           <span className="text-white font-semibold tabular-nums">{val}</span>
@@ -45,7 +74,7 @@ const CustomDarkTooltip: React.FC<TooltipProps<number, string>> = ({ active, pay
   return null;
 };
 
-const MemoizedChartInner = React.memo<MemoizedChartInnerProps>(({ series, metricType }) => (
+const MemoizedChartInner = React.memo<MemoizedChartInnerProps>(({ series, metricType, timeWindow }) => (
   <ResponsiveContainer width="100%" height="100%">
     <AreaChart data={series} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
       <defs>
@@ -56,7 +85,7 @@ const MemoizedChartInner = React.memo<MemoizedChartInnerProps>(({ series, metric
         </linearGradient>
       </defs>
       <CartesianGrid strokeDasharray="3 3" stroke="#2A2A2A" vertical={false} opacity={0.6} />
-      <XAxis dataKey="timestamp" stroke="#737373" fontSize={11} tickLine={false} />
+      <XAxis dataKey="timestamp" stroke="#737373" fontSize={11} tickLine={false} tickFormatter={(t: string) => formatWaktuSumbu(t, timeWindow)} />
       <YAxis stroke="#737373" fontSize={11} tickLine={false} />
       <Tooltip content={<CustomDarkTooltip />} />
       <Area
@@ -142,7 +171,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
             <span>Belum ada sampel metrik untuk rentang waktu {timeWindow}</span>
           </div>
         ) : (
-          <MemoizedChartInner series={series} metricType={metricType} />
+          <MemoizedChartInner series={series} metricType={metricType} timeWindow={timeWindow} />
         )}
       </div>
     </div>

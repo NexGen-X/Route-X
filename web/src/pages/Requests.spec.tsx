@@ -105,6 +105,7 @@ const MOCK_PAYLOAD: RequestPayload = {
 const mockListFn = vi.fn();
 const mockEventsFn = vi.fn();
 const mockPayloadFn = vi.fn();
+const mockProvidersFn = vi.fn();
 
 vi.mock('../api/client', () => ({
   api: {
@@ -114,8 +115,15 @@ vi.mock('../api/client', () => ({
       events: (id: string, createdAt?: string) => mockEventsFn(id, createdAt),
       payload: (id: string, createdAt?: string) => mockPayloadFn(id, createdAt),
     },
+    providers: {
+      list: (params?: Record<string, unknown>) => mockProvidersFn(params),
+    },
   },
 }));
+
+// "Semua Waktu" dikirim sebagai from epoch agar labelnya jujur
+// (audit3 V-FJ-03).
+const DARI_SEMUA_WAKTU = '1970-01-01T00:00:00Z';
 
 describe('Requests Page — Modular Architecture & Integration Spec', () => {
   beforeEach(() => {
@@ -126,6 +134,12 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     });
     mockEventsFn.mockResolvedValue({ events: MOCK_EVENTS });
     mockPayloadFn.mockResolvedValue(MOCK_PAYLOAD);
+    mockProvidersFn.mockResolvedValue({
+      items: [
+        { id: 'openai-main', name: 'OpenAI Production' },
+        { id: 'anthropic-backup', name: 'Anthropic Secondary' },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -167,7 +181,7 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     render(<Requests />);
 
     await waitFor(() => {
-      expect(mockListFn).toHaveBeenCalledWith({ limit: 25 });
+      expect(mockListFn).toHaveBeenCalledWith({ limit: 25, from: DARI_SEMUA_WAKTU });
     });
 
     // 1. Klik tab "Sukses (2xx)"
@@ -175,6 +189,7 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     await waitFor(() => {
       expect(mockListFn).toHaveBeenCalledWith({
         limit: 25,
+        from: DARI_SEMUA_WAKTU,
         status_class: '2xx',
       });
     });
@@ -184,6 +199,7 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     await waitFor(() => {
       expect(mockListFn).toHaveBeenCalledWith({
         limit: 25,
+        from: DARI_SEMUA_WAKTU,
         status_class: 'error',
       });
     });
@@ -314,9 +330,80 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     await waitFor(() => {
       expect(mockListFn).toHaveBeenCalledWith({
         limit: 25,
+        from: DARI_SEMUA_WAKTU,
         cursor: 'cursor-page-2',
       });
     });
+  });
+
+  it('dropdown provider berisi provider operator nyata dan mengirim provider_id (audit3 V-FJ-03)', async () => {
+    render(<Requests />);
+
+    const select = await screen.findByLabelText('Filter berdasarkan upstream provider');
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'OpenAI Production' })).toBeInTheDocument();
+    });
+    // Slug vendor karangan lama tidak boleh muncul lagi.
+    expect(screen.queryByRole('option', { name: 'Groq Cloud' })).not.toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: 'anthropic-backup' } });
+    await waitFor(() => {
+      expect(mockListFn).toHaveBeenCalledWith(
+        expect.objectContaining({ provider_id: 'anthropic-backup' })
+      );
+    });
+    // Parameter slug 'provider' tidak pernah dikirim lagi.
+    for (const call of mockListFn.mock.calls) {
+      expect(call[0]).not.toHaveProperty('provider');
+    }
+  });
+
+  it('mode Live menggabungkan item baru tanpa membuang halaman yang sudah dimuat (audit3 V-FJ-14)', async () => {
+    vi.useFakeTimers();
+    try {
+      mockListFn.mockResolvedValueOnce({
+        items: [MOCK_REQUEST_SUCCESS],
+        next_cursor: 'cursor-page-2',
+      });
+      render(<Requests />);
+
+      await vi.waitFor(() => {
+        expect(screen.getByText('Muat Lebih Banyak...')).toBeInTheDocument();
+      });
+
+      // Muat halaman kedua.
+      mockListFn.mockResolvedValueOnce({
+        items: [MOCK_REQUEST_ERROR],
+        next_cursor: undefined,
+      });
+      fireEvent.click(screen.getByText('Muat Lebih Banyak...'));
+      await vi.waitFor(() => {
+        expect(screen.getAllByText('req-uuid-2').length).toBeGreaterThan(0);
+      });
+
+      // Polling live: halaman pertama kini memuat item yang lebih baru.
+      const BARU: RequestLog = {
+        ...MOCK_REQUEST_SUCCESS,
+        id: 'req-3',
+        request_id: 'req-uuid-3',
+        created_at: '2026-09-25T10:10:00Z',
+      };
+      mockListFn.mockResolvedValue({
+        items: [BARU, MOCK_REQUEST_SUCCESS],
+        next_cursor: 'cursor-page-2',
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Live Stream/i }));
+      await vi.advanceTimersByTimeAsync(4000);
+
+      // Item baru tampil DAN item halaman kedua tidak hilang.
+      await vi.waitFor(() => {
+        expect(screen.getAllByText('req-uuid-3').length).toBeGreaterThan(0);
+      });
+      expect(screen.getAllByText('req-uuid-2').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('req-uuid-1').length).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('dapat membuka inspector modal melalui kartu mobile dan mendukung keyboard navigation', async () => {

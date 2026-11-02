@@ -141,6 +141,14 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
   const totalEventLatency =
     events.reduce((sum, ev) => sum + (ev.latency_ms || 0), 0) || 1;
 
+  // Skala waterfall adalah TOTAL DURASI request, bukan jumlah latensi
+  // event: penskalaan lama membuat segmen selalu memenuhi 100% batang
+  // walau event hanya mencakup sebagian durasi, dan sisanya (overhead
+  // gateway) hilang dari gambar (audit3 V-FJ-06). Bila duration_ms tidak
+  // tersedia, jumlah event adalah satu-satunya penyebut yang ada.
+  const skalaWaterfall =
+    request.duration_ms > 0 ? request.duration_ms : totalEventLatency;
+
   const latencyStyle = getLatencyPillStyle(request.duration_ms);
   const statusColor = getHttpStatusColor(request.status_code);
 
@@ -250,15 +258,16 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
           <div className="w-full h-3 bg-bg-base rounded-full overflow-hidden flex border border-border/50">
             {events.length > 0 ? (
               events.map((ev, idx) => {
-                const pct = Math.min(
-                  100,
-                  Math.max(4, Math.round(((ev.latency_ms || 0) / totalEventLatency) * 100))
-                );
+                // Lebar persis sebanding durasi total, tanpa jepit minimum
+                // yang menggelembungkan segmen kecil; minWidth 2px hanya
+                // agar segmen sangat kecil tetap terlihat, bukan klaim
+                // proporsi.
+                const pct = ((ev.latency_ms || 0) / skalaWaterfall) * 100;
                 return (
                   <div
                     key={idx}
-                    style={{ width: `${pct}%` }}
-                    title={`${ev.provider_id || ev.kind}: ${ev.latency_ms}ms (${pct}%)`}
+                    style={{ width: `${pct}%`, minWidth: pct > 0 ? 2 : 0 }}
+                    title={`${ev.provider_id || ev.kind}: ${ev.latency_ms}ms (${pct.toFixed(1)}% dari total durasi)`}
                     className={`${
                       WATERFALL_COLORS[idx % WATERFALL_COLORS.length]
                     } hover:opacity-80 transition-all border-r border-black/30 first:rounded-l-full last:rounded-r-full`}
@@ -269,7 +278,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
               <div
                 style={{ width: '100%' }}
                 className="bg-accent rounded-full"
-                title={`Upstream Latency: ${request.duration_ms}ms`}
+                title={`Total durasi: ${request.duration_ms}ms`}
               />
             )}
           </div>
@@ -289,7 +298,10 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
             ) : (
               <span className="flex items-center gap-1 font-mono">
                 <span className="w-2 h-2 rounded-full bg-accent" aria-hidden="true" />
-                Upstream roundtrip: {request.duration_ms}ms
+                {/* Tanpa rincian event, batang ini adalah total durasi
+                    request — bukan "upstream roundtrip": latensi upstream
+                    murni tidak tersedia di baris daftar (audit3 V-FJ-06). */}
+                Total durasi: {request.duration_ms}ms
               </span>
             )}
           </div>

@@ -36,20 +36,35 @@ describe('money utility', () => {
     it('mendukung berbagai variasi fractionDigits (0, 2, 4, 6, 8)', () => {
       const val = '1234.56789012';
 
-      // fractionDigits = 0
-      expect(formatUSD(val, 0)).toBe('$1,234');
+      // fractionDigits = 0 — pecahan ,5678… membulatkan bagian bulat ke atas
+      expect(formatUSD(val, 0)).toBe('$1,235');
 
-      // fractionDigits = 2
-      expect(formatUSD(val, 2)).toBe('$1,234.56');
+      // fractionDigits = 2 — digit terpotong pertama 7, naik
+      expect(formatUSD(val, 2)).toBe('$1,234.57');
 
-      // fractionDigits = 4
-      expect(formatUSD(val, 4)).toBe('$1,234.5678');
+      // fractionDigits = 4 — digit terpotong pertama 9, naik
+      expect(formatUSD(val, 4)).toBe('$1,234.5679');
 
-      // fractionDigits = 6
+      // fractionDigits = 6 — digit terpotong pertama 1, tetap
       expect(formatUSD(val, 6)).toBe('$1,234.56789');
 
       // fractionDigits = 8
       expect(formatUSD(val, 8)).toBe('$1,234.56789012');
+    });
+
+    it('membulatkan half-up, bukan memotong (audit3 V-FJ-08)', () => {
+      // Bukti lama: '1.999' pada 2 digit tampil $1.99 (terpotong).
+      expect(formatUSD('1.999', 2)).toBe('$2');
+      expect(formatUSD('9.9999', 2)).toBe('$10');
+      expect(formatUSD('0.123456', 4)).toBe('$0.1235');
+      expect(formatUSD('0.00005', 4)).toBe('$0.0001');
+      expect(formatUSD('2.5', 0)).toBe('$3');
+      // Di bawah setengah tetap turun, dan separuh persis naik (half-up).
+      expect(formatUSD('1.0049', 2)).toBe('$1');
+      expect(formatUSD('1.005', 2)).toBe('$1.01');
+      // Negatif membulatkan magnitudenya; rambatan mencapai ribuan.
+      expect(formatUSD('-1.999', 2)).toBe('$-2');
+      expect(formatUSD('999.999', 2)).toBe('$1,000');
     });
 
     it('memotong trailing zeros pada bagian pecahan desimal', () => {

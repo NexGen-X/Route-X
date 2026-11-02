@@ -51,9 +51,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/NexGen-X/Route-X/internal/apikey"
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
+	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
 )
 
@@ -412,6 +414,39 @@ func (r *Recorder) Record(ctx context.Context, ev Event) {
 		r.logger.WarnContext(ctx, "antrean pencatat pemakaian penuh, catatan dibuang",
 			"request_id", ev.RequestID, "kapasitas", r.ukuran)
 	}
+}
+
+// RecordRejection mencatat penolakan middleware (401 autentikasi, 429 pembatas
+// laju) sebagai baris requests, mengimplementasikan apikey.RejectionSink.
+//
+// Barisnya sengaja minimal dan jujur: tidak ada provider/model/token karena
+// permintaan tidak pernah mencapai upstream; yang tercatat adalah persis yang
+// terjadi — endpoint yang dituju, status, kategori & kode error, dan key
+// pemiliknya bila kredensialnya sempat terverifikasi. Tanpa ini upaya memakai
+// key mati atau dicabut tidak terlihat di mana pun (audit3 V-GW-46).
+func (r *Recorder) RecordRejection(ctx context.Context, info apikey.RejectionInfo) {
+	if r == nil || info.Request == nil {
+		return
+	}
+	req := info.Request
+	var ip netip.Addr
+	if v, ok := httpx.ClientIPFrom(ctx); ok {
+		ip = v
+	}
+	r.Record(ctx, Event{
+		RequestID:    observability.RequestIDFrom(ctx),
+		Method:       req.Method,
+		Endpoint:     req.URL.Path,
+		APIKeyID:     info.APIKeyID,
+		APIKeyName:   info.APIKeyName,
+		StatusCode:   info.StatusCode,
+		ErrorType:    info.ErrorType,
+		ErrorCode:    info.ErrorCode,
+		ErrorMessage: info.ErrorMessage,
+		ClientIP:     ip,
+		UserAgent:    req.UserAgent(),
+		TerjadiPada:  time.Now().UTC(),
+	})
 }
 
 // Close menghentikan penulis setelah antrean dikuras.

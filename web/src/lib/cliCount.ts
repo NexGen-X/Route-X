@@ -11,7 +11,11 @@ export function muatJumlahToolCli(): Promise<number | null> {
   if (!cache) {
     cache = api.cli
       .detected()
-      .then((r) => (Array.isArray(r.tools) ? r.tools.length : null))
+      // Badge harus menampilkan tool yang TERDETEKSI di mesin ini
+      // (total_detected), bukan panjang seluruh registri (tools) — versi
+      // lama selalu menampilkan jumlah registri penuh walau tidak ada satu
+      // pun tool yang terpasang (audit3 V-FJ-11).
+      .then((r) => (typeof r.total_detected === 'number' ? r.total_detected : null))
       .catch(() => null);
   }
   return cache;

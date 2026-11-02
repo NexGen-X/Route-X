@@ -2,7 +2,7 @@ import React from 'react';
 import { Card } from '../common/Card';
 import { Badge } from '../common/Badge';
 import { Tooltip } from '../common/Tooltip';
-import { Gauge, Trash2, Shield, Waves } from 'lucide-react';
+import { Gauge, Trash2, Shield } from 'lucide-react';
 import type { RateLimitCardProps } from './types';
 
 export const RateLimitCard: React.FC<RateLimitCardProps> = ({
@@ -14,9 +14,11 @@ export const RateLimitCard: React.FC<RateLimitCardProps> = ({
   const tpm = limit.tokens_per_minute ?? 0;
   const rps = limit.requests_per_second ?? 0;
 
-  // Indikator visual kapasitas leaky/token bucket (persentase simulasi kuota token/req)
-  const rpmCapacityPct = rpm > 0 ? Math.min(100, Math.max(15, Math.round((rpm / 120) * 100))) : 100;
-  const tpmCapacityPct = tpm > 0 ? Math.min(100, Math.max(15, Math.round((tpm / 200000) * 100))) : 100;
+  // Batang "kapasitas bucket" lama diskalakan ke konstanta karangan
+  // (120 RPM / 200rb TPM, dilantai 15%) dan tidak mengukur pemakaian apa
+  // pun — API tidak menyediakan sisa kuota jendela berjalan per aturan.
+  // Batangnya DIHAPUS (audit3 V-FJ-05): kartu ini hanya menampilkan angka
+  // konfigurasi nyata di grid di bawah.
 
   return (
     <Card className="p-5 flex flex-col justify-between" data-testid={`rate-limit-card-${limit.id}`}>
@@ -58,46 +60,6 @@ export const RateLimitCard: React.FC<RateLimitCardProps> = ({
           </div>
         </div>
 
-        {/* Bucket Visual Indicator (Token & Leaky Bucket Capacity) */}
-        <div className="mt-3.5 p-3 rounded-inner bg-bg-surface-1 border border-border/60 space-y-2">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-text-muted flex items-center gap-1.5 font-medium">
-              <Waves className="w-3.5 h-3.5 text-accent-text" aria-hidden="true" />
-              <span>Token Bucket Indicator</span>
-            </span>
-            <span className="font-mono text-xs text-accent-text font-semibold">
-              {rps > 0 ? `${rps} burst window` : 'unlimited'}
-            </span>
-          </div>
-
-          {/* RPM Bucket Level */}
-          <div className="space-y-1">
-            <div className="flex justify-between text-[10px] font-mono text-text-muted">
-              <span>RPM Bucket Kapasitas</span>
-              <span>{rpm > 0 ? `${rpm} RPM` : 'Tidak Terbatas'}</span>
-            </div>
-            <div className="w-full h-1.5 bg-bg-surface-2 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-sky-400 rounded-full transition-all duration-500"
-                style={{ width: `${rpmCapacityPct}%` }}
-              />
-            </div>
-          </div>
-
-          {/* TPM Bucket Level */}
-          <div className="space-y-1">
-            <div className="flex justify-between text-[10px] font-mono text-text-muted">
-              <span>Token Flow Bandwidth</span>
-              <span>{tpm > 0 ? `${tpm.toLocaleString()} TPM` : 'Tidak Terbatas'}</span>
-            </div>
-            <div className="w-full h-1.5 bg-bg-surface-2 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-accent to-purple-400 rounded-full transition-all duration-500"
-                style={{ width: `${tpmCapacityPct}%` }}
-              />
-            </div>
-          </div>
-        </div>
       </div>
 
       <div className="mt-5 pt-3 border-t border-border flex items-center justify-between">

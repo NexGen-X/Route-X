@@ -105,6 +105,9 @@ export const Providers: React.FC = () => {
   const [models, setModels] = useState<ProviderModel[]>([]);
   const [oauthSessions, setOauthSessions] = useState<OAuthSession[]>([]);
   const [providerDetailsError, setProviderDetailsError] = useState<string | null>(null);
+  // Error sesi OAuth TERPISAH dari daftarnya: kegagalan memuat tidak boleh
+  // lagi ditelan menjadi daftar kosong (audit3 V-FJ-15).
+  const [oauthSessionsError, setOauthSessionsError] = useState<string | null>(null);
 
   // Status Aksi & Pengujian
   const [probingId, setProbingId] = useState<string | null>(null);
@@ -183,22 +186,35 @@ export const Providers: React.FC = () => {
   const loadProviderDetails = async (providerId: string) => {
     const reqId = ++providerDetailsReqRef.current;
     setProviderDetailsError(null);
+    setOauthSessionsError(null);
     try {
-      const [credsRes, modsRes, oauthRes] = await Promise.all([
+      const [credsRes, modsRes] = await Promise.all([
         api.credentials.list(providerId),
         api.providers.models(providerId),
-        api.providers.listOAuthSessions(providerId).catch(() => ({ items: [] })),
       ]);
       if (providerDetailsReqRef.current !== reqId) return;
       setCredentials(credsRes.items || []);
       setModels(modsRes.items || []);
-      setOauthSessions(oauthRes.items || []);
     } catch (err) {
       if (providerDetailsReqRef.current !== reqId) return;
       setCredentials([]);
       setModels([]);
       setOauthSessions([]);
       setProviderDetailsError(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    // Sesi OAuth dimuat terpisah dari kredensial & model: kegagalannya
+    // dilaporkan lewat oauthSessionsError, BUKAN ditelan menjadi daftar
+    // kosong — "belum ada sesi" dan "gagal memuat sesi" adalah dua keadaan
+    // berbeda dan harus terlihat berbeda (audit3 V-FJ-15).
+    try {
+      const oauthRes = await api.providers.listOAuthSessions(providerId);
+      if (providerDetailsReqRef.current !== reqId) return;
+      setOauthSessions(oauthRes.items || []);
+    } catch (err) {
+      if (providerDetailsReqRef.current !== reqId) return;
+      setOauthSessions([]);
+      setOauthSessionsError(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -760,6 +776,12 @@ export const Providers: React.FC = () => {
             )}
 
             {/* TAB 2: KREDENSIAL API KEY & OAUTH POOL */}
+            {drawerTab === 'credentials' && oauthSessionsError && (
+              <QueryError
+                message={`Sesi OAuth gagal dimuat: ${oauthSessionsError}`}
+                onRetry={() => void loadProviderDetails(selectedProvider.id)}
+              />
+            )}
             {drawerTab === 'credentials' && (
               <CredentialsTab
                 selectedProvider={selectedProvider}

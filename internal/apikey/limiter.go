@@ -441,6 +441,10 @@ type Limiter struct {
 	redis  *cache.Redis
 	logger *slog.Logger
 
+	// sink menerima penolakan (429, dan 401 tanpa principal) untuk log
+	// request; nil berarti tidak dicatat (audit3 V-GW-46).
+	sink RejectionSink
+
 	// rejected berlabel {scope, limit}, milik observability.Metrics.
 	rejected *prometheus.CounterVec
 	// failOpen mencatat berapa kali batas tidak bisa diperiksa karena Redis.
@@ -1081,6 +1085,15 @@ func (l *Limiter) Limit() func(http.Handler) http.Handler {
 					slog.String("method", r.Method),
 					slog.String("path", r.URL.Path))
 				httpx.Unauthorized(w, r, MessageInvalidKey)
+				if l.sink != nil {
+					l.sink.RecordRejection(ctx, RejectionInfo{
+						Request:      r,
+						StatusCode:   http.StatusUnauthorized,
+						ErrorType:    "auth",
+						ErrorCode:    httpx.CodeInvalidAPIKey,
+						ErrorMessage: MessageInvalidKey,
+					})
+				}
 				return
 			}
 
@@ -1112,6 +1125,21 @@ func (l *Limiter) Limit() func(http.Handler) http.Handler {
 					slog.String("path", r.URL.Path))
 
 				httpx.TooManyRequests(w, r, MessageRateLimited, decision.RetryAfter)
+				// Penolakan laju juga menjadi baris log request (audit3
+				// V-GW-46); principal di sini SUDAH terverifikasi, jadi key
+				// pemiliknya sah dicantumkan agar badai 429 per key terlihat
+				// di dashboard.
+				if l.sink != nil {
+					l.sink.RecordRejection(ctx, RejectionInfo{
+						Request:      r,
+						StatusCode:   http.StatusTooManyRequests,
+						ErrorType:    "rate_limit",
+						ErrorCode:    httpx.CodeRateLimitExceeded,
+						ErrorMessage: MessageRateLimited,
+						APIKeyID:     principal.ID(),
+						APIKeyName:   principal.Key.Name,
+					})
+				}
 				return
 			}
 

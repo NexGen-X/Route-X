@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Budget, APIKey, Model, RateLimit } from '../types';
 import { Card } from '../components/common/Card';
@@ -25,6 +26,16 @@ export interface BudgetsProps {
 
 export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
   const { toast, confirmModal } = useToast();
+  const queryClient = useQueryClient();
+
+  // Halaman Kunci API membaca anggaran lewat React Query ['budgets']
+  // (staleTime 5 menit): mutasi di halaman ini WAJIB menginvalidasinya,
+  // kalau tidak lencana anggaran per kunci menampilkan data basi sampai
+  // lima menit (audit3 V-FJ-09). Daftar lokal halaman ini sendiri tetap
+  // dimuat ulang lewat loadData seperti biasa.
+  const segarkanCacheAnggaran = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['budgets'] });
+  }, [queryClient]);
   const [activeTab, setActiveTab] = useState<BudgetTab>(initialTab);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [limits, setLimits] = useState<RateLimit[]>([]);
@@ -101,6 +112,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
     try {
       await api.budgets.reset(id);
       toast.success('Pemakaian anggaran periode ini berhasil direset ke nol.', 'Anggaran Direset');
+      segarkanCacheAnggaran();
       void loadData();
     } catch (err: unknown) {
       toast.error('Gagal reset anggaran: ' + getErrorMessage(err));
@@ -111,6 +123,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
     try {
       await api.budgets.toggle(b.id, !b.enabled);
       toast.success(`Anggaran "${b.name}" ${!b.enabled ? 'diaktifkan' : 'dinonaktifkan'}.`);
+      segarkanCacheAnggaran();
       void loadData();
     } catch (err: unknown) {
       toast.error('Gagal mengubah status anggaran: ' + getErrorMessage(err));
@@ -130,6 +143,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
     try {
       await api.budgets.delete(id);
       toast.success('Alokasi anggaran berhasil dihapus.', 'Anggaran Dihapus');
+      segarkanCacheAnggaran();
       void loadData();
     } catch (err: unknown) {
       toast.error('Gagal menghapus anggaran: ' + getErrorMessage(err));
@@ -163,6 +177,7 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
       setIsCreateBudgetOpen(false);
       setBudgetInitialValues(undefined);
       toast.success('Alokasi anggaran baru berhasil disimpan.', 'Anggaran Dibuat');
+      segarkanCacheAnggaran();
       void loadData();
     } catch (err: unknown) {
       toast.error('Gagal membuat anggaran: ' + getErrorMessage(err));

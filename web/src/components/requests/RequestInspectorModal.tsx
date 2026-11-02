@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Copy, Terminal, Code2, Network, ShieldCheck, Layers } from 'lucide-react';
+import { Check, Copy, Terminal, Code2, Network, ShieldCheck, Layers, Info } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { StatusDot } from '../common/StatusDot';
 import { Button } from '../components/../common/Button';
@@ -23,6 +23,10 @@ export interface RequestInspectorModalProps {
   request: RequestLog | null;
   events: RequestEvent[];
   payload: RequestPayload | null;
+  // Benar bila endpoint payload menjawab 404: payload memang tidak disimpan
+  // (keadaan normal by design), bukan kegagalan muat — tab Payload lalu
+  // menampilkan penjelasan netral, bukan banner error (B-078).
+  payloadTidakTersimpan?: boolean;
   error?: string | null;
   onRetry?: () => void;
 }
@@ -102,6 +106,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
   request,
   events,
   payload,
+  payloadTidakTersimpan = false,
   error,
   onRetry,
 }) => {
@@ -467,6 +472,18 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
                     {highlightJson(responseFormatted)}
                   </pre>
                 </div>
+              </div>
+            ) : payloadTidakTersimpan ? (
+              // Keadaan normal by design, disajikan netral (bukan gaya
+              // error): Route-X tidak merekam body request/respons, jadi
+              // memang tidak ada payload yang bisa ditampilkan (B-078).
+              <div className="flex items-start gap-2.5 p-3.5 rounded-inner bg-bg-surface-2/40 border border-border text-xs text-text-secondary">
+                <Info className="w-4 h-4 text-text-muted shrink-0 mt-px" aria-hidden="true" />
+                <p>
+                  Payload request tidak disimpan. Route-X tidak merekam body
+                  permintaan maupun respons, sehingga tidak ada payload yang
+                  dapat ditampilkan untuk request ini.
+                </p>
               </div>
             ) : (
               <p className="text-xs text-text-muted italic">

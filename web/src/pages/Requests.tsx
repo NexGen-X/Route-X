@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import type { RequestLog, RequestEvent, RequestPayload } from '../types';
 import { getErrorMessage } from '../utils/error';
 import { Card } from '../components/common/Card';
@@ -37,6 +37,10 @@ export const Requests: React.FC = () => {
   const [selectedReq, setSelectedReq] = useState<RequestLog | null>(null);
   const [reqEvents, setReqEvents] = useState<RequestEvent[]>([]);
   const [reqPayload, setReqPayload] = useState<RequestPayload | null>(null);
+  // Payload yang tidak tersimpan (404 dari endpoint payload) adalah keadaan
+  // normal by design — Route-X tidak merekam body request/respons — bukan
+  // kegagalan muat, jadi dibedakan dari error inspector sungguhan (B-078).
+  const [payloadTidakTersimpan, setPayloadTidakTersimpan] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLiveFeed, setIsLiveFeed] = useState(false);
@@ -149,6 +153,7 @@ export const Requests: React.FC = () => {
     // Bersihkan state lama agar modal tidak menampilkan payload request sebelumnya.
     setReqEvents([]);
     setReqPayload(null);
+    setPayloadTidakTersimpan(false);
     setIsInspectorOpen(true);
     setInspectorError(null);
     try {
@@ -173,6 +178,14 @@ export const Requests: React.FC = () => {
       }
       if (payloadRes.status === 'fulfilled') {
         setReqPayload(payloadRes.value);
+      } else if (payloadRes.reason instanceof ApiError && payloadRes.reason.status === 404) {
+        // Endpoint payload menjawab 404 (kode not_found) bila baris payload
+        // tidak ada. Karena SavePayload tidak pernah dipanggil di produksi,
+        // inilah keadaan normal untuk SEMUA request: payload memang tidak
+        // disimpan, bukan gagal dimuat — jangan laporkan sebagai error
+        // inspector (B-078). Kegagalan lain (5xx, jaringan) tetap error.
+        setReqPayload(null);
+        setPayloadTidakTersimpan(true);
       } else {
         setReqPayload(null);
         gagal.push('payload: ' + getErrorMessage(payloadRes.reason));
@@ -184,6 +197,7 @@ export const Requests: React.FC = () => {
       if (inspectorReqRef.current !== reqId) return;
       setReqEvents([]);
       setReqPayload(null);
+      setPayloadTidakTersimpan(false);
       setInspectorError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -326,6 +340,7 @@ export const Requests: React.FC = () => {
         request={selectedReq}
         events={reqEvents}
         payload={reqPayload}
+        payloadTidakTersimpan={payloadTidakTersimpan}
         error={inspectorError}
         onRetry={() => {
           if (selectedReq) void handleInspect(selectedReq);

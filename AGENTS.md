@@ -26,7 +26,7 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 
 ## Aturan
 - **Pedoman Aturan & Tata Kelola Agen Resmi**:
-  - [Aturan Orkestrasi & Koordinasi Multi-Agent](.agents/rules/multi_agent_orchestration.md) — Tata kelola resmi koordinasi multi-agent, katalog 13 sub-agent Route-X, pipeline orkestrasi 4-tahap, format serah terima pesan 5-seksi (`send_message`), isolasi branch Git kerja vs koordinasi komunikasi aktif, dan zero-any TypeScript.
+  - [Aturan Orkestrasi & Koordinasi Multi-Agent](.agents/rules/multi_agent_orchestration.md) — Tata kelola resmi koordinasi multi-agent, katalog 25 peran sub-agent Route-X (master prompt spesialis yang benar-benar ada: 7 berkas di `.agents/prompts/`), pipeline orkestrasi 4-tahap, format serah terima pesan 5-seksi (`send_message`), isolasi branch Git kerja vs koordinasi komunikasi aktif, dan zero-any TypeScript.
   - [Aturan Pengembangan & Standar Kerja (routex-dev)](.agents/rules/routex-dev.md) — Konvensi Go & TS, zero-race, arsitektur single-admin, dan keamanan zero-trust.
   - [Standar Verifikasi Multi-Aspek](.agents/rules/multi_aspect_verification.md) — 4 lapisan verifikasi empiris, wire protocol live probe, dan protokol anti-halusinasi.
 - Bahasa komentar/log di codebase ini: Indonesia. Ikuti gaya yang ada.

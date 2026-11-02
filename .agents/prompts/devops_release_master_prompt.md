@@ -66,11 +66,18 @@ Setelah kode dimerge ke `main`:
 Jika inisiatif merupakan rilis versi baru (`vX.Y.Z`):
 1. Buat git tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z - ..."` dan `git push origin vX.Y.Z`.
 2. Kemas biner statis mandiri ke `routex-vX.Y.Z-linux-amd64.tar.gz`.
-3. Publikasikan rilis via GitHub CLI:
+3. Buat rilis (beserta tag-nya) lewat API GitHub biasa atau GitHub CLI, TANPA aset terlebih dahulu:
    ```bash
    gh release create vX.Y.Z --title "Route-X vX.Y.Z - ..." --notes "..."
-   gh release upload vX.Y.Z routex-vX.Y.Z-linux-amd64.tar.gz
    ```
+4. Unggah aset tarball (dan berkas `.sha256` pendampingnya) lewat API `uploads.github.com` secara langsung, memakai kredensial unggah khusus yang tersimpan aman di vault (kredensial khusus host `uploads.github.com`, di luar chat — nilai token tidak pernah ditulis di repo maupun chat, diambil dari vault hanya saat eksekusi):
+   ```bash
+   curl -X POST -H "Authorization: Bearer <token-dari-vault>" -H "Content-Type: application/gzip" \
+     --data-binary @routex-vX.Y.Z-linux-amd64.tar.gz \
+     "https://uploads.github.com/repos/NexGen-X/Route-X/releases/<release_id>/assets?name=routex-vX.Y.Z-linux-amd64.tar.gz"
+   ```
+   JANGAN memakai `gh release upload` biasa untuk repo ini: jalur itu terbukti gagal 401 di `uploads.github.com` bagi konektor/token bawaan (token API biasa hanya terikat host `api.github.com`). Pembuatan rilis/tag pada langkah 3 tetap lewat API biasa dan tidak terpengaruh.
+5. Verifikasi aset: unduh balik tarball dari URL unduhan rilis dan jalankan binernya untuk memastikan versi & commit yang tercetak benar.
 
 ---
 

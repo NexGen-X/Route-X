@@ -6,7 +6,7 @@ import { Badge } from '../components/common/Badge';
 import { Button } from '../components/common/Button';
 import { Drawer } from '../components/common/Drawer';
 import { PageHeader } from '../components/common/PageHeader';
-import { Users, Plus, Trash2, KeyRound, LogOut, Pencil, UserCheck, Eye, EyeOff, Shield } from 'lucide-react';
+import { Users, Plus, Trash2, KeyRound, LogOut, Pencil, UserCheck, Eye, EyeOff, Shield, LockOpen } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { validasiPassword, validasiSpasiTepiKataSandi } from '../utils/password';
@@ -157,6 +157,30 @@ export const UsersPage: React.FC = () => {
     }
   };
 
+  // sedangTerkunci: akun terkunci admin (status locked) ATAU terkunci
+  // sementara oleh mekanisme brute force (locked_until masih di masa
+  // depan walau status active). Hanya akun seperti ini yang menampilkan
+  // tombol Buka Kunci (audit3 B-076).
+  const sedangTerkunci = (u: User) =>
+    u.status === 'locked' ||
+    (!!u.locked_until && new Date(u.locked_until).getTime() > Date.now());
+
+  const handleUnlock = async (u: User) => {
+    const ok = await confirmModal({
+      title: 'Buka Kunci Pengguna?',
+      message: `Kunci login ${u.email} dibuka: penghitung gagal login dinolkan dan masa kunci sementara dihapus.`,
+      confirmText: 'Ya, Buka Kunci',
+    });
+    if (!ok) return;
+    try {
+      await api.users.unlock(u.id);
+      toast.success(`Kunci ${u.email} dibuka.`);
+      void loadAll();
+    } catch (err) {
+      toast.error('Gagal membuka kunci: ' + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   const handleRevokeSessions = async (u: User) => {
     const ok = await confirmModal({
       title: 'Cabut Semua Sesi?',
@@ -273,6 +297,8 @@ export const UsersPage: React.FC = () => {
                     <td className={`${kelasSelIsi} hidden md:table-cell`}>
                       {u.must_change_password ? (
                         <span className="text-[11px] text-amber-300">Wajib ganti password</span>
+                      ) : sedangTerkunci(u) && u.status !== 'locked' ? (
+                        <span className="text-[11px] text-amber-300">Terkunci sementara (gagal login)</span>
                       ) : (
                         <span className="text-[11px] text-text-muted">—</span>
                       )}
@@ -289,6 +315,17 @@ export const UsersPage: React.FC = () => {
                         >
                           Kelola
                         </Button>
+                        {sedangTerkunci(u) && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void handleUnlock(u)}
+                            icon={<LockOpen className="w-3.5 h-3.5" />}
+                            className="text-xs"
+                          >
+                            Buka Kunci
+                          </Button>
+                        )}
                         {u.status === 'active' ? (
                           <Button
                             variant="secondary"
@@ -348,6 +385,9 @@ export const UsersPage: React.FC = () => {
                 {u.must_change_password && (
                   <span className="text-[11px] text-amber-300">Wajib ganti password</span>
                 )}
+                {sedangTerkunci(u) && u.status !== 'locked' && (
+                  <span className="text-[11px] text-amber-300">Terkunci sementara (gagal login)</span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -359,6 +399,17 @@ export const UsersPage: React.FC = () => {
                 >
                   Kelola
                 </Button>
+                {sedangTerkunci(u) && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void handleUnlock(u)}
+                    icon={<LockOpen className="w-3.5 h-3.5" />}
+                    className="text-xs flex-1 min-h-[44px]"
+                  >
+                    Buka Kunci
+                  </Button>
+                )}
                 {u.status === 'active' ? (
                   <Button
                     variant="secondary"

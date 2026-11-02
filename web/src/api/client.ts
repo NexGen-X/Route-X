@@ -866,6 +866,12 @@ export const api = {
         `/api/admin/access/users/${encodeURIComponent(id)}/revoke-sessions`,
         { method: 'POST' }
       ),
+    // Buka kunci login manual (audit3 B-076): backend menjawab User akhir
+    // (idempoten untuk akun yang memang tidak terkunci).
+    unlock: (id: string) =>
+      request<User>(`/api/admin/access/users/${encodeURIComponent(id)}/unlock`, {
+        method: 'POST',
+      }),
   },
 
   sessions: {

@@ -481,3 +481,86 @@ func TestSiapkanBerkasRestoreMenyaringPembuka(t *testing.T) {
 		t.Errorf("dump tanpa baris sasaran harus disalin utuh, got:\n%s", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// 3. Audit restore (B-077)
+// ---------------------------------------------------------------------------
+
+// hitungAuditRestore menghitung baris audit aksi restore di database target
+// memakai pool BARU — pool lama bisa memegang koneksi yang diputus
+// penukaran, sama seperti isiPenanda.
+func (e *lingkunganRestore) hitungAuditRestore() int {
+	e.t.Helper()
+	ctx := context.Background()
+	cfg := e.pool.Config().Copy()
+	cfg.ConnConfig.Database = e.namaDB
+	cfg.MinConns = 0
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		e.t.Fatalf("pool pembaca audit %s: %v", e.namaDB, err)
+	}
+	defer pool.Close()
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs
+		WHERE action = 'restore' AND resource_type = 'database_backup'`).Scan(&n); err != nil {
+		e.t.Fatalf("menghitung audit restore di %s: %v", e.namaDB, err)
+	}
+	return n
+}
+
+// TestRestoreAuditTercatatSesudahTukar: sesudah restore BERHASIL, baris
+// audit restore wajib ada di database hasil restore. Ini menegaskan
+// perbaikan B-077 pada jalur restore teruji penuh: penukaran database
+// memutuskan koneksi pool, tetapi catatan untuk aksi paling sensitif ini
+// tidak boleh hilang.
+func TestRestoreAuditTercatatSesudahTukar(t *testing.T) {
+	env := siapkanLingkunganRestore(t)
+	env.tanamPenanda("AWAL")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/system/backup/export?format=sql", nil)
+	recExp := httptest.NewRecorder()
+	env.handler.exportDatabaseSQL(recExp, req)
+	if recExp.Code != http.StatusOK {
+		t.Fatalf("ekspor status = %d. body: %s", recExp.Code, recExp.Body.String())
+	}
+
+	rec := env.panggilRestore("routex_backup.sql", recExp.Body.Bytes())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("restore status = %d. body: %s", rec.Code, rec.Body.String())
+	}
+
+	if n := env.hitungAuditRestore(); n < 1 {
+		t.Errorf("baris audit restore di database hasil restore = %d, mau >= 1", n)
+	}
+}
+
+// TestWriteAuditRestorePulihDariPoolMati: pool yang dimatikan meniru
+// keadaan koneksi pool aplikasi sesudah penukaran database (backend
+// diakhiri, 57P01) — tulisan pertama pasti gagal, dan writeAuditRestore
+// wajib pulih lewat koneksi baru yang mengikat nama database yang sama.
+func TestWriteAuditRestorePulihDariPoolMati(t *testing.T) {
+	env := siapkanLingkunganRestore(t)
+	ctx := context.Background()
+
+	cfg := env.pool.Config().Copy()
+	cfg.MinConns = 0
+	poolMati, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatalf("membuat pool yang akan dimatikan: %v", err)
+	}
+	if _, err := poolMati.Exec(ctx, `SELECT 1`); err != nil {
+		t.Fatalf("memanaskan pool: %v", err)
+	}
+	poolMati.Close()
+
+	h := &Handlers{
+		pool:   poolMati,
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/system/backup/restore", nil)
+	h.writeAuditRestore(ctx, req, map[string]any{"filename": "uji-b077.sql"})
+
+	if n := env.hitungAuditRestore(); n != 1 {
+		t.Errorf("baris audit restore = %d, mau tepat 1 (tulisan ulang tidak boleh menggandakan)", n)
+	}
+}

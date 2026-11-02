@@ -370,7 +370,7 @@ func (h *Handlers) restoreDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeAudit(ctx, r, "restore", "database_backup", "all", map[string]any{
+	h.writeAuditRestore(ctx, r, map[string]any{
 		"filename":        header.Filename,
 		"size":            header.Size,
 		"safety_database": hasil.DatabasePengaman,
@@ -388,6 +388,44 @@ var (
 	errDumpTerlaluBesar = errors.New("dump sesudah dekompresi melebihi batas ukuran")
 	errDumpKosong       = errors.New("dump kosong atau rusak")
 )
+
+// writeAuditRestore mencatat audit aksi restore yang BERHASIL.
+//
+// Tulisan pertama memakai pool aplikasi seperti writeAudit biasa, tetapi
+// tulisan itu bisa gagal tepat sesudah restore: penukaran database
+// skratch-swap memutuskan SELURUH koneksi ke database target
+// (putuskanKoneksi — backend diakhiri, 57P01), termasuk koneksi diam yang
+// dipegang pool. Itulah temuan B-077: restore berhasil tetapi catatan
+// audit persistennya hilang. Bila tulisan pertama gagal, tulisan dicoba
+// SATU kali lagi lewat pool baru yang mengikat nama database yang sama —
+// sesudah penukaran, nama itu menunjuk database HASIL restore, jadi
+// catatan mendarat di tempat yang benar. Kegagalan tetap fail-open
+// (cukup dilog): audit tidak boleh menggagalkan restore yang sudah
+// berhasil, tetapi tidak boleh hilang diam-diam pada jalur sukses normal.
+func (h *Handlers) writeAuditRestore(ctx context.Context, r *http.Request, metadata map[string]any) {
+	if err := h.writeAuditTx(ctx, h.pool, r, "restore", "database_backup", "all", metadata); err == nil {
+		return
+	} else {
+		h.logger.WarnContext(ctx, "tulis audit restore lewat pool utama gagal; mencoba koneksi baru",
+			slog.Any("err", err))
+	}
+
+	segar, err := h.poolDatabaseLain(ctx, h.pool.Config().ConnConfig.Database, 1)
+	if err != nil {
+		h.logger.ErrorContext(ctx, "gagal membuka koneksi baru untuk audit restore", slog.Any("err", err))
+		return
+	}
+	defer segar.Close()
+
+	if err := h.writeAuditTx(ctx, segar, r, "restore", "database_backup", "all", metadata); err != nil {
+		h.logger.LogAttrs(ctx, slog.LevelError, "gagal menulis audit log",
+			slog.String("action", "restore"),
+			slog.String("resource_type", "database_backup"),
+			slog.String("resource_id", "all"),
+			slog.String("error", err.Error()),
+		)
+	}
+}
 
 // spoolDumpUnggahan menulis isi unggahan (mentah atau gzip) ke berkas
 // sementara SQL polos dan mengembalikan path-nya. Pemanggil wajib menghapus

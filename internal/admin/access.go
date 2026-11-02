@@ -46,6 +46,7 @@ func (h *Handlers) accessRoutes(r chi.Router) {
 		ur.With(auth.RequirePermission(seed.PermUsersWrite)).Delete("/{id}", h.deleteUser)
 		ur.With(auth.RequirePermission(seed.PermUsersWrite)).Post("/{id}/force-reset-password", h.forceResetPassword)
 		ur.With(auth.RequirePermission(seed.PermUsersWrite)).Post("/{id}/revoke-sessions", h.revokeUserSessions)
+		ur.With(auth.RequirePermission(seed.PermUsersWrite)).Post("/{id}/unlock", h.unlockUser)
 	})
 
 	// 3. Sessions
@@ -866,6 +867,30 @@ func (h *Handlers) forceResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	h.writeAudit(ctx, r, "force_reset_password", "user", id, map[string]any{"sesi_tercabut": revoked})
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "password_reset"})
+}
+
+// unlockUser menangani POST /api/admin/access/users/{id}/unlock: membuka
+// kunci login pengguna secara manual (audit3 B-076). Sebelumnya method repo
+// Users.Unlock lengkap dan teruji tetapi tidak terjangkau permukaan mana
+// pun — akun terkunci hanya pulih sesudah locked_until kedaluwarsa.
+//
+// Perilaku untuk pengguna yang memang TIDAK terkunci: idempoten 200 dengan
+// keadaan akhirnya (Unlock menolkan penghitung gagal dan mengosongkan
+// locked_until; status hanya berubah dari locked). Ini sejajar
+// revoke-sessions pada pengguna tanpa sesi yang menjawab 200 count=0.
+// Yang ditolak hanya pengguna yang tidak ada (404 dari repo).
+func (h *Handlers) unlockUser(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	u, err := h.usersRepo.Unlock(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "pengguna")
+		return
+	}
+
+	h.writeAudit(ctx, r, "unlock", "user", id, nil)
+	_ = h.respond(w, r, http.StatusOK, toUserDTO(&u, []string{"Admin"}))
 }
 
 func (h *Handlers) revokeUserSessions(w http.ResponseWriter, r *http.Request) {

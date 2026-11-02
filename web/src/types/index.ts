@@ -5,6 +5,11 @@ export interface User {
   email: string;
   display_name: string;
   status: 'active' | 'disabled' | 'locked';
+  // Keadaan kunci brute force dari DTO backend: locked_until terisi dan
+  // masih di masa depan berarti akun terkunci sementara walau statusnya
+  // active (dasar tampilnya tombol Buka Kunci, audit3 B-076).
+  failed_login_attempts?: number;
+  locked_until?: string | null;
   must_change_password: boolean;
   created_at: string;
   updated_at: string;

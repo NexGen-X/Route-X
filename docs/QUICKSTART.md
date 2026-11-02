@@ -1,6 +1,6 @@
 # Route-X Quickstart & Developer Integration Guide
 
-Dokumentasi ini memandu pengembang dalam mengintegrasikan aplikasi dengan **Route-X AI Gateway** (`https://api.your-domain.com`). Route-X menyediakan endpoint yang 100% kompatibel dengan protokol standar **OpenAI API**, sehingga Anda dapat langsung menggunakan pustaka resmi OpenAI (Python, Node.js), LangChain, LlamaIndex, atau cURL tanpa perlu mengubah kode aplikasi secara signifikan.
+Dokumentasi ini memandu pengembang dalam mengintegrasikan aplikasi dengan **Route-X AI Gateway** (`https://api.your-domain.com`). Route-X menyediakan endpoint yang kompatibel dengan protokol **OpenAI API** dan **Anthropic Messages API**, sehingga Anda dapat menggunakan pustaka resmi OpenAI (Python, Node.js), SDK Anthropic, LangChain, LlamaIndex, atau cURL dengan perubahan konfigurasi minimal (base URL + API key).
 
 ---
 
@@ -19,7 +19,7 @@ Setelah gateway dinyalakan, buka konsol web di peramban:
 
 ## 🔑 2. Autentikasi Klien API
 
-Seluruh permintaan inferensi ke gateway wajib menyertakan kunci API klien (*Client API Key*) yang dibuat melalui menu **Client API Keys** di konsol administrasi (`/#/api-keys`).
+Seluruh permintaan inferensi ke gateway wajib menyertakan kunci API klien (*Client API Key*) yang dibuat melalui menu **Kunci API** di konsol administrasi (`#/access/api-keys`).
 
 Gunakan salah satu format header berikut:
 ```http
@@ -37,9 +37,14 @@ x-api-key: sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 | Endpoint | Metode | Protokol | Deskripsi |
 |---|:---:|:---:|---|
 | `https://api.your-domain.com/v1/chat/completions` | `POST` | OpenAI | Inferensi percakapan standar OpenAI (streaming SSE & unary). |
-| `https://api.your-domain.com/v1/messages` | `POST` | Anthropic | Protokol asli Anthropic Claude (Claude Code, Cursor, dll.). |
-| `https://api.your-domain.com/v1/models` | `GET` | OpenAI | Daftar seluruh model AI aktif dan alias yang tersedia. |
+| `https://api.your-domain.com/v1/responses` | `POST` | OpenAI | **Alias** dari Chat Completions (handler yang sama), bukan implementasi penuh OpenAI Responses API. |
+| `https://api.your-domain.com/v1/messages` | `POST` | Anthropic | Protokol Anthropic Messages (Claude Code, Cursor, dll.). |
+| `https://api.your-domain.com/v1/messages/count_tokens` | `POST` | Anthropic | Estimasi jumlah token sebuah pesan (tokenizer lokal). |
+| `https://api.your-domain.com/v1/models` | `GET` | OpenAI | Daftar model yang benar-benar memiliki rute aktif, beserta aliasnya (berpaginasi `limit`/`after_id`). |
+| `https://api.your-domain.com/v1/models/{model}` | `GET` | OpenAI | Detail satu model. |
 | `https://api.your-domain.com/v1/embeddings` | `POST` | OpenAI | Vektorisasi teks untuk RAG / Pencarian Semantik. |
+
+Varian `/v1/v1/messages` dan `/v1/v1/messages/count_tokens` juga diterima sebagai alias.
 
 ---
 
@@ -64,7 +69,7 @@ client = OpenAI(
 
 # 1. Non-Streaming Chat Completion
 response = client.chat.completions.create(
-    model="gpt-5.6-terra",  # Atau alias model lain yang terdaftar di Route-X
+    model="gpt-5",  # Atau alias model lain yang terdaftar di Route-X
     messages=[
         {"role": "system", "content": "Anda adalah asisten AI yang cerdas dan solutif."},
         {"role": "user", "content": "Jelaskan arsitektur AI Gateway dalam 2 kalimat."}
@@ -77,7 +82,7 @@ print(response.choices[0].message.content)
 
 # 2. Streaming Chat Completion (Server-Sent Events)
 stream = client.chat.completions.create(
-    model="gpt-5.6-terra",
+    model="gpt-5",
     messages=[{"role": "user", "content": "Tuliskan 3 tips produktivitas."}],
     stream=True
 )
@@ -108,7 +113,7 @@ const client = new OpenAI({
 
 async function main() {
   const completion = await client.chat.completions.create({
-    model: 'gpt-5.6-terra',
+    model: 'gpt-5',
     messages: [{ role: 'user', content: 'Halo dari Node.js!' }],
   });
 
@@ -128,7 +133,7 @@ curl -X POST https://api.your-domain.com/v1/chat/completions \
   -H "Authorization: Bearer sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-5.6-terra",
+    "model": "gpt-5",
     "messages": [
       {"role": "user", "content": "Halo Route-X!"}
     ],
@@ -140,7 +145,7 @@ curl -N -X POST https://api.your-domain.com/v1/chat/completions \
   -H "Authorization: Bearer sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-5.6-terra",
+    "model": "gpt-5",
     "messages": [
       {"role": "user", "content": "Ceritakan satu lelucon lucu."}
     ],
@@ -156,7 +161,7 @@ curl -N -X POST https://api.your-domain.com/v1/chat/completions \
 from langchain_openai import ChatOpenAI
 
 llm = ChatOpenAI(
-    model="gpt-5.6-terra",
+    model="gpt-5",
     openai_api_base="https://api.your-domain.com/v1",
     openai_api_key="sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     temperature=0.5
@@ -174,7 +179,7 @@ print(response.content)
 from llama_index.llms.openai import OpenAI
 
 llm = OpenAI(
-    model="gpt-5.6-terra",
+    model="gpt-5",
     api_base="https://api.your-domain.com/v1",
     api_key="sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 )
@@ -187,7 +192,7 @@ print(response.text)
 
 ### F. Anthropic Claude Protocol (`/v1/messages`)
 
-Route-X menyediakan native passthrough untuk endpoint Anthropic, memungkinkan perkakas seperti Claude Code, Cursor, atau Anthropic SDK terhubung langsung:
+Route-X menerima protokol Anthropic Messages dan menerjemahkannya ke bentuk kanonik internal sebelum meneruskannya ke upstream (bukan passthrough mentah), sehingga perkakas seperti Claude Code, Cursor, atau Anthropic SDK dapat terhubung langsung. Block `document` didukung dengan batas berikut: dokumen teks (`text/plain`, termasuk base64) diteruskan sebagai teks ke semua upstream; dokumen PDF base64 diteruskan sebagai block asli hanya ke upstream Anthropic (tanpa kandidat Anthropic, request ditolak `400 unsupported_document_upstream`); dokumen bersumber URL ditolak — kirim isinya sebagai teks atau base64. Batas ukuran satu dokumen 10 MiB sesudah dekode base64:
 
 ```bash
 curl -X POST https://api.your-domain.com/v1/messages \
@@ -195,7 +200,7 @@ curl -X POST https://api.your-domain.com/v1/messages \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "claude-3-5-sonnet",
+    "model": "claude-sonnet-5",
     "max_tokens": 1024,
     "messages": [
       {"role": "user", "content": "Halo Claude via Route-X!"}
@@ -208,13 +213,13 @@ curl -X POST https://api.your-domain.com/v1/messages \
 ## ⚡ 5. Fitur Cerdas Gateway
 
 1. **Model Aliasing**:
-   Anda dapat menggunakan alias umum seperti `gpt-4o`, `claude-3-5-sonnet`, atau nama kustom. Route-X akan otomatis memetakan alias tersebut ke model riil di upstream provider.
+   Anda dapat memakai nama model katalog (mis. `gpt-5`, `claude-sonnet-5`) atau alias kustom yang didaftarkan operator di konsol. Route-X memetakan alias tersebut ke model riil di upstream provider.
 2. **Combo Routing (Failover & Load Balancing)**:
    Jika provider utama mengalami gangguan (*timeout*, *rate limit*, atau *out of balance*), Route-X secara otomatis mengalirkan permintaan ke provider cadangan (*cascading failover*) tanpa disadari oleh aplikasi klien.
 3. **Tracking Latensi & Biaya Real-Time**:
    Setiap respons menyertakan header pelacakan:
-   - `x-request-id`: ID pelacakan unik permintaan untuk penelusuran di menu **Requests**.
-   - `x-ratelimit-remaining-requests`: Sisa kuota rate limit.
+   - `X-Request-Id`: ID pelacakan unik permintaan untuk penelusuran di menu **Permintaan**.
+   - `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`: batas, sisa, dan waktu reset kuota rate limit kunci Anda (dipasang pada respons yang lolos maupun yang ditolak).
 
 ---
 
@@ -224,8 +229,14 @@ Route-X mengembalikan format error standar yang seragam:
 
 | Kode HTTP | Error Code | Penyebab & Solusi |
 |:---:|---|---|
-| `401` | `invalid_api_key` | Kunci API salah, dicabut (*revoked*), atau kadaluarsa. Buat kunci baru di konsol. |
-| `403` | `insufficient_scope` | Kunci API tidak memiliki scope `inference`. Tambahkan scope di menu API Keys. |
-| `429` | `rate_limit_exceeded` | Batas permintaan per detik/menit terlampaui. Tunggu sesaat atau tingkatkan limit. |
-| `402` | `budget_exceeded` | Pagu anggaran akun habis. Hubungi admin untuk menambah budget. |
-| `504` | `upstream_timeout` | Upstream provider tidak menjawab dalam waktu batas (timeout). Failover akan otomatis aktif jika dikonfigurasi. |
+| `400` | `invalid_request_error` / `content_filter` | Isi permintaan tidak sah, atau ditolak filter konten. Periksa kembali payload Anda. |
+| `401` | `invalid_api_key` | Kunci API salah, dicabut (*revoked*), kadaluarsa, atau pemiliknya dinonaktifkan. Buat kunci baru di konsol. |
+| `402` | `budget_exceeded` | Pagu anggaran yang berlaku untuk kunci/model/provider ini habis atau ditahan reservasi lain. Hubungi admin untuk menaikkan pagu. |
+| `403` | `provider_not_allowed` | Kunci API tidak diizinkan memakai provider tujuan permintaan ini. Sesuaikan izin provider pada kunci. |
+| `404` | `model_not_found` | Model tidak dikenal atau tidak memiliki rute aktif. Periksa `GET /v1/models`. |
+| `429` | `rate_limit_exceeded` | Batas laju terlampaui (kunci Anda, atau seluruh provider untuk model ini sedang membatasi laju). Tunggu sesaat — perhatikan header `X-RateLimit-Reset`. |
+| `502` | `upstream_error` / `upstream_auth_failed` / `upstream_permission_denied` / `upstream_quota_exhausted` | Kegagalan di sisi provider atau kredensial gateway ke provider. Ini bukan soal API key Anda — hubungi operator gateway. |
+| `503` | `upstream_overloaded` | Seluruh kandidat provider untuk model ini sedang penuh atau ter-skip pemutus arus. Coba lagi beberapa saat lagi. |
+| `504` | `upstream_timeout` | Upstream provider tidak menjawab sebelum batas waktu. Failover otomatis berlaku bila ada kandidat lain. |
+
+Permukaan Anthropic (`/v1/messages`) mengembalikan error yang sama dalam envelope Anthropic (`{"type":"error","error":{...}}`).

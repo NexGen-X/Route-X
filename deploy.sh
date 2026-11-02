@@ -1,4 +1,19 @@
 #!/bin/bash
+# ==============================================================================
+# Route-X — Deploy Docker (4 layanan: routex, db, redis, caddy)
+# ==============================================================================
+# Prasyarat : Docker + Docker Compose v2, dijalankan dari root repo.
+# Perilaku  : - Membuat .env otomatis (rahasia acak unik, izin 600) bila
+#               belum ada; MENOLAK membuat .env baru di atas volume data
+#               lama yang yatim (pulihkan .env dari cadangan Anda).
+#             - Build image SEBELUM kontainer lama dimatikan.
+#             - Sukses hanya diklaim sesudah /healthz menjawab lewat Caddy.
+# Variabel  : DOMAIN=domainanda.com  -> PUBLIC_URL memakai domain itu;
+#               tanpa DOMAIN, host adalah IP publik utama server dan
+#               sertifikat Caddy untuk IP adalah CA internal.
+#             VERSION=vX.Y.Z         -> menimpa cap versi biner Docker
+#               (bawaan: dari web/package.json).
+# ==============================================================================
 set -e
 
 echo "🚀 Menyiapkan arsitektur Docker Route-X (4 Layanan: Route-X, DB, Redis, Caddy)..."

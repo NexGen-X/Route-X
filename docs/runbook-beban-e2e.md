@@ -1,17 +1,12 @@
 # Runbook uji beban + e2e Route-X (staging lokal)
 
-Hasil smoke 2026-09-09: 20 VU 5 menit, 17.880 request, 0 gagal,
-p95 6,16 ms (ambang 800 ms).
-Hasil BERAT 2026-09-09: 200 VU 8 menit (ramp 2 + tahan 5 + turun 1),
-441.894 request pada 920/detik, 1 gagal yang expected (abort SSE),
-p95 13,22 ms (ambang 2000 ms), 43.874 abort tanpa kebocoran.
-Playwright menyeluruh 2026-09-09: 24/24 lolos 13,4 detik
-(2 setup auth + 4 aksi-tulis admin + 3 alur inti + 15 semua-halaman),
-pola storage-state: login tepat 2 kali, hemat limiter 20/IP/15 mnt.
-Chaos yang disuntik tengah jalan: echo2 fail 60 dtk (failover 200),
-Redis mati 30 dtk (chat 200 fail-open, login 401 benar, readyz down),
-echo2 slow 2-4 dtk (prompt unik 3 dtk, cache menutupi prompt lama).
-Rute: gateway -> 2 echo OpenAI-compatible lokal.
+Dokumen ini berisi PROSEDUR yang tetap berlaku. Seluruh hasil uji
+bertanggal dipindah ke Lampiran di akhir berkas dan berlabel historis —
+jangan jadikan angka lampiran sebagai patokan keadaan suite saat ini.
+Patokan terkini: suite Playwright 227 test dalam 6 proyek (setup,
+chromium, firefox, webkit, mobile-chrome, mobile-safari); hasil
+verifikasi penutup audit3: 223 lulus / 4 skip / 0 gagal nyata.
+Rute uji: gateway -> 2 echo OpenAI-compatible lokal.
 
 ## 1. Siapkan database staging
 
@@ -51,7 +46,7 @@ Hanya untuk staging lokal, jangan tiru di produksi.
 
   go build -o /tmp/ai-gateway-staging ./cmd/ai-gateway
   set -a; . /tmp/staging.env; set +a
-  /tmp/ai-gateway-staging -migrate   # harus: applied=10, seed akun admin awal
+  /tmp/ai-gateway-staging -migrate   # harus: applied=19, seed akun admin awal
   /tmp/ai-gateway-staging            # di latar; healthz di :18080
 
 ## 4. Nyalakan echo upstream
@@ -64,9 +59,10 @@ Echo menjawab GET /models + /v1/models dan POST /chat/completions +
 ## 5. Daftarkan provider + model + kredensial (via curl + cookie admin)
 
 Login dulu (POST /api/auth/login), ganti password bila diminta
-(POST /api/auth/change-password, wajib header Origin + X-CSRF-Token
-diambil dari cookie routex_csrf -- lihat riwayat sesi 2026-09-09 bila lupa),
-lalu:
+(POST /api/auth/change-password). Mutasi admin wajib header Origin +
+X-CSRF-Token — token CSRF tinggal di cookie `routex_csrf` dan disalin
+dashboard ke header itu; untuk curl, ambil nilainya dari cookie login.
+Lalu:
 
   POST /api/admin/upstreams/providers
     {"name":"echo-loadtest","kind":"openai_compatible",
@@ -108,9 +104,15 @@ failover teruji. Suntik chaos tengah jalan lewat flag file:
   service redis-server stop/start # uji fail-open 30 detik
 
 Ekspektasi saat chaos: failover tetap 200, Redis mati chat 200
-+ login 401 + readyz redis down, prompt unik menembus cache.
++ login 401 + readyz menunjukkan redis degraded/down, prompt unik
+menembus cache.
 
-## 8. Jalan Playwright menyeluruh (butuh admin khusus e2e)
+## 8. Jalan Playwright menyeluruh (butuh dua akun khusus e2e)
+
+Arsitektur single-admin: TIDAK ada peran Viewer — setiap pengguna
+terautentikasi adalah admin. Akun kedua di bawah ini hanyalah akun
+admin kedua yang dipakai suite sebagai "pengguna biasa"; yang menguji
+bukan perbedaan peran, melainkan alur milik akun lain.
 
   POST /api/admin/access/users
     {"email":"admin-e2e@local",...}            # akun Admin (seed awal)
@@ -123,62 +125,23 @@ Ekspektasi saat chaos: failover tetap 200, Redis mati chat 200
     E2E_EMAIL=e2e-viewer@local E2E_PASSWORD=<GANTI_PASSWORD_VIEWER> \
     npx playwright test --workers=1
 
-Hasil 2026-09-09: 24/24 lolos 13,4 detik. Rincian:
-2 setup auth (login admin + user tepat 1 kali),
-4 aksi-tulis (buat API key UI, alokasikan budget UI, rule+limit API),
-3 alur inti, 14 semua-halaman + 1 fallback rute.
-Hasil 2026-09-10 (5 browser, termasuk mobile): 200 lolos 10,3 menit
---workers=1 full suite (2 setup + 17 menyeluruh + 1 fallback + 5 aksi-tulis
-+ 3 alur-inti + 6 sisa-kritis + 12 mobile-responsif + 1 drawer, per browser
-dengan skip jujur). Per-project: chromium 45 lolos, mobile-chrome (Pixel 7)
-45 lolos + drawer buka-tutup ok, mobile-safari (iPhone 14) 46/46 lolos,
-webkit 45 lolos + 1 skip drawer, firefox 44 lolos + 1 flaky retry ok
-(CLI mobile, timing render) + 1 skip drawer. Test drawer di desktop skip
-jujur: tombol hamburger lg:hidden hanya ada di viewport kecil. 12 test
-mobile cek scroll horizontal <=1px per halaman + drawer via backdrop
-(z-50 menutupi hamburger z-30 saat terbuka, pola resmi Sidebar.tsx).
-Hasil 2026-09-10 sore (minimalis UI: PageHeader responsif 8 halaman,
-Card header stack vertikal mobile, toast tengah di mobile, selector
-Observability grid 2x2): chromium+mobile-chrome+mobile-safari 127 passed
-7,6 mnt --workers=1, 4 gagal awal lalu hijau semua saat rerun parsial:
-1 Observabilitas mobile-safari tombol Latency P95 terpotong @408px (akar:
-Card action flex-shrink-0 tanpa wrap; fix grid-cols-2 + Card stack),
-2 CLI mobile (timing render),
-1 filter mobile flaky TTL (lolos rerun). Pelajaran: binary staging harus
-direbuild setelah tiap perubahan web karena dist di-embed (dist lama = fix
-tak terbaca test).
 Staging wajib UPSTREAM_ALLOW_HTTP=true + UPSTREAM_ALLOWED_PRIVATE_ADDRS
 =127.0.0.1/32 + provider echo-sisa prio1 + echo-konten prio10 + mapping
-gpt-5, kalau tidak 4 test sisa-kritis gagal setup (bukan bug kode).
-Tambahan sejak runbook ini: halaman Katalog Model, Pengguna Admin + test
+gpt-5, kalau tidak test sisa-kritis gagal setup (bukan bug kode).
+Suite kini juga memuat halaman Katalog Model dan Pengguna Admin + test
 tulis UI (buat user baru + rotasi password + hapus bersih).
-Rincian: 2 setup + 17 menyeluruh + 1 fallback
-+ 5 aksi-tulis + 3 alur inti
-+ 5 sisa-kritis (providers/egress/users/filter/RL/kuota, 1 skip jadwal).
-Hasil 2026-09-09 (3 browser): 86 lolos 4,5 menit = 2 setup auth
-+ 28 x 3 browser (4 aksi-tulis + 3 alur inti + 15 menyeluruh -
-14 halaman + 1 fallback rute - + 6 sisa-kritis providers/egress/
-users/filter/RL/kuota, termasuk tunggu TTL filter 7 dtk dan
-pricing 35 dtk).
 
 ## 8b. Jalan Playwright sisa-kritis (6 area tulis + 2 negatif)
 
 Butuh provider echo-sisa (echo-upstream.py :19091, prioritas 1) dan
-echo-konten (:19093) terdaftar dengan kredensial, keduanya map gpt-5.
-Buat admin khusus, lalu:
+echo-konten (scripts/load/echo-konten.py :19093) terdaftar dengan
+kredensial, keduanya map gpt-5. Buat admin khusus, lalu:
 
   cd web
   BASE_URL=http://127.0.0.1:18080 \
     E2E_ADMIN_EMAIL=admin-sisa@local E2E_ADMIN_PASSWORD=<GANTI_PASSWORD_ADMIN> \
     E2E_EMAIL=viewer-sisa@local E2E_PASSWORD=<GANTI_PASSWORD_VIEWER> \
     npx playwright test sisa-kritis --no-deps --workers=1
-
-Hasil 2026-09-09: 6/6 lolos, full suite 30/30 1,4 menit. Rincian:
-providers (buat, kredensial, attach, test-model, hapus bersih), egress
-(pool mati probe unhealthy 200 + hapus), users (buat, grant Viewer,
-login, update, hapus), filter respons (blokir 4xx lalu lolos 200
-setelah hapus), negatif rate-limit (key 2 RPM, request ke-3 429),
-negatif kuota (harga 1000 USD/1M + budget 0,01, blokir 402).
 
 Pola: SATU APIRequestContext + login 1x di beforeAll (hemat limiter),
 nama e2e-sisa-*, prioritas provider 99, cleanup di finally. Wajib
@@ -189,14 +152,15 @@ Tiga TTL memengaruhi timing: filter 5 dtk, budget 5 dtk, harga 30 dtk
 {key: {id,...}, masked, raw_key} — id dan raw_key di ROOT hanya
 untuk baca, bukan tulis.
 
-Wajib --workers=1 dan pola storage-state (auth.setup.ts): 24 test
-x login = 429 dari limiter login (20/IP/15 mnt). File sesi
+Wajib --workers=1 dan pola storage-state (auth.setup.ts): login
+berulang per test = 429 dari limiter login (20/IP/15 mnt). File sesi
 e2e/.auth-*.json sudah di .gitignore, dibuat ulang tiap run.
 
 Pelajarannya: page.request/fixture request TIDAK mengirim Origin
 maupun token CSRF otomatis, padahal mutasi menuntut keduanya.
-Ambil csrf_token dari GET /api/auth/me lalu kirim sebagai header
-Origin + X-CSRF-Token di tiap POST/PUT/DELETE.
+Ambil token dari cookie `routex_csrf` (atau csrf_token dari
+GET /api/auth/me) lalu kirim sebagai header Origin + X-CSRF-Token di
+tiap POST/PUT/DELETE.
 
 Jangan jalankan Playwright bersamaan dengan k6 bila mengukur latency:
 tiga browser ikut memakai server yang sama dan mencemari angka p95.
@@ -215,3 +179,68 @@ bukan hilang tanpa jejak.
   sudo -u postgres psql -c "DROP DATABASE routex_staging"
   shred -u /tmp/staging.env /tmp/staging.cookies /tmp/loadtest_key /tmp/e2e_pw
   sudo -u postgres psql -c "ALTER ROLE routex WITH PASSWORD '<password-semula>'"
+
+---
+
+## Lampiran — Arsip hasil uji (HISTORIS, jangan jadikan patokan kini)
+
+Angka-angka di bawah ini adalah potret pada tanggalnya, dipindahkan
+utuh dari badan runbook agar prosedur di atas bersih. Keadaan suite
+dan kode sudah jauh berubah sejak hasil ini dicatat (migrasi kini 19,
+RBAC sudah dihapus, suite 227 test/6 proyek).
+
+### Hasil k6 + Playwright 2026-09-09 (era migrasi 0010)
+
+Hasil smoke 2026-09-09: 20 VU 5 menit, 17.880 request, 0 gagal,
+p95 6,16 ms (ambang 800 ms).
+Hasil BERAT 2026-09-09: 200 VU 8 menit (ramp 2 + tahan 5 + turun 1),
+441.894 request pada 920/detik, 1 gagal yang expected (abort SSE),
+p95 13,22 ms (ambang 2000 ms), 43.874 abort tanpa kebocoran.
+Playwright menyeluruh 2026-09-09: 24/24 lolos 13,4 detik
+(2 setup auth + 4 aksi-tulis admin + 3 alur inti + 15 semua-halaman),
+pola storage-state: login tepat 2 kali, hemat limiter 20/IP/15 mnt.
+Chaos yang disuntik tengah jalan: echo2 fail 60 dtk (failover 200),
+Redis mati 30 dtk (chat 200 fail-open, login 401 benar, readyz down),
+echo2 slow 2-4 dtk (prompt unik 3 dtk, cache menutupi prompt lama).
+
+Rincian menyeluruh 2026-09-09: 2 setup auth (login admin + user
+tepat 1 kali), 4 aksi-tulis (buat API key UI, alokasikan budget UI,
+rule+limit API), 3 alur inti, 14 semua-halaman + 1 fallback rute.
+
+Hasil sisa-kritis 2026-09-09: 6/6 lolos, full suite 30/30 1,4 menit.
+Rincian: providers (buat, kredensial, attach, test-model, hapus
+bersih), egress (pool mati probe unhealthy 200 + hapus), users
+(buat, grant Viewer, login, update, hapus), filter respons (blokir
+4xx lalu lolos 200 setelah hapus), negatif rate-limit (key 2 RPM,
+request ke-3 429), negatif kuota (harga 1000 USD/1M + budget 0,01,
+blokir 402). ("grant Viewer" mencerminkan era sebelum RBAC dihapus.)
+
+Hasil 2026-09-09 (3 browser): 86 lolos 4,5 menit = 2 setup auth
++ 28 x 3 browser (4 aksi-tulis + 3 alur inti + 15 menyeluruh -
+14 halaman + 1 fallback rute - + 6 sisa-kritis providers/egress/
+users/filter/RL/kuota, termasuk tunggu TTL filter 7 dtk dan
+pricing 35 dtk).
+
+### Hasil Playwright 2026-09-10
+
+Hasil 2026-09-10 (5 browser, termasuk mobile): 200 lolos 10,3 menit
+--workers=1 full suite (2 setup + 17 menyeluruh + 1 fallback + 5 aksi-tulis
++ 3 alur-inti + 6 sisa-kritis + 12 mobile-responsif + 1 drawer, per browser
+dengan skip jujur). Per-project: chromium 45 lolos, mobile-chrome (Pixel 7)
+45 lolos + drawer buka-tutup ok, mobile-safari (iPhone 14) 46/46 lolos,
+webkit 45 lolos + 1 skip drawer, firefox 44 lolos + 1 flaky retry ok
+(CLI mobile, timing render) + 1 skip drawer. Test drawer di desktop skip
+jujur: tombol hamburger lg:hidden hanya ada di viewport kecil. 12 test
+mobile cek scroll horizontal <=1px per halaman + drawer via backdrop
+(z-50 menutupi hamburger z-30 saat terbuka, pola resmi Sidebar.tsx).
+
+Hasil 2026-09-10 sore (minimalis UI: PageHeader responsif 8 halaman,
+Card header stack vertikal mobile, toast tengah di mobile, selector
+Observability grid 2x2): chromium+mobile-chrome+mobile-safari 127 passed
+7,6 mnt --workers=1, 4 gagal awal lalu hijau semua saat rerun parsial:
+1 Observabilitas mobile-safari tombol Latency P95 terpotong @408px (akar:
+Card action flex-shrink-0 tanpa wrap; fix grid-cols-2 + Card stack),
+2 CLI mobile (timing render),
+1 filter mobile flaky TTL (lolos rerun). Pelajaran: binary staging harus
+direbuild setelah tiap perubahan web karena dist di-embed (dist lama = fix
+tak terbaca test).

@@ -117,7 +117,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
             <button
               type="button"
               onClick={onShowGuide}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-bg-surface-1 hover:bg-bg-surface-2 text-xs text-text-secondary hover:text-white transition-colors font-mono cursor-pointer border border-border hover:border-border-hover"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[44px] sm:min-h-[32px] rounded-md bg-bg-surface-1 hover:bg-bg-surface-2 text-xs text-text-secondary hover:text-white transition-colors font-mono cursor-pointer border border-border hover:border-border-hover"
               aria-label="Buka Panduan Cepat"
             >
               <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />

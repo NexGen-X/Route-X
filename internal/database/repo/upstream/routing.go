@@ -636,6 +636,49 @@ func (r *RoutingRepo) SetProviders(ctx context.Context, ruleID string, providerI
 	return nil
 }
 
+// ProviderTanpaPemetaanModel mengembalikan nama provider — dari daftar
+// providerIDs — yang TIDAK memiliki baris provider_models untuk modelID,
+// terurut mengikuti urutan daftar masuk.
+//
+// Dipakai menegakkan audit3 V-FF-11 di lapisan admin: mengikat provider
+// yang tidak bisa melayani model target aturan adalah konfigurasi mati
+// (kandidatnya tidak akan pernah terpilih untuk model itu), dan dulu
+// ikatan semacam itu diterima senyap di ketiga jalur tulis aturan.
+// Provider yang tidak terdaftar sama sekali tidak dilaporkan di sini —
+// ketiadaannya sudah ditolak jalur SetProviders lewat foreign key.
+func (r *RoutingRepo) ProviderTanpaPemetaanModel(ctx context.Context, modelID string, providerIDs []string) ([]string, error) {
+	const op = "memeriksa pemetaan model provider aturan routing"
+	if len(providerIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.q.Query(ctx, `
+		select p.name
+		from unnest($2::uuid[]) with ordinality as t(id, urutan)
+		join providers p on p.id = t.id
+		where not exists (
+			select 1 from provider_models pm
+			where pm.provider_id = t.id and pm.model_id = $1
+		)
+		order by t.urutan`, modelID, providerIDs)
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	defer rows.Close()
+
+	var nama []string
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, repo.Err(op, err)
+		}
+		nama = append(nama, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return nama, nil
+}
+
 // SetRuleProviders menjalankan RoutingRepo.SetProviders di dalam transaksinya sendiri.
 //
 // Disediakan mengikuti SetPrice: pemanggil yang hanya memegang pool tidak perlu merakit

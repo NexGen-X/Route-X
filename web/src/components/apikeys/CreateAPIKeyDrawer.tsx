@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { KeyRound, Shield, Clock, DollarSign, Activity } from 'lucide-react';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
+import { InputBilangan } from '../common/InputBilangan';
+import { useToast } from '../../context/ToastContext';
+import { parseJumlahUsd } from '../../utils/money';
 import type { ExpirationPreset } from './types';
 
 export interface CreateAPIKeyDrawerProps {
@@ -23,9 +26,15 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
   onSubmit,
   isSubmitting = false,
 }) => {
+  const { toast } = useToast();
   const [name, setName] = useState('');
-  const [rpmLimit, setRpmLimit] = useState(120);
-  const [tpmLimit, setTpmLimit] = useState(100000);
+  // RPM/TPM dipegang sebagai TEKS mentah (audit3 V-FF-06): Number(teks)
+  // versi lama mengubah "1.5" menjadi float yang ditolak server dengan
+  // pesan buram, dan teks/kosong menjadi NaN/0 senyap. Kini keduanya
+  // divalidasi sebagai bilangan bulat >= 0 saat submit dengan pesan jelas.
+  const [rpmTeks, setRpmTeks] = useState('120');
+  const [tpmTeks, setTpmTeks] = useState('100000');
+  const [galatBatas, setGalatBatas] = useState<string | null>(null);
   const [monthlyBudgetUsd, setMonthlyBudgetUsd] = useState('');
   const [expirationPreset, setExpirationPreset] = useState<ExpirationPreset>('never');
   const [customDays, setCustomDays] = useState(30);
@@ -46,22 +55,52 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim()) {
+      toast.error('Nama kunci wajib diisi.');
+      return;
+    }
+    // Validasi batas laju (V-FF-06): hanya bilangan bulat >= 0. Pecahan
+    // seperti 1.5 dulu terkirim sebagai float dan ditolak server; kini
+    // berhenti di sini dengan penjelasan.
+    const rpmBersih = rpmTeks.trim();
+    const tpmBersih = tpmTeks.trim();
+    if (!/^\d+$/.test(rpmBersih) || !/^\d+$/.test(tpmBersih)) {
+      const pesan =
+        'Batas RPM dan TPM harus bilangan bulat 0 atau lebih (0 = tanpa batas) — pecahan, teks, dan kolom kosong tidak diterima.';
+      setGalatBatas(pesan);
+      toast.error(pesan, 'Batas Kecepatan Tidak Valid');
+      return;
+    }
+    setGalatBatas(null);
+    // Anggaran divalidasi di sini juga (V-FF-07) agar format koma desimal
+    // "10,5" tidak lolos menjadi NaN di halaman: halaman tetap memagarinya
+    // sekali lagi sebelum kunci dibuat.
+    const anggaranTeks = monthlyBudgetUsd.trim();
+    if (anggaranTeks !== '') {
+      const hasil = parseJumlahUsd(anggaranTeks);
+      if (!hasil.ok) {
+        toast.error(hasil.pesan, 'Anggaran Tidak Valid');
+        return;
+      }
+    }
     const expiresAt = calculateExpiresAt(expirationPreset, customDays);
     await onSubmit({
       name: name.trim(),
-      rpm_limit: rpmLimit,
-      tpm_limit: tpmLimit,
-      monthlyBudgetUsd: monthlyBudgetUsd.trim(),
+      rpm_limit: Number(rpmBersih),
+      tpm_limit: Number(tpmBersih),
+      monthlyBudgetUsd: anggaranTeks,
       expiresAt,
     });
   };
 
   const handleResetAndClose = () => {
     setName('');
-    setRpmLimit(120);
-    setTpmLimit(100000);
+    setRpmTeks('120');
+    setTpmTeks('100000');
+    setGalatBatas(null);
     setMonthlyBudgetUsd('');
     setExpirationPreset('never');
+    setCustomDays(30);
     onClose();
   };
 
@@ -158,16 +197,21 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
           </div>
 
           {expirationPreset === 'custom' && (
-            <div className="pt-2 flex items-center gap-2">
-              <input
-                type="number"
-                min="1"
-                max="730"
-                value={customDays}
-                onChange={(e) => setCustomDays(Number(e.target.value))}
-                className="w-24 px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
-              />
-              <span className="text-xs text-text-secondary">hari dari sekarang</span>
+            <div className="pt-2 flex items-start gap-2">
+              {/* InputBilangan menegakkan rentang 1–730 (V-FF-17): atribut
+                  max saja dulu tidak mencegah nilai seperti 99999 tersimpan
+                  sebagai tanggal kedaluwarsa tahun 2300. */}
+              <div className="w-28">
+                <InputBilangan
+                  ariaLabel="Hari kedaluwarsa kustom"
+                  value={customDays}
+                  onChange={setCustomDays}
+                  min={1}
+                  max={730}
+                  className="w-full px-3 py-1.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono"
+                />
+              </div>
+              <span className="text-xs text-text-secondary pt-2">hari dari sekarang (maks 730)</span>
             </div>
           )}
         </div>
@@ -188,8 +232,8 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
                 id="key-rpm"
                 type="number"
                 min="0"
-                value={rpmLimit}
-                onChange={(e) => setRpmLimit(Number(e.target.value))}
+                value={rpmTeks}
+                onChange={(e) => setRpmTeks(e.target.value)}
                 className="w-full px-3 py-2 bg-bg-surface border border-border rounded-nav text-white font-mono"
               />
               <span className="text-[10px] text-text-muted block mt-0.5">0 = Tanpa Batas</span>
@@ -204,13 +248,18 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
                 type="number"
                 min="0"
                 step="1000"
-                value={tpmLimit}
-                onChange={(e) => setTpmLimit(Number(e.target.value))}
+                value={tpmTeks}
+                onChange={(e) => setTpmTeks(e.target.value)}
                 className="w-full px-3 py-2 bg-bg-surface border border-border rounded-nav text-white font-mono"
               />
               <span className="text-[10px] text-text-muted block mt-0.5">0 = Tanpa Batas</span>
             </div>
           </div>
+          {galatBatas && (
+            <p role="alert" className="text-[11px] text-red-400">
+              {galatBatas}
+            </p>
+          )}
         </div>
 
         {/* Anggaran Bulanan USD */}
@@ -224,10 +273,9 @@ export const CreateAPIKeyDrawer: React.FC<CreateAPIKeyDrawerProps> = ({
             <input
               id="monthly-budget-usd"
               name="monthlyBudgetUsd"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="Contoh: 50.00"
+              type="text"
+              inputMode="decimal"
+              placeholder="Contoh: 50.00 atau 50,00"
               value={monthlyBudgetUsd}
               onChange={(e) => setMonthlyBudgetUsd(e.target.value)}
               className="w-full pl-7 pr-3 py-2.5 bg-bg-surface-2 border border-border rounded-nav text-white font-mono placeholder:text-text-muted focus:outline-none focus:border-accent"

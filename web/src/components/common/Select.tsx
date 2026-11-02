@@ -71,6 +71,12 @@ export const Select: React.FC<SelectProps> = ({
 
   const isSearchable = searchable ?? options.length > 5;
   const selectedOption = options.find((opt) => opt.value === value);
+  // Nilai yatim (audit3 V-FF-16): value tersimpan yang tidak ada di options
+  // (mis. strategi/model yang sudah dihapus dari katalog). Dulu trigger
+  // menampilkan placeholder seolah kolom kosong, padahal nilai itu tetap
+  // ikut terkirim saat form disimpan — operator bisa menimpa data tanpa
+  // sadar. Kini nilai mentahnya ditampilkan dengan gaya peringatan.
+  const nilaiYatim = value !== '' && !selectedOption;
 
   const filteredOptions = options.filter((opt) => {
     if (!searchQuery.trim()) return true;
@@ -148,7 +154,10 @@ export const Select: React.FC<SelectProps> = ({
 
     switch (e.key) {
       case 'Escape':
+        // stopPropagation (V-FF-20): Escape untuk menutup dropdown tidak
+        // boleh ikut menutup Modal/Drawer yang menaunginya.
         e.preventDefault();
+        e.stopPropagation();
         setIsOpen(false);
         setSearchQuery('');
         break;
@@ -226,8 +235,8 @@ export const Select: React.FC<SelectProps> = ({
       >
         <div className="flex items-center gap-2 truncate min-w-0 flex-1">
           {selectedOption?.icon && <span className="flex-shrink-0">{selectedOption.icon}</span>}
-          <span className={cn('truncate', selectedOption ? 'text-white font-medium' : 'text-text-muted font-normal')}>
-            {selectedOption ? selectedOption.label : placeholder}
+          <span className={cn('truncate', selectedOption ? 'text-white font-medium' : nilaiYatim ? 'text-amber-300 font-medium' : 'text-text-muted font-normal')}>
+            {selectedOption ? selectedOption.label : nilaiYatim ? value : placeholder}
           </span>
         </div>
 
@@ -242,6 +251,11 @@ export const Select: React.FC<SelectProps> = ({
       </button>
 
       {error && <span id={`${selectId}-error`} className="text-[11px] text-status-error mt-1 block">{error}</span>}
+      {!error && nilaiYatim && (
+        <span className="text-[11px] text-amber-300/90 mt-1 block">
+          Nilai tersimpan tidak ada dalam daftar opsi — nilai ini tetap terkirim apa adanya sampai Anda memilih opsi lain.
+        </span>
+      )}
 
       {/* Floating Custom Dropdown List untuk Desktop (>= 640px) */}
       {isOpen && !isMobile && (
@@ -287,6 +301,16 @@ export const Select: React.FC<SelectProps> = ({
             tabIndex={-1}
             className="overflow-y-auto p-1 divide-y divide-white/[0.04] space-y-0.5 scrollbar-thin"
           >
+            {nilaiYatim && !searchQuery.trim() && (
+              <div
+                role="option"
+                aria-selected={true}
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs bg-amber-500/10 text-amber-300 border border-amber-500/25"
+              >
+                <span className="truncate font-mono">{value}</span>
+                <span className="text-[10px] shrink-0">nilai tersimpan — tidak ada dalam daftar</span>
+              </div>
+            )}
             {filteredOptions.length === 0 ? (
               <div className="py-4 px-3 text-center text-xs text-text-muted">
                 Tidak ada opsi yang cocok dengan "{searchQuery}"
@@ -413,6 +437,16 @@ export const Select: React.FC<SelectProps> = ({
                 tabIndex={-1}
                 className="overflow-y-auto px-2 py-2 space-y-1 divide-y divide-white/[0.04] max-h-[60vh] scrollbar-thin"
               >
+                {nilaiYatim && !searchQuery.trim() && (
+                  <div
+                    role="option"
+                    aria-selected={true}
+                    className="flex items-center justify-between gap-3 px-3 py-3 rounded-xl text-xs bg-amber-500/10 text-amber-300 border border-amber-500/25 min-h-[44px]"
+                  >
+                    <span className="truncate font-mono">{value}</span>
+                    <span className="text-[10px] shrink-0">nilai tersimpan</span>
+                  </div>
+                )}
                 {filteredOptions.length === 0 ? (
                   <div className="py-8 px-4 text-center text-xs text-text-muted">
                     Tidak ada opsi yang cocok dengan "{searchQuery}"

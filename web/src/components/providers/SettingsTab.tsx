@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import type { Provider, EgressPool } from '../../types';
 import type { api as apiClient } from '../../api/client';
 import { Button } from '../common/Button';
+import { InputBilangan } from '../common/InputBilangan';
 import { Tooltip } from '../common/Tooltip';
 import { Globe, Trash2, Check, AlertTriangle } from 'lucide-react';
 
@@ -35,8 +36,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [configForm, setConfigForm] = useState({
     display_name: selectedProvider?.display_name || '',
     base_url: selectedProvider?.base_url || '',
-    priority: selectedProvider?.priority || 100,
-    weight: selectedProvider?.weight || 100,
+    // ?? bukan || (audit3 V-FF-02): prioritas 0 SAH di server (rentang
+    // 0..100000) dan tidak boleh berubah menjadi 100 hanya karena falsy.
+    priority: selectedProvider?.priority ?? 100,
+    weight: selectedProvider?.weight ?? 100,
   });
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
@@ -51,8 +54,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       setConfigForm({
         display_name: selectedProvider.display_name || '',
         base_url: selectedProvider.base_url || '',
-        priority: selectedProvider.priority || 100,
-        weight: selectedProvider.weight || 100,
+        priority: selectedProvider.priority ?? 100,
+        weight: selectedProvider.weight ?? 100,
       });
     }
   }, [selectedProvider]);
@@ -103,19 +106,22 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             </div>
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">Prioritas Routing</label>
-              <input
-                type="number"
+              <InputBilangan
+                ariaLabel="Prioritas Routing"
                 value={configForm.priority}
-                onChange={(e) => setConfigForm({ ...configForm, priority: parseInt(e.target.value) || 100 })}
+                onChange={(n) => setConfigForm({ ...configForm, priority: n })}
+                min={0}
+                max={100000}
                 className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white font-mono outline-none focus:border-accent"
               />
             </div>
             <div>
               <label className="block text-xs font-medium text-text-secondary mb-1.5">Bobot Load Balance</label>
-              <input
-                type="number"
+              <InputBilangan
+                ariaLabel="Bobot Load Balance"
                 value={configForm.weight}
-                onChange={(e) => setConfigForm({ ...configForm, weight: parseInt(e.target.value) || 100 })}
+                onChange={(n) => setConfigForm({ ...configForm, weight: n })}
+                min={1}
                 className="w-full px-2.5 py-1.5 text-xs bg-bg-surface border border-border rounded-lg text-white font-mono outline-none focus:border-accent"
               />
             </div>

@@ -32,6 +32,7 @@ export interface DomainTabProps {
   inputMode: SSLProviderMode;
   isDomainLoading: boolean;
   isDomainSaving: boolean;
+  isDomainDeleting: boolean;
   domainFeedback: DomainFeedback;
   serverIP: string | null;
   setInputDomain: (domain: string) => void;

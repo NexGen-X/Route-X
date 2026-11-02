@@ -166,6 +166,48 @@ func cleanUUID(s *string) *string {
 	return &trimmed
 }
 
+// galatProviderTanpaModel menandai penolakan audit3 V-FF-11: provider yang
+// diikat ke aturan tidak memetakan model target aturan itu, sehingga
+// kandidatnya tidak akan pernah bisa melayani model tersebut. Dulu ketiga
+// jalur tulis aturan (buat, ubah, pasang provider) menerima ikatan mati
+// ini tanpa bunyi; kini ditolak 400 dengan nama providernya disebut.
+type galatProviderTanpaModel struct {
+	Nama []string
+}
+
+func (e *galatProviderTanpaModel) Error() string {
+	return fmt.Sprintf(
+		"provider berikut tidak memetakan model target aturan ini: %s — petakan dulu modelnya ke provider tersebut, atau lepaskan provider itu dari aturan",
+		strings.Join(e.Nama, ", "),
+	)
+}
+
+// tulisGalatProviderModel menulis respons 400 bila err adalah penolakan
+// V-FF-11 dan mengembalikan true; false berarti err lain, tangani seperti
+// biasa.
+func tulisGalatProviderModel(w http.ResponseWriter, r *http.Request, err error) bool {
+	var g *galatProviderTanpaModel
+	if errors.As(err, &g) {
+		httpx.BadRequest(w, r, "provider_tidak_memetakan_model", g.Error())
+		return true
+	}
+	return false
+}
+
+// periksaIkatanProvider memeriksa daftar provider terhadap model target
+// aturan dan mengembalikan galatProviderTanpaModel bila ada yang tidak
+// memetakan model itu.
+func periksaIkatanProvider(ctx context.Context, repoRouting *upstream.RoutingRepo, modelID string, providerIDs []string) error {
+	tanpa, err := repoRouting.ProviderTanpaPemetaanModel(ctx, modelID, providerIDs)
+	if err != nil {
+		return err
+	}
+	if len(tanpa) > 0 {
+		return &galatProviderTanpaModel{Nama: tanpa}
+	}
+	return nil
+}
+
 // literalNullJSON adalah representasi JSON null mentah, dipakai membandingkan field
 // pipeline mentah supaya "null eksplisit" bisa dibedakan dari "tidak disebut".
 var literalNullJSON = []byte("null")
@@ -321,6 +363,12 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(req.ProviderIDs) > 0 {
+			// V-FF-11: ikatan provider wajib memetakan model target aturan.
+			if modelID := cleanUUID(req.MatchModelID); modelID != nil {
+				if err := periksaIkatanProvider(ctx, txRouting, *modelID, req.ProviderIDs); err != nil {
+					return err
+				}
+			}
 			if err := txRouting.SetProviders(ctx, rule.ID, req.ProviderIDs, req.Weights); err != nil {
 				return err
 			}
@@ -332,6 +380,9 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
+		if tulisGalatProviderModel(w, r, err) {
+			return
+		}
 		mapRepoError(w, r, err, "aturan routing")
 		return
 	}
@@ -395,6 +446,16 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Model target akhir sesudah penggabungan dengan keadaan sekarang —
+	// dasar pemeriksaan ikatan provider V-FF-11 di dalam transaksi.
+	modelAkhir := ""
+	if existing.MatchModelID != nil {
+		modelAkhir = *existing.MatchModelID
+	}
+	if req.MatchModelID != nil {
+		modelAkhir = strings.TrimSpace(*req.MatchModelID)
+	}
+
 	var p upstream.UpdateRoutingRuleParams
 	if req.Name != "" {
 		p.Name = &req.Name
@@ -456,6 +517,12 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if req.ProviderIDs != nil {
+			// V-FF-11: ikatan provider wajib memetakan model target akhir.
+			if modelAkhir != "" && len(req.ProviderIDs) > 0 {
+				if err := periksaIkatanProvider(ctx, txRouting, modelAkhir, req.ProviderIDs); err != nil {
+					return err
+				}
+			}
 			if err := txRouting.SetProviders(ctx, id, req.ProviderIDs, req.Weights); err != nil {
 				return err
 			}
@@ -467,6 +534,9 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
+		if tulisGalatProviderModel(w, r, err) {
+			return
+		}
 		mapRepoError(w, r, err, "aturan routing")
 		return
 	}
@@ -533,7 +603,30 @@ func (h *Handlers) setRuleProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.routingRepo.SetProviders(ctx, id, req.ProviderIDs, req.Weights); err != nil {
+	// V-FF-11: aturan yang punya model target hanya boleh diikat ke
+	// provider yang memetakan model itu.
+	aturan, err := h.routingRepo.Get(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "aturan routing")
+		return
+	}
+	if aturan.MatchModelID != nil && len(req.ProviderIDs) > 0 {
+		if err := periksaIkatanProvider(ctx, h.routingRepo, *aturan.MatchModelID, req.ProviderIDs); err != nil {
+			if tulisGalatProviderModel(w, r, err) {
+				return
+			}
+			mapRepoError(w, r, err, "provider aturan routing")
+			return
+		}
+	}
+
+	// SetRuleProviders (pembungkus bertransaksi), BUKAN metode repo di atas
+	// pool: SetProviders menolak berjalan di luar transaksi (ErrNeedsTx),
+	// sehingga pemanggilan langsung versi lama membuat endpoint ini selalu
+	// menjawab 500 untuk ikatan yang sah sekalipun — drawer "Edit Penyedia
+	// & Bobot" tidak pernah berhasil menyimpan. Terbukti oleh
+	// TestIkatanProviderWajibMemetakanModel (audit3 grup 13).
+	if err := upstream.SetRuleProviders(ctx, h.pool, id, req.ProviderIDs, req.Weights); err != nil {
 		mapRepoError(w, r, err, "provider aturan routing")
 		return
 	}

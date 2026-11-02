@@ -32,8 +32,9 @@ import {
   ProviderBrandIcon,
   type KnownProviderPreset,
 } from './ProviderIcons';
-import { matchExistingProvider } from './providerMatching';
+import { matchExistingProvider, slugNamaProvider, validasiProviderBaru } from './providerMatching';
 import { extractAuthTokenFromInput } from '../../utils/authExtractor';
+import { useToast } from '../../context/ToastContext';
 
 export interface CreateProviderModalProps {
   isOpen: boolean;
@@ -96,6 +97,13 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
     egress_pool_id: undefined as string | undefined,
   });
 
+  const { confirmModal } = useToast();
+  // Potret isian form tepat sesudah preset terakhir diterapkan (V-FF-09):
+  // klik preset dulu menimpa SELURUH isian form tanpa konfirmasi, termasuk
+  // nama/base URL/API key yang sudah diketik operator. Kini penyimpangan
+  // dari potret ini berarti ada isian manual yang akan hilang.
+  const potretFormRef = useRef<{ name: string; display_name: string; base_url: string } | null>(null);
+
   const setupPreset = (preset: KnownProviderPreset | null) => {
     setCurrentPreset(preset);
     if (preset) {
@@ -112,12 +120,17 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
             ? ''
             : 'Akun Tambahan'
         );
+        potretFormRef.current = {
+          name: newProv.name,
+          display_name: newProv.display_name,
+          base_url: newProv.base_url,
+        };
       } else {
         setTargetExistingProvider(null);
         setModalMode('create_new');
         setAuthTab(preset.authLoginType === 'oauth_fallback' ? 'oauth' : 'apikey');
         setAccountLabel('Akun Utama');
-        setNewProv({
+        const provBaru = {
           name: preset.name,
           display_name: preset.displayName,
           kind: preset.kind,
@@ -125,25 +138,62 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
           priority: preset.defaultPriority,
           weight: preset.defaultWeight,
           timeout_ms: 30000,
-          egress_pool_id: undefined,
-        });
+          egress_pool_id: undefined as string | undefined,
+        };
+        setNewProv(provBaru);
+        potretFormRef.current = {
+          name: provBaru.name,
+          display_name: provBaru.display_name,
+          base_url: provBaru.base_url,
+        };
       }
     } else {
       setTargetExistingProvider(null);
       setModalMode('create_new');
       setAuthTab('apikey');
       setAccountLabel('Primary Key');
-      setNewProv({
+      const provBaru = {
         name: 'custom-provider',
         display_name: 'Custom Provider',
-        kind: 'openai_compatible',
+        kind: 'openai_compatible' as Provider['kind'],
         base_url: 'https://api.openai-proxy.local/v1',
         priority: 100,
         weight: 100,
         timeout_ms: 30000,
-        egress_pool_id: undefined,
-      });
+        egress_pool_id: undefined as string | undefined,
+      };
+      setNewProv(provBaru);
+      potretFormRef.current = {
+        name: provBaru.name,
+        display_name: provBaru.display_name,
+        base_url: provBaru.base_url,
+      };
     }
+  };
+
+  // Klik preset dari pemilih: konfirmasi dulu bila ada isian manual yang
+  // akan tertimpa (V-FF-09). Pembukaan modal (setupPreset dari effect)
+  // tidak melewati penjaga ini karena form memang masih segar.
+  const pilihPreset = async (preset: KnownProviderPreset | null) => {
+    const potret = potretFormRef.current;
+    const isianBerubah =
+      quickApiKey.trim() !== '' ||
+      authFallbackInput.trim() !== '' ||
+      (potret !== null &&
+        (potret.name !== newProv.name ||
+          potret.display_name !== newProv.display_name ||
+          potret.base_url !== newProv.base_url));
+    if (isianBerubah) {
+      const ok = await confirmModal({
+        title: 'Ganti Preset?',
+        message:
+          'Beralih preset akan menimpa isian form saat ini (nama, base URL, dan kredensial yang belum disimpan). Lanjutkan?',
+        confirmText: 'Ya, Ganti Preset',
+        cancelText: 'Batal',
+      });
+      if (!ok) return;
+    }
+    setupPreset(preset);
   };
 
   // Inisialisasi HANYA saat modal berubah tertutup -> terbuka (audit F7):
@@ -181,21 +231,33 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
   const handleTestSocket = async () => {
     setSocketPingStatus({ testing: true });
     const start = performance.now();
-    try {
-      const targetUrl = (newProv.base_url || '').replace(/\/+$/, '');
+    // Uji per endpoint dengan controller + tenggat SENDIRI (audit3 V-FF-22):
+    // versi lama memakai satu controller 4 detik untuk rantai tiga fetch —
+    // endpoint pertama yang lambat menghabiskan seluruh anggaran sehingga
+    // fallback tak pernah sempat dicoba; dan fallback hanya berjalan saat
+    // fetch MENOLAK, padahal jawaban HTTP 404 (endpoint tidak ada) justru
+    // alasan utama mencoba endpoint berikutnya.
+    const targetUrl = (newProv.base_url || '').replace(/\/+$/, '');
+    const kandidat = ['/models', '/api/tags', '/v1/models'];
+    let berhasil = false;
+    for (const suffix of kandidat) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-      const res = await fetch(`${targetUrl}/models`, { method: 'GET', signal: controller.signal })
-        .catch(() => fetch(`${targetUrl}/api/tags`, { method: 'GET', signal: controller.signal }))
-        .catch(() => fetch(`${targetUrl}/v1/models`, { method: 'GET', signal: controller.signal }));
-
-      clearTimeout(timeoutId);
-      const latency = Math.round(performance.now() - start);
-      setSocketPingStatus({ testing: false, latency, ok: Boolean(res && res.ok) });
-    } catch {
-      setSocketPingStatus({ testing: false, latency: 0, ok: false });
+      const timer = setTimeout(() => controller.abort(), 4000);
+      try {
+        const res = await fetch(`${targetUrl}${suffix}`, { method: 'GET', signal: controller.signal });
+        if (res.ok) {
+          berhasil = true;
+          break;
+        }
+        // Status gagal (mis. 404): lanjut ke kandidat berikutnya.
+      } catch {
+        // Jaringan/abort pada kandidat ini: lanjut ke kandidat berikutnya.
+      } finally {
+        clearTimeout(timer);
+      }
     }
+    const latency = Math.round(performance.now() - start);
+    setSocketPingStatus({ testing: false, latency, ok: berhasil });
   };
 
   const switchToCreateNew = () => {
@@ -290,13 +352,23 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
         setSavingStep('');
       }
     } else {
+      // Validasi form provider baru (V-FF-09): nama & base_url wajib sah
+      // dan slug hasil normalisasi tidak boleh menabrak provider lain.
+      // Versi lama mengirim apa adanya dan menormalisasi nama secara
+      // diam-diam di tengah jalan.
+      const galatForm = validasiProviderBaru(newProv, providers);
+      if (galatForm) {
+        toast.error(galatForm);
+        setIsSaving(false);
+        return;
+      }
       setIsSaving(true);
       setSavingStep('Mendaftarkan provider ke PostgreSQL...');
 
       try {
         const created = await api.providers.create({
           ...newProv,
-          name: newProv.name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-'),
+          name: slugNamaProvider(newProv.name),
           display_name: newProv.display_name.trim(),
           base_url: newProv.base_url.trim(),
           egress_pool_id: selectedEgressPoolId || undefined,
@@ -442,7 +514,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                 <button
                   key={preset.id}
                   type="button"
-                  onClick={() => setupPreset(preset)}
+                  onClick={() => void pilihPreset(preset)}
                   className={`p-2 rounded-lg border flex flex-col items-center justify-center text-center gap-1 transition-all cursor-pointer min-h-[50px] ${
                     isSelected
                       ? 'bg-accent/15 border-accent text-white shadow-sm ring-1 ring-accent'
@@ -463,7 +535,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                 <button
                   key={preset.id}
                   type="button"
-                  onClick={() => setupPreset(preset)}
+                  onClick={() => void pilihPreset(preset)}
                   className={`p-1.5 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
                     currentPreset?.id === preset.id
                       ? 'bg-accent/15 border-accent text-white'
@@ -477,7 +549,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
               ))}
               <button
                 type="button"
-                onClick={() => setupPreset(null)}
+                onClick={() => void pilihPreset(null)}
                 className={`p-1.5 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
                   currentPreset === null
                     ? 'bg-purple-950/40 border-purple-500 text-purple-200'
@@ -598,6 +670,12 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                       onChange={(e) => setNewProv({ ...newProv, name: e.target.value })}
                       className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
                     />
+                    {slugNamaProvider(newProv.name) !== '' && slugNamaProvider(newProv.name) !== newProv.name.trim() && (
+                      <p className="text-[10px] text-text-muted mt-1">
+                        Nama teknis yang akan tersimpan:{' '}
+                        <span className="font-mono text-text-secondary">{slugNamaProvider(newProv.name)}</span>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="provider-display-name">Nama Tampilan *</label>
@@ -932,6 +1010,12 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
                       onChange={(e) => setNewProv({ ...newProv, name: e.target.value })}
                       className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono focus:outline-none focus:border-accent"
                     />
+                    {slugNamaProvider(newProv.name) !== '' && slugNamaProvider(newProv.name) !== newProv.name.trim() && (
+                      <p className="text-[10px] text-text-muted mt-1">
+                        Nama teknis yang akan tersimpan:{' '}
+                        <span className="font-mono text-text-secondary">{slugNamaProvider(newProv.name)}</span>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-text-secondary mb-1.5" htmlFor="adv-provider-baseurl">Base URL *</label>

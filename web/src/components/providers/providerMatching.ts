@@ -159,3 +159,55 @@ export const matchExistingProvider = (
 
   return null;
 };
+
+/**
+ * Slug nama teknis provider (audit3 V-FF-09): normalisasi yang dulu hanya
+ * terjadi senyap di dalam handleSubmit modal buat provider — operator
+ * mengetik "OpenAI Saya!" dan provider tersimpan sebagai "openai-saya-"
+ * tanpa pernah melihat hasil akhirnya. Kini slug dihitung oleh satu fungsi
+ * bersama yang dipakai pratinjau form DAN pengiriman, jadi yang dilihat
+ * operator persis yang tersimpan.
+ */
+export function slugNamaProvider(nama: string): string {
+  return nama.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+}
+
+/**
+ * Validasi form provider baru (V-FF-09): mengembalikan pesan galat pertama
+ * atau null. Nama/nama tampilan wajib terisi, base_url wajib URL http(s)
+ * yang sah, dan slug hasil normalisasi tidak boleh menabrak provider yang
+ * sudah ada (tabrakan itu dulu baru muncul sebagai error server yang buram).
+ */
+export function validasiProviderBaru(
+  form: { name: string; display_name: string; base_url: string },
+  providers: Provider[],
+): string | null {
+  if (!form.name.trim()) {
+    return 'Nama teknis provider wajib diisi.';
+  }
+  if (!form.display_name.trim()) {
+    return 'Nama tampilan provider wajib diisi.';
+  }
+  const baseUrl = form.base_url.trim();
+  if (!baseUrl) {
+    return 'Base URL endpoint wajib diisi.';
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return `Base URL "${baseUrl}" bukan URL yang valid — contoh: https://api.openai.com/v1.`;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return 'Base URL harus diawali http:// atau https://.';
+  }
+  const slug = slugNamaProvider(form.name);
+  if (!slug || /^-+$/.test(slug)) {
+    return 'Nama teknis provider tidak menghasilkan nama yang sah — gunakan huruf, angka, tanda hubung, atau garis bawah.';
+  }
+  const tabrakan = providers.find((p) => p.name === slug);
+  if (tabrakan) {
+    return `Nama "${form.name.trim()}" tersimpan sebagai "${slug}" yang sudah dipakai provider "${tabrakan.display_name || tabrakan.name}" — ganti nama teknisnya.`;
+  }
+  return null;
+}

@@ -1,7 +1,8 @@
-import React, { useEffect, useId } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 import FocusTrap from 'focus-trap-react';
 import { X } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { buatPenandaOverlay } from '../../lib/tumpukanOverlay';
 
 declare global {
   interface Window {
@@ -54,17 +55,24 @@ export const Drawer: React.FC<DrawerProps> = ({
   const titleId = `drawer-title-${generatedTitleId.replace(/:/g, '')}`;
   const subtitleId = `drawer-subtitle-${generatedTitleId.replace(/:/g, '')}`;
 
+  // Penanda tumpukan overlay (V-FF-20): Escape hanya menutup lapisan
+  // TERATAS, sama seperti Modal.
+  const penandaRef = useRef(buatPenandaOverlay());
+
   // Kunci body bersama lintas Modal/Drawer; restore nilai overflow asli.
   useEffect(() => {
+    const penanda = penandaRef.current;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !e.defaultPrevented && penanda.teratas()) onClose();
     };
     if (isOpen) {
+      penanda.masuk();
       __acquireBodyLock();
       window.addEventListener('keydown', handleKeyDown);
       return () => {
         window.removeEventListener('keydown', handleKeyDown);
         __releaseBodyLock();
+        penanda.keluar();
       };
     }
     return () => {
@@ -138,9 +146,10 @@ export const Drawer: React.FC<DrawerProps> = ({
               {children}
             </div>
 
-            {/* Drawer Footer (Sticky) */}
+            {/* Drawer Footer (Sticky) — wadah flex berjarak (V-FF-40),
+                sama seperti footer Modal. */}
             {footer && (
-              <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-t border-border bg-bg-surface-1/80 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10">
+              <div className="px-4 py-3.5 sm:px-6 sm:py-4 border-t border-border bg-bg-surface-1/80 backdrop-blur-md flex-shrink-0 sticky bottom-0 z-10 flex items-center gap-3 flex-wrap">
                 {footer}
               </div>
             )}

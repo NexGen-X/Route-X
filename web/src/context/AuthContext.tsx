@@ -37,11 +37,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Penanda unmount: refresh async yang selesai setelah unmount tidak boleh setState.
   const mountedRef = useRef(true);
+  // Penanda generasi sesi (audit3 V-FF-25): refresh() yang dimulai SEBELUM
+  // login/logout tidak boleh menimpa hasil login/logout ketika ia selesai
+  // belakangan — versi lama hanya memeriksa mounted, sehingga refresh basi
+  // bisa menghidupkan lagi sesi yang baru saja logout (atau menghapus sesi
+  // yang baru saja login). login()/logout() menaikkan generasi; refresh
+  // membuang hasilnya bila generasi sudah bergerak.
+  const generasiRef = useRef(0);
+  // Verifikasi sesi akibat event 401 global sedang berjalan (V-FF-26).
+  const verifikasiRef = useRef(false);
 
   const refresh = useCallback(async () => {
+    const generasiAwal = generasiRef.current;
     try {
       const res = (await api.auth.me()) as AuthResponse;
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || generasiRef.current !== generasiAwal) return;
       if (res) {
         const p: Principal = (res.principal || res) as Principal;
         if (!p.session_id && p.session?.id) {
@@ -56,7 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setPrincipal(null);
       }
     } catch (err: unknown) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || generasiRef.current !== generasiAwal) return;
       // Hanya 401 yang berarti sesi benar-benar mati -> logout.
       const status = extractHttpStatus(err);
       if (status === 401) {
@@ -80,10 +90,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     mountedRef.current = true;
     refresh();
-    // Dengarkan 401 global dari api client agar sesi kedaluwarsa langsung logout.
+    // Dengarkan 401 global dari api client. Audit3 V-FF-26: 401 dari request
+    // LATAR (polling, widget) TIDAK lagi berarti logout seketika — sesi
+    // diverifikasi dulu lewat /api/auth/me; hanya bila /me sendiri menjawab
+    // 401 barulah refresh() di atas membersihkan principal. Dulu satu 401
+    // dari polling yang basi langsung membuang sesi yang sebenarnya sehat.
     const handleUnauthorized = () => {
-      setPrincipal(null);
-      setCsrfToken('');
+      if (verifikasiRef.current) return;
+      verifikasiRef.current = true;
+      void refresh().finally(() => {
+        verifikasiRef.current = false;
+      });
     };
     window.addEventListener('routex:unauthorized', handleUnauthorized);
     return () => {
@@ -97,6 +114,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [refresh]);
 
   const login = useCallback(async (email: string, pass: string, keep = false) => {
+    // Generasi baru: refresh lama yang masih terbang tidak boleh menimpa
+    // principal hasil login ini (V-FF-25).
+    generasiRef.current += 1;
     const res = (await api.auth.login({ email, password: pass, keep_signed_in: keep })) as AuthResponse;
     const p: Principal = (res.principal || res) as Principal;
     if (!p.session_id && p.session?.id) {
@@ -109,6 +129,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(async () => {
+    // Generasi baru SEJAK AWAL logout: refresh yang selesai di tengah proses
+    // logout tidak boleh menghidupkan kembali principal (V-FF-25).
+    generasiRef.current += 1;
     try {
       await api.auth.logout();
     } finally {

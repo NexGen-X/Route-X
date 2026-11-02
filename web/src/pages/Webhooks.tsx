@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { Webhook, WebhookDelivery } from '../types';
 import { Card } from '../components/common/Card';
@@ -151,33 +151,55 @@ export const Webhooks: React.FC = () => {
     }
   };
 
+  // Penjaga urutan riwayat & detail pengiriman (audit3 V-FF-21): versi lama
+  // tanpa penjaga — respons webhook A yang terlambat menimpa daftar milik
+  // webhook B yang sedang dibuka, dan sisa state webhook sebelumnya tetap
+  // tampil selama pemuatan. Pola sama seperti allowedReqRef di APIKeys.
+  const deliveriesReqRef = useRef(0);
+  const deliveryDetailReqRef = useRef(0);
+
   const loadDeliveries = async (id: string) => {
+    const reqId = ++deliveriesReqRef.current;
     setDeliveriesLoading(true);
     try {
       const res = await api.webhooks.getDeliveries(id);
+      if (deliveriesReqRef.current !== reqId) return;
       setDeliveries(res.items || []);
     } catch (err: unknown) {
+      if (deliveriesReqRef.current !== reqId) return;
       toast.error(getErrorMessage(err, 'Gagal memuat riwayat pengiriman.'));
     } finally {
-      setDeliveriesLoading(false);
+      if (deliveriesReqRef.current === reqId) {
+        setDeliveriesLoading(false);
+      }
     }
   };
 
   const openWebhookDeliveries = (wh: Webhook) => {
     setSelectedWebhook(wh);
+    // Bersihkan sisa webhook sebelumnya SEBELUM memuat yang baru (V-FF-21).
+    setDeliveries([]);
+    setSelectedDeliveryId(null);
+    setDeliveryDetails(null);
     void loadDeliveries(wh.id);
   };
 
   const loadDeliveryDetails = async (deliveryId: number) => {
+    const reqId = ++deliveryDetailReqRef.current;
     setDetailsLoading(true);
     setSelectedDeliveryId(deliveryId);
+    setDeliveryDetails(null);
     try {
       const res = await api.webhooks.getDelivery(deliveryId.toString());
+      if (deliveryDetailReqRef.current !== reqId) return;
       setDeliveryDetails(res);
     } catch (err: unknown) {
+      if (deliveryDetailReqRef.current !== reqId) return;
       toast.error(getErrorMessage(err, 'Gagal memuat detail pengiriman.'));
     } finally {
-      setDetailsLoading(false);
+      if (deliveryDetailReqRef.current === reqId) {
+        setDetailsLoading(false);
+      }
     }
   };
 

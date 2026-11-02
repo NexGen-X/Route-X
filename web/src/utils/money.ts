@@ -45,6 +45,38 @@ export function formatUSD(value?: string | number | null, fractionDigits = 4): s
   return fraction.length > 0 ? `$${sign}${groupedWhole}.${fraction}` : `$${sign}${groupedWhole}`;
 }
 
+export type HasilParseJumlahUsd =
+  | { ok: true; nilai: number }
+  | { ok: false; pesan: string };
+
+/**
+ * Mengurai jumlah USD yang diketik operator (audit3 V-FF-07).
+ *
+ * Versi lama memakai Number(teks) mentah: "10,5" (koma desimal yang wajar
+ * diketik operator Indonesia) menjadi NaN lalu diperlakukan sebagai "tanpa
+ * anggaran" — kunci lahir tanpa batas anggaran sementara toast menyatakan
+ * sukses penuh. Fungsi ini menerima titik ATAU koma sebagai pemisah desimal
+ * (satu saja), menolak notasi ilmiah/teks/ribuan ambigu, dan mengembalikan
+ * pesan galat yang bisa ditampilkan apa adanya.
+ */
+export function parseJumlahUsd(teks: string): HasilParseJumlahUsd {
+  const t = teks.trim();
+  if (t === '') {
+    return { ok: false, pesan: 'Jumlah anggaran wajib diisi.' };
+  }
+  if (!/^\d+(?:[.,]\d+)?$/.test(t)) {
+    return {
+      ok: false,
+      pesan: 'Format jumlah tidak valid — gunakan angka biasa, mis. 10.5 atau 10,5 (tanpa pemisah ribuan).',
+    };
+  }
+  const nilai = Number(t.replace(',', '.'));
+  if (!Number.isFinite(nilai) || nilai <= 0) {
+    return { ok: false, pesan: 'Jumlah anggaran harus lebih besar dari 0.' };
+  }
+  return { ok: true, nilai };
+}
+
 export function percentageOfDecimal(spent: string, limit: string): number {
   const toScaled = (value: string): bigint | null => {
     const match = value.trim().match(DECIMAL_RE);

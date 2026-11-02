@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import type { RoutingRule, Model, Provider } from '../../types';
 import { Drawer } from '../common/Drawer';
 import { Button } from '../common/Button';
+import { InputBilangan } from '../common/InputBilangan';
 import { Select } from '../common/Select';
 import { ComboBuilder } from './ComboBuilder';
 import { useToast } from '../../context/ToastContext';
@@ -60,6 +61,12 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
   const [editMode, setEditMode] = useState<'model_only' | 'combo_routing'>('model_only');
   const [editTargetModelId, setEditTargetModelId] = useState('');
   const [editTargetProviderId, setEditTargetProviderId] = useState('');
+  // Penanda ikatan provider disentuh operator (audit3 V-FF-01): pilihan
+  // provider di drawer ini hanya sanggup menampilkan SATU provider, jadi
+  // tanpa penanda ini aturan yang terikat ke >= 2 provider selalu tersimpan
+  // kembali sebagai [] — ikatan lamanya terhapus oleh edit yang tidak
+  // bermaksud menyentuhnya sama sekali.
+  const [providerDiubah, setProviderDiubah] = useState(false);
   const [editVirtualAlias, setEditVirtualAlias] = useState('');
   const [editPipeline, setEditPipeline] = useState<ComboPipeline>(pipelineKosong());
   const [showEditAdvanced, setShowEditAdvanced] = useState(false);
@@ -113,6 +120,7 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
 
     setEditTargetModelId(rule.match_model_id || '');
     setEditTargetProviderId(pIds.length === 1 ? pIds[0] : '');
+    setProviderDiubah(false);
 
     if (mMode === 'combo_routing') {
       setEditMode('combo_routing');
@@ -204,14 +212,39 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
         const selModel = models.find((m) => m.id === editTargetModelId);
         const selProv = providers.find((p) => p.id === editTargetProviderId);
         const modelName = selModel?.model_id || editTargetModelId;
+        // Ikatan provider (V-FF-01): hanya timpa provider_ids/weights bila
+        // operator BENAR-BENAR mengubah pilihan provider atau model target
+        // (mengubah model memang mereset pilihan provider di UI). Bila
+        // tidak disentuh, pertahankan ikatan tersimpan dari payload dasar —
+        // termasuk aturan multi-provider yang tidak bisa ditampilkan
+        // pilihan tunggalnya di drawer ini.
+        const ikatanProvider: Partial<RoutingRule> = providerDiubah
+          ? {
+              provider_ids: editTargetProviderId ? [editTargetProviderId] : [],
+              weights: {},
+            }
+          : {};
+        // Cermin penolakan server (V-FF-11) untuk pilihan provider baru.
+        if (
+          providerDiubah &&
+          editTargetProviderId &&
+          selModel?.providers &&
+          !selModel.providers.some((mp) => mp.provider_id === editTargetProviderId)
+        ) {
+          toast.error(
+            `Provider "${selProv?.display_name || selProv?.name || editTargetProviderId}" tidak memetakan model ${modelName} — ikatan itu akan ditolak server. Pilih provider yang menyediakan model ini atau kosongkan target provider.`
+          );
+          setIsSubmitting(false);
+          return;
+        }
         payload = {
           ...payload,
           name: editRuleForm.name || `direct-${modelName.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
           strategy: 'priority',
-          max_attempts: 1,
+          // V-FF-10: hormati isian Maksimal Percobaan operator (dulu ditimpa 1).
+          max_attempts: editRuleForm.max_attempts,
           match_model_id: editTargetModelId,
-          provider_ids: editTargetProviderId ? [editTargetProviderId] : [],
-          weights: {},
+          ...ikatanProvider,
           pipeline: null,
           virtual_alias: '',
           description: customDesc
@@ -379,6 +412,9 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
                 onChange={(val) => {
                   setEditTargetModelId(val);
                   setEditTargetProviderId('');
+                  // Mengubah model mereset pilihan provider secara terlihat
+                  // di UI — pilihan (kosong) itu yang berlaku saat simpan.
+                  setProviderDiubah(true);
                 }}
                 placeholder="-- Pilih Model Target --"
                 options={models.map((m) => {
@@ -399,7 +435,10 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
               <Select
                 label="Target Provider (Opsional)"
                 value={editTargetProviderId}
-                onChange={(val) => setEditTargetProviderId(val)}
+                onChange={(val) => {
+                  setEditTargetProviderId(val);
+                  setProviderDiubah(true);
+                }}
                 placeholder="-- Bawaan (Semua Provider Penyedia Model) --"
                 options={[
                   { value: '', label: '-- Bawaan (Semua Provider Penyedia Model) --' },
@@ -418,6 +457,14 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
                   }),
                 ]}
               />
+              {!providerDiubah && (rule?.providers?.length ?? 0) > 1 && (
+                <p className="text-[11px] text-text-muted leading-relaxed">
+                  Aturan ini sedang terikat ke {rule?.providers?.length} provider sekaligus
+                  (diatur lewat panel Provider pada daftar aturan). Pilihan di atas tidak
+                  mengubah ikatan itu kecuali Anda memilih provider di sini — memilih satu
+                  provider akan mengganti seluruh ikatan menjadi provider itu saja.
+                </p>
+              )}
             </div>
           )}
 
@@ -459,17 +506,12 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
                   <label className="block text-xs font-medium text-text-secondary mb-1">
                     Maksimal Percobaan
                   </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="10"
+                  <InputBilangan
+                    ariaLabel="Maksimal Percobaan"
                     value={editRuleForm.max_attempts}
-                    onChange={(e) =>
-                      setEditRuleForm({
-                        ...editRuleForm,
-                        max_attempts: parseInt(e.target.value) || 3,
-                      })
-                    }
+                    onChange={(n) => setEditRuleForm({ ...editRuleForm, max_attempts: n })}
+                    min={1}
+                    max={10}
                     className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
                 </div>
@@ -477,16 +519,11 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
                   <label className="block text-xs font-medium text-text-secondary mb-1">
                     Jeda Backoff (ms)
                   </label>
-                  <input
-                    type="number"
-                    min="0"
+                  <InputBilangan
+                    ariaLabel="Jeda Backoff (ms)"
                     value={editRuleForm.backoff_ms}
-                    onChange={(e) =>
-                      setEditRuleForm({
-                        ...editRuleForm,
-                        backoff_ms: parseInt(e.target.value) || 200,
-                      })
-                    }
+                    onChange={(n) => setEditRuleForm({ ...editRuleForm, backoff_ms: n })}
+                    min={0}
                     className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
                 </div>
@@ -494,15 +531,11 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
                   <label className="block text-xs font-medium text-text-secondary mb-1">
                     Prioritas Evaluasi
                   </label>
-                  <input
-                    type="number"
+                  <InputBilangan
+                    ariaLabel="Prioritas Evaluasi"
                     value={editRuleForm.priority}
-                    onChange={(e) =>
-                      setEditRuleForm({
-                        ...editRuleForm,
-                        priority: parseInt(e.target.value) || 100,
-                      })
-                    }
+                    onChange={(n) => setEditRuleForm({ ...editRuleForm, priority: n })}
+                    min={0}
                     className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
                 </div>
@@ -510,15 +543,11 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
                   <label className="block text-xs font-medium text-text-secondary mb-1">
                     Ambang Circuit Breaker
                   </label>
-                  <input
-                    type="number"
+                  <InputBilangan
+                    ariaLabel="Ambang Circuit Breaker"
                     value={editRuleForm.failure_threshold}
-                    onChange={(e) =>
-                      setEditRuleForm({
-                        ...editRuleForm,
-                        failure_threshold: parseInt(e.target.value) || 5,
-                      })
-                    }
+                    onChange={(n) => setEditRuleForm({ ...editRuleForm, failure_threshold: n })}
+                    min={1}
                     className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white font-mono text-xs focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
                   />
                 </div>

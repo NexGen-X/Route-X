@@ -56,6 +56,10 @@ const Shell: React.FC = () => {
   const navigate = (path: string) => {
     window.location.hash = path;
     setCurrentPath(path);
+    // Navigasi dari mana pun (palet perintah, hero, kartu) menutup drawer
+    // mobile (audit3 V-FF-33): versi lama membiarkan drawer tetap terbuka
+    // menutupi halaman tujuan di ponsel.
+    setIsMobileOpen(false);
   };
 
   if (isLoading) {

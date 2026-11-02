@@ -34,9 +34,11 @@ export const Button: React.FC<ButtonProps> = ({
       'text-text-secondary hover:text-white hover:bg-bg-surface-2 border border-transparent',
   };
 
+  // Target sentuh mobile minimal 44px (audit3 V-FF-38); ukuran desktop
+  // (sm:) dipertahankan seperti sebelumnya.
   const sizes = {
-    sm: 'text-xs px-3 py-1.5 min-h-[36px] sm:min-h-[30px]',
-    md: 'text-xs sm:text-sm px-3.5 py-1.5 min-h-[40px] sm:min-h-[34px]',
+    sm: 'text-xs px-3 py-1.5 min-h-[44px] sm:min-h-[30px]',
+    md: 'text-xs sm:text-sm px-3.5 py-1.5 min-h-[44px] sm:min-h-[34px]',
     lg: 'text-sm px-4 py-2 min-h-[44px] sm:min-h-[38px]',
   };
 

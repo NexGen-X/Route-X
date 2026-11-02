@@ -185,9 +185,14 @@ type ChatRequest struct {
 type Usage struct {
 	InputTokens       int
 	CachedInputTokens int
-	OutputTokens      int
-	ReasoningTokens   int
-	TotalTokens       int
+	// CacheCreationInputTokens adalah token yang DITULIS ke prompt cache. Ia
+	// BAGIAN dari InputTokens (konvensi bersarang yang sama seperti CachedInput),
+	// dan dipisahkan karena tarifnya berbeda dari input biasa: Anthropic
+	// menagihnya 1,25× harga input. Hanya adaptor Anthropic yang mengisinya.
+	CacheCreationInputTokens int
+	OutputTokens             int
+	ReasoningTokens          int
+	TotalTokens              int
 }
 
 // Choice adalah satu kandidat jawaban.

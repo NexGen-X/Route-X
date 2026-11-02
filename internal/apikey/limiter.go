@@ -277,6 +277,13 @@ const (
 // ditanyakan adalah apakah anggaran sudah habis, dan anggaran yang terpakai persis habis
 // memang tidak menyisakan apa-apa untuk request berikutnya.
 //
+// Kunci racun — kunci penghitung yang isinya bukan bilangan bulat, ditulis tangan
+// atau oleh alat lain — DIHAPUS pada Fase 1 dan diperlakukan sebagai nol. Tanpa
+// itu, Fase 3 akan mati pada INCRBY di kunci racun di TENGAH putaran: kenaikan
+// kunci-kunci sebelumnya sudah terlanjur tersimpan, kunci sesudahnya tidak naik,
+// dan skripnya gagal sehingga keputusan jatuh ke gagal-terbuka — penghitung tak
+// konsisten dan penegakan mati senyap selama kunci racun ada (audit3 V-AB-18).
+//
 // PEXPIRE juga dipasang ulang bila PTTL melaporkan kunci tanpa masa berlaku. Itu tidak
 // bisa terjadi lewat jalur ini, tetapi kunci bisa lahir dari tangan lain (operator yang
 // memeriksa sesuatu dengan SET, migrasi versi skrip); memasangnya ulang membuat penghitung
@@ -300,11 +307,21 @@ local n = #KEYS
 local counts = {}
 local exceeded = 0
 
--- Fase 1: baca seluruh penghitung sebelum satu pun diputuskan. Kunci yang tidak ada dan
--- kunci yang isinya bukan angka sama-sama dibaca sebagai nol; tanpa "or 0", nilai yang
--- tidak bisa diurai akan menggagalkan seluruh skrip pada operasi aritmetika di bawah.
+-- Fase 1: baca seluruh penghitung sebelum satu pun diputuskan. Kunci yang tidak ada
+-- dibaca sebagai nol. Kunci yang isinya bukan bilangan bulat (kunci racun) DIHAPUS dan
+-- dibaca nol: membiarkannya berarti INCRBY pada Fase 3 menggagalkan skrip di tengah
+-- putaran, sesudah sebagian kenaikan terlanjur tersimpan (audit3 V-AB-18).
 for i = 1, n do
-	counts[i] = tonumber(redis.call('GET', KEYS[i])) or 0
+	local mentah = redis.call('GET', KEYS[i])
+	if mentah and not string.match(mentah, '^-?%d+$') then
+		-- Mode lihat (2) tidak menulis apa pun, jadi di sana kunci racun hanya
+		-- dibaca nol; penghapusannya terjadi pada penulisan berikutnya.
+		if mode ~= 2 then
+			redis.call('DEL', KEYS[i])
+		end
+		mentah = false
+	end
+	counts[i] = tonumber(mentah) or 0
 end
 
 -- Fase 2: pada mode tegakkan, cari batas pertama yang akan terlampaui.
@@ -342,6 +359,35 @@ for i = 1, n do
 	out[i + 1] = counts[i]
 end
 return out
+`)
+
+// refundScript membatalkan kenaikan penghitung request untuk satu permintaan.
+//
+// Pasangan Limit(): middleware menaikkan penghitung SEBELUM handler tahu apakah
+// permintaan itu akan benar-benar dijalankan — modelnya baru diketahui sesudah
+// body diurai. Tanpa pembatalan, permintaan yang ditolak kebijakan di handler
+// (model tidak diizinkan, anggaran habis, penyaring konten) tetap membakar
+// kuota key/pengguna/IP/global walau tidak pernah menyentuh upstream
+// (audit3 V-AB-17).
+//
+// Kunci yang tidak ada dilewati (jendelanya mungkin sudah berganti sejak
+// kenaikan — membatalkan ke jendela yang salah lebih buruk daripada tidak
+// membatalkan), kunci racun dihapus seperti pada limiterScript, dan hasilnya
+// dijepit di nol: pembatalan tidak boleh membuat penghitung negatif.
+var refundScript = cache.NewScript(`
+local cost = tonumber(ARGV[1])
+for i = 1, #KEYS do
+	local mentah = redis.call('GET', KEYS[i])
+	if mentah and not string.match(mentah, '^-?%d+$') then
+		redis.call('DEL', KEYS[i])
+	elseif mentah then
+		local sisa = redis.call('INCRBY', KEYS[i], -cost)
+		if sisa < 0 then
+			redis.call('INCRBY', KEYS[i], -sisa)
+		end
+	end
+end
+return 1
 `)
 
 // --- Limiter -----------------------------------------------------------------
@@ -774,6 +820,56 @@ func tokenWindowsFor(scopes []ScopeTokenLimits, now time.Time) []window {
 		out = append(out, tokenWindows(s.Scope, s.ID, s.Limits, now)...)
 	}
 	return out
+}
+
+// RefundRequest membatalkan kenaikan penghitung request yang dilakukan Limit()
+// untuk SATU permintaan, pada cakupan yang sama dengan yang dinaikkan.
+//
+// Dipanggil lapisan gateway ketika permintaan ditolak kebijakan SEBELUM satu
+// pun percobaan upstream dijalankan (audit3 V-AB-17): kuota hanya boleh
+// terbakar oleh permintaan yang benar-benar dilayani atau dicoba ke upstream.
+// Penyusunan cakupannya meniru Limit() persis — resolver bila terpasang,
+// kalau tidak cakupan key (dengan bawaan) plus IP — karena membatalkan
+// cakupan yang berbeda dari yang dinaikkan sama saja tidak membatalkan.
+//
+// Kegagalannya ditelan (dicatat Debug): pengembalian yang gagal tidak boleh
+// menggagalkan respons penolakan yang sedang ditulis, dan Redis yang mati
+// memang berarti tidak ada penghitung yang perlu dibatalkan.
+func (l *Limiter) RefundRequest(ctx context.Context, p *Principal, ip netip.Addr) {
+	if l == nil || l.redis == nil || p == nil {
+		return
+	}
+	var scopes []ScopeLimits
+	if l.resolver != nil {
+		scopes = l.resolver(ctx, p, ip)
+	} else {
+		scopes = []ScopeLimits{{
+			Scope:  ScopeAPIKey,
+			ID:     p.ID(),
+			Limits: LimitsFromKey(p.Key).WithDefaults(l.keyDefaults),
+		}}
+		if ip.IsValid() {
+			scopes = append(scopes, ScopeLimits{Scope: ScopeIP, ID: ip.String(), Limits: l.ipLimits})
+		}
+	}
+
+	now := l.now()
+	var windows []window
+	for _, s := range scopes {
+		windows = append(windows, requestWindows(s.Scope, s.ID, s.Limits, now)...)
+	}
+	if len(windows) == 0 {
+		return
+	}
+	keys := make([]string, len(windows))
+	for i, w := range windows {
+		keys[i] = w.key()
+	}
+	if _, err := l.redis.RunScript(ctx, refundScript, keys, 1); err != nil {
+		l.log(ctx).LogAttrs(ctx, slog.LevelDebug,
+			"pengembalian kuota permintaan yang ditolak gagal",
+			slog.String("error", err.Error()))
+	}
 }
 
 // RecordTokens mencatat pemakaian token dan melaporkan apakah anggarannya sudah habis.

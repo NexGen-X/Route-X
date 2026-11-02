@@ -41,7 +41,11 @@ type Price struct {
 	CreatedBy *string
 }
 
-// IsCurrent melaporkan apakah harga ini yang sedang berlaku.
+// IsCurrent melaporkan apakah baris ini yang terbuka (belum ditutup baris lain).
+//
+// Terbuka TIDAK sama dengan efektif: baris ber-effective_from masa depan sudah
+// terbuka sejak dipasang tetapi baru berlaku pada tanggalnya. Yang menjawab
+// "harga yang menagih sekarang" adalah PricingRepo.Current, bukan method ini.
 func (p *Price) IsCurrent() bool { return p.EffectiveTo == nil }
 
 // PricingRepo adalah akses data riwayat harga.
@@ -278,8 +282,13 @@ func nullTime(t time.Time) any {
 
 // Current mengambil harga yang sedang berlaku untuk sepasang model-provider.
 //
-// Dilayani indeks model_pricing_one_current_idx, yang sekaligus menjamin hasilnya paling
-// banyak satu baris.
+// "Sedang berlaku" berarti efektif pada SAAT INI, bukan sekadar baris yang belum
+// ditutup: harga yang dipasang dengan effective_from di masa depan menutup baris
+// lama (effective_to terisi tanggal masa depan itu) dan membuka baris baru, jadi
+// menyaring hanya pada effective_to is null akan menagih harga masa depan mulai
+// hari ini (audit3 V-AB-08). Predikatnya karena itu sama dengan At pada waktu
+// sekarang — rentang setengah terbuka yang memuat now() — dan urutan menurun
+// dengan limit 1 memilih baris terbaru yang efektif bila ada tumpang tindih.
 func (r *PricingRepo) Current(ctx context.Context, providerModelID string) (*Price, error) {
 	const op = "mengambil harga berlaku"
 	if !idOK(providerModelID) {
@@ -287,7 +296,12 @@ func (r *PricingRepo) Current(ctx context.Context, providerModelID string) (*Pri
 	}
 
 	price, err := scanPrice(r.q.QueryRow(ctx, `select `+priceColumns+`
-		from model_pricing where provider_model_id = $1 and effective_to is null`, providerModelID))
+		from model_pricing
+		where provider_model_id = $1
+		  and effective_from <= now()
+		  and (effective_to is null or effective_to > now())
+		order by effective_from desc
+		limit 1`, providerModelID))
 	if err != nil {
 		return nil, repo.Err(op, err)
 	}
@@ -305,14 +319,19 @@ func (r *PricingRepo) Current(ctx context.Context, providerModelID string) (*Pri
 // Pemanggil menyimpan hasilnya di memori dengan TTL pendek, pola yang sama dengan aturan
 // routing dan tabel kebijakan.
 //
-// Dilayani indeks partial model_pricing_one_current_idx, yang sekaligus menjamin paling
-// banyak satu baris per pemetaan.
+// Predikatnya sama dengan Current — efektif pada saat ini, BUKAN sekadar belum
+// ditutup — supaya harga ber-effective_from masa depan tidak ikut tertagih lebih
+// dulu (audit3 V-AB-08). Urutan kedua effective_from menaik membuat baris terbaru
+// yang efektif menang bila pemanggil melipat hasil per pemetaan dan ada baris
+// tumpang tindih dari SQL langsung.
 func (r *PricingRepo) CurrentAll(ctx context.Context) ([]*Price, error) {
 	const op = "mengambil seluruh harga berlaku"
 
 	rows, err := r.q.Query(ctx, `select `+priceColumns+`
-		from model_pricing where effective_to is null
-		order by provider_model_id`)
+		from model_pricing
+		where effective_from <= now()
+		  and (effective_to is null or effective_to > now())
+		order by provider_model_id, effective_from`)
 	if err != nil {
 		return nil, repo.Err(op, err)
 	}
@@ -417,7 +436,7 @@ func (r *PricingRepo) History(ctx context.Context, providerModelID string, page 
 
 // TokenUsage adalah jumlah token satu request, dipecah menurut cara penagihannya.
 //
-// Keempat angka SALING LEPAS. Token yang terlayani prompt cache dihitung di CachedInput
+// Kelima angka SALING LEPAS. Token yang terlayani prompt cache dihitung di CachedInput
 // dan tidak boleh ikut dihitung di Input. Ini penting karena penyedia melaporkannya
 // dengan cara lain: OpenAI mengirim prompt_tokens yang SUDAH termasuk cached_tokens,
 // jadi adaptornya wajib mengurangkan lebih dulu — kalau tidak, token cache tertagih dua
@@ -425,29 +444,44 @@ func (r *PricingRepo) History(ctx context.Context, providerModelID string, page 
 type TokenUsage struct {
 	Input       int64
 	CachedInput int64
-	Output      int64
-	Reasoning   int64
+	// CacheCreation adalah token yang DITULIS ke prompt cache (saat ini hanya
+	// dilaporkan Anthropic). Ia bukan input biasa: Anthropic menagihnya di atas
+	// harga input — lihat pengaliCacheCreation pada Cost.
+	CacheCreation int64
+	Output        int64
+	Reasoning     int64
 }
 
 // Total mengembalikan jumlah seluruh token, sesuai kolom requests.total_tokens.
 func (u TokenUsage) Total() int64 {
-	return u.Input + u.CachedInput + u.Output + u.Reasoning
+	return u.Input + u.CachedInput + u.CacheCreation + u.Output + u.Reasoning
 }
 
 // CostBreakdown adalah biaya satu request beserta rinciannya.
 //
-// Total adalah jumlah dari keempat rincian setelah masing-masing dibulatkan, sehingga
+// Total adalah jumlah dari kelima rincian setelah masing-masing dibulatkan, sehingga
 // rincian yang ditampilkan di dashboard benar-benar berjumlah sama dengan totalnya.
 // Membulatkan hanya sekali di akhir memang lebih tepat secara matematis, tetapi
 // menghasilkan tabel yang tidak bisa dijumlahkan pengguna dengan tangan, dan selisihnya
 // paling besar dua satuan 10^-8 dolar.
 type CostBreakdown struct {
-	Input       USD
-	CachedInput USD
-	Output      USD
-	Reasoning   USD
-	Total       USD
+	Input         USD
+	CachedInput   USD
+	CacheCreation USD
+	Output        USD
+	Reasoning     USD
+	Total         USD
 }
+
+// Pengali tarif tulis prompt cache Anthropic terhadap harga input: cache 5 menit
+// ditagih 1,25× harga input (cache 1 jam 2× — tetapi laporan usage Anthropic yang
+// diurai adaptor tidak memecah keduanya, jadi yang dipakai adalah tarif bawaan
+// 5 menit; lihat providers/anthropic upstreamUsage). Melipat token ini ke input
+// biasa menagihnya 1,0× dan menguapkan premi tulisnya (audit3 V-AB-11).
+const (
+	pengaliCacheCreationNum = 5
+	pengaliCacheCreationDen = 4
+)
 
 // Cost menghitung biaya sejumlah token dengan harga ini.
 //
@@ -491,8 +525,46 @@ func (p *Price) Cost(u TokenUsage) (CostBreakdown, error) {
 		}
 	}
 
-	out.Total = out.Input + out.CachedInput + out.Output + out.Reasoning
+	// Token tulis cache tidak punya kolom harga sendiri di tabel harga karena
+	// tarifnya TURUNAN dari harga input (pengali tetap di atas), bukan angka yang
+	// diketik operator.
+	out.CacheCreation, err = costOfScaled(u.CacheCreation, p.Input,
+		pengaliCacheCreationNum, pengaliCacheCreationDen)
+	if err != nil {
+		return CostBreakdown{}, fmt.Errorf("menghitung biaya token cache creation: %w", err)
+	}
+
+	out.Total = out.Input + out.CachedInput + out.CacheCreation + out.Output + out.Reasoning
 	return out, nil
+}
+
+// costOfScaled menghitung tokens × perMTok × num/den ÷ 1.000.000 secara eksak,
+// dengan pembulatan setengah ke atas yang sama seperti costOf. Dipakai tarif yang
+// merupakan pecahan tetap dari harga lain (tulis prompt cache).
+func costOfScaled(tokens int64, perMTok USD, num, den int64) (USD, error) {
+	switch {
+	case tokens < 0:
+		return 0, fmt.Errorf("%w: jumlah token negatif (%d)", ErrInvalidAmount, tokens)
+	case perMTok < 0:
+		return 0, fmt.Errorf("%w: harga negatif (%s)", ErrInvalidAmount, perMTok.Decimal())
+	case tokens == 0 || perMTok == 0:
+		return 0, nil
+	case num <= 0 || den <= 0:
+		return 0, fmt.Errorf("%w: pengali tarif tidak sah (%d/%d)", ErrInvalidAmount, num, den)
+	}
+
+	pembagi := new(big.Int).Mul(big.NewInt(tokensPerMTok), big.NewInt(den))
+	total := new(big.Int).Mul(big.NewInt(tokens), big.NewInt(int64(perMTok)))
+	total.Mul(total, big.NewInt(num))
+	// Setengah ke atas: tambahkan separuh pembagi sebelum membagi.
+	total.Add(total, new(big.Int).Quo(pembagi, big.NewInt(2)))
+	total.Quo(total, pembagi)
+
+	if !total.IsInt64() {
+		return 0, fmt.Errorf("%w: biaya %d token dengan harga %s di luar rentang yang bisa disimpan",
+			ErrInvalidAmount, tokens, perMTok.Decimal())
+	}
+	return USD(total.Int64()), nil
 }
 
 // costOf menghitung tokens × perMTok ÷ 1.000.000 secara eksak.

@@ -8,6 +8,7 @@ import type {
   ModelAlias,
   ProviderModel,
   Price,
+  ReferencePrice,
   EgressPool,
   EgressProbeResult,
   RoutingRule,
@@ -419,6 +420,8 @@ export const api = {
       }),
     pricingHistory: (mappingId: string) =>
       request<{ items: Price[] }>(`/api/admin/upstreams/models/mappings/${encodeURIComponent(mappingId)}/pricing/history`),
+    pricingReference: (mappingId: string) =>
+      request<ReferencePrice>(`/api/admin/upstreams/models/mappings/${encodeURIComponent(mappingId)}/pricing/reference`),
   },
 
   egress: {

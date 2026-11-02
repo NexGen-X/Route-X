@@ -536,8 +536,12 @@ func toCanonicalUsage(u upstreamUsage) providers.Usage {
 	return providers.Usage{
 		InputTokens:       input,
 		CachedInputTokens: u.CacheReadInputTokens,
-		OutputTokens:      u.OutputTokens,
-		TotalTokens:       input + u.OutputTokens,
+		// Ikut dibawa terpisah supaya penagihan bisa mengenakan premi tulis
+		// cache 1,25×; melipatnya ke InputTokens saja menagihnya sebagai input
+		// biasa 1,0× (audit3 V-AB-11).
+		CacheCreationInputTokens: u.CacheCreationInputTokens,
+		OutputTokens:             u.OutputTokens,
+		TotalTokens:              input + u.OutputTokens,
 	}
 }
 

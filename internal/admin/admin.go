@@ -72,10 +72,21 @@ type Handlers struct {
 	engine      *router.Engine
 	oauthRepo   *upstream.OAuthRepo
 	oauthClient *oauth.GoogleOAuthClient
+	// priceCache adalah cuplikan harga milik pencatat/router; nil bila tidak
+	// di-injeksi (lihat Config.PriceCache).
+	priceCache PriceCache
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	version string
 	commit  string
 	builtAt string
+}
+
+// PriceCache adalah cuplikan harga di memori yang dipakai pencatat pemakaian
+// dan strategi lowest_cost. Dipenuhi *usage.Pricer. Admin hanya butuh satu
+// method-nya: membatalkan cuplikan sesudah harga diubah lewat API, supaya
+// harga baru berlaku seketika di instance ini (audit3 V-AB-09).
+type PriceCache interface {
+	Invalidate()
 }
 
 // Config membawa seluruh dependensi yang dibutuhkan oleh Admin Handlers.
@@ -111,6 +122,10 @@ type Config struct {
 	// mutasi lewat API admin, supaya perubahan (termasuk virtual_alias) segera efektif
 	// tanpa menunggu TTL 5 detik. Opsional: nil berarti tidak ada invalidasi instan.
 	Engine *router.Engine
+	// PriceCache adalah cuplikan harga pencatat/router. Dipakai membatalkannya
+	// sesudah setPricing berhasil, supaya harga baru tidak menunggu TTL cuplikan
+	// 30 detik untuk menagih. Opsional: nil berarti tidak ada invalidasi instan.
+	PriceCache PriceCache
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	Version string
 	Commit  string
@@ -159,6 +174,7 @@ func NewHandlers(cfg Config) *Handlers {
 		responseCache:  cfg.ResponseCache,
 		cliManager:     cfg.CLIManager,
 		engine:         cfg.Engine,
+		priceCache:     cfg.PriceCache,
 		oauthRepo:      cfg.OAuthRepo,
 		oauthClient:    cfg.OAuthClient,
 		version:        cfg.Version,

@@ -30,8 +30,15 @@
 //
 // # Kontrak Sinkronisasi Redis Multi-Replica dan Penanganan Failover
 //
-// Sistem pembatasan laju Route-X dirancang untuk beroperasi di atas topologi Redis tunggal
-// maupun multi-replica (Primary/Replica dengan Sentinel atau Cluster):
+// Sistem pembatasan laju Route-X beroperasi di atas Redis NODE TUNGGAL, atau
+// Primary/Replica dengan Sentinel di mana seluruh penulisan pergi ke primary.
+// Redis CLUSTER TIDAK didukung (audit3 V-AB-19): klien dibangun dengan
+// redis.NewClient (bukan cluster client), kunci penghitung tidak memakai hash
+// tag — cache.Key justru meng-escape "{" dan "}" — dan skrip Lua limiter
+// menyentuh banyak kunci sekaligus, jadi di Cluster ia akan gagal CROSSSLOT.
+// Klaim lama yang menyebut Cluster sebagai topologi yang didukung sudah
+// dicabut dari dokumen ini; jangan memasang gateway ini di belakang Cluster
+// dan mengharapkan pembatasan laju bekerja.
 //
 //  1. Pemisahan Tanggung Jawab (Separation of Concerns):
 //     Paket ini (internal/ratelimit) bertindak sebagai penyedia kebijakan (policy layer) lokal

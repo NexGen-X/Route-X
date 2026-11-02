@@ -93,6 +93,7 @@ type Handlers struct {
 	guard      *Guard
 	usage      UsageSink
 	respCache  *responsecache.Engine
+	penaksir   router.CostSource
 	logger     *slog.Logger
 }
 
@@ -110,6 +111,10 @@ type HandlersDeps struct {
 
 	// Restrict boleh nil, yang berarti tanpa pembatasan model/provider per API key.
 	Restrict KeyRestrictions
+	// Penaksir adalah sumber harga untuk estimasi biaya pra-permintaan, dipakai
+	// reservasi anggaran (audit3 V-AB-16). Boleh nil: tanpa penaksir, anggaran
+	// ditegakkan tanpa reservasi (perilaku lama).
+	Penaksir router.CostSource
 	// Guard menegakkan penyaring konten, batas laju cakupan model dan provider, serta
 	// anggaran biaya. nil berarti tidak satu pun kebijakan itu ditegakkan.
 	Guard *Guard
@@ -161,7 +166,7 @@ func NewHandlers(d HandlersDeps) (*Handlers, error) {
 		models: d.Models, lister: d.Lister, candidates: d.Candidates,
 		restrict: d.Restrict, factory: d.Factory,
 		engine: engine, exec: d.Executor, guard: guard, usage: d.Usage,
-		respCache: d.ResponseCache, logger: logger,
+		respCache: d.ResponseCache, penaksir: d.Penaksir, logger: logger,
 	}, nil
 }
 
@@ -260,7 +265,7 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 	clientIP, _ := httpx.ClientIPFrom(r.Context())
 	targets := TargetsFor(p, model.ID, clientIP)
 	j.pasangKebijakan(p, targets)
-	if !h.kebijakan(w, r, p, model, targets) {
+	if !h.kebijakan(w, r, p, model, targets, h.estimasiBiaya(r.Context(), model, req)) {
 		return nil, false
 	}
 
@@ -354,16 +359,54 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 	}, true
 }
 
+// estimasiBiaya menaksir biaya permintaan ini dari harga pemetaan TERMAHAL
+// modelnya, untuk reservasi anggaran (audit3 V-AB-16).
+//
+// Termahal, bukan yang akan menang: provider pemenang belum diketahui pada
+// titik ini, dan reservasi yang terlalu kecil membuka kembali celah
+// pelampauan, sementara reservasi yang terlalu besar hanya menolak lebih
+// awal di dekat pagu. Nol berarti estimasi tidak bisa disusun — penaksir
+// tidak terpasang, pemetaan tidak bisa didaftar, atau belum satu pun
+// pemetaan dihargai — dan pemanggil jatuh ke pemeriksaan tanpa reservasi.
+func (h *Handlers) estimasiBiaya(ctx context.Context, model *upstream.Model, req *providers.ChatRequest) upstream.USD {
+	if h.penaksir == nil || model == nil {
+		return 0
+	}
+	lister, ok := h.models.(interface {
+		ListProviderModels(context.Context, upstream.ProviderModelFilter) ([]*upstream.ProviderModel, error)
+	})
+	if !ok {
+		return 0
+	}
+	pemetaan, err := lister.ListProviderModels(ctx, upstream.ProviderModelFilter{ModelID: model.ID})
+	if err != nil {
+		h.logger.DebugContext(ctx, "estimasi biaya tidak bisa disusun, anggaran tanpa reservasi",
+			"model", model.ModelID, "error", err)
+		return 0
+	}
+	est := EstimateTokens(req)
+	var maks upstream.USD
+	for _, pm := range pemetaan {
+		if biaya, ok := h.penaksir.Cost(pm.ID, est); ok && biaya > maks {
+			maks = biaya
+		}
+	}
+	return maks
+}
+
 // kebijakan menjalankan pemeriksaan yang menuntut model sudah diketahui: pembatasan model,
 // batas laju cakupan model, anggaran biaya, dan gerbang anggaran token.
 //
 // Urutannya dari yang paling murah: pembatasan model dijawab dari memori, batas laju dan
 // gerbang token satu perjalanan ke Redis, anggaran satu pembacaan dari salinan ber-TTL.
 //
+// estimasi adalah taksiran biaya permintaan ini untuk reservasi anggaran;
+// nol berarti tanpa reservasi (pemeriksaan biasa).
+//
 // ok false berarti jawaban sudah ditulis.
 func (h *Handlers) kebijakan(
 	w http.ResponseWriter, r *http.Request,
-	p *apikey.Principal, model *upstream.Model, targets []policy.Target,
+	p *apikey.Principal, model *upstream.Model, targets []policy.Target, estimasi upstream.USD,
 ) bool {
 	if rj := h.guard.SaringPermintaan(r.Context(), contentfilter.Subject{ModelID: model.ID}); rj != nil {
 		rj.Tulis(w, r)
@@ -373,7 +416,7 @@ func (h *Handlers) kebijakan(
 		rj.Tulis(w, r)
 		return false
 	}
-	if rj := h.guard.PeriksaAnggaran(r.Context(), targets); rj != nil {
+	if rj := h.guard.PeriksaAnggaranDenganReservasi(r.Context(), targets, estimasi); rj != nil {
 		rj.Tulis(w, r)
 		return false
 	}
@@ -757,6 +800,44 @@ func untukKandidat(req *providers.ChatRequest, c *upstream.RouteCandidate) *prov
 }
 
 // ChatCompletions melayani POST /v1/chat/completions dan POST /v1/responses.
+// jagaKuota adalah penjaga pengembalian kuota Limit() untuk satu permintaan
+// (audit3 V-AB-17).
+//
+// Middleware Limit() menaikkan penghitung sebelum handler berjalan. Penjaga
+// ini dipasang di awal handler dan ditutup lewat defer: bila handler keluar
+// TANPA pernah memanggil lolos(), permintaan itu ditolak sebelum satu pun
+// percobaan upstream — kuotanya dikembalikan. lolos() dipanggil begitu
+// persiapan berhasil, karena sesudah itu eksekusi upstream pasti dicoba dan
+// kuota yang terbakar memang sah.
+type jagaKuota struct {
+	h     *Handlers
+	r     *http.Request
+	aktif bool
+}
+
+// jagaKuotaPraUpstream memasang penjaga kuota pada permintaan ini.
+func (h *Handlers) jagaKuotaPraUpstream(r *http.Request) *jagaKuota {
+	return &jagaKuota{h: h, r: r, aktif: true}
+}
+
+// lolos menandai persiapan berhasil dan eksekusi upstream akan dicoba.
+func (j *jagaKuota) lolos() { j.aktif = false }
+
+// tutup mengembalikan kuota bila permintaan berakhir sebagai penolakan
+// pra-upstream. Aman dipanggil berulang.
+func (j *jagaKuota) tutup() {
+	if !j.aktif {
+		return
+	}
+	j.aktif = false
+	p, ok := apikey.PrincipalFrom(j.r.Context())
+	if !ok || p == nil {
+		return
+	}
+	ip, _ := httpx.ClientIPFrom(j.r.Context())
+	j.h.guard.KembalikanKuota(j.r.Context(), p, ip)
+}
+
 func (h *Handlers) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	// Jejak dibuat sebelum apa pun dan diserahkan lewat defer, sehingga SETIAP jalan keluar
 	// — termasuk yang belum ada saat baris ini ditulis — menghasilkan satu baris log
@@ -765,10 +846,14 @@ func (h *Handlers) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	j, w := h.mulaiJejak(w, r)
 	defer j.selesai(r.Context())
 
+	jaga := h.jagaKuotaPraUpstream(r)
+	defer jaga.tutup()
+
 	pr, ok := h.siapkanChat(w, r, j)
 	if !ok {
 		return
 	}
+	jaga.lolos()
 	if pr.req.Stream {
 		h.chatMengalir(w, r, pr, j)
 		return
@@ -1069,6 +1154,46 @@ func cakupanCache(pr *persiapan) responsecache.Scope {
 	return s
 }
 
+// terapkanLantaiPemakaian mengisi sisi pemakaian yang TIDAK dilaporkan upstream.
+//
+// Upstream yang sah boleh menjawab tanpa objek usage sama sekali, dan aliran
+// boleh berakhir (atau diputus klien) sebelum chunk usage final tiba. Tanpa
+// lantai, permintaan seperti itu tercatat 0 token: kuotanya tidak berkurang
+// dan biayanya nol, padahal prompt-nya nyata terkirim dan jawabannya nyata
+// dihasilkan — kebocoran penagihan keluarga PR #202 (audit3 V-GW-10, V-AB-14).
+//
+// Dua sisi ditaksir dari bahan yang berbeda dengan sengaja:
+//
+//   - INPUT dari prompt peminta (EstimateTokens — taksiran yang sama yang
+//     dipakai routing). Versi lama lantai aliran hanya menaksir output, jadi
+//     token input hilang total pada aliran tanpa chunk usage.
+//   - OUTPUT dari byte KONTEN yang benar-benar dihasilkan (byteKonten),
+//     dibagi bytePerToken. Pemanggil WAJIB menyerahkan byte konten, bukan
+//     byte aliran terbingkai: pada permukaan Anthropic framing SSE (baris
+//     event:, envelope JSON) jauh lebih besar daripada kontennya, dan
+//     menaksir dari byte terbingkai menggelembungkan taksiran belasan kali
+//     lipat (audit3 V-AB-15).
+//
+// Angka yang SUDAH dilaporkan upstream tidak pernah ditimpa: lantai hanya
+// mengisi sisi yang kosong.
+func terapkanLantaiPemakaian(req *providers.ChatRequest, u providers.Usage, byteKonten int64) providers.Usage {
+	if u.InputTokens <= 0 {
+		if est := EstimateTokens(req).InputTokens; est > 0 {
+			u.InputTokens = est
+			u.TotalTokens += est
+		}
+	}
+	if u.OutputTokens <= 0 && byteKonten > 0 {
+		keluar := int(byteKonten / bytePerToken)
+		if keluar < 1 {
+			keluar = 1
+		}
+		u.OutputTokens = keluar
+		u.TotalTokens += keluar
+	}
+	return u
+}
+
 // chatSekali melayani completion non-streaming.
 func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
 	var cacheKey string
@@ -1164,16 +1289,22 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 		tulisKegagalan(w, r, out.Err)
 		return
 	}
-	j.pasangPemakaian(out.Value.Usage)
+	// Lantai pemakaian diterapkan SEBELUM apa pun mencatat token: respons tanpa
+	// objek usage dari upstream tetap harus memakan kuota dan tertagih
+	// (audit3 V-GW-10). Teks jawaban dihitung sekali di sini dan dipakai ulang
+	// penyaring jawaban di bawah.
+	teks := teksJawaban(out.Value)
+	pemakaian := terapkanLantaiPemakaian(pr.req, out.Value.Usage, int64(len(teks)))
+	j.pasangPemakaian(pemakaian)
 
 	// Pemakaian token dicatat SEBELUM penyaring jawaban: permintaannya sudah dijalankan dan
 	// tokennya sudah ditagihkan upstream, jadi jawaban yang kemudian ditolak penyaring pun
 	// tetap harus memakan kuota. Kalau dibalik, klien bisa menghabiskan token tanpa batas
 	// dengan mengirim permintaan yang jawabannya selalu tertahan penyaring.
-	h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(out.Value.Usage.TotalTokens))
-	h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(out.Value.Usage.TotalTokens))
+	h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(pemakaian.TotalTokens))
+	h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(pemakaian.TotalTokens))
 
-	if rj := h.guard.SaringJawaban(r.Context(), teksJawaban(out.Value),
+	if rj := h.guard.SaringJawaban(r.Context(), teks,
 		pr.model.ID, out.Candidate.ProviderID); rj != nil {
 		rj.Tulis(w, r)
 		return
@@ -1204,8 +1335,8 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 				Model:      out.Candidate.UpstreamModelName,
 				ProviderID: out.Candidate.ProviderID,
 				Raw:        out.Value.Raw,
-				Usage:      out.Value.Usage,
-				Teks:       teksJawaban(out.Value),
+				Usage:      pemakaian,
+				Teks:       teks,
 				CachedAt:   time.Now(),
 			})
 		}
@@ -1423,19 +1554,14 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 	// yang sudah dihasilkan sampai titik itu tetap ditagihkan provider. Melewatkannya berarti
 	// klien yang selalu memutus aliran lebih awal tidak pernah memakan kuota tokennya.
 	defer func() {
-		// Chunk usage final belum tentu tiba saat aliran diputus: tanpa ini
-		// CatatToken menerima TotalTokens 0 dan langsung return, sehingga
-		// token yang sudah terkirim tidak memakan kuota sama sekali. Lantainya
-		// ditaksir dari byte yang benar-benar terkirim (rasio yang sama dengan
-		// EstimateTokens), supaya abort rutin tidak menjadi pemakaian gratis.
-		if usage.TotalTokens <= 0 && terkirim > 0 {
-			lantai := int(terkirim / bytePerToken)
-			if lantai < 1 {
-				lantai = 1
-			}
-			usage.OutputTokens = lantai
-			usage.TotalTokens = usage.InputTokens + lantai
-		}
+		// Chunk usage final belum tentu tiba saat aliran diputus: tanpa lantai,
+		// CatatToken menerima TotalTokens 0 dan langsung return, sehingga token
+		// yang sudah terkirim tidak memakan kuota sama sekali. Lantainya
+		// menaksir DUA sisi (audit3 V-AB-14): output dari byte yang benar-benar
+		// terkirim, dan input dari prompt peminta — versi lama hanya menaksir
+		// output, jadi token input hilang total pada aliran tanpa chunk usage
+		// padahal prompt-nya nyata ditagihkan upstream.
+		usage = terapkanLantaiPemakaian(pr.req, usage, terkirim)
 		h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(usage.TotalTokens))
 		h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(usage.TotalTokens))
 		// Token juga diserahkan ke pencatat lewat defer yang sama, dan alasannya sama:
@@ -1628,6 +1754,10 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 	j, w := h.mulaiJejak(w, r)
 	defer j.selesai(r.Context())
 
+	// Penolakan pra-upstream mengembalikan kuota Limit() (audit3 V-AB-17).
+	jaga := h.jagaKuotaPraUpstream(r)
+	defer jaga.tutup()
+
 	body, ok := h.bacaBody(w, r)
 	if !ok {
 		return
@@ -1664,7 +1794,9 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 	clientIP, _ := httpx.ClientIPFrom(r.Context())
 	targets := TargetsFor(p, model.ID, clientIP)
 	j.pasangKebijakan(p, targets)
-	if !h.kebijakan(w, r, p, model, targets) {
+	// Embeddings tanpa reservasi (estimasi 0): taksiran token chat tidak
+	// berlaku untuk masukan embedding, dan pemeriksaan biasa tetap berjalan.
+	if !h.kebijakan(w, r, p, model, targets, 0) {
 		return
 	}
 
@@ -1689,6 +1821,8 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 	}
 	plan := PlanFromRule(keputusan.Rule, model.ModelID, keputusan.Candidates)
 
+	// Persiapan lolos: eksekusi upstream akan dicoba, kuota sah terbakar.
+	jaga.lolos()
 	out := Execute(h.guard.DenganMemoBatas(r.Context()), h.exec, plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.EmbeddingsResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {

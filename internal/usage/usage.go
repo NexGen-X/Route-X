@@ -221,9 +221,21 @@ type Event struct {
 	// Reasoning. Lihat catatan paket.
 	InputTokens       int
 	CachedInputTokens int
-	OutputTokens      int
-	ReasoningTokens   int
-	TotalTokens       int
+	// CacheCreationInputTokens adalah bagian dari InputTokens yang merupakan
+	// token TULIS prompt cache; dipisahkan hanya untuk penagihan (tarifnya
+	// berbeda), bukan kolom requests tersendiri.
+	CacheCreationInputTokens int
+	OutputTokens             int
+	ReasoningTokens          int
+	TotalTokens              int
+
+	// TerjadiPada adalah saat permintaan selesai di gateway. Penagihan memakai
+	// harga yang berlaku pada saat INI, bukan harga berjalan saat pencatat
+	// asinkron kebetulan memproses antrean (audit3 V-AB-09): pergantian harga
+	// di antara keduanya tidak boleh mengubah biaya permintaan yang sudah
+	// selesai. Nol berarti pemanggil tidak tahu — pencatat jatuh ke harga
+	// berjalan, perilaku lama.
+	TerjadiPada time.Time
 
 	// Latency adalah umur seluruh permintaan di gateway ini.
 	Latency time.Duration
@@ -282,11 +294,17 @@ type Recorder struct {
 	metrics *observability.Metrics
 	logger  *slog.Logger
 
-	antre   chan Event
-	mati    chan struct{}
-	tutup   sync.Once
-	wg      sync.WaitGroup
-	dalam   atomic.Int64
+	antre chan Event
+	mati  chan struct{}
+	tutup sync.Once
+	wg    sync.WaitGroup
+	dalam atomic.Int64
+	// kirimMu menutup jendela antara pemeriksaan sinyal tutup dan pengiriman
+	// ke antrean di Record (audit3 V-LN-17): Record memegang kunci baca selama
+	// periksa-dan-kirim, Close memegang kunci tulis saat menutup mati, jadi
+	// tidak ada catatan yang bisa lolos pemeriksaan tepat sebelum Close lalu
+	// mendarat di antrean yang sudah tidak dikuras siapa pun.
+	kirimMu sync.RWMutex
 	batas   time.Duration
 	pekerja int
 	ukuran  int
@@ -362,6 +380,14 @@ func (r *Recorder) Record(ctx context.Context, ev Event) {
 	}
 	r.catatMetrik(ev)
 
+	// Periksa-dan-kirim berjalan di bawah kunci baca kirimMu, dan Close menutup
+	// sinyal berhenti di bawah kunci tulisnya (audit3 V-LN-17). Dua select
+	// terpisah tanpa kunci menyisakan jendela: pemeriksaan lolos, lalu Close
+	// menutup dan penulis selesai menguras, lalu pengiriman mendarat di antrean
+	// yang tak lagi dilayani — catatan hilang tanpa terhitung sebagai dropped.
+	r.kirimMu.RLock()
+	defer r.kirimMu.RUnlock()
+
 	// Sinyal berhenti diperiksa SENDIRI lebih dulu, bukan sebagai satu cabang select
 	// bersama pengiriman ke antrean. Kalau digabung, keduanya siap pada saat yang sama
 	// setelah Close dan Go memilih salah satunya secara acak — sehingga sebagian catatan
@@ -400,7 +426,15 @@ func (r *Recorder) Close(ctx context.Context) error {
 	if r == nil {
 		return nil
 	}
-	r.tutup.Do(func() { close(r.mati) })
+	r.tutup.Do(func() {
+		// Kunci tulis menunggu setiap Record yang sedang memeriksa-dan-mengirim
+		// selesai lebih dulu: sesudah baris ini, tidak ada pengiriman baru yang
+		// bisa lolos, dan pengurasan penulis di jalan() pasti melihat seluruh
+		// catatan yang pernah diterima (audit3 V-LN-17).
+		r.kirimMu.Lock()
+		close(r.mati)
+		r.kirimMu.Unlock()
+	})
 
 	selesai := make(chan struct{})
 	go func() {
@@ -459,46 +493,65 @@ func (r *Recorder) tulisAman(ev Event) {
 	r.tulis(ev)
 }
 
-// tulis menyimpan satu catatan.
+// konteksLangkah membuat konteks BARU bertenggat untuk satu langkah penulisan.
 //
-// Context-nya BARU, bukan turunan context permintaan: permintaannya sudah selesai dan
-// context-nya sudah dibatalkan, jadi turunan apa pun darinya gagal seketika. Tenggatnya
-// ada supaya satu pernyataan yang menggantung tidak menahan penulis ini sementara antrean
-// di belakangnya penuh lalu mulai membuang catatan.
-func (r *Recorder) tulis(ev Event) {
-	ctx, batal := context.WithTimeout(context.Background(), r.batas)
-	defer batal()
+// Bukan turunan context permintaan: permintaannya sudah selesai dan context-nya
+// sudah dibatalkan, jadi turunan apa pun darinya gagal seketika. Dan SATU konteks
+// per langkah, bukan satu untuk seluruh catatan (audit3 V-AB-22): versi lama
+// membagi satu tenggat 10 detik berurutan untuk query harga + Insert +
+// AppendEvents + AddSpend, sehingga database yang lambat membuat keempatnya
+// gagal berkelompok dan pesan sebabnya menunjuk langkah yang salah. Kini langkah
+// yang lambat hanya menggagalkan dirinya sendiri.
+func (r *Recorder) konteksLangkah() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), r.batas)
+}
 
+// tulis menyimpan satu catatan.
+func (r *Recorder) tulis(ev Event) {
 	if statusTerpakai(ev.StatusCode) != ev.StatusCode {
 		// Berarti ada jalur keluar di lapisan HTTP yang selesai tanpa melaporkan statusnya.
 		// Barisnya tetap ditulis dengan 500 — lihat statusTerpakai — tetapi jalur itu perlu
 		// dicari, dan hanya log ini yang menunjukkan bahwa ia ada.
+		ctx, batal := r.konteksLangkah()
 		r.logger.ErrorContext(ctx, "permintaan dicatat tanpa status HTTP yang sah",
 			"request_id", ev.RequestID, "status", ev.StatusCode, "endpoint", ev.Endpoint)
+		batal()
 	}
 
-	biaya := r.biaya(ctx, ev)
+	ctxBiaya, batalBiaya := r.konteksLangkah()
+	biaya := r.biaya(ctxBiaya, ev)
+	batalBiaya()
 
 	insertGagal := false
 	if r.store != nil {
-		pk, dibuat, err := r.store.Insert(ctx, ev.record(biaya))
+		ctxTulis, batalTulis := r.konteksLangkah()
+		pk, dibuat, err := r.store.Insert(ctxTulis, ev.record(biaya))
 		switch {
 		case err != nil:
 			insertGagal = true
 			r.hasil(OutcomeFailed)
-			r.logger.ErrorContext(ctx, "baris log request gagal ditulis",
+			r.logger.ErrorContext(ctxTulis, "baris log request gagal ditulis",
 				"request_id", ev.RequestID, "status", ev.StatusCode, "error", err)
 		default:
 			r.hasil(OutcomeWritten)
 			if timeline := ev.timeline(); len(timeline) > 0 {
-				if err := r.store.AppendEvents(ctx, pk, dibuat, timeline); err != nil {
+				ctxEvents, batalEvents := r.konteksLangkah()
+				if err := r.store.AppendEvents(ctxEvents, pk, dibuat, timeline); err != nil {
 					// Timeline hanya diagnostik: barisnya sudah tertulis, dan kehilangan
-					// jejak percobaan tidak mengubah satu pun angka pemakaian.
-					r.logger.WarnContext(ctx, "timeline percobaan gagal ditulis",
+					// jejak percobaan tidak mengubah satu pun angka pemakaian. Tetapi
+					// kegagalannya kini TERHITUNG, bukan hanya WARN: tanpa penghitung,
+					// timeline inspector bisa hilang massal sementara indikator
+					// pencatatan tampak hijau (audit3 V-AB-23).
+					if r.metrics != nil {
+						r.metrics.UsageEventFailures.Inc()
+					}
+					r.logger.WarnContext(ctxEvents, "timeline percobaan gagal ditulis",
 						"request_id", ev.RequestID, "error", err)
 				}
+				batalEvents()
 			}
 		}
+		batalTulis()
 	}
 
 	// Konsistensi log <-> anggaran (audit F6): AddSpend TETAP dijalankan
@@ -509,12 +562,14 @@ func (r *Recorder) tulis(ev Event) {
 	// Yang ditambahkan audit: PENANDA REKONSILIASI eksplisit per RequestID
 	// agar pasangan "anggaran terpotong tanpa baris log" bisa ditemukan
 	// dan diselaraskan kemudian, bukan tenggelam di log yang terpisah.
+	ctxSpend, batalSpend := r.konteksLangkah()
+	defer batalSpend()
 	if insertGagal && biaya > 0 {
-		r.logger.ErrorContext(ctx, "REKONSILIASI: pemakaian anggaran tetap dinaikkan walau baris request gagal ditulis",
+		r.logger.ErrorContext(ctxSpend, "REKONSILIASI: pemakaian anggaran tetap dinaikkan walau baris request gagal ditulis",
 			"request_id", ev.RequestID, "biaya_usd", biaya.String())
 	}
 
-	r.tambahPemakaian(ctx, ev, biaya)
+	r.tambahPemakaian(ctxSpend, ev, biaya)
 }
 
 // biaya menghitung biaya satu permintaan dari harga yang berlaku.
@@ -535,8 +590,18 @@ func (r *Recorder) biaya(ctx context.Context, ev Event) upstream.USD {
 	if ev.tokenUsage().Total() <= 0 {
 		return 0
 	}
-	harga, ok := r.prices.Price(ctx, ev.ProviderModelID)
+	// Harga yang dipakai adalah harga pada SAAT PERMINTAAN SELESAI (TerjadiPada),
+	// bukan harga berjalan saat catatan ini kebetulan diproses: antrean asinkron
+	// berarti dua waktu itu bisa berbeda, dan memakai yang kedua mengubah biaya
+	// permintaan lampau setiap kali operator mengganti harga (audit3 V-AB-09).
+	harga, ok := r.prices.PriceAt(ctx, ev.ProviderModelID, ev.TerjadiPada)
 	if !ok {
+		// Terhitung di metrik, bukan hanya WARN sekali per cuplikan: pemetaan yang
+		// lupa dihargai membekukan anggaran USD tanpa gejala lain, jadi keadaannya
+		// harus bisa dialarmkan (audit3 V-AB-10).
+		if r.metrics != nil {
+			r.metrics.UsageUnpriced.WithLabelValues(ev.ProviderName, ev.ModelName).Inc()
+		}
 		r.prices.laporTanpaHarga(ctx, ev.ProviderModelID, ev.ProviderName, ev.ModelName)
 		return 0
 	}

@@ -138,6 +138,20 @@ export interface Price {
   created_at: string;
 }
 
+// ReferencePrice adalah tawaran harga acuan dari katalog bawaan untuk satu
+// pemetaan (audit3 V-AB-12). available=false berarti katalog tidak punya
+// acuan untuk model upstream itu — bukan angka nol.
+export interface ReferencePrice {
+  available: boolean;
+  provider_kind: string;
+  upstream_model: string;
+  input_per_1m_usd?: string;
+  output_per_1m_usd?: string;
+  cached_input_per_1m_usd?: string;
+  source?: string;
+  fetched_on?: string;
+}
+
 export interface EgressPool {
   id: string;
   name: string;

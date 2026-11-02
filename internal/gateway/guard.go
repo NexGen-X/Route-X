@@ -204,6 +204,22 @@ func (g *Guard) saring(ctx context.Context, s contentfilter.Subject) *Rejection 
 	}
 }
 
+// KembalikanKuota membatalkan kenaikan penghitung Limit() untuk permintaan
+// yang ditolak SEBELUM satu pun percobaan upstream dijalankan (audit3 V-AB-17).
+//
+// Middleware Limit() berjalan sebelum body dibaca, jadi pada saat handler
+// menolak — model tidak diizinkan, anggaran habis, tersaring konten, tidak ada
+// kandidat — penghitung key/pengguna/IP/global sudah naik. Tanpa pembatalan
+// ini, klien yang terus ditolak kehabisan kuota hariannya tanpa satu pun
+// permintaan yang benar-benar dilayani. Permintaan yang sudah dicoba ke
+// upstream TIDAK dibatalkan: percobaannya nyata mengonsumsi sumber daya.
+func (g *Guard) KembalikanKuota(ctx context.Context, p *apikey.Principal, ip netip.Addr) {
+	if g == nil || g.limiter == nil || p == nil {
+		return
+	}
+	g.limiter.RefundRequest(ctx, p, ip)
+}
+
 // ProviderDilarang melaporkan apakah satu provider dilarang penyaring konten.
 //
 // Dipakai untuk MENYARING kandidat, bukan untuk menolak permintaan. Bedanya penting: kalau
@@ -234,6 +250,39 @@ func (g *Guard) PeriksaAnggaran(ctx context.Context, targets []policy.Target) *R
 	if !v.Blocked {
 		return nil
 	}
+	return g.penolakanAnggaran(ctx, v)
+}
+
+// PeriksaAnggaranDenganReservasi adalah PeriksaAnggaran yang sekaligus
+// menahan estimasi biaya permintaan ini pada anggaran yang berlaku.
+//
+// Tanpa reservasi, pemeriksaan pra-permintaan atas akuntansi pasca-bayar
+// terlampaui sebesar konkurensi (audit3 V-AB-16): sepuluh permintaan paralel
+// membaca sisa yang sama dan semuanya lolos. Estimasi dihitung pemanggil dari
+// harga pemetaan termahal model itu — arah konservatif yang benar untuk
+// sebuah gerbang. estimasi <= 0 (harga tidak diketahui) jatuh ke pemeriksaan
+// biasa: pemetaan yang belum dihargai memang menagih nol, jadi tidak ada
+// pagu uang yang bisa ditembus lewatnya.
+func (g *Guard) PeriksaAnggaranDenganReservasi(ctx context.Context, targets []policy.Target, estimasi upstream.USD) *Rejection {
+	if g == nil || g.budgets == nil {
+		return nil
+	}
+	if estimasi <= 0 {
+		return g.PeriksaAnggaran(ctx, targets)
+	}
+	v := g.budgets.Tahan(ctx, targets, estimasi)
+	if len(v.Alerts) > 0 {
+		g.budgets.Announce(ctx, v.Alerts)
+	}
+	if !v.Blocked {
+		return nil
+	}
+	return g.penolakanAnggaran(ctx, v)
+}
+
+// penolakanAnggaran menyusun Rejection 402 dari satu keputusan anggaran yang
+// memblokir, dipakai kedua jalur pemeriksaan di atas.
+func (g *Guard) penolakanAnggaran(ctx context.Context, v billing.Verdict) *Rejection {
 	g.logger.WarnContext(ctx, "permintaan ditolak karena anggaran habis",
 		"anggaran", v.Budget.Name, "cakupan", v.Budget.Scope, "periode", v.Budget.Period,
 		"terpakai_usd", v.Budget.SpentUSD.String(), "batas_usd", v.Budget.LimitUSD.String())

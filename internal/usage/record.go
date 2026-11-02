@@ -41,11 +41,12 @@ func statusTerpakai(status int) int {
 // salinannya, di TokensFor.
 func (ev *Event) tokenUsage() upstream.TokenUsage {
 	return TokensFor(providers.Usage{
-		InputTokens:       ev.InputTokens,
-		CachedInputTokens: ev.CachedInputTokens,
-		OutputTokens:      ev.OutputTokens,
-		ReasoningTokens:   ev.ReasoningTokens,
-		TotalTokens:       ev.TotalTokens,
+		InputTokens:              ev.InputTokens,
+		CachedInputTokens:        ev.CachedInputTokens,
+		CacheCreationInputTokens: ev.CacheCreationInputTokens,
+		OutputTokens:             ev.OutputTokens,
+		ReasoningTokens:          ev.ReasoningTokens,
+		TotalTokens:              ev.TotalTokens,
 	})
 }
 

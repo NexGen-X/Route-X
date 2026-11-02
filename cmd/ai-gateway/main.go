@@ -508,6 +508,7 @@ func buildGatewaySurface(
 		// Pembatasan model dan provider per API key. Bukan opsional di produksi: tanpa ini
 		// setiap key boleh memakai setiap model.
 		Restrict: keyRepo,
+		Penaksir: pricer,
 		Guard: gateway.NewGuard(gateway.GuardDeps{
 			Filters: filters,
 			Budgets: budgets,
@@ -629,15 +630,33 @@ func buildGatewaySurface(
 		ResponseCache:  respCache,
 		CLIManager:     cliMgr,
 		Engine:         ruleEngine,
+		PriceCache:     pricer,
 		Version:        version,
 		Commit:         commit,
 		BuiltAt:        builtAt,
 	})
 
 	closeAll := func(c context.Context) error {
-		_ = workerSup.Stop(c)
-		_ = breaker.Close(c)
-		return recorder.Close(c)
+		// Setiap tahap penutupan membawa tenggatnya SENDIRI (audit3 V-AB-21).
+		// Versi lama meneruskan satu konteks yang sama berurutan ke ketiga
+		// tahap, jadi pencatat pemakaian — tahap terakhir dan satu-satunya yang
+		// antreannya berisi pekerjaan nyata — hanya kebagian SISA waktu sesudah
+		// supervisor dan pemutus arus selesai, dan antreannya bisa terpotong
+		// bukan karena ia lambat melainkan karena tahap sebelumnya yang lambat.
+		// WithoutCancel melepaskan tenggat warisan pemanggil sambil tetap
+		// membawa nilai konteksnya.
+		tahap := func() (context.Context, context.CancelFunc) {
+			return context.WithTimeout(context.WithoutCancel(c), usageDrainTimeout)
+		}
+		ctxWorker, batalWorker := tahap()
+		_ = workerSup.Stop(ctxWorker)
+		batalWorker()
+		ctxBreaker, batalBreaker := tahap()
+		_ = breaker.Close(ctxBreaker)
+		batalBreaker()
+		ctxRecorder, batalRecorder := tahap()
+		defer batalRecorder()
+		return recorder.Close(ctxRecorder)
 	}
 
 	return r, adminHandlers, closeAll, nil

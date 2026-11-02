@@ -1,5 +1,7 @@
 # Standar Verifikasi Multi-Aspek & Protokol Anti-Halusinasi
 
+> ⚠️ **DOKUMEN INTERNAL AGEN — BUKAN DOKUMENTASI PENGGUNA/PRODUK.** Berkas ini adalah konteks kerja internal untuk AI agent di repo Route-X. Bila isinya bertentangan dengan kode sumber atau `AGENTS.md` repo, **kode dan `AGENTS.md` yang menang**. Indeks & catatan keselarasan: [`.agents/README.md`](../README.md).
+
 ## Konteks & Prinsip Wajib
 Dilarang keras menyajikan hasil mentah, asumsi teoretis, atau klaim penyelesaian tugas hanya berdasarkan spekulasi kode atau mock lokal semata.
 Semua klaim hasil pekerjaan, integrasi provider luar, maupun perbaikan bug wajib dibuktikan dengan bukti empiris nyata melalui 4 lapisan verifikasi.
@@ -13,7 +15,7 @@ Semua klaim hasil pekerjaan, integrasi provider luar, maupun perbaikan bug wajib
    - Uji mode streaming (SSE framing: `data: ...\n\n`) dan non-streaming secara terpisah.
 
 2. **Backend Architecture & Database Integrity**:
-   - `go test -v ./...` wajib 100% PASS (zero failure).
+   - `go test -v ./...` wajib lulus (zero failure); pengujian yang diskip karena prasyarat lingkungan harus tercatat alasannya, bukan disembunyikan.
    - Verifikasi data nyata di database PostgreSQL via SQL riil: periksa skema kolom, constraint, dan enkripsi AES-256-GCM pada data rahasia.
    - Periksa status layanan systemd (`routex.service`) dan endpoint probe `/healthz` & `/readyz`.
 

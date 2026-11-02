@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Requests } from './Requests';
+import { ApiError } from '../api/client';
 import type { RequestLog, RequestEvent, RequestPayload } from '../types';
 import { copyTextToClipboard } from '../utils/clipboard';
 
@@ -108,6 +109,20 @@ const mockPayloadFn = vi.fn();
 const mockProvidersFn = vi.fn();
 
 vi.mock('../api/client', () => ({
+  // Kelas ApiError tiruan dengan bentuk yang sama seperti aslinya
+  // (status + code) agar pembedaan 404 vs error nyata bisa diuji (B-078).
+  ApiError: class ApiError extends Error {
+    status: number;
+    code: string;
+    param?: string;
+    constructor(status: number, code: string, message: string, param?: string) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+      this.code = code;
+      this.param = param;
+    }
+  },
   api: {
     requests: {
       list: (params: Record<string, string | number>) => mockListFn(params),
@@ -287,6 +302,50 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     expect(mockToastSuccess).toHaveBeenCalledWith(
       'Perintah cURL disalin ke clipboard.'
     );
+  });
+
+  it('menampilkan penjelasan netral (bukan error) bila payload tidak tersimpan (404)', async () => {
+    // Keadaan normal di produksi: endpoint payload menjawab 404 karena
+    // payload memang tidak pernah disimpan (B-078).
+    mockPayloadFn.mockRejectedValueOnce(
+      new ApiError(404, 'not_found', 'payload request tidak ditemukan')
+    );
+    render(<Requests />);
+
+    const row = await screen.findByTestId('request-row-req-uuid-1');
+    fireEvent.click(row);
+
+    await waitFor(() => {
+      expect(screen.getByText('Detail Request & Timeline Event')).toBeInTheDocument();
+    });
+
+    // Penjelasan netral tampil di tab Payload...
+    await waitFor(() => {
+      expect(screen.getByText(/Payload request tidak disimpan/)).toBeInTheDocument();
+    });
+    // ...dan TIDAK ada banner error inspector untuk keadaan ini.
+    expect(screen.queryByText('Data gagal dimuat')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Sebagian data inspector gagal dimuat/)).not.toBeInTheDocument();
+  });
+
+  it('tetap menampilkan error inspector bila payload gagal dimuat sungguhan (500)', async () => {
+    mockPayloadFn.mockRejectedValueOnce(
+      new ApiError(500, 'internal_error', 'Terjadi kesalahan internal pada server.')
+    );
+    render(<Requests />);
+
+    const row = await screen.findByTestId('request-row-req-uuid-1');
+    fireEvent.click(row);
+
+    // Kegagalan muat nyata tetap dilaporkan sebagai error inspector...
+    await waitFor(() => {
+      expect(screen.getByText('Data gagal dimuat')).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(/Sebagian data inspector gagal dimuat — payload:/)
+    ).toBeInTheDocument();
+    // ...dan penjelasan netral tak-tersimpan TIDAK boleh tampil.
+    expect(screen.queryByText(/Payload request tidak disimpan/)).not.toBeInTheDocument();
   });
 
   it('mendukung toggle tombol Live Feed Polling', async () => {

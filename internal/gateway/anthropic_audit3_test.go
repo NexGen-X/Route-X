@@ -191,7 +191,11 @@ func TestDecodeAnthropicDokumen(t *testing.T) {
 		}
 	})
 
-	t.Run("sumber base64 ditolak eksplisit, bukan diabaikan", func(t *testing.T) {
+	// Batch C2: PDF base64 tidak lagi ditolak di decode — ia menjadi bagian
+	// dokumen kanonik yang diteruskan utuh ke upstream Anthropic, dan
+	// ditolak di tahap routing bila pemenangnya bukan Anthropic. Yang tetap
+	// dilarang di sini adalah sumber yang tidak bisa dijaga kesetiaannya.
+	t.Run("sumber base64 PDF menjadi bagian dokumen kanonik", func(t *testing.T) {
 		body := []byte(`{
 			"model": "m", "max_tokens": 10,
 			"messages": [{"role": "user", "content": [
@@ -199,8 +203,63 @@ func TestDecodeAnthropicDokumen(t *testing.T) {
 				{"type": "text", "text": "ringkas"}
 			]}]
 		}`)
+		req, err := DecodeAnthropicMessagesRequest(body)
+		if err != nil {
+			t.Fatalf("DecodeAnthropicMessagesRequest: %v", err)
+		}
+		msg := req.Messages[0]
+		if len(msg.Parts) != 2 {
+			t.Fatalf("bagian pesan = %d, mau 2 (dokumen + teks): %+v", len(msg.Parts), msg.Parts)
+		}
+		dok := msg.Parts[0]
+		if dok.Type != providers.PartTypeDocument || dok.Document == nil ||
+			dok.Document.MediaType != "application/pdf" || dok.Document.Data != "JVBERi0=" {
+			t.Errorf("bagian[0] = %+v, mau dokumen PDF dengan data utuh", dok)
+		}
+		if msg.Parts[1].Type != providers.PartTypeText || msg.Parts[1].Text != "ringkas" {
+			t.Errorf("bagian[1] = %+v, mau teks pendamping sesudah dokumen", msg.Parts[1])
+		}
+	})
+
+	t.Run("sumber base64 text/plain didekode menjadi teks", func(t *testing.T) {
+		body := []byte(`{
+			"model": "m", "max_tokens": 10,
+			"messages": [{"role": "user", "content": [
+				{"type": "document", "source": {"type": "base64", "media_type": "text/plain", "data": "aXNpLXRla3MtZG9rdW1lbg=="}}
+			]}]
+		}`)
+		req, err := DecodeAnthropicMessagesRequest(body)
+		if err != nil {
+			t.Fatalf("DecodeAnthropicMessagesRequest: %v", err)
+		}
+		if teks := req.Messages[0].Text(); !strings.Contains(teks, "isi-teks-dokumen") {
+			t.Errorf("isi pesan = %q, mau memuat teks hasil dekode base64", teks)
+		}
+	})
+
+	t.Run("sumber url ditolak eksplisit", func(t *testing.T) {
+		body := []byte(`{
+			"model": "m", "max_tokens": 10,
+			"messages": [{"role": "user", "content": [
+				{"type": "document", "source": {"type": "url", "url": "https://contoh.invalid/a.pdf"}}
+			]}]
+		}`)
 		if _, err := DecodeAnthropicMessagesRequest(body); err == nil {
-			t.Error("document base64 tidak ditolak — ia akan hilang diam-diam seperti V-GW-22")
+			t.Error("document sumber url tidak ditolak — gateway tidak boleh mengambil berkas dari URL klien")
+		}
+	})
+
+	t.Run("base64 rusak dan media_type asing ditolak", func(t *testing.T) {
+		for nama, sumber := range map[string]string{
+			"base64 rusak":    `{"type": "base64", "media_type": "application/pdf", "data": "!!!bukan-base64!!!"}`,
+			"media_type lain": `{"type": "base64", "media_type": "image/png", "data": "JVBERi0="}`,
+			"sumber file":     `{"type": "file", "file_id": "file_123"}`,
+		} {
+			body := []byte(`{"model": "m", "max_tokens": 10, "messages": [{"role": "user", "content": [
+				{"type": "document", "source": ` + sumber + `}]}]}`)
+			if _, err := DecodeAnthropicMessagesRequest(body); err == nil {
+				t.Errorf("%s: tidak ditolak", nama)
+			}
 		}
 	})
 

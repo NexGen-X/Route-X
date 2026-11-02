@@ -787,6 +787,8 @@ func perkiraanTokenPesan(m *providers.Message) int {
 				total += tokenGambar(p.ImageURL)
 			case providers.PartTypeAudio:
 				total += tokenAudioMinimum
+			case providers.PartTypeDocument:
+				total += tokenDokumen(p.Document)
 			}
 		}
 	}
@@ -796,6 +798,24 @@ func perkiraanTokenPesan(m *providers.Message) int {
 		total += overheadPesan + bagiKeAtas(len(tc.Function.Name)+len(tc.Function.Arguments), bytePerToken)
 	}
 	return total
+}
+
+// tokenDokumen memperkirakan biaya satu dokumen biner (PDF) dari ukuran
+// byte mentahnya sebagai proksi.
+//
+// Ini PROKSI, bukan pengukuran: Anthropic menagih PDF per halaman, dan
+// jumlah halaman tidak bisa diketahui tanpa mengurai berkas PDF-nya —
+// pekerjaan yang tidak pantas dilakukan di jalur taksiran. Ukuran terdékode
+// diturunkan dari panjang base64-nya (3 byte per 4 karakter) lalu dibagi
+// bytePerToken seperti teks. Dokumen padat teks akan dinilai masuk akal;
+// dokumen berisi gambar pindaian akan dinilai terlalu kecil — arah salah
+// yang sama seperti yang diterima tokenAudioMinimum, dan koreksinya datang
+// dari usage nyata upstream sesudah permintaan berjalan.
+func tokenDokumen(dok *providers.Document) int {
+	if dok == nil || dok.Data == "" {
+		return 0
+	}
+	return bagiKeAtas(len(dok.Data)/4*3, bytePerToken)
 }
 
 // tokenGambar memperkirakan biaya satu gambar dari detail yang diminta.

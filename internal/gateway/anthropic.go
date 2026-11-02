@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
@@ -90,6 +92,11 @@ type anthropicMetadata struct {
 type anthropicErrorBody struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
+	// Code adalah kode mesin milik gateway (bukan bagian dari spec
+	// Anthropic, yang hanya mengenal type + message). Ia hanya diisi untuk
+	// penolakan yang pemanggilnya perlu bedakan secara programatik;
+	// klien Anthropic biasa aman mengabaikannya.
+	Code string `json:"code,omitempty"`
 }
 
 type anthropicErrorEnvelope struct {
@@ -98,16 +105,21 @@ type anthropicErrorEnvelope struct {
 }
 
 func writeAnthropicError(w http.ResponseWriter, status int, errType string, message string) {
+	tulisEnvelopeAnthropic(w, status, anthropicErrorBody{Type: errType, Message: message})
+}
+
+// writeAnthropicErrorBerkode menulis error ber-envelope Anthropic yang juga
+// membawa kode mesin gateway, untuk penolakan yang dibedakan pemanggil
+// secara programatik (mis. dokumen PDF tanpa kandidat Anthropic).
+func writeAnthropicErrorBerkode(w http.ResponseWriter, status int, errType, code, message string) {
+	tulisEnvelopeAnthropic(w, status, anthropicErrorBody{Type: errType, Code: code, Message: message})
+}
+
+func tulisEnvelopeAnthropic(w http.ResponseWriter, status int, body anthropicErrorBody) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("anthropic-version", "2023-06-01")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(anthropicErrorEnvelope{
-		Type: "error",
-		Error: anthropicErrorBody{
-			Type:    errType,
-			Message: message,
-		},
-	})
+	_ = json.NewEncoder(w).Encode(anthropicErrorEnvelope{Type: "error", Error: body})
 }
 
 func randomMsgID() string {
@@ -183,19 +195,59 @@ func (p *pembangunPesan) tambahTeks(teks string) {
 	p.parts = append(p.parts, providers.ContentPart{Type: providers.PartTypeText, Text: teks})
 }
 
-// teksDokumen mengekstrak isi teks dari block document.
+// tambahDokumen melampirkan satu bagian dokumen biner (PDF) pada posisi
+// block-nya di dalam pesan. Berbeda dari tambahTeks, dokumen TIDAK masuk
+// daftar teks: ia tidak punya padanan teks dan harus tiba di adapter
+// Anthropic sebagai bagiannya sendiri (Batch C2).
+func (p *pembangunPesan) tambahDokumen(dok *providers.Document) {
+	p.multimodal = true
+	p.parts = append(p.parts, providers.ContentPart{Type: providers.PartTypeDocument, Document: dok})
+}
+
+// maksByteDokumen adalah batas ukuran SATU dokumen sesudah base64 didekode.
 //
-// Hanya sumber teks dan sumber daftar block yang punya padanan setia di bentuk
-// kanonik. Dokumen biner (PDF base64, URL) tidak punya tempat di bentuk kanonik
-// dan TIDAK diabaikan diam-diam — model yang menjawab tanpa lampirannya lebih
-// berbahaya daripada penolakan yang jelas (audit3 V-GW-22).
-func teksDokumen(b anthropicBlock) (string, error) {
+// Batasnya dinyatakan di sini, bukan diwarisi diam-diam dari batas body:
+// body gateway menampung 32 MiB untuk SELURUH permintaan (dan base64
+// mengembang ±4/3), jadi dokumen tunggal 10 MiB menyisakan ruang bagi
+// beberapa lampiran plus percakapannya, sementara dokumen di atas itu
+// hampir pasti berkas yang salah tempat di badan chat.
+const maksByteDokumen = 10 << 20
+
+// hasilDokumen adalah keluaran terjemahan satu block document: tepat satu
+// dari teks / dok yang terisi.
+//
+//   - teks: dokumen yang setia sebagai teks di semua dialek (sumber teks,
+//     sumber content, dan base64 text/plain yang didekode). Ia diinjeksi ke
+//     pesan kanonik sebagai teks biasa, pada posisi block-nya.
+//   - dok: dokumen biner (PDF base64) yang berjalan sebagai bagian kanonik
+//     sendiri sampai adapter Anthropic — satu-satunya adapter yang bisa
+//     meneruskannya utuh (Batch C2).
+type hasilDokumen struct {
+	teks string
+	dok  *providers.Document
+}
+
+// terjemahkanDokumen menerjemahkan sumber satu block document.
+//
+// Yang tidak didukung ditolak eksplisit, tidak pernah diabaikan diam-diam —
+// model yang menjawab tanpa lampirannya lebih berbahaya daripada penolakan
+// yang jelas (audit3 V-GW-22):
+//
+//   - sumber "url": gateway TIDAK mengambil berkas dari URL pilihan klien
+//     (itu SSRF yang dijaga di seluruh repositori ini), jadi ditolak walau
+//     API Anthropic sendiri menerimanya.
+//   - sumber lain (file, dsb.) dan media_type di luar yang didukung: ditolak
+//     dengan menyebut alasannya.
+func terjemahkanDokumen(b anthropicBlock) (hasilDokumen, error) {
 	if b.Source == nil {
-		return "", errors.New("block 'document' tanpa sumber tidak bisa diterjemahkan")
+		return hasilDokumen{}, errors.New("block 'document' tanpa sumber tidak bisa diterjemahkan")
 	}
 	switch b.Source.Type {
 	case "text":
-		return b.Source.Data, nil
+		if mt := b.Source.MediaType; mt != "" && mt != "text/plain" {
+			return hasilDokumen{}, fmt.Errorf("block 'document' bersumber teks dengan media_type %q tidak didukung; sumber teks hanya menerima text/plain", mt)
+		}
+		return hasilDokumen{teks: b.Source.Data}, nil
 	case "content":
 		var parts []string
 		for _, sub := range b.Source.Content {
@@ -203,9 +255,54 @@ func teksDokumen(b anthropicBlock) (string, error) {
 				parts = append(parts, sub.Text)
 			}
 		}
-		return strings.Join(parts, "\n"), nil
+		return hasilDokumen{teks: strings.Join(parts, "\n")}, nil
+	case "base64":
+		return dokumenBase64(b.Source)
+	case "url":
+		return hasilDokumen{}, errors.New("block 'document' dengan sumber \"url\" tidak didukung gateway ini; kirim isi dokumen sebagai teks atau base64")
 	default:
-		return "", fmt.Errorf("block 'document' dengan sumber %q belum didukung gateway ini; kirim isi dokumen sebagai teks", b.Source.Type)
+		return hasilDokumen{}, fmt.Errorf("block 'document' dengan sumber %q tidak didukung gateway ini; kirim isi dokumen sebagai teks atau base64", b.Source.Type)
+	}
+}
+
+// dokumenBase64 mengurai sumber base64 satu block document.
+func dokumenBase64(src *anthropicImage) (hasilDokumen, error) {
+	// Spasi dan baris baru di dalam base64 ditoleransi (sebagian klien
+	// membungkus base64 per baris); selain itu penguraiannya ketat.
+	bersih := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\n' || r == '\r' || r == '\t' {
+			return -1
+		}
+		return r
+	}, src.Data)
+	// Perkiraan ukuran terdékode diperiksa SEBELUM mendekode sungguhan,
+	// supaya lampiran raksasa ditolak tanpa mengalokasikan isinya.
+	if len(bersih)/4*3 > maksByteDokumen {
+		return hasilDokumen{}, fmt.Errorf("dokumen melebihi batas ukuran %d byte sesudah didekode", maksByteDokumen)
+	}
+	mentah, err := base64.StdEncoding.DecodeString(bersih)
+	if err != nil {
+		return hasilDokumen{}, errors.New("block 'document' memuat data base64 yang tidak sah")
+	}
+	if len(mentah) > maksByteDokumen {
+		return hasilDokumen{}, fmt.Errorf("dokumen melebihi batas ukuran %d byte sesudah didekode", maksByteDokumen)
+	}
+
+	switch src.MediaType {
+	case "application/pdf":
+		if len(mentah) == 0 {
+			return hasilDokumen{}, errors.New("block 'document' PDF tidak memuat data")
+		}
+		// Data yang disimpan adalah base64 BERSIH (tanpa jeda baris), supaya
+		// bentuk kanoniknya satu-satunya dan sidiknya stabil.
+		return hasilDokumen{dok: &providers.Document{MediaType: "application/pdf", Data: bersih}}, nil
+	case "text/plain":
+		if !utf8.Valid(mentah) {
+			return hasilDokumen{}, errors.New("block 'document' base64 text/plain tidak didekode menjadi teks UTF-8 yang sah")
+		}
+		return hasilDokumen{teks: string(mentah)}, nil
+	default:
+		return hasilDokumen{}, fmt.Errorf("block 'document' base64 dengan media_type %q tidak didukung; yang didukung application/pdf dan text/plain", src.MediaType)
 	}
 }
 
@@ -260,12 +357,14 @@ func decodePesanAnthropic(m anthropicMsg) ([]providers.Message, error) {
 				}
 			}
 		case "document":
-			teks, err := teksDokumen(b)
+			hasil, err := terjemahkanDokumen(b)
 			if err != nil {
 				return nil, err
 			}
-			if teks != "" {
-				pb.tambahTeks(teks)
+			if hasil.dok != nil {
+				pb.tambahDokumen(hasil.dok)
+			} else if hasil.teks != "" {
+				pb.tambahTeks(hasil.teks)
 			}
 		case "thinking":
 			// Jejak penalaran riwayat assistant dibawa beserta tanda tangannya
@@ -731,6 +830,34 @@ func teruskanSebagaiErrorAnthropic(w http.ResponseWriter, p *penangkapRespons) {
 	writeAnthropicError(w, status, tipeErrorAnthropic(status, kode), pesan)
 }
 
+// mengandungDokumenPDF melaporkan apakah permintaan kanonik ini memuat
+// satu pun bagian dokumen biner (PDF base64).
+func mengandungDokumenPDF(req *providers.ChatRequest) bool {
+	if req == nil {
+		return false
+	}
+	for i := range req.Messages {
+		for _, p := range req.Messages[i].Parts {
+			if p.Type == providers.PartTypeDocument && p.Document != nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// kandidatAnthropicSaja menyaring kandidat ke provider berkind Anthropic
+// saja, mempertahankan urutan routing aslinya.
+func kandidatAnthropicSaja(cands []*upstream.RouteCandidate) []*upstream.RouteCandidate {
+	out := make([]*upstream.RouteCandidate, 0, len(cands))
+	for _, c := range cands {
+		if c.Kind == providers.KindAnthropic {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // AnthropicMessages melayani POST /v1/messages untuk Anthropic Messages API (Claude Code, dll).
 func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	j, w := h.mulaiJejak(w, r)
@@ -759,6 +886,24 @@ func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		teruskanSebagaiErrorAnthropic(w, tangkap)
 		return
+	}
+
+	// Dokumen PDF hanya bisa diteruskan utuh oleh upstream Anthropic; dialek
+	// lain tidak punya padanannya di gateway ini. Kandidat dibatasi ke
+	// Anthropic SEBELUM eksekusi — bukan sesudah pemenang diketahui — supaya
+	// PDF tidak pernah terkirim ke upstream yang akan membuangnya, dan
+	// penolakannya terjadi sebelum satu byte pun menyentuh jaringan
+	// (Batch C2). Penyaringan yang sama berlaku di jalur fallback tier
+	// (siapkanTierFallback).
+	if mengandungDokumenPDF(pr.req) {
+		anthropic := kandidatAnthropicSaja(pr.plan.Candidates)
+		if len(anthropic) == 0 {
+			writeAnthropicErrorBerkode(w, http.StatusBadRequest, httpx.ErrTypeInvalidRequest,
+				"unsupported_document_upstream",
+				"dokumen PDF hanya bisa dilayani provider Anthropic, dan tidak ada kandidat Anthropic yang tersedia untuk model ini")
+			return
+		}
+		pr.plan.Candidates = anthropic
 	}
 	jaga.lolos()
 

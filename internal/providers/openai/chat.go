@@ -256,6 +256,21 @@ func (p *Provider) chatPayload(req *providers.ChatRequest, streaming bool) ([]by
 	if req == nil || len(req.Messages) == 0 {
 		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "permintaan chat tanpa pesan")
 	}
+	// Bagian dokumen biner (PDF) tidak punya padanan di dialek OpenAI dan
+	// gateway menyaring kandidat di permukaan Anthropic supaya ia tidak
+	// pernah tiba di sini. Pemeriksaan ini adalah lapis pengaman terakhir:
+	// meneruskan Parts apa adanya akan mengirim block yang tidak dikenal
+	// upstream, dan membuangnya diam-diam membuat model menjawab tanpa
+	// lampirannya — keduanya lebih buruk daripada penolakan yang jelas
+	// (Batch C2).
+	for i := range req.Messages {
+		for _, part := range req.Messages[i].Parts {
+			if part.Type == providers.PartTypeDocument {
+				return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,
+					"dokumen PDF hanya bisa dilayani provider Anthropic")
+			}
+		}
+	}
 	if strings.TrimSpace(req.Model) == "" {
 		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "nama model wajib diisi")
 	}

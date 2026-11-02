@@ -1351,6 +1351,19 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 		h.logger.WarnContext(ctx, "tidak ada kandidat fallback yang lolos penyaringan provider", "target_model", tierModelName)
 		return nil, nil, nil, nil
 	}
+
+	// Permintaan berdokumen PDF hanya boleh jatuh ke kandidat Anthropic —
+	// penyaringan yang sama seperti rencana utama di permukaan Anthropic
+	// (Batch C2). Bagian dokumen hanya lahir dari decode Anthropic, jadi
+	// untuk permukaan OpenAI pemeriksaan ini tidak pernah menyaring apa
+	// pun. Tier tanpa kandidat Anthropic dilewati, bukan dilanggar.
+	if mengandungDokumenPDF(pr.req) {
+		saring = kandidatAnthropicSaja(saring)
+		if len(saring) == 0 {
+			h.logger.WarnContext(ctx, "tidak ada kandidat Anthropic untuk fallback berdokumen PDF, tier dilewati", "target_model", tierModelName)
+			return nil, nil, nil, nil
+		}
+	}
 	return tModel, saring, targets, nil
 }
 

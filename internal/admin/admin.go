@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -62,12 +63,16 @@ type Handlers struct {
 	trafficRepo    *traffic.Repo
 	webhooksRepo   *webhooks.Repo
 	dispatcher     *webhooks.Dispatcher
-	factory        *gateway.Factory
-	breaker        *gateway.Breaker
-	supervisor     *worker.Supervisor
-	cipher         *security.Cipher
-	responseCache  *responsecache.Engine
-	cliManager     *cliconfig.Manager
+	// webhookEvents adalah produser event webhook dari tindakan admin
+	// (api_key.created/revoked, ban.created). Opsional: nil berarti event
+	// dari permukaan admin tidak diproduksi (audit3 V-WH-08).
+	webhookEvents webhooks.EnqueueSink
+	factory       *gateway.Factory
+	breaker       *gateway.Breaker
+	supervisor    *worker.Supervisor
+	cipher        *security.Cipher
+	responseCache *responsecache.Engine
+	cliManager    *cliconfig.Manager
 	// engine router gateway; nil bila tidak di-injeksi (lihat Config.Engine).
 	engine      *router.Engine
 	oauthRepo   *upstream.OAuthRepo
@@ -112,12 +117,16 @@ type Config struct {
 	TrafficRepo    *traffic.Repo
 	WebhooksRepo   *webhooks.Repo
 	Dispatcher     *webhooks.Dispatcher
-	Factory        *gateway.Factory
-	Breaker        *gateway.Breaker
-	Supervisor     *worker.Supervisor
-	Cipher         *security.Cipher
-	ResponseCache  *responsecache.Engine
-	CLIManager     *cliconfig.Manager
+	// WebhookEvents adalah antrean event webhook untuk tindakan admin
+	// (api_key.created/revoked, ban.created). Opsional: nil berarti tidak
+	// ada event yang diproduksi dari permukaan admin (audit3 V-WH-08).
+	WebhookEvents webhooks.EnqueueSink
+	Factory       *gateway.Factory
+	Breaker       *gateway.Breaker
+	Supervisor    *worker.Supervisor
+	Cipher        *security.Cipher
+	ResponseCache *responsecache.Engine
+	CLIManager    *cliconfig.Manager
 	// Engine router gateway. Dipakai untuk membatalkan cache aturan aktif setelah
 	// mutasi lewat API admin, supaya perubahan (termasuk virtual_alias) segera efektif
 	// tanpa menunggu TTL 5 detik. Opsional: nil berarti tidak ada invalidasi instan.
@@ -167,6 +176,7 @@ func NewHandlers(cfg Config) *Handlers {
 		trafficRepo:    cfg.TrafficRepo,
 		webhooksRepo:   cfg.WebhooksRepo,
 		dispatcher:     cfg.Dispatcher,
+		webhookEvents:  cfg.WebhookEvents,
 		factory:        cfg.Factory,
 		breaker:        cfg.Breaker,
 		supervisor:     cfg.Supervisor,
@@ -253,6 +263,29 @@ func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, reso
 			slog.String("resource_id", resourceID),
 			slog.String("error", err.Error()),
 		)
+	}
+}
+
+// pancarkanEvent memasukkan satu event tindakan admin ke antrean webhook
+// (produser untuk api_key.created, api_key.revoked, ban.created — audit3
+// V-WH-08: ketiga event ini sebelumnya boleh dilanggani tetapi tidak punya
+// produser sama sekali).
+//
+// Kegagalannya hanya dicatat: tindakan adminnya sudah berhasil dan tidak
+// boleh digagalkan oleh antrean notifikasi. Payload TIDAK boleh memuat
+// rahasia — untuk api_key.* hanya ID, nama, dan awalan publik key.
+func (h *Handlers) pancarkanEvent(ctx context.Context, event string, payload map[string]any) {
+	if h.webhookEvents == nil {
+		return
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["event"] = event
+	payload["timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	if _, err := h.webhookEvents.Enqueue(ctx, event, payload); err != nil {
+		h.logger.WarnContext(ctx, "gagal memasukkan event admin ke antrean webhook",
+			"event", event, "error", err)
 	}
 }
 
@@ -376,6 +409,16 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 			msg = "nama jalur egress pool tidak boleh kosong"
 		case "egress_pool_weight_positive":
 			msg = "bobot egress pool harus lebih besar dari 0"
+		case "webhooks_retries_range":
+			msg = "max_retries harus antara 0 dan 20"
+		case "webhooks_timeout_range":
+			msg = "timeout_ms harus antara 1000 dan 120000"
+		case "webhooks_events_known":
+			msg = "events memuat nama event yang tidak dikenal"
+		case "webhooks_events_not_empty":
+			msg = "events wajib berisi minimal satu event yang dilanggani"
+		case "webhooks_name_not_empty":
+			msg = "nama webhook tidak boleh kosong"
 		}
 		httpx.BadRequest(w, r, "constraint_violation", msg)
 	default:

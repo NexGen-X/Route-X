@@ -42,6 +42,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/router"
 	"github.com/NexGen-X/Route-X/internal/usage"
+	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
 
 // UsageSink menerima catatan hasil satu permintaan. Dipenuhi *usage.Recorder.
@@ -190,9 +191,12 @@ var peristiwaKebijakan = map[string]string{
 // dikumpulkan bertahap adalah status HTTP — itu dibaca dari respons yang benar-benar
 // tertulis, sehingga titik keluar yang baru tidak perlu diingat.
 type jejak struct {
-	sink   UsageSink
-	logger *slog.Logger
-	w      *pencatatRespons
+	sink UsageSink
+	// webhooks adalah produser event request.completed/request.failed;
+	// nil berarti event siklus permintaan tidak diproduksi.
+	webhooks webhooks.EnqueueSink
+	logger   *slog.Logger
+	w        *pencatatRespons
 
 	mulai    time.Time
 	method   string
@@ -245,6 +249,7 @@ func (h *Handlers) mulaiJejak(w http.ResponseWriter, r *http.Request) (*jejak, h
 	ip, _ := httpx.ClientIPFrom(r.Context())
 	j := &jejak{
 		sink:     h.usage,
+		webhooks: h.webhooks,
 		logger:   h.logger,
 		w:        pw,
 		mulai:    time.Now(),
@@ -493,6 +498,39 @@ func (j *jejak) selesai(ctx context.Context) {
 	}
 
 	j.sink.Record(ctx, ev)
+
+	// Produser event request.completed / request.failed (audit3 V-WH-08):
+	// kedua event ini sebelumnya boleh dilanggani tetapi tidak punya produser
+	// sama sekali — 39 request sukses dan banyak yang gagal pada verifikasi
+	// live menghasilkan nol delivery. Konteks dilepas dari pembatalan klien:
+	// notifikasi tidak boleh mati hanya karena klien menutup koneksi lebih
+	// dulu (justru request yang terputus termasuk yang perlu dilaporkan).
+	if j.webhooks != nil {
+		event := "request.completed"
+		if status >= 400 {
+			event = "request.failed"
+		}
+		payload := map[string]any{
+			"event":        event,
+			"request_id":   ev.RequestID,
+			"endpoint":     j.endpoint,
+			"method":       j.method,
+			"model":        j.modelName,
+			"requested":    j.requested,
+			"status_code":  status,
+			"stream":       j.stream,
+			"total_tokens": ev.TotalTokens,
+			"duration_ms":  ev.Latency.Milliseconds(),
+			"timestamp":    time.Now().UTC().Format(time.RFC3339),
+		}
+		if status >= 400 {
+			payload["error_code"] = kode
+		}
+		if _, err := j.webhooks.Enqueue(context.WithoutCancel(ctx), event, payload); err != nil {
+			j.logger.WarnContext(ctx, "gagal memasukkan event permintaan ke antrean webhook",
+				"event", event, "error", err)
+		}
+	}
 }
 
 // tipeKesalahan menentukan kategori kegagalan yang dicatat.

@@ -75,6 +75,14 @@ func NewDispatcher(
 		if len(via) >= 10 {
 			return errors.New("terlalu banyak pengalihan (redirect limit 10 tercapai)")
 		}
+		// Pengalihan ke HOST LAIN ditolak: klien HTTP meneruskan header khusus
+		// (termasuk X-RouteX-Signature) dan payload ke target redirect, jadi
+		// mengizinkannya berarti menyerahkan tanda tangan yang sah ke pihak
+		// ketiga mana pun yang ditunjuk respons 307/308 (audit3 V-WH-09).
+		// Redirect dalam host yang sama tetap diikuti dan tetap divalidasi SSRF.
+		if !strings.EqualFold(req.URL.Host, via[0].URL.Host) {
+			return errors.New("pengalihan ke host lain ditolak untuk pengiriman bertanda tangan")
+		}
 		// Validasi setiap hop redirect terhadap SSRF policy (skema, kredensial userinfo, IP privat)
 		if err := security.ValidateBaseURL(req.URL.String(), ssrfPolicy); err != nil {
 			return fmt.Errorf("pengalihan URL melanggar kebijakan SSRF: %w", err)
@@ -129,17 +137,18 @@ func (d *Dispatcher) Dispatch(ctx context.Context, delivery *Delivery) error {
 	if err != nil {
 		d.logger.WarnContext(ctx, "webhook tidak ditemukan untuk antrean delivery",
 			"delivery_id", delivery.ID, "webhook_id", delivery.WebhookID, "error", err)
-		// Bila webhook induk sudah dihapus, delivery ini tidak bisa dikirim lagi.
-		return d.repo.RecordFailure(ctx, delivery.ID, delivery.WebhookID, delivery.AttemptCount+1, 0,
-			time.Now(), nil, "webhook induk tidak ditemukan")
+		// Bila webhook induk sudah dihapus, delivery ini tidak bisa dikirim lagi:
+		// tinggalkan permanen, jangan jadwalkan ulang (audit3 V-WH-01).
+		return d.repo.RecordAbandoned(ctx, delivery.ID, delivery.WebhookID, delivery.AttemptCount+1,
+			"webhook induk tidak ditemukan")
 	}
 
 	// Jika endpoint dinonaktifkan manual oleh operator, batalkan pengiriman.
 	if !wh.Enabled {
 		d.logger.InfoContext(ctx, "webhook dinonaktifkan oleh operator, pengiriman ditinggalkan",
 			"delivery_id", delivery.ID, "webhook_id", wh.ID)
-		return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, wh.MaxRetries, wh.MaxRetries,
-			time.Now(), nil, "webhook dinonaktifkan operator")
+		return d.repo.RecordAbandoned(ctx, delivery.ID, wh.ID, delivery.AttemptCount+1,
+			"webhook dinonaktifkan operator")
 	}
 
 	// 1. Dekripsi secret webhook memakai AAD terikat ke ID webhook.
@@ -148,16 +157,11 @@ func (d *Dispatcher) Dispatch(ctx context.Context, delivery *Delivery) error {
 	if err != nil {
 		d.logger.ErrorContext(ctx, "gagal mendekripsi secret webhook",
 			"delivery_id", delivery.ID, "webhook_id", wh.ID, "error", err)
-		return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, wh.MaxRetries, wh.MaxRetries,
-			time.Now(), nil, "gagal mendekripsi secret webhook")
+		return d.repo.RecordAbandoned(ctx, delivery.ID, wh.ID, delivery.AttemptCount+1,
+			"gagal mendekripsi secret webhook")
 	}
 
-	// 2. Hitung tanda tangan HMAC-SHA256 dari payload mentah.
-	mac := hmac.New(sha256.New, secretBytes)
-	mac.Write(delivery.Payload)
-	sigHex := hex.EncodeToString(mac.Sum(nil))
-
-	// 3. Siapkan HTTP Request dengan batas waktu timeout_ms.
+	// 2. Siapkan HTTP Request dengan batas waktu timeout_ms.
 	timeout := time.Duration(wh.TimeoutMS) * time.Millisecond
 	if timeout <= 0 {
 		timeout = DefaultDeliveryTimeout
@@ -170,10 +174,15 @@ func (d *Dispatcher) Dispatch(ctx context.Context, delivery *Delivery) error {
 		sanitizedErr := SanitizeErrorMessage(err.Error())
 		d.logger.WarnContext(ctx, "URL webhook melanggar kebijakan SSRF",
 			"delivery_id", delivery.ID, "webhook_id", wh.ID, "error", sanitizedErr)
-		return d.repo.RecordFailure(ctx, delivery.ID, wh.ID, wh.MaxRetries, wh.MaxRetries,
-			time.Now(), nil, "SSRF: "+sanitizedErr)
+		return d.repo.RecordAbandoned(ctx, delivery.ID, wh.ID, delivery.AttemptCount+1,
+			"SSRF: "+sanitizedErr)
 	}
 
+	// 3. Susun body FINAL yang benar-benar dikirim. Untuk URL Discord/Telegram
+	// body adalah JSON pembungkus; tanda tangan dihitung atas body final ini,
+	// bukan payload asli — versi lama menandatangani payload asli sehingga
+	// verifikasi penerima atas body yang diterimanya selalu gagal untuk
+	// keluarga URL itu (audit3 V-WH-06).
 	bodyPayload := delivery.Payload
 	if strings.Contains(wh.URL, "discord.com/api/webhooks") {
 		discordBody := map[string]string{"content": fmt.Sprintf("🔔 **Route-X Alert**\n```json\n%s\n```", string(delivery.Payload))}
@@ -189,16 +198,20 @@ func (d *Dispatcher) Dispatch(ctx context.Context, delivery *Delivery) error {
 			time.Now().Add(d.backoff(delivery.AttemptCount+1)), nil, sanitizedErr)
 	}
 
+	// 4. Tanda tangan mengikat timestamp + ID delivery + body final
+	// (audit3 V-WH-05): delivery yang tertangkap tidak bisa di-replay dengan
+	// timestamp diganti, karena timestamp ikut di dalam MAC dan penerima bisa
+	// menegakkan jendela kesegaran dari X-RouteX-Timestamp.
 	nowUnix := strconv.FormatInt(time.Now().Unix(), 10)
+	sigHex := SignPayload(secretBytes, nowUnix, delivery.ID, bodyPayload)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Route-X-Webhook/1.0")
 	req.Header.Set("X-RouteX-Delivery", strconv.FormatInt(delivery.ID, 10))
 	req.Header.Set("X-RouteX-Event", delivery.Event)
 	req.Header.Set("X-RouteX-Timestamp", nowUnix)
 	req.Header.Set("X-RouteX-Signature", "sha256="+sigHex)
-	req.Header.Set("X-Hub-Signature-256", "sha256="+sigHex)
 
-	// 4. Kirim request HTTP.
+	// 5. Kirim request HTTP.
 	resp, err := d.client.Do(req)
 	now := time.Now()
 	if err != nil {
@@ -214,7 +227,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, delivery *Delivery) error {
 		_ = resp.Body.Close()
 	}()
 
-	// 5. Evaluasi kode status respons HTTP.
+	// 6. Evaluasi kode status respons HTTP.
 	// 2xx dianggap sukses; di luar 2xx dianggap gagal dan dijadwalkan ulang bila retry masih ada.
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return d.repo.RecordSuccess(ctx, delivery.ID, wh.ID, resp.StatusCode)
@@ -302,6 +315,12 @@ func SanitizeErrorMessage(raw string) string {
 			return "[URL_TIDAK_SAH]" + suffix
 		}
 		u.RawQuery = ""
+		// Path juga bisa memuat rahasia: token bot Telegram hidup di path
+		// (/bot<id>:<token>/...) dan token webhook Discord juga
+		// (/api/webhooks/<id>/<token>). Membiarkan path utuh menulis token
+		// asli ke kolom error DB dan log (audit3 V-WH-10).
+		u.Path = samarkanPathToken(u.Path)
+		u.RawPath = ""
 		return u.Redacted() + suffix
 	})
 
@@ -316,23 +335,119 @@ func SanitizeErrorMessage(raw string) string {
 	return clean
 }
 
-// MaskSecret menyamarkan secret webhook untuk tampilan dashboard, mis. "whsec_****1b7e".
-func MaskSecret(secret string) string {
-	s := strings.TrimSpace(secret)
-	if len(s) == 0 {
-		return "whsec_****"
+// samarkanPathToken menyamarkan segmen path URL yang memuat token.
+//
+// Tiga bentuk yang dikenali: segmen bot Telegram ("bot<id>:<token>"), segmen
+// token Discord (dua langkah sesudah segmen "webhooks"), dan segmen panjang
+// yang bentuknya seperti token acak. Segmen biasa (nama metode, ID numerik,
+// UUID) dibiarkan utuh supaya pesan error tetap bisa dibaca.
+func samarkanPathToken(path string) string {
+	if path == "" {
+		return path
 	}
-	if len(s) <= 4 {
-		return "whsec_****" + s
+	segs := strings.Split(path, "/")
+	// Aturan Discord lebih dulu karena berbasis posisi: token adalah segmen
+	// sesudah ID webhook numerik.
+	for i, seg := range segs {
+		if seg == "webhooks" && i+2 < len(segs) && segs[i+2] != "" {
+			segs[i+2] = "[TERSEMBUNYI]"
+		}
 	}
-	last4 := s[len(s)-4:]
-	return "whsec_****" + last4
+	for i, seg := range segs {
+		switch {
+		case seg == "[TERSEMBUNYI]":
+			// Sudah disamarkan aturan posisi di atas.
+		case strings.HasPrefix(seg, "bot") && strings.Contains(seg, ":") && len(seg) > 12:
+			// Token bot Telegram: /bot<id>:<token>/nama-metode.
+			segs[i] = "bot[TERSEMBUNYI]"
+		case segmenSepertiToken(seg):
+			segs[i] = "[TERSEMBUNYI]"
+		}
+	}
+	return strings.Join(segs, "/")
 }
 
-// VerifySignature memverifikasi tanda tangan payload webhook menggunakan secret HMAC-SHA256.
+// segmenSepertiToken melaporkan apakah satu segmen path tampak seperti token
+// acak: cukup panjang, hanya aksara token, campuran huruf dan angka, dan
+// bukan UUID (UUID adalah pengenal, bukan rahasia).
+func segmenSepertiToken(seg string) bool {
+	if len(seg) < 24 || tampakUUID(seg) {
+		return false
+	}
+	huruf, angka := false, false
+	for _, c := range seg {
+		switch {
+		case c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z':
+			huruf = true
+		case c >= '0' && c <= '9':
+			angka = true
+		case c == '-' || c == '_' || c == '.' || c == ':':
+		default:
+			return false
+		}
+	}
+	return huruf && angka
+}
+
+// tampakUUID melaporkan apakah seg berbentuk UUID kanonik 8-4-4-4-12 heksadesimal.
+func tampakUUID(seg string) bool {
+	if len(seg) != 36 {
+		return false
+	}
+	for i, c := range seg {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// MaskSecret menyamarkan secret webhook untuk tampilan dashboard, mis. "whsec_****1b7e".
 //
+// Secret yang terlalu pendek TIDAK ditampilkan sebagian sama sekali:
+// menampilkan 4 karakter terakhir dari secret 4–11 karakter berarti
+// membocorkan sebagian besar (atau seluruh) nilainya (audit3 V-WH-11).
+func MaskSecret(secret string) string {
+	s := strings.TrimSpace(secret)
+	if len(s) < 12 {
+		return "whsec_****"
+	}
+	return "whsec_****" + s[len(s)-4:]
+}
+
+// SignPayload menghitung tanda tangan pengiriman webhook: HMAC-SHA256 atas
+// "<timestamp>.<deliveryID>.<body final>".
+//
+// Timestamp dan ID delivery ikut ditandatangani (audit3 V-WH-05) supaya
+// tangkapan satu delivery tidak bisa di-replay dengan timestamp diganti:
+// penerima memeriksa tanda tangan memakai nilai header X-RouteX-Timestamp
+// dan X-RouteX-Delivery yang diterimanya, lalu menolak timestamp di luar
+// jendela kesegaran yang ia tetapkan. Body yang ditandatangani adalah body
+// FINAL yang dikirim (sesudah pembungkus Discord/Telegram), bukan payload
+// antrean (audit3 V-WH-06).
+func SignPayload(secret []byte, timestamp string, deliveryID int64, body []byte) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write([]byte(timestamp))
+	mac.Write([]byte("."))
+	mac.Write([]byte(strconv.FormatInt(deliveryID, 10)))
+	mac.Write([]byte("."))
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// VerifySignature memverifikasi tanda tangan pengiriman webhook.
+//
+// payload adalah body yang diterima, timestamp dan deliveryID adalah nilai
+// header X-RouteX-Timestamp dan X-RouteX-Delivery yang menyertainya.
 // Menggunakan hmac.Equal agar kebal terhadap serangan timing attack.
-func VerifySignature(payload []byte, secret []byte, sigHeader string) bool {
+func VerifySignature(payload []byte, secret []byte, timestamp string, deliveryID int64, sigHeader string) bool {
 	sig := strings.TrimSpace(sigHeader)
 	sig = strings.TrimPrefix(sig, "sha256=")
 	expectedHex, err := hex.DecodeString(sig)
@@ -340,9 +455,10 @@ func VerifySignature(payload []byte, secret []byte, sigHeader string) bool {
 		return false
 	}
 
-	mac := hmac.New(sha256.New, secret)
-	mac.Write(payload)
-	computed := mac.Sum(nil)
+	computed, err := hex.DecodeString(SignPayload(secret, timestamp, deliveryID, payload))
+	if err != nil {
+		return false
+	}
 
 	return hmac.Equal(computed, expectedHex)
 }
@@ -365,12 +481,7 @@ func (d *Dispatcher) Ping(ctx context.Context, wh *Webhook) (int, time.Duration,
 	nowStr := time.Now().UTC().Format(time.RFC3339)
 	payload := []byte(fmt.Sprintf(`{"event":"ping.test","webhook_id":%q,"timestamp":%q,"message":"Uji koneksi webhook dari Route-X Admin"}`, wh.ID, nowStr))
 
-	// 3. Hitung HMAC-SHA256
-	mac := hmac.New(sha256.New, secretBytes)
-	mac.Write(payload)
-	sigHex := hex.EncodeToString(mac.Sum(nil))
-
-	// 4. Validasi SSRF
+	// 3. Validasi SSRF
 	if err := security.ValidateBaseURL(wh.URL, d.ssrfPolicy); err != nil {
 		return 0, 0, fmt.Errorf("SSRF: %s", SanitizeErrorMessage(err.Error()))
 	}
@@ -382,6 +493,8 @@ func (d *Dispatcher) Ping(ctx context.Context, wh *Webhook) (int, time.Duration,
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// 4. Susun body final, lalu tandatangani dengan skema yang sama seperti
+	// pengiriman antrean (mengikat timestamp + ID + body final; ID ping = 0).
 	bodyPayload := payload
 	if strings.Contains(wh.URL, "discord.com/api/webhooks") {
 		discordBody := map[string]string{"content": fmt.Sprintf("🔔 **Route-X Ping**\n```json\n%s\n```", string(payload))}
@@ -396,13 +509,13 @@ func (d *Dispatcher) Ping(ctx context.Context, wh *Webhook) (int, time.Duration,
 	}
 
 	nowUnix := strconv.FormatInt(time.Now().Unix(), 10)
+	sigHex := SignPayload(secretBytes, nowUnix, 0, bodyPayload)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Route-X-Webhook/1.0")
 	req.Header.Set("X-RouteX-Delivery", "0")
 	req.Header.Set("X-RouteX-Event", "ping.test")
 	req.Header.Set("X-RouteX-Timestamp", nowUnix)
 	req.Header.Set("X-RouteX-Signature", "sha256="+sigHex)
-	req.Header.Set("X-Hub-Signature-256", "sha256="+sigHex)
 
 	start := time.Now()
 	resp, err := d.client.Do(req)

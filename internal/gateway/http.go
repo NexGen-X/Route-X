@@ -42,6 +42,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/responsecache"
 	"github.com/NexGen-X/Route-X/internal/router"
+	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
 
 // maxBodyBytes adalah batas body yang dibaca handler di paket ini.
@@ -97,6 +98,7 @@ type Handlers struct {
 	exec       *Executor
 	guard      *Guard
 	usage      UsageSink
+	webhooks   webhooks.EnqueueSink
 	respCache  *responsecache.Engine
 	penaksir   router.CostSource
 	// pembatasLaju adalah middleware pembatas laju inferensi; lihat
@@ -131,6 +133,10 @@ type HandlersDeps struct {
 	// pemakaian anggaran yang naik — sah untuk test, tetapi di produksi berarti halaman
 	// Requests kosong dan setiap anggaran menegakkan angka yang tidak bergerak.
 	Usage UsageSink
+	// Webhooks adalah produser event request.completed dan request.failed,
+	// dipancarkan dari jejak selesai setiap permintaan. nil berarti kedua
+	// event itu tidak diproduksi (audit3 V-WH-08).
+	Webhooks webhooks.EnqueueSink
 	// PembatasLaju adalah middleware pembatas laju inferensi (apikey.Limiter.Limit
 	// di produksi). Ia dipasang DI DALAM Routes, hanya pada rute inferensi — bukan
 	// pada seluruh permukaan seperti sebelumnya. Alasannya terbukti di audit3
@@ -184,6 +190,7 @@ func NewHandlers(d HandlersDeps) (*Handlers, error) {
 		models: d.Models, lister: d.Lister, candidates: d.Candidates,
 		restrict: d.Restrict, factory: d.Factory,
 		engine: engine, exec: d.Executor, guard: guard, usage: d.Usage,
+		webhooks:  d.Webhooks,
 		respCache: d.ResponseCache, penaksir: d.Penaksir,
 		pembatasLaju: d.PembatasLaju, logger: logger,
 	}, nil

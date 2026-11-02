@@ -116,6 +116,32 @@ type EnqueueSink interface {
 	Enqueue(ctx context.Context, event string, payload any) (int, error)
 }
 
+// KnownEvents adalah katalog event yang boleh dilanggani webhook. Daftar ini
+// WAJIB sama dengan constraint webhooks_events_known di migrasi 0008 — dan
+// setiap event di sini WAJIB punya produser nyata di kode (audit3 V-WH-08:
+// tujuh event sempat boleh dilanggani tetapi tidak pernah diproduksi, jadi
+// langganannya mati senyap). Menambah event baru berarti: tambah di sini,
+// tambah migrasi, dan pasang produsernya.
+var KnownEvents = []string{
+	"*",
+	"request.completed", "request.failed",
+	"provider.unhealthy", "provider.recovered",
+	"circuit.opened", "circuit.closed",
+	"budget.threshold", "budget.exceeded",
+	"ratelimit.exceeded", "content.blocked",
+	"api_key.created", "api_key.revoked", "ban.created",
+}
+
+// ValidEvent melaporkan apakah nama event ada di katalog langganan.
+func ValidEvent(event string) bool {
+	for _, e := range KnownEvents {
+		if e == event {
+			return true
+		}
+	}
+	return false
+}
+
 // Repo menyediakan operasi basis data untuk webhook dan antrean pengirimannya.
 
 type Repo struct {
@@ -149,6 +175,7 @@ type CreateWebhookParams struct {
 	Events     []string
 	RawSecret  string // Plaintext rahasia yang akan dienkripsi
 	Cipher     *security.Cipher
+	Enabled    bool
 	MaxRetries int
 	TimeoutMS  int
 	CreatedBy  string
@@ -173,11 +200,26 @@ func (r *Repo) Create(ctx context.Context, p CreateWebhookParams) (*Webhook, err
 	if len(p.Events) == 0 {
 		return nil, fmt.Errorf("%s: minimal satu event harus dilanggani", op)
 	}
+	for _, ev := range p.Events {
+		if !ValidEvent(ev) {
+			return nil, fmt.Errorf("%s: event %q tidak dikenal", op, ev)
+		}
+	}
+	if strings.TrimSpace(p.RawSecret) == "" {
+		// Secret adalah satu-satunya cara penerima memastikan payload benar
+		// dari gateway ini (lihat komentar migrasi 0008); secret kosong berarti
+		// tanda tangan HMAC berkunci kosong yang bisa dipalsukan siapa pun
+		// (audit3 V-WH-04).
+		return nil, fmt.Errorf("%s: secret webhook tidak boleh kosong", op)
+	}
 	if p.TimeoutMS <= 0 {
 		p.TimeoutMS = 10000
 	}
-	if p.MaxRetries < 0 {
-		p.MaxRetries = 5
+	if p.TimeoutMS < 1000 || p.TimeoutMS > 120000 {
+		return nil, fmt.Errorf("%s: timeout_ms harus antara 1000 dan 120000", op)
+	}
+	if p.MaxRetries < 0 || p.MaxRetries > 20 {
+		return nil, fmt.Errorf("%s: max_retries harus antara 0 dan 20", op)
 	}
 
 	// Buat ID baru jika belum disediakan agar AAD bisa langsung diikat ke ID ini.
@@ -206,14 +248,14 @@ func (r *Repo) Create(ctx context.Context, p CreateWebhookParams) (*Webhook, err
 	row := r.q.QueryRow(ctx, `
 		insert into webhooks (
 			id, name, url, events, secret_ciphertext,
-			encryption_key_id, masked_hint, max_retries, timeout_ms, created_by
+			encryption_key_id, masked_hint, enabled, max_retries, timeout_ms, created_by
 		) values (
 			$1::uuid, $2, $3, $4, $5,
-			$6, $7, $8, $9, $10::uuid
+			$6, $7, $8, $9, $10, $11::uuid
 		)
 		returning `+webhookColumns,
 		id, p.Name, p.URL, p.Events, ciphertext,
-		p.Cipher.KeyID(), hint, p.MaxRetries, p.TimeoutMS, createdBy,
+		p.Cipher.KeyID(), hint, p.Enabled, p.MaxRetries, p.TimeoutMS, createdBy,
 	)
 
 	w, err := scanWebhook(row)
@@ -488,6 +530,80 @@ func (r *Repo) RecordFailure(
 	return nil
 }
 
+// RecordAbandoned menandai pengiriman ditinggalkan permanen TANPA jadwal ulang.
+//
+// Dipakai jalur terminal dispatcher (webhook dinonaktifkan, secret tak
+// terdekripsi, URL ditolak SSRF, induk hilang): keadaan yang tidak akan pulih
+// dengan mencoba lagi. Versi lama jalur ini memanggil RecordFailure dengan
+// attemptCount == maxRetries dan next_attempt_at = now(), padahal aturan
+// abandoned di RecordFailure memakai pembanding ketat — delivery berputar
+// ±1×/detik selamanya dan tidak pernah teretensi (audit3 V-WH-01).
+func (r *Repo) RecordAbandoned(
+	ctx context.Context,
+	deliveryID int64,
+	webhookID string,
+	attemptCount int,
+	sanitizedErrMsg string,
+) error {
+	const op = "meninggalkan pengiriman webhook permanen"
+
+	_, err := r.q.Exec(ctx, `
+		update webhook_deliveries
+		set status = $2,
+		    locked_at = null,
+		    locked_by = null,
+		    attempt_count = $3,
+		    error_message = nullif($4, '')
+		where id = $1`,
+		deliveryID, StatusAbandoned, attemptCount, sanitizedErrMsg,
+	)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+
+	// Induk mungkin sudah tidak ada (kasus webhook terhapus); UPDATE yang
+	// mengenai nol baris bukan kesalahan di sini.
+	_, err = r.q.Exec(ctx, `
+		update webhooks
+		set last_delivery_at = now(),
+		    last_delivery_status = $2,
+		    consecutive_failures = consecutive_failures + 1,
+		    updated_at = now()
+		where id = $1::uuid`,
+		webhookID, StatusAbandoned,
+	)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+
+	return nil
+}
+
+// RenewLeases memperbarui stempel sewa (locked_at) baris 'delivering' milik
+// satu worker.
+//
+// ClaimDue mencap sewa seluruh batch di awal, sedangkan dispatch berjalan
+// sesudahnya — tanpa pembaruan ini, item ekor batch yang masih antre di
+// memori bisa melewati ambang stuck dan dipulihkan (lalu dikirim ganda) oleh
+// instance lain (audit3 V-WH-12). Worker memanggil ini berkala selama batch
+// berjalan, dan locked_by memastikan worker hanya memperbarui sewanya sendiri.
+func (r *Repo) RenewLeases(ctx context.Context, deliveryIDs []int64, workerID string) error {
+	const op = "memperbarui sewa pengiriman webhook"
+	if len(deliveryIDs) == 0 {
+		return nil
+	}
+	_, err := r.q.Exec(ctx, `
+		update webhook_deliveries
+		set locked_at = now()
+		where id = any($1) and status = 'delivering' and locked_by = $2`,
+		deliveryIDs, workerID,
+	)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+	return nil
+}
+
 // DeleteRetention membersihkan riwayat pengiriman delivered dan abandoned secara ber-batch.
 //
 // Memanfaatkan indeks partial webhook_deliveries_created_idx untuk efisiensi.
@@ -560,6 +676,14 @@ func (r *Repo) Update(ctx context.Context, id string, p UpdateWebhookParams) (*W
 		setClauses = append(setClauses, fmt.Sprintf("url = $%d", len(args)))
 	}
 	if p.Events != nil {
+		if len(p.Events) == 0 {
+			return nil, fmt.Errorf("%s: minimal satu event harus dilanggani", op)
+		}
+		for _, ev := range p.Events {
+			if !ValidEvent(ev) {
+				return nil, fmt.Errorf("%s: event %q tidak dikenal", op, ev)
+			}
+		}
 		args = append(args, p.Events)
 		setClauses = append(setClauses, fmt.Sprintf("events = $%d", len(args)))
 	}
@@ -568,10 +692,16 @@ func (r *Repo) Update(ctx context.Context, id string, p UpdateWebhookParams) (*W
 		setClauses = append(setClauses, fmt.Sprintf("enabled = $%d", len(args)))
 	}
 	if p.MaxRetries != nil {
+		if *p.MaxRetries < 0 || *p.MaxRetries > 20 {
+			return nil, fmt.Errorf("%s: max_retries harus antara 0 dan 20", op)
+		}
 		args = append(args, *p.MaxRetries)
 		setClauses = append(setClauses, fmt.Sprintf("max_retries = $%d", len(args)))
 	}
 	if p.TimeoutMS != nil {
+		if *p.TimeoutMS < 1000 || *p.TimeoutMS > 120000 {
+			return nil, fmt.Errorf("%s: timeout_ms harus antara 1000 dan 120000", op)
+		}
 		args = append(args, *p.TimeoutMS)
 		setClauses = append(setClauses, fmt.Sprintf("timeout_ms = $%d", len(args)))
 	}

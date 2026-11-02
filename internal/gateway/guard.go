@@ -40,6 +40,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/ratelimit"
+	"github.com/NexGen-X/Route-X/internal/webhooks"
 )
 
 // Kode penolakan kebijakan pada envelope error.
@@ -97,17 +98,22 @@ type GuardDeps struct {
 	// tiba-tiba memblokir seluruh lalu lintas satu penyewa tidak terlihat sampai penyewa itu
 	// mengeluh.
 	Metrics *observability.Metrics
-	Logger  *slog.Logger
+	// Webhooks adalah produser event ratelimit.exceeded dan content.blocked.
+	// nil berarti kedua event itu tidak diproduksi dari jalur gateway
+	// (audit3 V-WH-08).
+	Webhooks webhooks.EnqueueSink
+	Logger   *slog.Logger
 }
 
 // Guard menegakkan kebijakan pembatasan lalu lintas pada jalur request.
 type Guard struct {
-	filters *contentfilter.Engine
-	budgets *billing.Enforcer
-	rates   *ratelimit.Engine
-	limiter *apikey.Limiter
-	metrics *observability.Metrics
-	logger  *slog.Logger
+	filters  *contentfilter.Engine
+	budgets  *billing.Enforcer
+	rates    *ratelimit.Engine
+	limiter  *apikey.Limiter
+	metrics  *observability.Metrics
+	webhooks webhooks.EnqueueSink
+	logger   *slog.Logger
 }
 
 // NewGuard membuat penegak kebijakan. Penerima nil sah dan berarti tanpa kebijakan.
@@ -118,7 +124,25 @@ func NewGuard(d GuardDeps) *Guard {
 	}
 	return &Guard{
 		filters: d.Filters, budgets: d.Budgets, rates: d.Rates,
-		limiter: d.Limiter, metrics: d.Metrics, logger: logger,
+		limiter: d.Limiter, metrics: d.Metrics, webhooks: d.Webhooks, logger: logger,
+	}
+}
+
+// pancarkan memasukkan satu event kebijakan ke antrean webhook. Kegagalan
+// hanya dicatat — penolakan kebijakannya sendiri sudah terjadi dan tidak
+// boleh berubah karena antrean notifikasi bermasalah.
+func (g *Guard) pancarkan(ctx context.Context, event string, payload map[string]any) {
+	if g == nil || g.webhooks == nil {
+		return
+	}
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["event"] = event
+	payload["timestamp"] = time.Now().UTC().Format(time.RFC3339)
+	if _, err := g.webhooks.Enqueue(ctx, event, payload); err != nil {
+		g.logger.WarnContext(ctx, "gagal memasukkan event kebijakan ke antrean webhook",
+			"event", event, "error", err)
 	}
 }
 
@@ -198,6 +222,15 @@ func (g *Guard) saring(ctx context.Context, s contentfilter.Subject) *Rejection 
 			Code: CodePayloadTooBig, Message: v.Reason,
 		}
 	}
+	// Produser event content.blocked (audit3 V-WH-08). Payload hanya memuat
+	// identitas aturan dan konteks model — isi permintaan yang diblokir
+	// tidak pernah masuk antrean webhook.
+	g.pancarkan(ctx, "content.blocked", map[string]any{
+		"filter":   v.Filter.Name,
+		"kind":     string(v.Filter.Kind),
+		"response": s.Response,
+		"model_id": s.ModelID,
+	})
 	return &Rejection{
 		Status: http.StatusBadRequest, Type: httpx.ErrTypeInvalidRequest,
 		Code: CodeContentFilter, Message: v.Reason,
@@ -345,6 +378,13 @@ func (g *Guard) PeriksaBatasModel(ctx context.Context, modelID string) *Rejectio
 	}
 	g.logger.InfoContext(ctx, "permintaan ditolak batas laju cakupan model",
 		"model", modelID, "batas", d.Limit, "nilai", d.LimitValue)
+	g.pancarkan(ctx, "ratelimit.exceeded", map[string]any{
+		"scope":              d.Scope,
+		"limit":              d.Limit,
+		"limit_value":        d.LimitValue,
+		"retry_after_second": int64(d.RetryAfter / time.Second),
+		"model_id":           modelID,
+	})
 	return rejectionBatas(d, "model "+kutipKebijakan(modelID)+" sedang melewati batas lajunya")
 }
 
@@ -608,6 +648,13 @@ func (g *Guard) GerbangToken(ctx context.Context, p *apikey.Principal, targets [
 	}
 	g.logger.InfoContext(ctx, "permintaan ditolak karena anggaran token habis",
 		"api_key", p.Masked(), "cakupan", d.Scope, "batas", d.Limit, "nilai", d.LimitValue)
+	g.pancarkan(ctx, "ratelimit.exceeded", map[string]any{
+		"scope":              d.Scope,
+		"limit":              d.Limit,
+		"limit_value":        d.LimitValue,
+		"retry_after_second": int64(d.RetryAfter / time.Second),
+		"api_key":            p.Masked(),
+	})
 	return rejectionBatas(d, "anggaran token untuk periode ini sudah habis")
 }
 

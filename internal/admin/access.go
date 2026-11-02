@@ -243,6 +243,14 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "api_key", created.Key.ID, map[string]any{"name": created.Key.Name, "prefix": created.Key.Prefix})
+	// Produser event api_key.created (audit3 V-WH-08). Payload hanya memuat
+	// pengenal publik — nilai key mentah tidak pernah masuk antrean webhook.
+	h.pancarkanEvent(ctx, "api_key.created", map[string]any{
+		"api_key_id":    created.Key.ID,
+		"name":          created.Key.Name,
+		"prefix":        created.Key.Prefix,
+		"owner_user_id": ownerID,
+	})
 	_ = h.respond(w, r, http.StatusCreated, KeyCreatedResponse{
 		Key:    toKeyDTO(created.Key, req.ModelIDs, req.ProviderIDs),
 		Masked: created.Key.Masked(),
@@ -415,6 +423,17 @@ func (h *Handlers) rotateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "rotate", "api_key", id, map[string]any{"new_key_id": created.Key.ID})
+	// Rotasi adalah pencabutan + pembuatan dalam satu tindakan: kedua event
+	// diproduksi supaya pelanggan tidak melewatkan salah satunya.
+	h.pancarkanEvent(ctx, "api_key.revoked", map[string]any{
+		"api_key_id": id,
+		"reason":     "rotasi",
+	})
+	h.pancarkanEvent(ctx, "api_key.created", map[string]any{
+		"api_key_id": created.Key.ID,
+		"name":       created.Key.Name,
+		"prefix":     created.Key.Prefix,
+	})
 	_ = h.respond(w, r, http.StatusOK, KeyCreatedResponse{
 		Key:    toKeyDTO(created.Key, nil, nil),
 		Masked: created.Key.Masked(),
@@ -448,6 +467,10 @@ func (h *Handlers) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "revoke", "api_key", id, map[string]any{"reason": reason})
+	h.pancarkanEvent(ctx, "api_key.revoked", map[string]any{
+		"api_key_id": id,
+		"reason":     reason,
+	})
 	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
 		Key:    toKeyDTO(k, nil, nil),
 		Masked: k.Masked(),

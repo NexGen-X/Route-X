@@ -404,6 +404,17 @@ func TestRestoreRoundTripEksporRestore(t *testing.T) {
 		t.Fatalf("hasil ekspor bukan dump PostgreSQL")
 	}
 
+	// Tirukan dump dari pg_dump 17+ (client boleh lebih baru daripada
+	// server — kejadian nyata di CI): baris SET transaction_timeout di
+	// pembuka tidak dikenal server PostgreSQL 16 dan harus disaring jalur
+	// restore, bukan menggugurkan seluruh pemulihan.
+	dump = []byte(strings.Replace(string(dump),
+		"SET lock_timeout = 0;",
+		"SET lock_timeout = 0;\nSET transaction_timeout = 0;", 1))
+	if !strings.Contains(string(dump), "SET transaction_timeout") {
+		t.Fatalf("jangkar SET lock_timeout tidak ditemukan di dump ekspor")
+	}
+
 	// Ubah produksi sesudah backup diambil.
 	if _, err := env.pool.Exec(context.Background(), `INSERT INTO penanda VALUES ('SESUDAH_BACKUP')`); err != nil {
 		t.Fatalf("mengubah penanda: %v", err)
@@ -424,5 +435,49 @@ func TestRestoreRoundTripEksporRestore(t *testing.T) {
 	}
 	if isi := env.isiPenanda(env.pengaman); len(isi) != 2 {
 		t.Errorf("penanda pengaman = %v, mau 2 baris (AWAL + SESUDAH_BACKUP)", isi)
+	}
+}
+
+// TestSiapkanBerkasRestoreMenyaringPembuka: baris SET transaction_timeout
+// hanya dibuang di wilayah pembuka dump; baris serupa di badan fungsi (isi)
+// dipertahankan persis, dan dump tanpa baris itu disalin utuh.
+func TestSiapkanBerkasRestoreMenyaringPembuka(t *testing.T) {
+	tanpaBaris := "-- komentar pg_dump\n" +
+		"SET statement_timeout = 0;\n" +
+		"SET client_encoding = 'UTF8';\n" +
+		"SELECT pg_catalog.set_config('search_path', '', false);\n" +
+		"\n" +
+		"CREATE FUNCTION publik.contoh() RETURNS void AS $$\n" +
+		"BEGIN\n" +
+		"    SET transaction_timeout = 0;\n" +
+		"END;\n" +
+		"$$ LANGUAGE plpgsql;\n"
+	denganBaris := strings.Replace(tanpaBaris,
+		"SET client_encoding = 'UTF8';",
+		"SET client_encoding = 'UTF8';\nSET transaction_timeout = 0;", 1)
+
+	jalankan := func(t *testing.T, isi string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "dump.sql")
+		if err := os.WriteFile(path, []byte(isi), 0o600); err != nil {
+			t.Fatalf("menulis dump uji: %v", err)
+		}
+		efektif, err := siapkanBerkasRestore(path)
+		if err != nil {
+			t.Fatalf("siapkanBerkasRestore: %v", err)
+		}
+		defer os.Remove(efektif)
+		hasil, err := os.ReadFile(efektif)
+		if err != nil {
+			t.Fatalf("membaca berkas efektif: %v", err)
+		}
+		return string(hasil)
+	}
+
+	if got := jalankan(t, denganBaris); got != tanpaBaris {
+		t.Errorf("hasil saringan tidak sama dengan dump tanpa baris transaction_timeout:\n--- got ---\n%s\n--- mau ---\n%s", got, tanpaBaris)
+	}
+	if got := jalankan(t, tanpaBaris); got != tanpaBaris {
+		t.Errorf("dump tanpa baris sasaran harus disalin utuh, got:\n%s", got)
 	}
 }

@@ -551,7 +551,10 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 			// kandidat itu. Kalau semuanya tersaring, tolakNyaTanpaKandidat yang menjelaskan
 			// sebabnya — jauh lebih bisa ditindaklanjuti daripada 502 dari provider yang
 			// sengaja tidak pernah dihubungi.
-			boleh = !h.guard.ProviderDilarang(r.Context(), c.ProviderID)
+			// Anggaran cakupan provider yang habis menyaring dengan cara yang sama
+			// (audit3 V-AB-04): ia tidak bisa diperiksa sebelum provider dipilih.
+			boleh = !h.guard.ProviderDilarang(r.Context(), c.ProviderID) &&
+				!h.guard.ProviderAnggaranHabis(r.Context(), c.ProviderID)
 			if boleh && periksaKey {
 				var err error
 				boleh, err = h.restrict.AllowsProvider(r.Context(), p.ID(), c.ProviderID)
@@ -641,6 +644,9 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 				continue
 			}
 			if h.guard.ProviderDilarang(ctx, c.ProviderID) {
+				continue
+			}
+			if h.guard.ProviderAnggaranHabis(ctx, c.ProviderID) {
 				continue
 			}
 			if h.restrict != nil && p.ID() != "" {
@@ -937,7 +943,8 @@ func (h *Handlers) saringKandidatTier2(ctx context.Context, cands []*upstream.Ro
 		}
 		boleh, ada := diingat[c.ProviderID]
 		if !ada {
-			boleh = !h.guard.ProviderDilarang(ctx, c.ProviderID)
+			boleh = !h.guard.ProviderDilarang(ctx, c.ProviderID) &&
+				!h.guard.ProviderAnggaranHabis(ctx, c.ProviderID)
 			if boleh && periksaKey {
 				var err error
 				boleh, err = h.restrict.AllowsProvider(ctx, p.ID(), c.ProviderID)

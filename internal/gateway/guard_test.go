@@ -258,6 +258,39 @@ func TestAnggaranWarnTidakMemblokir(t *testing.T) {
 // pointerG mengembalikan pointer ke nilai apa pun, untuk mengisi kolom opsional.
 func pointerG[T any](v T) *T { return &v }
 
+// TestProviderAnggaranHabisMenyaringKandidat membuktikan perbaikan V-AB-04 di sisi
+// penegakan: anggaran cakupan provider yang habis beraksi blokir menyisihkan
+// provider itu dari kandidat, provider lain tidak ikut tersisih, dan aksi warn
+// tidak pernah menyisihkan.
+func TestProviderAnggaranHabisMenyaringKandidat(t *testing.T) {
+	src := &sumberKebijakan{budgets: []*policy.Budget{
+		{
+			ID: "bp1", Name: "pagu provider A", Scope: policy.ScopeProvider, ScopeID: "prov-a",
+			Period: policy.PeriodMonthly, LimitUSD: upstream.MustParseUSD("5"),
+			SpentUSD: upstream.MustParseUSD("5"), ActionOnExceed: policy.ActionBlock,
+			AlertThresholdPct: 80, Enabled: true,
+		},
+		{
+			ID: "bp2", Name: "pantau provider B", Scope: policy.ScopeProvider, ScopeID: "prov-b",
+			Period: policy.PeriodMonthly, LimitUSD: upstream.MustParseUSD("5"),
+			SpentUSD: upstream.MustParseUSD("99"), ActionOnExceed: policy.ActionWarn,
+			AlertThresholdPct: 80, Enabled: true,
+		},
+	}}
+	g := guardUji(t, src)
+	ctx := context.Background()
+
+	if !g.ProviderAnggaranHabis(ctx, "prov-a") {
+		t.Error("prov-a anggarannya habis beraksi blokir, mau tersisih (true)")
+	}
+	if g.ProviderAnggaranHabis(ctx, "prov-b") {
+		t.Error("prov-b beraksi warn, mau tidak tersisih (false)")
+	}
+	if g.ProviderAnggaranHabis(ctx, "prov-tidak-dikenal") {
+		t.Error("provider tanpa anggaran, mau tidak tersisih (false)")
+	}
+}
+
 // --- Batas laju cakupan model ------------------------------------------------
 
 func TestBatasLajuCakupanModel(t *testing.T) {

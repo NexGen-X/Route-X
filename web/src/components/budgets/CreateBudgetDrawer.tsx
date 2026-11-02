@@ -213,7 +213,10 @@ export const CreateBudgetDrawer: React.FC<CreateBudgetDrawerProps> = ({
                 options={[
                   { value: '', label: '-- Pilih Model --' },
                   ...models.map((m) => ({
-                    value: m.model_id,
+                    // Nilainya UUID model (m.id), BUKAN nama (m.model_id): jalur
+                    // request mencocokkan anggaran cakupan model terhadap UUID,
+                    // jadi menyimpan nama membuat anggaran lahir mati (audit3 V-AB-02).
+                    value: m.id,
                     label: `${m.display_name || m.model_id} (${m.model_id})`,
                   })),
                 ]}

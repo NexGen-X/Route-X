@@ -18,7 +18,9 @@ export function getScopeDisplay(
     return { label: key ? key.name : `${scopeId.slice(0, 8)}...`, isRaw: !key };
   }
   if (scope === 'model') {
-    const m = models.find((mod) => mod.model_id === scopeId);
+    // scope_id kini UUID model (mod.id); nama (mod.model_id) tetap dicocokkan demi
+    // baris warisan yang belum tersembuhkan migrasi 0017.
+    const m = models.find((mod) => mod.id === scopeId || mod.model_id === scopeId);
     return { label: m ? (m.display_name || m.model_id) : scopeId, isRaw: false };
   }
   if (scope === 'ip') {

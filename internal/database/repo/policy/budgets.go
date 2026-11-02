@@ -202,6 +202,46 @@ func (r *Repo) ExpiredBudgets(ctx context.Context, asOf time.Time) ([]*Budget, e
 	return out, nil
 }
 
+// AkhirPeriode menghitung batas akhir periode yang dimulai pada waktu `dari`.
+//
+// Batasnya SELARAS KALENDER untuk weekly dan monthly, persis seperti yang dijanjikan
+// label UI ("Reset pagu setiap awal pekan" / "setiap tanggal 1 bulan"): weekly berakhir
+// pada Senin 00:00 UTC berikutnya, monthly pada tanggal 1 bulan berikutnya 00:00 UTC.
+// Daily adalah pengecualian yang disengaja: labelnya "setiap 24 jam", jadi batasnya
+// `dari` + 24 jam bergulir.
+//
+// Keselarasan kalender ini juga yang membunuh drift jangkar (audit3 V-AB-05): rantai
+// AddDate(0,1,0) dari tanggal 31 melompat ke tanggal 3 bulan berikutnya dan menggeser
+// jangkar selamanya, sedangkan tanggal 1 selalu ada di setiap bulan sehingga rantai
+// batas monthly tidak pernah bergeser dan tidak pernah melompati satu bulan pun.
+//
+// ok false berarti periodenya tidak punya batas akhir (PeriodTotal atau nilai tak
+// dikenal): anggaran seperti itu memang tidak pernah direset worker.
+func AkhirPeriode(period string, dari time.Time) (akhir time.Time, ok bool) {
+	dari = dari.UTC()
+	switch period {
+	case PeriodDaily:
+		return dari.Add(24 * time.Hour), true
+	case PeriodWeekly:
+		// Senin berikutnya pukul 00:00 UTC, selalu tegas sesudah `dari`.
+		tengahMalam := time.Date(dari.Year(), dari.Month(), dari.Day(), 0, 0, 0, 0, time.UTC)
+		// Weekday: Minggu=0 … Sabtu=6; Senin=1. Jarak ke Senin terdekat (hari ini
+		// bila Senin) adalah (8-weekday)%7 hari dari tengah malam ini.
+		kandidat := tengahMalam.AddDate(0, 0, (8-int(dari.Weekday()))%7)
+		if !kandidat.After(dari) {
+			kandidat = kandidat.AddDate(0, 0, 7)
+		}
+		return kandidat, true
+	case PeriodMonthly:
+		// Tanggal 1 bulan berikutnya pukul 00:00 UTC. Hari ke-1 selalu sah di semua
+		// bulan, jadi AddDate di sini tidak bisa meluap ke bulan berikutnya lagi.
+		awalBulan := time.Date(dari.Year(), dari.Month(), 1, 0, 0, 0, 0, time.UTC)
+		return awalBulan.AddDate(0, 1, 0), true
+	default:
+		return time.Time{}, false
+	}
+}
+
 // CreateBudgetParams adalah masukan pembuatan anggaran.
 type CreateBudgetParams struct {
 	Name    string
@@ -240,18 +280,31 @@ func (r *Repo) CreateBudget(ctx context.Context, p CreateBudgetParams) (*Budget,
 	if threshold == 0 {
 		threshold = 80
 	}
-	var start any
-	if !p.PeriodStart.IsZero() {
-		start = p.PeriodStart
+
+	// Periode WAJIB punya batas akhir sejak lahir (audit3 V-AB-01): period_end NULL
+	// tidak pernah dipilih ExpiredBudgets, jadi anggaran daily/weekly/monthly tanpa
+	// period_end ditegakkan seumur hidup dan BudgetResetterJob tidak pernah
+	// menyentuhnya. Pemanggil boleh menentukan jendela sendiri; bila tidak, jendela
+	// dihitung dari awal periode di sini — di lapisan repo, supaya SEMUA jalur
+	// pembuatan (API admin hari ini, jalur lain di masa depan) mendapatkannya.
+	start := p.PeriodStart
+	if start.IsZero() {
+		start = time.Now().UTC()
+	}
+	end := p.PeriodEnd
+	if end == nil {
+		if e, ok := AkhirPeriode(p.Period, start); ok {
+			end = &e
+		}
 	}
 
 	row := r.q.QueryRow(ctx, `
 		insert into budgets (name, scope, scope_id, period, limit_usd,
 			period_start, period_end, action_on_exceed, alert_threshold_pct, created_by)
-		values ($1, $2, $3, $4, $5::numeric, coalesce($6, now()), $7, $8, $9, $10)
+		values ($1, $2, $3, $4, $5::numeric, $6, $7, $8, $9, $10)
 		returning `+budgetColumns,
 		p.Name, p.Scope, nullIfEmpty(p.ScopeID), p.Period, p.LimitUSD.Decimal(),
-		start, p.PeriodEnd, action, threshold, createdBy)
+		start, end, action, threshold, createdBy)
 
 	b, err := scanBudget(row)
 	if err != nil {
@@ -267,9 +320,10 @@ func (r *Repo) CreateBudget(ctx context.Context, p CreateBudgetParams) (*Budget,
 // modelnya, dan empat UPDATE berurutan berarti empat kali biaya perjalanan ditambah
 // kemungkinan sebagian berhasil sebagian tidak.
 //
-// Presisi: kolomnya numeric(14,6) sementara USD berskala 8, jadi PostgreSQL MEMBULATKAN
-// setiap penambahan ke enam angka desimal. Selisih maksimumnya 5e-7 USD per permintaan.
-// Angka yang berwenang untuk penagihan adalah requests.cost_usd (skala 8); spent_usd di
+// Presisi: kolomnya numeric(20,10) sejak migrasi 0017 (sebelumnya numeric(14,6), yang
+// membulatkan setiap penambahan berskala 8 hingga biaya di bawah 5e-7 USD hilang
+// seluruhnya — audit3 V-AB-07). Pada skala 10, penambahan nilai USD berskala 8 eksak.
+// Angka yang berwenang untuk penagihan tetap requests.cost_usd (skala 8); spent_usd di
 // sini adalah penghitung untuk PENEGAKAN, dan worker pemelihara periode bisa menghitungnya
 // ulang dari sumber berskala penuh itu.
 //
@@ -333,30 +387,44 @@ func (r *Repo) ResetPeriod(ctx context.Context, id string, start time.Time, end 
 // Dipakai worker reset periode. spent_usd diisi dari hasil hitung ulang requests.cost_usd
 // (skala 8) agar tidak ada pembulatan yang tertimbun dan memperhitungkan request yang mungkin
 // sudah mendarat di periode baru sebelum worker sempat mereset.
-func (r *Repo) ResetPeriodWithSpend(ctx context.Context, id string, start time.Time, end *time.Time, spent upstream.USD) (*Budget, error) {
+//
+// Penulisannya ber-CAS pada jendela periode LAMA (audit3 V-AB-06): update hanya berlaku
+// bila period_start/period_end baris masih persis seperti yang dibaca pemanggil sebelum
+// menghitung ulang pemakaian. Tanpa syarat itu, dua reset yang balapan (worker dua
+// instance, atau worker melawan reset manual) saling menimpa dengan angka hitung yang
+// basi dan periode bergeser dua kali tanpa ada yang menyadari. Bila jendela sudah
+// berubah, hasilnya repo.ErrConflict dan pemanggil cukup melewatkan baris ini — pihak
+// lain sudah memajukannya.
+func (r *Repo) ResetPeriodWithSpend(ctx context.Context, id string, start time.Time, end *time.Time, spent upstream.USD, expectedStart time.Time, expectedEnd *time.Time) (*Budget, error) {
 	const op = "mereset periode anggaran dengan pemakaian terhitung"
 	if !idOK(id) {
 		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 
-	row := r.q.QueryRow(ctx, `
+	tag, err := r.q.Exec(ctx, `
 		update budgets
 		set spent_usd = $2::numeric, period_start = $3, period_end = $4, alerted_at = null, exceeded_alerted_at = null, updated_at = now()
-		where id = $1
-		returning `+budgetColumns, id, spent.Decimal(), start, end)
-
-	b, err := scanBudget(row)
+		where id = $1 and period_start = $5 and period_end is not distinct from $6`,
+		id, spent.Decimal(), start, end, expectedStart, expectedEnd)
 	if err != nil {
 		return nil, repo.Err(op, err)
 	}
-	return b, nil
+	if tag.RowsAffected() == 0 {
+		// Bedakan "barisnya tidak ada" dari "jendelanya sudah berubah": yang pertama
+		// ErrNotFound seperti jalur lain, yang kedua konflik CAS.
+		if _, err := r.GetBudget(ctx, id); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%s: %w: periode anggaran sudah dimajukan pihak lain", op, repo.ErrConflict)
+	}
+	return r.GetBudget(ctx, id)
 }
 
 // CalculateSpend menghitung ulang akumulasi biaya nyata dari requests.cost_usd (skala 8).
 //
-// Dipakai saat reset periode anggaran: kolom budgets.spent_usd bertipe numeric(14,6) sehingga
-// setiap AddSpend dibulatkan PostgreSQL (selisih hingga 5e-7 USD per permintaan). Menghitung
-// ulang dari tabel requests memulihkan presisi penuh 8 desimal sebelum periode baru dimulai.
+// Dipakai saat reset periode anggaran: menghitung ulang dari tabel requests memulihkan
+// angka otoritatif berskala penuh sebelum periode baru dimulai, termasuk request yang
+// mendarat di jendela baru sebelum worker sempat mereset.
 func (r *Repo) CalculateSpend(ctx context.Context, scope, scopeID string, from time.Time, to *time.Time) (upstream.USD, error) {
 	const op = "menghitung pemakaian riil dari log request"
 

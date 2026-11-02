@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -568,7 +569,7 @@ func TestExpiredBudgetsDanResetDenganBiaya(t *testing.T) {
 	biayaBaru := upstream.MustParseUSD("12.34000000")
 	mulaiBaru := time.Now()
 	selesaiBaru := mulaiBaru.Add(24 * time.Hour)
-	direset, err := r.ResetPeriodWithSpend(ctx, b.ID, mulaiBaru, &selesaiBaru, biayaBaru)
+	direset, err := r.ResetPeriodWithSpend(ctx, b.ID, mulaiBaru, &selesaiBaru, biayaBaru, b.PeriodStart, b.PeriodEnd)
 	if err != nil {
 		t.Fatalf("ResetPeriodWithSpend: %v", err)
 	}
@@ -577,6 +578,210 @@ func TestExpiredBudgetsDanResetDenganBiaya(t *testing.T) {
 	}
 	if direset.AlertedAt != nil {
 		t.Errorf("AlertedAt seharusnya nil setelah reset")
+	}
+}
+
+// TestAkhirPeriodeSelarasKalender mengunci batas periode weekly/monthly pada kalender
+// (audit3 V-AB-05): rantai batas monthly tidak pernah melompati bulan dan tidak pernah
+// bergeser dari tanggal 1, termasuk dari jangkar tanggal 31 dan tahun kabisat.
+func TestAkhirPeriodeSelarasKalender(t *testing.T) {
+	kasus := []struct {
+		nama   string
+		period string
+		dari   time.Time
+		mau    time.Time
+		mauOK  bool
+	}{
+		{"daily bergulir 24 jam", PeriodDaily,
+			time.Date(2026, 1, 31, 10, 30, 0, 0, time.UTC),
+			time.Date(2026, 2, 1, 10, 30, 0, 0, time.UTC), true},
+		{"monthly dari tanggal 31", PeriodMonthly,
+			time.Date(2026, 1, 31, 10, 0, 0, 0, time.UTC),
+			time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), true},
+		{"monthly dari tanggal 1", PeriodMonthly,
+			time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC),
+			time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), true},
+		{"monthly tahun kabisat", PeriodMonthly,
+			time.Date(2024, 2, 29, 23, 0, 0, 0, time.UTC),
+			time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC), true},
+		{"monthly ganti tahun", PeriodMonthly,
+			time.Date(2026, 12, 15, 0, 0, 0, 0, time.UTC),
+			time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), true},
+		{"weekly dari Rabu", PeriodWeekly,
+			time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC),
+			time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC), true},
+		{"weekly tepat Senin tengah malam", PeriodWeekly,
+			time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC),
+			time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC), true},
+		{"weekly Senin pagi", PeriodWeekly,
+			time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC),
+			time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC), true},
+		{"weekly dari Minggu", PeriodWeekly,
+			time.Date(2026, 11, 8, 23, 0, 0, 0, time.UTC),
+			time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC), true},
+		{"total tanpa batas", PeriodTotal,
+			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			time.Time{}, false},
+	}
+	for _, k := range kasus {
+		t.Run(k.nama, func(t *testing.T) {
+			got, ok := AkhirPeriode(k.period, k.dari)
+			if ok != k.mauOK {
+				t.Fatalf("ok = %v, mau %v", ok, k.mauOK)
+			}
+			if ok && !got.Equal(k.mau) {
+				t.Errorf("AkhirPeriode(%s, %s) = %s, mau %s", k.period, k.dari, got, k.mau)
+			}
+		})
+	}
+
+	// Rantai monthly selama 14 bulan dari jangkar tanggal 31: tidak ada bulan yang
+	// terlewat dan hari batas selalu tanggal 1.
+	dari := time.Date(2026, 1, 31, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 14; i++ {
+		akhir, ok := AkhirPeriode(PeriodMonthly, dari)
+		if !ok {
+			t.Fatalf("rantai bulan ke-%d: ok = false", i)
+		}
+		if akhir.Day() != 1 {
+			t.Fatalf("rantai bulan ke-%d: batas %s bukan tanggal 1", i, akhir)
+		}
+		dari = akhir
+	}
+	if dari.Year() != 2027 || dari.Month() != time.March {
+		t.Errorf("rantai 14 bulan berakhir di %s, mau Maret 2027", dari)
+	}
+}
+
+// TestCreateBudgetMengisiPeriodEnd membuktikan perbaikan V-AB-01: anggaran berkala
+// yang dibuat TANPA period_end eksplisit lahir dengan batas akhir terisi dan — sesudah
+// batasnya lewat — benar-benar ditemukan ExpiredBudgets agar worker bisa meresetnya.
+func TestCreateBudgetMengisiPeriodEnd(t *testing.T) {
+	ctx, r := newRepo(t)
+
+	// Daily yang awal periodenya dua hari lalu: batasnya (awal + 24 jam) sudah lewat,
+	// jadi ia kedaluwarsa dan harus bisa ditemukan worker.
+	mulai := time.Now().Add(-48 * time.Hour)
+	b, err := r.CreateBudget(ctx, CreateBudgetParams{
+		Name: "harian-tanpa-end", Scope: ScopeGlobal, Period: PeriodDaily,
+		LimitUSD: upstream.MustParseUSD("10"), PeriodStart: mulai,
+	})
+	if err != nil {
+		t.Fatalf("CreateBudget: %v", err)
+	}
+	if b.PeriodEnd == nil {
+		t.Fatal("PeriodEnd = nil setelah CreateBudget, mau terisi otomatis")
+	}
+	// Perbandingan dipotong ke mikrodetik: timestamptz tidak menyimpan nanodetik.
+	if mau := mulai.Add(24 * time.Hour); !b.PeriodEnd.Truncate(time.Microsecond).Equal(mau.Truncate(time.Microsecond)) {
+		t.Errorf("PeriodEnd = %s, mau %s", b.PeriodEnd, mau)
+	}
+
+	kedaluwarsa, err := r.ExpiredBudgets(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("ExpiredBudgets: %v", err)
+	}
+	ditemukan := false
+	for _, k := range kedaluwarsa {
+		if k.ID == b.ID {
+			ditemukan = true
+		}
+	}
+	if !ditemukan {
+		t.Error("anggaran daily berbatas lewat tidak ditemukan ExpiredBudgets")
+	}
+
+	// Monthly lahir dengan batas tanggal 1 bulan berikutnya; total tetap tanpa batas.
+	bm, err := r.CreateBudget(ctx, CreateBudgetParams{
+		Name: "bulanan-tanpa-end", Scope: ScopeGlobal, Period: PeriodMonthly,
+		LimitUSD: upstream.MustParseUSD("10"),
+	})
+	if err != nil {
+		t.Fatalf("CreateBudget monthly: %v", err)
+	}
+	if bm.PeriodEnd == nil || bm.PeriodEnd.Day() != 1 {
+		t.Errorf("PeriodEnd monthly = %v, mau tanggal 1 bulan berikutnya", bm.PeriodEnd)
+	}
+
+	bt, err := r.CreateBudget(ctx, CreateBudgetParams{
+		Name: "total-tanpa-end", Scope: ScopeGlobal, Period: PeriodTotal,
+		LimitUSD: upstream.MustParseUSD("10"),
+	})
+	if err != nil {
+		t.Fatalf("CreateBudget total: %v", err)
+	}
+	if bt.PeriodEnd != nil {
+		t.Errorf("PeriodEnd total = %v, mau nil", bt.PeriodEnd)
+	}
+}
+
+// TestResetPeriodWithSpendCASMenolakJendelaBasi membuktikan perbaikan V-AB-06: reset
+// yang membawa jendela lama yang sudah tidak cocok ditolak sebagai konflik, bukan
+// menimpa periode yang sudah dimajukan pihak lain.
+func TestResetPeriodWithSpendCASMenolakJendelaBasi(t *testing.T) {
+	ctx, r := newRepo(t)
+
+	mulai := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	akhir := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	b, err := r.CreateBudget(ctx, CreateBudgetParams{
+		Name: "cas", Scope: ScopeGlobal, Period: PeriodMonthly,
+		LimitUSD: upstream.MustParseUSD("10"), PeriodStart: mulai, PeriodEnd: &akhir,
+	})
+	if err != nil {
+		t.Fatalf("CreateBudget: %v", err)
+	}
+
+	mulaiBaru := akhir
+	akhirBaru := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+
+	// Jendela harapan salah (akhir digeser sehari) → konflik, baris tidak berubah.
+	akhirSalah := akhir.Add(24 * time.Hour)
+	if _, err := r.ResetPeriodWithSpend(ctx, b.ID, mulaiBaru, &akhirBaru, 0, mulai, &akhirSalah); !errors.Is(err, repo.ErrConflict) {
+		t.Fatalf("ResetPeriodWithSpend jendela salah: err = %v, mau ErrConflict", err)
+	}
+	tetap, err := r.GetBudget(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("GetBudget: %v", err)
+	}
+	if !tetap.PeriodStart.Equal(mulai) {
+		t.Errorf("PeriodStart berubah menjadi %s padahal reset ditolak", tetap.PeriodStart)
+	}
+
+	// Jendela harapan benar → berhasil.
+	if _, err := r.ResetPeriodWithSpend(ctx, b.ID, mulaiBaru, &akhirBaru, 0, b.PeriodStart, b.PeriodEnd); err != nil {
+		t.Fatalf("ResetPeriodWithSpend jendela benar: %v", err)
+	}
+
+	// Pengulangan dengan jendela LAMA yang sama sekarang basi → konflik.
+	if _, err := r.ResetPeriodWithSpend(ctx, b.ID, mulaiBaru, &akhirBaru, 0, mulai, &akhir); !errors.Is(err, repo.ErrConflict) {
+		t.Fatalf("ResetPeriodWithSpend pengulangan: err = %v, mau ErrConflict", err)
+	}
+}
+
+// TestAddSpendBiayaMikroTidakHilang membuktikan perbaikan V-AB-07: penambahan biaya
+// berskala 8 yang sangat kecil (1,2e-7 USD) terakumulasi eksak sesudah kolom spent_usd
+// diperlebar migrasi 0017, bukan dibulatkan menjadi nol satu per satu.
+func TestAddSpendBiayaMikroTidakHilang(t *testing.T) {
+	ctx, r := newRepo(t)
+	b, err := r.CreateBudget(ctx, CreateBudgetParams{
+		Name: "mikro", Scope: ScopeGlobal, Period: PeriodDaily,
+		LimitUSD: upstream.MustParseUSD("10"),
+	})
+	if err != nil {
+		t.Fatalf("CreateBudget: %v", err)
+	}
+	mikro := upstream.MustParseUSD("0.00000012")
+	for i := 0; i < 20; i++ {
+		if _, err := r.AddSpend(ctx, nil, mikro); err != nil {
+			t.Fatalf("AddSpend ke-%d: %v", i, err)
+		}
+	}
+	got, err := r.GetBudget(ctx, b.ID)
+	if err != nil {
+		t.Fatalf("GetBudget: %v", err)
+	}
+	if mau := upstream.MustParseUSD("0.00000240"); got.SpentUSD != mau {
+		t.Errorf("SpentUSD = %s, mau %s (20 × 0.00000012)", got.SpentUSD, mau)
 	}
 }
 

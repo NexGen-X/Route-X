@@ -247,6 +247,32 @@ func (g *Guard) PeriksaAnggaran(ctx context.Context, targets []policy.Target) *R
 	}
 }
 
+// ProviderAnggaranHabis melaporkan apakah satu provider punya anggaran cakupan
+// provider yang sudah habis dan beraksi blokir.
+//
+// Anggaran cakupan provider tidak bisa diperiksa PeriksaAnggaran di muka: provider
+// belum dipilih saat itu. Karena itu penegakannya berbentuk PENYARINGAN KANDIDAT,
+// sama seperti larangan provider dari penyaring konten — provider yang anggarannya
+// habis disisihkan dari daftar kandidat, dan permintaan tetap dilayani provider lain
+// selama masih ada. Tanpa ini anggaran cakupan provider tidak pernah menahan apa pun
+// (audit3 V-AB-04); pasangannya di sisi pencatatan ada di pencatat usage, yang kini
+// menyertakan target provider pada AddSpend agar spent baris ini benar-benar terisi.
+func (g *Guard) ProviderAnggaranHabis(ctx context.Context, providerID string) bool {
+	if g == nil || g.budgets == nil || providerID == "" {
+		return false
+	}
+	v := g.budgets.Check(ctx, []policy.Target{{Scope: policy.ScopeProvider, ID: providerID}})
+	if len(v.Alerts) > 0 {
+		g.budgets.Announce(ctx, v.Alerts)
+	}
+	if v.Blocked {
+		g.logger.WarnContext(ctx, "provider disisihkan dari kandidat karena anggarannya habis",
+			"provider", providerID, "anggaran", v.Budget.Name,
+			"terpakai_usd", v.Budget.SpentUSD.String(), "batas_usd", v.Budget.LimitUSD.String())
+	}
+	return v.Blocked
+}
+
 // PeriksaBatasModel menegakkan batas laju cakupan MODEL.
 //
 // Hanya cakupan model, karena cakupan lainnya — key, pengguna, IP, global — sudah ditegakkan

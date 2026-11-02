@@ -610,6 +610,19 @@ func (h *Handlers) createRateLimit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cakupan model: simpan UUID model kanonik, bukan nama/alias — lihat
+	// normalisasiScopeModel (audit3 V-AB-03).
+	scopeIDModel, errNormalisasi := h.normalisasiScopeModel(ctx, req.Scope, req.ScopeID)
+	if errNormalisasi != nil {
+		if errors.Is(errNormalisasi, repo.ErrNotFound) {
+			httpx.BadRequest(w, r, "invalid_scope_id", "scope_id tidak menunjuk model yang dikenal: "+req.ScopeID)
+			return
+		}
+		mapRepoError(w, r, errNormalisasi, "model")
+		return
+	}
+	req.ScopeID = scopeIDModel
+
 	var actorID string
 	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
 		actorID = p.User.ID
@@ -750,6 +763,25 @@ func (h *Handlers) getBudget(w http.ResponseWriter, r *http.Request) {
 	_ = h.respond(w, r, http.StatusOK, toBudgetDTO(b))
 }
 
+// normalisasiScopeModel mengubah scope_id cakupan model menjadi UUID model kanonik.
+//
+// Jalur request (target gateway, mesin batas laju, AddSpend, CalculateSpend) SELALU
+// memakai UUID model, sedangkan yang wajar diketik/dipilih operator adalah nama atau
+// alias model. Tanpa normalisasi di batas tulis ini, baris anggaran/batas laju scope
+// model menyimpan nama dan tidak pernah bertemu target UUID — aturan itu lahir mati
+// (audit3 V-AB-02, V-AB-03). Resolve menerima nama kanonik, alias, maupun UUID itu
+// sendiri, jadi nilai yang sudah benar lolos apa adanya.
+func (h *Handlers) normalisasiScopeModel(ctx context.Context, scope, scopeID string) (string, error) {
+	if scope != policy.ScopeModel || scopeID == "" || h.modelRepo == nil {
+		return scopeID, nil
+	}
+	m, err := h.modelRepo.Resolve(ctx, scopeID)
+	if err != nil {
+		return "", err
+	}
+	return m.ID, nil
+}
+
 type createBudgetReq struct {
 	Name              string `json:"name"`
 	Scope             string `json:"scope"`
@@ -785,6 +817,19 @@ func (h *Handlers) createBudget(w http.ResponseWriter, r *http.Request) {
 	if req.Scope == "global" {
 		req.ScopeID = ""
 	}
+
+	// Cakupan model: simpan UUID model kanonik, bukan nama/alias yang dikirim
+	// pemanggil — lihat normalisasiScopeModel.
+	scopeIDModel, errNormalisasi := h.normalisasiScopeModel(ctx, req.Scope, req.ScopeID)
+	if errNormalisasi != nil {
+		if errors.Is(errNormalisasi, repo.ErrNotFound) {
+			httpx.BadRequest(w, r, "invalid_scope_id", "scope_id tidak menunjuk model yang dikenal: "+req.ScopeID)
+			return
+		}
+		mapRepoError(w, r, errNormalisasi, "model")
+		return
+	}
+	req.ScopeID = scopeIDModel
 
 	limitUSD, err := upstream.ParseUSD(req.LimitUSD)
 	if err != nil {
@@ -910,8 +955,22 @@ func (h *Handlers) resetBudget(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
+	// Periode baru WAJIB punya batas akhir (audit3 V-AB-01): reset manual yang
+	// menulis period_end NULL membuat anggaran kebal terhadap BudgetResetterJob
+	// selamanya — sama seperti bug pembuatannya. Batasnya dihitung dari periode
+	// anggaran itu sendiri; hanya periode 'total' yang sah tanpa batas.
+	ada, err := h.policyRepo.GetBudget(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "reset anggaran")
+		return
+	}
+
 	now := time.Now().UTC()
-	b, err := h.policyRepo.ResetPeriod(ctx, id, now, nil)
+	var end *time.Time
+	if e, ok := policy.AkhirPeriode(ada.Period, now); ok {
+		end = &e
+	}
+	b, err := h.policyRepo.ResetPeriod(ctx, id, now, end)
 	if err != nil {
 		mapRepoError(w, r, err, "reset anggaran")
 		return

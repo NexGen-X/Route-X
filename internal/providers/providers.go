@@ -43,6 +43,12 @@ const (
 	PartTypeText     = "text"
 	PartTypeImageURL = "image_url"
 	PartTypeAudio    = "input_audio"
+	// PartTypeDocument adalah lampiran dokumen biner (PDF) yang hanya bisa
+	// dilayani upstream Anthropic. Ia TIDAK diratakan menjadi teks: PDF yang
+	// dibuang atau diubah diam-diam membuat model menjawab tanpa lampirannya.
+	// Gateway menyaring kandidat untuk permintaan yang memuat bagian ini —
+	// lihat gateway/anthropic.go (Batch C2).
+	PartTypeDocument = "document"
 )
 
 // ImageURL adalah rujukan gambar, berupa URL atau data URI base64.
@@ -58,12 +64,28 @@ type Audio struct {
 	Format string `json:"format"`
 }
 
+// Document adalah lampiran dokumen biner berkode base64, padanan block
+// `document` bersumber base64 pada Messages API Anthropic.
+//
+// MediaType saat ini hanya "application/pdf": dokumen teks TIDAK memakai
+// bentuk ini, karena teks diratakan menjadi bagian teks biasa saat decode —
+// ia setia sebagai teks di semua dialek. PDF tidak punya padanan teks, jadi
+// ia berjalan sebagai bagiannya sendiri sampai adapter Anthropic, satu-
+// satunya adapter yang bisa meneruskannya utuh.
+type Document struct {
+	MediaType string `json:"media_type"`
+	// Data adalah isi dokumen berkode base64 (bentuk standar, tanpa awalan
+	// data URI).
+	Data string `json:"data"`
+}
+
 // ContentPart adalah satu bagian pesan multimodal.
 type ContentPart struct {
 	Type     string    `json:"type"`
 	Text     string    `json:"text,omitempty"`
 	ImageURL *ImageURL `json:"image_url,omitempty"`
 	Audio    *Audio    `json:"input_audio,omitempty"`
+	Document *Document `json:"document,omitempty"`
 }
 
 // Message adalah satu pesan dalam percakapan.

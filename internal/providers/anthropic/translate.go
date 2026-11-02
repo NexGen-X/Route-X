@@ -13,6 +13,7 @@ import (
 const (
 	blockText            = "text"
 	blockImage           = "image"
+	blockDocument        = "document"
 	blockToolUse         = "tool_use"
 	blockToolResult      = "tool_result"
 	blockThinking        = "thinking"
@@ -393,6 +394,19 @@ func (p *Provider) contentBlocks(m *providers.Message) ([]block, error) {
 			}
 			blocks = append(blocks, block{Type: blockImage, Source: &imageSource{
 				Type: "url", URL: part.ImageURL.URL,
+			}})
+
+		case providers.PartTypeDocument:
+			if part.Document == nil || part.Document.Data == "" {
+				continue
+			}
+			// Dokumen diteruskan sebagai block document native — bentuk yang
+			// sama persis dengan yang dikirim klien di permukaan Anthropic.
+			// Inilah satu-satunya adapter yang bisa melakukannya; gateway
+			// menyaring kandidat supaya bagian ini tidak pernah tiba di
+			// adapter lain (Batch C2).
+			blocks = append(blocks, block{Type: blockDocument, Source: &imageSource{
+				Type: "base64", MediaType: part.Document.MediaType, Data: part.Document.Data,
 			}})
 
 		case providers.PartTypeAudio:

@@ -339,6 +339,15 @@ func (p *Provider) contentParts(m *providers.Message) ([]geminiPart, error) {
 				Data:     part.Audio.Data,
 			}})
 
+		case providers.PartTypeDocument:
+			// Dokumen biner (PDF) di gateway ini hanya dilayani Anthropic:
+			// gateway menyaring kandidat di permukaan Anthropic supaya
+			// bagian ini tidak tiba di sini. Bila ia tiba juga (jalur lain
+			// di masa depan), ia ditolak eksplisit — membuangnya diam-diam
+			// membuat model menjawab tanpa lampirannya (Batch C2).
+			return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,
+				"dokumen PDF hanya bisa dilayani provider Anthropic")
+
 		default:
 			// Jenis bagian baru diabaikan: adapter tidak boleh menolak permintaan hanya
 			// karena ada field yang belum dikenalnya.

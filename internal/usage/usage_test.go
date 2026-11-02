@@ -210,6 +210,39 @@ func TestRecorderMenulisBarisDanMenaikkanAnggaran(t *testing.T) {
 	}
 }
 
+// TestRecorderMenyertakanTargetProvider membuktikan perbaikan V-AB-04 di sisi
+// pencatatan: AddSpend menerima target cakupan provider milik provider pemenang,
+// supaya spent anggaran cakupan provider benar-benar terisi. Target asli milik
+// event tidak boleh ikut berubah.
+func TestRecorderMenyertakanTargetProvider(t *testing.T) {
+	r, _, spend, _ := pencatatUji(t)
+
+	ev := eventLengkap()
+	r.Record(context.Background(), ev)
+	tutup(t, r)
+
+	spend.mu.Lock()
+	defer spend.mu.Unlock()
+	if len(spend.targets) != 1 {
+		t.Fatalf("AddSpend dipanggil %d kali, mau 1", len(spend.targets))
+	}
+	got := spend.targets[0]
+	var adaProvider bool
+	for _, tg := range got {
+		if tg.Scope == policy.ScopeProvider && tg.ID == ev.ProviderID {
+			adaProvider = true
+		}
+	}
+	if !adaProvider {
+		t.Errorf("targets AddSpend = %v, mau memuat target provider %s", got, ev.ProviderID)
+	}
+	for _, tg := range ev.Targets {
+		if tg.Scope == policy.ScopeProvider {
+			t.Error("ev.Targets milik pemanggil ikut berubah — target provider harus disalin, bukan ditempel")
+		}
+	}
+}
+
 // Nama model yang dipakai sebagai label metrik WAJIB nama kanonik. RequestedModel datang
 // dari klien, jadi memakainya berarti satu klien yang mengirim nama acak bisa meledakkan
 // jumlah time series.

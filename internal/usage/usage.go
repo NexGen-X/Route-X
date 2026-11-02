@@ -569,7 +569,18 @@ func (r *Recorder) tambahPemakaian(ctx context.Context, ev Event, biaya upstream
 	if r.spend == nil || biaya <= 0 || len(ev.Targets) == 0 {
 		return
 	}
-	if _, err := r.spend.AddSpend(ctx, ev.Targets, biaya); err != nil {
+	// Target provider disusun DI SINI, bukan di TargetsFor jalur request: provider
+	// pemenang baru diketahui sesudah eksekusi selesai, dan tanpanya anggaran
+	// cakupan provider tidak pernah terisi spent-nya (audit3 V-AB-04). Daftar
+	// disalin dulu — ev.Targets milik bersama dan menempelkan di tempat akan
+	// mengubah irisan milik pemanggil.
+	targets := ev.Targets
+	if ev.ProviderID != "" {
+		targets = make([]policy.Target, 0, len(ev.Targets)+1)
+		targets = append(targets, ev.Targets...)
+		targets = append(targets, policy.Target{Scope: policy.ScopeProvider, ID: ev.ProviderID})
+	}
+	if _, err := r.spend.AddSpend(ctx, targets, biaya); err != nil {
 		r.hasil(OutcomeSpendFailed)
 		r.logger.ErrorContext(ctx, "pemakaian anggaran gagal dinaikkan, penegakan anggaran tidak bergerak",
 			"request_id", ev.RequestID, "biaya_usd", biaya.String(), "error", err)

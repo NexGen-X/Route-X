@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -17,15 +18,17 @@ import (
 type BudgetResetRepo interface {
 	ExpiredBudgets(ctx context.Context, asOf time.Time) ([]*policy.Budget, error)
 	CalculateSpend(ctx context.Context, scope, scopeID string, from time.Time, to *time.Time) (upstream.USD, error)
-	ResetPeriodWithSpend(ctx context.Context, id string, start time.Time, end *time.Time, spent upstream.USD) (*policy.Budget, error)
+	ResetPeriodWithSpend(ctx context.Context, id string, start time.Time, end *time.Time, spent upstream.USD, expectedStart time.Time, expectedEnd *time.Time) (*policy.Budget, error)
 }
 
 // BudgetResetterJob memajukan periode anggaran yang sudah berakhir dan menghitung ulang pemakaiannya.
 //
 // Aturan 11:
 //   - Memakai query baru ExpiredBudgets karena ActiveBudgets mengecualikan baris yang period_end-nya lewat.
-//   - Menghitung ulang spent_usd dari requests.cost_usd (skala 8) karena kolom budgets.spent_usd
-//     berskala 6 sehingga akumulasi AddSpend PostgreSQL mengalami pembulatan.
+//   - Menghitung ulang spent_usd dari requests.cost_usd (skala 8) agar angka periode baru
+//     berasal dari sumber otoritatif, bukan akumulasi yang bisa menyimpang.
+//   - Batas periode berikutnya dari policy.AkhirPeriode (selaras kalender untuk
+//     weekly/monthly) dan penulisannya ber-CAS pada jendela lama.
 //   - Melepas penanda peringatan (alerted_at = null) agar periode baru dapat memicu peringatan kembali.
 type BudgetResetterJob struct {
 	pool   *pgxpool.Pool
@@ -81,22 +84,21 @@ func (b *BudgetResetterJob) resetOne(ctx context.Context, bg *policy.Budget, now
 	}
 
 	newStart := *bg.PeriodEnd
-	var newEnd time.Time
 
-	// Majukan rentang periode hingga mencakup waktu sekarang
+	// Majukan rentang periode hingga mencakup waktu sekarang. Batasnya dihitung
+	// policy.AkhirPeriode — selaras kalender untuk weekly/monthly, BUKAN AddDate
+	// berantai dari jangkar berjalan: rantai AddDate(0,1,0) dari tanggal 31 melompat
+	// ke tanggal 3 dan menggeser jangkar selamanya (audit3 V-AB-05). Baris warisan
+	// yang batas lamanya belum selaras (mis. tanggal 3 hasil drift lama) mendapat
+	// satu periode jembatan pendek lalu selaras permanen mulai periode berikutnya.
+	var newEnd time.Time
 	for {
-		switch bg.Period {
-		case policy.PeriodDaily:
-			newEnd = newStart.Add(24 * time.Hour)
-		case policy.PeriodWeekly:
-			newEnd = newStart.Add(7 * 24 * time.Hour)
-		case policy.PeriodMonthly:
-			newEnd = newStart.AddDate(0, 1, 0)
-		default:
+		e, ok := policy.AkhirPeriode(bg.Period, newStart)
+		if !ok {
 			// Periode 'total' atau tidak dikenal tidak direset otomatis
 			return nil
 		}
-
+		newEnd = e
 		if newEnd.After(now) {
 			break
 		}
@@ -109,8 +111,16 @@ func (b *BudgetResetterJob) resetOne(ctx context.Context, bg *policy.Budget, now
 		return repo.Err("menghitung ulang pemakaian", err)
 	}
 
-	updated, err := b.repo.ResetPeriodWithSpend(ctx, bg.ID, newStart, &newEnd, spend)
+	// CAS pada jendela lama (audit3 V-AB-06): bila periode sudah dimajukan pihak
+	// lain sejak ExpiredBudgets dibaca, lewati tanpa error — pekerjaannya sudah
+	// selesai, dan memaksakan angka hitung basi hanya menimpa hasil yang lebih baru.
+	updated, err := b.repo.ResetPeriodWithSpend(ctx, bg.ID, newStart, &newEnd, spend, bg.PeriodStart, bg.PeriodEnd)
 	if err != nil {
+		if errors.Is(err, repo.ErrConflict) {
+			b.logger.InfoContext(ctx, "periode anggaran sudah dimajukan pihak lain, reset dilewati",
+				"budget_id", bg.ID, "budget_name", bg.Name)
+			return nil
+		}
 		return repo.Err("mereset periode di database", err)
 	}
 

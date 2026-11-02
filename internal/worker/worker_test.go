@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/NexGen-X/Route-X/internal/database"
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/policy"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/observability"
@@ -467,6 +468,11 @@ type dummyBudgetResetRepo struct {
 	spent   upstream.USD
 	resetID string
 	mu      sync.Mutex
+
+	// Tangkap argumen reset terakhir untuk asersi jendela & CAS.
+	resetStart, resetExpectedStart time.Time
+	resetEnd, resetExpectedEnd     *time.Time
+	resetErr                       error
 }
 
 func (r *dummyBudgetResetRepo) ExpiredBudgets(context.Context, time.Time) ([]*policy.Budget, error) {
@@ -479,10 +485,15 @@ func (r *dummyBudgetResetRepo) CalculateSpend(context.Context, string, string, t
 	return r.spent, nil
 }
 
-func (r *dummyBudgetResetRepo) ResetPeriodWithSpend(_ context.Context, id string, start time.Time, end *time.Time, spent upstream.USD) (*policy.Budget, error) {
+func (r *dummyBudgetResetRepo) ResetPeriodWithSpend(_ context.Context, id string, start time.Time, end *time.Time, spent upstream.USD, expectedStart time.Time, expectedEnd *time.Time) (*policy.Budget, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.resetID = id
+	r.resetStart, r.resetEnd = start, end
+	r.resetExpectedStart, r.resetExpectedEnd = expectedStart, expectedEnd
+	if r.resetErr != nil {
+		return nil, r.resetErr
+	}
 	return &policy.Budget{ID: id, Name: "budget-reset", SpentUSD: spent}, nil
 }
 
@@ -513,6 +524,61 @@ func TestBudgetResetterJobMemajukanPeriode(t *testing.T) {
 
 	if repo.resetID != "b-expired-1" {
 		t.Errorf("resetID = %q, mau b-expired-1", repo.resetID)
+	}
+}
+
+// TestBudgetResetterMonthlyTidakMelompatiFebruari membuktikan perbaikan V-AB-05:
+// anggaran monthly warisan berjangkar tanggal 31/1 dimajukan worker ke jendela
+// kalender [1 Feb, 1 Mar) — Februari tidak terlewat dan jangkar tidak bergeser ke
+// tanggal 3 seperti rantai AddDate lama. CAS-nya membawa jendela lama persis.
+func TestBudgetResetterMonthlyTidakMelompatiFebruari(t *testing.T) {
+	ctx := context.Background()
+
+	mulai := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	akhir := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
+	bg := &policy.Budget{
+		ID: "b-monthly-31", Name: "anggaran-bulanan-31",
+		Period: policy.PeriodMonthly, PeriodStart: mulai, PeriodEnd: &akhir,
+	}
+	rp := &dummyBudgetResetRepo{expired: []*policy.Budget{bg}}
+	job := NewBudgetResetterJob(nil, rp, nil)
+
+	now := time.Date(2026, 2, 15, 12, 0, 0, 0, time.UTC)
+	if err := job.resetOne(ctx, bg, now); err != nil {
+		t.Fatalf("resetOne: %v", err)
+	}
+
+	mauMulai := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	mauAkhir := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	if !rp.resetStart.Equal(mauMulai) {
+		t.Errorf("awal periode baru = %s, mau %s", rp.resetStart, mauMulai)
+	}
+	if rp.resetEnd == nil || !rp.resetEnd.Equal(mauAkhir) {
+		t.Errorf("akhir periode baru = %v, mau %s", rp.resetEnd, mauAkhir)
+	}
+	if !rp.resetExpectedStart.Equal(mulai) || rp.resetExpectedEnd == nil || !rp.resetExpectedEnd.Equal(akhir) {
+		t.Errorf("harapan CAS = [%s, %v], mau [%s, %s]", rp.resetExpectedStart, rp.resetExpectedEnd, mulai, akhir)
+	}
+}
+
+// TestBudgetResetterKonflikCASDilewati membuktikan perbaikan V-AB-06 di sisi worker:
+// konflik CAS (periode sudah dimajukan pihak lain) bukan kegagalan job.
+func TestBudgetResetterKonflikCASDilewati(t *testing.T) {
+	ctx := context.Background()
+
+	akhir := time.Now().Add(-time.Hour)
+	bg := &policy.Budget{
+		ID: "b-konflik", Name: "anggaran-konflik",
+		Period: policy.PeriodDaily, PeriodStart: akhir.Add(-24 * time.Hour), PeriodEnd: &akhir,
+	}
+	rp := &dummyBudgetResetRepo{
+		expired:  []*policy.Budget{bg},
+		resetErr: fmt.Errorf("mereset periode anggaran dengan pemakaian terhitung: %w", repo.ErrConflict),
+	}
+	job := NewBudgetResetterJob(nil, rp, nil)
+
+	if err := job.resetOne(ctx, bg, time.Now()); err != nil {
+		t.Fatalf("resetOne dengan konflik CAS: err = %v, mau nil", err)
 	}
 }
 

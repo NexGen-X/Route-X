@@ -36,7 +36,7 @@ acuan memahami apa yang installer lakukan.
   TRUSTED_PROXIES=127.0.0.1,::1
   UPSTREAM_ALLOW_HTTP=false
   INITIAL_ADMIN_EMAIL=admin@routex.local
-  INITIAL_ADMIN_PASSWORD=<password kuat pilihan Anda>
+  INITIAL_ADMIN_PASSWORD=<GANTI_DENGAN_PASSWORD_KUAT_ANDA>
 
 Hasilkan secret dengan `bash scripts/ops/generate-secrets.sh` — formatnya
 sudah benar untuk validasi config (ENCRYPTION_KEY dan API_KEY_PEPPER

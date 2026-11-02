@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "postbuild": "touch dist/.gitkeep",
+    "postbuild": "node scripts/cap-versi-sw.mjs && touch dist/.gitkeep",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",

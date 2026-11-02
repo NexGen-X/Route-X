@@ -29,6 +29,35 @@ const (
 	maxHashLen = 64
 )
 
+// tipeKontenEksplisit memetakan nama berkas ke Content-Type yang WAJIB
+// disajikan, tanpa bergantung pada tabel MIME host maupun tebakan ekstensi
+// Go (audit3 V-FF-41): mime.TypeByExtension(".webmanifest") menghasilkan ""
+// sehingga http.ServeContent jatuh ke sniffing dan manifest tersaji sebagai
+// text/plain — Chrome menolaknya dan pemasangan PWA mati senyap, di jalur
+// native maupun Docker. Pemetaan ini hanya untuk berkas yang namanya tetap
+// dan maknanya dikunci spesifikasi; berkas lain tetap mengikuti perilaku
+// ServeContent seperti biasa.
+var tipeKontenEksplisit = map[string]string{
+	"manifest.webmanifest": "application/manifest+json",
+	"sw.js":                "text/javascript; charset=utf-8",
+	"favicon.ico":          "image/x-icon",
+	"robots.txt":           "text/plain; charset=utf-8",
+}
+
+// tipeKontenUntuk mengembalikan Content-Type eksplisit untuk satu nama
+// berkas, atau "" bila berkas itu tidak dipetakan. Selain nama persis di
+// peta, ekstensi .webmanifest selalu dipetakan: manifest dengan nama lain
+// pun tidak boleh bergantung pada mime.types host.
+func tipeKontenUntuk(name string) string {
+	if ct, ok := tipeKontenEksplisit[path.Base(name)]; ok {
+		return ct
+	}
+	if strings.EqualFold(path.Ext(name), ".webmanifest") {
+		return "application/manifest+json"
+	}
+	return ""
+}
+
 // apiPathPrefixes adalah rute yang selalu milik router API.
 //
 // SPAHandler dipasang sebagai fallback di akar, sesudah semua rute API terdaftar.
@@ -151,6 +180,11 @@ func (h *spaHandler) serveFile(w http.ResponseWriter, r *http.Request, name stri
 	}
 
 	w.Header().Set("Cache-Control", h.cacheControl(name, isIndex))
+	if ct := tipeKontenUntuk(name); ct != "" {
+		// ServeContent tidak menimpa Content-Type yang sudah terpasang,
+		// jadi pemetaan eksplisit di sini selalu menang atas sniffing.
+		w.Header().Set("Content-Type", ct)
+	}
 	http.ServeContent(w, r, path.Base(name), info.ModTime(), content)
 	return true
 }
@@ -163,6 +197,15 @@ func (h *spaHandler) serveFile(w http.ResponseWriter, r *http.Request, name stri
 func (h *spaHandler) cacheControl(name string, isIndex bool) string {
 	base := path.Base(name)
 	if isIndex || strings.EqualFold(path.Ext(base), ".html") {
+		return "no-cache"
+	}
+	// Service worker dan manifest adalah titik kendali pembaruan PWA:
+	// keduanya harus divalidasi ulang pada setiap pemuatan (audit3
+	// V-FF-42). Masuk ember "mutable" max-age=3600 membuat peramban
+	// menunda skrip SW & manifest baru sampai ±1 jam — persis jendela
+	// di mana perbaikan darurat tidak sampai ke pengguna. no-cache di
+	// sini tetap murah: ServeContent menjawab 304 bila belum berubah.
+	if base == "sw.js" || strings.EqualFold(path.Ext(base), ".webmanifest") {
 		return "no-cache"
 	}
 	if looksHashed(base) {

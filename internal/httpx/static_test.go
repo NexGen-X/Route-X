@@ -23,6 +23,8 @@ func webDist() fstest.MapFS {
 		"assets/logo.svg":         &fstest.MapFile{Data: []byte("<svg/>")},
 		"favicon.ico":             &fstest.MapFile{Data: []byte("ico")},
 		"robots.txt":              &fstest.MapFile{Data: []byte("User-agent: *")},
+		"sw.js":                   &fstest.MapFile{Data: []byte("self.addEventListener('install',()=>{})")},
+		"manifest.webmanifest":    &fstest.MapFile{Data: []byte(`{"name":"Route-X"}`)},
 	}
 }
 
@@ -141,6 +143,55 @@ func TestSPAHeaderCache(t *testing.T) {
 		"/robots.txt":              "public, max-age=3600",
 		"/index.html":              "no-cache",
 		"/":                        "no-cache",
+	}
+	for target, want := range tests {
+		rec := getStatic(t, h, target)
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status %d, want 200", target, rec.Code)
+			continue
+		}
+		if got := rec.Header().Get("Cache-Control"); got != want {
+			t.Errorf("%s: Cache-Control %q, want %q", target, got, want)
+		}
+	}
+}
+
+// TestSPATipeKontenEksplisit mengunci pemetaan tipe untuk berkas PWA &
+// pendamping (audit3 V-FF-41): manifest TIDAK BOLEH tersaji text/plain
+// hasil sniffing, di host mana pun — pemetaan eksplisit handler yang
+// menjaminnya, bukan /etc/mime.types.
+func TestSPATipeKontenEksplisit(t *testing.T) {
+	h := SPAHandler(webDist(), SPAOptions{})
+
+	tests := map[string]string{
+		"/manifest.webmanifest": "application/manifest+json",
+		"/sw.js":                "text/javascript; charset=utf-8",
+		"/favicon.ico":          "image/x-icon",
+		"/robots.txt":           "text/plain; charset=utf-8",
+	}
+	for target, want := range tests {
+		rec := getStatic(t, h, target)
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status %d, want 200", target, rec.Code)
+			continue
+		}
+		if got := rec.Header().Get("Content-Type"); got != want {
+			t.Errorf("%s: Content-Type %q, want %q", target, got, want)
+		}
+	}
+}
+
+// TestSPACacheAsetPWA mengunci kebijakan cache titik kendali PWA
+// (audit3 V-FF-42): sw.js dan manifest selalu divalidasi ulang, sementara
+// aset mutable biasa tetap pada ember 1 jam.
+func TestSPACacheAsetPWA(t *testing.T) {
+	h := SPAHandler(webDist(), SPAOptions{})
+
+	tests := map[string]string{
+		"/sw.js":                "no-cache",
+		"/manifest.webmanifest": "no-cache",
+		"/favicon.ico":          "public, max-age=3600",
+		"/robots.txt":           "public, max-age=3600",
 	}
 	for target, want := range tests {
 		rec := getStatic(t, h, target)

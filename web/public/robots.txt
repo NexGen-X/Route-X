@@ -1,0 +1,4 @@
+# Route-X adalah konsol admin privat (di balik login) untuk satu operator.
+# Tidak ada halaman publik yang layak diindeks; larang semua crawler.
+User-agent: *
+Disallow: /

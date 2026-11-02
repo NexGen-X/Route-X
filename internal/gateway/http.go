@@ -547,6 +547,147 @@ func teksJawaban(resp *providers.ChatResponse) string {
 	return b.String()
 }
 
+// teksDariKontenWire mengekstrak teks dari satu field "content" bentuk wire
+// OpenAI: string polos, atau array bagian yang potongan teksnya digabung.
+// Bentuk lain (null, angka, bagian non-teks) menghasilkan "".
+func teksDariKontenWire(konten json.RawMessage) string {
+	if len(konten) == 0 {
+		return ""
+	}
+	var tunggal string
+	if err := json.Unmarshal(konten, &tunggal); err == nil {
+		return tunggal
+	}
+	var bagian []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(konten, &bagian); err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, p := range bagian {
+		if p.Type == "text" {
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
+}
+
+// teksDariRawJawaban mengekstrak teks jawaban dari body wire yang tersimpan
+// di entri cache (Entry.Raw selalu bentuk OpenAI — dialek lain diterjemahkan
+// adapter ke bentuk itu, lihat ChatResponse.Raw).
+//
+// Dipakai jalur HIT untuk entri lama yang belum punya Entry.Teks: tanpa
+// ekstraksi ini entri semacam itu melewati SaringJawaban sepenuhnya
+// (audit3 V-GW-06). Ekstraksi yang gagal mengembalikan "" — dan teks kosong
+// memang tidak punya apa-apa untuk disaring, sama seperti jalur MISS.
+func teksDariRawJawaban(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var wire struct {
+		Choices []struct {
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, c := range wire.Choices {
+		t := teksDariKontenWire(c.Message.Content)
+		if t == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(t)
+	}
+	return b.String()
+}
+
+// teksDariChunkAliran menggabungkan teks jawaban dari chunk streaming yang
+// ditampung untuk cache, supaya entri streaming ikut menyimpan teks jawaban
+// (audit3 V-GW-04) — sebelumnya hanya entri non-streaming yang punya Teks.
+//
+// Dua bentuk potongan dikenali: delta.content dialek OpenAI dan text_delta
+// dialek Anthropic. Chunk yang tidak terurai dilewati; hasil gabungan ini
+// bahan audit & penyaring, bukan rekonstruksi byte respons.
+func teksDariChunkAliran(chunks []string) string {
+	var b strings.Builder
+	for _, chunk := range chunks {
+		var wire struct {
+			Choices []struct {
+				Delta struct {
+					Content json.RawMessage `json:"content"`
+				} `json:"delta"`
+			} `json:"choices"`
+			Delta struct {
+				Text string `json:"text"`
+			} `json:"delta"`
+		}
+		if err := json.Unmarshal([]byte(chunk), &wire); err != nil {
+			continue
+		}
+		for _, c := range wire.Choices {
+			b.WriteString(teksDariKontenWire(c.Delta.Content))
+		}
+		b.WriteString(wire.Delta.Text)
+	}
+	return b.String()
+}
+
+// pemakaianCacheHIT menyusun pemakaian yang dicatat untuk satu cache HIT.
+//
+// Entri lama bisa menyimpan TotalTokens 0; tanpa lantai ini CatatToken
+// langsung return dan HIT lama menjadi gratis tanpa batas, sementara baris
+// requests mencatat 0 token untuk request yang kuotanya ditagih sebesar
+// taksiran (audit3 V-GW-09). Satu angka dipakai untuk KEDUA sisi — yang
+// ditagih ke kuota dan yang masuk catatan — supaya keduanya tidak pernah
+// bercerita berbeda. Lantainya ditaksir dari prompt peminta, konsisten
+// dengan EstimateTokens yang dipakai persiapan untuk routing.
+func pemakaianCacheHIT(req *providers.ChatRequest, entry *responsecache.Entry) providers.Usage {
+	u := entry.Usage
+	if u.TotalTokens > 0 {
+		return u
+	}
+	est := EstimateTokens(req).InputTokens
+	if est < 1 {
+		est = 1
+	}
+	u.InputTokens = est
+	u.TotalTokens = est
+	return u
+}
+
+// kandidatCacheHIT menentukan kandidat yang dicatat sebagai pelayan satu
+// cache HIT (audit3 V-GW-09): kandidat dari keputusan routing request INI
+// yang providernya sama dengan asal entri — nama & pemetaan modelnya masih
+// yang berlaku sekarang. Bila provider asal sudah tidak termasuk kandidat
+// (routing berubah sejak entri disimpan), kandidat sintetis minimal disusun
+// dari identitas yang tersimpan di entri, supaya baris requests tetap
+// menyebut provider & model hulu asal jawaban itu. Nil bila entri tidak
+// membawa ProviderID sama sekali (entri warisan sebelum V-GW-04 diperbaiki
+// di jalur streaming).
+func kandidatCacheHIT(pr *persiapan, entry *responsecache.Entry) *upstream.RouteCandidate {
+	if entry == nil || entry.ProviderID == "" {
+		return nil
+	}
+	for _, c := range pr.decision.Candidates {
+		if c != nil && c.ProviderID == entry.ProviderID {
+			return c
+		}
+	}
+	return &upstream.RouteCandidate{
+		ProviderID:        entry.ProviderID,
+		UpstreamModelName: entry.Model,
+	}
+}
+
 // bacaBody membaca body permintaan dengan batas, sambil menegakkan kontrak
 // header yang dijanjikan permukaan ini:
 //
@@ -1432,35 +1573,36 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 			// tidak ada panggilan upstream — karena pencatat menghitung biaya
 			// dari kandidat pemenang, dan jalur ini tidak punya pemenang.
 			//
-			// Entri lama bisa menyimpan TotalTokens 0; tanpa lantai ini CatatToken
-			// langsung return dan HIT lama menjadi gratis tanpa batas. Lantainya
-			// ditaksir dari prompt peminta, konsisten dengan EstimateTokens yang
-			// dipakai persiapan untuk routing.
-			tokenHIT := int64(entry.Usage.TotalTokens)
-			if tokenHIT <= 0 {
-				tokenHIT = int64(EstimateTokens(pr.req).InputTokens)
-				if tokenHIT < 1 {
-					tokenHIT = 1
-				}
+			// Pemakaian yang ditagih dan yang dicatat disusun sekali lewat
+			// pemakaianCacheHIT (lantai taksiran untuk entri lama bertoken nol).
+			pemakaian := pemakaianCacheHIT(pr.req, entry)
+			j.pasangPemakaian(pemakaian)
+			// Baris requests untuk HIT tetap menyebut provider & pemetaan
+			// model asal jawaban (audit3 V-GW-09); tanpa ini inspektor
+			// menampilkan request tanpa provider untuk semua HIT.
+			if menang := kandidatCacheHIT(pr, entry); menang != nil {
+				j.pasangPercobaan(nil, menang)
 			}
-			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, tokenHIT)
+			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(pemakaian.TotalTokens))
 			// Kebijakan jawaban yang berlaku saat menyimpan bisa berubah sejak
 			// itu; yang ditegakkan adalah kebijakan SAAT INI. Teks diambil dari
-			// entri supaya tidak perlu mengurai ulang Raw; entri lama yang belum
-			// punya teks melewatkan pemeriksaan ini.
-			if entry.Teks != "" {
-				if rj := h.guard.SaringJawaban(r.Context(), entry.Teks,
-					pr.model.ID, entry.ProviderID); rj != nil {
-					rj.Tulis(w, r)
-					return
-				}
+			// entri; entri lama yang belum punya teks diekstrak dari Raw-nya —
+			// tanpa itu entri lama melewati penyaring sepenuhnya
+			// (audit3 V-GW-06).
+			teks := entry.Teks
+			if teks == "" {
+				teks = teksDariRawJawaban(entry.Raw)
+			}
+			if rj := h.guard.SaringJawaban(r.Context(), teks,
+				pr.model.ID, entry.ProviderID); rj != nil {
+				rj.Tulis(w, r)
+				return
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("X-RouteX-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(entry.Raw)
-			j.pasangPemakaian(entry.Usage)
 			return
 		}
 	}
@@ -1667,18 +1809,19 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		cacheKey = h.respCache.ComputeScopedKey(pr.req, cakupanCache(pr))
 		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.StreamChunks) > 0 {
 			// Seperti jalur non-streaming: HIT tetap memakan kuota token,
-			// dengan lantai taksiran yang sama untuk entri lama bertoken nol.
+			// dengan lantai taksiran yang sama untuk entri lama bertoken nol,
+			// dan pemakaian yang ditagih sama dengan yang dicatat
+			// (pemakaianCacheHIT, audit3 V-GW-09). Baris requests juga
+			// menyebut provider asal jawaban lewat kandidatCacheHIT.
 			// Penyaring jawaban TIDAK dijalankan di sini — jawaban streaming
 			// memang tidak disaring (lihat Guard.SaringJawaban), dan memeriksa
 			// ulang potongan yang sudah terkirim tidak mungkin.
-			tokenHIT := int64(entry.Usage.TotalTokens)
-			if tokenHIT <= 0 {
-				tokenHIT = int64(EstimateTokens(pr.req).InputTokens)
-				if tokenHIT < 1 {
-					tokenHIT = 1
-				}
+			pemakaian := pemakaianCacheHIT(pr.req, entry)
+			j.pasangPemakaian(pemakaian)
+			if menang := kandidatCacheHIT(pr, entry); menang != nil {
+				j.pasangPercobaan(nil, menang)
 			}
-			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, tokenHIT)
+			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(pemakaian.TotalTokens))
 			if err := httpx.PrepareSSE(w, r); err != nil {
 				h.gagalSiapkanSSE(w, r, j, err)
 				return
@@ -1693,7 +1836,6 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 				}
 			}
 			h.tutupAliran(r, w, rc)
-			j.pasangPemakaian(entry.Usage)
 			return
 		}
 	}
@@ -1801,10 +1943,15 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				if cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() && len(streamChunks) > 0 {
+					// ProviderID dan teks jawaban ikut disimpan, sejajar
+					// jalur non-streaming (audit3 V-GW-04): tanpa keduanya
+					// provenance entri streaming hilang dari audit.
 					_ = h.respCache.Set(r.Context(), cacheKey, &responsecache.Entry{
 						Model:        out.Candidate.UpstreamModelName,
+						ProviderID:   out.Candidate.ProviderID,
 						Usage:        usage,
 						StreamChunks: streamChunks,
+						Teks:         teksDariChunkAliran(streamChunks),
 						CachedAt:     time.Now(),
 					})
 				}

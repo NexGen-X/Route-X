@@ -561,7 +561,10 @@ func buildGatewaySurface(
 		Candidates: providersRepo,
 		Factory:    factory,
 		Engine:     ruleEngine,
-		Executor:   gateway.NewExecutor(breaker, logger),
+		// Executor membaca kesehatan egress dari repo yang sama dengan
+		// factory: kandidat ber-pool tak sehat disisihkan selama ada
+		// alternatif, fail-open bila semuanya tak sehat (sisa grup 8).
+		Executor: gateway.NewExecutor(breaker, logger, gateway.WithEgressHealth(egress)),
 		// Pembatasan model dan provider per API key. Bukan opsional di produksi: tanpa ini
 		// setiap key boleh memakai setiap model.
 		Restrict: keyRepo,
@@ -646,6 +649,25 @@ func buildGatewaySurface(
 		},
 	}
 	workerSup.Register(sessionCleanupJob, 1*time.Hour, 45*time.Second)
+
+	// 9. Rekonsiliasi jumlah entri response cache: counter ringkas
+	// meta:entry_count tidak berkurang saat entri kedaluwarsa alami oleh
+	// TTL, jadi dihitung ulang dari kunci Redis secara berkala supaya
+	// statistik yang dibaca operator tidak berbohong tanpa batas (sisa
+	// B-023). Ringan: SCAN berpola dalam batch terbatas, seperempat jam
+	// sekali — penyimpangan maksimalnya memang satu interval ini.
+	reconcileCacheJob := worker.JobFunc{
+		JobName: "response_cache_rekonsiliasi",
+		Fn: func(ctx context.Context) error {
+			n, err := respCache.RekonsiliasiJumlahEntri(ctx)
+			if err != nil {
+				return err
+			}
+			logger.DebugContext(ctx, "jumlah entri response cache direkonsiliasi", "jumlah", n)
+			return nil
+		},
+	}
+	workerSup.Register(reconcileCacheJob, 15*time.Minute, 1*time.Minute)
 
 	workerSup.Start(ctx)
 

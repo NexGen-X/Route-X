@@ -42,14 +42,58 @@ Menaikkan ke 90/14 hanya bila compliance meminta + cek disk dulu
 
 ## 4. Rotasi secret
 
-Variabel yang wajib diganti berkala: SESSION_SECRET, ENCRYPTION_KEY,
-API_KEY_PEPPER, METRICS_TOKEN (min 32 char). Prosedur:
+Tidak semua secret setara — memperlakukan keempatnya dengan prosedur yang
+sama pernah tertulis di sini dan itu berbahaya. Yang benar per variabel:
 
-  1. Generate nilai baru, simpan di secret manager.
-  2. Rolling restart satu instance, verifikasi healthz+readyz 200.
-  3. Lanjutkan ke instance berikutnya.
-  4. Sesi lama invalid setelah SESSION_SECRET diganti:
-     umumkan maintenance window ke pengguna.
+### API_KEY_PEPPER — JANGAN dirotasi
+
+Pepper adalah bahan hash satu arah untuk API key. Menggantinya membuat
+SEMUA API key yang sudah diterbitkan gagal autentikasi (401) secara
+permanen dan serentak: tidak ada re-hash yang mungkin karena nilai mentah
+key tidak disimpan. Pemulihan hanya dua: kembalikan nilai pepper lama
+persis, atau buat ulang seluruh API key. Pepper hanya boleh berubah pada
+instalasi baru yang belum menerbitkan key.
+
+### SESSION_SECRET — hanya membatalkan token CSRF, BUKAN sesi
+
+Secret ini adalah kunci HMAC token CSRF. Keabsahan sesi login ditentukan
+baris tabel `sessions` di database, jadi merotasi SESSION_SECRET TIDAK
+mengeluarkan siapa pun — sesi lama tetap sah sampai kedaluwarsa/dicabut.
+Untuk memaksa semua perangkat masuk ulang (respons insiden), pakai saklar
+khususnya:
+
+  POST /api/admin/access/sessions/revoke-all   (izin users:write)
+
+atau cabut sesi per pengguna lewat halaman Akses. Rotasi SESSION_SECRET
+sendiri aman kapan pun (restart; token CSRF lama gugur, sesi tetap hidup).
+
+### ENCRYPTION_KEY — lewat masa tenggang, bukan sekali tebas
+
+Ciphertext kredensial provider, secret webhook, URL egress, dan refresh
+token OAuth dienkripsi dengan kunci ini. Prosedur yang aman:
+
+  1. Siapkan kunci baru (base64 32 byte) di secret manager.
+  2. Setel ENCRYPTION_KEY=<kunci baru> DAN
+     ENCRYPTION_KEY_PREVIOUS=<kunci lama>, restart, verifikasi
+     healthz+readyz 200 dan kredensial provider terbaca. Pada keadaan ini
+     gateway membaca ciphertext lama maupun baru, dan menulis dengan
+     kunci baru.
+  3. Jalankan routex-rotate untuk menulis ulang ciphertext lama:
+     OLD_ENCRYPTION_KEY=<lama> NEW_ENCRYPTION_KEY=<baru> routex-rotate
+     (kunci hanya dari env — argumen baris perintah terlihat di daftar
+     proses). Rotasi yang menemukan baris berkunci asing (bukan lama/bukan
+     baru) akan DIBATALKAN keras, bukan dilewati.
+  4. Verifikasi lagi, lalu HAPUS ENCRYPTION_KEY_PREVIOUS dan restart.
+     Selama env itu terpasang, kunci lama masih dipercaya untuk dekripsi.
+
+Urutan lama "rotasi dulu dengan gateway mati, ganti env, nyalakan" tidak
+lagi wajib — masa tenggang di langkah 2 menghapus jendela di mana gateway
+tidak bisa membaca datanya sendiri.
+
+### METRICS_TOKEN — aman dirotasi
+
+Ganti nilainya (min 32 char), samakan konfigurasi scraper Prometheus,
+restart. Tidak ada data persisten yang bergantung padanya.
 
 ## 5. Dependensi
 

@@ -64,7 +64,27 @@ var (
 	// karena permintaan seperti ini biasanya salah kirim, dan meloloskannya akan
 	// mencabut seluruh sesi lain tanpa mengubah apa pun.
 	ErrPasswordUnchanged = errors.New("password baru sama dengan password saat ini")
+
+	// ErrPasswordChangeThrottled berarti percobaan ganti password dibatasi
+	// sementara: akun sedang terkunci oleh penghitung kegagalan, atau batas laju
+	// percobaan terlampaui. Dibawa PasswordChangeThrottledError.
+	ErrPasswordChangeThrottled = errors.New("percobaan ganti password dibatasi sementara")
 )
+
+// PasswordChangeThrottledError adalah penolakan ganti password karena pembatasan.
+//
+// Error() hanya mengembalikan pesan sentinel: sebab rincinya (terkunci vs batas
+// laju) tidak dibedakan ke klien, sama seperti kebijakan LoginError.
+type PasswordChangeThrottledError struct {
+	// RetryAfter adalah perkiraan lama tunggu sebelum percobaan berikutnya
+	// diterima, untuk header Retry-After.
+	RetryAfter time.Duration
+}
+
+func (e *PasswordChangeThrottledError) Error() string { return ErrPasswordChangeThrottled.Error() }
+
+// Unwrap membuat errors.Is(err, ErrPasswordChangeThrottled) bekerja.
+func (e *PasswordChangeThrottledError) Unwrap() error { return ErrPasswordChangeThrottled }
 
 // Pesan yang boleh dilihat klien. Dikumpulkan di satu tempat supaya keseragamannya bisa
 // diperiksa dengan mata — khususnya MessageLoginFailed, yang harus dipakai apa adanya
@@ -84,6 +104,9 @@ const (
 	// MessagePasswordChangeRequired dipakai saat pengguna wajib mengganti password
 	// lebih dulu.
 	MessagePasswordChangeRequired = "password wajib diganti sebelum memakai fitur lain"
+	// MessagePasswordChangeThrottled dipakai saat percobaan ganti password dibatasi
+	// sementara oleh penguncian akun atau batas laju.
+	MessagePasswordChangeThrottled = "terlalu banyak percobaan ganti password yang gagal, coba lagi beberapa saat lagi"
 	// MessageCSRFInvalid dipakai untuk seluruh kegagalan pemeriksaan CSRF, tanpa
 	// menyebut apakah yang bermasalah token, cookie, atau Origin.
 	MessageCSRFInvalid = "permintaan ditolak: token CSRF tidak sah"
@@ -115,6 +138,8 @@ const (
 	CodeWeakPassword = "weak_password"
 	// CodePasswordUnchanged: password baru sama dengan yang sekarang.
 	CodePasswordUnchanged = "password_unchanged"
+	// CodePasswordChangeThrottled: percobaan ganti password dibatasi sementara.
+	CodePasswordChangeThrottled = "password_change_throttled"
 	// CodeUnsupportedMediaType: body bukan application/json.
 	CodeUnsupportedMediaType = "unsupported_media_type"
 )

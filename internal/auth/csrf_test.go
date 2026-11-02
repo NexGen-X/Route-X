@@ -46,6 +46,11 @@ type csrfRequest struct {
 	cookie    string
 	// noPrincipal mensimulasikan pemasangan middleware tanpa RequireSession di depannya.
 	noPrincipal bool
+	// viaHeader menandai principal terautentikasi lewat token header tervalidasi.
+	viaHeader bool
+	// extraHeaders adalah header mentah tambahan pada request (mis. Authorization
+	// sampah) untuk membuktikan kehadirannya tidak mengubah keputusan middleware.
+	extraHeaders map[string]string
 }
 
 func (h *csrfHarness) do(t *testing.T, in csrfRequest) *httptest.ResponseRecorder {
@@ -69,6 +74,9 @@ func (h *csrfHarness) do(t *testing.T, in csrfRequest) *httptest.ResponseRecorde
 	if in.cookie != "" {
 		r.AddCookie(&http.Cookie{Name: h.cookies.CSRFName(), Value: in.cookie})
 	}
+	for k, v := range in.extraHeaders {
+		r.Header.Set(k, v)
+	}
 	if !in.noPrincipal {
 		sessionID := in.sessionID
 		if sessionID == "" {
@@ -77,6 +85,7 @@ func (h *csrfHarness) do(t *testing.T, in csrfRequest) *httptest.ResponseRecorde
 		principal := &Principal{
 			User:      identity.User{ID: "11111111-1111-4111-8111-111111111111"},
 			SessionID: sessionID,
+			ViaHeader: in.viaHeader,
 		}
 		r = r.WithContext(WithPrincipal(r.Context(), principal))
 	}

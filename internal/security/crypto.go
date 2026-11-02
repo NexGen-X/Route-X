@@ -46,25 +46,76 @@ var (
 type Cipher struct {
 	aead  cipher.AEAD
 	keyID string
+	// legacy memetakan keyID kunci lama ke AEAD-nya, untuk masa tenggang
+	// rotasi: ciphertext lama tetap terbaca, enkripsi baru selalu memakai
+	// kunci utama. Kosong berarti tidak ada masa tenggang.
+	legacy map[string]cipher.AEAD
 }
 
 // NewCipher membuat Cipher dari kunci 32 byte, biasanya dari config.EncryptionKey.
 func NewCipher(key []byte) (*Cipher, error) {
+	return NewCipherWithLegacy(key)
+}
+
+// NewCipherWithLegacy membuat Cipher dengan kunci lama tambahan yang hanya
+// dipakai untuk DEKRIPSI (masa tenggang rotasi ENCRYPTION_KEY, audit3 V-LN-30).
+//
+// Tanpa ini, rotasi adalah operasi sekali-tebas: ciphertext ditulis ulang oleh
+// routex-rotate memakai kunci baru, tetapi gateway yang masih berjalan dan
+// proses yang ter-restart dengan env lama seketika gagal membaca semuanya —
+// dan bila urutannya terbalik, gateway baru tidak bisa membaca ciphertext
+// lama sama sekali. Dengan kunci lama terpasang sebagai warisan, operator
+// bisa memasang kunci baru + lama lebih dulu, menjalankan rotasi kapan pun,
+// lalu mencabut kunci lama setelah terverifikasi. Kunci warisan yang sama
+// dengan kunci utama ditolak: itu salah konfigurasi yang akan menyembunyikan
+// fakta bahwa rotasi belum benar-benar terjadi.
+func NewCipherWithLegacy(key []byte, legacyKeys ...[]byte) (*Cipher, error) {
+	aead, err := newAEAD(key)
+	if err != nil {
+		return nil, err
+	}
+	c := &Cipher{aead: aead, keyID: deriveKeyID(key)}
+	for _, legacyKey := range legacyKeys {
+		if len(legacyKey) == 0 {
+			continue
+		}
+		legacyAEAD, err := newAEAD(legacyKey)
+		if err != nil {
+			return nil, fmt.Errorf("kunci warisan: %w", err)
+		}
+		legacyID := deriveKeyID(legacyKey)
+		if legacyID == c.keyID {
+			return nil, fmt.Errorf("kunci warisan sama dengan kunci aktif (key id %s): rotasi belum terjadi", legacyID)
+		}
+		if c.legacy == nil {
+			c.legacy = make(map[string]cipher.AEAD)
+		}
+		c.legacy[legacyID] = legacyAEAD
+	}
+	return c, nil
+}
+
+// newAEAD membangun AES-256-GCM dari kunci mentah.
+func newAEAD(key []byte) (cipher.AEAD, error) {
 	if len(key) != KeyLen {
 		return nil, fmt.Errorf("%w: dapat %d byte", ErrInvalidKeyLength, len(key))
 	}
-
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		// Tidak seharusnya terjadi karena panjang kunci sudah divalidasi.
 		return nil, fmt.Errorf("membuat blok AES: %w", err)
 	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("membuat GCM: %w", err)
-	}
+	return cipher.NewGCM(block)
+}
 
-	return &Cipher{aead: aead, keyID: deriveKeyID(key)}, nil
+// aeadFor memilih AEAD menurut keyID tertanam di ciphertext: kunci utama,
+// atau salah satu kunci warisan selama masa tenggang. nil berarti tidak ada
+// kunci yang cocok.
+func (c *Cipher) aeadFor(keyID string) cipher.AEAD {
+	if keyID == c.keyID {
+		return c.aead
+	}
+	return c.legacy[keyID]
 }
 
 // deriveKeyID menghasilkan pengenal pendek untuk kunci. Dipakai untuk mengenali kunci
@@ -117,18 +168,19 @@ func (c *Cipher) Decrypt(stored, aad string) ([]byte, error) {
 	if version != cipherFormatVersion {
 		return nil, fmt.Errorf("%w: versi %q tidak didukung", ErrMalformedCiphertext, version)
 	}
-	if keyID != c.keyID {
+	aead := c.aeadFor(keyID)
+	if aead == nil {
 		// Dilaporkan terpisah agar operator tahu ini soal rotasi kunci, bukan data rusak.
 		return nil, fmt.Errorf("%w: record dienkripsi dengan kunci %s, kunci aktif %s",
 			ErrKeyMismatch, keyID, c.keyID)
 	}
 
-	nonceSize := c.aead.NonceSize()
-	if len(sealed) < nonceSize+c.aead.Overhead() {
+	nonceSize := aead.NonceSize()
+	if len(sealed) < nonceSize+aead.Overhead() {
 		return nil, ErrMalformedCiphertext
 	}
 
-	plaintext, err := c.aead.Open(nil, sealed[:nonceSize], sealed[nonceSize:], []byte(aad))
+	plaintext, err := aead.Open(nil, sealed[:nonceSize], sealed[nonceSize:], []byte(aad))
 	if err != nil {
 		// Penyebab aslinya tidak diteruskan: membedakan "tag salah" dari "aad salah"
 		// akan memberi penyerang informasi yang tidak perlu.
@@ -147,12 +199,13 @@ func (c *Cipher) DecryptSecret(stored, aad string) (Secret, error) {
 	return Secret(plaintext), nil
 }
 
-// CanDecrypt melaporkan apakah ciphertext ini dienkripsi dengan kunci aktif. Dipakai
-// worker rotasi kunci untuk memilih record yang perlu dienkripsi ulang, tanpa harus
-// mencoba dekripsi.
+// CanDecrypt melaporkan apakah ciphertext ini bisa dibuka dengan kunci yang
+// dipegang Cipher ini — kunci aktif ATAU salah satu kunci warisan masa
+// tenggang. Dipakai worker rotasi kunci untuk memilih record yang perlu
+// dienkripsi ulang, tanpa harus mencoba dekripsi.
 func (c *Cipher) CanDecrypt(stored string) bool {
 	version, keyID, _, err := parseCiphertext(stored)
-	return err == nil && version == cipherFormatVersion && keyID == c.keyID
+	return err == nil && version == cipherFormatVersion && c.aeadFor(keyID) != nil
 }
 
 // parseCiphertext memecah format tersimpan menjadi bagian-bagiannya.

@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -84,6 +85,13 @@ type Handlers struct {
 	version string
 	commit  string
 	builtAt string
+
+	// publicURL adalah PUBLIC_URL dari konfigurasi env: sumber tepercaya
+	// untuk resolveGatewayURL, di atas turunan request (lihat Config).
+	publicURL string
+	// trustedProxies adalah prefix proxy tepercaya untuk gerbang header
+	// Forwarded-* di resolveGatewayURL. Kosong = tidak percaya sama sekali.
+	trustedProxies []netip.Prefix
 }
 
 // PriceCache adalah cuplikan harga di memori yang dipakai pencatat pemakaian
@@ -139,6 +147,16 @@ type Config struct {
 	Version string
 	Commit  string
 	BuiltAt string
+
+	// PublicURL adalah PUBLIC_URL dari konfigurasi env. Dipakai
+	// resolveGatewayURL sebagai sumber tepercaya di atas turunan request
+	// (audit3 V-AU-19): URL yang ditulis ke konfigurasi CLI tidak boleh
+	// dibentuk dari header Host/X-Forwarded-* mentah.
+	PublicURL string
+	// TrustedProxies adalah daftar prefix proxy yang boleh dipercaya untuk
+	// header X-Forwarded-Proto/Host di resolveGatewayURL (dari env
+	// TRUSTED_PROXIES). Kosong berarti header itu tidak pernah dipercaya.
+	TrustedProxies []netip.Prefix
 }
 
 // NewHandlers menginisialisasi controller REST API admin.
@@ -153,6 +171,12 @@ func NewHandlers(cfg Config) *Handlers {
 	var csrf *auth.CSRF
 	if cfg.AuthSvc != nil {
 		csrf = cfg.AuthSvc.CSRF()
+	} else {
+		// Salah-pasang yang berbahaya bila diam: Routes() akan gagal-tertutup
+		// dan menolak semua permintaan admin (audit3 V-AU-12), tetapi operator
+		// harus melihat sebabnya di log sejak proses start, bukan dari keluhan
+		// dashboard yang mati total.
+		l.Error("admin.NewHandlers: AuthSvc tidak terpasang — seluruh rute admin akan ditolak (fail-closed) sampai ini diperbaiki")
 	}
 
 	return &Handlers{
@@ -190,6 +214,8 @@ func NewHandlers(cfg Config) *Handlers {
 		version:        cfg.Version,
 		commit:         cfg.Commit,
 		builtAt:        cfg.BuiltAt,
+		publicURL:      cfg.PublicURL,
+		trustedProxies: cfg.TrustedProxies,
 	}
 }
 

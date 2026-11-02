@@ -26,6 +26,12 @@ type TableResult struct {
 	TableName string `json:"table_name"`
 	Scanned   int    `json:"scanned"`
 	Rotated   int    `json:"rotated"`
+	// SudahBaru adalah jumlah baris yang sudah memakai kunci baru sebelum
+	// rotasi ini berjalan (rotasi lanjutan/idempoten). Dilaporkan supaya
+	// operator bisa membedakan "tidak ada yang perlu dirotasi" dari "rotasi
+	// sebelumnya sudah selesai" — dan supaya audit cakupan di rotateTableInTx
+	// punya tempat mencatat sisi yang sah dari sebaran key id.
+	SudahBaru int `json:"already_current"`
 }
 
 // Result merangkum seluruh hasil eksekusi rotasi kunci enkripsi.
@@ -123,12 +129,14 @@ func NewRotator(cfg Config) (*Rotator, error) {
 // 5. settings cli:config:*
 //
 // Aturan Arsitektur & Keamanan:
-//   - Wajib SATU transaksi tunggal yang melingkupi KETIGA tabel. security.Cipher hanya
-//     mendukung satu kunci aktif (NewCipher). Jika transaksi dipisah per tabel dan kegagalan
-//     terjadi di tabel ketiga (egress_pool), tabel 1 dan 2 sudah ter-commit dengan kunci baru
-//     sementara tabel 3 masih kunci lama. Akibatnya aplikasi tidak akan pernah bisa mendekripsi
-//     sebagian datanya sendiri dengan kunci mana pun. Dengan satu transaksi atomik, seluruh
-//     tabel berhasil bersamaan atau dibatalkan bersamaan tanpa meninggalkan inkonsistensi.
+//   - Wajib SATU transaksi tunggal yang melingkupi KETIGA tabel. Jika transaksi
+//     dipisah per tabel dan kegagalan terjadi di tabel ketiga (egress_pool), tabel 1
+//     dan 2 sudah ter-commit dengan kunci baru sementara tabel 3 masih kunci lama —
+//     instalasi harus selalu bisa membaca seluruh datanya dengan konfigurasi kunci
+//     yang sedang terpasang. Dengan satu transaksi atomik, seluruh tabel berhasil
+//     bersamaan atau dibatalkan bersamaan tanpa meninggalkan inkonsistensi.
+//   - Setiap tabel diaudit cakupannya lebih dulu: baris dengan encryption_key_id
+//     di luar {lama, baru} membatalkan rotasi (lihat rotateTableInTx).
 //   - Kolom ciphertext dan encryption_key_id WAJIB diperbarui bersamaan dalam baris yang sama.
 //     Jika diperbarui terpisah, baris dengan ciphertext baru tapi key ID lama tidak akan
 //     pernah bisa didekripsi oleh siapa pun lagi.
@@ -314,6 +322,45 @@ func (r *Rotator) rotateSettingsInTx(ctx context.Context, tx pgx.Tx) (TableResul
 
 func (r *Rotator) rotateTableInTx(ctx context.Context, tx pgx.Tx, spec tableSpec) (TableResult, error) {
 	result := TableResult{TableName: spec.name}
+
+	// Audit cakupan SEBELUM memilih baris (audit3 V-LN-29): query utama di
+	// bawah hanya menyaring baris berkunci LAMA, jadi baris dengan key id
+	// ASING — kunci ketiga dari rotasi yang terputus, atau NULL — tidak
+	// pernah terlihat: rotasi melaporkan sukses sementara baris itu tertinggal
+	// tak terdekripsi oleh kunci mana pun. Itu tidak boleh lolos diam-diam:
+	// sebaran key id diperiksa utuh dan nilai di luar {lama, baru} adalah
+	// error keras yang membatalkan seluruh transaksi.
+	auditQuery := fmt.Sprintf(`SELECT %s, count(*) FROM %s GROUP BY 1`, spec.keyIdColumn, spec.name)
+	arows, err := tx.Query(ctx, auditQuery)
+	if err != nil {
+		return result, fmt.Errorf("memeriksa sebaran key id tabel %s: %w", spec.name, err)
+	}
+	for arows.Next() {
+		var kid *string
+		var n int
+		if err := arows.Scan(&kid, &n); err != nil {
+			arows.Close()
+			return result, fmt.Errorf("memindai sebaran key id tabel %s: %w", spec.name, err)
+		}
+		switch {
+		case kid != nil && *kid == r.oldCipher.KeyID():
+			// Baris kunci lama: akan dipilih query utama di bawah.
+		case kid != nil && *kid == r.newCipher.KeyID():
+			result.SudahBaru += n
+		default:
+			label := "NULL"
+			if kid != nil {
+				label = *kid
+			}
+			arows.Close()
+			return result, fmt.Errorf("tabel %s memuat %d baris dengan encryption_key_id %q yang bukan kunci lama (%s) maupun kunci baru (%s): rotasi dibatalkan agar baris itu tidak tertinggal tak terdekripsi — selidiki asal kunci itu sebelum mencoba lagi",
+				spec.name, n, label, r.oldCipher.KeyID(), r.newCipher.KeyID())
+		}
+	}
+	arows.Close()
+	if err := arows.Err(); err != nil {
+		return result, fmt.Errorf("iterasi sebaran key id tabel %s: %w", spec.name, err)
+	}
 
 	// Ambil seluruh baris yang masih terenkripsi dengan kunci lama (OldKeyID).
 	// Baris yang sudah memiliki NewKeyID secara otomatis diabaikan, menjaga sifat idempoten.

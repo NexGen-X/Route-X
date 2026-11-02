@@ -662,6 +662,22 @@ func PeerIPFrom(r *http.Request) (netip.Addr, bool) {
 	return ip, ip.IsValid()
 }
 
+// IsTrustedProxy melaporkan apakah koneksi langsung (peer) request ini datang
+// dari proxy yang terdaftar tepercaya.
+//
+// Inilah satu-satunya gerbang yang boleh membuka kepercayaan pada header
+// Forwarded-*: header hanya boleh dipercaya bila pihak yang bisa menulisnya
+// adalah proxy kita sendiri. Diekspor karena keputusan yang sama dibutuhkan di
+// luar middleware ini — misalnya admin.resolveGatewayURL, yang membangun URL
+// publik dari X-Forwarded-Proto/Host hanya di belakang proxy tepercaya.
+func IsTrustedProxy(r *http.Request, trusted []netip.Prefix) bool {
+	peer, ok := PeerIPFrom(r)
+	if !ok || len(trusted) == 0 {
+		return false
+	}
+	return prefixesContain(trusted, peer)
+}
+
 // ParseTrustedProxies mengubah daftar teks berisi CIDR ("10.0.0.0/8") atau IP
 // tunggal ("192.0.2.10") menjadi prefix untuk RealIP. Entri kosong dilewati.
 func ParseTrustedProxies(values []string) ([]netip.Prefix, error) {

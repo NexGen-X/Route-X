@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -280,6 +281,16 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		in.CurrentPassword, in.NewPassword, principal.SessionID, clientIP(r), r.UserAgent())
 	switch {
 	case err == nil:
+	case errors.Is(err, ErrPasswordChangeThrottled):
+		// 429 seperti login yang dibatasi laju: akun terkunci atau batas laju
+		// terlampaui. Retry-After dibawa dari estimasi service.
+		var throttled *PasswordChangeThrottledError
+		retryAfter := time.Duration(0)
+		if errors.As(err, &throttled) {
+			retryAfter = throttled.RetryAfter
+		}
+		httpx.TooManyRequests(w, r, MessagePasswordChangeThrottled, retryAfter)
+		return
 	case errors.Is(err, ErrWrongPassword):
 		httpx.WriteError(w, r, http.StatusForbidden, httpx.ErrTypePermission,
 			CodeCurrentPasswordInvalid, ErrWrongPassword.Error())

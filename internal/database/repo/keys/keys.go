@@ -70,6 +70,11 @@ const (
 	ReasonExpired      = "expired"
 	ReasonIPNotAllowed = "ip_not_allowed"
 	ReasonBanned       = "banned"
+	// ReasonOwnerInactive: pemilik key tidak lagi boleh masuk — akunnya
+	// dinonaktifkan/dikunci admin, atau sedang wajib mengganti password karena
+	// reset paksa. Key yang pemiliknya sudah tidak punya akses dashboard tidak
+	// boleh tetap menjadi kredensial API yang hidup.
+	ReasonOwnerInactive = "owner_inactive"
 )
 
 // Rejection menjelaskan kenapa sebuah key ditolak.
@@ -309,6 +314,16 @@ func (r *Repo) Authenticate(ctx context.Context, raw string, clientIP netip.Addr
 				when status = 'disabled'                      then 'disabled'
 				when expires_at is not null
 				     and expires_at <= now()                  then 'expired'
+				-- Status pemilik menegakkan diri ke key (audit3 V-AU-01): sesi
+				-- pemilik mati seketika saat akun dinonaktifkan atau di-reset
+				-- paksa, jadi key miliknya tidak boleh lebih hidup dari itu.
+				-- must_change_password ikut menolak karena reset paksa memang
+				-- dimaksudkan memutus seluruh akses sampai password diganti.
+				when owner_user_id is not null and exists (
+					select 1 from users u
+					where u.id = api_keys.owner_user_id
+					  and (u.status <> 'active' or u.must_change_password)
+				) then 'owner_inactive'
 				when cardinality(ip_allowlist) > 0
 				     and ($2::inet is null
 				          or not exists (select 1 from unnest(ip_allowlist) net

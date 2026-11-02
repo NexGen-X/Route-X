@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -65,6 +66,7 @@ type Service struct {
 	touchInterval time.Duration
 	lockThreshold int
 	lockDuration  time.Duration
+	maxSessions   int
 
 	// limiter boleh nil; method-nya aman dipanggil pada penerima nil dan berarti tanpa
 	// pembatasan laju.
@@ -123,6 +125,26 @@ func WithLoginLimiter(l *LoginLimiter) Option {
 	return func(s *Service) { s.limiter = l }
 }
 
+// DefaultMaxSessionsPerUser adalah batas sesi aktif bersamaan per pengguna.
+//
+// Sepuluh memberi ruang yang lega untuk pemakaian single-user yang nyata —
+// browser utama, browser cadangan, ponsel companion, CLI, dan beberapa sesi
+// uji — sambil tetap membatasi berapa banyak token hidup yang bisa menumpuk
+// (atau dicuri) tanpa ada yang membersihkannya. Login yang melewati batas
+// mencabut sesi tertua, BUKAN menolak loginnya: menolak akan mengunci pemilik
+// yang sah hanya karena perangkat lamanya belum kedaluwarsa.
+const DefaultMaxSessionsPerUser = 10
+
+// WithMaxSessionsPerUser mengubah batas sesi aktif bersamaan per pengguna.
+// Nilai ≤ 0 diabaikan.
+func WithMaxSessionsPerUser(n int) Option {
+	return func(s *Service) {
+		if n > 0 {
+			s.maxSessions = n
+		}
+	}
+}
+
 // NewService membuat layanan sesi di atas pool database.
 //
 // pool wajib ada. cfg dipakai untuk menentukan atribut cookie dan kunci HMAC token CSRF;
@@ -143,6 +165,7 @@ func NewService(pool *pgxpool.Pool, cfg *config.Config, logger *slog.Logger, opt
 
 		sessionTTL:    DefaultSessionTTL,
 		touchInterval: DefaultTouchInterval,
+		maxSessions:   DefaultMaxSessionsPerUser,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -185,6 +208,13 @@ type Principal struct {
 	// terpisah karena itulah satu-satunya bagian sesi yang dibutuhkan mayoritas
 	// pemanggil (pengikat token CSRF, target pencabutan saat logout).
 	SessionID string `json:"session_id"`
+	// ViaHeader menandai bahwa request ini terautentikasi lewat token di header
+	// (Authorization Bearer / X-Session-Token) yang benar-benar tervalidasi, BUKAN
+	// lewat cookie. CSRF.Protect memakainya untuk memutuskan apakah pemeriksaan
+	// CSRF berlaku: kredensial header tidak dilampirkan browser secara otomatis,
+	// jadi tidak ada yang bisa ditumpangi serangan lintas situs. Tidak diserialkan —
+	// ini fakta tentang request, bukan tentang penggunanya.
+	ViaHeader bool `json:"-"`
 	// Permissions adalah gabungan izin seluruh peran, terurut dan tanpa duplikat.
 	// Selalu non-nil supaya terserialisasi sebagai [] alih-alih null.
 	Permissions []string `json:"permissions"`
@@ -358,6 +388,7 @@ func (s *Service) Login(ctx context.Context, email string, password security.Sec
 	// penghitung kegagalan sudah dinolkan tetapi sesinya tidak pernah ada, atau sesi
 	// hidup tanpa jejak audit siapa pun yang membuatnya.
 	var created identity.CreatedSession
+	var evicted int
 	err = repo.InTx(ctx, s.pool, func(q repo.Querier) error {
 		if err := identity.NewUsers(q).RecordLoginSuccess(ctx, u.ID, ip); err != nil {
 			return err
@@ -366,6 +397,14 @@ func (s *Service) Login(ctx context.Context, email string, password security.Sec
 		created, cErr = identity.NewSessions(q).Create(ctx, identity.NewSession{
 			UserID: u.ID, TTL: s.sessionTTL, IP: ip, UserAgent: userAgent,
 		})
+		if cErr != nil {
+			return cErr
+		}
+		// Batas sesi bersamaan ditegakkan di transaksi yang sama: sesi yang
+		// baru dibuat dihitung, lalu yang tertua dicabut sampai jumlahnya
+		// tidak melewati batas. Jumlah yang terusir dicatat di audit login
+		// supaya terlihat bila suatu perangkat "tiba-tiba keluar sendiri".
+		evicted, cErr = identity.NewSessions(q).RevokeOldestBeyond(ctx, u.ID, s.maxSessions)
 		if cErr != nil {
 			return cErr
 		}
@@ -380,6 +419,7 @@ func (s *Service) Login(ctx context.Context, email string, password security.Sec
 			Metadata: map[string]any{
 				"expires_at":           created.ExpiresAt,
 				"must_change_password": u.MustChangePassword,
+				"sesi_terlama_dicabut": evicted,
 			},
 		})
 	})
@@ -554,18 +594,56 @@ func (s *Service) Authenticate(ctx context.Context, token security.Secret) (*Pri
 	}, nil
 }
 
-// touchIfStale memperbarui last_seen_at hanya bila jejaknya sudah cukup tua.
+// authenticateRequest menukar kredensial sesi pada request menjadi principal.
+//
+// Token header dicoba lebih dulu, cookie sesudahnya sebagai CADANGAN. Urutan
+// cadangan ini adalah perbaikan audit3 V-AU-04: sebelumnya SessionToken
+// mengembalikan token header apa adanya dan tidak pernah mencapai cookie,
+// sehingga satu header sampah (X-Session-Token: asal) mengalahkan cookie yang
+// sah — request ditolak 401 dan RequireSession menghapus cookie-nya, yaitu
+// logout paksa diam-diam oleh header yang tidak sah, sementara baris sesinya
+// di database tetap hidup. Sekarang header yang tidak menghasilkan sesi hanya
+// berarti "coba cookie", dan cookie hanya dihapus bila ia sendiri yang gagal.
+//
+// Kegagalan infrastruktur (database mati) dari percobaan mana pun diteruskan
+// apa adanya dan tidak ditimpa percobaan berikutnya: membalasnya sebagai
+// "tidak ada sesi" akan menyuruh pengguna masuk ulang untuk masalah yang
+// bukan kredensialnya.
+func (s *Service) authenticateRequest(ctx context.Context, r *http.Request) (*Principal, error) {
+	header := s.cookies.SessionTokenFromHeader(r)
+	cookie := s.cookies.SessionTokenFromCookie(r)
+
+	if !header.IsZero() {
+		p, err := s.Authenticate(ctx, header)
+		if err == nil {
+			p.ViaHeader = true
+			return p, nil
+		}
+		if !errors.Is(err, ErrNoSession) {
+			return nil, err
+		}
+		if cookie.IsZero() || cookie == header {
+			return nil, err
+		}
+		// Jatuh ke cookie di bawah.
+	}
+	return s.Authenticate(ctx, cookie)
+}
+
+// touchIfStale memperbarui last_seen_at hanya bila jejaknya sudah cukup tua,
+// sekaligus menggeser kedaluwarsa sesi yang sedang aktif dipakai.
 //
 // Menyegarkannya pada setiap request akan berarti satu UPDATE per request dashboard:
 // setiap UPDATE PostgreSQL menulis versi baru barisnya, meninggalkan versi lama untuk
 // dibersihkan autovacuum, dan menambah WAL yang ikut direplikasi. Untuk data yang hanya
 // dipakai menampilkan "terakhir terlihat" di daftar perangkat, biaya itu tidak sebanding.
 //
-// Ambangnya DefaultTouchInterval (5 menit). Yang hilang hanyalah ketelitian jejak sampai
-// selang itu — cukup teliti untuk daftar perangkat, dan tidak berpengaruh sama sekali pada
-// keamanan, karena masa berlaku sesi ditentukan expires_at yang tetap, bukan oleh jejak
-// ini. Kegagalannya diabaikan dengan sengaja: last_seen_at bukan alasan menolak request
-// yang kredensialnya sudah terbukti sah.
+// Ambangnya DefaultTouchInterval (5 menit), dan penggeseran kedaluwarsa ikut
+// menumpang di tulisan yang sama: sesi aktif diperpanjang sebesar TTL yang
+// dikonfigurasi (dibatasi batas mutlak identity.MaxSessionLifetime di lapisan
+// repo), sesi diam tetap mati pada jadwalnya. Kegagalannya diabaikan dengan
+// sengaja: jejak bukan alasan menolak request yang kredensialnya sudah
+// terbukti sah.
 func (s *Service) touchIfStale(ctx context.Context, p *Principal) {
 	if p == nil || s.touchInterval <= 0 {
 		return
@@ -573,7 +651,7 @@ func (s *Service) touchIfStale(ctx context.Context, p *Principal) {
 	if time.Since(p.Session.LastSeenAt) < s.touchInterval {
 		return
 	}
-	if err := s.sessions.Touch(ctx, p.SessionID); err != nil {
+	if err := s.sessions.Touch(ctx, p.SessionID, s.sessionTTL); err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			// Sesi dicabut oleh permintaan lain di sela-selanya. Bukan kesalahan.
 			return
@@ -626,6 +704,16 @@ func (s *Service) Logout(ctx context.Context, sessionID string, actor identity.A
 // ChangePassword mengganti password pengguna setelah memverifikasi password lamanya, lalu
 // mencabut sesi-sesinya yang lain. Nilai kembalinya adalah jumlah sesi yang dicabut.
 //
+// Verifikasi password lama di sini dilindungi penguncian dan batas laju yang SAMA
+// dengan login (audit3 V-AU-02): akun yang terkunci ditolak sebelum verifikasi,
+// setiap kegagalan menaikkan penghitung kegagalan login yang sama lewat
+// RecordLoginFailure, dan pembatas laju Redis memeriksa (IP, email) yang sama.
+// Versi lama hanya menulis audit — 20 tebakan salah terbukti hanya menghasilkan
+// 20× 403 tanpa satu pun penghitung bergerak, sehingga sesi yang bocor bisa
+// menebak password lama tanpa batas lalu mengunci pemilik keluar secara permanen.
+// Satu akun satu penghitung juga berarti serangan bisa berpindah jalur (login ↔
+// ganti password) tanpa menggandakan anggarannya.
+//
 // keepSessionID adalah sesi yang dibiarkan hidup — biasanya sesi yang sedang dipakai
 // pemanggil, sehingga penggantian password tidak mengeluarkannya sendiri dari dashboard.
 // String kosong berarti seluruh sesi dicabut, yang tepat untuk reset password oleh admin
@@ -649,13 +737,14 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, current, ne
 	}
 	actor := identity.Actor{UserID: u.ID, Email: u.Email}
 
-	verify, err := security.VerifyPassword(current.Reveal(), u.PasswordHash.Reveal())
-	if err != nil {
-		return 0, fmt.Errorf("%s: %w", op, err)
-	}
-	if !verify.Match {
-		// Dicatat di audit: permintaan ganti password dengan password lama yang salah,
-		// dari sesi yang sah, adalah pola khas sesi yang dipakai orang lain.
+	// Penguncian diperiksa sebelum verifikasi, meniru urutan Login: akun yang
+	// terkunci tidak boleh terus ditebak lewat jalur ini selama masa kuncinya,
+	// dan jawaban untuknya tidak bergantung pada benar/salahnya password.
+	if u.Locked(time.Now()) && u.LockedUntil != nil {
+		retryAfter := time.Until(*u.LockedUntil)
+		if retryAfter < 0 {
+			retryAfter = 0
+		}
 		s.writeAudit(ctx, identity.Event{
 			Actor:        actor,
 			Action:       identity.ActionPasswordChangeFailed,
@@ -664,10 +753,29 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, current, ne
 			IP:           ip,
 			UserAgent:    userAgent,
 			RequestID:    observability.RequestIDFrom(ctx),
-			Metadata:     map[string]any{"reason": string(ReasonBadPassword)},
+			Metadata:     map[string]any{"reason": string(ReasonLocked)},
 		})
-		s.log(ctx).LogAttrs(ctx, slog.LevelWarn, "ganti password ditolak: password lama salah",
-			slog.String("user_id", u.ID), slog.String("session_id", keepSessionID))
+		s.log(ctx).LogAttrs(ctx, slog.LevelWarn, "ganti password ditolak: akun terkunci sementara",
+			slog.String("user_id", u.ID), slog.Time("locked_until", *u.LockedUntil))
+		return 0, &PasswordChangeThrottledError{RetryAfter: retryAfter}
+	}
+
+	// Batas laju lapisan Redis yang sama dengan login, dikunci (IP, email).
+	if allowed, retryAfter := s.limiter.Allow(ctx, ip, u.Email); !allowed {
+		s.log(ctx).LogAttrs(ctx, slog.LevelWarn, "ganti password ditolak batas laju",
+			slog.String("user_id", u.ID), slog.String("ip", ip),
+			slog.Duration("retry_after", retryAfter))
+		return 0, &PasswordChangeThrottledError{RetryAfter: retryAfter}
+	}
+
+	verify, err := security.VerifyPassword(current.Reveal(), u.PasswordHash.Reveal())
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", op, err)
+	}
+	if !verify.Match {
+		// Kegagalan dicatat ke penghitung lockout, bukan hanya ke audit:
+		// lihat recordPasswordChangeFailure.
+		s.recordPasswordChangeFailure(ctx, u, actor, keepSessionID, ip, userAgent)
 		return 0, fmt.Errorf("%s: %w", op, ErrWrongPassword)
 	}
 
@@ -694,6 +802,13 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, current, ne
 		// mustChange=false: pemilik akun sendiri yang menggantinya, jadi kewajiban ganti
 		// password (mis. dari admin bootstrap) selesai di sini.
 		if err := identity.NewUsers(q).ChangePassword(ctx, userID, next, false); err != nil {
+			return err
+		}
+
+		// Password lama terbukti benar, jadi penghitung kegagalan dinolkan di
+		// transaksi yang sama: sisa tebakan gagal sebelumnya (dari jalur login
+		// maupun jalur ini) tidak boleh mengunci pemilik yang sah.
+		if err := identity.NewUsers(q).ResetFailedAttempts(ctx, userID); err != nil {
 			return err
 		}
 
@@ -747,6 +862,56 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, current, ne
 	return revoked, nil
 }
 
+// recordPasswordChangeFailure mencatat satu kegagalan verifikasi password lama
+// pada jalur ganti password.
+//
+// Berbeda dari versi lama yang hanya menulis audit, kegagalan di sini menaikkan
+// penghitung kegagalan login yang sama (RecordLoginFailure) dalam satu
+// transaksi dengan catatan auditnya — pola yang sama dengan recordFailure pada
+// jalur login. Lima kegagalan berturut-turut mengunci akun selama durasi
+// penguncian login, dari jalur mana pun tebakannya datang.
+//
+// Kegagalan pencatatan TIDAK mengubah hasil: password lama memang salah, dan
+// itu yang dijawab ke pemanggil. Ia hanya dilaporkan ke log, meniru alasan yang
+// sama di recordFailure.
+func (s *Service) recordPasswordChangeFailure(ctx context.Context, u identity.User, actor identity.Actor, sessionID, ip, userAgent string) {
+	var failure identity.LoginFailure
+	err := repo.InTx(ctx, s.pool, func(q repo.Querier) error {
+		var rErr error
+		failure, rErr = identity.NewUsers(q).RecordLoginFailure(ctx, u.ID, s.lockThreshold, s.lockDuration)
+		if rErr != nil {
+			return rErr
+		}
+		return identity.NewAudit(q).Write(ctx, identity.Event{
+			Actor:        actor,
+			Action:       identity.ActionPasswordChangeFailed,
+			ResourceType: identity.ResourceUser,
+			ResourceID:   u.ID,
+			IP:           ip,
+			UserAgent:    userAgent,
+			RequestID:    observability.RequestIDFrom(ctx),
+			Metadata: map[string]any{
+				"reason":   string(ReasonBadPassword),
+				"attempts": failure.Attempts,
+				"locked":   failure.Locked,
+			},
+		})
+	})
+	if err != nil {
+		s.log(ctx).LogAttrs(ctx, slog.LevelError, "gagal mencatat kegagalan ganti password",
+			slog.String("user_id", u.ID), slog.String("error", err.Error()))
+		return
+	}
+
+	level := slog.LevelWarn
+	if failure.Locked {
+		level = slog.LevelError
+	}
+	s.log(ctx).LogAttrs(ctx, level, "ganti password ditolak: password lama salah",
+		slog.String("user_id", u.ID), slog.String("session_id", sessionID),
+		slog.Int("attempts", failure.Attempts), slog.Bool("locked", failure.Locked))
+}
+
 // loadAuthorization memuat nama peran dan izin efektif seorang pengguna.
 // Dalam arsitektur single-admin, seluruh pengguna terautentikasi adalah Admin dengan izin penuh.
 func (s *Service) loadAuthorization(_ context.Context, _ string) (roles, permissions []string, err error) {
@@ -763,8 +928,8 @@ func (s *Service) loadAuthorization(_ context.Context, _ string) (roles, permiss
 // menyerahkan kredensial admin penuh dalam plaintext kepada siapa pun yang memintanya.
 // Dalam arsitektur single-admin setiap pengguna terautentikasi adalah Admin dengan izin
 // penuh (*), jadi satu permintaan GET cukup untuk menguasai seluruh instance sebelum
-// password diganti. Password hanya boleh didapat dari sumber tepercaya: output instalasi,
-// berkas .env, atau perintah routex-rotate.
+// password diganti. Password hanya boleh didapat dari sumber tepercaya: output
+// instalasi atau berkas .env (INITIAL_ADMIN_PASSWORD).
 type SetupHintResponse struct {
 	HasDefaultAdmin bool   `json:"has_default_admin"`
 	DefaultEmail    string `json:"default_email,omitempty"`

@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/NexGen-X/Route-X/internal/auth"
+	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 )
 
@@ -27,13 +28,20 @@ func (h *Handlers) Routes() http.Handler {
 	// 1. Wajib memiliki sesi login aktif di cookie (RequireSession).
 	// 2. Wajib sudah menyelesaikan ganti password pertama kali (RequirePasswordChanged).
 	// 3. Wajib lolos proteksi double-submit cookie CSRF untuk seluruh mutasi (POST/PUT/DELETE).
-	if h.authSvc != nil {
+	//
+	// Rantai ini dipasang UTUH atau TIDAK SAMA SEKALI (audit3 V-AU-12): versi
+	// lama memasang tiap penjaga secara kondisional, jadi AuthSvc/CSRF yang
+	// nil — salah pasang saat konstruksi — membuat SELURUH permukaan admin
+	// (termasuk mutasi) berjalan tanpa autentikasi apa pun, tanpa satu pun
+	// sinyal. Sekarang keadaan itu gagal-tertutup: semua rute menjawab 500
+	// dan konstruktor mencatat error keras. Produksi tidak terpengaruh —
+	// main selalu memasang keduanya.
+	if h.authSvc != nil && h.csrf != nil {
 		r.Use(h.authSvc.RequireSession())
-	}
-	r.Use(auth.RequirePasswordChanged())
-
-	if h.csrf != nil {
+		r.Use(auth.RequirePasswordChanged())
 		r.Use(h.csrf.Protect())
+	} else {
+		r.Use(h.tolakSemuaAdmin)
 	}
 
 	// Pemasangan rute per domain administratif
@@ -59,9 +67,30 @@ func (h *Handlers) Routes() http.Handler {
 	// Tiga alias baca ini dipertahankan karena pola pemakaiannya
 	// (pemantauan/skrip kesehatan eksternal) tidak bisa dibuktikan nol
 	// dari dalam repo dan biaya mempertahankannya kecil.
-	r.Get("/overview", h.getSystemOverview)
-	r.Get("/diagnostics", h.getDiagnostics)
-	r.Get("/summary", h.getSummary)
+	// Izin alias disamakan PERSIS dengan rute kanonisnya (audit3 V-AU-14):
+	// sebelumnya ketiga alias ini tidak membawa RequirePermission sama
+	// sekali, jadi setiap peran non-admin di masa depan yang tidak memegang
+	// izin baca kanonis tetap bisa membaca datanya lewat alias. Hari ini
+	// dampaknya nol (single-admin: principal selalu memegang "*"), tetapi
+	// alias tidak boleh menjadi pintu yang lebih longgar dari pintunya.
+	r.With(auth.RequirePermission(seed.PermHealthRead)).Get("/overview", h.getSystemOverview)
+	r.With(auth.RequirePermission(seed.PermHealthRead)).Get("/diagnostics", h.getDiagnostics)
+	r.With(auth.RequirePermission(seed.PermUsageRead)).Get("/summary", h.getSummary)
 
 	return r
+}
+
+// tolakSemuaAdmin menolak setiap permintaan admin dengan 500.
+//
+// Dipasang oleh Routes menggantikan rantai autentikasi bila layanan auth
+// atau penjaga CSRF tidak terpasang pada Handlers: permukaan yang tidak bisa
+// membuktikan siapa pemanggilnya tidak boleh melayani apa pun (lihat
+// komentar di Routes). Kesalahannya dicatat pada level Error di konstruktor
+// dan di sini, supaya salah-pasang itu terlihat, bukan diam.
+func (h *Handlers) tolakSemuaAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.logger.ErrorContext(r.Context(), "permintaan admin ditolak: rantai autentikasi tidak terpasang pada Handlers",
+			"method", r.Method, "path", r.URL.Path)
+		httpx.InternalError(w, r)
+	})
 }

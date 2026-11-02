@@ -69,6 +69,24 @@ type Config struct {
 	EncryptionKey []byte
 	APIKeyPepper  []byte
 
+	// SessionTTL adalah masa berlaku sesi sejak sentuhan terakhir (kedaluwarsa
+	// geser), dari env SESSION_TTL. Bawaan 12 jam. Sebelumnya opsi kode
+	// auth.WithSessionTTL ada tetapi tidak pernah dipasang dari konfigurasi —
+	// nilainya terkunci di bawaan kode dan operator tidak bisa mengubahnya
+	// (audit3 V-AU-11). Batas mutlak umur sesi tetap
+	// identity.MaxSessionLifetime, apa pun nilai ini.
+	SessionTTL time.Duration
+
+	// EncryptionKeyPrevious adalah kunci enkripsi LAMA selama masa tenggang
+	// rotasi ENCRYPTION_KEY, dari env ENCRYPTION_KEY_PREVIOUS. Kosong berarti
+	// tidak ada masa tenggang. Selama terpasang, ciphertext berkunci lama
+	// tetap bisa didekripsi sementara enkripsi baru selalu memakai
+	// EncryptionKey — rotasi berhenti menjadi operasi sekali-tebas yang
+	// membuat instalasi tidak bisa boot di antara penulisan ulang ciphertext
+	// dan penggantian env (audit3 V-LN-30). Cabut env ini setelah rotasi
+	// selesai dan terverifikasi.
+	EncryptionKeyPrevious []byte
+
 	// MetricsToken adalah Bearer token untuk scraper Prometheus di /metrics.
 	// Wajib diisi saat produksi (fail-fast di validate); di non-produksi boleh
 	// kosong dan loopback tetap diizinkan untuk pengembangan lokal.
@@ -214,9 +232,11 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 		RedisURL:       r.requiredURL("REDIS_URL", "redis", "rediss", "unix"),
 		TrustedProxies: r.csv("TRUSTED_PROXIES"),
 
-		SessionSecret: r.requiredSecret("SESSION_SECRET", minSessionSecretLen),
-		EncryptionKey: r.requiredKeyBytes("ENCRYPTION_KEY", encryptionKeyLen),
-		APIKeyPepper:  r.requiredKeyBytesMin("API_KEY_PEPPER", minAPIKeyPepperLen),
+		SessionSecret:         r.requiredSecret("SESSION_SECRET", minSessionSecretLen),
+		EncryptionKey:         r.requiredKeyBytes("ENCRYPTION_KEY", encryptionKeyLen),
+		EncryptionKeyPrevious: r.optionalKeyBytes("ENCRYPTION_KEY_PREVIOUS", encryptionKeyLen),
+		APIKeyPepper:          r.requiredKeyBytesMin("API_KEY_PEPPER", minAPIKeyPepperLen),
+		SessionTTL:            r.duration("SESSION_TTL", 12*time.Hour),
 
 		// Token metrik dibaca lewat Secret agar tidak bocor ke log; validasi
 		// panjang minimum khusus produksi ada di validate.
@@ -265,6 +285,9 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 
 // validate memeriksa aturan yang melibatkan lebih dari satu variabel sekaligus.
 func (c *Config) validate(r *reader) {
+	if c.SessionTTL < 5*time.Minute || c.SessionTTL > 7*24*time.Hour {
+		r.fail("SESSION_TTL (%s) harus antara 5 menit dan 7 hari", c.SessionTTL)
+	}
 	if c.DBMinConns > c.DBMaxConns {
 		r.fail("DB_MIN_CONNS (%d) tidak boleh lebih besar dari DB_MAX_CONNS (%d)", c.DBMinConns, c.DBMaxConns)
 	}
@@ -450,6 +473,28 @@ func (r *reader) requiredKeyBytes(key string, wantLen int) []byte {
 	if len(b) != wantLen {
 		r.fail("%s harus tepat %d byte setelah didekode base64, dapat %d (hasilkan dengan: openssl rand -base64 %d)",
 			key, wantLen, len(b), wantLen)
+		return nil
+	}
+	return b
+}
+
+// optionalKeyBytes mendekode kunci base64 OPSIONAL dengan panjang byte yang
+// tepat. Tidak disetel berarti nil tanpa kesalahan (fiturnya mati); disetel
+// tetapi cacat adalah kesalahan konfigurasi — menelan kunci lama yang salah
+// ketik secara diam-diam akan membuat masa tenggang rotasi tampak berjalan
+// padahal tidak ada ciphertext lama yang bisa dibaca.
+func (r *reader) optionalKeyBytes(key string, wantLen int) []byte {
+	v, ok := r.raw(key)
+	if !ok || strings.TrimSpace(v) == "" {
+		return nil
+	}
+	b, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		r.fail("%s bukan base64 yang sah", key)
+		return nil
+	}
+	if len(b) != wantLen {
+		r.fail("%s harus tepat %d byte setelah didekode base64, dapat %d", key, wantLen, len(b))
 		return nil
 	}
 	return b

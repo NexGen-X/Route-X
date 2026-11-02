@@ -14,18 +14,42 @@ import (
 	"github.com/NexGen-X/Route-X/internal/security/rotation"
 )
 
+// muatKunciRotasi membaca pasangan kunci rotasi HANYA dari environment:
+// OLD_ENCRYPTION_KEY dan NEW_ENCRYPTION_KEY.
+//
+// Flag -old-key/-new-key yang dulu ada DIHAPUS (audit3 V-LN-31): nilai yang
+// dilewatkan sebagai argumen baris perintah terbaca oleh semua pengguna host
+// lewat daftar proses (ps) dan terekam di riwayat shell, padahal ini kunci
+// yang membuka seluruh kredensial provider. Environment tidak kebal bocor,
+// tetapi tidak disiarkan ke daftar proses.
+func muatKunciRotasi() (lama, baru string, err error) {
+	lama = os.Getenv("OLD_ENCRYPTION_KEY")
+	baru = os.Getenv("NEW_ENCRYPTION_KEY")
+	if lama == "" || baru == "" {
+		return "", "", fmt.Errorf("variabel lingkungan OLD_ENCRYPTION_KEY dan NEW_ENCRYPTION_KEY wajib disediakan (kunci tidak lagi diterima sebagai argumen perintah)")
+	}
+	return lama, baru, nil
+}
+
 func main() {
 	var (
-		oldKey = flag.String("old-key", os.Getenv("OLD_ENCRYPTION_KEY"), "Kunci enkripsi lama (32-byte base64)")
-		newKey = flag.String("new-key", os.Getenv("NEW_ENCRYPTION_KEY"), "Kunci enkripsi baru (32-byte base64)")
 		dbURL  = flag.String("db-url", os.Getenv("DATABASE_URL"), "URL koneksi basis data PostgreSQL")
 		dryRun = flag.Bool("dry-run", false, "Simulasi rotasi tanpa menulis perubahan apa pun ke basis data")
 	)
 	flag.Parse()
 
-	if *oldKey == "" || *newKey == "" {
-		fmt.Fprintln(os.Stderr, "Error: Flag --old-key dan --new-key wajib disediakan (atau lewat variabel lingkungan).")
-		flag.Usage()
+	// Perkakas ini TIDAK memiliki subcommand. Argumen posisional apa pun —
+	// termasuk perintah hantu "set-admin-password" yang pernah tertulis di
+	// pesan log seed dan mustahil bekerja — ditolak keras di sini, bukan
+	// diabaikan diam-diam sementara rotasi tetap berjalan (audit3 V-LN-28/31).
+	if flag.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "Error: routex-rotate tidak memiliki subcommand; argumen %q tidak dikenal. Perkakas ini hanya merotasi ENCRYPTION_KEY.\n", flag.Arg(0))
+		os.Exit(2)
+	}
+
+	oldKey, newKey, err := muatKunciRotasi()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -66,8 +90,8 @@ func main() {
 
 	rotator, err := rotation.NewRotator(rotation.Config{
 		DB:     pool,
-		OldKey: *oldKey,
-		NewKey: *newKey,
+		OldKey: oldKey,
+		NewKey: newKey,
 		DryRun: *dryRun,
 	})
 	if err != nil {
@@ -87,9 +111,9 @@ func main() {
 	fmt.Println("Hasil Pemrosesan Tabel:")
 	for _, t := range res.Tables {
 		if res.DryRun {
-			fmt.Printf("  • %-22s: %d baris terdeteksi memakai kunci lama (siap dirotasi)\n", t.TableName, t.Scanned)
+			fmt.Printf("  • %-22s: %d baris terdeteksi memakai kunci lama (siap dirotasi), %d baris sudah memakai kunci baru\n", t.TableName, t.Scanned, t.SudahBaru)
 		} else {
-			fmt.Printf("  • %-22s: %d baris dipindai, %d baris berhasil dirotasi ke kunci baru\n", t.TableName, t.Scanned, t.Rotated)
+			fmt.Printf("  • %-22s: %d baris dipindai, %d baris berhasil dirotasi ke kunci baru, %d baris sudah memakai kunci baru\n", t.TableName, t.Scanned, t.Rotated, t.SudahBaru)
 		}
 	}
 	fmt.Println("------------------------------------------------------------------")
@@ -99,6 +123,9 @@ func main() {
 	} else {
 		fmt.Printf("Total baris berhasil dirotasi: %d baris.\n", res.TotalRotated)
 		fmt.Println("✅ Sukses: Seluruh data terenkripsi telah diperbarui dengan kunci baru.")
+		fmt.Println("Langkah berikutnya (masa tenggang ENCRYPTION_KEY_PREVIOUS):")
+		fmt.Println("  1. Setel ENCRYPTION_KEY=<kunci baru> dan ENCRYPTION_KEY_PREVIOUS=<kunci lama>, lalu restart gateway dan verifikasi kredensial provider terbaca.")
+		fmt.Println("  2. Setelah terverifikasi, HAPUS ENCRYPTION_KEY_PREVIOUS dan restart sekali lagi — selama env itu terpasang, kunci lama masih dipercaya untuk dekripsi.")
 	}
 	fmt.Println("==================================================================")
 }

@@ -174,8 +174,8 @@ func TestCreateRoutingRuleAliasGandaRollback(t *testing.T) {
 		"virtual_alias": "sudah-diambil",
 		"pipeline":      pipelineValid,
 	}, true)
-	if res.StatusCode != http.StatusBadRequest {
-		t.Fatalf("status = %d, mau 400 untuk alias ganda, body: %s", res.StatusCode, string(body))
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, mau 409 untuk alias ganda, body: %s", res.StatusCode, string(body))
 	}
 	if !strings.Contains(string(body), "sudah-diambil") {
 		t.Errorf("pesan tidak menyebut alias yang bentrok: %s", string(body))
@@ -337,8 +337,8 @@ func TestUpdateRoutingRuleAliasGandaDitolak(t *testing.T) {
 	res, body := client.do(http.MethodPut,
 		"/api/admin/gateway/routing-rules/"+got.ID,
 		map[string]any{"virtual_alias": "milik-saya"}, true)
-	if res.StatusCode != http.StatusBadRequest {
-		t.Fatalf("status = %d, mau 400 untuk alias ganda, body: %s", res.StatusCode, string(body))
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, mau 409 untuk alias ganda, body: %s", res.StatusCode, string(body))
 	}
 	if !strings.Contains(string(body), "milik-saya") || !strings.Contains(string(body), "Combo Pemilik Alias") {
 		t.Errorf("pesan tidak menjelaskan pemilik alias: %s", string(body))

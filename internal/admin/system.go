@@ -191,7 +191,7 @@ func (h *Handlers) runJob(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
 	if h.supervisor == nil {
-		httpx.BadRequest(w, r, "supervisor_unavailable", "supervisor worker latar belakang tidak aktif")
+		tidakTersedia(w, r, "supervisor_unavailable", "supervisor worker latar belakang tidak aktif")
 		return
 	}
 
@@ -350,7 +350,7 @@ func (h *Handlers) flushCache(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 	if h.responseCache == nil {
-		httpx.BadRequest(w, r, "cache_unavailable", "Response cache engine tidak aktif")
+		tidakTersedia(w, r, "cache_unavailable", "Response cache engine tidak aktif")
 		return
 	}
 	var req CacheSettingsRequest

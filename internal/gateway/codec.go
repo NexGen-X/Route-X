@@ -198,7 +198,7 @@ func DecodeEmbeddingsRequest(body []byte) (*providers.EmbeddingsRequest, error) 
 	if !ok {
 		return nil, fmt.Errorf("field %s wajib diisi", kutip(fInput))
 	}
-	if out.Input, err = uraikanMasukanEmbedding(raw); err != nil {
+	if out.Input, out.TokenInput, err = uraikanMasukanEmbedding(raw); err != nil {
 		return nil, err
 	}
 
@@ -310,35 +310,79 @@ func uraikanTools(raw json.RawMessage) ([]providers.Tool, error) {
 	return tools, nil
 }
 
-// uraikanMasukanEmbedding menerima satu string atau array string.
+// uraikanMasukanEmbedding menerima seluruh bentuk masukan yang dikenal dialek
+// OpenAI: satu string, array string, atau array token yang sudah dikodekan
+// (satu array bilangan, atau array dari array bilangan untuk batch).
 //
-// Bentuk ketiga yang dikenal dialek OpenAI — array token yang sudah dikodekan — DITOLAK,
-// bukan diteruskan. Bentuk kanonik memuat teks, dan sebagian provider tujuan (Gemini)
-// hanya menerima teks; token hanya bermakna terhadap tokenizer model yang menghasilkannya,
-// sehingga meneruskannya ke provider lain menghasilkan vektor untuk teks yang berbeda —
-// kegagalan yang tidak memunculkan error apa pun, hanya hasil yang salah.
-func uraikanMasukanEmbedding(raw json.RawMessage) ([]string, error) {
+// Bentuk token dikembalikan TERPISAH dari teks, tidak diterjemahkan: token
+// hanya bermakna terhadap tokenizer model yang menghasilkannya, dan gateway
+// tidak punya kosakata tokenizer itu. Yang bisa dilakukan dengan jujur adalah
+// meneruskannya apa adanya ke provider berdialek OpenAI — yang memakai
+// tokenizer yang sama dengan yang diasumsikan klien — dan menolaknya di
+// adapter dialek lain (Gemini hanya menerima teks), alih-alih berpura-pura
+// mengerti isinya. Penolakan total di lapisan ini, perilaku sebelum audit3
+// V-GW-40, melanggar kontrak OpenAI untuk bentuk yang sah.
+func uraikanMasukanEmbedding(raw json.RawMessage) (teks []string, token [][]int, err error) {
 	var satu string
 	if json.Unmarshal(raw, &satu) == nil {
 		if satu == "" {
-			return nil, fmt.Errorf("field %s wajib diisi", kutip(fInput))
+			return nil, nil, fmt.Errorf("field %s wajib diisi", kutip(fInput))
 		}
-		return []string{satu}, nil
+		return []string{satu}, nil, nil
 	}
 
 	var banyak []string
-	if err := json.Unmarshal(raw, &banyak); err != nil {
-		return nil, fmt.Errorf("field %s harus berupa string atau array string; array token belum didukung", kutip(fInput))
+	if err := json.Unmarshal(raw, &banyak); err == nil {
+		if len(banyak) == 0 {
+			return nil, nil, fmt.Errorf("field %s wajib diisi", kutip(fInput))
+		}
+		for i, s := range banyak {
+			if s == "" {
+				return nil, nil, fmt.Errorf("field %s wajib diisi", kutip(fmt.Sprintf("%s[%d]", fInput, i)))
+			}
+		}
+		return banyak, nil, nil
 	}
-	if len(banyak) == 0 {
-		return nil, fmt.Errorf("field %s wajib diisi", kutip(fInput))
+
+	// Satu urutan token = satu masukan.
+	var satuToken []int
+	if err := json.Unmarshal(raw, &satuToken); err == nil {
+		if err := periksaTokenEmbedding(satuToken, fInput); err != nil {
+			return nil, nil, err
+		}
+		return nil, [][]int{satuToken}, nil
 	}
-	for i, s := range banyak {
-		if s == "" {
-			return nil, fmt.Errorf("field %s wajib diisi", kutip(fmt.Sprintf("%s[%d]", fInput, i)))
+
+	// Batch: array dari urutan token.
+	var banyakToken [][]int
+	if err := json.Unmarshal(raw, &banyakToken); err == nil {
+		if len(banyakToken) == 0 {
+			return nil, nil, fmt.Errorf("field %s wajib diisi", kutip(fInput))
+		}
+		for i, urutan := range banyakToken {
+			if err := periksaTokenEmbedding(urutan, fmt.Sprintf("%s[%d]", fInput, i)); err != nil {
+				return nil, nil, err
+			}
+		}
+		return nil, banyakToken, nil
+	}
+
+	return nil, nil, fmt.Errorf("field %s harus berupa string, array string, atau array token", kutip(fInput))
+}
+
+// periksaTokenEmbedding menolak urutan token kosong dan id negatif: keduanya
+// tidak bermakna bagi tokenizer mana pun, dan meneruskannya hanya memindahkan
+// pesan error ke upstream yang lebih sulit dibaca.
+func periksaTokenEmbedding(urutan []int, jalur string) error {
+	if len(urutan) == 0 {
+		return fmt.Errorf("field %s wajib diisi", kutip(jalur))
+	}
+	for _, id := range urutan {
+		if id < 0 {
+			return fmt.Errorf("field %s memuat id token negatif", kutip(jalur))
 		}
 	}
-	return banyak, nil
+	return nil
 }
 
 // --- Pesan -------------------------------------------------------------------

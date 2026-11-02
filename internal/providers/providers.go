@@ -320,8 +320,15 @@ type Stream interface {
 
 // EmbeddingsRequest adalah permintaan embedding.
 type EmbeddingsRequest struct {
-	Model      string
-	Input      []string
+	Model string
+	Input []string
+	// TokenInput adalah masukan berbentuk token yang sudah dikodekan klien
+	// (bentuk ketiga kontrak OpenAI). Bila terisi, Input kosong dan salah satu
+	// dari keduanya selalu terisi. Token TIDAK diterjemahkan gateway menjadi
+	// teks — ia hanya bermakna bagi tokenizer model tujuan — jadi adapter
+	// berdialek OpenAI meneruskannya apa adanya dan adapter dialek lain
+	// menolaknya dengan jelas (audit3 V-GW-40).
+	TokenInput [][]int
 	Dimensions *int
 	User       string
 	// EncodingFormat: "float" atau "base64". Kosong berarti float.

@@ -375,7 +375,10 @@ func GuardedDialContext(policy SSRFPolicy, base *net.Dialer) DialContextFunc {
 func ValidateProxyURL(raw string, policy SSRFPolicy) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidBaseURL, err)
+		// Detail parse TIDAK disertakan: *url.Error memuat URL mentah apa
+		// adanya, dan URL proxy lazim membawa kredensial — error ini mengalir
+		// ke respons API pembuatan pool (audit3 V-EO-23).
+		return fmt.Errorf("%w: format URL tidak sah", ErrInvalidBaseURL)
 	}
 	switch u.Scheme {
 	case "https", "http", "socks5", "socks5h":

@@ -72,7 +72,10 @@ func (h *Handlers) provisionCloudflareAIGateway(w http.ResponseWriter, r *http.R
 		EnableCache: req.EnableCache,
 	})
 	if err != nil {
-		httpx.BadRequest(w, r, "cloudflare_provision_failed", fmt.Sprintf("Gagal mendaftarkan AI Gateway di Cloudflare: %v", err))
+		// Kegagalan API pihak ketiga: 502 + pesan umum, teks asli ke log
+		// (audit3 V-EM-03).
+		h.gagalHulu(w, r, "provisioning cloudflare gagal", "cloudflare_provision_failed",
+			"Gagal mendaftarkan AI Gateway di Cloudflare; periksa kredensial dan koneksi lalu coba lagi", err)
 		return
 	}
 
@@ -147,7 +150,8 @@ func (h *Handlers) provisionDenoRelay(w http.ResponseWriter, r *http.Request) {
 		ProjectName: projectName,
 	})
 	if err != nil {
-		httpx.BadRequest(w, r, "deno_provision_failed", fmt.Sprintf("Gagal mendeploy script relay ke Deno: %v", err))
+		h.gagalHulu(w, r, "provisioning deno gagal", "deno_provision_failed",
+			"Gagal mendeploy script relay ke Deno; periksa kredensial dan koneksi lalu coba lagi", err)
 		return
 	}
 

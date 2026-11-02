@@ -220,7 +220,7 @@ func (h *Handlers) testWebhookPing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.dispatcher == nil {
-		httpx.BadRequest(w, r, "dispatcher_unavailable", "dispatcher webhook tidak aktif")
+		tidakTersedia(w, r, "dispatcher_unavailable", "dispatcher webhook tidak aktif")
 		return
 	}
 

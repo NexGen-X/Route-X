@@ -6,6 +6,13 @@ info:
     enkripsi kredensial AES-256-GCM, perutean adaptif ber-failover otomatis, pemutus arus terdistribusi,
     pengawasan anggaran berpresisi finansial skala 8 desimal (upstream.USD), jejak audit menyeluruh,
     dan dashboard operasional tersemat.
+
+    Catatan cakupan: permukaan /v1 dan /api/auth terdokumentasi penuh. Permukaan
+    /api/admin memiliki 135 operasi terdaftar; yang terdokumentasi di sini adalah
+    operasi inti yang paling sering dipakai alat eksternal — sisanya (users,
+    sessions, webhooks, settings, backup, egress, rate-limits, dan seluruh
+    PUT/DELETE/toggle) mengikuti pola envelope dan autentikasi yang sama tetapi
+    belum diuraikan satu per satu dalam dokumen ini.
   version: 1.5.1
   contact:
     name: Route-X Engineering Team
@@ -33,6 +40,7 @@ paths:
       operationId: createChatCompletion
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -54,12 +62,20 @@ paths:
           $ref: '#/components/responses/400BadRequest'
         '401':
           $ref: '#/components/responses/401Unauthorized'
+        '402':
+          $ref: '#/components/responses/402BudgetExceeded'
         '403':
           $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
         '429':
           $ref: '#/components/responses/429RateLimited'
         '502':
           $ref: '#/components/responses/502BadGateway'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/504GatewayTimeout'
 
   /v1/messages:
     post:
@@ -69,6 +85,10 @@ paths:
       description: |
         Protokol asli Anthropic Claude Messages API (Claude Code, Cursor, Cline, LibreChat).
         Mendukung SSE streaming, multimodal images, tool/function calling.
+        Prefiks ganda /v1/v1/messages juga dilayani sebagai alias toleransi untuk
+        klien yang menyusun base URL berlapis; bentuk kanoniknya adalah /v1/messages.
+        Pendamping POST /v1/messages/count_tokens menerima body yang sama dan
+        mengembalikan taksiran jumlah token masukan.
       operationId: createAnthropicMessage
       security:
         - BearerAuth: []
@@ -101,32 +121,49 @@ paths:
     post:
       tags:
         - Inferencing
-      summary: Eksekusi Responses API
-      description: Endpoint kompatibel OpenAI Responses API untuk format keluaran terstruktur.
+      summary: Eksekusi Chat Completions (alias nama /responses)
+      description: |
+        Nama baru OpenAI untuk permukaan percakapan yang sama, dilayani handler
+        Chat Completions. PERHATIAN: bentuk asli OpenAI Responses API
+        (`{model, input}` dan respons ber-`object: response`) BELUM didukung —
+        body wajib mengikuti skema Chat Completions (`messages`) dan responsnya
+        berbentuk `chat.completion`. Klien yang mengirim bentuk Responses API
+        asli menerima 400 karena `messages` kosong.
       operationId: createResponse
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [model, input]
-              properties:
-                model:
-                  type: string
-                  example: gpt-4o
-                input:
-                  type: string
-                  example: Analisis tren pasar kecerdasan buatan kuartal ini.
+              $ref: '#/components/schemas/ChatCompletionRequest'
       responses:
         '200':
-          description: Jawaban terstruktur berhasil dihasilkan
+          description: Berhasil memproses permintaan (bentuk chat.completion)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
         '400':
           $ref: '#/components/responses/400BadRequest'
         '401':
           $ref: '#/components/responses/401Unauthorized'
+        '402':
+          $ref: '#/components/responses/402BudgetExceeded'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+        '429':
+          $ref: '#/components/responses/429RateLimited'
+        '502':
+          $ref: '#/components/responses/502BadGateway'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/504GatewayTimeout'
 
   /v1/embeddings:
     post:
@@ -137,6 +174,7 @@ paths:
       operationId: createEmbedding
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -154,16 +192,50 @@ paths:
           $ref: '#/components/responses/400BadRequest'
         '401':
           $ref: '#/components/responses/401Unauthorized'
+        '402':
+          $ref: '#/components/responses/402BudgetExceeded'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+        '429':
+          $ref: '#/components/responses/429RateLimited'
+        '502':
+          $ref: '#/components/responses/502BadGateway'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/504GatewayTimeout'
 
   /v1/models:
     get:
       tags:
         - Inferencing
       summary: Daftar Model Tersedia
-      description: Mengembalikan katalog model kanonik dan alias yang aktif di Route-X Gateway.
+      description: |
+        Mengembalikan katalog model kanonik dan alias yang aktif di Route-X Gateway.
+        Hanya model yang benar-benar bisa dilayani key pemanggil yang tampil: model
+        tanpa pemetaan provider, model yang dimatikan, dan model yang seluruh
+        providernya terlarang bagi key tidak didaftarkan. Alias tampil sebagai entri
+        sendiri. Endpoint ini bacaan katalog dan TIDAK memakan kuota laju inferensi.
       operationId: listModels
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Jumlah maksimum entri pada halaman ini. Tanpa parameter ini seluruh katalog dikembalikan.
+          schema:
+            type: integer
+            minimum: 1
+        - name: after_id
+          in: query
+          required: false
+          description: Kursor paginasi — id entri terakhir dari halaman sebelumnya; halaman berikutnya mulai tepat sesudahnya.
+          schema:
+            type: string
       responses:
         '200':
           description: Daftar model berhasil dimuat
@@ -171,6 +243,42 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ModelListResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+
+  /v1/models/{model}:
+    get:
+      tags:
+        - Inferencing
+      summary: Detail Satu Model
+      description: |
+        Mengembalikan satu entri model menurut nama kanonik atau aliasnya. Model
+        yang tidak tampil di daftar (dimatikan, tanpa pemetaan, atau terlarang
+        bagi key pemanggil) dijawab 404 yang sama seperti model yang tidak ada.
+      operationId: getModel
+      security:
+        - BearerAuth: []
+        - ApiKeyAuth: []
+      parameters:
+        - name: model
+          in: path
+          required: true
+          description: Nama kanonik atau alias model
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Detail model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelObject'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '404':
+          $ref: '#/components/responses/404NotFound'
 
   # ============================================================================
   # 2. Health & Observability Endpoints
@@ -204,6 +312,17 @@ paths:
                     type: integer
                     example: 3600
 
+    head:
+      tags:
+        - Health & Telemetry
+      summary: Liveness Probe (HEAD)
+      description: Bentuk HEAD dari liveness probe, untuk load balancer yang hanya memeriksa status.
+      operationId: livenessProbeHead
+      security: []
+      responses:
+        '200':
+          description: Gateway dalam keadaan aktif
+
   /readyz:
     get:
       tags:
@@ -217,16 +336,33 @@ paths:
           description: Seluruh dependensi sehat dan siap melayani permintaan
         '503':
           description: Salah satu dependensi gagal atau terputus
+    head:
+      tags:
+        - Health & Telemetry
+      summary: Readiness Probe (HEAD)
+      description: Bentuk HEAD dari readiness probe.
+      operationId: readinessProbeHead
+      security: []
+      responses:
+        '200':
+          description: Seluruh dependensi sehat dan siap melayani permintaan
+        '503':
+          description: Salah satu dependensi gagal atau terputus
 
   /metrics:
     get:
       tags:
         - Health & Telemetry
       summary: Prometheus Telemetry Metrics
-      description: Menyajikan eksposur metrik internal format teks Prometheus untuk scraping Prometheus/Grafana.
+      description: |
+        Menyajikan eksposur metrik internal format teks Prometheus untuk scraping Prometheus/Grafana.
+        Akses diberikan lewat salah satu dari: sesi admin, header
+        `Authorization: Bearer <METRICS_TOKEN>`, atau koneksi loopback bila
+        METRICS_ALLOW_LOOPBACK dinyalakan operator (bawaan mati di produksi).
       operationId: getPrometheusMetrics
       security:
         - SessionCookie: []
+        - MetricsBearer: []
       responses:
         '200':
           description: Data metrik Prometheus
@@ -262,9 +398,6 @@ paths:
                   type: string
                   format: password
                   example: Passw0rdRahasia!
-                keep_signed_in:
-                  type: boolean
-                  default: false
       responses:
         '200':
           description: Login berhasil, cookie routex_session dan routex_csrf terpasang
@@ -292,7 +425,7 @@ paths:
       tags:
         - Authentication
       summary: Informasi Pengguna & Hak Akses Sesi
-      description: Mengambil data pengguna login saat ini, peran RBAC, dan katalog izin efektif.
+      description: Mengambil data pengguna login saat ini beserta token CSRF sesi. Route-X memakai model admin tunggal — setiap pengguna terautentikasi adalah admin penuh; tidak ada peran RBAC.
       operationId: getPrincipalMe
       security:
         - SessionCookie: []
@@ -326,6 +459,44 @@ paths:
       responses:
         '200':
           description: Kata sandi berhasil diperbarui
+
+  /api/auth/setup-hint:
+    get:
+      tags:
+        - Authentication
+      summary: Petunjuk Status Onboarding Awal
+      description: |
+        Endpoint publik yang menyatakan apakah instalasi masih pada keadaan
+        awal (admin bawaan belum mengganti kata sandinya). Nonaktif secara
+        informasi begitu onboarding selesai.
+      operationId: getSetupHint
+      security: []
+      responses:
+        '200':
+          description: Status onboarding berhasil dimuat
+
+  /api/internal/tls-check:
+    get:
+      tags:
+        - Health & Telemetry
+      summary: Pemeriksaan Domain & TLS untuk Caddy
+      description: |
+        Dipakai reverse proxy (Caddy on-demand TLS) untuk memutuskan apakah
+        sebuah nama host boleh diterbitkan sertifikatnya. Menjawab 200 untuk
+        domain yang terdaftar pada instalasi ini dan 400 untuk yang tidak.
+      operationId: caddyTLSCheck
+      security: []
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Domain terdaftar; sertifikat boleh diterbitkan
+        '400':
+          description: Domain tidak terdaftar pada instalasi ini
 
   # ============================================================================
   # 4. Administrative REST API (/api/admin/*)
@@ -394,14 +565,62 @@ paths:
       tags:
         - Admin Upstreams
       summary: Buat Upstream Provider Baru
-      description: Mendaftarkan provider AI hulu baru dengan validasi SSRF ketat pada base URL.
+      description: |
+        Mendaftarkan provider AI hulu baru. Saat pendaftaran, base_url hanya
+        diperiksa skemanya (wajib diawali http:// atau https://, ditegakkan
+        constraint database); penegakan SSRF penuh atas alamat tujuan —
+        resolusi DNS, alamat privat, kredensial di dalam URL, dan pengalihan —
+        ditegakkan kemudian, saat koneksi keluar dibuat oleh dialer
+        berpenjaga, bukan saat pendaftaran.
       operationId: createProvider
       security:
         - SessionCookie: []
           CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kind, base_url]
+              properties:
+                name:
+                  type: string
+                  description: Pengenal unik provider (huruf kecil, angka, tanda hubung)
+                display_name:
+                  type: string
+                kind:
+                  type: string
+                  enum: [openai, anthropic, google, openai_compatible, custom]
+                base_url:
+                  type: string
+                  format: uri
+                enabled:
+                  type: boolean
+                priority:
+                  type: integer
+                weight:
+                  type: integer
+                timeout_ms:
+                  type: integer
+                max_retries:
+                  type: integer
+                rate_limit_rpm:
+                  type: integer
+                rate_limit_tpm:
+                  type: integer
+                max_concurrent:
+                  type: integer
+                egress_pool_id:
+                  type: string
+                  format: uuid
       responses:
         '201':
           description: Provider berhasil dibuat
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '409':
+          $ref: '#/components/responses/409Conflict'
 
   /api/admin/upstreams/providers/{id}/probe:
     post:
@@ -467,9 +686,64 @@ paths:
       security:
         - SessionCookie: []
           CSRFToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                label:
+                  type: string
+                live:
+                  type: boolean
+                  description: true untuk kunci produksi (sk_live_...), false untuk kunci uji (sk_test_...)
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                rate_limit_rpm:
+                  type: integer
+                rate_limit_tpm:
+                  type: integer
+                daily_request_limit:
+                  type: integer
+                  format: int64
+                monthly_request_limit:
+                  type: integer
+                  format: int64
+                daily_token_limit:
+                  type: integer
+                  format: int64
+                monthly_token_limit:
+                  type: integer
+                  format: int64
+                ip_allowlist:
+                  type: array
+                  items:
+                    type: string
+                expires_at:
+                  type: string
+                  format: date-time
+                allowed_models:
+                  type: array
+                  items:
+                    type: string
+                  description: Pembatasan model yang boleh dipakai kunci ini
+                allowed_providers:
+                  type: array
+                  items:
+                    type: string
+                  description: Pembatasan provider yang boleh dipakai kunci ini
       responses:
         '201':
           description: Kunci API berhasil dibuat
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '409':
+          $ref: '#/components/responses/409Conflict'
 
   /api/admin/system/diagnostics:
     get:
@@ -499,6 +773,10 @@ components:
       in: header
       name: x-api-key
       description: Kunci API klien Route-X format `sk_live_<random>` via header `x-api-key` (standar Anthropic SDK).
+    MetricsBearer:
+      type: http
+      scheme: bearer
+      description: Token scraper metrik (env METRICS_TOKEN) untuk /metrics tanpa sesi admin.
     SessionCookie:
       type: apiKey
       in: cookie
@@ -637,10 +915,14 @@ components:
             $ref: '#/components/schemas/ChatMessage'
         temperature:
           type: number
-          default: 1.0
           minimum: 0.0
           maximum: 2.0
           example: 0.7
+          description: Bila tidak diisi, gateway TIDAK menetapkan nilai bawaan — parameter dibiarkan ke bawaan model di upstream.
+        top_p:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
         max_tokens:
           type: integer
           description: Batas maksimal token keluaran yang dihasilkan
@@ -649,6 +931,33 @@ components:
           type: boolean
           default: false
           description: Aktifkan streaming potongan teks via Server-Sent Events (SSE)
+        stop:
+          description: Urutan penghenti — satu string atau array string
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        tools:
+          type: array
+          description: Definisi perkakas (function calling) yang diteruskan ke upstream
+          items:
+            type: object
+        tool_choice:
+          description: Pilihan pemakaian perkakas (string seperti "auto"/"none" atau objek penunjuk fungsi)
+          oneOf:
+            - type: string
+            - type: object
+        response_format:
+          type: object
+          description: 'Format respons yang diminta (mis. {type: json_object})'
+        seed:
+          type: integer
+        reasoning_effort:
+          type: string
+        user:
+          type: string
+          description: Pengenal pengguna akhir pemanggil, diteruskan ke upstream
 
     ChatMessage:
       type: object
@@ -661,8 +970,13 @@ components:
           enum: [system, user, assistant, tool]
           example: user
         content:
-          type: string
-          example: Jelaskan arsitektur routing pada Route-X AI Gateway.
+          description: Isi pesan — teks polos atau array bagian konten multimodal (teks, gambar, dan sebagainya)
+          oneOf:
+            - type: string
+              example: Jelaskan arsitektur routing pada Route-X AI Gateway.
+            - type: array
+              items:
+                type: object
         name:
           type: string
           example: Ahmad
@@ -715,12 +1029,26 @@ components:
           type: string
           example: text-embedding-3-small
         input:
+          description: |
+            Teks yang akan di-embedding: satu string, array string, atau array
+            token yang sudah dikodekan (satu array bilangan, atau array dari
+            array bilangan untuk batch). Bentuk token diteruskan apa adanya ke
+            provider berdialek OpenAI dan ditolak oleh provider dialek lain
+            (mis. Google) yang hanya menerima teks.
           oneOf:
             - type: string
               example: Dokumen kebijakan privasi dan keamanan sistem.
             - type: array
               items:
                 type: string
+            - type: array
+              items:
+                type: integer
+            - type: array
+              items:
+                type: array
+                items:
+                  type: integer
 
     EmbeddingResponse:
       type: object
@@ -761,6 +1089,22 @@ components:
               type: integer
               example: 8
 
+    ModelObject:
+      type: object
+      properties:
+        id:
+          type: string
+          example: gpt-4o
+        object:
+          type: string
+          example: model
+        created:
+          type: integer
+          example: 1700000000
+        owned_by:
+          type: string
+          example: openai
+
     ModelListResponse:
       type: object
       required:
@@ -773,20 +1117,18 @@ components:
         data:
           type: array
           items:
-            type: object
-            properties:
-              id:
-                type: string
-                example: gpt-4o
-              object:
-                type: string
-                example: model
-              created:
-                type: integer
-                example: 1700000000
-              owned_by:
-                type: string
-                example: openai
+            $ref: '#/components/schemas/ModelObject'
+        first_id:
+          type: string
+          nullable: true
+          description: Id entri pertama pada halaman ini (null bila kosong)
+        last_id:
+          type: string
+          nullable: true
+          description: Id entri terakhir pada halaman ini (null bila kosong)
+        has_more:
+          type: boolean
+          description: Masih ada entri sesudah halaman ini
 
     UsageInfo:
       type: object
@@ -804,10 +1146,6 @@ components:
         total_tokens:
           type: integer
           example: 575
-        cost_usd:
-          type: string
-          description: Biaya moneter skala 8 desimal USD
-          example: "0.00342500"
 
     ErrorEnvelope:
       type: object
@@ -857,19 +1195,43 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     404NotFound:
-      description: Entitas atau endpoint tidak ditemukan
+      description: Entitas atau endpoint tidak ditemukan — pada /v1 termasuk model yang tidak dikenal (code model_not_found) atau dimatikan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    402BudgetExceeded:
+      description: Anggaran biaya terlampaui (code budget_exceeded) — penolakan anggaran memakai 402, BUKAN 429
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    409Conflict:
+      description: Konflik keunikan — sumber daya dengan nama/pengenal yang sama sudah ada (code conflict)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     429RateLimited:
-      description: Batas kuota laju permintaan atau anggaran terlampaui
+      description: Batas kuota laju permintaan (RPM/TPM) terlampaui — anggaran biaya memakai 402, bukan status ini
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     502BadGateway:
       description: Seluruh upstream provider gagal atau sirkuit terbuka
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    503ServiceUnavailable:
+      description: Tidak ada provider yang bisa melayani model saat ini (code no_provider_for_model / upstream_overloaded) atau dependensi internal tidak tersedia
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    504GatewayTimeout:
+      description: Upstream tidak menjawab dalam batas waktu (code upstream_timeout)
       content:
         application/json:
           schema:

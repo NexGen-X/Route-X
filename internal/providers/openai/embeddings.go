@@ -27,13 +27,25 @@ type embeddingsResponse struct {
 
 // Embeddings menghitung embedding untuk satu atau beberapa masukan.
 func (p *Provider) Embeddings(ctx context.Context, req *providers.EmbeddingsRequest) (*providers.EmbeddingsResponse, error) {
-	if req == nil || len(req.Input) == 0 {
+	if req == nil || (len(req.Input) == 0 && len(req.TokenInput) == 0) {
 		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "permintaan embedding tanpa input")
 	}
 
 	body := map[string]any{
 		"model": req.Model,
-		"input": req.Input,
+	}
+	if len(req.TokenInput) > 0 {
+		// Masukan token diteruskan apa adanya: dialek ini memakai tokenizer
+		// yang sama dengan yang diasumsikan klien saat mengkodekannya. Satu
+		// masukan dikirim sebagai satu array, batch sebagai array dari array —
+		// persis bentuk yang diterima gateway (audit3 V-GW-40).
+		if len(req.TokenInput) == 1 {
+			body["input"] = req.TokenInput[0]
+		} else {
+			body["input"] = req.TokenInput
+		}
+	} else {
+		body["input"] = req.Input
 	}
 	if req.Dimensions != nil {
 		body["dimensions"] = *req.Dimensions

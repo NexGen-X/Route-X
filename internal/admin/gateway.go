@@ -275,7 +275,7 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.pastikanAliasBebas(ctx, alias, ""); err != nil {
-		httpx.BadRequest(w, r, "alias_conflict", err.Error())
+		httpx.WriteError(w, r, http.StatusConflict, httpx.ErrTypeInvalidRequest, "alias_conflict", err.Error())
 		return
 	}
 
@@ -390,7 +390,7 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.pastikanAliasBebas(ctx, aliasAkhir, id); err != nil {
-		httpx.BadRequest(w, r, "alias_conflict", err.Error())
+		httpx.WriteError(w, r, http.StatusConflict, httpx.ErrTypeInvalidRequest, "alias_conflict", err.Error())
 		return
 	}
 
@@ -1383,7 +1383,7 @@ func (h *Handlers) resetCircuitBreaker(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// Tidak ada backend breaker sama sekali: jangan pura-pura mereset.
-		httpx.BadRequest(w, r, "breaker_unavailable", "Circuit breaker tidak tersedia pada instalasi ini")
+		tidakTersedia(w, r, "breaker_unavailable", "Circuit breaker tidak tersedia pada instalasi ini")
 		return
 	}
 

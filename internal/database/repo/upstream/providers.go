@@ -380,7 +380,8 @@ func (r *ProviderRepo) List(ctx context.Context, f ProviderFilter, page repo.Pag
 	}
 	if f.Search != "" {
 		// Satu argumen dipakai dua kali, jadi kondisinya dirakit langsung.
-		args = append(args, f.Search)
+		// Teks pengguna diloloskan dari wildcard LIKE (audit3 V-DT-23).
+		args = append(args, repo.EscapeLikePattern(f.Search))
 		n := len(args)
 		conds = append(conds, fmt.Sprintf(
 			"(name ilike '%%' || $%d || '%%' or display_name ilike '%%' || $%d || '%%')", n, n))

@@ -572,7 +572,7 @@ func buildGatewaySurface(
 	// 3. Retention cleaner: membuang partisi lampau dan menghapus batch payload serta delivery
 	retentionJob := worker.NewRetentionWorker(
 		db.Pool, webhookRepo, trafficRepo,
-		cfg.RequestLogRetentionDays, cfg.RequestBodyRetentionDays, logger,
+		cfg.RequestLogRetentionDays, cfg.RequestBodyRetentionDays, cfg.AuditLogRetentionDays, logger,
 	)
 	workerSup.Register(retentionJob, 1*time.Hour, 30*time.Second)
 

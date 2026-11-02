@@ -36,6 +36,15 @@ const migrationsDir = "migrations"
 // bertabrakan dengan pemakaian advisory lock lain di database yang sama.
 const advisoryLockKey int64 = 0x524F55544558
 
+// MigrationAdvisoryLockKey mengekspos kunci advisory lock migrasi ke paket lain
+// yang pekerjaannya bisa bertabrakan dengan DDL migrasi — khususnya pembuat
+// partisi bulanan di worker. Kunci worker sendiri tetap di namespace terpisah
+// (lihat internal/worker); yang dibagikan di sini hanya NILAI kunci migrasi,
+// supaya pemegangnya bisa menahan diri selama migrasi berjalan (audit3 V-DT-19:
+// pembuatan partisi dan migrasi yang balapan pada boot awal multi-instance
+// bisa saling menggagalkan).
+const MigrationAdvisoryLockKey int64 = advisoryLockKey
+
 // lockWaitTimeout membatasi lama menunggu instance lain menyelesaikan migrasinya.
 //
 // Kalau terlampaui kita menyerah dan gagal start: orchestrator akan menjalankan
@@ -206,6 +215,9 @@ func Migrate(ctx context.Context, db *DB, logger *slog.Logger) (applied int, err
 	if err != nil {
 		return 0, err
 	}
+	if err := checkMigrationContinuity(migrations); err != nil {
+		return 0, err
+	}
 
 	// Advisory lock bersifat per-session, jadi seluruh rangkaian dikerjakan di satu
 	// koneksi yang dipegang sampai selesai — termasuk pelepasan kuncinya.
@@ -282,11 +294,82 @@ func Migrate(ctx context.Context, db *DB, logger *slog.Logger) (applied int, err
 		)
 	}
 
+	if err := verifyCoreSchema(ctx, conn); err != nil {
+		return applied, err
+	}
+
 	logger.Info("migrasi selesai",
 		slog.Int("applied", applied),
 		slog.Int("total", len(migrations)),
 	)
 	return applied, nil
+}
+
+// checkMigrationContinuity menolak kumpulan migrasi yang nomor versinya
+// melompat (audit3 V-DT-15).
+//
+// parseMigrations hanya memeriksa nama, duplikasi, dan isi — bukan kelengkapan
+// rangkaian. File yang hilang dari biner (terhapus saat refactor, gagal
+// tertanam) lolos dari semua pemeriksaan itu dan baru meledak jauh kemudian
+// sebagai error SQL runtime yang penyebabnya tidak terlihat. Di sini rangkaian
+// wajib rapat: setiap versi tepat satu di atas versi sebelumnya. Pemeriksaan
+// sengaja TIDAK ditaruh di parseMigrations — fungsi itu juga dipakai untuk
+// mengurai kumpulan parsial pada test pengurutan.
+func checkMigrationContinuity(migrations []migration) error {
+	for i := 1; i < len(migrations); i++ {
+		prev, cur := migrations[i-1], migrations[i]
+		if cur.version != prev.version+1 {
+			return fmt.Errorf("%w: nomor migrasi tidak berkesinambungan: sesudah %d (%s) lompat ke %d (%s) — ada file migrasi yang hilang dari biner",
+				ErrInvalidMigration, prev.version, prev.filename, cur.version, cur.filename)
+		}
+	}
+	return nil
+}
+
+// coreSchemaObjects adalah objek skema minimum yang diasumsikan SELURUH kode
+// aplikasi ada. Daftarnya sengaja pendek dan hanya memuat tabel & fungsi yang
+// dibuat migrasi awal dan tidak pernah diganti nama.
+var coreSchemaObjects = []string{
+	ledgerTable,
+	"users", "sessions", "audit_logs",
+	"api_keys", "providers", "models", "routing_rules", "content_filters",
+	"requests", "request_events", "request_payloads",
+	"usage_hourly", "usage_daily",
+	"webhooks", "settings",
+}
+
+// verifyCoreSchema memeriksa bentuk kasar skema hasil akhir migrasi
+// (audit3 V-DT-18).
+//
+// Checksum hanya membuktikan file migrasi tidak berubah — ia tidak mendeteksi
+// drift DDL manual, tabel warisan pra-runner, atau restore parsial: semua itu
+// lolos boot lalu meledak sebagai error query di tengah trafik. Pemeriksaan
+// ini BUKAN verifikasi skema penuh (tidak memeriksa kolom/indeks/constraint);
+// ia hanya memastikan objek inti yang diasumsikan biner benar-benar ada,
+// supaya kegagalannya berbunyi jelas saat start, bukan di tengah malam.
+func verifyCoreSchema(ctx context.Context, conn *pgxpool.Conn) error {
+	var missing []string
+	for _, obj := range coreSchemaObjects {
+		var reg *string
+		if err := conn.QueryRow(ctx, "select to_regclass($1)::text", obj).Scan(&reg); err != nil {
+			return fmt.Errorf("memeriksa keberadaan tabel %s: %w", obj, err)
+		}
+		if reg == nil {
+			missing = append(missing, obj)
+		}
+	}
+	var fn *string
+	if err := conn.QueryRow(ctx, "select to_regprocedure('create_monthly_partition(text, date)')::text").Scan(&fn); err != nil {
+		return fmt.Errorf("memeriksa keberadaan fungsi partisi: %w", err)
+	}
+	if fn == nil {
+		missing = append(missing, "create_monthly_partition(text, date)")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("skema hasil migrasi tidak lengkap: objek inti tidak ditemukan: %s — database ini tidak dibentuk oleh rangkaian migrasi Route-X yang utuh",
+			strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 // lockMigrations mengambil advisory lock dan mengembalikan fungsi pelepasnya.
@@ -374,11 +457,17 @@ func checkLedgerAgainstFiles(migrations []migration, ledger map[int64]appliedMig
 	}
 
 	// Pembukuan memuat versi yang tidak ada filenya: biasanya biner ini lebih tua
-	// dari databasenya (rollback aplikasi tanpa rollback skema). Bukan error — skema
-	// yang lebih maju tetap kompatibel — tapi operator perlu tahu.
+	// dari databasenya (rollback aplikasi tanpa rollback skema). Ini BUKAN keadaan
+	// yang aman secara umum dan tidak ada jalur downgrade: migrasi destruktif
+	// (0010 men-DROP tabel RBAC, 0013 men-DROP settings xray) tidak bisa dibalik,
+	// jadi biner lama yang jalan di atas skema lebih baru bisa salah membaca atau
+	// gagal total — klaim lama "skema yang lebih maju tetap kompatibel" tidak
+	// berlaku melewati migrasi-migrasi itu (audit3 V-DT-16). Boot tetap dilanjutkan
+	// karena selisih satu-dua versi non-destruktif adalah pola deploy yang sah,
+	// tetapi peringatannya harus dibaca sebagai rambu satu arah, bukan formalitas.
 	for version, a := range ledger {
 		if _, ok := known[version]; !ok {
-			logger.Warn("database memuat migrasi yang tidak ada di biner ini",
+			logger.Warn("database memuat migrasi yang tidak ada di biner ini — rollback biner melewati migrasi destruktif (0010, 0013) TIDAK didukung dan berisiko",
 				slog.Int64("version", version),
 				slog.String("name", a.name),
 			)

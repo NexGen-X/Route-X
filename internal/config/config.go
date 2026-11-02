@@ -132,6 +132,7 @@ type Config struct {
 
 	RequestLogRetentionDays  int
 	RequestBodyRetentionDays int
+	AuditLogRetentionDays    int
 
 	HealthCheckInterval time.Duration
 	UsageRollupInterval time.Duration
@@ -260,6 +261,10 @@ func loadFrom(lookup lookupFunc) (*Config, error) {
 
 		RequestLogRetentionDays:  r.intRange("REQUEST_LOG_RETENTION_DAYS", 30, 1, 3650),
 		RequestBodyRetentionDays: r.intRange("REQUEST_BODY_RETENTION_DAYS", 7, 1, 3650),
+		// Jejak audit disimpan jauh lebih lama dari log request (nilainya justru
+		// untuk menengok jauh ke belakang), tetapi tidak lagi selamanya —
+		// audit_logs sebelumnya tidak punya retensi sama sekali (audit3 V-DT-20).
+		AuditLogRetentionDays: r.intRange("AUDIT_LOG_RETENTION_DAYS", 365, 1, 3650),
 
 		HealthCheckInterval: r.duration("HEALTH_CHECK_INTERVAL", 60*time.Second),
 		UsageRollupInterval: r.duration("USAGE_ROLLUP_INTERVAL", 5*time.Minute),

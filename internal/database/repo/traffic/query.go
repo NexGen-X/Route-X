@@ -196,13 +196,17 @@ func (r *Repo) List(ctx context.Context, f Filter, p repo.Page) (Result, error) 
 		}
 	}
 	if f.Search != "" {
-		// Dicocokkan ke tiga kolom yang semuanya bukan rahasia. Satu argumen dipakai
-		// tiga kali, jadi kondisinya dirakit langsung.
-		args = append(args, f.Search)
-		n := len(args)
+		// Dicocokkan ke tiga kolom yang semuanya bukan rahasia; kondisinya
+		// dirakit langsung. DUA argumen sengaja dikirim (audit3 V-DT-23):
+		// nilai MENTAH untuk cabang kesetaraan request_id, dan nilai
+		// TER-ESCAPE untuk pola ILIKE — satu argumen ter-escape untuk
+		// keduanya akan merusak pencarian request_id yang mengandung _
+		// (bentuk id yang sah, mis. "req_limit").
+		args = append(args, f.Search, repo.EscapeLikePattern(f.Search))
+		nMentah, nPola := len(args)-1, len(args)
 		conds = append(conds, fmt.Sprintf(
 			"(request_id = $%d or requested_model ilike '%%' || $%d || '%%' or provider_name ilike '%%' || $%d || '%%')",
-			n, n, n))
+			nMentah, nPola, nPola))
 	}
 
 	dir, cmp := "desc", "<"

@@ -341,6 +341,28 @@ func rencanakan(op string, q Query) (rencana, error) {
 		}
 	}
 
+	// Sumber rollup hanya menyimpan bucket utuh (jam/hari), jadi jendela yang
+	// jatuh di tengah bucket harus diratakan ke batas bucket SEBELUM dipakai —
+	// dan nilai yang dilaporkan ke pemanggil adalah jendela yang benar-benar
+	// dibaca (audit3 V-DT-04b). Tanpa perataan ini, syarat bucket >= from
+	// membuang seluruh bucket pertama secara diam-diam (from tengah hari =
+	// satu hari data lenyap dari total) sementara bidang From pada respons
+	// tetap mengklaim jendela asli. Sumber mentah (requests) tidak diratakan:
+	// barisnya bertanda waktu persis, jadi jendela tengah jam memang berarti
+	// tengah jam di sana.
+	switch src {
+	case SourceDaily:
+		from = awalHari(from)
+		if to != awalHari(to) {
+			to = awalHari(to).AddDate(0, 0, 1)
+		}
+	case SourceHourly:
+		from = awalJam(from)
+		if to != awalJam(to) {
+			to = awalJam(to).Add(time.Hour)
+		}
+	}
+
 	p := rencana{source: src, from: from, to: to}
 	switch src {
 	case SourceRequests:
@@ -532,9 +554,12 @@ func (r *Repo) Breakdown(ctx context.Context, q Query, dim Dimension, limit int)
 //     panjang jawaban, bukan kecepatan provider. Memakai latency_ms apa adanya membuat
 //     provider yang melayani jawaban panjang selalu terlihat paling lambat. Sisa biasnya
 //     diakui: pada satu pemetaan yang lalu lintasnya campur, dua definisi ikut tercampur.
-//   - Hanya request BERHASIL. Provider yang menolak setiap permintaan dalam 5 ms adalah
-//     yang tercepat menurut angka mentah, dan mengurutkannya paling depan berarti
-//     mengirimkan seluruh lalu lintas ke provider yang sedang rusak.
+//   - Hanya request BERHASIL, dengan definisi sukses yang sama persis dengan
+//     agregat di berkas ini (status_code < 400 DAN error_type is null).
+//     "Berhasil" versi status saja akan memasukkan stream yang terputus di
+//     tengah (200 + error_type) sebagai sampel latensi sukses — dan strategi
+//     lowest_latency justru tertarik ke provider yang rajin memutus
+//     (audit3 V-DT-24).
 //   - minSamples menyaring pemetaan yang sampelnya terlalu sedikit, dan pemetaan yang
 //     tersaring TIDAK muncul di hasil sama sekali. Pemanggil memperlakukan yang tidak ada
 //     sebagai "belum terukur" lalu mengurutkannya paling belakang — p95 dari dua sampel
@@ -564,7 +589,7 @@ func (r *Repo) LatencyByProviderModel(
 		from requests r
 		join provider_models pm
 		  on pm.provider_id = r.provider_id and pm.model_id = r.model_id
-		where r.created_at >= $1 and r.status_code < 400
+		where r.created_at >= $1 and r.status_code < 400 and r.error_type is null
 		group by pm.id
 		having count(*) >= $3`,
 		time.Now().Add(-window), percentile, minSamples)

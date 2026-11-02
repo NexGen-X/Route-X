@@ -385,7 +385,8 @@ func listModelsQuery(f ModelFilter, cursor string, limit int) (string, []any) {
 		add("m.family = $%d", f.Family)
 	}
 	if f.Search != "" {
-		args = append(args, f.Search)
+		// Teks pengguna diloloskan dari wildcard LIKE (audit3 V-DT-23).
+		args = append(args, repo.EscapeLikePattern(f.Search))
 		n := len(args)
 		conds = append(conds, fmt.Sprintf(
 			"(m.model_id ilike '%%' || $%d || '%%' "+
@@ -718,8 +719,11 @@ func (r *ModelRepo) ListProviderModels(ctx context.Context, f ProviderModelFilte
 		where = " where " + strings.Join(conds, " and ")
 	}
 
+	// Urutan diakhiri id sebagai pemecah seri (audit3 V-DT-26): baris hasil impor
+	// massal berbagi priority, weight, DAN created_at (satu transaksi), jadi
+	// tanpa pemecah seri urutan daftar bisa berubah antar panggilan.
 	rows, err := r.q.Query(ctx, `select `+providerModelColumns+` from provider_models`+where+
-		` order by priority asc nulls last, weight desc nulls last, created_at asc`, args...)
+		` order by priority asc nulls last, weight desc nulls last, created_at asc, id asc`, args...)
 	if err != nil {
 		return nil, repo.Err(op, err)
 	}

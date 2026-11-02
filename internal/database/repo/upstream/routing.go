@@ -702,7 +702,8 @@ func (r *RoutingRepo) List(ctx context.Context, f RoutingRuleFilter, page repo.P
 	}
 	if f.Search != "" {
 		// Satu argumen dipakai dua kali, jadi kondisinya dirakit langsung.
-		args = append(args, f.Search)
+		// Teks pengguna diloloskan dari wildcard LIKE (audit3 V-DT-23).
+		args = append(args, repo.EscapeLikePattern(f.Search))
 		n := len(args)
 		conds = append(conds, fmt.Sprintf(
 			"(r.name ilike '%%' || $%d || '%%' or r.description ilike '%%' || $%d || '%%')", n, n))

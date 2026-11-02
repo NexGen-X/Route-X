@@ -2,26 +2,37 @@
 
 ## 1. Backup + restore database
 
-Backup harian dengan pg_dump format custom:
+Dua jalur resmi — rincian lengkap di `docs/DISASTER_RECOVERY.md`:
 
-  pg_dump $DATABASE_URL -Fc -f /var/backups/routex-$(date +%F).dump
+  - Backup terjadwal di server: `scripts/ops/backup-db.sh`
+    (dump SQL gzip ke /var/backups/routex, pola nama
+    routex_prod_YYYYMMDD_HHMMSS.sql.gz, retensi 7 hari,
+    log /var/log/routex/backup.log). Penjadwalan cron dipasang
+    operator sendiri; repo tidak memasangnya otomatis.
+  - Ekspor/restore dari aplikasi: Pengaturan → Cadangan & Pemulihan
+    (POST /api/admin/system/backup/export dan .../restore).
+    Restore produksi WAJIB lewat jalur ini — ia memakai skratch-swap:
+    dump dipindai, di-restore ke database skratch, dicek versi
+    skemanya, lalu nama ditukar dan database lama dipertahankan
+    sebagai <db>_pre_restore. Jangan memulihkan dump langsung ke
+    database produksi.
 
-Restore ke database kosong (verifikasi berkala):
+Verifikasi berkas cadangan di database buang:
 
-  createdb routex_restore
-  pg_restore -d routex_restore /var/backups/routex-TANGGAL.dump
-  psql -d routex_restore -tAc "SELECT count(*) FROM schema_migrations;"
-  # harus: 15 (migrasi 0001 sampai 0015)
-
-Hasil uji: dump ~254 KB, restore ke DB baru
-users/models sama dengan sumber, schema_migrations=15.
+  createdb routex_verifikasi
+  gunzip -c <berkas>.sql.gz | psql -d routex_verifikasi -v ON_ERROR_STOP=1
+  psql -d routex_verifikasi -tAc "SELECT count(*) FROM schema_migrations;"
+  # harus: 19 (migrasi 0001 sampai 0019)
+  dropdb routex_verifikasi
 
 ## 2. Alert yang disarankan
 
 Ambang dari hasil beban 200 VU (p95 13 ms, error ~0):
 
   healthz           != 200 selama 2 menit    -> page
-  readyz            != 200 selama 2 menit    -> page (cek Redis/DB)
+  readyz            != 200 selama 2 menit    -> page (dependensi kritis: PostgreSQL/skema;
+                                                 Redis non-kritis — gagalnya membuat status
+                                                 "degraded" tetapi tetap HTTP 200)
   p95 chat          > 2000 ms selama 5 menit -> warning
   5xx / menit       > 10 selama 5 menit      -> warning
   antrian worker    macet > 10 menit         -> warning
@@ -29,16 +40,21 @@ Ambang dari hasil beban 200 VU (p95 13 ms, error ~0):
 
 Ambang p95 2000 ms sama dengan thresholds k6-berat.js.
 
-## 3. Retensi data (30/7)
+## 3. Retensi data
 
-Konfigurasi di internal/config/config.go: retensi requests 30 hari,
-usage_hourly 7 hari (nilai default, bisa dioverride env).
+Tiga knob env di internal/config/config.go (bawaan dalam kurung):
+REQUEST_LOG_RETENTION_DAYS (30) untuk baris requests,
+REQUEST_BODY_RETENTION_DAYS (7) untuk payload request, dan
+AUDIT_LOG_RETENTION_DAYS (365) untuk audit_logs. Worker retensi
+menjalankan penghapusan berpartisi; kegagalannya tercatat jujur di
+status worker, bukan ditelan.
 Cek baris tua sebelum mengubah:
 
   psql -f scripts/ops/retention-check.sql
 
-Menaikkan ke 90/14 hanya bila compliance meminta + cek disk dulu
-(partisi requests tumbuh ~385 MB per 294 ribu baris pada uji berat).
+Menaikkan retensi hanya bila compliance meminta + cek disk dulu
+(rujukan historis uji beban 2026-09: partisi requests tumbuh
+~385 MB per 294 ribu baris).
 
 ## 4. Rotasi secret
 
@@ -62,7 +78,7 @@ mengeluarkan siapa pun — sesi lama tetap sah sampai kedaluwarsa/dicabut.
 Untuk memaksa semua perangkat masuk ulang (respons insiden), pakai saklar
 khususnya:
 
-  POST /api/admin/access/sessions/revoke-all   (izin users:write)
+  POST /api/admin/access/sessions/revoke-all   (sesi admin; arsitektur single-admin)
 
 atau cabut sesi per pengguna lewat halaman Akses. Rotasi SESSION_SECRET
 sendiri aman kapan pun (restart; token CSRF lama gugur, sesi tetap hidup).
@@ -100,10 +116,12 @@ restart. Tidak ada data persisten yang bergantung padanya.
   go mod verify            # harus: all modules verified
   npm audit --omit=dev     # harus: 0 vuln prod
 
-Hasil 2026-09-09: go mod verify bersih, npm prod 0 vuln.
+Hasil terakhir terverifikasi 2026-09-09: go mod verify bersih, npm prod 0 vuln.
 2 vuln dev-only (esbuild via vite, GHSA dev-server) DITERIMA:
 hanya memengaruhi `vite dev`, tidak ikut build produksi.
 Jangan `npm audit fix --force` (naik ke vite 8, breaking change).
+Jalankan ulang kedua perintah di atas untuk angka terkini — hasil
+bertanggal ini adalah catatan historis, bukan status kini.
 
 ## 6. Zona waktu periode anggaran
 

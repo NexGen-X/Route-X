@@ -1,77 +1,89 @@
 # Route-X Disaster Recovery & Backup Runbook
 
-Panduan ini mendokumentasikan prosedur pencadangan otomatis (*backup*) dan pemulihan darurat (*disaster recovery*) untuk database produksi Route-X (`routex_prod`).
+Panduan pencadangan dan pemulihan database Route-X. Ada dua jalur resmi:
+
+1. **Skrip server** [`scripts/ops/backup-db.sh`](../scripts/ops/backup-db.sh) — dump terjadwal di sisi server (untuk cadangan berkala di luar aplikasi).
+2. **Panel admin** (Pengaturan → Cadangan & Pemulihan) — ekspor dan restore dari dalam aplikasi. **Restore produksi WAJIB lewat jalur ini**: restore admin memakai mekanisme skratch-swap yang aman (lihat §3).
+
+> ⚠️ **Jangan pernah memulihkan dump langsung ke database produksi** (`gunzip | psql "$DATABASE_URL"` dan sejenisnya). Prosedur lama itu sudah dihapus dari dokumen ini: ia menulis ke database aktif tanpa pemeriksaan isi, tanpa satu transaksi, dan tanpa salinan pengaman — satu berkas cadangan yang rusak atau berbahaya langsung menjadi kerusakan produksi. Pemulihan `psql` manual hanya boleh diarahkan ke database **buang/scratch** untuk verifikasi (§4).
 
 ---
 
-## 🗄️ 1. Mekanisme Backup Otomatis
+## 1. Backup otomatis di server (skrip)
 
-- **Skrip Eksekusi**: [`scripts/ops/backup-db.sh`](../scripts/ops/backup-db.sh) / `/usr/local/bin/routex-backup.sh`
-- **Jadwal Otomatis**: Setiap hari pukul `02:00 UTC` via `/etc/cron.d/routex-backup`
-- **Lokasi Cadangan**: `/var/backups/routex/`
-- **Format Berkas**: `routex_prod_YYYYMMDD_HHMMSS.sql.gz`
-- **Tingkat Kompresi**: Gzip Level 9 (menghemat >80% ruang penyimpanan)
-- **Rotasi Otomatis**: Berkas cadangan yang berusia lebih dari **7 hari** dihapus secara otomatis.
-- **Berkas Log**: `/var/log/routex/backup.log`
+Fakta skrip [`scripts/ops/backup-db.sh`](../scripts/ops/backup-db.sh) saat ini:
 
-### Menjalankan Backup Manual (On-Demand)
-Jika Anda ingin mencadangkan database sebelum melakukan perubahan besar atau migrasi:
+- Membaca `DATABASE_URL` dari `/etc/routex/routex.env`; password diteruskan ke `pg_dump` lewat environment `PGPASSWORD` (tidak pernah lewat argumen proses).
+- Menulis ke `/var/backups/routex/` (izin `700`) dengan pola nama `routex_prod_YYYYMMDD_HHMMSS.sql.gz`, kompresi gzip level 9, izin berkas `600`.
+- Menguji integritas arsip (`gzip -t`) sebelum menyatakan sukses; log ke `/var/log/routex/backup.log`.
+- **Rotasi otomatis: 7 hari** — berkas `routex_prod_*.sql.gz` yang lebih tua dihapus di akhir run yang sukses.
+
+Repo **tidak** memasang penjadwalan apa pun secara otomatis. Bila ingin backup harian, pasang skrip dan cron-nya sendiri, contoh:
+
 ```bash
-/usr/local/bin/routex-backup.sh
+sudo install -m 700 scripts/ops/backup-db.sh /usr/local/bin/routex-backup.sh
+
+# /etc/cron.d/routex-backup — contoh: setiap hari pukul 02:00 UTC
+0 2 * * * root /usr/local/bin/routex-backup.sh
 ```
 
-Periksa log hasil backup:
+Menjalankan backup manual (mis. sebelum perubahan besar):
+
 ```bash
+sudo /usr/local/bin/routex-backup.sh
 tail -n 20 /var/log/routex/backup.log
+ls -lht /var/backups/routex/ | head
 ```
 
----
+## 2. Ekspor dari panel admin
 
-## 🚑 2. Prosedur Pemulihan Darurat (*Restore Procedure*)
+Di konsol: **Pengaturan → Cadangan & Pemulihan → Ekspor**, atau lewat API (POST, tunduk CSRF seperti mutasi admin lain):
 
-Jika terjadi kehilangan data, kegagalan disk, atau kesalahan operasi:
+```
+POST /api/admin/system/backup/export?format=sql.gz   (bawaan)
+POST /api/admin/system/backup/export?format=sql      (teks polos)
+```
 
-### Langkah 1: Hentikan Layanan Route-X Sementara
-Mencegah lalu lintas baru menulis ke database saat proses pemulihan:
+Ekspor mengalirkan dump `pg_dump` (opsi `--clean --if-exists --no-owner --no-privileges`) sebagai unduhan `routex_backup_YYYYMMDD_HHMMSS.sql.gz`. Simpan hasilnya di luar server produksi.
+
+## 3. Restore produksi — lewat panel admin (skratch-swap)
+
+Di konsol: **Pengaturan → Cadangan & Pemulihan → Restore**, unggah berkas `.sql` atau `.sql.gz` (unggahan terkompresi dibatasi 50 MB; hasil dekompresi dibatasi 1 GiB). Atau lewat API: `POST /api/admin/system/backup/restore`.
+
+Alur yang dijalankan server (audit3 B-045):
+
+1. Unggahan dispool ke berkas sementara dan **dipindai**: meta-command psql (`\!` dan sejenisnya) serta `COPY ... PROGRAM` ditolak dengan `400 invalid_backup_content` — berkas cadangan tidak bisa menjadi jalur eksekusi perintah OS.
+2. Dump di-restore ke **database skratch** sekali pakai memakai `psql --single-transaction` + `ON_ERROR_STOP` — kegagalan di tengah membatalkan seluruhnya; database produksi belum tersentuh.
+3. Versi skema skratch diperiksa ke ledger migrasi: lebih baru dari biner → ditolak; lebih lama → dimigrasikan di skratch sampai versi terkini (saat ini 0019).
+4. Nama database **ditukar secara atomik**: database lama dipertahankan utuh sebagai **`<nama-db>_pre_restore`**, skratch menjadi database aktif. Respons sukses memuat `safety_database` dan `schema_version`.
+5. Gateway melanjutkan layanan memakai database hasil restore.
+
+Sesudah restore:
+
 ```bash
-systemctl stop routex
+curl -s http://127.0.0.1:8080/healthz   # {"status":"ok"}
+curl -s http://127.0.0.1:8080/readyz    # status + checks per dependensi
 ```
 
-### Langkah 2: Pilih Berkas Cadangan Terbaru
-Lihat daftar cadangan yang tersedia di `/var/backups/routex/`:
-```bash
-ls -lht /var/backups/routex/routex_prod_*.sql.gz | head -n 5
-```
+Lalu buka konsol dan periksa hitungan ringkas di Pengaturan → Cadangan & Pemulihan (model, provider, aturan routing, API key) serta lakukan satu request uji.
 
-### Langkah 3: Uji Integritas Berkas Cadangan
-Pastikan berkas gzip tidak terkorupsi:
+### Rollback bila hasil restore tidak beres
+
+Database pra-restore masih utuh sebagai `<nama-db>_pre_restore`. Untuk kembali:
+
+1. Hentikan layanan (`systemctl stop routex`).
+2. Dari database `postgres`, ganti nama database aktif saat ini menjadi nama lain (mis. `<nama-db>_gagal`), lalu ganti nama `<nama-db>_pre_restore` menjadi `<nama-db>`.
+3. Nyalakan kembali layanan dan ulangi verifikasi di atas.
+
+## 4. Verifikasi berkas cadangan (database buang)
+
+Untuk sekadar membuktikan sebuah dump bisa dibaca — tanpa menyentuh produksi:
+
 ```bash
 gzip -t /var/backups/routex/routex_prod_YYYYMMDD_HHMMSS.sql.gz
+
+sudo -u postgres createdb routex_verifikasi
+gunzip -c /var/backups/routex/routex_prod_YYYYMMDD_HHMMSS.sql.gz | psql -d routex_verifikasi -v ON_ERROR_STOP=1
+psql -d routex_verifikasi -tAc "SELECT count(*) FROM schema_migrations;"   # harus: 19
+sudo -u postgres dropdb routex_verifikasi
 ```
-
-### Langkah 4: Pulihkan Database PostgreSQL
-Jalankan dekrompresi dan restore langsung ke `routex_prod`:
-```bash
-# Opsi A: Menggunakan kredensial dari routex.env secara otomatis
-set -a && . /etc/routex/routex.env && set +a
-gunzip -c /var/backups/routex/routex_prod_YYYYMMDD_HHMMSS.sql.gz | psql "$DATABASE_URL"
-
-# Opsi B: Menggunakan user lokal postgres
-gunzip -c /var/backups/routex/routex_prod_YYYYMMDD_HHMMSS.sql.gz | sudo -u postgres psql -d routex_prod
-```
-
-### Langkah 5: Nyalakan Kembali Layanan Route-X
-```bash
-systemctl start routex
-systemctl status routex --no-pager
-```
-
-### Langkah 6: Verifikasi Status Pemulihan
-1. Periksa endpoint kesehatan gateway:
-   ```bash
-   curl -i http://127.0.0.1:8080/health
-   ```
-2. Pastikan tabel metadata (users, models, api_keys) terisi normal:
-   ```bash
-   sudo -u postgres psql -d routex_prod -c "SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM models;"
-   ```

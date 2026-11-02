@@ -5,7 +5,9 @@
 # 1. PostgreSQL (Database primer & auto-setup database/role)
 # 2. Redis Server (Distributed cache & rate limiter)
 # 3. Caddy Web Server (Edge reverse proxy & auto TLS)
-# 4. Route-X Core & Web UI (Kompilasi biner native + Systemd service)
+# 4. Route-X Core & Web UI (Biner rilis resmi dari GitHub Releases +
+#    verifikasi checksum .sha256; kompilasi dari sumber hanya fallback
+#    bila unduhan tidak tersedia, dengan cap versi dev-<sha>)
 # ==============================================================================
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive

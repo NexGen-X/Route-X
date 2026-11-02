@@ -5,7 +5,7 @@ Dokumen ini memandu deployment Route-X ke platform cloud **Render** menggunakan 
 Arsitektur di Render:
 - **Web Service (Docker)**: Menjalankan binary Go `ai-gateway` yang meng-embed frontend SPA React Vite.
 - **Managed PostgreSQL**: Basis data primer, auto-migrasi schema, dan penyiapan akun admin awal saat start.
-- **Managed Redis**: Distributed cache, rate limiter per-IP/per-email, dan response caching.
+- **Managed Redis**: Rate limiter dan state terdistribusi gateway, termasuk penyimpanan *response cache* — fitur opsional yang **bawaan nonaktif** dan diaktifkan operator dari konsol (Pengaturan → Performa & Cache) dengan isolasi per API key.
 
 ---
 
@@ -50,20 +50,22 @@ Blueprint `render.yaml` di repositori ini secara otomatis mendirikan Web Service
    - `PUBLIC_URL`: URL layanan Render Anda (contoh: `https://route-x.onrender.com` atau domain kustom Anda).
    - `ENCRYPTION_KEY`: Masukkan nilai dari skrip langkah 2.
    - `API_KEY_PEPPER`: Masukkan nilai dari skrip langkah 2.
-   - `INITIAL_ADMIN_EMAIL`: (Opsional) Masukkan email admin Anda atau biarkan default.
-   - `INITIAL_ADMIN_PASSWORD`: (Opsional) Masukkan kata sandi admin Anda atau biarkan default.
+   - `INITIAL_ADMIN_EMAIL`: (Opsional) Masukkan email admin Anda; bawaan `admin@routex.local`.
+   - `INITIAL_ADMIN_PASSWORD`: **Wajib diisi** agar akun admin pertama dibuat. Tidak ada password default — bila kosong, tidak ada admin yang dibuat sama sekali.
 6. Klik **Apply**. Render akan mulai membangun container Docker dan menginisialisasi database serta Redis.
+
+Catatan: `render.yaml` tidak mendeklarasikan `ANTIGRAVITY_CLIENT_SECRET`. Bila Anda memakai integrasi Antigravity (Google OAuth), tambahkan variabel itu secara manual di Render Dashboard → Environment — client secret dibaca dari environment saja, tidak tertanam di biner. Daftar variabel lengkap: `.env.render.example`.
 
 ---
 
 ## 4. Proses Build & Startup Otomatis
 
 Selama proses deploy:
-1. **Stage 1 (Frontend Build)**: Render menjalankan `npm ci` dan `npm run build` di dalam Node 20.
-2. **Stage 2 (Backend Build)**: Binary Go `ai-gateway` dikompilasi dengan menyematkan aset `web/dist` ke dalamnya.
-3. **Stage 3 (Runtime)**: Image Alpine Linux minimalis (~25MB) dijalankan.
+1. **Stage 1 (Frontend Build)**: Render menjalankan `npm ci` dan `npm run build` di dalam Node 24.
+2. **Stage 2 (Backend Build)**: Binary Go `ai-gateway` (Go 1.27.3) dikompilasi dengan menyematkan aset `web/dist` ke dalamnya.
+3. **Stage 3 (Runtime)**: Image Alpine 3.24 minimalis dijalankan (memuat `postgresql-client`, yang dibutuhkan fitur Backup/Restore admin).
 4. **Bootstrapping**:
-   - `ai-gateway` otomatis terhubung ke `DATABASE_URL` dan menjalankan migrasi skema database (`0001_initial.sql` sampai `0010_drop_roles.sql`).
+   - `ai-gateway` otomatis terhubung ke `DATABASE_URL` dan menjalankan migrasi skema database (migrasi `0001` sampai `0019`).
    - `seed.Run` membuat akun Admin pertama hanya jika tabel pengguna kosong DAN `INITIAL_ADMIN_PASSWORD` disetel (email dari `INITIAL_ADMIN_EMAIL`, bawaan `admin@routex.local`; tanpa password, tidak ada admin yang dibuat).
    - Server mendengarkan pada port yang diatur Render (`PORT=10000`).
 
@@ -77,11 +79,12 @@ Setelah status di Render Dashboard berubah menjadi **Live**:
    ```bash
    curl -i https://route-x.onrender.com/healthz
    ```
-   Respons yang diharapkan:
-   ```json
-   HTTP/2 200
-   {"status":"ok","version":"dev","commit":"none","uptime_seconds":15}
+   Respons yang diharapkan (endpoint publik hanya menyajikan status — version/commit/uptime tidak lagi diekspos):
    ```
+   HTTP/2 200
+   {"status":"ok"}
+   ```
+   Untuk kesiapan dependensi gunakan `/readyz`: respons `{"status":"ok","checks":{...}}` dengan status per dependensi (PostgreSQL kritis; Redis non-kritis — gagalnya menghasilkan status `degraded` tetapi tetap HTTP 200).
 
 2. **Masuk ke Konsol Administrasi**:
    - Buka browser ke `https://route-x.onrender.com/login`.

@@ -99,7 +99,25 @@ func scanOAuthSessionJoined(row pgxRow) (*OAuthSessionMeta, error) {
 }
 
 // UpsertSession menyimpan atau memperbarui refresh token sesi OAuth provider.
+//
+// Seluruh rangkaian berjalan dalam SATU transaksi bila querier-nya pool:
+// versi lama menjalankan upsert dan re-enkripsi korektif AAD sebagai dua
+// pernyataan terpisah, sehingga crash di antaranya meninggalkan ciphertext
+// ber-AAD salah yang tidak bisa didekripsi permanen (audit3 V-EO-14).
 func (r *OAuthRepo) UpsertSession(ctx context.Context, p UpsertOAuthSessionParams) (*OAuthSessionMeta, error) {
+	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
+		var out *OAuthSessionMeta
+		err := repo.InTx(ctx, pool, func(q repo.Querier) error {
+			var err error
+			out, err = r.WithQuerier(q).UpsertSession(ctx, p)
+			return err
+		})
+		return out, err
+	}
+	return r.upsertSession(ctx, p)
+}
+
+func (r *OAuthRepo) upsertSession(ctx context.Context, p UpsertOAuthSessionParams) (*OAuthSessionMeta, error) {
 	const op = "menyimpan sesi oauth provider"
 	if !idOK(p.ProviderID) || !idOK(p.CredentialID) {
 		return nil, fmt.Errorf("%s: %w: ID tidak valid", op, repo.ErrInvalidReference)
@@ -280,11 +298,23 @@ func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold tim
 		if err != nil {
 			// Gagal dekripsi (mis. rotasi kunci belum tuntas): CATAT dan
 			// lanjutkan ke sesi lain. Sesi ini tidak akan pernah direfresh
-			// sampai kunci/ciphertext-nya beres, jadi log ini satu-satunya
-			// sinyal operator (audit F5: sebelumnya dilewati diam-diam
-			// padahal komentar mengaku mencatat).
+			// sampai kunci/ciphertext-nya beres.
+			//
+			// Kegagalannya juga ditulis ke last_refresh_error sesi: log saja
+			// tidak cukup, karena versi lama membuat sesi yang refresh
+			// token-nya mati permanen tampak sehat selamanya di UI dengan
+			// kolom error NULL (audit3 V-EO-13). Penulisan ini best-effort —
+			// kegagalannya tidak boleh menghentikan pemindaian sesi lain.
 			slog.Warn("sesi oauth dilewati: refresh token gagal didekripsi",
 				"session_id", id, "provider_id", provID, "error", err)
+			pesan := "refresh token tidak dapat didekripsi (kunci enkripsi mungkin telah berganti); hubungkan ulang akun OAuth ini"
+			if _, uerr := r.q.Exec(ctx, `
+				update provider_oauth_sessions
+				set last_refresh_error = $2, updated_at = now()
+				where id = $1`, id, pesan); uerr != nil {
+				slog.Warn("gagal mencatat kegagalan dekripsi sesi oauth",
+					"session_id", id, "error", uerr)
+			}
 			continue
 		}
 
@@ -338,6 +368,40 @@ func (r *OAuthRepo) GetActiveSession(ctx context.Context, sessionID string) (*Ac
 		RefreshToken: secret,
 		EgressPoolID: egressPoolID,
 	}, nil
+}
+
+// UpdateRefreshToken mengganti refresh token tersimpan sebuah sesi.
+//
+// Dipakai saat penyedia MENGEMBALIKAN refresh token baru pada respons refresh
+// (rotasi refresh token): versi lama membuang nilai itu, sehingga penyedia
+// yang merotasi refresh token memutus sesi secara permanen pada refresh
+// pertama (audit3 V-EO-18). AAD-nya sama dengan sesi yang sudah ada — ID sesi
+// tidak berubah — jadi tidak ada koreksi lanjutan yang diperlukan.
+func (r *OAuthRepo) UpdateRefreshToken(ctx context.Context, sessionID string, refreshToken security.Secret) error {
+	const op = "memperbarui refresh token sesi oauth"
+	if !idOK(sessionID) {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	if refreshToken.IsZero() {
+		return fmt.Errorf("%s: %w: refresh token kosong", op, repo.ErrConstraint)
+	}
+
+	ciphertext, err := r.cipher.EncryptSecret(refreshToken, security.OAuthSessionAAD(sessionID))
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+
+	tag, err := r.q.Exec(ctx, `
+		update provider_oauth_sessions
+		set refresh_token_encrypted = $2, encryption_key_id = $3, updated_at = now()
+		where id = $1`, sessionID, ciphertext, r.cipher.KeyID())
+	if err != nil {
+		return repo.Err(op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	return nil
 }
 
 // UpdateRefreshStatus memperbarui status terakhir refresh sesi OAuth.

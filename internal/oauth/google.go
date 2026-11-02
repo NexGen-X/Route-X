@@ -28,24 +28,49 @@ const (
 	GoogleTokenEndpoint = "https://oauth2.googleapis.com/token"
 )
 
-// GetDefaultAntigravityClientSecret mengembalikan client secret resmi Antigravity.
-// Prioritas mengambil dari env ANTIGRAVITY_CLIENT_SECRET jika diatur, atau fallback ke default payload.
+// ErrTokenDitolakPermanen menandai penolakan token yang TIDAK akan sembuh
+// dengan mencoba lagi: invalid_grant berarti refresh token sudah dicabut,
+// kedaluwarsa permanen, atau tidak pernah sah. Pemanggil (worker refresh,
+// refresh manual) memakai penanda ini untuk menonaktifkan sesi dan
+// menampilkannya ke operator, alih-alih mengulang kegagalan yang sama selamanya
+// (audit3 V-EO-17).
+var ErrTokenDitolakPermanen = errors.New("token ditolak permanen oleh penyedia OAuth")
+
+// GetDefaultAntigravityClientSecret mengembalikan client secret Antigravity
+// dari env ANTIGRAVITY_CLIENT_SECRET, atau string kosong bila tidak disetel.
+//
+// Dulu ada fallback berupa array byte ter-obfuskasi XOR satu byte yang
+// terdekode menjadi client secret asli. Obfuskasi itu tidak menyembunyikan
+// apa pun (kunci XOR-nya tertulis di sebelah arraynya), membuat nilai lolos
+// dari pemindaian rahasia berbasis teks, dan menyembunyikan fakta bahwa
+// integrasi ini butuh konfigurasi (audit3 V-EO-24). Sekarang env adalah
+// satu-satunya sumber; jalur Antigravity yang membutuhkannya dan tidak
+// menemukannya gagal dengan pesan eksplisit dari lengkapiClientSecret.
+func GetDefaultAntigravityClientSecret() string {
+	return strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLIENT_SECRET"))
+}
+
+// lengkapiClientSecret menentukan client secret yang dipakai untuk client ID
+// bawaan Antigravity bila pemanggil tidak menyediakannya.
+//
+// Untuk client ID lain, secret kosong dibiarkan apa adanya (client publik
+// memang tidak punya secret). Untuk Antigravity, kosong berarti konfigurasi
+// belum lengkap dan pertukaran/refresh pasti ditolak Google — lebih baik
+// gagal di sini dengan pesan yang bisa ditindaklanjuti operator daripada
+// menerima penolakan buram dari endpoint token.
+func lengkapiClientSecret(clientID, clientSecret string) (string, error) {
+	if clientSecret != "" || clientID != DefaultAntigravityClientID {
+		return clientSecret, nil
+	}
+	if s := GetDefaultAntigravityClientSecret(); s != "" {
+		return s, nil
+	}
+	return "", errors.New("client secret Antigravity belum disetel: pasang env ANTIGRAVITY_CLIENT_SECRET pada proses gateway")
+}
+
 // maxTokenResponseBytes membatasi ukuran respons endpoint token OAuth (respons
 // token Google berukuran ratusan byte; 1 MiB sudah sangat longgar).
 const maxTokenResponseBytes = 1 << 20
-
-func GetDefaultAntigravityClientSecret() string {
-	if s := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLIENT_SECRET")); s != "" {
-		return s
-	}
-	key := byte(0x5A)
-	encoded := []byte{29, 21, 25, 9, 10, 2, 119, 17, 111, 98, 28, 13, 8, 110, 98, 108, 22, 62, 22, 16, 107, 55, 22, 24, 98, 41, 2, 25, 110, 32, 108, 43, 30, 27, 60}
-	out := make([]byte, len(encoded))
-	for i, b := range encoded {
-		out[i] = b ^ key
-	}
-	return string(out)
-}
 
 // TokenResult memuat hasil pertukaran atau pembaharuan token Google.
 type TokenResult struct {
@@ -167,8 +192,9 @@ func (c *GoogleOAuthClient) ExchangeAuthCodeWithProxy(
 		redirectURI = DefaultRedirectURI
 	}
 
-	if clientSecret == "" && clientID == DefaultAntigravityClientID {
-		clientSecret = GetDefaultAntigravityClientSecret()
+	clientSecret, err := lengkapiClientSecret(clientID, clientSecret)
+	if err != nil {
+		return nil, err
 	}
 
 	form := url.Values{
@@ -218,6 +244,9 @@ func (c *GoogleOAuthClient) ExchangeAuthCodeWithProxy(
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("http status %d", resp.StatusCode)
 		}
+		if res.Error == "invalid_grant" {
+			return nil, fmt.Errorf("%w: server oauth google menolak kode: %s", ErrTokenDitolakPermanen, errMsg)
+		}
 		return nil, fmt.Errorf("server oauth google menolak kode: %s", errMsg)
 	}
 
@@ -259,8 +288,9 @@ func (c *GoogleOAuthClient) RefreshAccessTokenWithProxy(
 		clientID = c.defaultClient
 	}
 
-	if clientSecret == "" && clientID == DefaultAntigravityClientID {
-		clientSecret = GetDefaultAntigravityClientSecret()
+	clientSecret, err := lengkapiClientSecret(clientID, clientSecret)
+	if err != nil {
+		return nil, err
 	}
 
 	form := url.Values{
@@ -307,6 +337,11 @@ func (c *GoogleOAuthClient) RefreshAccessTokenWithProxy(
 		}
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("http status %d", resp.StatusCode)
+		}
+		if res.Error == "invalid_grant" {
+			// Refresh token dicabut/kedaluwarsa permanen: mencoba lagi pada
+			// putaran berikutnya tidak akan mengubah hasil (audit3 V-EO-17).
+			return nil, fmt.Errorf("%w: gagal me-refresh token google: %s", ErrTokenDitolakPermanen, errMsg)
 		}
 		return nil, fmt.Errorf("gagal me-refresh token google: %s", errMsg)
 	}

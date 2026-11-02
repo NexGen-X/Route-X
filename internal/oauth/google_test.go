@@ -243,6 +243,10 @@ func TestParseIDTokenClaims(t *testing.T) {
 }
 
 func TestExchangeAuthCodeMock(t *testing.T) {
+	// Secret Antigravity kini HANYA dari env (fallback tertanam dihapus,
+	// audit3 V-EO-24): test memasangnya eksplisit.
+	t.Setenv("ANTIGRAVITY_CLIENT_SECRET", "test-secret-dari-env")
+
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256"}`))
 	mockClaims, _ := json.Marshal(map[string]any{
 		"iss":            "https://accounts.google.com",

@@ -7,9 +7,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/security"
+	"github.com/NexGen-X/Route-X/internal/worker"
 )
 
 type exchangeOAuthCodeReq struct {
@@ -84,6 +86,15 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 		// internal) dan hanya boleh sampai ke log (audit3 V-EM-01).
 		h.gagalHulu(w, r, "penukaran kode otorisasi oauth gagal", "oauth_exchange_failed",
 			"Gagal menukarkan kode otorisasi dengan penyedia OAuth; periksa koneksi ke penyedia lalu coba lagi", err)
+		return
+	}
+
+	// Masa berlaku yang tidak sah dari penyedia berarti kredensial lahir
+	// kedaluwarsa dan tidak akan pernah terpilih — tolak di sini dengan
+	// pesan jelas alih-alih menyimpan kredensial mati (audit3 V-EO-20).
+	if tokenRes.ExpiresIn <= 0 {
+		h.gagalHulu(w, r, "respons token oauth tidak memuat expires_in yang sah", "oauth_exchange_failed",
+			"Penyedia OAuth mengembalikan token tanpa masa berlaku yang sah; coba lagi", nil)
 		return
 	}
 
@@ -225,6 +236,22 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 
 	var sessionsToRefresh []string
 	if req.SessionID != "" {
+		// Sesi yang disebut eksplisit WAJIB milik provider di URL dan dalam
+		// keadaan aktif: versi lama me-refresh sesi provider mana pun (dan
+		// sesi nonaktif) hanya bermodal ID-nya (audit3 V-EO-22).
+		meta, err := h.oauthRepo.GetSession(ctx, req.SessionID)
+		if err != nil {
+			mapRepoError(w, r, err, "oauth_session")
+			return
+		}
+		if meta.ProviderID != providerID {
+			mapRepoError(w, r, repo.ErrNotFound, "oauth_session")
+			return
+		}
+		if !meta.Enabled {
+			httpx.BadRequest(w, r, "session_disabled", "Sesi OAuth nonaktif tidak bisa di-refresh; aktifkan dulu")
+			return
+		}
 		sessionsToRefresh = append(sessionsToRefresh, req.SessionID)
 	} else {
 		all, err := h.oauthRepo.ListSessionsByProviderID(ctx, providerID)
@@ -239,9 +266,35 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Kunci advisory yang sama dengan worker berkala dan penyegar
+	// on-demand: refresh manual tidak boleh balapan dengan keduanya atas
+	// sesi yang sama (audit3 V-EO-19).
+	unlock, terkunci, err := worker.TryAdvisoryLock(ctx, h.pool, worker.LockOAuthRefresh)
+	if err != nil {
+		h.gagalInternal(w, r, "gagal mengambil kunci refresh oauth", err)
+		return
+	}
+	if !terkunci {
+		httpx.WriteError(w, r, http.StatusConflict, httpx.ErrTypeAPI, "refresh_in_progress",
+			"Refresh OAuth lain sedang berjalan; coba lagi sebentar")
+		return
+	}
+	defer unlock()
+
 	refreshedCount := 0
 	var lastErr error
 
+	// Logika per sesi satu-satunya ada di worker.RefreshSesiOAuth: egress
+	// gagal-keras, percobaan ulang transien, validasi expires_in, refresh
+	// token rotasi tersimpan, dan penonaktifan saat ditolak permanen
+	// (audit3 V-EO-17 s.d. V-EO-21).
+	deps := worker.OAuthRefreshDeps{
+		OAuth:  h.oauthRepo,
+		Creds:  h.credentialRepo,
+		Egress: h.egressRepo,
+		Client: h.oauthClient,
+		Logger: h.logger,
+	}
 	for _, sessID := range sessionsToRefresh {
 		activeSess, err := h.oauthRepo.GetActiveSession(ctx, sessID)
 		if err != nil {
@@ -249,34 +302,10 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		var proxyURL security.Secret
-		if activeSess.EgressPoolID != nil && *activeSess.EgressPoolID != "" && h.egressRepo != nil {
-			pURL, err := h.egressRepo.ProxyURL(ctx, *activeSess.EgressPoolID)
-			if err != nil {
-				h.logger.WarnContext(ctx, "gagal memuat proxy URL untuk refresh oauth manual",
-					"session_id", sessID, "egress_pool_id", *activeSess.EgressPoolID, "error", err)
-			} else {
-				proxyURL = pURL
-			}
-		}
-
-		res, err := h.oauthClient.RefreshAccessTokenWithProxy(ctx, activeSess.RefreshToken.Reveal(), activeSess.ClientID, "", proxyURL)
-		if err != nil {
-			errStr := err.Error()
-			_ = h.oauthRepo.UpdateRefreshStatus(ctx, sessID, &errStr)
+		if err := worker.RefreshSesiOAuth(ctx, deps, activeSess); err != nil {
 			lastErr = err
 			continue
 		}
-
-		expiresAt := time.Now().Add(time.Duration(res.ExpiresIn) * time.Second)
-		if err := h.credentialRepo.UpdateSecret(ctx, activeSess.CredentialID, res.AccessToken, &expiresAt); err != nil {
-			errStr := err.Error()
-			_ = h.oauthRepo.UpdateRefreshStatus(ctx, sessID, &errStr)
-			lastErr = err
-			continue
-		}
-
-		_ = h.oauthRepo.UpdateRefreshStatus(ctx, sessID, nil)
 		refreshedCount++
 	}
 
@@ -294,6 +323,23 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// pastikanSesiMilikProvider memverifikasi sesi yang disebut URL benar-benar
+// milik provider di URL yang sama. Mengembalikan false (dan sudah menulis
+// jawabannya) bila tidak: sesi provider lain dijawab 404 agar keberadaannya
+// tidak terkonfirmasi lewat URL provider yang salah (audit3 V-EO-22).
+func (h *Handlers) pastikanSesiMilikProvider(w http.ResponseWriter, r *http.Request, providerID, sessionID string) bool {
+	meta, err := h.oauthRepo.GetSession(r.Context(), sessionID)
+	if err != nil {
+		mapRepoError(w, r, err, "oauth_session")
+		return false
+	}
+	if meta.ProviderID != providerID {
+		mapRepoError(w, r, repo.ErrNotFound, "oauth_session")
+		return false
+	}
+	return true
+}
+
 // toggleOAuthSession menyalakan atau mematikan salah satu akun OAuth tanpa menghapusnya.
 func (h *Handlers) toggleOAuthSession(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -308,6 +354,10 @@ func (h *Handlers) toggleOAuthSession(w http.ResponseWriter, r *http.Request) {
 	var req toggleOAuthSessionReq
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+
+	if !h.pastikanSesiMilikProvider(w, r, providerID, sessionID) {
 		return
 	}
 
@@ -336,6 +386,10 @@ func (h *Handlers) deleteOAuthSession(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := h.authorizeProviderAccess(ctx, providerID); err != nil {
 		mapRepoError(w, r, err, "provider")
+		return
+	}
+
+	if !h.pastikanSesiMilikProvider(w, r, providerID, sessionID) {
 		return
 	}
 

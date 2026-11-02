@@ -491,10 +491,21 @@ func buildGatewaySurface(
 		}
 	}
 
+	// Repo sesi OAuth + klien Google dibuat sebelum pabrik: pabrik memakainya
+	// untuk refresh on-demand di jalur request (audit3 V-EO-15), dan worker
+	// refresh berkala memakai instance yang sama di bawah.
+	oauthRepo, err := upstream.NewOAuthRepo(db.Pool, cipher)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	googleOAuthClient := oauth.NewGoogleOAuthClient(nil)
+	penyegarOAuth := worker.NewPenyegarOAuth(db.Pool, oauthRepo, creds, egress, googleOAuthClient, logger)
+
 	// Pabrik adapter provider dipakai bersama antara permintaan inferensi dan health checker
 	// worker, menegakkan kebijakan SSRF dan cache instance yang konsisten (Aturan 14).
 	factory := gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
-		gateway.WithCredentialUseMarker(creds))
+		gateway.WithCredentialUseMarker(creds),
+		gateway.WithOAuthRefresher(penyegarOAuth))
 
 	// Engine router gateway. Satu instance untuk seluruh proses: dipakai handler
 	// gateway untuk resolusi aturan, dan di-injeksikan ke API admin agar mutasi
@@ -544,6 +555,9 @@ func buildGatewaySurface(
 	healthJob := worker.NewHealthCheckerJob(
 		db.Pool, providersRepo, factory, webhookRepo, metrics, logger,
 	)
+	// Kesehatan egress pool ikut diperbarui berkala pada job yang sama —
+	// dulu hanya berubah dari tombol Tes manual (audit3 V-EO-05).
+	healthJob.SetEgressSource(egress, cfg.UpstreamSSRFPolicy())
 	workerSup.Register(healthJob, cfg.HealthCheckInterval, 5*time.Second)
 
 	// 2. Rollup scheduler: menghitung agregasi token & biaya hourly dan daily
@@ -570,11 +584,7 @@ func buildGatewaySurface(
 	workerSup.Register(webhookJob, 1*time.Second, 2*time.Second)
 
 	// 7. OAuth token refresher: memantau dan me-refresh token Google Antigravity & OAuth upstream
-	oauthRepo, err := upstream.NewOAuthRepo(db.Pool, cipher)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	googleOAuthClient := oauth.NewGoogleOAuthClient(nil)
+	// (oauthRepo & googleOAuthClient dibuat di atas, sebelum pabrik).
 	oauthJob := worker.NewOAuthRefreshWorker(db.Pool, oauthRepo, creds, egress, googleOAuthClient, logger)
 	workerSup.Register(oauthJob, 10*time.Minute, 1*time.Minute)
 

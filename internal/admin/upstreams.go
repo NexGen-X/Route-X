@@ -202,11 +202,41 @@ type createProviderReq struct {
 	Metadata      json.RawMessage `json:"metadata"`
 }
 
+// validasiBaseURLProvider memeriksa base URL provider terhadap kebijakan
+// SSRF yang berlaku dan menulis jawaban 400 bila ditolak. Mengembalikan true
+// bila URL boleh disimpan/dipakai.
+//
+// Pemeriksaan ini dulu TIDAK ada di jalur simpan maupun sinkronisasi model:
+// alamat metadata cloud (169.254.169.254) dan URL berkredensial tersimpan
+// sebagai 201, dan sync model mengirim kunci provider ke URL tersimpan tanpa
+// satu pun validasi (audit3 V-EO-09/V-EO-10). Kebijakannya meniru jalur
+// inferensi: BYOK selalu paling ketat, provider operator mengikuti kebijakan
+// operator (yang bisa mengizinkan HTTP/alamat privat secara sadar).
+// Pesan ValidateBaseURL aman diteruskan: ia tidak pernah memuat kredensial
+// (URL berkredensial ditolak dengan pesan statis).
+func (h *Handlers) validasiBaseURLProvider(w http.ResponseWriter, r *http.Request, raw string, byok bool) bool {
+	policy := security.DefaultSSRFPolicy()
+	if !byok && h.factory != nil {
+		policy = h.factory.SSRFPolicy()
+	}
+	if err := security.ValidateBaseURL(raw, policy); err != nil {
+		httpx.BadRequest(w, r, "invalid_base_url", "base_url provider ditolak: "+err.Error())
+		return false
+	}
+	return true
+}
+
 func (h *Handlers) createProvider(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req createProviderReq
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+
+	// base_url divalidasi SAAT DISIMPAN, bukan baru ketahuan salah saat
+	// adapter dibangun atau kunci dikirim (audit3 V-EO-10).
+	if !h.validasiBaseURLProvider(w, r, req.BaseURL, false) {
 		return
 	}
 
@@ -260,7 +290,8 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	// Isolasi BYOK: pastikan pemanggil adalah pemilik provider atau Super Admin
-	if _, err := h.authorizeProviderAccess(ctx, id); err != nil {
+	pAda, err := h.authorizeProviderAccess(ctx, id)
+	if err != nil {
 		mapRepoError(w, r, err, "provider")
 		return
 	}
@@ -268,6 +299,12 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	var req createProviderReq
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
+		return
+	}
+
+	// Sama seperti pembuatan: base_url baru divalidasi sebelum disimpan
+	// (audit3 V-EO-10).
+	if req.BaseURL != "" && !h.validasiBaseURLProvider(w, r, req.BaseURL, pAda.IsBYOK) {
 		return
 	}
 
@@ -314,7 +351,7 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	params.Metadata = req.Metadata
 
 	var p *upstream.Provider
-	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txRepo := h.providerRepo.WithQuerier(q)
 		var err error
 		p, err = txRepo.Update(ctx, id, params)
@@ -588,17 +625,27 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Ambil kredensial aktif jika ada dan dekripsi API key
+	// 2. Validasi base_url tersimpan SEBELUM kredensial apa pun disiapkan:
+	// sync mengirim kunci provider ke URL ini, dan versi lama tidak pernah
+	// memvalidasinya — kunci melintas via HTTP polos ke URL yang tidak
+	// pernah diperiksa bentuknya (audit3 V-EO-09). Kebijakannya sama dengan
+	// jalur inferensi: BYOK paling ketat, operator mengikuti factory.
+	ssrfPolicy := security.DefaultSSRFPolicy()
+	if !p.IsBYOK && h.factory != nil {
+		ssrfPolicy = h.factory.SSRFPolicy()
+	}
+	if err := security.ValidateBaseURL(p.BaseURL, ssrfPolicy); err != nil {
+		httpx.BadRequest(w, r, "invalid_base_url", "base_url provider ditolak: "+err.Error())
+		return
+	}
+
+	// 3. Ambil kredensial aktif jika ada dan dekripsi API key
 	var apiKey string
 	if activeCred, credErr := h.credentialRepo.Active(ctx, p.ID); credErr == nil && activeCred != nil {
 		apiKey = activeCred.Secret.Reveal()
 	}
 
-	// 3. Siapkan HTTP client dengan kebijakan SSRF wajib
-	ssrfPolicy := security.DefaultSSRFPolicy()
-	if h.factory != nil {
-		ssrfPolicy = h.factory.SSRFPolicy()
-	}
+	// 4. Siapkan HTTP client dengan kebijakan SSRF wajib
 
 	httpClient, err := providers.NewHTTPClient(providers.ClientConfig{
 		Timeout:             15 * time.Second,
@@ -610,7 +657,7 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Susun discovery URL berdasarkan dialek provider
+	// 5. Susun discovery URL berdasarkan dialek provider
 	var discoveryURL string
 	var reqBody io.Reader
 	method := http.MethodGet
@@ -692,7 +739,7 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// 5. Ekstraksi model IDs
+			// 6. Ekstraksi model IDs
 			var oaiResp openAIModelDiscoveryResponse
 			var ollamaResp ollamaModelDiscoveryResponse
 			var googleResp googleModelDiscoveryResponse
@@ -1881,7 +1928,10 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	proxySecret, err := h.egressRepo.ProxyURL(ctx, id)
+	// Diagnostik sengaja memakai varian tanpa syarat aktif: menguji pool
+	// yang sedang dinonaktifkan adalah sah, sedangkan ProxyURL jalur lalu
+	// lintas menolak pool nonaktif (audit3 V-EO-01).
+	proxySecret, err := h.egressRepo.ProxyURLDiagnostik(ctx, id)
 	if err != nil {
 		mapRepoError(w, r, err, "egress pool proxy_url")
 		return
@@ -1915,17 +1965,33 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 	var transport *http.Transport
 	var probeURL string
 	var extraHeaders map[string]string
+	// probeGatewayCF menandai probe ke URL gateway Cloudflare milik pool:
+	// untuknya, respons HTTP apa pun (termasuk 401/404) berarti gateway ada
+	// dan terjangkau — bukan kegagalan.
+	probeGatewayCF := false
 
-	if parsedProxy.Host == "gateway.ai.cloudflare.com" || strings.Contains(parsedProxy.Host, "gateway.ai.cloudflare.com") {
+	// Klasifikasi dari host hasil uraian (KlasifikasiRelay), bukan substring
+	// URL mentah (audit3 V-EO-08).
+	jenisRelay, _ := security.KlasifikasiRelay(proxyRaw)
+	if jenisRelay == security.RelayCloudflare {
 		// Cloudflare AI Gateway adalah AI reverse proxy edge, bukan forward proxy HTTP CONNECT.
-		// Pengujian konektivitas riil dilakukan langsung ke endpoint trace edge Cloudflare AI Gateway.
+		// Yang diuji adalah URL gateway MILIK pool ini (akun + gateway di
+		// path): versi lama mem-probe domain trace umum yang sama untuk
+		// semua pool, sehingga gateway yang tidak pernah terbuat pun tampak
+		// sehat (audit3 V-EO-05).
 		transport = &http.Transport{
 			DialContext:       security.GuardedDialContext(ssrfPolicy, dialer),
 			TLSClientConfig:   &tls.Config{InsecureSkipVerify: false, MinVersion: tls.VersionTLS12},
 			DisableKeepAlives: true,
 		}
-		probeURL = "https://gateway.ai.cloudflare.com/cdn-cgi/trace"
-	} else if strings.HasSuffix(parsedProxy.Host, ".deno.dev") {
+		probeURL = strings.TrimRight(proxyRaw, "/")
+		if parsedProxy.User != nil {
+			u := *parsedProxy
+			u.User = nil
+			probeURL = strings.TrimRight(u.String(), "/")
+		}
+		probeGatewayCF = true
+	} else if jenisRelay == security.RelayDeno {
 		// Deno Deploy Relay adalah reverse proxy relay.
 		transport = &http.Transport{
 			DialContext:       security.GuardedDialContext(ssrfPolicy, dialer),
@@ -1934,6 +2000,11 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		}
 		probeURL = "https://" + parsedProxy.Host + "/cdn-cgi/trace"
 		extraHeaders = map[string]string{"x-target-host": "cloudflare.com"}
+		if parsedProxy.User != nil {
+			if token, ok := parsedProxy.User.Password(); ok && token != "" {
+				extraHeaders["x-relay-token"] = token
+			}
+		}
 	} else {
 		transport = &http.Transport{
 			Proxy:             http.ProxyURL(parsedProxy),
@@ -1976,6 +2047,23 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
+
+	if probeGatewayCF {
+		// Gateway milik pool menjawab: jalurnya sehat apa pun status
+		// aplikasinya (gateway tanpa kredensial memang menjawab 401/404).
+		if err := h.egressRepo.RecordHealth(ctx, id, "healthy", &duration); err != nil {
+			h.logger.ErrorContext(ctx, "gagal mencatat health egress (healthy)",
+				slog.String("id", id), slog.String("error", err.Error()))
+		}
+		_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
+			Status:    "healthy",
+			Success:   true,
+			LatencyMS: &duration,
+			CheckedAt: now,
+			Message:   fmt.Sprintf("Gateway Cloudflare milik pool merespons HTTP %d (Latensi: %dms)", resp.StatusCode, duration),
+		})
+		return
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		// AUDIT FIX: kegagalan pencatatan health tidak lagi senyap.

@@ -136,11 +136,22 @@ func (c *CloudflareClient) ProvisionAIGateway(ctx context.Context, p CloudflareP
 
 	alreadyExist := false
 	if !cfResp.Success {
-		// Cek jika error menyatakan gateway sudah ada
+		// Klaim "sudah ada" hanya diterima dari PESAN error yang menyatakannya,
+		// lalu WAJIB diverifikasi dengan GET. Versi lama juga menerima kode
+		// 1000 — padahal semantik resmi Cloudflare untuk 1000 adalah
+		// "Invalid API Token": token yang tidak sah pun menghasilkan "sukses
+		// palsu" dan pool aktif menunjuk gateway yang tidak pernah terbuat
+		// (audit3 V-EO-07).
+		klaimSudahAda := false
 		for _, e := range cfResp.Errors {
-			if strings.Contains(strings.ToLower(e.Message), "already exists") || e.Code == 1000 {
-				alreadyExist = true
+			if strings.Contains(strings.ToLower(e.Message), "already exists") {
+				klaimSudahAda = true
 				break
+			}
+		}
+		if klaimSudahAda {
+			if c.gatewayTerdaftar(ctx, p.AccountID, p.APIToken, gatewayID) {
+				alreadyExist = true
 			}
 		}
 		if !alreadyExist {
@@ -154,7 +165,7 @@ func (c *CloudflareClient) ProvisionAIGateway(ctx context.Context, p CloudflareP
 			if len(msgs) > 0 {
 				msg = strings.Join(msgs, ", ")
 			}
-			return nil, fmt.Errorf("cloudflare API error: %s", msg)
+			return nil, fmt.Errorf("cloudflare API error (HTTP %d): %s", resp.StatusCode, msg)
 		}
 	}
 
@@ -166,4 +177,33 @@ func (c *CloudflareClient) ProvisionAIGateway(ctx context.Context, p CloudflareP
 		GatewayURL:   gatewayURL,
 		AlreadyExist: alreadyExist,
 	}, nil
+}
+
+// gatewayTerdaftar memeriksa keberadaan nyata sebuah AI Gateway lewat GET.
+// Dipakai untuk memverifikasi klaim "already exists" dari respons POST yang
+// gagal: klaim tanpa bukti keberadaan tidak dipercaya (lihat V-EO-07).
+func (c *CloudflareClient) gatewayTerdaftar(ctx context.Context, accountID, apiToken, gatewayID string) bool {
+	apiURL := fmt.Sprintf("%s/accounts/%s/ai-gateway/gateways/%s", c.baseURL, accountID, gatewayID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiToken))
+	req.Header.Set("User-Agent", "Route-X-Provisioner/1.0")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return false
+	}
+	var getResp cfGatewayResp
+	if err := json.Unmarshal(respBytes, &getResp); err != nil {
+		return false
+	}
+	return getResp.Success && getResp.Result.ID == gatewayID
 }

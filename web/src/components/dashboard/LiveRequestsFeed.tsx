@@ -57,22 +57,22 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                 ? 'text-rose-400 bg-rose-500/10 border-rose-500/20'
                 : 'text-text-secondary bg-bg-surface-2 border-border';
 
+              // Satu baris = SATU kontrol: seluruh baris adalah <button>
+              // asli (audit3 B-006). Pola lama div role="button" yang di
+              // dalamnya ada tombol mata melanggar axe nested-interactive —
+              // pembaca layar/keyboard bingung ada dua kontrol bertumpuk.
+              // Ikon mata kini dekoratif di dalam tombol yang sama.
               return (
-                <div
+                <button
                   key={req.id || req.request_id}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      onNavigate('/requests');
-                    }
-                  }}
+                  type="button"
                   onClick={() => onNavigate('/requests')}
-                  className="py-2 px-1 flex items-center justify-between gap-2 text-xs hover:bg-bg-surface-2/30 transition-colors cursor-pointer group"
+                  aria-label={`Inspeksi request ${req.requested_model || req.model_id || 'unknown'}`}
+                  title="Inspeksi jejak audit request"
+                  className="w-full py-2 px-1 flex items-center justify-between gap-2 text-left text-xs hover:bg-bg-surface-2/30 transition-colors cursor-pointer group focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                 >
                   {/* Kiri: Status code, Model Name, Protocol */}
-                  <div className="flex items-center gap-2 min-w-0">
+                  <span className="flex items-center gap-2 min-w-0">
                     <span className={`font-mono font-medium text-[11px] tabular-nums shrink-0 px-1.5 py-0.5 rounded border ${statusBadgeClass}`}>
                       {req.status_code}
                     </span>
@@ -84,10 +84,10 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                         SSE
                       </span>
                     )}
-                  </div>
+                  </span>
 
                   {/* Kanan: Latency, Tokens, Time */}
-                  <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] text-text-secondary">
+                  <span className="flex items-center gap-2 shrink-0 font-mono text-[11px] text-text-secondary">
                     <span className="tabular-nums">{req.duration_ms}ms</span>
                     <span className="text-text-muted select-none" aria-hidden="true">·</span>
                     <span className="text-text-muted tabular-nums hidden sm:inline">{req.total_tokens || 0} tok</span>
@@ -95,20 +95,11 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
                     <span className="text-text-muted text-[10px] whitespace-nowrap">
                       {formatTimeAgo(req.created_at)}
                     </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onNavigate('/requests');
-                      }}
-                      aria-label={`Inspeksi request ${req.requested_model || req.model_id}`}
-                      className="p-1 text-text-muted hover:text-white rounded hover:bg-bg-surface-2 transition-colors"
-                      title="Inspeksi jejak audit request"
-                    >
+                    <span className="p-1 text-text-muted group-hover:text-white transition-colors" aria-hidden="true">
                       <Eye className="w-3.5 h-3.5" aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
+                    </span>
+                  </span>
+                </button>
               );
             })}
           </div>

@@ -7,6 +7,7 @@ import { PageHeader } from '../components/common/PageHeader';
 import { KeyRound, Plus, RefreshCw, Search } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
 import { getErrorMessage } from '../utils/error';
 import { parseJumlahUsd } from '../utils/money';
 import type { Model, APIKey } from '../types';
@@ -423,6 +424,11 @@ export const APIKeys: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Penanda daftar terpotong (sisa V-FF-28): kunci adalah daftar yang
+          dirender; model adalah sumber pilihan pada formulir kunci. */}
+      {keysData?.terpotong && <PeringatanDaftarTerpotong sumber="kunci API" className="mb-4" />}
+      {modelsData?.terpotong && <PeringatanDaftarTerpotong sumber="model (pilihan pada formulir kunci)" className="mb-4" />}
 
       {isError ? (
         <QueryError

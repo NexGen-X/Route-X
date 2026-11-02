@@ -7,6 +7,7 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Plus, Layers } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
 import {
   CircuitBreakersPanel,
   RuleCard,
@@ -35,6 +36,9 @@ export const RoutingRules: React.FC = () => {
 
   const [rulesError, setRulesError] = useState<string | null>(null);
   const [breakersError, setBreakersError] = useState<string | null>(null);
+  // Sumber daftar yang terpotong saat dimuat (sisa V-FF-28): nama sumber
+  // yang hasil listAll-nya bertanda `terpotong`, untuk peringatan visual.
+  const [sumberTerpotong, setSumberTerpotong] = useState<string[]>([]);
 
   const loadRules = async () => {
     setIsRulesLoading(true);
@@ -61,6 +65,14 @@ export const RoutingRules: React.FC = () => {
         const pItems = Array.isArray(resProv.value) ? resProv.value : resProv.value?.items;
         setProviders(pItems || []);
       }
+
+      // Penanda terpotong per sumber (sisa V-FF-28): daftar yang tidak
+      // terbaca utuh tidak boleh tampil seolah lengkap.
+      const terpotong: string[] = [];
+      if (resRules.status === 'fulfilled' && resRules.value?.terpotong) terpotong.push('aturan routing');
+      if (resModels.status === 'fulfilled' && resModels.value?.terpotong) terpotong.push('model');
+      if (resProv.status === 'fulfilled' && !Array.isArray(resProv.value) && resProv.value?.terpotong) terpotong.push('provider');
+      setSumberTerpotong(terpotong);
     } catch (err: unknown) {
       setRulesError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -158,6 +170,10 @@ export const RoutingRules: React.FC = () => {
         <div className="mb-4">
           <QueryError message={rulesError} onRetry={() => void loadRules()} />
         </div>
+      )}
+
+      {sumberTerpotong.length > 0 && (
+        <PeringatanDaftarTerpotong sumber={sumberTerpotong.join(', ')} className="mb-4" />
       )}
 
       {isRulesLoading ? (

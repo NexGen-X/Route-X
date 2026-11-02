@@ -155,7 +155,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
                 </div>
 
                 {testResult && (
-                  <div className={`px-2 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 animate-in fade-in duration-150 ${testResult.ok ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'}`}>
+                  <div className={`px-2 py-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 animate-fade-in ${testResult.ok ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'}`}>
                     <span className="flex items-center gap-1.5 min-w-0 font-bold truncate">
                       {testResult.ok ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" aria-hidden="true" /> : <AlertTriangle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" aria-hidden="true" />}
                       <span className="truncate">{testResult.ok ? 'Uji ok' : 'Uji gagal'}{testResult.latency_ms > 0 && ` · ${testResult.latency_ms} ms`}</span>

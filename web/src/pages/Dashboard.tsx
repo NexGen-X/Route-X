@@ -17,6 +17,7 @@ import {
   ProviderHealthMatrix,
 } from '../components/dashboard';
 import { WidgetErrorBoundary } from '../components/common/WidgetErrorBoundary';
+import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
 import {
   bacaPrefQuickStart,
   simpanPrefQuickStart,
@@ -100,6 +101,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   // kegagalan yang masih berlangsung tampak sembuh setiap 5 detik.
   const [pollError, setPollError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
+  // Penanda daftar provider terpotong (sisa V-FF-28): hasil listAll
+  // bertanda `terpotong` tidak boleh tampil seolah matriks kesehatan
+  // provider sudah lengkap.
+  const [providersTerpotong, setProvidersTerpotong] = useState(false);
   // Panduan Cepat: Dashboard pemilik tunggal keadaannya (R1 Fase 2).
   // Preferensi operator (dismiss/ciut manual) disimpan lewat quickstartPrefs;
   // selama operator belum mengatur manual, keadaan ciut mengikuti status
@@ -163,6 +168,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         if (provRes.status === 'fulfilled' && provRes.value) {
           const pItems = Array.isArray(provRes.value) ? provRes.value : provRes.value.items;
           setProviders(pItems || []);
+          setProvidersTerpotong(!Array.isArray(provRes.value) && !!provRes.value.terpotong);
         } else if (provRes.status === 'rejected') {
           failedEndpoints.push('Penyedia Upstream');
         }
@@ -340,6 +346,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             <span>Pembaruan live gagal: {pesan}. Data terakhir tetap ditampilkan.</span>
           </div>
         ))}
+
+      {providersTerpotong && <PeringatanDaftarTerpotong sumber="provider" />}
 
       {/* 1. HERO OPERATIONAL STATUS & ACTION BAR */}
       <DashboardHero

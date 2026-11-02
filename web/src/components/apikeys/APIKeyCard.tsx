@@ -111,9 +111,9 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
           <div className="flex items-center gap-3 min-w-0">
             <KeyRound className="w-5 h-5 text-text-muted shrink-0 mt-0.5" aria-hidden="true" />
             <div className="min-w-0">
-              <h4 className="text-sm font-bold text-text-primary tracking-tight truncate">
+              <h3 className="text-sm font-bold text-text-primary tracking-tight truncate">
                 {apiKey.name}
-              </h4>
+              </h3>
               <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                 {getExpirationBadge()}
               </div>

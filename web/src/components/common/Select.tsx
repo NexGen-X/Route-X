@@ -260,7 +260,7 @@ export const Select: React.FC<SelectProps> = ({
       {/* Floating Custom Dropdown List untuk Desktop (>= 640px) */}
       {isOpen && !isMobile && (
         <div
-          className="absolute z-50 left-0 right-0 mt-1.5 bg-bg-surface/98 border border-white/[0.1] rounded-xl shadow-surface-elevated backdrop-blur-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-64"
+          className="absolute z-50 left-0 right-0 mt-1.5 bg-bg-surface/98 border border-white/[0.1] rounded-xl shadow-surface-elevated backdrop-blur-xl overflow-hidden animate-zoom-in flex flex-col max-h-64"
           style={{ minWidth: '100%' }}
         >
           {/* Kolom Pencarian Cepat Inline */}
@@ -375,7 +375,7 @@ export const Select: React.FC<SelectProps> = ({
             />
 
             {/* Bottom Sheet Container */}
-            <div className="relative w-full max-h-[85vh] bg-bg-surface/98 border-t border-white/[0.1] rounded-t-2xl z-50 flex flex-col animate-in slide-in-from-bottom duration-200 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-surface-elevated backdrop-blur-xl">
+            <div className="relative w-full max-h-[85vh] bg-bg-surface/98 border-t border-white/[0.1] rounded-t-2xl z-50 flex flex-col animate-sheet-up pb-[max(1rem,env(safe-area-inset-bottom))] shadow-surface-elevated backdrop-blur-xl">
               {/* Drag Handle */}
               <div className="w-12 h-1 bg-white/[0.2] rounded-full mx-auto my-3 shrink-0" aria-hidden="true" />
 

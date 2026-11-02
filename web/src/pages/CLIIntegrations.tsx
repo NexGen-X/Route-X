@@ -7,6 +7,7 @@ import type { CLITool, CLIDetectedResponse, Model, RoutingRule, APIKey } from '.
 import { useToast } from '../context/ToastContext';
 import { copyTextToClipboard } from '../utils/clipboard';
 import { QueryError } from '../components/common/QueryError';
+import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
 import type { ToolConfig, DiagStatus } from '../components/cli/types';
 import { extractDynamicComboOptions } from '../components/cli/types';
 import { CLIEnvBanner } from '../components/cli/CLIEnvBanner';
@@ -35,6 +36,10 @@ export const CLIIntegrations: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Sumber data pilihan (model/aturan/kunci) yang terpotong saat dimuat
+  // (sisa V-FF-28): pilihan konfigurasi yang tidak terbaca utuh wajib
+  // menampilkan peringatan, bukan tampil seolah lengkap.
+  const [sumberTerpotong, setSumberTerpotong] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [mainTab, setMainTab] = useState<'installed' | 'all'>('installed');
@@ -118,6 +123,12 @@ export const CLIIntegrations: React.FC = () => {
         setModels(modelsList);
         setRules(rulesList);
         setRegisteredKeys(keysList);
+
+        const terpotong: string[] = [];
+        if (modelsRes.status === 'fulfilled' && modelsRes.value?.terpotong) terpotong.push('model');
+        if (rulesRes.status === 'fulfilled' && rulesRes.value?.terpotong) terpotong.push('aturan routing');
+        if (apiKeysRes.status === 'fulfilled' && apiKeysRes.value?.terpotong) terpotong.push('kunci API');
+        setSumberTerpotong(terpotong);
 
         const comboOpts = extractDynamicComboOptions(rulesList);
         const initialConfigs: Record<string, ToolConfig> = {};
@@ -451,6 +462,9 @@ export const CLIIntegrations: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {sumberTerpotong.length > 0 && (
+        <PeringatanDaftarTerpotong sumber={sumberTerpotong.join(', ')} />
+      )}
       <PageHeader
         title="Integrasi CLI & Editor AI"
         actions={

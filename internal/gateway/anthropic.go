@@ -16,6 +16,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/providers"
+	"github.com/NexGen-X/Route-X/internal/responsecache"
 )
 
 type anthropicBlock struct {
@@ -800,6 +801,38 @@ func (h *Handlers) AnthropicCountTokens(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
+	// Response cache tahap awal (Batch C1) juga melayani permukaan
+	// Anthropic non-streaming, dengan kunci berpermukaan "anthropic":
+	// tubuh yang disimpan adalah tubuh dialek Anthropic yang disusun
+	// handler ini, bukan Raw upstream dialek OpenAI. Syarat HIT lebih
+	// ketat daripada permukaan OpenAI — entri wajib membawa Teks, karena
+	// pengekstrak teks dari Raw hanya memahami dialek OpenAI; entri tanpa
+	// teks diperlakukan sebagai MISS, bukan disajikan tanpa penyaring.
+	var cacheKey string
+	if h.respCache != nil && h.respCache.IsEnabled() && layakCacheRespons(pr.req) {
+		cacheKey = h.respCache.ComputeScopedKey(pr.req, cakupanCache(pr, permukaanAnthropic))
+		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.Raw) > 0 && entry.Teks != "" {
+			pemakaian := pemakaianCacheHIT(pr.req, entry)
+			j.pasangPemakaian(pemakaian)
+			if menang := kandidatCacheHIT(pr, entry); menang != nil {
+				j.pasangPercobaan(nil, menang)
+			}
+			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(pemakaian.TotalTokens))
+			if rj := h.guard.SaringJawaban(r.Context(), entry.Teks,
+				pr.model.ID, entry.ProviderID); rj != nil {
+				writeAnthropicError(w, rj.Status, rj.Type, rj.Message)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("anthropic-version", "2023-06-01")
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("X-RouteX-Cache", "HIT")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(entry.Raw)
+			return
+		}
+	}
+
 	out := Execute(h.guard.DenganMemoBatas(r.Context()), h.exec, pr.plan,
 		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.ChatResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
@@ -971,11 +1004,42 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 		Usage: usageAnthropicDariKanonik(pemakaian),
 	}
 
+	// Tubuh disusun ke buffer lebih dulu: byte yang sama persis yang
+	// dikirim ke klien inilah yang disimpan ke cache (Batch C1), bukan
+	// hasil susun ulang kedua yang bisa berbeda (ID pesan acak).
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(resp); err != nil {
+		h.logger.ErrorContext(r.Context(), "gagal menyusun respons Anthropic", "error", err)
+		httpx.InternalError(w, r)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("anthropic-version", "2023-06-01")
 	w.Header().Set("Cache-Control", "no-store")
+	if cacheKey != "" {
+		// Header hanya tampil bila cache benar-benar dilibatkan pada
+		// request ini — sama seperti permukaan OpenAI.
+		w.Header().Set("X-RouteX-Cache", "MISS")
+	}
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	_, _ = w.Write(buf.Bytes())
+
+	if cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() {
+		// Hanya respons sukses yang mencapai titik ini: kegagalan upstream
+		// dan penolakan penyaring sudah return lebih dulu, jadi tidak ada
+		// error maupun jawaban tersaring yang ter-cache. Teks ikut disimpan
+		// supaya jalur HIT bisa menegakkan penyaring dengan kebijakan
+		// SAAT HIT.
+		_ = h.respCache.Set(r.Context(), cacheKey, &responsecache.Entry{
+			Model:      out.Candidate.UpstreamModelName,
+			ProviderID: out.Candidate.ProviderID,
+			Raw:        buf.Bytes(),
+			Usage:      pemakaian,
+			Teks:       teksJawaban(out.Value),
+			CachedAt:   time.Now(),
+		})
+	}
 }
 
 // alatAliran adalah catatan satu tool yang sudah dibuka block-nya pada aliran

@@ -507,8 +507,15 @@ func buildGatewaySurface(
 	// Engine response cache untuk caching cerdas inferensi prompt berulang.
 	// Bawaan engine NONAKTIF (audit F3); pulihkan setelan yang pernah
 	// dipersistensikan admin dari tabel settings. Tanpa baris tersimpan,
-	// cache tetap mati — restart tidak lagi menyalakannya diam-diam
-	// melewati penolakan cache_policy_unsafe di API admin.
+	// cache tetap mati — restart tidak menyalakannya diam-diam.
+	//
+	// Sejak Batch C1 baris enabled=true adalah setelan yang SAH: kebijakan
+	// sidik kunci yang dulu dituntut penolakan cache_policy_unsafe
+	// (isolasi per API key, sidik rute, permukaan) sudah diterapkan di
+	// responsecache.ComputeScopedKey, dan jalur admin menerima aktivasi.
+	// Baris dari era penolakan tidak mungkin berisi enabled=true (admin
+	// menolaknya dan boot lama mengabaikannya), jadi tidak ada warisan
+	// yang perlu diperlakukan khusus.
 	respCache := responsecache.NewEngine(rdb, logger)
 	{
 		settingsRepoCache := identity.NewSettings(db.Pool)
@@ -516,13 +523,8 @@ func buildGatewaySurface(
 			var persisted responsecache.PersistedSettings
 			if jerr := json.Unmarshal(s.Value, &persisted); jerr != nil {
 				logger.Warn("setelan response cache tersimpan tidak terbaca; cache dibiarkan nonaktif", "error", jerr)
-			} else if persisted.Enabled {
-				// Jalur admin menolak aktivasi sampai kebijakan fingerprint
-				// diterapkan, jadi baris enabled=true tidak mungkin berasal
-				// dari versi ini; perlakukan sebagai tidak sah.
-				logger.Warn("setelan response cache tersimpan meminta enabled=true yang tidak diizinkan kebijakan saat ini; cache dibiarkan nonaktif")
 			} else {
-				respCache.SetSettings(false, time.Duration(persisted.TTLSeconds)*time.Second)
+				respCache.SetSettings(persisted.Enabled, time.Duration(persisted.TTLSeconds)*time.Second)
 			}
 		}
 	}

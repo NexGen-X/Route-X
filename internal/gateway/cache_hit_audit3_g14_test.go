@@ -51,34 +51,6 @@ func TestTeksDariRawJawaban(t *testing.T) {
 	}
 }
 
-// TestTeksDariChunkAliran adalah regresi audit3 V-GW-04: entri streaming
-// kini menyimpan teks jawaban hasil gabungan chunk, untuk kedua dialek.
-func TestTeksDariChunkAliran(t *testing.T) {
-	openai := []string{
-		`{"choices":[{"delta":{"role":"assistant","content":""}}]}`,
-		`{"choices":[{"delta":{"content":"halo "}}]}`,
-		`{"choices":[{"delta":{"content":"dunia"}}]}`,
-		`{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":9}}`,
-	}
-	if got := teksDariChunkAliran(openai); got != "halo dunia" {
-		t.Errorf("dialek OpenAI: got %q, mau %q", got, "halo dunia")
-	}
-
-	anthropic := []string{
-		`{"type":"message_start","message":{"id":"m1"}}`,
-		`{"type":"content_block_delta","delta":{"type":"text_delta","text":"pagi "}}`,
-		`{"type":"content_block_delta","delta":{"type":"text_delta","text":"semua"}}`,
-		`bukan-json`,
-	}
-	if got := teksDariChunkAliran(anthropic); got != "pagi semua" {
-		t.Errorf("dialek Anthropic: got %q, mau %q", got, "pagi semua")
-	}
-
-	if got := teksDariChunkAliran(nil); got != "" {
-		t.Errorf("tanpa chunk: got %q, mau \"\"", got)
-	}
-}
-
 // TestPemakaianCacheHIT adalah regresi audit3 V-GW-09: pemakaian yang
 // dicatat untuk HIT harus sama dengan yang ditagih — entri lama bertoken
 // nol mendapat lantai taksiran di kedua sisi, entri ber-usage utuh tidak

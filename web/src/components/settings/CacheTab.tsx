@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Zap, Trash2, CheckCircle2 } from 'lucide-react';
-import { api, ApiError } from '../../api/client';
+import { api } from '../../api/client';
 import type { ResponseCacheStats } from '../../types';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
@@ -17,12 +17,13 @@ import { InfoBanner } from '../common/InfoBanner';
 // menyala sampai kebijakan fingerprint tenant/routing/policy diterapkan,
 // karena kunci cache belum membedakan konteks tersebut).
 //
-// Tab ini jujur soal keadaan itu: tidak ada tombol aktifkan yang pasti
-// gagal. Yang ditawarkan hanya operasi yang benar-benar bekerja —
-// melihat statistik, mengatur TTL (dipersistensikan dan dipakai saat
-// kebijakan aktivasi tiba), menonaktifkan bila sedang menyala, dan
-// mengosongkan cache. Penolakan cache_policy_unsafe dari server tetap
-// ditangkap dan ditampilkan sebagai penjelasan, bukan toast gagal.
+// Sejak Batch C1 kebijakan itu diterapkan di server — kunci cache
+// terisolasi per API key (identitas ter-hash), memuat permukaan dan
+// sidik rute, dan tahap awal hanya menyimpan respons sukses
+// non-streaming tanpa tool — jadi aktivasi kini DITERIMA dan tab ini
+// menawarkan kontrol yang berfungsi penuh: aktifkan, nonaktifkan
+// (berlaku seketika), atur TTL, lihat statistik, dan kosongkan cache.
+// Batas tahap awal dinyatakan apa adanya di banner, bukan disembunyikan.
 
 const TTL_MAKS_MENIT = 1440; // Batas server: TTLSeconds ≤ 86400 (24 jam).
 
@@ -39,7 +40,6 @@ export const CacheTab: React.FC = () => {
   const [ttlGalat, setTtlGalat] = useState<string | null>(null);
   const [menyimpan, setMenyimpan] = useState<boolean>(false);
   const [mengosongkan, setMengosongkan] = useState<boolean>(false);
-  const [penolakanKebijakan, setPenolakanKebijakan] = useState<string | null>(null);
 
   const muat = useCallback(async () => {
     setMemuat(true);
@@ -60,13 +60,10 @@ export const CacheTab: React.FC = () => {
     void muat();
   }, [muat]);
 
-  // Tangani kegagalan simpan: penolakan kebijakan tampil sebagai
-  // penjelasan menetap; kegagalan lain cukup toast.
+  // Kegagalan simpan cukup toast: server tidak lagi menolak aktivasi
+  // dengan kode kebijakan (Batch C1), jadi tidak ada penjelasan menetap
+  // yang perlu ditampilkan.
   const tanganiGagalSimpan = (err: unknown, konteks: string) => {
-    if (err instanceof ApiError && err.code === 'cache_policy_unsafe') {
-      setPenolakanKebijakan(err.message);
-      return;
-    }
     toast.error(`${konteks}: ${getErrorMessage(err)}`);
   };
 
@@ -95,11 +92,9 @@ export const CacheTab: React.FC = () => {
     const ttl = hasil.ttl;
     setTtlGalat(null);
     setMenyimpan(true);
-    setPenolakanKebijakan(null);
     try {
-      // enabled selalu dikirim apa adanya dari statistik terakhir; server
-      // menolak enabled=true (cache_policy_unsafe) dan menerjemahkannya
-      // di tanganiGagalSimpan menjadi penjelasan.
+      // enabled selalu dikirim apa adanya dari statistik terakhir —
+      // menyimpan TTL tidak mengubah status aktif/nonaktif.
       await api.system.updateCacheSettings(cache.enabled, ttl * 60);
       toast.success(`TTL cache respons tersimpan: ${ttl} menit.`, 'TTL Tersimpan');
       void muat();
@@ -112,13 +107,35 @@ export const CacheTab: React.FC = () => {
 
   const handleNonaktifkan = async () => {
     setMenyimpan(true);
-    setPenolakanKebijakan(null);
     try {
       await api.system.updateCacheSettings(false, cache?.ttl_seconds ?? 3600);
       toast.info('Cache respons dinonaktifkan.', 'Pengaturan Cache');
       void muat();
     } catch (err: unknown) {
       tanganiGagalSimpan(err, 'Gagal menonaktifkan cache');
+    } finally {
+      setMenyimpan(false);
+    }
+  };
+
+  // Mengaktifkan dengan TTL dari kolom yang sedang tampil (divalidasi
+  // dengan pengurai yang sama seperti simpan TTL — tidak ada nilai yang
+  // terkirim tanpa terlihat operator).
+  const handleAktifkan = async () => {
+    const hasil = uraiTtl();
+    if ('galat' in hasil) {
+      setTtlGalat(hasil.galat);
+      toast.error(hasil.galat, 'TTL Tidak Valid');
+      return;
+    }
+    setTtlGalat(null);
+    setMenyimpan(true);
+    try {
+      await api.system.updateCacheSettings(true, hasil.ttl * 60);
+      toast.success('Cache respons diaktifkan.', 'Pengaturan Cache');
+      void muat();
+    } catch (err: unknown) {
+      tanganiGagalSimpan(err, 'Gagal mengaktifkan cache');
     } finally {
       setMenyimpan(false);
     }
@@ -167,9 +184,13 @@ export const CacheTab: React.FC = () => {
           </div>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-          {cache?.enabled && (
+          {cache?.enabled ? (
             <Button variant="danger" size="sm" isLoading={menyimpan} onClick={() => void handleNonaktifkan()}>
               Nonaktifkan Cache
+            </Button>
+          ) : (
+            <Button variant="primary" size="sm" isLoading={menyimpan} disabled={!cache} onClick={() => void handleAktifkan()}>
+              Aktifkan Cache
             </Button>
           )}
           <Button
@@ -185,23 +206,25 @@ export const CacheTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Penjelasan jujur: aktivasi ditahan kebijakan keamanan server.
-          Ringkasan selalu tampil; penjelasan panjang di balik Detail
-          (InfoBanner, Fase 3 P5) — bukan lagi dinding teks. */}
-      {!cache?.enabled && (
-        <InfoBanner variant="warning" className="mt-4" summary="Cache belum dapat diaktifkan dari panel ini.">
-          Server menahan aktivasi sampai kebijakan fingerprint tenant, routing, dan policy diterapk ...[truncated 4518 chars]an (keputusan keamanan audit F3 — kunci cache belum membedakan konteks tersebut, jadi respons bisa tersaji lintas konteks). TTL di bawah tetap berlaku dan tersimpan; statistik tetap terpantau dari sini.
-        </InfoBanner>
-      )}
+      {/* Penjelasan perilaku & batas tahap awal aktivasi (Batch C1):
+          ringkasan selalu tampil; rincian di balik Detail (InfoBanner). */}
+      <InfoBanner
+        variant="info"
+        className="mt-4"
+        summary={
+          cache?.enabled
+            ? 'Cache aktif — hanya respons sukses non-streaming tanpa tool yang disimpan.'
+            : 'Cache nonaktif — aktifkan untuk melayani respons identik dari Redis.'
+        }
+      >
+        Kunci cache terisolasi per API key: respons untuk satu kunci tidak pernah melayani kunci lain.
+        Yang disimpan hanya respons sukses (2xx) non-streaming dari chat completions dan permukaan
+        Anthropic; streaming, respons error, jawaban yang ditolak penyaring konten, dan permintaan
+        yang mendeklarasikan tool tidak pernah di-cache. Perubahan provider, routing, atau pemetaan
+        model membuat entri lama tidak terjangkau dan kedaluwarsa mengikuti TTL; perubahan kredensial
+        mengosongkan cache. Menonaktifkan cache menghentikan penyajian dari cache seketika.
+      </InfoBanner>
 
-      {/* Penolakan kebijakan dari server, ditampilkan apa adanya. */}
-      {penolakanKebijakan && (
-        <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
-          <p className="text-[11px] leading-relaxed text-red-300">
-            Server menolak perubahan ini: {penolakanKebijakan}
-          </p>
-        </div>
-      )}
 
       {gagalMuat && (
         <p className="mt-4 text-xs text-red-400">

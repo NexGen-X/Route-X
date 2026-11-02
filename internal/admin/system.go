@@ -370,10 +370,16 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "invalid_ttl", "TTLSeconds harus dalam rentang 0–86400 detik")
 		return
 	}
-	if req.Enabled {
-		httpx.BadRequest(w, r, "cache_policy_unsafe", "Response cache dinonaktifkan sampai fingerprint tenant, routing, dan policy diterapkan")
-		return
-	}
+	// Aktivasi DITERIMA sejak Batch C1: penolakan cache_policy_unsafe
+	// historis menuntut fingerprint tenant, routing, dan policy — dan
+	// ketiganya kini diterapkan di kunci cache itu sendiri
+	// (responsecache.ComputeScopedKey): isolasi per API key dengan
+	// identitas ter-hash terpisah domain, model kanonik, permukaan, dan
+	// sidik rute; tahap awal hanya respons sukses non-streaming tanpa
+	// tool yang dibaca/disimpan (gateway.layakCacheRespons). Tidak ada
+	// knob di permukaan ini yang bisa melemahkan isolasi itu — kunci
+	// selalu dibentuk kode, bukan pilihan operator — jadi tidak ada
+	// konfigurasi tak aman yang perlu ditolak di sini.
 	ttl := time.Duration(req.TTLSeconds) * time.Second
 	// Persistensikan SEBELUM menerapkan (audit F3): setelan yang hanya
 	// hidup di memori hilang saat restart dan boot lama diam-diam
@@ -384,7 +390,7 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 		if p, ok := auth.PrincipalFrom(r.Context()); ok && p != nil {
 			actorID = p.User.ID
 		}
-		persisted, _ := json.Marshal(responsecache.PersistedSettings{Enabled: false, TTLSeconds: req.TTLSeconds})
+		persisted, _ := json.Marshal(responsecache.PersistedSettings{Enabled: req.Enabled, TTLSeconds: req.TTLSeconds})
 		if _, err := h.settingsRepo.Put(r.Context(), identity.SettingWrite{
 			Key:         responsecache.SettingKey,
 			Value:       persisted,
@@ -395,9 +401,12 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	h.responseCache.SetSettings(false, ttl)
+	// Kill switch: SetSettings(false, ...) berlaku seketika — IsEnabled
+	// diperiksa pada setiap request, jadi penonaktifan menghentikan
+	// penyajian HIT pada request berikutnya tanpa restart.
+	h.responseCache.SetSettings(req.Enabled, ttl)
 	_ = h.respond(w, r, http.StatusOK, CacheSettingsResponseDTO{
-		Enabled:    false,
+		Enabled:    req.Enabled,
 		TTLSeconds: req.TTLSeconds,
 		Message:    "Pengaturan response cache berhasil diperbarui",
 	})

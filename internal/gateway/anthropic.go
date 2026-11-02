@@ -530,12 +530,23 @@ func usageAnthropicDariKanonik(u providers.Usage) anthropicUsage {
 	if masuk < 0 {
 		masuk = 0
 	}
-	return anthropicUsage{
+	out := anthropicUsage{
 		InputTokens:              masuk,
 		OutputTokens:             u.OutputTokens,
 		CacheCreationInputTokens: u.CacheCreationInputTokens,
 		CacheReadInputTokens:     u.CachedInputTokens,
 	}
+	// Rincian TTL tulis cache diteruskan bila kanonik membawanya, persis
+	// bentuk objek cache_creation pada spec Anthropic; tanpa rincian field
+	// ini hilang (omitempty), bukan objek bernol yang menyiratkan upstream
+	// melaporkannya.
+	if u.CacheCreation1hInputTokens > 0 || u.CacheCreation5mInputTokens > 0 {
+		out.CacheCreation = &anthropicCacheCreation{
+			Ephemeral1hInputTokens: u.CacheCreation1hInputTokens,
+			Ephemeral5mInputTokens: u.CacheCreation5mInputTokens,
+		}
+	}
+	return out
 }
 
 // blokGambarDariPart mengubah satu bagian gambar kanonik menjadi block image
@@ -580,6 +591,16 @@ type anthropicUsage struct {
 	OutputTokens             int `json:"output_tokens"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+	// CacheCreation adalah rincian TTL token tulis cache; hanya hadir bila
+	// upstream melaporkannya (lihat usageAnthropicDariKanonik).
+	CacheCreation *anthropicCacheCreation `json:"cache_creation,omitempty"`
+}
+
+// anthropicCacheCreation adalah objek cache_creation pada usage spec
+// Anthropic: pecahan token tulis cache menurut TTL-nya.
+type anthropicCacheCreation struct {
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
 }
 
 // penangkapRespons menahan seluruh keluaran HTTP selama tahap persiapan
@@ -1332,18 +1353,25 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 	if stopSeq != "" {
 		stopSeqNilai = stopSeq
 	}
+	usageDelta := map[string]any{
+		"input_tokens":                usageKlien.InputTokens,
+		"output_tokens":               outputTokens,
+		"cache_creation_input_tokens": usageKlien.CacheCreationInputTokens,
+		"cache_read_input_tokens":     usageKlien.CacheReadInputTokens,
+	}
+	if usageKlien.CacheCreation != nil {
+		usageDelta["cache_creation"] = map[string]any{
+			"ephemeral_1h_input_tokens": usageKlien.CacheCreation.Ephemeral1hInputTokens,
+			"ephemeral_5m_input_tokens": usageKlien.CacheCreation.Ephemeral5mInputTokens,
+		}
+	}
 	msgDeltaPayload, _ := json.Marshal(map[string]any{
 		"type": "message_delta",
 		"delta": map[string]any{
 			"stop_reason":   stopReason,
 			"stop_sequence": stopSeqNilai,
 		},
-		"usage": map[string]any{
-			"input_tokens":                usageKlien.InputTokens,
-			"output_tokens":               outputTokens,
-			"cache_creation_input_tokens": usageKlien.CacheCreationInputTokens,
-			"cache_read_input_tokens":     usageKlien.CacheReadInputTokens,
-		},
+		"usage": usageDelta,
 	})
 	_, _ = fmt.Fprintf(w, "event: message_delta\ndata: %s\n\n", msgDeltaPayload)
 	_ = rc.Flush()

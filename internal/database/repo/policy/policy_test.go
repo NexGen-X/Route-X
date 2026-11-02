@@ -653,6 +653,88 @@ func TestAkhirPeriodeSelarasKalender(t *testing.T) {
 	}
 }
 
+// TestAkhirPeriodeDiZonaWaktuOperator membuktikan sisa V-AB-24: batas kalender
+// weekly/monthly jatuh pada tengah malam ZONA OPERATOR (di sini WITA = UTC+8),
+// bukan tengah malam UTC, sedangkan daily tetap durasi 24 jam bergulir di zona
+// mana pun. Zona ditetapkan FixedZone agar test deterministik tanpa tzdata.
+func TestAkhirPeriodeDiZonaWaktuOperator(t *testing.T) {
+	wita := time.FixedZone("WITA", 8*60*60)
+
+	kasus := []struct {
+		nama   string
+		period string
+		dari   time.Time // momen awal, ditulis dalam UTC
+		mau    time.Time // batas akhir yang diharapkan, ditulis dalam UTC
+		mauOK  bool
+	}{
+		// Rabu 09:00 UTC = Rabu 17:00 WITA → Senin berikutnya 00:00 WITA
+		// = Minggu 16:00 UTC.
+		{"weekly dari Rabu", PeriodWeekly,
+			time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC),
+			time.Date(2026, 11, 8, 16, 0, 0, 0, time.UTC), true},
+		// Minggu 17:30 UTC sudah Senin 01:30 WITA → batasnya Senin pekan
+		// BERIKUTNYA 00:00 WITA, bukan Senin 00:00 UTC besok.
+		{"weekly melintasi garis hari", PeriodWeekly,
+			time.Date(2026, 11, 8, 17, 30, 0, 0, time.UTC),
+			time.Date(2026, 11, 15, 16, 0, 0, 0, time.UTC), true},
+		// Tepat pada batas Senin 00:00 WITA (= Minggu 16:00 UTC): batas
+		// berikutnya Senin sesudahnya, bukan momen itu sendiri.
+		{"weekly tepat pada batas", PeriodWeekly,
+			time.Date(2026, 11, 8, 16, 0, 0, 0, time.UTC),
+			time.Date(2026, 11, 15, 16, 0, 0, 0, time.UTC), true},
+		// 31 Jan 17:00 UTC = 1 Feb 01:00 WITA → bulan berjalan operator
+		// adalah Februari, jadi batasnya 1 Mar 00:00 WITA = 28 Feb 16:00 UTC.
+		{"monthly melintasi garis bulan", PeriodMonthly,
+			time.Date(2026, 1, 31, 17, 0, 0, 0, time.UTC),
+			time.Date(2026, 2, 28, 16, 0, 0, 0, time.UTC), true},
+		{"monthly pertengahan bulan", PeriodMonthly,
+			time.Date(2026, 11, 15, 4, 0, 0, 0, time.UTC),
+			time.Date(2026, 11, 30, 16, 0, 0, 0, time.UTC), true},
+		// Daily adalah durasi: zona tidak mengubahnya.
+		{"daily tetap 24 jam bergulir", PeriodDaily,
+			time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC),
+			time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC), true},
+		{"total tanpa batas", PeriodTotal,
+			time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			time.Time{}, false},
+	}
+	for _, k := range kasus {
+		t.Run(k.nama, func(t *testing.T) {
+			got, ok := AkhirPeriodeDi(k.period, k.dari, wita)
+			if ok != k.mauOK {
+				t.Fatalf("ok = %v, mau %v", ok, k.mauOK)
+			}
+			if ok && !got.Equal(k.mau) {
+				t.Errorf("AkhirPeriodeDi(%s, %s, WITA) = %s, mau %s", k.period, k.dari, got, k.mau)
+			}
+		})
+	}
+
+	// Bawaan harus identik dengan perilaku lama: loc UTC dan loc nil sama
+	// persis dengan AkhirPeriode untuk semua periode.
+	for _, period := range []string{PeriodDaily, PeriodWeekly, PeriodMonthly, PeriodTotal} {
+		dari := time.Date(2026, 1, 31, 10, 30, 0, 0, time.UTC)
+		mau, mauOK := AkhirPeriode(period, dari)
+		for nama, loc := range map[string]*time.Location{"UTC": time.UTC, "nil": nil} {
+			got, ok := AkhirPeriodeDi(period, dari, loc)
+			if ok != mauOK || (ok && !got.Equal(mau)) {
+				t.Errorf("AkhirPeriodeDi(%s, %s, %s) = %s,%v, mau %s,%v (sama dengan AkhirPeriode)",
+					period, dari, nama, got, ok, mau, mauOK)
+			}
+		}
+	}
+
+	// Nama IANA nyata yang dipakai operator proyek ini, bila tzdata tersedia
+	// di mesin test: hasilnya harus sama dengan FixedZone UTC+8 di atas.
+	if makassar, err := time.LoadLocation("Asia/Makassar"); err == nil {
+		got, ok := AkhirPeriodeDi(PeriodWeekly, time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC), makassar)
+		mau := time.Date(2026, 11, 8, 16, 0, 0, 0, time.UTC)
+		if !ok || !got.Equal(mau) {
+			t.Errorf("AkhirPeriodeDi weekly Asia/Makassar = %s,%v, mau %s,true", got, ok, mau)
+		}
+	}
+}
+
 // TestCreateBudgetMengisiPeriodEnd membuktikan perbaikan V-AB-01: anggaran berkala
 // yang dibuat TANPA period_end eksplisit lahir dengan batas akhir terisi dan — sesudah
 // batasnya lewat — benar-benar ditemukan ExpiredBudgets agar worker bisa meresetnya.

@@ -448,8 +448,16 @@ type TokenUsage struct {
 	// dilaporkan Anthropic). Ia bukan input biasa: Anthropic menagihnya di atas
 	// harga input — lihat pengaliCacheCreation pada Cost.
 	CacheCreation int64
-	Output        int64
-	Reasoning     int64
+	// CacheCreation1h dan CacheCreation5m adalah PECAHAN CacheCreation
+	// menurut TTL tulisnya: tulis 1 jam ditagih 2× harga input, tulis 5 menit
+	// 1,25×. Keduanya nol bila provider tidak melaporkan pecahan; jumlahnya
+	// tidak boleh melewati CacheCreation, dan selisihnya (token creation
+	// tanpa atribusi TTL) ditagih tarif 5 menit oleh Cost — persis perilaku
+	// sebelum pecahan ini ada.
+	CacheCreation1h int64
+	CacheCreation5m int64
+	Output          int64
+	Reasoning       int64
 }
 
 // Total mengembalikan jumlah seluruh token, sesuai kolom requests.total_tokens.
@@ -474,13 +482,19 @@ type CostBreakdown struct {
 }
 
 // Pengali tarif tulis prompt cache Anthropic terhadap harga input: cache 5 menit
-// ditagih 1,25× harga input (cache 1 jam 2× — tetapi laporan usage Anthropic yang
-// diurai adaptor tidak memecah keduanya, jadi yang dipakai adalah tarif bawaan
-// 5 menit; lihat providers/anthropic upstreamUsage). Melipat token ini ke input
-// biasa menagihnya 1,0× dan menguapkan premi tulisnya (audit3 V-AB-11).
+// ditagih 1,25× harga input dan cache 1 jam 2×. Laporan usage Anthropic memecah
+// keduanya lewat objek cache_creation (ephemeral_5m/ephemeral_1h_input_tokens),
+// dan pecahan itu kini diurai adaptor sampai ke TokenUsage. Token creation
+// TANPA pecahan — atau sisa yang tidak teratribusi ke TTL mana pun — ditagih
+// tarif 5 menit, persis perilaku sebelum pecahan diurai (sisa B-011). Melipat
+// token ini ke input biasa menagihnya 1,0× dan menguapkan premi tulisnya
+// (audit3 V-AB-11).
 const (
 	pengaliCacheCreationNum = 5
 	pengaliCacheCreationDen = 4
+
+	pengaliCacheCreation1hNum = 2
+	pengaliCacheCreation1hDen = 1
 )
 
 // Cost menghitung biaya sejumlah token dengan harga ini.
@@ -527,12 +541,27 @@ func (p *Price) Cost(u TokenUsage) (CostBreakdown, error) {
 
 	// Token tulis cache tidak punya kolom harga sendiri di tabel harga karena
 	// tarifnya TURUNAN dari harga input (pengali tetap di atas), bukan angka yang
-	// diketik operator.
-	out.CacheCreation, err = costOfScaled(u.CacheCreation, p.Input,
+	// diketik operator. Hanya porsi 1 jam yang perlu dipisahkan — tarifnya
+	// berbeda. Selebihnya (pecahan 5 menit eksplisit DAN sisa tanpa atribusi
+	// TTL) satu keranjang pada tarif 5 menit, jadi dihitung sekali dari
+	// CacheCreation dikurangi porsi 1 jam; CacheCreation5m karenanya tidak
+	// mengubah hitungan di sini, hanya menjelaskan komposisi untuk pencatatan.
+	// Porsi 1 jam dijepit ke dalam CacheCreation: laporan yang pecahannya
+	// tidak konsisten tidak boleh menagih creation melebihi total yang
+	// dilaporkan. Tanpa pecahan sama sekali (CacheCreation1h nol),
+	// hitungannya identik dengan tarif tunggal 5 menit sebelum pecahan ada.
+	porsi1h := min(max(u.CacheCreation1h, 0), max(u.CacheCreation, 0))
+	biaya5m, err := costOfScaled(u.CacheCreation-porsi1h, p.Input,
 		pengaliCacheCreationNum, pengaliCacheCreationDen)
 	if err != nil {
 		return CostBreakdown{}, fmt.Errorf("menghitung biaya token cache creation: %w", err)
 	}
+	biaya1h, err := costOfScaled(porsi1h, p.Input,
+		pengaliCacheCreation1hNum, pengaliCacheCreation1hDen)
+	if err != nil {
+		return CostBreakdown{}, fmt.Errorf("menghitung biaya token cache creation 1 jam: %w", err)
+	}
+	out.CacheCreation = biaya5m + biaya1h
 
 	out.Total = out.Input + out.CachedInput + out.CacheCreation + out.Output + out.Reasoning
 	return out, nil

@@ -228,9 +228,15 @@ type Event struct {
 	// token TULIS prompt cache; dipisahkan hanya untuk penagihan (tarifnya
 	// berbeda), bukan kolom requests tersendiri.
 	CacheCreationInputTokens int
-	OutputTokens             int
-	ReasoningTokens          int
-	TotalTokens              int
+	// CacheCreation1hInputTokens dan CacheCreation5mInputTokens adalah
+	// pecahan TTL dari CacheCreationInputTokens (tulis cache 1 jam vs
+	// 5 menit), diteruskan apa adanya ke TokensFor untuk tarif yang
+	// berbeda. Nol bila upstream tidak melaporkannya.
+	CacheCreation1hInputTokens int
+	CacheCreation5mInputTokens int
+	OutputTokens               int
+	ReasoningTokens            int
+	TotalTokens                int
 
 	// TerjadiPada adalah saat permintaan selesai di gateway. Penagihan memakai
 	// harga yang berlaku pada saat INI, bukan harga berjalan saat pencatat

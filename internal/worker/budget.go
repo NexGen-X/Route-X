@@ -27,24 +27,33 @@ type BudgetResetRepo interface {
 //   - Memakai query baru ExpiredBudgets karena ActiveBudgets mengecualikan baris yang period_end-nya lewat.
 //   - Menghitung ulang spent_usd dari requests.cost_usd (skala 8) agar angka periode baru
 //     berasal dari sumber otoritatif, bukan akumulasi yang bisa menyimpang.
-//   - Batas periode berikutnya dari policy.AkhirPeriode (selaras kalender untuk
-//     weekly/monthly) dan penulisannya ber-CAS pada jendela lama.
+//   - Batas periode berikutnya dari policy.AkhirPeriodeDi pada zona waktu operator
+//     (selaras kalender untuk weekly/monthly) dan penulisannya ber-CAS pada jendela lama.
 //   - Melepas penanda peringatan (alerted_at = null) agar periode baru dapat memicu peringatan kembali.
 type BudgetResetterJob struct {
 	pool   *pgxpool.Pool
 	repo   BudgetResetRepo
 	logger *slog.Logger
+	// zonaWaktu adalah zona waktu operator untuk batas kalender periode
+	// (env BUDGET_TIMEZONE). Selalu non-nil; bawaan UTC.
+	zonaWaktu *time.Location
 }
 
-// NewBudgetResetterJob membuat instance baru BudgetResetterJob.
-func NewBudgetResetterJob(pool *pgxpool.Pool, repo BudgetResetRepo, logger *slog.Logger) *BudgetResetterJob {
+// NewBudgetResetterJob membuat instance baru BudgetResetterJob. zonaWaktu
+// adalah zona waktu operator dari konfigurasi (pola parameter knob yang sama
+// seperti NewRetentionWorker); nil berarti UTC, perilaku historis.
+func NewBudgetResetterJob(pool *pgxpool.Pool, repo BudgetResetRepo, zonaWaktu *time.Location, logger *slog.Logger) *BudgetResetterJob {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if zonaWaktu == nil {
+		zonaWaktu = time.UTC
+	}
 	return &BudgetResetterJob{
-		pool:   pool,
-		repo:   repo,
-		logger: logger,
+		pool:      pool,
+		repo:      repo,
+		logger:    logger,
+		zonaWaktu: zonaWaktu,
 	}
 }
 
@@ -86,14 +95,14 @@ func (b *BudgetResetterJob) resetOne(ctx context.Context, bg *policy.Budget, now
 	newStart := *bg.PeriodEnd
 
 	// Majukan rentang periode hingga mencakup waktu sekarang. Batasnya dihitung
-	// policy.AkhirPeriode — selaras kalender untuk weekly/monthly, BUKAN AddDate
+	// policy.AkhirPeriodeDi pada zona waktu operator — selaras kalender untuk weekly/monthly, BUKAN AddDate
 	// berantai dari jangkar berjalan: rantai AddDate(0,1,0) dari tanggal 31 melompat
 	// ke tanggal 3 dan menggeser jangkar selamanya (audit3 V-AB-05). Baris warisan
 	// yang batas lamanya belum selaras (mis. tanggal 3 hasil drift lama) mendapat
 	// satu periode jembatan pendek lalu selaras permanen mulai periode berikutnya.
 	var newEnd time.Time
 	for {
-		e, ok := policy.AkhirPeriode(bg.Period, newStart)
+		e, ok := policy.AkhirPeriodeDi(bg.Period, newStart, b.zonaWaktu)
 		if !ok {
 			// Periode 'total' atau tidak dikenal tidak direset otomatis
 			return nil

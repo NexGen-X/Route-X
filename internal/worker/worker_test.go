@@ -517,7 +517,7 @@ func TestBudgetResetterJobMemajukanPeriode(t *testing.T) {
 		spent:   upstream.MustParseUSD("5.25000000"),
 	}
 
-	job := NewBudgetResetterJob(nil, repo, nil)
+	job := NewBudgetResetterJob(nil, repo, nil, nil)
 	if err := job.Run(ctx); err != nil {
 		t.Fatalf("Run budget resetter: %v", err)
 	}
@@ -541,7 +541,7 @@ func TestBudgetResetterMonthlyTidakMelompatiFebruari(t *testing.T) {
 		Period: policy.PeriodMonthly, PeriodStart: mulai, PeriodEnd: &akhir,
 	}
 	rp := &dummyBudgetResetRepo{expired: []*policy.Budget{bg}}
-	job := NewBudgetResetterJob(nil, rp, nil)
+	job := NewBudgetResetterJob(nil, rp, nil, nil)
 
 	now := time.Date(2026, 2, 15, 12, 0, 0, 0, time.UTC)
 	if err := job.resetOne(ctx, bg, now); err != nil {
@@ -561,6 +561,40 @@ func TestBudgetResetterMonthlyTidakMelompatiFebruari(t *testing.T) {
 	}
 }
 
+// TestBudgetResetterZonaWaktuOperator membuktikan sisa V-AB-24 di sisi
+// worker: anggaran monthly dimajukan pada kalender zona operator (WITA =
+// UTC+8), bukan kalender UTC. Jendela lama berakhir 31 Jan 00:00 UTC
+// (= 31 Jan 08:00 WITA); periode yang memuatnya berakhir 1 Feb 00:00 WITA
+// (= 31 Jan 16:00 UTC) dan periode penuh berikutnya [1 Feb, 1 Mar) WITA
+// = [31 Jan 16:00 UTC, 28 Feb 16:00 UTC).
+func TestBudgetResetterZonaWaktuOperator(t *testing.T) {
+	ctx := context.Background()
+	wita := time.FixedZone("WITA", 8*60*60)
+
+	mulai := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	akhir := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
+	bg := &policy.Budget{
+		ID: "b-monthly-wita", Name: "anggaran-bulanan-wita",
+		Period: policy.PeriodMonthly, PeriodStart: mulai, PeriodEnd: &akhir,
+	}
+	rp := &dummyBudgetResetRepo{expired: []*policy.Budget{bg}}
+	job := NewBudgetResetterJob(nil, rp, wita, nil)
+
+	now := time.Date(2026, 2, 15, 12, 0, 0, 0, time.UTC)
+	if err := job.resetOne(ctx, bg, now); err != nil {
+		t.Fatalf("resetOne: %v", err)
+	}
+
+	mauMulai := time.Date(2026, 1, 31, 16, 0, 0, 0, time.UTC)
+	mauAkhir := time.Date(2026, 2, 28, 16, 0, 0, 0, time.UTC)
+	if !rp.resetStart.Equal(mauMulai) {
+		t.Errorf("awal periode baru = %s, mau %s (1 Feb 00:00 WITA)", rp.resetStart, mauMulai)
+	}
+	if rp.resetEnd == nil || !rp.resetEnd.Equal(mauAkhir) {
+		t.Errorf("akhir periode baru = %v, mau %s (1 Mar 00:00 WITA)", rp.resetEnd, mauAkhir)
+	}
+}
+
 // TestBudgetResetterKonflikCASDilewati membuktikan perbaikan V-AB-06 di sisi worker:
 // konflik CAS (periode sudah dimajukan pihak lain) bukan kegagalan job.
 func TestBudgetResetterKonflikCASDilewati(t *testing.T) {
@@ -575,7 +609,7 @@ func TestBudgetResetterKonflikCASDilewati(t *testing.T) {
 		expired:  []*policy.Budget{bg},
 		resetErr: fmt.Errorf("mereset periode anggaran dengan pemakaian terhitung: %w", repo.ErrConflict),
 	}
-	job := NewBudgetResetterJob(nil, rp, nil)
+	job := NewBudgetResetterJob(nil, rp, nil, nil)
 
 	if err := job.resetOne(ctx, bg, time.Now()); err != nil {
 		t.Fatalf("resetOne dengan konflik CAS: err = %v, mau nil", err)

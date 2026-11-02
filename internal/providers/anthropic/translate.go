@@ -106,6 +106,19 @@ type upstreamUsage struct {
 	OutputTokens             int `json:"output_tokens"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	// CacheCreation adalah rincian TTL token tulis cache. Objek ini tidak
+	// selalu hadir (respons tanpa tulis cache, atau upstream lama), dan
+	// ketidakhadirannya BUKAN nol yang pasti — penagihan membedakannya:
+	// tanpa rincian, seluruh creation ditagih tarif 5 menit.
+	CacheCreation *rincianCacheCreation `json:"cache_creation"`
+}
+
+// rincianCacheCreation adalah objek cache_creation pada usage Anthropic:
+// pecahan cache_creation_input_tokens menurut TTL tulisnya. Pada respons
+// Anthropic yang sah, ephemeral_1h + ephemeral_5m = cache_creation_input_tokens.
+type rincianCacheCreation struct {
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
 }
 
 // messagesResponse adalah respons non-streaming /v1/messages.
@@ -576,7 +589,7 @@ func truncate(s string, n int) string {
 //     input_tokens + output_tokens saja akan melewatkan seluruh token cache.
 func toCanonicalUsage(u upstreamUsage) providers.Usage {
 	input := u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
-	return providers.Usage{
+	out := providers.Usage{
 		InputTokens:       input,
 		CachedInputTokens: u.CacheReadInputTokens,
 		// Ikut dibawa terpisah supaya penagihan bisa mengenakan premi tulis
@@ -586,6 +599,15 @@ func toCanonicalUsage(u upstreamUsage) providers.Usage {
 		OutputTokens:             u.OutputTokens,
 		TotalTokens:              input + u.OutputTokens,
 	}
+	// Rincian TTL tulis cache ikut dibawa bila dilaporkan: penagihan
+	// membedakan tulis 1 jam (2×) dari 5 menit (1,25×). Tanpa objek
+	// cache_creation kedua field tetap nol dan seluruh creation jatuh ke
+	// tarif 5 menit (sisa B-011).
+	if u.CacheCreation != nil {
+		out.CacheCreation1hInputTokens = u.CacheCreation.Ephemeral1hInputTokens
+		out.CacheCreation5mInputTokens = u.CacheCreation.Ephemeral5mInputTokens
+	}
+	return out
 }
 
 // mapStopReason menerjemahkan stop_reason Anthropic ke bentuk kanonik.

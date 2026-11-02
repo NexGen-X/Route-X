@@ -1,5 +1,7 @@
 # Route-X — Aturan Pengembangan & Standar Kerja (routex-dev)
 
+> ⚠️ **DOKUMEN INTERNAL AGEN — BUKAN DOKUMENTASI PENGGUNA/PRODUK.** Berkas ini adalah konteks kerja internal untuk AI agent di repo Route-X. Bila isinya bertentangan dengan kode sumber atau `AGENTS.md` repo, **kode dan `AGENTS.md` yang menang**. Indeks & catatan keselarasan: [`.agents/README.md`](../README.md).
+
 Aturan ini berlaku wajib bagi AI agent dan pengembang yang bekerja di repositori Route-X.
 
 ---
@@ -39,8 +41,8 @@ Aturan ini berlaku wajib bagi AI agent dan pengembang yang bekerja di repositori
 
 ---
 
-## 5. Dual-Protocol Engine & Streaming (v1.1.0 Feature Standards)
-- **Kompatibilitas OpenAI**: Rute `/v1/chat/completions` dan `/v1/responses` harus sepenuhnya mematuhi spesifikasi OpenAI, baik non-streaming maupun streaming SSE.
+## 5. Dual-Protocol Engine & Streaming (Standar Fitur Berjalan)
+- **Kompatibilitas OpenAI**: Rute `/v1/chat/completions` mematuhi spesifikasi OpenAI Chat Completions, baik non-streaming maupun streaming SSE. Rute `/v1/responses` adalah **alias** handler Chat Completions — BUKAN implementasi penuh OpenAI Responses API; jangan mengklaim kepatuhan Responses API penuh.
 - **Kompatibilitas Anthropic**: Rute `/v1/messages` dan `/v1/v1/messages` harus menangani konversi dua arah secara presisi (roles, multi-modal content parts, tool calls).
 - **Integritas Streaming SSE**: Chunk streaming tidak boleh memotong karakter UTF-8 multibyte atau merusak framing JSON event `data: {...}`.
 - **Zero-Touch CLI Protection**: Konfigurasi otomatis untuk alat CLI pengembang (Claude Code, OpenCode, Aider, SGPT) tidak boleh mengganggu environment Antigravity (`agy`).

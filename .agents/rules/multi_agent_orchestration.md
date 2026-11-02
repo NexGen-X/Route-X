@@ -1,5 +1,7 @@
 # Aturan Resmi Orkestrasi & Koordinasi Multi-Agent Route-X (multi-agent-orchestration)
 
+> ⚠️ **DOKUMEN INTERNAL AGEN — BUKAN DOKUMENTASI PENGGUNA/PRODUK.** Berkas ini adalah konteks kerja internal untuk AI agent di repo Route-X. Bila isinya bertentangan dengan kode sumber atau `AGENTS.md` repo, **kode dan `AGENTS.md` yang menang**. Indeks & catatan keselarasan: [`.agents/README.md`](../README.md).
+
 Dokumen ini merupakan pedoman tata kelola dan orkestrasi multi-agent resmi untuk ekosistem rekayasa perangkat lunak Route-X. Aturan ini mengikat seluruh AI sub-agent, peer agent, dan orchestrator yang berpartisipasi dalam perancangan, pengembangan, pengujian, audit, dan rilis repositori Route-X.
 
 ---
@@ -33,9 +35,11 @@ Dalam arsitektur orkestrasi Route-X, diberlakukan pemisahan tegas antara **isola
 
 ---
 
-## 2. Katalog 13 Sub-Agent Resmi Route-X
+## 2. Katalog Peran Sub-Agent Route-X (25 Peran)
 
-Repositori Route-X mengklasifikasikan keahlian rekayasa ke dalam 13 sub-agent dengan peran (*Role*), masukan (*Input*), dan keluaran (*Output*) yang terdefinisi secara ketat:
+Repositori Route-X mengklasifikasikan keahlian rekayasa ke dalam 25 peran dengan peran (*Role*), masukan (*Input*), dan keluaran (*Output*) yang terdefinisi sebagai berikut:
+
+> **Catatan kejujuran (wajib dibaca):** katalog ini adalah *taksonomi peran aspiratif* untuk pendelegasian tugas — bukan daftar agen yang benar-benar berjalan. Master prompt spesialis yang sungguh ada di repo hanyalah **7 berkas** di `.agents/prompts/` (orchestrator, backend_router, frontend_uiux, qa_audit, devops_release, database_architect, security_auditor). Peran di luar ketujuh itu adalah label penugasan untuk agen umum, bukan entitas tersendiri; beberapa peran (misalnya `edge_deployment_architect` untuk WASM/edge dan `realtime_stream_specialist` untuk WebRTC) menggambarkan kemampuan yang **tidak dimiliki produk saat ini** dan hanya boleh diperlakukan sebagai aspirasi, bukan dasar klaim fitur.
 
 ### 2.1. `routex_planner`
 - **Peran**: Lead Architectural & Task Planner yang menganalisis kebutuhan inisiatif besar, memetakan graf dependensi antar-modul (Go backend, PostgreSQL migrations, Redis cache, Web Dashboard React), dan menyusun dekomposisi tugas hierarkis berbasis *Blast Radius*.
@@ -70,7 +74,7 @@ Repositori Route-X mengklasifikasikan keahlian rekayasa ke dalam 13 sub-agent de
 ### 2.7. `dashboard_refactor_specialist`
 - **Peran**: Domain Specialist untuk modernisasi dan modularisasi halaman utama Dashboard (`web/src/pages/Dashboard.tsx`), bertanggung jawab atas agregasi visual telemetri gateway, grafik throughput/latensi, kartu status backend, dan pintasan alur onboarding.
 - **Input**: Halaman Dashboard monolitik, endpoint API `/api/telemetry` & `/api/health`, dan spesifikasi token antarmuka.
-- **Output**: Sub-komponen modular terisolasi di `web/src/components/dashboard/`, barrel export (`index.ts`), 0 tipe `any`, pemisahan concern state telemetri yang efisien terhadap re-render.
+- **Output**: Sub-komponen modular terisolasi di `web/src/components/dashboard/`, barrel export (`index.ts`) hanya bila ada konsumen nyata, 0 tipe `any`, pemisahan concern state telemetri yang efisien terhadap re-render.
 
 ### 2.8. `egress_refactor_specialist`
 - **Peran**: Domain Specialist untuk dekomposisi modular dan keamanan lalu lintas keluar pada halaman Egress Proxy & Forward Tunnel (`web/src/pages/Egress.tsx`, `internal/gateway/egress/`), memastikan pemisahan tegas konsep Forward Proxy (L4/L7 CONNECT tunnel) vs Reverse Proxy (L7 BaseURL routing), serta proteksi SSRF.
@@ -108,7 +112,7 @@ Repositori Route-X mengklasifikasikan keahlian rekayasa ke dalam 13 sub-agent de
 - **Output**: Laporan kerentanan sistem, skrip eksploitasi otomatis (PoC), dan rekomendasi patching keamanan.
 
 ### 2.15. `database_migration_specialist`
-- **Peran**: Database Architect / DBA yang mengelola migrasi skema PostgreSQL tanpa waktu henti (zero-downtime). Bertanggung jawab atas optimasi kueri kompleks, pembuatan indeks (B-Tree/JSONB), dan partisi tabel historis.
+- **Peran**: Database Architect / DBA yang mengelola migrasi skema PostgreSQL yang aman (append-only, terverifikasi checksum). Bertanggung jawab atas optimasi kueri kompleks, pembuatan indeks (B-Tree/JSONB), dan partisi tabel historis.
 - **Input**: Skema database saat ini (`internal/database/migrations/`), metrik kinerja kueri, dan rancangan fitur baru.
 - **Output**: Skrip migrasi `.sql` yang aman, perbaikan performa kueri ORM/SQL, dan audit integritas referensial.
 
@@ -203,7 +207,7 @@ flowchart TD
 1. **Isolasi Branch Git**: Pengerjaan wajib dilakukan pada cabang terisolasi baru yang dicabangkan dari commit `main` terbaru (`feat/*`, `fix/*`, `refactor/*`, `docs/*`).
 2. **Dekomposisi Terisolasi**: Memecah berkas monolitik menjadi sub-komponen fungsional terfokus yang disimpan dalam direktori terdedikasi (contoh: `web/src/components/<domain>/`).
 3. **Eliminasi Tipe `any` (Zero-Any Policy)**: Dilarang keras menggunakan tipe data `any` pada TypeScript. Seluruh properti wajib diketik secara ketat; gunakan tipe `unknown` dengan type guards jika data bersifat dinamis.
-4. **Enkapsulasi Barrel Export**: Setiap folder modul baru wajib menyediakan berkas `index.ts` sebagai titik ekspor terpadu, menjaga kebersihan jalur impor komponen lain.
+4. **Barrel Export Seperlunya**: Berkas `index.ts` hanya dibuat bila benar-benar dipakai konsumen nyata — gerbang knip di CI melarang ekspor mati, jadi jangan membuat barrel spekulatif "untuk kerapian".
 
 ### Tahap 3: Verifikasi Kualitas Independen (Tester / QA Auditor)
 Sebelum branch diajukan untuk rilis, QA Auditor wajib memvalidasi kode melalui **Protokol 7-Layer QA** dengan bukti output CLI nyata:
@@ -285,13 +289,13 @@ Ini memaksa agen penulisan kode untuk mengulang dan memperbaiki kode tanpa bisa 
 ### 6.4. Interogasi Permusuhan (Hostile QA Peer-Review)
 Agen dari Departemen QA & Keamanan (khususnya `qa_audit_engineer` dan `security_penetration_tester`) diinstruksikan beroperasi dengan persona **Kritis dan Permusuhan Teknis** terhadap agen pengembang. Mereka dilarang keras meloloskan kode dengan asumsi. Mereka harus bertindak seperti penyerang eksternal; sebuah rilis (PR) hanya sah jika lolos dari upaya "penghancuran" oleh agen QA ini.
 
-### 6.5. Kewajiban Standar Teknologi 2026 (State-of-the-Art Mandate)
-Untuk mencegah *technical debt*, seluruh sub-agen dilarang keras mengusulkan pola arsitektur usang (sebelum 2025). 
-- **Frontend / Arsitektur Web**: Wajib memanfaatkan fitur React 19+ (seperti *React Compiler*, *Server Components*, tanpa `useMemo` manual jika tidak perlu).
-- **UI/UX Design Language**: Wajib menggunakan standar estetika *State-of-the-Art* 2026. Ini mencakup *Adaptive Contrast* (merespons ambient light), *Spatial/Micro-interactions* yang sangat *fluid*, pemanfaatan murni CSS variabel native tanpa *hardcoding*, kepatuhan mutlak standar aksesibilitas WCAG 2.2+, dan penolakan terhadap desain monolitik kaku era 2020-an.
-- **Backend**: Wajib menggunakan Go 1.25+ dengan *range-over-func iterators* dan *built-in mux* terbaru, tanpa pustaka routing pihak ketiga usang.
-- **AI**: Harus mengeksploitasi fitur *Structured Outputs* dan pola komunikasi *Realtime WebRTC* modern.
-Agen yang tertangkap menggunakan pola usang (seperti *class components* React, palet warna kaku, atau *goroutine leaks* konvensional) akan langsung ditolak pada tahap *Code Review*.
+### 6.5. Kewajiban Standar Teknologi (Sesuai Versi yang Dipakai Repo)
+Untuk mencegah *technical debt*, seluruh sub-agen wajib mengikuti versi & standar yang **benar-benar dipakai repo saat ini** — bukan standar aspiratif dari luar:
+- **Frontend / Arsitektur Web**: React **18** (lihat `web/package.json`) + Vite + TypeScript strict. Jangan mengusulkan fitur React 19 (React Compiler, Server Components) selama repo belum bermigrasi.
+- **UI/UX Design Language**: Tema **Calm Console** (gelap ala Muse, token di `web/tailwind.config.js`, font **Noto Sans**) dan kepatuhan aksesibilitas **WCAG 2.1 AA** — target yang dipakai repo. Standar lama yang pernah tertulis di sini (*Adaptive Contrast* merespons ambient light, WCAG 2.2+) adalah **aspirasi tanpa dasar di kode dan telah dicabut**.
+- **Backend**: Go **1.27.3** (lihat `go.mod`); ikuti pola routing & pustaka yang sudah dipakai kode, jangan mengganti stack atas nama "terbaru".
+- **AI**: Permukaan yang didukung produk adalah Chat Completions (OpenAI-compat) dan Anthropic Messages, termasuk `/v1/responses` sebagai **alias** Chat Completions. Pola *Realtime WebRTC* **tidak** dimiliki produk saat ini — jangan diusulkan sebagai kewajiban.
+Agen yang tertangkap menggunakan pola usang (seperti *class components* React atau *goroutine leaks* konvensional) akan langsung ditolak pada tahap *Code Review*.
 
 ### 6.6. Distribusi Akses MCP (Model Context Protocol) Server
 Sistem harus mendistribusikan alat *server* MCP sesuai yurisdiksi spesialisasi masing-masing agen (`enable_mcp_tools: true`):

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -28,13 +29,19 @@ type anthropicBlock struct {
 	Input     json.RawMessage `json:"input,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   json.RawMessage `json:"content,omitempty"`
+	// IsError hanya bermakna pada block tool_result.
+	IsError bool `json:"is_error,omitempty"`
 }
 
+// anthropicImage adalah sumber block image maupun document. Keduanya berbagi
+// bentuk: base64 (media_type + data), url, teks polos (data, hanya document),
+// atau daftar block (content, hanya document).
 type anthropicImage struct {
-	Type      string `json:"type"`
-	MediaType string `json:"media_type,omitempty"`
-	Data      string `json:"data,omitempty"`
-	URL       string `json:"url,omitempty"`
+	Type      string           `json:"type"`
+	MediaType string           `json:"media_type,omitempty"`
+	Data      string           `json:"data,omitempty"`
+	URL       string           `json:"url,omitempty"`
+	Content   []anthropicBlock `json:"content,omitempty"`
 }
 
 type anthropicMsg struct {
@@ -49,15 +56,34 @@ type anthropicTool struct {
 }
 
 type anthropicRequest struct {
-	Model         string          `json:"model"`
-	Messages      []anthropicMsg  `json:"messages"`
-	System        json.RawMessage `json:"system,omitempty"`
-	MaxTokens     int             `json:"max_tokens"`
-	Stream        bool            `json:"stream,omitempty"`
-	Temperature   *float64        `json:"temperature,omitempty"`
-	TopP          *float64        `json:"top_p,omitempty"`
-	StopSequences []string        `json:"stop_sequences,omitempty"`
-	Tools         []anthropicTool `json:"tools,omitempty"`
+	Model     string          `json:"model"`
+	Messages  []anthropicMsg  `json:"messages"`
+	System    json.RawMessage `json:"system,omitempty"`
+	MaxTokens *int            `json:"max_tokens"`
+	Stream    bool            `json:"stream,omitempty"`
+	// Temperature, TopP, dan TopK adalah parameter sampling. Ketiganya wajib
+	// terbawa ke bentuk kanonik: menguraikannya lalu membuangnya berarti
+	// permintaan dijalankan dengan parameter yang BUKAN parameter pengirimnya
+	// (audit3 V-GW-17).
+	Temperature   *float64           `json:"temperature,omitempty"`
+	TopP          *float64           `json:"top_p,omitempty"`
+	TopK          *int               `json:"top_k,omitempty"`
+	StopSequences []string           `json:"stop_sequences,omitempty"`
+	Tools         []anthropicTool    `json:"tools,omitempty"`
+	ToolChoice    json.RawMessage    `json:"tool_choice,omitempty"`
+	Thinking      *anthropicThinking `json:"thinking,omitempty"`
+	Metadata      *anthropicMetadata `json:"metadata,omitempty"`
+}
+
+// anthropicThinking adalah parameter extended thinking pada body /v1/messages.
+type anthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
+// anthropicMetadata adalah block metadata pada body /v1/messages.
+type anthropicMetadata struct {
+	UserID string `json:"user_id,omitempty"`
 }
 
 type anthropicErrorBody struct {
@@ -110,35 +136,112 @@ func extractToolResultContent(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func decodeAnthropicContent(raw json.RawMessage, role string) (string, []providers.ContentPart, []providers.ToolCall, []providers.Message, error) {
-	if len(raw) == 0 {
-		return "", nil, nil, nil, nil
+// pembangunPesan mengumpulkan isi SATU pesan sumber Anthropic menjadi pesan
+// kanonik. Ia ada karena block tool_result harus menjadi pesan berperan tool
+// SENDIRI di bentuk kanonik, terpisah dari teks yang mengapitnya — memisahkannya
+// belakangan, sesudah seluruh teks dikumpulkan, membalik urutan percakapan
+// (audit3 V-GW-25). Pemanggil menyiram pembangun ini setiap kali tool_result
+// muncul, sehingga urutan block klien adalah urutan pesan kanonik, persis.
+type pembangunPesan struct {
+	role       providers.Role
+	teks       []string
+	parts      []providers.ContentPart
+	multimodal bool
+	toolCalls  []providers.ToolCall
+	reasoning  []string
+	signatures []string
+}
+
+func (p *pembangunPesan) kosong() bool {
+	return len(p.teks) == 0 && len(p.parts) == 0 && len(p.toolCalls) == 0 && len(p.reasoning) == 0
+}
+
+func (p *pembangunPesan) jadi() providers.Message {
+	m := providers.Message{Role: p.role, ToolCalls: p.toolCalls}
+	if p.multimodal {
+		m.Parts = p.parts
+	} else {
+		m.Content = strings.Join(p.teks, "\n")
+	}
+	if len(p.reasoning) > 0 {
+		m.ReasoningContent = strings.Join(p.reasoning, "")
+		// Tanda tangan hanya bisa dibawa bila riwayat memuat TEPAT SATU block
+		// thinking: tanda tangan mengesahkan isi block-nya sendiri, jadi
+		// memasangkan tanda tangan satu block ke gabungan beberapa block akan
+		// ditolak upstream. Sisanya adapter membuang jejak penalarannya juga —
+		// keduanya berjalan bersama atau tidak sama sekali (audit3 V-GW-23).
+		if len(p.signatures) == 1 && len(p.reasoning) == 1 {
+			m.ReasoningSignature = p.signatures[0]
+		}
+	}
+	return m
+}
+
+func (p *pembangunPesan) tambahTeks(teks string) {
+	p.teks = append(p.teks, teks)
+	p.parts = append(p.parts, providers.ContentPart{Type: providers.PartTypeText, Text: teks})
+}
+
+// teksDokumen mengekstrak isi teks dari block document.
+//
+// Hanya sumber teks dan sumber daftar block yang punya padanan setia di bentuk
+// kanonik. Dokumen biner (PDF base64, URL) tidak punya tempat di bentuk kanonik
+// dan TIDAK diabaikan diam-diam — model yang menjawab tanpa lampirannya lebih
+// berbahaya daripada penolakan yang jelas (audit3 V-GW-22).
+func teksDokumen(b anthropicBlock) (string, error) {
+	if b.Source == nil {
+		return "", errors.New("block 'document' tanpa sumber tidak bisa diterjemahkan")
+	}
+	switch b.Source.Type {
+	case "text":
+		return b.Source.Data, nil
+	case "content":
+		var parts []string
+		for _, sub := range b.Source.Content {
+			if sub.Type == "text" && sub.Text != "" {
+				parts = append(parts, sub.Text)
+			}
+		}
+		return strings.Join(parts, "\n"), nil
+	default:
+		return "", fmt.Errorf("block 'document' dengan sumber %q belum didukung gateway ini; kirim isi dokumen sebagai teks", b.Source.Type)
+	}
+}
+
+// decodePesanAnthropic menerjemahkan satu pesan Anthropic menjadi satu atau
+// lebih pesan kanonik, menjaga urutan block.
+func decodePesanAnthropic(m anthropicMsg) ([]providers.Message, error) {
+	role := providers.Role(m.Role)
+	if len(m.Content) == 0 {
+		return nil, nil
 	}
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return s, nil, nil, nil, nil
+	if err := json.Unmarshal(m.Content, &s); err == nil {
+		if s == "" {
+			return nil, nil
+		}
+		return []providers.Message{{Role: role, Content: s}}, nil
 	}
 	var blocks []anthropicBlock
-	if err := json.Unmarshal(raw, &blocks); err != nil {
-		return "", nil, nil, nil, fmt.Errorf("gagal mengurai pesan Anthropic: %w", err)
+	if err := json.Unmarshal(m.Content, &blocks); err != nil {
+		return nil, fmt.Errorf("gagal mengurai pesan Anthropic: %w", err)
 	}
 
-	var textParts []string
-	var contentParts []providers.ContentPart
-	var toolCalls []providers.ToolCall
-	var extraToolMessages []providers.Message
-	var isMultiModal bool
+	pb := &pembangunPesan{role: role}
+	var hasil []providers.Message
+	siram := func() {
+		if !pb.kosong() {
+			hasil = append(hasil, pb.jadi())
+			pb = &pembangunPesan{role: role}
+		}
+	}
 
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
-			textParts = append(textParts, b.Text)
-			contentParts = append(contentParts, providers.ContentPart{
-				Type: providers.PartTypeText,
-				Text: b.Text,
-			})
+			pb.tambahTeks(b.Text)
 		case "image":
-			isMultiModal = true
+			pb.multimodal = true
 			if b.Source != nil {
 				url := b.Source.URL
 				if url == "" && b.Source.Data != "" {
@@ -149,14 +252,36 @@ func decodeAnthropicContent(raw json.RawMessage, role string) (string, []provide
 					url = "data:" + mediaType + ";base64," + b.Source.Data
 				}
 				if url != "" {
-					contentParts = append(contentParts, providers.ContentPart{
+					pb.parts = append(pb.parts, providers.ContentPart{
 						Type:     providers.PartTypeImageURL,
 						ImageURL: &providers.ImageURL{URL: url},
 					})
 				}
 			}
+		case "document":
+			teks, err := teksDokumen(b)
+			if err != nil {
+				return nil, err
+			}
+			if teks != "" {
+				pb.tambahTeks(teks)
+			}
+		case "thinking":
+			// Jejak penalaran riwayat assistant dibawa beserta tanda tangannya
+			// supaya adapter Anthropic bisa mengirimkannya kembali utuh
+			// (audit3 V-GW-23).
+			pb.reasoning = append(pb.reasoning, b.Thinking)
+			if b.Signature != "" {
+				pb.signatures = append(pb.signatures, b.Signature)
+			}
+		case "redacted_thinking":
+			// Muatannya terenkripsi dan hanya bisa dipakai ulang oleh Anthropic
+			// sebagai block yang sama persis; bentuk kanonik tidak punya tempat
+			// untuknya. Berbeda dari thinking biasa, di sini tidak ada isi yang
+			// hilang dari sudut pandang model — block ini memang buram.
+			continue
 		case "tool_use":
-			toolCalls = append(toolCalls, providers.ToolCall{
+			pb.toolCalls = append(pb.toolCalls, providers.ToolCall{
 				ID:   b.ID,
 				Type: "function",
 				Function: providers.FunctionCall{
@@ -165,24 +290,64 @@ func decodeAnthropicContent(raw json.RawMessage, role string) (string, []provide
 				},
 			})
 		case "tool_result":
-			resText := extractToolResultContent(b.Content)
-			extraToolMessages = append(extraToolMessages, providers.Message{
+			// Siram dulu isi yang mendahului, barulah hasil tool menjadi pesan
+			// sendiri: [tool_result, text] harus tetap hasil-tool mendahului
+			// teks, bukan sebaliknya (audit3 V-GW-25). is_error ikut dibawa —
+			// menghilangkannya mengubah kegagalan menjadi keberhasilan di mata
+			// model (audit3 V-GW-24).
+			siram()
+			hasil = append(hasil, providers.Message{
 				Role:       providers.RoleTool,
 				ToolCallID: b.ToolUseID,
-				Content:    resText,
+				Content:    extractToolResultContent(b.Content),
+				IsError:    b.IsError,
 			})
+		default:
+			// Block yang tidak dikenal TIDAK diabaikan diam-diam: klien harus
+			// tahu bahwa sebagian permintaannya tidak bisa diterjemahkan,
+			// bukan menerima jawaban atas permintaan yang berbeda.
+			return nil, fmt.Errorf("block konten bertipe %q belum didukung gateway ini", b.Type)
 		}
 	}
+	siram()
+	return hasil, nil
+}
 
-	fullText := strings.Join(textParts, "\n")
-	if isMultiModal {
-		return fullText, contentParts, toolCalls, extraToolMessages, nil
+// teksSystemAnthropic mengekstrak teks dari field system (string atau daftar
+// block teks) pada body Anthropic.
+func teksSystemAnthropic(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
 	}
-	return fullText, nil, toolCalls, extraToolMessages, nil
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var blocks []anthropicBlock
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		var parts []string
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		return strings.Join(parts, "\n\n")
+	}
+	return ""
 }
 
 // DecodeAnthropicMessagesRequest menerjemahkan permintaan Anthropic Messages API ke bentuk kanonik providers.ChatRequest.
 func DecodeAnthropicMessagesRequest(body []byte) (*providers.ChatRequest, error) {
+	return decodeAnthropicMessagesRequest(body, true)
+}
+
+// decodeAnthropicMessagesRequest adalah pengurai bersama permukaan messages.
+//
+// wajibMaxTokens membedakan dua pemanggil: /v1/messages mewajibkan max_tokens
+// (spec Anthropic dan OpenAPI repo sama-sama menyatakannya required, jadi
+// ketiadaannya ditolak, bukan diganti diam-diam dengan 4096 — audit3 V-GW-30),
+// sedangkan /v1/messages/count_tokens tidak pernah memintanya.
+func decodeAnthropicMessagesRequest(body []byte, wajibMaxTokens bool) (*providers.ChatRequest, error) {
 	var aReq anthropicRequest
 	if err := json.Unmarshal(body, &aReq); err != nil {
 		return nil, fmt.Errorf("body JSON Anthropic tidak sah: %w", err)
@@ -190,66 +355,93 @@ func DecodeAnthropicMessagesRequest(body []byte) (*providers.ChatRequest, error)
 	if strings.TrimSpace(aReq.Model) == "" {
 		return nil, errors.New("field 'model' wajib diisi")
 	}
+	if wajibMaxTokens {
+		if aReq.MaxTokens == nil {
+			return nil, errors.New("field 'max_tokens' wajib diisi pada permukaan Anthropic")
+		}
+		if *aReq.MaxTokens <= 0 {
+			return nil, errors.New("field 'max_tokens' harus lebih besar dari 0")
+		}
+	}
 
 	out := &providers.ChatRequest{
 		Model:       aReq.Model,
 		Stream:      aReq.Stream,
 		Temperature: aReq.Temperature,
 		TopP:        aReq.TopP,
+		TopK:        aReq.TopK,
 		Stop:        aReq.StopSequences,
 	}
-	if aReq.MaxTokens > 0 {
-		mt := aReq.MaxTokens
-		out.MaxTokens = &mt
+	if aReq.MaxTokens != nil && *aReq.MaxTokens > 0 {
+		out.MaxTokens = aReq.MaxTokens
 	}
 
-	// Parsing system prompt
-	if len(aReq.System) > 0 {
-		var sysStr string
-		if err := json.Unmarshal(aReq.System, &sysStr); err == nil {
-			if sysStr != "" {
-				out.Messages = append(out.Messages, providers.Message{
-					Role:    providers.RoleSystem,
-					Content: sysStr,
-				})
+	// Seluruh parameter sah klien wajib terbawa ke bentuk kanonik. Versi lama
+	// pengurai ini tidak punya field untuk keempatnya, jadi tool_choice,
+	// top_k, metadata.user_id, dan thinking terbuang pada saat decode — sebelum
+	// adapter mana pun bisa melihatnya (audit3 V-GW-17).
+	if aReq.Metadata != nil && aReq.Metadata.UserID != "" {
+		out.User = aReq.Metadata.UserID
+	}
+	if aReq.Thinking != nil && aReq.Thinking.Type != "" {
+		switch aReq.Thinking.Type {
+		case "enabled", "disabled":
+			out.Thinking = &providers.ThinkingParam{
+				Type:         aReq.Thinking.Type,
+				BudgetTokens: aReq.Thinking.BudgetTokens,
 			}
-		} else {
-			var sysBlocks []anthropicBlock
-			if err := json.Unmarshal(aReq.System, &sysBlocks); err == nil {
-				var parts []string
-				for _, b := range sysBlocks {
-					if b.Type == "text" && b.Text != "" {
-						parts = append(parts, b.Text)
-					}
-				}
-				if len(parts) > 0 {
-					out.Messages = append(out.Messages, providers.Message{
-						Role:    providers.RoleSystem,
-						Content: strings.Join(parts, "\n\n"),
-					})
-				}
-			}
+		default:
+			return nil, fmt.Errorf("thinking.type %q tidak dikenal; gunakan \"enabled\" atau \"disabled\"", aReq.Thinking.Type)
 		}
 	}
-
-	// Parsing messages
-	for _, m := range aReq.Messages {
-		role := providers.Role(m.Role)
-		text, parts, toolCalls, extraTools, err := decodeAnthropicContent(m.Content, m.Role)
+	if len(aReq.ToolChoice) > 0 {
+		pilihan, parallel, err := terjemahkanToolChoiceAnthropic(aReq.ToolChoice)
 		if err != nil {
 			return nil, err
 		}
-		if text != "" || len(parts) > 0 || len(toolCalls) > 0 {
-			out.Messages = append(out.Messages, providers.Message{
-				Role:      role,
-				Content:   text,
-				Parts:     parts,
-				ToolCalls: toolCalls,
-			})
+		out.ToolChoice = pilihan
+		if parallel != nil {
+			out.ParallelToolCalls = parallel
 		}
-		if len(extraTools) > 0 {
-			out.Messages = append(out.Messages, extraTools...)
+	}
+
+	// System prompt: field tingkat atas DAN pesan berperan system di tengah
+	// daftar messages. Permukaan Anthropic tidak mengenal peran system di
+	// dalam messages — tempatnya hanya field system — jadi pesan seperti itu
+	// diangkat ke system prompt di sini, pada saat decode, untuk SEMUA rute.
+	// Sebelumnya pengangkatan hanya terjadi di adapter Anthropic, sehingga
+	// permintaan yang sama berarti dua hal berbeda tergantung upstream yang
+	// melayaninya (audit3 V-GW-33).
+	var sistem []string
+	if t := teksSystemAnthropic(aReq.System); t != "" {
+		sistem = append(sistem, t)
+	}
+
+	for _, m := range aReq.Messages {
+		if m.Role == "system" {
+			msgs, err := decodePesanAnthropic(m)
+			if err != nil {
+				return nil, err
+			}
+			for _, sm := range msgs {
+				if t := sm.Text(); t != "" {
+					sistem = append(sistem, t)
+				}
+			}
+			continue
 		}
+		msgs, err := decodePesanAnthropic(m)
+		if err != nil {
+			return nil, err
+		}
+		out.Messages = append(out.Messages, msgs...)
+	}
+
+	if len(sistem) > 0 {
+		out.Messages = append([]providers.Message{{
+			Role:    providers.RoleSystem,
+			Content: strings.Join(sistem, "\n\n"),
+		}}, out.Messages...)
 	}
 
 	// Parsing tools
@@ -267,12 +459,109 @@ func DecodeAnthropicMessagesRequest(body []byte) (*providers.ChatRequest, error)
 	return out, nil
 }
 
+// terjemahkanToolChoiceAnthropic mengubah tool_choice dialek Anthropic ke
+// bentuk kanonik bergaya OpenAI yang disimpan ChatRequest.ToolChoice.
+//
+// Peta maknanya: auto→"auto", any→"required" (OpenAI menyebut pemaksaan
+// memanggil salah satu tool dengan nama itu), none→"none", dan tool dengan
+// nama→objek function bernama sama. disable_parallel_tool_use adalah
+// kebalikan persis parallel_tool_calls kanonik.
+func terjemahkanToolChoiceAnthropic(raw json.RawMessage) (json.RawMessage, *bool, error) {
+	var tc struct {
+		Type                   string `json:"type"`
+		Name                   string `json:"name"`
+		DisableParallelToolUse bool   `json:"disable_parallel_tool_use"`
+	}
+	if err := json.Unmarshal(raw, &tc); err != nil {
+		return nil, nil, fmt.Errorf("tool_choice Anthropic tidak sah: %w", err)
+	}
+	var parallel *bool
+	if tc.DisableParallelToolUse {
+		f := false
+		parallel = &f
+	}
+	switch tc.Type {
+	case "auto":
+		return json.RawMessage(`"auto"`), parallel, nil
+	case "none":
+		return json.RawMessage(`"none"`), parallel, nil
+	case "any":
+		return json.RawMessage(`"required"`), parallel, nil
+	case "tool":
+		if tc.Name == "" {
+			return nil, nil, errors.New("tool_choice bertipe \"tool\" wajib menyebut nama tool pada field 'name'")
+		}
+		b, err := json.Marshal(map[string]any{
+			"type":     "function",
+			"function": map[string]any{"name": tc.Name},
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		return b, parallel, nil
+	default:
+		return nil, nil, fmt.Errorf("tool_choice.type %q tidak dikenal; gunakan \"auto\", \"any\", \"tool\", atau \"none\"", tc.Type)
+	}
+}
+
 type anthropicResponseContentBlock struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text,omitempty"`
-	ID    string          `json:"id,omitempty"`
-	Name  string          `json:"name,omitempty"`
-	Input json.RawMessage `json:"input,omitempty"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	Thinking  string          `json:"thinking,omitempty"`
+	Signature string          `json:"signature,omitempty"`
+	Source    *anthropicImage `json:"source,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
+}
+
+// usageAnthropicDariKanonik mengubah usage kanonik menjadi bentuk spec
+// Anthropic.
+//
+// Bentuk kanonik bersarang gaya OpenAI: InputTokens MEMUAT token cache, dan
+// CachedInputTokens/CacheCreationInputTokens adalah bagiannya. Spec Anthropic
+// sebaliknya: input_tokens adalah token input segar SAJA, dan token cache
+// dilaporkan pada fieldnya sendiri. Menyalin InputTokens apa adanya membuat
+// klien yang patuh spec menghitung token cache dua kali, dan tidak melaporkan
+// cache_creation sama sekali mengubur angka yang benar-benar ditagih
+// (audit3 V-GW-26).
+func usageAnthropicDariKanonik(u providers.Usage) anthropicUsage {
+	masuk := u.InputTokens - u.CachedInputTokens - u.CacheCreationInputTokens
+	if masuk < 0 {
+		masuk = 0
+	}
+	return anthropicUsage{
+		InputTokens:              masuk,
+		OutputTokens:             u.OutputTokens,
+		CacheCreationInputTokens: u.CacheCreationInputTokens,
+		CacheReadInputTokens:     u.CachedInputTokens,
+	}
+}
+
+// blokGambarDariPart mengubah satu bagian gambar kanonik menjadi block image
+// Anthropic, membongkar data URI kembali ke sumber base64-nya.
+func blokGambarDariPart(part providers.ContentPart) (anthropicResponseContentBlock, bool) {
+	if part.ImageURL == nil || part.ImageURL.URL == "" {
+		return anthropicResponseContentBlock{}, false
+	}
+	url := part.ImageURL.URL
+	if strings.HasPrefix(url, "data:") {
+		meta, data, ditemukan := strings.Cut(url[len("data:"):], ",")
+		if ditemukan && strings.HasSuffix(meta, ";base64") {
+			mediaType := strings.TrimSuffix(meta, ";base64")
+			if i := strings.IndexByte(mediaType, ';'); i >= 0 {
+				mediaType = mediaType[:i]
+			}
+			return anthropicResponseContentBlock{
+				Type:   "image",
+				Source: &anthropicImage{Type: "base64", MediaType: mediaType, Data: data},
+			}, true
+		}
+	}
+	return anthropicResponseContentBlock{
+		Type:   "image",
+		Source: &anthropicImage{Type: "url", URL: url},
+	}, true
 }
 
 type anthropicResponse struct {
@@ -293,6 +582,133 @@ type anthropicUsage struct {
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
 
+// penangkapRespons menahan seluruh keluaran HTTP selama tahap persiapan
+// permukaan Anthropic.
+//
+// Tahap persiapan memakai jalur bersama permukaan OpenAI (bacaBody,
+// siapkanChatParsed), dan jalur itu menjawab setiap penolakan ber-envelope
+// OpenAI. Klien Anthropic tidak bisa membaca envelope itu — bentuk error
+// adalah bagian dari kontrak permukaan ini (audit3 V-GW-29). Menulis ulang
+// seluruh jalur persiapan hanya untuk bentuk error akan menggandakan logika
+// yang paling rawan menyimpang, jadi keluaran persiapan DITAHAN di sini lalu
+// ditulis ulang sebagai envelope Anthropic oleh teruskanSebagaiErrorAnthropic.
+// Persiapan yang berhasil tidak menulis satu byte pun, jadi penangkapan ini
+// tidak mengubah jalur sukses sama sekali.
+type penangkapRespons struct {
+	header http.Header
+	status int
+	isi    bytes.Buffer
+}
+
+func penangkapBaru() *penangkapRespons {
+	return &penangkapRespons{header: make(http.Header)}
+}
+
+func (p *penangkapRespons) Header() http.Header { return p.header }
+
+func (p *penangkapRespons) WriteHeader(status int) {
+	if p.status == 0 {
+		p.status = status
+	}
+}
+
+func (p *penangkapRespons) Write(b []byte) (int, error) {
+	if p.status == 0 {
+		p.status = http.StatusOK
+	}
+	return p.isi.Write(b)
+}
+
+// tipeErrorAnthropic memetakan status HTTP (dan kode internal bila dikenal) ke
+// tipe error dalam kosakata Anthropic.
+func tipeErrorAnthropic(status int, kode string) string {
+	switch {
+	case status == http.StatusBadRequest:
+		return "invalid_request_error"
+	case status == http.StatusRequestEntityTooLarge:
+		return "request_too_large"
+	case status == http.StatusUnauthorized:
+		return "authentication_error"
+	case status == http.StatusPaymentRequired:
+		return "billing_error"
+	case status == http.StatusForbidden:
+		return "permission_error"
+	case status == http.StatusNotFound:
+		return "not_found_error"
+	case status == http.StatusTooManyRequests:
+		return "rate_limit_error"
+	case status == http.StatusServiceUnavailable && kode == "upstream_overloaded":
+		return "overloaded_error"
+	default:
+		return "api_error"
+	}
+}
+
+// tipeErrorAnthropicUntukUpstream memetakan kegagalan upstream ke tipe error
+// Anthropic, untuk peristiwa error di tengah aliran maupun jawaban persiapan.
+func tipeErrorAnthropicUntukUpstream(e *providers.Error) string {
+	if e == nil {
+		return "api_error"
+	}
+	switch e.Kind {
+	case providers.ErrKindRateLimit:
+		return "rate_limit_error"
+	case providers.ErrKindOverloaded:
+		return "overloaded_error"
+	case providers.ErrKindInvalidRequest, providers.ErrKindContentFilter:
+		return "invalid_request_error"
+	case providers.ErrKindModelNotFound:
+		return "not_found_error"
+	case providers.ErrKindAuth:
+		return "authentication_error"
+	case providers.ErrKindPermission:
+		return "permission_error"
+	case providers.ErrKindQuota:
+		return "billing_error"
+	default:
+		return "api_error"
+	}
+}
+
+// teruskanSebagaiErrorAnthropic menulis ulang respons error yang tertangkap
+// selama persiapan (ber-envelope OpenAI) sebagai envelope Anthropic
+// {"type":"error","error":{...}}, dengan status dan pesan yang sama.
+func teruskanSebagaiErrorAnthropic(w http.ResponseWriter, p *penangkapRespons) {
+	status := p.status
+	if status == 0 {
+		status = http.StatusInternalServerError
+	}
+	// Header yang bermakna bagi klien diteruskan apa adanya — Retry-After dan
+	// X-RateLimit-* adalah bagian dari kontrak penolakannya. Content-Type dan
+	// Content-Length tidak: envelope baru menyusunnya sendiri.
+	for k, vs := range p.header {
+		if strings.EqualFold(k, "Content-Type") || strings.EqualFold(k, "Content-Length") {
+			continue
+		}
+		for _, v := range vs {
+			w.Header().Add(k, v)
+		}
+	}
+
+	pesan, kode := "", ""
+	var env struct {
+		Error struct {
+			Message string  `json:"message"`
+			Code    *string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(p.isi.Bytes(), &env); err == nil {
+		pesan = env.Error.Message
+		if env.Error.Code != nil {
+			kode = *env.Error.Code
+		}
+	}
+	if pesan == "" {
+		pesan = "terjadi kesalahan pada tahap persiapan permintaan"
+	}
+	writeAnthropicError(w, status, tipeErrorAnthropic(status, kode), pesan)
+}
+
 // AnthropicMessages melayani POST /v1/messages untuk Anthropic Messages API (Claude Code, dll).
 func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	j, w := h.mulaiJejak(w, r)
@@ -302,8 +718,12 @@ func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	jaga := h.jagaKuotaPraUpstream(r)
 	defer jaga.tutup()
 
-	body, ok := h.bacaBody(w, r)
+	// Persiapan berjalan di atas penangkap: penolakannya ditulis ulang
+	// ber-envelope Anthropic, bukan OpenAI (audit3 V-GW-29).
+	tangkap := penangkapBaru()
+	body, ok := h.bacaBody(tangkap, r)
 	if !ok {
+		teruskanSebagaiErrorAnthropic(w, tangkap)
 		return
 	}
 
@@ -313,8 +733,9 @@ func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pr, ok := h.siapkanChatParsed(w, r, req, body, j)
+	pr, ok := h.siapkanChatParsed(tangkap, r, req, body, j)
 	if !ok {
+		teruskanSebagaiErrorAnthropic(w, tangkap)
 		return
 	}
 	jaga.lolos()
@@ -324,6 +745,37 @@ func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.anthropicChatSekali(w, r, pr, j)
+}
+
+// AnthropicCountTokens melayani POST /v1/messages/count_tokens.
+//
+// Endpoint ini bagian dari kontrak Messages API — klien resmi (Claude Code)
+// memanggilnya untuk menaksir konteks sebelum mengirim. Sebelumnya rute ini
+// tidak terdaftar sama sekali dan menjawab 404 (audit3 V-GW-29). Penghitungnya
+// EstimateTokens yang sama dengan yang dipakai persiapan routing: sebuah
+// TAKSIRAN, sama seperti yang dijanjikan nama endpoint-nya, dan model yang
+// tidak dikenal tetap ditolak — menghitung token untuk model hantu hanya
+// mengarang angka.
+func (h *Handlers) AnthropicCountTokens(w http.ResponseWriter, r *http.Request) {
+	tangkap := penangkapBaru()
+	body, ok := h.bacaBody(tangkap, r)
+	if !ok {
+		teruskanSebagaiErrorAnthropic(w, tangkap)
+		return
+	}
+	req, err := decodeAnthropicMessagesRequest(body, false)
+	if err != nil {
+		writeAnthropicError(w, http.StatusBadRequest, httpx.ErrTypeInvalidRequest, err.Error())
+		return
+	}
+	if _, ok := h.selesaikanModel(tangkap, r, req.Model); !ok {
+		teruskanSebagaiErrorAnthropic(w, tangkap)
+		return
+	}
+	w.Header().Set("anthropic-version", "2023-06-01")
+	_ = httpx.JSON(w, http.StatusOK, map[string]any{
+		"input_tokens": EstimateTokens(req).InputTokens,
+	})
 }
 
 func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
@@ -398,10 +850,42 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 
 	var contentBlocks []anthropicResponseContentBlock
 	stopReason := "end_turn"
+	var stopSequence *string
 
 	if len(out.Value.Choices) > 0 {
 		choice := out.Value.Choices[0]
-		if choice.Message.Content != "" {
+		// Block thinking mendahului isi lain, sesuai susunan Anthropic. Ia
+		// hanya diterbitkan bila upstream benar-benar mengembalikan jejak
+		// penalaran — sebelumnya jejak itu dibuang dan klien tidak pernah
+		// melihat block thinking pada jalur non-streaming (audit3 V-GW-21).
+		if choice.Message.ReasoningContent != "" {
+			contentBlocks = append(contentBlocks, anthropicResponseContentBlock{
+				Type:      "thinking",
+				Thinking:  choice.Message.ReasoningContent,
+				Signature: choice.Message.ReasoningSignature,
+			})
+		}
+		// Isi berbentuk Parts — jawaban upstream yang content-nya array bagian
+		// — diterjemahkan block demi block. Membaca Message.Content saja
+		// menghasilkan block teks KOSONG untuk jawaban seperti itu, karena
+		// bentuk Parts memang meninggalkan Content kosong (audit3 V-GW-20).
+		if len(choice.Message.Parts) > 0 {
+			for _, part := range choice.Message.Parts {
+				switch part.Type {
+				case providers.PartTypeText:
+					if part.Text != "" {
+						contentBlocks = append(contentBlocks, anthropicResponseContentBlock{
+							Type: "text",
+							Text: part.Text,
+						})
+					}
+				case providers.PartTypeImageURL:
+					if blok, ok := blokGambarDariPart(part); ok {
+						contentBlocks = append(contentBlocks, blok)
+					}
+				}
+			}
+		} else if choice.Message.Content != "" {
 			contentBlocks = append(contentBlocks, anthropicResponseContentBlock{
 				Type: "text",
 				Text: choice.Message.Content,
@@ -419,6 +903,10 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 				Input: inputRaw,
 			})
 		}
+		// stop_reason dipetakan setia: stop_sequence dan pause_turn adalah
+		// alasan berhenti yang berbeda dari end_turn bagi klien Anthropic, dan
+		// melipatkannya mengarang sebab berhenti yang tidak terjadi. Nilai
+		// stop_sequence-nya sendiri ikut dikirim (audit3 V-GW-28).
 		switch choice.FinishReason {
 		case providers.FinishStop:
 			stopReason = "end_turn"
@@ -426,6 +914,16 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 			stopReason = "tool_use"
 		case providers.FinishLength:
 			stopReason = "max_tokens"
+		case providers.FinishStopSequence:
+			stopReason = "stop_sequence"
+			if choice.StopSequence != "" {
+				ss := choice.StopSequence
+				stopSequence = &ss
+			}
+		case providers.FinishPauseTurn:
+			stopReason = "pause_turn"
+		case providers.FinishContentFilter:
+			stopReason = "refusal"
 		default:
 			stopReason = "end_turn"
 		}
@@ -439,17 +937,17 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 	}
 
 	resp := anthropicResponse{
-		ID:         msgID,
-		Type:       "message",
-		Role:       "assistant",
-		Model:      pr.model.ModelID,
-		Content:    contentBlocks,
-		StopReason: &stopReason,
-		Usage: anthropicUsage{
-			InputTokens:          out.Value.Usage.InputTokens,
-			OutputTokens:         out.Value.Usage.OutputTokens,
-			CacheReadInputTokens: out.Value.Usage.CachedInputTokens,
-		},
+		ID:           msgID,
+		Type:         "message",
+		Role:         "assistant",
+		Model:        pr.model.ModelID,
+		Content:      contentBlocks,
+		StopReason:   &stopReason,
+		StopSequence: stopSequence,
+		// Angka yang dilaporkan ke klien adalah angka yang SAMA dengan yang
+		// dicatat dan ditagih (pemakaian sesudah lantai), dalam bentuk spec
+		// Anthropic — bukan usage mentah upstream (audit3 V-GW-26).
+		Usage: usageAnthropicDariKanonik(pemakaian),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -457,6 +955,15 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// alatAliran adalah catatan satu tool yang sudah dibuka block-nya pada aliran
+// Anthropic: index kanonik yang dilaporkan adapter, ID tool-nya, dan index
+// block keluaran tempat potongannya ditulis.
+type alatAliran struct {
+	indexKanonik int
+	id           string
+	indexBlok    int
 }
 
 func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
@@ -541,9 +1048,38 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 		indexBlokSekarang int    // index blok yang sedang terbuka
 		tipeBlokSekarang  string // "text" atau "tool_use"; kosong berarti belum ada blok
 		blokTerbuka       bool
-		blokBerikutnya    int             // index untuk content_block berikutnya
-		blokTool          = map[int]int{} // index tool kanonik -> index blok keluaran
+		blokBerikutnya    int // index untuk content_block berikutnya
+		stopSeq           string
+
+		// Identitas tool TIDAK bisa bertumpu pada index kanonik saja. Adapter
+		// yang upstreamnya tidak mengirim index menomori potongan menurut
+		// posisinya di dalam chunk, jadi tool kedua yang tiba pada chunk-nya
+		// sendiri juga ber-index 0 — deltanya lalu menempel ke block tool
+		// pertama yang sudah ditutup dan tool itu sendiri tidak pernah menjadi
+		// block (audit3 V-GW-19). Yang stabil adalah ID: potongan ber-ID baru
+		// selalu tool baru, dan potongan tanpa ID adalah lanjutan tool terakhir
+		// yang dibuka untuk index tersebut.
+		alatDibuka []alatAliran
 	)
+
+	// cariAlat menyelesaikan satu potongan tool ke index block keluaran.
+	// false berarti potongan ini membuka tool yang belum dikenal.
+	cariAlat := func(tc providers.ToolCall) (int, bool) {
+		if tc.ID != "" {
+			for _, a := range alatDibuka {
+				if a.id == tc.ID {
+					return a.indexBlok, true
+				}
+			}
+			return 0, false
+		}
+		for i := len(alatDibuka) - 1; i >= 0; i-- {
+			if alatDibuka[i].indexKanonik == tc.Index {
+				return alatDibuka[i].indexBlok, true
+			}
+		}
+		return 0, false
+	}
 
 	// kirimEvent menulis satu peristiwa SSE beserta framingnya lalu memflush klien.
 	// Menulis SSE tanpa flush segera menumpuk chunk di buffer proxy dan mematikan
@@ -573,7 +1109,18 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 		tipeBlokSekarang = ""
 	}
 
-	defer func() {
+	// finalisasiPemakaian menerapkan lantai pemakaian dan mencatatnya, tepat
+	// satu kali. Jalur sukses memanggilnya SEBELUM message_delta disusun —
+	// supaya angka yang dikoreksi itulah yang sampai ke klien, bukan estimasi
+	// message_start yang tidak pernah diperbaiki (audit3 V-GW-27) — dan defer
+	// di bawahnya adalah jaring pengaman untuk semua jalan keluar lain
+	// (aliran terputus, klien pergi), yang tetap harus tercatat.
+	pemakaianFinal := false
+	finalisasiPemakaian := func() {
+		if pemakaianFinal {
+			return
+		}
+		pemakaianFinal = true
 		// Lantai dua sisi dari byte KONTEN (audit3 V-AB-14, V-AB-15): input
 		// dari prompt, output dari konten yang benar-benar dihasilkan —
 		// bukan dari byte aliran terbingkai.
@@ -581,7 +1128,8 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 		h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(usage.TotalTokens))
 		h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(usage.TotalTokens))
 		j.pasangPemakaian(usage)
-	}()
+	}
+	defer finalisasiPemakaian()
 
 	// 1. Kirim event message_start
 	startPayload, _ := json.Marshal(map[string]any{
@@ -616,11 +1164,20 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 			if errors.Is(err, io.EOF) {
 				break
 			}
+			// Kegagalan di tengah aliran DUA kali salah sebelum perbaikan ini:
+			// ia tidak pernah ditandai sebagai kegagalan upstream, jadi request
+			// tercatat sukses penuh (audit3 V-GW-47), dan peristiwa error-nya
+			// selalu api_error generik berapa pun sebab aslinya (audit3
+			// V-EM-08). Keduanya diperbaiki di sini: jejak ditandai gagal, dan
+			// tipe + pesan error dipetakan dari kegagalan aslinya.
+			perr := providers.AsError(err)
+			j.pasangKegagalanUpstream(perr)
+			_, _, _, pesanGalat := httpUntuk(perr)
 			errPayload, _ := json.Marshal(map[string]any{
 				"type": "error",
 				"error": map[string]any{
-					"type":    "api_error",
-					"message": "aliran terputus dari upstream",
+					"type":    tipeErrorAnthropicUntukUpstream(perr),
+					"message": pesanGalat,
 				},
 			})
 			_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", errPayload)
@@ -631,6 +1188,9 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 		if ev.Usage != nil {
 			usage = *ev.Usage
 		}
+		if ev.StopSequence != "" {
+			stopSeq = ev.StopSequence
+		}
 		if ev.FinishReason != "" {
 			switch ev.FinishReason {
 			case providers.FinishStop:
@@ -639,6 +1199,12 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 				stopReason = "tool_use"
 			case providers.FinishLength:
 				stopReason = "max_tokens"
+			case providers.FinishStopSequence:
+				stopReason = "stop_sequence"
+			case providers.FinishPauseTurn:
+				stopReason = "pause_turn"
+			case providers.FinishContentFilter:
+				stopReason = "refusal"
 			}
 		}
 
@@ -652,6 +1218,12 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 
 		// Potongan teks: buka blok text bila belum ada blok text yang terbuka.
 		// Transisi tool -> text menutup blok tool lama lebih dulu.
+		//
+		// Sesudah teks, alur TIDAK melompat ke peristiwa berikutnya: satu
+		// peristiwa kanonik bisa memuat teks DAN tool_calls sekaligus (chunk
+		// gabungan dari upstream berdialek OpenAI), dan melompat akan membuang
+		// tool_calls-nya — klien lalu menerima stop_reason "tool_use" untuk
+		// tool yang tidak pernah muncul sebagai block (audit3 V-GW-18).
 		if ev.Delta != "" {
 			byteKonten += int64(len(ev.Delta))
 			if tipeBlokSekarang != "text" {
@@ -684,22 +1256,25 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 				return
 			}
 			j.tandaiTTFT()
-			continue
 		}
 
 		// Potongan tool_calls. Adapter mengirim content_block_start tool_use sebagai
 		// satu peristiwa (membawa id dan nama, tanpa argumen), lalu setiap potongan
 		// argumen sebagai input_json_delta terpisah. Keduanya disusun ulang ke blok
-		// tool_use di index yang sama.
+		// tool_use yang sama — diselesaikan lewat cariAlat, bukan index mentah,
+		// supaya tool yang index kanoniknya bertabrakan tetap menjadi block
+		// sendiri-sendiri (audit3 V-GW-19).
 		for _, tc := range ev.ToolCalls {
-			idx, dikenal := blokTool[tc.Index]
+			idx, dikenal := cariAlat(tc)
 			if !dikenal {
 				// Tool baru: tutup blok yang sedang terbuka (text atau tool lain)
 				// sebelum membuka blok tool_use di index berikutnya.
 				tutupBlok()
 				idx = blokBerikutnya
 				blokBerikutnya++
-				blokTool[tc.Index] = idx
+				alatDibuka = append(alatDibuka, alatAliran{
+					indexKanonik: tc.Index, id: tc.ID, indexBlok: idx,
+				})
 				indexBlokSekarang = idx
 				blockStartPayload, _ := json.Marshal(map[string]any{
 					"type":  "content_block_start",
@@ -741,25 +1316,33 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 	// 3. Tutup content block yang masih terbuka saat aliran berakhir.
 	tutupBlok()
 
-	// 4. Kirim message_delta
+	// 4. Kirim message_delta. Pemakaian difinalisasi DULU: message_delta
+	// adalah tempat koreksi usage pada protokol Anthropic, dan di sinilah
+	// input_tokens asli upstream menggantikan estimasi lokal yang dibawa
+	// message_start (audit3 V-GW-27) — dalam bentuk spec, tanpa hitung ganda
+	// token cache (audit3 V-GW-26). Lantai di dalam finalisasi juga menaksir
+	// output dari byte KONTEN, bukan byte terbingkai (audit3 V-AB-15).
+	finalisasiPemakaian()
 	outputTokens := usage.OutputTokens
-	if outputTokens <= 0 {
-		// Taksiran dari byte KONTEN, bukan byte terbingkai (audit3 V-AB-15):
-		// angka ini yang dilihat klien sebagai output_tokens, jadi menggelem-
-		// bungkannya berarti klien mencatat pemakaian yang tidak pernah ada.
-		outputTokens = int(byteKonten / bytePerToken)
-		if outputTokens < 1 {
-			outputTokens = 1
-		}
+	if outputTokens < 1 {
+		outputTokens = 1
+	}
+	usageKlien := usageAnthropicDariKanonik(usage)
+	var stopSeqNilai any
+	if stopSeq != "" {
+		stopSeqNilai = stopSeq
 	}
 	msgDeltaPayload, _ := json.Marshal(map[string]any{
 		"type": "message_delta",
 		"delta": map[string]any{
 			"stop_reason":   stopReason,
-			"stop_sequence": nil,
+			"stop_sequence": stopSeqNilai,
 		},
 		"usage": map[string]any{
-			"output_tokens": outputTokens,
+			"input_tokens":                usageKlien.InputTokens,
+			"output_tokens":               outputTokens,
+			"cache_creation_input_tokens": usageKlien.CacheCreationInputTokens,
+			"cache_read_input_tokens":     usageKlien.CacheReadInputTokens,
 		},
 	})
 	_, _ = fmt.Fprintf(w, "event: message_delta\ndata: %s\n\n", msgDeltaPayload)

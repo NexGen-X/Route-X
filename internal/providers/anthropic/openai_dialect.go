@@ -150,6 +150,20 @@ func encodeToolCalls(calls []providers.ToolCall, withIndex bool) []oaToolCall {
 	return out
 }
 
+// finishReasonUntukOpenAI memetakan alasan berhenti kanonik ke kosakata
+// finish_reason OpenAI. stop_sequence dan pause_turn tidak punya padanan di
+// kosakata itu — jawaban model memang berhenti — jadi keduanya menjadi
+// "stop". Pemetaan ini hanya untuk dialek OpenAI; permukaan Anthropic
+// menerima nilai kanoniknya apa adanya (audit3 V-GW-28).
+func finishReasonUntukOpenAI(reason string) string {
+	switch reason {
+	case providers.FinishStopSequence, providers.FinishPauseTurn:
+		return providers.FinishStop
+	default:
+		return reason
+	}
+}
+
 // encodeCompletion menyusun objek chat.completion dari respons kanonik.
 func encodeCompletion(resp *providers.ChatResponse) json.RawMessage {
 	out := oaCompletion{
@@ -173,7 +187,7 @@ func encodeCompletion(resp *providers.ChatResponse) json.RawMessage {
 		}
 		choice := oaChoice{Index: c.Index, Message: msg}
 		if c.FinishReason != "" {
-			reason := c.FinishReason
+			reason := finishReasonUntukOpenAI(c.FinishReason)
 			choice.FinishReason = &reason
 		}
 		out.Choices = append(out.Choices, choice)
@@ -197,7 +211,7 @@ func encodeChunk(id, model string, created int64, delta *oaDelta, finishReason s
 	if delta != nil {
 		choice := oaChunkChoice{Index: 0, Delta: *delta}
 		if finishReason != "" {
-			reason := finishReason
+			reason := finishReasonUntukOpenAI(finishReason)
 			choice.FinishReason = &reason
 		}
 		chunk.Choices = append(chunk.Choices, choice)

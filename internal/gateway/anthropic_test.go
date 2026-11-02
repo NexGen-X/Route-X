@@ -148,6 +148,7 @@ func TestDecodeAnthropicMessagesRequest(t *testing.T) {
 	t.Run("content blocks with text and tool use and tool result", func(t *testing.T) {
 		body := []byte(`{
 			"model": "claude-3-5-sonnet",
+			"max_tokens": 1024,
 			"messages": [
 				{
 					"role": "user",

@@ -120,6 +120,7 @@ type wireRequest struct {
 	Stream        bool            `json:"stream"`
 	Temperature   *float64        `json:"temperature"`
 	TopP          *float64        `json:"top_p"`
+	TopK          *int            `json:"top_k"`
 	StopSequences []string        `json:"stop_sequences"`
 	Messages      []wireMessage   `json:"messages"`
 	Tools         []wireTool      `json:"tools"`
@@ -144,6 +145,8 @@ type wireBlock struct {
 	Content   []wireBlock       `json:"content"`
 	Source    map[string]string `json:"source"`
 	Thinking  string            `json:"thinking"`
+	Signature string            `json:"signature"`
+	IsError   bool              `json:"is_error"`
 }
 
 type wireTool struct {

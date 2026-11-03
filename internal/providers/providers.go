@@ -145,8 +145,15 @@ func (m *Message) Text() string {
 // ThinkingParam adalah parameter extended thinking bergaya Anthropic.
 //
 // Type "enabled" menyalakan penalaran dengan anggaran BudgetTokens; "disabled"
-// mematikannya secara eksplisit. Nilai lain tidak diteruskan — permukaan yang
-// mengurai permintaan menolaknya sebelum sampai ke sini.
+// mematikannya secara eksplisit; "adaptive" (B-096) berarti model memutuskan
+// sendiri kapan dan seberapa banyak berpikir — tanpa anggaran, dan itulah
+// bawaan Claude Code modern. "adaptive" hanya bermakna bagi upstream
+// Anthropic: adapter Anthropic meneruskannya apa adanya, sedangkan adapter
+// lain membuangnya (gateway juga menstripnya per kandidat di untukKandidat)
+// karena upstream non-Anthropic tidak punya konsep itu — representasi paling
+// jujurnya di sana adalah membiarkan bawaan upstream, bukan mengarang
+// anggaran. Nilai lain tidak diteruskan — permukaan yang mengurai permintaan
+// menolaknya sebelum sampai ke sini.
 type ThinkingParam struct {
 	Type         string
 	BudgetTokens int

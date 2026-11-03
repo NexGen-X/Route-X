@@ -1136,6 +1136,20 @@ func kutip(v string) string {
 func untukKandidat(req *providers.ChatRequest, c *upstream.RouteCandidate) *providers.ChatRequest {
 	salinan := *req
 	salinan.Model = c.UpstreamModelName
+	// thinking.type "adaptive" hanya dikenal upstream Anthropic (B-096).
+	// Titik ini TAHU jenis kandidatnya, jadi di sinilah pemetaannya
+	// diputuskan — bukan saat decode, yang berjalan sebelum routing memilih
+	// kandidat. Untuk kandidat non-Anthropic, "adaptive" (maknanya: model
+	// memutuskan sendiri) distrip menjadi tanpa parameter thinking:
+	// representasi paling jujurnya di upstream yang tidak punya konsep itu
+	// adalah membiarkan bawaan upstream, BUKAN mengarang budget token atau
+	// reasoning_effort. Kandidat Anthropic membawanya apa adanya dan
+	// adapter Anthropic meneruskannya utuh. Salinan dibuat per kandidat,
+	// jadi kandidat Anthropic pada percobaan failover berikutnya tetap
+	// menerima nilai aslinya dari req.
+	if c.Kind != providers.KindAnthropic && salinan.Thinking != nil && salinan.Thinking.Type == "adaptive" {
+		salinan.Thinking = nil
+	}
 	return &salinan
 }
 

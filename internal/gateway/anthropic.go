@@ -485,13 +485,20 @@ func decodeAnthropicMessagesRequest(body []byte, wajibMaxTokens bool) (*provider
 	}
 	if aReq.Thinking != nil && aReq.Thinking.Type != "" {
 		switch aReq.Thinking.Type {
-		case "enabled", "disabled":
+		case "enabled", "disabled", "adaptive":
+			// "adaptive" DITERIMA di sini (B-096): decode belum tahu upstream
+			// mana yang akan melayani — kandidat baru dipilih routing
+			// sesudahnya — jadi menolaknya di sini menghukum semua rute
+			// untuk keterbatasan sebagian upstream. Nilai kanoniknya
+			// dibawa apa adanya; keputusan meneruskan atau membuangnya
+			// diambil di titik yang tahu targetnya: untukKandidat (per
+			// kandidat) dan adapter masing-masing upstream.
 			out.Thinking = &providers.ThinkingParam{
 				Type:         aReq.Thinking.Type,
 				BudgetTokens: aReq.Thinking.BudgetTokens,
 			}
 		default:
-			return nil, fmt.Errorf("thinking.type %q tidak dikenal; gunakan \"enabled\" atau \"disabled\"", aReq.Thinking.Type)
+			return nil, fmt.Errorf("thinking.type %q tidak dikenal; gunakan \"enabled\", \"disabled\", atau \"adaptive\"", aReq.Thinking.Type)
 		}
 	}
 	if len(aReq.ToolChoice) > 0 {

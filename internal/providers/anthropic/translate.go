@@ -185,6 +185,7 @@ func (p *Provider) buildMessagesRequest(req *providers.ChatRequest, stream bool)
 	// sini agar permintaan yang sah di bentuk kanonik tidak berubah menjadi
 	// 400 di upstream.
 	budget := 0
+	adaptive := false
 	switch {
 	case req.Thinking != nil && req.Thinking.Type == "enabled":
 		budget = req.Thinking.BudgetTokens
@@ -193,6 +194,13 @@ func (p *Provider) buildMessagesRequest(req *providers.ChatRequest, stream bool)
 			// tanpa budget (atau di bawahnya) dinaikkan ke minimum itu.
 			budget = 1024
 		}
+	case req.Thinking != nil && req.Thinking.Type == "adaptive":
+		// "adaptive" diteruskan APA ADANYA (B-096): maknanya model
+		// memutuskan sendiri, jadi tidak ada budget yang boleh dikarang
+		// dan tidak ada penyesuaian max_tokens berbasis budget. Ia tetap
+		// thinking yang MENYALA, jadi perlakuan temperature/top_p di
+		// bawah sama seperti jalur budget.
+		adaptive = true
 	case req.Thinking != nil && req.Thinking.Type == "disabled":
 		// Mati secara eksplisit: ReasoningEffort tidak boleh menyalakannya
 		// kembali di belakang keputusan klien.
@@ -200,7 +208,11 @@ func (p *Provider) buildMessagesRequest(req *providers.ChatRequest, stream bool)
 	default:
 		budget = thinkingBudget(req.ReasoningEffort)
 	}
-	if budget > 0 {
+	if adaptive {
+		body.Thinking = &thinkingConfig{Type: "adaptive"}
+		body.Temperature = nil
+		body.TopP = nil
+	} else if budget > 0 {
 		body.Thinking = &thinkingConfig{Type: "enabled", BudgetTokens: budget}
 		if body.MaxTokens <= budget {
 			body.MaxTokens = budget + p.maxTokens

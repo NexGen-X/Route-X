@@ -425,7 +425,7 @@ func (m *Manager) tulisUlangKeyEnv(ctx context.Context, keyEnvPath, toolID, apiK
 //
 // Versi lama berkas ini hanya memuat empat nama generik dari tool terakhir
 // yang membawa kunci: variabel khas 10 dari 20 tool (OLLAMA_API_KEY,
-// GOOSE_API_KEY, SRC_ACCESS_TOKEN, dst.) tidak pernah terisi sama sekali
+// OPENAI_API_KEY khas goose, SRC_ACCESS_TOKEN, dst.) tidak pernah terisi sama sekali
 // (audit3 V-LN-24), dan mengonfigurasi tool B menghapus jejak tool A.
 func susunKontenKeyEnv(perTool map[string]kunciTersimpan) (string, error) {
 	type entriVar struct {
@@ -656,13 +656,46 @@ func (m *Manager) detectVersionLangsung(ctx context.Context, path string, versio
 	return ""
 }
 
+// modelAider mengembalikan nama model dalam bentuk yang dituntut Aider:
+// prefiks provider LiteLLM `openai/` (B-098). Tanpa prefiks itu Aider
+// 0.86 gagal sebelum request apa pun ("LLM Provider NOT provided") untuk
+// semua model OpenAI-compatible; run diagnostik Langkah 6 membuktikan
+// `openai/<model>` bekerja. Target yang sudah berprefiks dibiarkan.
+func modelAider(target string) string {
+	if target == "" || strings.HasPrefix(target, "openai/") {
+		return target
+	}
+	return "openai/" + target
+}
+
 // buildEnvVars menyusun map environment variables untuk tool tertentu.
 func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[string]string {
 	vars := make(map[string]string)
 
+	// B-101: Continue (cn) tidak membaca variabel env khusus apa pun —
+	// konfigurasi sahnya hanya berkas ~/.continue/config.yaml yang
+	// ditulis applyToolSpecificConfig. Mengekspor nama rekaan lagi
+	// hanya akan menyesatkan dan membiarkan cn jatuh ke config default
+	// dari env generik.
+	if tool.ID == "continue" {
+		return vars
+	}
+
 	actualURL := gwURL
-	if tool.ID == "claude" {
+	model := target
+	switch tool.ID {
+	case "claude":
+		// Claude Code memakai permukaan Anthropic gateway: base URL
+		// tanpa sufiks /v1.
 		actualURL = strings.TrimSuffix(gwURL, "/v1")
+	case "goose":
+		// B-099: OPENAI_HOST yang dibaca Goose adalah host tanpa sufiks
+		// /v1 (Goose menambahkan v1/chat/completions sendiri), dan
+		// provider-nya harus dinyatakan eksplisit.
+		actualURL = strings.TrimSuffix(gwURL, "/v1")
+		vars["GOOSE_PROVIDER"] = "openai"
+	case "aider":
+		model = modelAider(target)
 	}
 
 	if tool.EnvVarBaseURL != "" {
@@ -670,10 +703,74 @@ func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[str
 	}
 
 	if tool.EnvVarModel != "" {
-		vars[tool.EnvVarModel] = target
+		vars[tool.EnvVarModel] = model
 	}
 
 	return vars
+}
+
+// yamlKutip mengutip nilai sebagai skalar YAML bila memuat karakter yang
+// tidak aman sebagai skalar polos. Bentuk kutip ganda JSON adalah skalar
+// kutip ganda YAML yang sah.
+func yamlKutip(v string) string {
+	if v == "" {
+		return `""`
+	}
+	if strings.ContainsAny(v, " \t#\"'\\") || strings.Contains(v, ": ") || strings.HasSuffix(v, ":") {
+		q, err := json.Marshal(v)
+		if err == nil {
+			return string(q)
+		}
+	}
+	return v
+}
+
+// perbaruiYAMLTopLevel memperbarui kunci skalar tingkat-atas (tanpa
+// indentasi) di dokumen YAML yang sudah ada, mempertahankan baris lain
+// apa adanya — config.yaml Goose bisa memuat blok lain milik pengguna
+// (mis. extensions) yang tidak boleh dihancurkan Configure. Kunci yang
+// dikelola muncul dua kali atau lebih disisakan satu (yang pertama,
+// diperbarui); kunci yang belum ada ditambahkan di akhir.
+func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
+	dikelola := make(map[string]bool, len(pairs))
+	nilai := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		dikelola[p[0]] = true
+		nilai[p[0]] = p[1]
+	}
+	tertulis := make(map[string]bool, len(pairs))
+	var out []string
+	for _, line := range strings.Split(existing, "\n") {
+		kunci := ""
+		if line != "" && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
+			if i := strings.Index(line, ":"); i > 0 {
+				kunci = strings.TrimSpace(line[:i])
+			}
+		}
+		if kunci != "" && dikelola[kunci] {
+			if tertulis[kunci] {
+				continue // duplikat kunci terkelola: buang
+			}
+			tertulis[kunci] = true
+			out = append(out, kunci+": "+yamlKutip(nilai[kunci]))
+			continue
+		}
+		out = append(out, line)
+	}
+	hasil := strings.Join(out, "\n")
+	for _, p := range pairs {
+		if tertulis[p[0]] {
+			continue
+		}
+		if hasil != "" && !strings.HasSuffix(hasil, "\n") {
+			hasil += "\n"
+		}
+		hasil += p[0] + ": " + yamlKutip(p[1]) + "\n"
+	}
+	if hasil != "" && !strings.HasSuffix(hasil, "\n") {
+		hasil += "\n"
+	}
+	return hasil
 }
 
 // shellQuote mengutip nilai environment untuk shell POSIX tanpa membuka ruang
@@ -832,29 +929,113 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 
 	switch tool.ID {
 	case "claude":
-		// Tulis ~/.claude/settings.json
+		// Tulis ~/.claude/settings.json dalam skema sah Claude Code 2.x
+		// (B-097): variabel hidup di objek `env`, BUKAN kunci root
+		// snake_case `anthropic_base_url`/`model` yang tidak dikenal
+		// tool (dokumentasi resmi Claude Code, halaman Environment
+		// variables: "Add variables under the `env` key in a
+		// settings.json file"). Setelan lain milik pengguna yang sudah
+		// ada di berkas dipertahankan (pola yang sama dengan
+		// opencode.json), dan sisa kunci root salah dari versi lama
+		// dibuang. Key ikut ditulis di `env` sebagai ANTHROPIC_API_KEY
+		// — nama yang sama dengan yang diekspor key.env untuk tool ini
+		// — hanya bila Configure membawa key, konsisten dengan
+		// opencode.json yang menaruh apiKey di berkas; berkas 0600
+		// karena bisa memuat key itu. Tanpa key baru, entri key lama
+		// dihapus supaya tidak ada kredensial hantu (pola V-LN-26).
 		claudeDir := filepath.Join(homeDir, ".claude")
 		_ = os.MkdirAll(claudeDir, 0755)
 		settingsPath := filepath.Join(claudeDir, "settings.json")
 		claudeURL := strings.TrimSuffix(gwURL, "/v1")
-		cfg := map[string]any{
-			"anthropic_base_url": claudeURL,
-			"model":              target,
+		cfg := make(map[string]any)
+		if data, err := os.ReadFile(settingsPath); err == nil {
+			_ = json.Unmarshal(data, &cfg)
+			if cfg == nil {
+				cfg = make(map[string]any)
+			}
 		}
+		delete(cfg, "anthropic_base_url")
+		env, ok := cfg["env"].(map[string]any)
+		if !ok || env == nil {
+			env = make(map[string]any)
+			cfg["env"] = env
+		}
+		env["ANTHROPIC_BASE_URL"] = claudeURL
+		env["ANTHROPIC_MODEL"] = target
+		if apiKey != "" {
+			env["ANTHROPIC_API_KEY"] = apiKey
+		} else {
+			delete(env, "ANTHROPIC_API_KEY")
+		}
+		cfg["model"] = target
 		data, err := json.MarshalIndent(cfg, "", "  ")
 		if err != nil {
 			return fmt.Errorf("mengkodekan settings.json Claude: %w", err)
 		}
-		if err := tulisAtomik(settingsPath, data, 0644); err != nil {
+		if err := tulisAtomik(settingsPath, data, 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", settingsPath, err)
 		}
 
 	case "aider":
-		// Tulis ~/.aider.conf.yml
+		// Tulis ~/.aider.conf.yml. Nama model WAJIB berprefiks provider
+		// LiteLLM `openai/` (B-098) — sama seperti AIDER_MODEL di env.
 		aiderConfigPath := filepath.Join(homeDir, ".aider.conf.yml")
-		content := fmt.Sprintf("openai-api-base: %s\nmodel: %s\n", gwURL, target)
+		content := fmt.Sprintf("openai-api-base: %s\nmodel: %s\n", gwURL, modelAider(target))
 		if err := tulisAtomik(aiderConfigPath, []byte(content), 0644); err != nil {
 			return fmt.Errorf("menulis %s: %w", aiderConfigPath, err)
+		}
+
+	case "goose":
+		// Tulis ~/.config/goose/config.yaml (B-099) dengan kunci yang
+		// benar-benar dibaca Goose 1.x (dokumentasi resmi goose,
+		// Configure LLM Provider): GOOSE_PROVIDER, GOOSE_MODEL, dan
+		// OPENAI_HOST tanpa sufiks /v1. API key SENGAJA tidak ditulis
+		// di berkas ini — dokumentasi goose menyatakan key di
+		// config.yaml diabaikan; key sampai ke Goose lewat ekspor
+		// OPENAI_API_KEY di key.env/cli-env.sh. Kunci tingkat-atas lain
+		// milik pengguna (mis. extensions) dipertahankan.
+		gooseDir := filepath.Join(homeDir, ".config", "goose")
+		_ = os.MkdirAll(gooseDir, 0755)
+		goosePath := filepath.Join(gooseDir, "config.yaml")
+		var existing string
+		if data, err := os.ReadFile(goosePath); err == nil {
+			existing = string(data)
+		}
+		content := perbaruiYAMLTopLevel(existing, [][2]string{
+			{"GOOSE_PROVIDER", "openai"},
+			{"GOOSE_MODEL", target},
+			{"OPENAI_HOST", strings.TrimSuffix(gwURL, "/v1")},
+		})
+		if err := tulisAtomik(goosePath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", goosePath, err)
+		}
+
+	case "continue":
+		// Tulis ~/.continue/config.yaml (B-101, perbaikan keamanan):
+		// config lokal sah Continue 1.5.x (dokumentasi resmi Continue,
+		// config.yaml Reference: name/version/schema wajib, entri
+		// models ber-provider openai dengan apiBase + apiKey). Dengan
+		// berkas ini cn memakai gateway Route-X; tanpa berkas ini cn
+		// membangun config default dari env generik dan mengirim key
+		// gateway (ANTHROPIC_API_KEY dari key.env) ke vendor asli.
+		// apiBase memakai URL gateway DENGAN sufiks /v1 (bentuk yang
+		// dibuktikan run diagnostik Langkah 6). Berkas 0600 karena
+		// memuat apiKey.
+		continueDir := filepath.Join(homeDir, ".continue")
+		_ = os.MkdirAll(continueDir, 0755)
+		continuePath := filepath.Join(continueDir, "config.yaml")
+		var b strings.Builder
+		b.WriteString("name: Route-X\nversion: 1.0.0\nschema: v1\nmodels:\n")
+		fmt.Fprintf(&b, "  - name: %s\n", yamlKutip("Route-X "+target))
+		b.WriteString("    provider: openai\n")
+		fmt.Fprintf(&b, "    model: %s\n", yamlKutip(target))
+		fmt.Fprintf(&b, "    apiBase: %s\n", yamlKutip(gwURL))
+		if apiKey != "" {
+			fmt.Fprintf(&b, "    apiKey: %s\n", yamlKutip(apiKey))
+		}
+		b.WriteString("    roles:\n      - chat\n      - edit\n      - apply\n      - summarize\n")
+		if err := tulisAtomik(continuePath, []byte(b.String()), 0600); err != nil {
+			return fmt.Errorf("menulis %s: %w", continuePath, err)
 		}
 
 	case "fabric":
@@ -969,6 +1150,13 @@ func (m *Manager) GetExportScript(homeDir string) (string, error) {
 // variabel khas tiap tool DITAMBAH nama generik key.env. Versi lama hanya
 // memakai variabel tool, sehingga ROUTEX_API_KEY sendiri — nama yang
 // paling utama — tidak pernah dibersihkan/diredaksi (audit3 V-LN-34).
+// namaVarKunciWarisan adalah nama variabel kunci yang pernah diekspor
+// versi lama tetapi sudah tidak diproduksi lagi (B-099: GOOSE_API_KEY
+// tidak dibaca Goose; B-101: CONTINUE_API_KEY tidak dibaca cn). Keduanya
+// tetap masuk himpunan redaksi/pembersihan supaya skrip warisan yang
+// masih memuatnya dibersihkan, bukan bocor.
+var namaVarKunciWarisan = []string{"GOOSE_API_KEY", "CONTINUE_API_KEY"}
+
 func himpunanVarKunci() map[string]bool {
 	keyVars := map[string]bool{}
 	for _, t := range SupportedTools() {
@@ -977,6 +1165,9 @@ func himpunanVarKunci() map[string]bool {
 		}
 	}
 	for _, nama := range namaVarKunciGenerik {
+		keyVars[nama] = true
+	}
+	for _, nama := range namaVarKunciWarisan {
 		keyVars[nama] = true
 	}
 	return keyVars

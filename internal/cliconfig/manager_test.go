@@ -266,3 +266,253 @@ func TestScanMigratesLegacyAPIKey(t *testing.T) {
 		t.Fatalf("hasil migrasi tidak sah: %+v", migrated)
 	}
 }
+
+// TestConfigureClaudeSettingsSkemaEnv membuktikan B-097: settings.json
+// Claude Code ditulis dalam skema yang benar-benar dibaca tool — objek
+// `env` berisi ANTHROPIC_BASE_URL (tanpa /v1), ANTHROPIC_MODEL, dan
+// ANTHROPIC_API_KEY bila key diberikan — bukan kunci root snake_case
+// warisan. Setelan pengguna lain dipertahankan, sisa kunci root salah
+// dibuang, dan berkas berizin 0600 karena bisa memuat key.
+func TestConfigureClaudeSettingsSkemaEnv(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	lama := `{"anthropic_base_url":"http://lama","env":{"VARIABEL_LAIN":"tetap"},"permissions":{"allow":["Bash"]}}`
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), []byte(lama), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	mgr := NewManager(newMockSettingsStore(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res, err := mgr.Configure(ctx, ConfigureParams{
+		ToolID: "claude", Mode: ModeModelOnly, Target: "intern-s2",
+		APIKey: "kunci-uji-claude-123",
+	}, "http://localhost:8080/v1")
+	if err != nil {
+		t.Fatalf("Configure claude: %v", err)
+	}
+	if res.EnvVars["ANTHROPIC_BASE_URL"] != "http://localhost:8080" {
+		t.Errorf("EnvVars ANTHROPIC_BASE_URL = %q, mau tanpa /v1", res.EnvVars["ANTHROPIC_BASE_URL"])
+	}
+
+	settingsPath := filepath.Join(claudeDir, "settings.json")
+	fi, err := os.Stat(settingsPath)
+	if err != nil {
+		t.Fatalf("settings.json tidak ditulis: %v", err)
+	}
+	if fi.Mode().Perm() != 0600 {
+		t.Errorf("izin settings.json = %o, mau 600 (bisa memuat API key)", fi.Mode().Perm())
+	}
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("settings.json bukan JSON sah: %v", err)
+	}
+	if _, ada := cfg["anthropic_base_url"]; ada {
+		t.Errorf("kunci root anthropic_base_url warisan masih ada: %s", data)
+	}
+	env, ok := cfg["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("settings.json tidak punya objek env: %s", data)
+	}
+	if env["ANTHROPIC_BASE_URL"] != "http://localhost:8080" {
+		t.Errorf("env.ANTHROPIC_BASE_URL = %v, mau http://localhost:8080", env["ANTHROPIC_BASE_URL"])
+	}
+	if env["ANTHROPIC_MODEL"] != "intern-s2" {
+		t.Errorf("env.ANTHROPIC_MODEL = %v, mau intern-s2", env["ANTHROPIC_MODEL"])
+	}
+	if env["ANTHROPIC_API_KEY"] != "kunci-uji-claude-123" {
+		t.Errorf("env.ANTHROPIC_API_KEY = %v, mau key yang dikonfigurasi", env["ANTHROPIC_API_KEY"])
+	}
+	if env["VARIABEL_LAIN"] != "tetap" {
+		t.Errorf("variabel env pengguna lain hilang: %v", env)
+	}
+	if cfg["model"] != "intern-s2" {
+		t.Errorf("model tingkat-atas = %v, mau intern-s2", cfg["model"])
+	}
+	if _, ok := cfg["permissions"]; !ok {
+		t.Errorf("setelan permissions pengguna hilang: %s", data)
+	}
+}
+
+// TestConfigureAiderPrefiksOpenAI membuktikan B-098: nama model Aider
+// ditulis `openai/<model>` di .aider.conf.yml DAN di env AIDER_MODEL.
+func TestConfigureAiderPrefiksOpenAI(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	ctx := context.Background()
+	mgr := NewManager(newMockSettingsStore(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res, err := mgr.Configure(ctx, ConfigureParams{
+		ToolID: "aider", Mode: ModeModelOnly, Target: "intern-s2",
+	}, "http://localhost:8080/v1")
+	if err != nil {
+		t.Fatalf("Configure aider: %v", err)
+	}
+	if res.EnvVars["AIDER_MODEL"] != "openai/intern-s2" {
+		t.Errorf("AIDER_MODEL = %q, mau openai/intern-s2", res.EnvVars["AIDER_MODEL"])
+	}
+	if strings.Contains(res.ExportSnippet, "AIDER_MODEL='intern-s2'") {
+		t.Errorf("snippet masih memuat AIDER_MODEL tanpa prefiks: %s", res.ExportSnippet)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".aider.conf.yml"))
+	if err != nil {
+		t.Fatalf(".aider.conf.yml tidak ditulis: %v", err)
+	}
+	if !strings.Contains(string(data), "model: openai/intern-s2") {
+		t.Errorf(".aider.conf.yml tidak memuat model berprefiks:\n%s", data)
+	}
+	if !strings.Contains(string(data), "openai-api-base: http://localhost:8080/v1") {
+		t.Errorf(".aider.conf.yml tidak memuat openai-api-base gateway:\n%s", data)
+	}
+	if modelAider("openai/sudah") != "openai/sudah" {
+		t.Error("modelAider tidak boleh menggandakan prefiks openai/")
+	}
+}
+
+// TestConfigureGooseConfigDanEnv membuktikan B-099 dan B-100: Goose
+// mendapat config.yaml yang sah (GOOSE_PROVIDER/GOOSE_MODEL/OPENAI_HOST
+// tanpa /v1, blok pengguna lain dipertahankan, TANPA api key di berkas),
+// ekspor env yang benar-benar dibacanya, dan VersionArg --version.
+func TestConfigureGooseConfigDanEnv(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	gooseDir := filepath.Join(home, ".config", "goose")
+	if err := os.MkdirAll(gooseDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	lama := "GOOSE_MODEL: model-lama\nextensions:\n  developer:\n    enabled: true\n"
+	if err := os.WriteFile(filepath.Join(gooseDir, "config.yaml"), []byte(lama), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	def, ok := cariToolDef("goose")
+	if !ok {
+		t.Fatal("goose tidak ditemukan")
+	}
+	if def.VersionArg != "--version" {
+		t.Errorf("VersionArg goose = %q, mau --version (B-100)", def.VersionArg)
+	}
+	if def.EnvVarBaseURL != "OPENAI_HOST" || def.EnvVarAPIKey != "OPENAI_API_KEY" {
+		t.Errorf("definisi env goose = %q/%q, mau OPENAI_HOST/OPENAI_API_KEY", def.EnvVarBaseURL, def.EnvVarAPIKey)
+	}
+
+	ctx := context.Background()
+	mgr := NewManager(newMockSettingsStore(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res, err := mgr.Configure(ctx, ConfigureParams{
+		ToolID: "goose", Mode: ModeModelOnly, Target: "intern-s2",
+		APIKey: "kunci-uji-goose-123",
+	}, "http://localhost:8080/v1")
+	if err != nil {
+		t.Fatalf("Configure goose: %v", err)
+	}
+	if res.EnvVars["GOOSE_PROVIDER"] != "openai" {
+		t.Errorf("GOOSE_PROVIDER = %q, mau openai", res.EnvVars["GOOSE_PROVIDER"])
+	}
+	if res.EnvVars["OPENAI_HOST"] != "http://localhost:8080" {
+		t.Errorf("OPENAI_HOST = %q, mau tanpa /v1", res.EnvVars["OPENAI_HOST"])
+	}
+	if res.EnvVars["GOOSE_MODEL"] != "intern-s2" {
+		t.Errorf("GOOSE_MODEL = %q, mau intern-s2", res.EnvVars["GOOSE_MODEL"])
+	}
+
+	data, err := os.ReadFile(filepath.Join(gooseDir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("config.yaml goose tidak ditulis: %v", err)
+	}
+	konten := string(data)
+	for _, mau := range []string{"GOOSE_PROVIDER: openai", "GOOSE_MODEL: intern-s2", "OPENAI_HOST: http://localhost:8080", "extensions:", "developer:"} {
+		if !strings.Contains(konten, mau) {
+			t.Errorf("config.yaml goose tidak memuat %q:\n%s", mau, konten)
+		}
+	}
+	if strings.Count(konten, "GOOSE_MODEL:") != 1 {
+		t.Errorf("GOOSE_MODEL harus tepat satu sesudah pembaruan:\n%s", konten)
+	}
+	for _, terlarang := range []string{"model-lama", "kunci-uji-goose-123", "GOOSE_API_KEY", "GOOSE_OPENAI_HOST", "/v1"} {
+		if strings.Contains(konten, terlarang) {
+			t.Errorf("config.yaml goose memuat %q yang tidak sah:\n%s", terlarang, konten)
+		}
+	}
+
+	keyEnv, err := os.ReadFile(filepath.Join(home, ".routex", "key.env"))
+	if err != nil {
+		t.Fatalf("key.env tidak ada: %v", err)
+	}
+	if !strings.Contains(string(keyEnv), "OPENAI_API_KEY='kunci-uji-goose-123'") {
+		t.Errorf("key.env harus mengekspor kunci goose sebagai OPENAI_API_KEY:\n%s", keyEnv)
+	}
+	if strings.Contains(string(keyEnv), "GOOSE_API_KEY") {
+		t.Errorf("key.env masih mengekspor GOOSE_API_KEY:\n%s", keyEnv)
+	}
+}
+
+// TestConfigureContinueConfigLokal membuktikan B-101 (keamanan): cn
+// mendapat ~/.continue/config.yaml yang sah menunjuk gateway (provider
+// openai, apiBase dengan /v1, apiKey key produk, izin 0600), dan tidak
+// ada lagi ekspor variabel rekaan CONTINUE_* di hasil Configure maupun
+// cli-env.sh.
+func TestConfigureContinueConfigLokal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	ctx := context.Background()
+	mgr := NewManager(newMockSettingsStore(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res, err := mgr.Configure(ctx, ConfigureParams{
+		ToolID: "continue", Mode: ModeModelOnly, Target: "intern-s2",
+		APIKey: "kunci-uji-continue-123",
+	}, "http://localhost:8080/v1")
+	if err != nil {
+		t.Fatalf("Configure continue: %v", err)
+	}
+	if len(res.EnvVars) != 0 {
+		t.Errorf("EnvVars continue harus kosong (cn tidak membaca env khusus), didapat %v", res.EnvVars)
+	}
+	if strings.Contains(res.ExportSnippet, "CONTINUE_") {
+		t.Errorf("snippet continue masih memuat variabel rekaan: %s", res.ExportSnippet)
+	}
+
+	cfgPath := filepath.Join(home, ".continue", "config.yaml")
+	fi, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatalf("~/.continue/config.yaml tidak ditulis: %v", err)
+	}
+	if fi.Mode().Perm() != 0600 {
+		t.Errorf("izin config.yaml continue = %o, mau 600 (memuat apiKey)", fi.Mode().Perm())
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	konten := string(data)
+	for _, mau := range []string{
+		"name: Route-X", "schema: v1", "provider: openai",
+		"model: intern-s2", "apiBase: http://localhost:8080/v1",
+		"apiKey: kunci-uji-continue-123",
+	} {
+		if !strings.Contains(konten, mau) {
+			t.Errorf("config.yaml continue tidak memuat %q:\n%s", mau, konten)
+		}
+	}
+
+	script, err := os.ReadFile(filepath.Join(home, ".routex", "cli-env.sh"))
+	if err != nil {
+		t.Fatalf("cli-env.sh tidak ada: %v", err)
+	}
+	if strings.Contains(string(script), "CONTINUE_API") || strings.Contains(string(script), "CONTINUE_MODEL") {
+		t.Errorf("cli-env.sh masih mengekspor variabel rekaan Continue:\n%s", script)
+	}
+
+	def, ok := cariToolDef("continue")
+	if !ok {
+		t.Fatal("continue tidak ditemukan")
+	}
+	if def.EnvVarBaseURL != "" || def.EnvVarModel != "" || def.EnvVarAPIKey != "OPENAI_API_KEY" {
+		t.Errorf("definisi env continue = %q/%q/%q, mau kosong/kosong/OPENAI_API_KEY",
+			def.EnvVarBaseURL, def.EnvVarAPIKey, def.EnvVarModel)
+	}
+}

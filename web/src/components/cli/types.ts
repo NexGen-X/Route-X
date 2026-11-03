@@ -65,9 +65,16 @@ export const getToolCompleteSnippet = (
   publicBaseURL: string,
 ): string => {
   const target = config?.target || tool.active_target || models[0]?.model_id || '';
-  const isClaude = tool.id === 'claude';
-  const gwURL = isClaude ? publicBaseURL : `${publicBaseURL}/v1`;
+  // Claude Code dan Goose membaca base URL TANPA sufiks /v1 (B-097/B-099:
+  // goose menambahkan v1/chat/completions sendiri ke OPENAI_HOST).
+  const tanpaV1 = tool.id === 'claude' || tool.id === 'goose';
+  const gwURL = tanpaV1 ? publicBaseURL : `${publicBaseURL}/v1`;
   const key = config?.apiKey || userApiKey || '<KUNCI_API_ROUTEX_ANDA>';
+  // Aider menuntut prefiks provider LiteLLM pada nama model (B-098).
+  const targetTampil =
+    tool.id === 'aider' && target && !target.startsWith('openai/')
+      ? `openai/${target}`
+      : target;
 
   const lines: string[] = [];
 
@@ -82,11 +89,15 @@ export const getToolCompleteSnippet = (
       lines.push(`export ${k}='${gwURL}'`);
     }
   }
+  // Goose juga wajib tahu provider-nya (B-099).
+  if (tool.id === 'goose') {
+    lines.push(`export GOOSE_PROVIDER='openai'`);
+  }
 
   // 2. Target Model / Rule
   for (const [k] of Object.entries(tool.env_vars || {})) {
     if (k.includes('MODEL') || k.includes('DEFAULT')) {
-      lines.push(`export ${k}='${target}'`);
+      lines.push(`export ${k}='${targetTampil}'`);
     }
   }
 

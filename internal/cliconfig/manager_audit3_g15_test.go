@@ -33,8 +33,15 @@ func TestSusunKontenKeyEnvGabungan(t *testing.T) {
 	if !strings.Contains(konten, "export OLLAMA_API_KEY='kunci-ollama'") {
 		t.Errorf("OLLAMA_API_KEY tidak terisi dari konfigurasi ollama:\n%s", konten)
 	}
-	if !strings.Contains(konten, "export GOOSE_API_KEY='kunci-goose'") {
-		t.Errorf("GOOSE_API_KEY tidak terisi dari konfigurasi goose:\n%s", konten)
+	// B-099: kunci goose kini diekspor sebagai OPENAI_API_KEY (nama yang
+	// benar-benar dibaca Goose); GOOSE_API_KEY tidak diproduksi lagi.
+	// Karena OPENAI_API_KEY juga nama generik, nilainya mengikuti tool
+	// terbaru (opencode) — perilaku generik yang sama seperti sebelumnya.
+	if strings.Contains(konten, "GOOSE_API_KEY") {
+		t.Errorf("GOOSE_API_KEY tidak boleh lagi diproduksi (B-099):\n%s", konten)
+	}
+	if !strings.Contains(konten, "export OPENAI_API_KEY='kunci-opencode'") {
+		t.Errorf("OPENAI_API_KEY harus terisi (goose/generik terbaru):\n%s", konten)
 	}
 	// Nama generik mengikuti tool yang paling baru dikonfigurasi.
 	if !strings.Contains(konten, "export ROUTEX_API_KEY='kunci-opencode'") {
@@ -106,8 +113,13 @@ func TestConfigureDuaToolKeyEnvUtuh(t *testing.T) {
 	if !strings.Contains(konten, "OLLAMA_API_KEY") || !strings.Contains(konten, "kunci-ollama-123") {
 		t.Errorf("key.env kehilangan konfigurasi ollama sesudah goose dikonfigurasi:\n%s", konten)
 	}
-	if !strings.Contains(konten, "GOOSE_API_KEY") || !strings.Contains(konten, "kunci-goose-456") {
+	// B-099: konfigurasi goose terbaca lewat OPENAI_API_KEY, bukan
+	// GOOSE_API_KEY yang tidak dibaca Goose.
+	if !strings.Contains(konten, "OPENAI_API_KEY") || !strings.Contains(konten, "kunci-goose-456") {
 		t.Errorf("key.env tidak memuat konfigurasi goose:\n%s", konten)
+	}
+	if strings.Contains(konten, "GOOSE_API_KEY") {
+		t.Errorf("key.env tidak boleh lagi memuat GOOSE_API_KEY (B-099):\n%s", konten)
 	}
 	// Generik mengikuti yang terbaru (goose).
 	if !strings.Contains(konten, "ROUTEX_API_KEY='kunci-goose-456'") && !strings.Contains(konten, `ROUTEX_API_KEY="kunci-goose-456"`) && !strings.Contains(konten, "ROUTEX_API_KEY=kunci-goose-456") {

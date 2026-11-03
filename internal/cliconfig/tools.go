@@ -103,16 +103,25 @@ func SupportedTools() []ToolDef {
 			DefaultTarget: "gpt-5",
 		},
 		{
-			ID:            "continue",
-			Name:          "Continue CLI",
-			Category:      "Coding Agent",
-			Description:   "Ekstensi dan CLI pendamping coding modular open-source untuk IDE dan shell.",
-			BinaryNames:   []string{"continue"},
-			ConfigPaths:   []string{".continue/config.json", ".continue/config.yaml"},
-			VersionArg:    "--version",
-			EnvVarBaseURL: "CONTINUE_API_BASE",
-			EnvVarAPIKey:  "CONTINUE_API_KEY",
-			EnvVarModel:   "CONTINUE_MODEL",
+			ID:          "continue",
+			Name:        "Continue CLI",
+			Category:    "Coding Agent",
+			Description: "Ekstensi dan CLI pendamping coding modular open-source untuk IDE dan shell.",
+			// Biner CLI resmi Continue adalah `cn` (diagnostik Langkah 6
+			// memakai cn 1.5.47); nama `continue` dipertahankan sebagai
+			// cadangan deteksi.
+			BinaryNames: []string{"cn", "continue"},
+			ConfigPaths: []string{".continue/config.yaml", ".continue/config.json"},
+			VersionArg:  "--version",
+			// B-101: cn TIDAK membaca variabel khusus apa pun
+			// (CONTINUE_API_BASE/API_KEY/MODEL adalah rekaan versi lama
+			// yang tidak pernah dibaca tool). Konfigurasi Continue hidup
+			// di ~/.continue/config.yaml; satu-satunya nama env yang
+			// dikenal provider openai-nya adalah OPENAI_API_KEY, yang
+			// menjadi nama kunci env tool ini.
+			EnvVarBaseURL: "",
+			EnvVarAPIKey:  "OPENAI_API_KEY",
+			EnvVarModel:   "",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
 		},
@@ -131,15 +140,21 @@ func SupportedTools() []ToolDef {
 			DefaultTarget: "gpt-5",
 		},
 		{
-			ID:            "goose",
-			Name:          "Goose Agent",
-			Category:      "Developer Agent",
-			Description:   "Developer agent open-source dari Block untuk otomatisasi pekerjaan rekayasa perangkat lunak.",
-			BinaryNames:   []string{"goose"},
-			ConfigPaths:   []string{".config/goose/config.yaml"},
-			VersionArg:    "version",
-			EnvVarBaseURL: "GOOSE_OPENAI_HOST",
-			EnvVarAPIKey:  "GOOSE_API_KEY",
+			ID:          "goose",
+			Name:        "Goose Agent",
+			Category:    "Developer Agent",
+			Description: "Developer agent open-source dari Block untuk otomatisasi pekerjaan rekayasa perangkat lunak.",
+			BinaryNames: []string{"goose"},
+			ConfigPaths: []string{".config/goose/config.yaml"},
+			// B-100: goose menolak subcommand `version`
+			// ("unrecognized subcommand"); yang sah adalah --version.
+			VersionArg: "--version",
+			// B-099: Goose membaca provider openai lewat OPENAI_HOST
+			// (tanpa sufiks /v1) dan OPENAI_API_KEY. Nama lama
+			// GOOSE_OPENAI_HOST/GOOSE_API_KEY tidak dibaca Goose sama
+			// sekali dan tidak lagi diekspor.
+			EnvVarBaseURL: "OPENAI_HOST",
+			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "GOOSE_MODEL",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",

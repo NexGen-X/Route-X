@@ -11,7 +11,7 @@
 <p>
 <a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.6.1"><img src="https://img.shields.io/badge/Release-v1.6.1-10B981?style=for-the-badge&logo=github" alt="Release v1.6.1"></a>
 <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27.3+-00ADD8?style=for-the-badge&logo=go" alt="Go 1.27.3+"></a>
-<a href="https://react.dev"><img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react" alt="React 18"></a>
+<a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react" alt="React 19"></a>
 <a href="https://postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql" alt="PostgreSQL 16"></a>
 <a href="https://redis.io"><img src="https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis" alt="Redis 7"></a>
 <a href="https://github.com/NexGen-X/Route-X/actions/workflows/ci.yml"><img src="https://github.com/NexGen-X/Route-X/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
@@ -341,7 +341,7 @@ flowchart LR
     subgraph RouteX["Route-X — single Go binary"]
         IN["Dual-protocol ingestion<br/>/v1/chat/completions · /v1/messages<br/>bidirectional transpilation & SSE streaming"]
         ENG["Routing & policy engine<br/>Redis rate limiter · atomic budget reservation<br/>combo routing · 3-state circuit breaker · cascade failover"]
-        DASH["Embedded dashboard<br/>Calm Console — React 18 + Tailwind 3.4 (go:embed)"]
+        DASH["Embedded dashboard<br/>Calm Console — React 19 + Tailwind 3.4 (go:embed)"]
         IN --> ENG
     end
 

@@ -212,6 +212,31 @@ func (r *CredentialRepo) List(ctx context.Context, providerID string) ([]*Creden
 	return out, nil
 }
 
+// HasCredentials melaporkan apakah provider ini punya baris kredensial SAMA SEKALI,
+// tanpa memedulikan enabled maupun kedaluwarsa.
+//
+// Pembedaan ini penopang perbaikan B-103: Active yang menjawab ErrNotFound bisa
+// berarti dua keadaan yang berlawanan — provider memang tidak pernah diberi
+// kredensial (keadaan sah untuk server lokal tanpa autentikasi), atau provider
+// PUNYA kredensial tetapi semuanya dinonaktifkan/kedaluwarsa (keputusan operator
+// yang wajib menghentikan trafik). Pemanggil yang perlu membedakan keduanya —
+// pabrik adapter gateway — bertanya di sini, bukan menebak dari ErrNotFound.
+func (r *CredentialRepo) HasCredentials(ctx context.Context, providerID string) (bool, error) {
+	const op = "memeriksa keberadaan kredensial provider"
+	if !idOK(providerID) {
+		return false, fmt.Errorf("%s: %w: provider_id bukan UUID", op, repo.ErrInvalidReference)
+	}
+
+	var ada bool
+	err := r.q.QueryRow(ctx,
+		`select exists(select 1 from provider_credentials where provider_id = $1)`,
+		providerID).Scan(&ada)
+	if err != nil {
+		return false, repo.Err(op, err)
+	}
+	return ada, nil
+}
+
 // Active mengembalikan kredensial aktif provider dalam bentuk sudah terdekripsi.
 //
 // Pemilihannya mengikuti strategi provider lebih dulu, baru riwayat

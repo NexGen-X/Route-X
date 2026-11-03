@@ -142,16 +142,31 @@ if [ -z "$DB_PASS" ]; then
     DB_PASS=$(openssl rand -hex 16)
 fi
 
-# Inisialisasi role dan database bila belum ada
+# Inisialisasi role dan database bila belum ada.
+# CREATEDB (B-104): restore dari panel admin memakai mekanisme skratch-swap
+# (B-045) — gateway sebagai role ini harus bisa CREATE DATABASE skratch,
+# ALTER DATABASE ... RENAME untuk penukaran, dan DROP DATABASE salinan
+# pengaman lama, semuanya atas database MILIKNYA SENDIRI. Tanpa CREATEDB,
+# restore selalu gagal 42501 pada instalasi native standar sementara ekspor
+# bekerja, jadi fitur pemulihan mati tepat saat paling dibutuhkan. Hak ini
+# SENGAJA sempit: hanya CREATEDB pada role aplikasi ini saja — BUKAN
+# SUPERUSER, BUKAN CREATEROLE — sehingga role tidak bisa membuat role lain,
+# menaikkan haknya, atau menyentuh database milik role lain di luar hak
+# pemilik database-nya sendiri (rincian trade-off: PR B-104 dan
+# docs/DISASTER_RECOVERY.md §3). Jalur compose tidak lewat sini: di sana
+# POSTGRES_USER adalah superuser bawaan image PostgreSQL.
 if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
-    sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
+    sudo -u postgres psql -c "CREATE USER ${DB_USER} WITH CREATEDB PASSWORD '${DB_PASS}';"
     echo "   User database '${DB_USER}' berhasil dibuat."
 fi
 # Selalu selaraskan password role dengan yang tercatat di routex.env
 # (audit3 V-DP-06): versi lama hanya menyetel password saat CREATE, jadi
 # instalasi ulang sesudah rotasi manual membuat role dan env berbeda dan
-# gateway gagal login selamanya.
-sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';" >/dev/null
+# gateway gagal login selamanya. ALTER yang sama kini juga selalu
+# menyelaraskan CREATEDB (B-104): menjalankan ulang installer (jalur
+# upgrade) menyembuhkan instalasi lama yang role-nya lahir tanpa CREATEDB,
+# pola yang sama dengan penyembuhan home pengguna layanan (B-095).
+sudo -u postgres psql -c "ALTER USER ${DB_USER} WITH CREATEDB PASSWORD '${DB_PASS}';" >/dev/null
 if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
     sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
     echo "   Database '${DB_NAME}' berhasil dibuat."

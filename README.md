@@ -33,7 +33,7 @@
 
 > **Release status.** The latest release is **v1.6.1** — it simplifies the API key lifecycle (including two breaking changes on the admin API-key surface), fixes installer and error-message friction found during the v1.6.0 VPS trial, and updates the web test dependency. Everything described in this README reflects the code in this repository; see [`CHANGELOG.md`](CHANGELOG.md) for the full release notes.
 
-> **Scope — read before deploying.** Route-X is an open-source project built for **personal use and small, trusted teams**. Its identity model is **single-admin**: every authenticated dashboard user has full administrator rights — there is no role-based access control and no multi-tenant isolation between dashboard users. Do not expose a Route-X instance to untrusted users, and protect internet-facing instances like any other admin panel that stores paid upstream API credentials.
+> **Scope — read before deploying.** Route-X is an open-source project built for **personal use and small, trusted teams**. Its identity model is deliberately simple — there is no role-based access control and no multi-tenant isolation between dashboard users — but administrator rights are **not** automatic: a dashboard account is a full administrator only when it was explicitly created or promoted with the `admin` role, and accounts created without a role have no admin access at all. Do not expose a Route-X instance to untrusted users, and protect internet-facing instances like any other admin panel that stores paid upstream API credentials.
 
 ## Why Route-X?
 

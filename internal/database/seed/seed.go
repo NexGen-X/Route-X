@@ -1,5 +1,5 @@
-// Package seed menanam data yang harus ada agar aplikasi bisa dipakai: katalog izin,
-// empat peran bawaan, dan akun admin pertama.
+// Package seed menanam data yang harus ada agar aplikasi bisa dipakai: katalog
+// model dan akun admin pertama.
 //
 // Seluruhnya idempoten dan dijalankan setiap kali aplikasi start. Data ini tidak
 // ditanam lewat migrasi SQL karena isinya adalah kebijakan yang bisa berkembang:
@@ -133,6 +133,11 @@ func seedInitialAdmin(ctx context.Context, q repo.Querier, cfg *config.Config, l
 		DisplayName:        "Administrator",
 		Status:             identity.UserStatusActive,
 		MustChangePassword: true,
+		// Admin pertama adalah satu-satunya pembuatan pengguna yang menjadi
+		// admin secara bawaan (B-102): tanpa dia, instalasi baru tidak punya
+		// siapa pun yang bisa masuk panel. Pembuatan lewat API admin justru
+		// sebaliknya — non-admin kecuali peran admin diminta eksplisit.
+		IsAdmin: true,
 	})
 	if err != nil {
 		return false, fmt.Errorf("membuat admin pertama: %w", err)
@@ -207,7 +212,7 @@ func WarnDefaultAdminPending(ctx context.Context, pool *pgxpool.Pool, cfg *confi
 
 	pesan := fmt.Sprintf(
 		"ADMIN PERTAMA %q MASIH MEMAKAI PASSWORD AWAL: instance ini belum aman sampai kata sandinya diganti. "+
-			"Dalam arsitektur single-admin, siapa pun yang memegang kredensial ini memiliki kendali penuh. "+
+			"Akun ini adalah admin penuh, jadi siapa pun yang memegang kredensial ini memiliki kendali penuh. "+
 			"Ganti sekarang lewat dashboard: masuk dengan kredensial awal, lalu ganti password (sistem mewajibkannya pada login pertama).",
 		email)
 

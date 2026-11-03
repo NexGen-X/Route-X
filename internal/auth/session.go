@@ -231,14 +231,22 @@ type Principal struct {
 }
 
 // Can melaporkan apakah principal memiliki satu izin.
-// Can melaporkan apakah principal memiliki satu izin.
-// Dalam arsitektur single-admin, seluruh pengguna terautentikasi adalah administrator
-// dengan akses penuh.
+//
+// Izin dicocokkan terhadap daftar izin efektif principal: "*" (hanya dibawa
+// admin, lihat loadAuthorization) cocok dengan izin apa pun; selain itu harus
+// ada kecocokan persis. Sebelum B-102 method ini selalu menjawab true untuk
+// principal mana pun — itulah yang membuat seluruh rute admin bisa dibaca
+// sesi pengguna biasa.
 func (p *Principal) Can(permission string) bool {
 	if p == nil || permission == "" {
 		return false
 	}
-	return true
+	for _, dimiliki := range p.Permissions {
+		if dimiliki == "*" || dimiliki == permission {
+			return true
+		}
+	}
+	return false
 }
 
 // CanAny melaporkan apakah principal memiliki setidaknya satu dari izin yang diberikan.
@@ -246,13 +254,19 @@ func (p *Principal) CanAny(permissions ...string) bool {
 	if p == nil || len(permissions) == 0 {
 		return false
 	}
-	return true
+	for _, permission := range permissions {
+		if p.Can(permission) {
+			return true
+		}
+	}
+	return false
 }
 
 // MustChangePassword melaporkan apakah pengguna wajib mengganti passwordnya lebih dulu.
 func (p *Principal) MustChangePassword() bool { return p != nil && p.User.MustChangePassword }
 
-// TopRole mengembalikan nama peran terkuat yang dimiliki ("Admin").
+// TopRole mengembalikan nama peran terkuat yang dimiliki ("Admin" untuk
+// admin, "User" untuk pengguna biasa).
 func (p *Principal) TopRole() string {
 	if p == nil {
 		return ""
@@ -260,7 +274,12 @@ func (p *Principal) TopRole() string {
 	if len(p.Roles) > 0 {
 		return p.Roles[0]
 	}
-	return "Admin"
+	// Cadangan dari kolom kewenangan baris pengguna, untuk principal yang
+	// dirakit manual (mis. di test) tanpa daftar peran.
+	if p.User.IsAdmin {
+		return "Admin"
+	}
+	return "User"
 }
 
 // Actor menyusun cuplikan pelaku untuk catatan audit.
@@ -382,7 +401,7 @@ func (s *Service) Login(ctx context.Context, email string, password security.Sec
 
 	// Peran dan izin dimuat sebelum transaksi. Keduanya pembacaan murni, dan nama peran
 	// dibutuhkan sebagai cuplikan pelaku di catatan audit login.
-	roles, permissions, err := s.loadAuthorization(ctx, u.ID)
+	roles, permissions, err := s.loadAuthorization(ctx, u)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -585,7 +604,7 @@ func (s *Service) Authenticate(ctx context.Context, token security.Secret) (*Pri
 	// passwordnya lima kali. Untuk mengeluarkan seseorang, cabut sesinya atau matikan
 	// akunnya; keduanya keputusan sadar, bukan efek samping.
 
-	roles, permissions, err := s.loadAuthorization(ctx, u.ID)
+	roles, permissions, err := s.loadAuthorization(ctx, u)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -918,9 +937,14 @@ func (s *Service) recordPasswordChangeFailure(ctx context.Context, u identity.Us
 }
 
 // loadAuthorization memuat nama peran dan izin efektif seorang pengguna.
-// Dalam arsitektur single-admin, seluruh pengguna terautentikasi adalah Admin dengan izin penuh.
-func (s *Service) loadAuthorization(_ context.Context, _ string) (roles, permissions []string, err error) {
-	return []string{"Admin"}, []string{"*"}, nil
+//
+// Kewenangan diturunkan dari kolom is_admin baris pengguna itu sendiri
+// (B-102): admin membawa peran "Admin" dan izin "*"; pengguna biasa membawa
+// peran "User" dan TANPA izin admin, sehingga RequirePermission menolaknya
+// di seluruh rute admin. Sebelum perbaikan ini fungsi ini mengembalikan
+// Admin/"*" untuk semua orang tanpa melihat baris penggunanya.
+func (s *Service) loadAuthorization(_ context.Context, u identity.User) (roles, permissions []string, err error) {
+	return u.Roles(), u.Permissions(), nil
 }
 
 // SetupHintResponse adalah informasi onboarding awal untuk halaman login.
@@ -931,10 +955,10 @@ func (s *Service) loadAuthorization(_ context.Context, _ string) (roles, permiss
 //
 // Sebelumnya field default_password membuat rute publik tanpa autentikasi ini
 // menyerahkan kredensial admin penuh dalam plaintext kepada siapa pun yang memintanya.
-// Dalam arsitektur single-admin setiap pengguna terautentikasi adalah Admin dengan izin
-// penuh (*), jadi satu permintaan GET cukup untuk menguasai seluruh instance sebelum
-// password diganti. Password hanya boleh didapat dari sumber tepercaya: output
-// instalasi atau berkas .env (INITIAL_ADMIN_PASSWORD).
+// Akun admin pertama adalah admin penuh (izin "*"), jadi satu permintaan GET
+// cukup untuk menguasai seluruh instance sebelum password diganti. Password
+// hanya boleh didapat dari sumber tepercaya: output instalasi atau berkas
+// .env (INITIAL_ADMIN_PASSWORD).
 type SetupHintResponse struct {
 	HasDefaultAdmin bool   `json:"has_default_admin"`
 	DefaultEmail    string `json:"default_email,omitempty"`

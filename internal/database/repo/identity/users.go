@@ -71,8 +71,35 @@ type User struct {
 	LastLoginIP        string     `json:"last_login_ip,omitempty"`
 	MustChangePassword bool       `json:"must_change_password"`
 
+	// IsAdmin adalah satu-satunya pembeda kewenangan antar akun (B-102):
+	// true berarti peran "Admin" dengan izin penuh ("*"); false berarti
+	// pengguna biasa tanpa satu pun izin admin. Taksonomi dua tingkat ini
+	// disengaja — RBAC bergranular dihapus migrasi 0010 dan tidak dihidupkan
+	// lagi di sini.
+	IsAdmin bool `json:"is_admin"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Roles mengembalikan nama peran pengguna: ["Admin"] untuk admin, ["User"]
+// untuk pengguna biasa. Selalu non-nil supaya terserialisasi sebagai [].
+func (u User) Roles() []string {
+	if u.IsAdmin {
+		return []string{"Admin"}
+	}
+	return []string{"User"}
+}
+
+// Permissions mengembalikan izin efektif pengguna: ["*"] untuk admin, dan
+// slice kosong (non-nil) untuk pengguna biasa — pengguna biasa tidak memegang
+// satu pun izin yang disyaratkan rute admin, jadi RequirePermission menolaknya
+// dengan 403.
+func (u User) Permissions() []string {
+	if u.IsAdmin {
+		return []string{"*"}
+	}
+	return []string{}
 }
 
 // Locked melaporkan apakah akun sedang terkunci sementara pada waktu now.
@@ -99,6 +126,11 @@ type NewUser struct {
 	// MustChangePassword memaksa penggantian password saat login pertama, dipakai
 	// untuk admin bootstrap yang password awalnya berasal dari environment.
 	MustChangePassword bool
+	// IsAdmin menandai akun sebagai admin penuh. Bawaan false SENGAJA aman
+	// (B-102): pemanggil yang tidak menyebut peran menghasilkan pengguna
+	// biasa, bukan admin. Hanya jalur eksplisit — bootstrap admin pertama
+	// dan pembuatan/pembaruan pengguna dengan peran admin — yang menyetelnya.
+	IsAdmin bool
 }
 
 // ProfileUpdate adalah perubahan profil sebagian: field nil berarti tidak diubah.
@@ -147,7 +179,7 @@ func NewUsers(q repo.Querier) *Users { return &Users{q: q} }
 // yang diharapkan scanUser.
 const userColumns = `id::text, email, coalesce(display_name, ''), password_hash, status,
 	failed_login_attempts, locked_until, last_login_at, coalesce(host(last_login_ip), ''),
-	must_change_password, created_at, updated_at`
+	must_change_password, is_admin, created_at, updated_at`
 
 // scanUser membaca satu baris pengguna.
 func scanUser(row pgx.Row) (User, error) {
@@ -158,7 +190,7 @@ func scanUser(row pgx.Row) (User, error) {
 	)
 	err := row.Scan(&u.ID, &u.Email, &u.DisplayName, &hash, &status,
 		&u.FailedLoginAttempts, &u.LockedUntil, &u.LastLoginAt, &u.LastLoginIP,
-		&u.MustChangePassword, &u.CreatedAt, &u.UpdatedAt)
+		&u.MustChangePassword, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt)
 	if err != nil {
 		return User{}, err
 	}
@@ -199,13 +231,13 @@ func (r *Users) Create(ctx context.Context, in NewUser) (User, error) {
 		return User{}, repo.Err(op, err)
 	}
 
-	const query = `insert into users (email, password_hash, display_name, status, must_change_password)
-	values ($1, $2, $3, $4, $5)
+	const query = `insert into users (email, password_hash, display_name, status, must_change_password, is_admin)
+	values ($1, $2, $3, $4, $5, $6)
 	returning ` + userColumns
 
 	u, err := scanUser(r.q.QueryRow(ctx, query,
 		strings.TrimSpace(in.Email), hash, textParam(strings.TrimSpace(in.DisplayName)),
-		string(status), in.MustChangePassword))
+		string(status), in.MustChangePassword, in.IsAdmin))
 	if err != nil {
 		return User{}, repo.Err(op, err)
 	}
@@ -428,6 +460,40 @@ func (r *Users) SetStatus(ctx context.Context, id string, status UserStatus) (Us
 		return User{}, repo.Err(op, err)
 	}
 	return u, nil
+}
+
+// SetAdmin mengubah status admin sebuah akun dan mengembalikan baris terbaru.
+//
+// Inilah satu-satunya jalur mengubah kewenangan sesudah akun dibuat (B-102).
+// Penjagaan "selalu ada admin aktif" adalah keputusan pemanggil (handler
+// admin), bukan lapisan ini — sama seperti SetStatus.
+func (r *Users) SetAdmin(ctx context.Context, id string, isAdmin bool) (User, error) {
+	const op = "mengubah peran pengguna"
+	if !validUUID(id) {
+		return User{}, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	const query = `update users set is_admin = $2 where id = $1 returning ` + userColumns
+	u, err := scanUser(r.q.QueryRow(ctx, query, id, isAdmin))
+	if err != nil {
+		return User{}, repo.Err(op, err)
+	}
+	return u, nil
+}
+
+// CountActiveAdmins menghitung akun berstatus active yang merupakan admin.
+//
+// Dipakai penjaga admin-aktif-terakhir di handler admin (B-102): invariansi
+// yang dijaga adalah "selalu ada minimal satu ADMIN aktif", bukan "satu
+// pengguna aktif" — sebelum kolom is_admin ada, kedua hitungan itu tertukar
+// karena seluruh pengguna dianggap admin.
+func (r *Users) CountActiveAdmins(ctx context.Context) (int, error) {
+	const op = "menghitung admin aktif"
+	var n int
+	if err := r.q.QueryRow(ctx, `select count(*) from users where is_admin and status = 'active'`).Scan(&n); err != nil {
+		return 0, repo.Err(op, err)
+	}
+	return n, nil
 }
 
 // Unlock membuka akun yang terkunci: penghitung kegagalan dinolkan dan penguncian

@@ -19,7 +19,7 @@ import (
 
 func TestLoginSuccess(t *testing.T) {
 	e := newEnv(t)
-	user := e.makeUser(t, "operator@example.test", seed.RoleOperator)
+	user := e.makeUser(t, "operator@example.test", seed.RoleAdmin)
 
 	res, err := e.svc.Login(e.ctx, "operator@example.test", security.Secret(testPassword),
 		"203.0.113.9", "uji/1.0")
@@ -600,19 +600,34 @@ func TestTouchOnlyWhenStale(t *testing.T) {
 	}
 }
 
-// Seluruh pengguna terautentikasi memiliki peran Admin dan izin penuh dalam arsitektur single-admin.
+// Peran principal mengikuti kolom is_admin akunnya (B-102): pengguna biasa
+// membawa peran "User" dan tanpa izin; admin membawa "Admin" dan izin penuh.
+// Test ini menggantikan ekspektasi single-admin lama yang menyatakan seluruh
+// pengguna terautentikasi adalah Admin.
 func TestLoginUserPrincipal(t *testing.T) {
 	e := newEnv(t)
-	e.makeUser(t, "admin-uji@example.test", "")
+	e.makeUser(t, "biasa-uji@example.test", "")
+	e.makeUser(t, "admin-uji@example.test", seed.RoleAdmin)
 
-	res := e.login(t, "admin-uji@example.test")
+	res := e.login(t, "biasa-uji@example.test")
 	if res.Principal.Permissions == nil {
 		t.Error("Permissions nil, mau slice non-nil")
 	}
-	if res.Principal.TopRole() != "Admin" {
-		t.Errorf("TopRole() = %q, mau 'Admin'", res.Principal.TopRole())
+	if len(res.Principal.Permissions) != 0 {
+		t.Errorf("Permissions pengguna biasa = %v, mau kosong", res.Principal.Permissions)
 	}
-	if !res.Principal.Can(seed.PermHealthRead) {
+	if res.Principal.TopRole() != "User" {
+		t.Errorf("TopRole() pengguna biasa = %q, mau 'User'", res.Principal.TopRole())
+	}
+	if res.Principal.Can(seed.PermHealthRead) {
+		t.Error("pengguna biasa seharusnya TIDAK punya izin admin")
+	}
+
+	resAdmin := e.login(t, "admin-uji@example.test")
+	if resAdmin.Principal.TopRole() != "Admin" {
+		t.Errorf("TopRole() admin = %q, mau 'Admin'", resAdmin.Principal.TopRole())
+	}
+	if !resAdmin.Principal.Can(seed.PermHealthRead) {
 		t.Error("admin terautentikasi seharusnya punya izin penuh")
 	}
 }

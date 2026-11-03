@@ -112,7 +112,7 @@ fly deploy
 Fly.io akan:
 1. Membangun kontainer Docker secara multi-stage (Node 24 Vite + Go 1.27.3 + Alpine 3.24, sesuai `Dockerfile`).
 2. Menyalakan mesin di region yang dipilih.
-3. Menjalankan auto-migrasi skema database (0001 sampai 0019) dan inisialisasi akun admin.
+3. Menjalankan auto-migrasi skema database (0001 sampai 0020) dan inisialisasi akun admin.
 4. Memvalidasi health check di `/healthz` (respons hanya `{"status":"ok"}`; interval 30 detik sesuai `fly.toml`).
 
 ---

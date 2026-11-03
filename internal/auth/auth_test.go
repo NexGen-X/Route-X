@@ -273,13 +273,18 @@ func randomHex(t *testing.T, n int) string {
 // --- Fixture ----------------------------------------------------------------
 
 // makeUser membuat pengguna aktif dengan testPassword.
-func (e *env) makeUser(t *testing.T, email, _ string) identity.User {
+func (e *env) makeUser(t *testing.T, email, role string) identity.User {
 	t.Helper()
+	// Parameter peran kini bermakna lagi (B-102): nama peran admin pada
+	// taksonomi seed ("Admin"/"Super Admin") menghasilkan akun admin;
+	// nama lain (termasuk kosong) menghasilkan pengguna biasa — persis
+	// bawaan aman jalur produk.
 	u, err := e.users.Create(e.ctx, identity.NewUser{
 		Email:       email,
 		Password:    security.Secret(testPassword),
 		DisplayName: "Uji " + email,
 		Status:      identity.UserStatusActive,
+		IsAdmin:     role == seed.RoleAdmin || role == seed.RoleSuperAdmin,
 	})
 	if err != nil {
 		t.Fatalf("membuat pengguna %q: %v", email, err)

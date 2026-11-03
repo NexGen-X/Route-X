@@ -111,6 +111,11 @@ func TestRunCreatesAdminAndCatalog(t *testing.T) {
 	if admin.Status != identity.UserStatusActive {
 		t.Errorf("status admin = %q", admin.Status)
 	}
+	// Bootstrap admin pertama tetap ADMIN penuh (B-102): jalur seed adalah
+	// satu-satunya pembuatan admin secara bawaan, dan ia harus eksplisit.
+	if !admin.IsAdmin {
+		t.Error("IsAdmin admin pertama = false; bootstrap harus menghasilkan admin penuh")
+	}
 
 	// Password yang tertanam harus benar-benar bisa dipakai login.
 	ok, err := security.VerifyPassword(testAdminPassword, admin.PasswordHash.Reveal())

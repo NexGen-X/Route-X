@@ -637,7 +637,7 @@ func (h *Handlers) listUsers(w http.ResponseWriter, r *http.Request) {
 
 	usersDTO := make([]UserDTO, 0, len(userPage.Users))
 	for _, u := range userPage.Users {
-		usersDTO = append(usersDTO, toUserDTO(&u, []string{"Admin"}))
+		usersDTO = append(usersDTO, toUserDTO(&u))
 	}
 
 	_ = h.respond(w, r, http.StatusOK, ListEnvelope[UserDTO]{
@@ -657,9 +657,34 @@ func (h *Handlers) getUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = h.respond(w, r, http.StatusOK, UserDetailResponse{
-		User:        toUserDTO(&u, []string{"Admin"}),
-		Permissions: []string{"*"},
+		User:        toUserDTO(&u),
+		Roles:       u.Roles(),
+		Permissions: u.Permissions(),
 	})
+}
+
+// Nilai field "role" yang sah pada pembuatan/pembaruan pengguna (B-102).
+// Taksonominya dua tingkat, mengikuti model yang hidup di kode: "admin"
+// (peran Admin, izin "*") dan "user" (pengguna biasa tanpa izin admin).
+const (
+	peranAdmin = "admin"
+	peranUser  = "user"
+)
+
+// uraiPeran menerjemahkan nilai field "role" menjadi status admin. Nilai
+// kosong BUKAN peran: pemanggil memutuskan maknanya (pada pembuatan =
+// bawaan non-admin; pada pembaruan = peran tidak diubah). Nilai lain di
+// luar dua peran yang sah ditolak (sah=false) supaya salah ketik tidak
+// diam-diam menjadi keputusan kewenangan.
+func uraiPeran(role string) (isAdmin bool, sah bool) {
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case peranAdmin:
+		return true, true
+	case peranUser:
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 type createUserReq struct {
@@ -667,6 +692,10 @@ type createUserReq struct {
 	Name               string `json:"name"`
 	Password           string `json:"password"`
 	MustChangePassword bool   `json:"must_change_password"`
+	// Role adalah peran yang diminta: "admin" atau "user". Kosong berarti
+	// bawaan AMAN non-admin (B-102) — admin hanya lahir dari permintaan
+	// eksplisit, tidak pernah dari ketiadaan field.
+	Role string `json:"role"`
 }
 
 func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
@@ -677,19 +706,30 @@ func (h *Handlers) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isAdmin := false
+	if req.Role != "" {
+		var sah bool
+		isAdmin, sah = uraiPeran(req.Role)
+		if !sah {
+			httpx.BadRequest(w, r, "invalid_role", fmt.Sprintf("role %q tidak sah; nilai yang diterima: %q atau %q", req.Role, peranAdmin, peranUser))
+			return
+		}
+	}
+
 	u, err := h.usersRepo.Create(ctx, identity.NewUser{
 		Email:              req.Email,
 		DisplayName:        req.Name,
 		Password:           security.Secret(req.Password),
 		MustChangePassword: req.MustChangePassword,
+		IsAdmin:            isAdmin,
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "pengguna")
 		return
 	}
 
-	h.writeAudit(ctx, r, "create", "user", u.ID, map[string]any{"email": u.Email})
-	_ = h.respond(w, r, http.StatusCreated, toUserDTO(&u, []string{"Admin"}))
+	h.writeAudit(ctx, r, "create", "user", u.ID, map[string]any{"email": u.Email, "is_admin": u.IsAdmin})
+	_ = h.respond(w, r, http.StatusCreated, toUserDTO(&u))
 }
 
 func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
@@ -697,8 +737,9 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	var req struct {
-		Name   string `json:"name"`
-		Status string `json:"status"`
+		Name   string  `json:"name"`
+		Status string  `json:"status"`
+		Role   *string `json:"role"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
@@ -712,6 +753,73 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			mapRepoError(w, r, err, "pengguna")
 			return
+		}
+	}
+
+	// Perubahan peran (B-102): "admin" menaikkan, "user" menurunkan. Field
+	// absen (nil) berarti peran tidak disentuh — berbeda dari pembuatan,
+	// ketiadaan field di sini tidak boleh menafsirkan apa pun.
+	if req.Role != nil {
+		isAdmin, sah := uraiPeran(*req.Role)
+		if !sah {
+			httpx.BadRequest(w, r, "invalid_role", fmt.Sprintf("role %q tidak sah; nilai yang diterima: %q atau %q", *req.Role, peranAdmin, peranUser))
+			return
+		}
+		target, err := h.usersRepo.GetByID(ctx, id)
+		if err != nil {
+			mapRepoError(w, r, err, "pengguna")
+			return
+		}
+		if target.IsAdmin != isAdmin {
+			if isAdmin {
+				if _, err := h.usersRepo.SetAdmin(ctx, id, true); err != nil {
+					mapRepoError(w, r, err, "peran pengguna")
+					return
+				}
+			} else {
+				// Menurunkan peran akun SENDIRI DITOLAK, sejajar penonaktifan
+				// akun sendiri: sesi curian tidak boleh dipakai mengunci
+				// admin keluar dari kewenangannya sendiri tanpa jejak khusus.
+				if p, ok := auth.PrincipalFrom(ctx); ok && p != nil && p.User.ID == id {
+					httpx.BadRequest(w, r, "self_demote_forbidden", "peran akun sendiri tidak bisa diturunkan; minta admin lain yang melakukannya")
+					return
+				}
+				// Menurunkan ADMIN AKTIF TERAKHIR DITOLAK (lockout total),
+				// dengan pola transaksi berkunci advisory yang sama seperti
+				// penonaktifan/penghapusan di bawah.
+				err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+					if err := kunciPenjagaAdminTx(ctx, q); err != nil {
+						return err
+					}
+					users := identity.NewUsers(q)
+					targetTx, err := users.GetByID(ctx, id)
+					if err != nil {
+						return err
+					}
+					if !targetTx.IsAdmin {
+						return nil
+					}
+					if targetTx.Status == identity.UserStatusActive {
+						jumlah, err := users.CountActiveAdmins(ctx)
+						if err != nil {
+							return err
+						}
+						if jumlah <= 1 {
+							return errAdminAktifTerakhir
+						}
+					}
+					_, err = users.SetAdmin(ctx, id, false)
+					return err
+				})
+				if errors.Is(err, errAdminAktifTerakhir) {
+					httpx.BadRequest(w, r, "last_admin_forbidden", "pengguna ini admin aktif terakhir; buat admin lain dulu sebelum menurunkan perannya")
+					return
+				}
+				if err != nil {
+					mapRepoError(w, r, err, "peran pengguna")
+					return
+				}
+			}
 		}
 	}
 
@@ -742,12 +850,16 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					return err
 				}
-				if target.Status == identity.UserStatusActive {
-					activePage, err := users.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2})
+				// Yang dijaga adalah jumlah ADMIN aktif (B-102): menonaktifkan
+				// pengguna biasa tidak mengurangi admin sama sekali, dan
+				// pengguna biasa yang aktif tidak ikut menghitung sebagai
+				// "admin lain" yang menjaga invariansi.
+				if target.IsAdmin && target.Status == identity.UserStatusActive {
+					jumlah, err := users.CountActiveAdmins(ctx)
 					if err != nil {
 						return err
 					}
-					if len(activePage.Users) <= 1 {
+					if jumlah <= 1 {
 						return errAdminAktifTerakhir
 					}
 				}
@@ -780,7 +892,7 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeAudit(ctx, r, "update", "user", id, nil)
-	_ = h.respond(w, r, http.StatusOK, toUserDTO(&u, []string{"Admin"}))
+	_ = h.respond(w, r, http.StatusOK, toUserDTO(&u))
 }
 
 func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
@@ -809,12 +921,14 @@ func (h *Handlers) deleteUser(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
-		if target.Status == identity.UserStatusActive {
-			activePage, err := users.List(ctx, identity.UserFilter{Status: identity.UserStatusActive}, repo.Page{Limit: 2})
+		// Sama seperti penonaktifan: yang dijaga adalah ADMIN aktif
+		// terakhir (B-102), bukan pengguna aktif terakhir.
+		if target.IsAdmin && target.Status == identity.UserStatusActive {
+			jumlah, err := users.CountActiveAdmins(ctx)
 			if err != nil {
 				return err
 			}
-			if len(activePage.Users) <= 1 {
+			if jumlah <= 1 {
 				return errAdminAktifTerakhir
 			}
 		}
@@ -888,7 +1002,7 @@ func (h *Handlers) unlockUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "unlock", "user", id, nil)
-	_ = h.respond(w, r, http.StatusOK, toUserDTO(&u, []string{"Admin"}))
+	_ = h.respond(w, r, http.StatusOK, toUserDTO(&u))
 }
 
 func (h *Handlers) revokeUserSessions(w http.ResponseWriter, r *http.Request) {

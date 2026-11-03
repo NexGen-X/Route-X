@@ -595,7 +595,7 @@ paths:
       tags:
         - Authentication
       summary: Informasi Pengguna & Hak Akses Sesi
-      description: Mengambil data pengguna login saat ini beserta token CSRF sesi. Route-X memakai model admin tunggal — setiap pengguna terautentikasi adalah admin penuh; tidak ada peran RBAC.
+      description: Mengambil data pengguna login saat ini beserta token CSRF sesi. Route-X memakai model dua tingkat tanpa RBAC (B-102) — admin penuh hanya untuk akun is_admin; pengguna biasa terautentikasi tanpa izin admin dan ditolak 403 di rute admin.
       operationId: getPrincipalMe
       security:
         - SessionCookie: []
@@ -6706,6 +6706,10 @@ components:
           type: string
         must_change_password:
           type: boolean
+        role:
+          type: string
+          enum: [admin, user]
+          description: "Peran pengguna (B-102). Bila tidak disebut, hasilnya pengguna biasa (user) TANPA akses admin; admin hanya lahir dari nilai admin yang eksplisit."
     CreateWebhookRequest:
       type: object
       properties:
@@ -8662,6 +8666,10 @@ components:
           type: string
         status:
           type: string
+        role:
+          type: string
+          enum: [admin, user]
+          description: "Peran baru pengguna (B-102). Bila tidak disebut, peran tidak berubah. Menurunkan peran akun sendiri dan menurunkan admin aktif terakhir ditolak 400."
     UpdateWebhookRequest:
       type: object
       properties:
@@ -8715,6 +8723,9 @@ components:
         updated_at:
           type: string
           format: date-time
+        is_admin:
+          type: boolean
+          description: "true = admin penuh (roles [Admin], permissions [*]); false = pengguna biasa tanpa izin admin (B-102)."
         roles:
           type: array
           items:

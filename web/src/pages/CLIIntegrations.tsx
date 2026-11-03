@@ -176,8 +176,6 @@ export const CLIIntegrations: React.FC = () => {
   }, []);
 
   const handleModeChange = (toolId: string, mode: 'model_only' | 'routing' | 'combo') => {
-    if (toolId === 'agy') return; // Antigravity CLI terlindungi (read-only)
-
     setToolConfigs((prev) => {
       const current = prev[toolId];
       let newTarget = current?.target || '';
@@ -202,8 +200,6 @@ export const CLIIntegrations: React.FC = () => {
   };
 
   const handleTargetChange = (toolId: string, target: string) => {
-    if (toolId === 'agy') return; // Antigravity CLI terlindungi (read-only)
-
     setToolConfigs((prev) => ({
       ...prev,
       [toolId]: {
@@ -224,11 +220,6 @@ export const CLIIntegrations: React.FC = () => {
   };
 
   const handleApply = async (toolId: string) => {
-    if (toolId === 'agy') {
-      toast.info('Antigravity CLI dilindungi oleh aturan sistem dan tidak dapat dimodifikasi.');
-      return;
-    }
-
     const config = toolConfigs[toolId];
     if (!config) return;
 

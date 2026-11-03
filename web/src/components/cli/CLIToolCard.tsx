@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import {
   Terminal,
-  Shield,
-  Lock,
   CheckCircle2,
   XCircle,
   AlertTriangle,
@@ -68,7 +66,6 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
 }) => {
   const [showKey, setShowKey] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const isAgy = tool.id === 'agy';
   const completeSnippet = getToolCompleteSnippet(tool, config, models, userApiKey, publicBaseURL);
 
   const modeLabels: Record<'model_only' | 'routing' | 'combo', string> = {
@@ -81,9 +78,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
     <Card
       key={tool.id}
       className={`p-5 flex flex-col justify-between transition-all duration-200 rounded-card shadow-sm ${
-        isAgy
-          ? 'border-amber-500/30 bg-bg-surface'
-          : tool.installed
+        tool.installed
           ? 'border-border hover:border-border/80 bg-bg-surface'
           : 'border-border-subtle opacity-75 bg-bg-surface-2'
       }`}
@@ -94,14 +89,12 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
           <div className="flex items-center gap-3 min-w-0">
             <div
               className={`w-10 h-10 rounded-inner flex items-center justify-center shrink-0 border ${
-                isAgy
-                  ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                  : tool.installed
+                tool.installed
                   ? 'bg-bg-surface-2 border-border text-text-primary'
                   : 'bg-bg-surface-3 border-border text-text-muted'
               }`}
             >
-              {isAgy ? <Shield className="w-5 h-5" /> : <Terminal className="w-5 h-5 text-accent-text" />}
+              <Terminal className="w-5 h-5 text-accent-text" />
             </div>
             <div className="truncate">
               <h4 className="text-base font-semibold text-white tracking-tight truncate">
@@ -115,15 +108,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
 
           {/* Status Badge Minimalis */}
           <div className="shrink-0 pt-0.5">
-            {isAgy ? (
-              <Badge
-                variant="neutral"
-                className="gap-1 bg-amber-500/10 text-amber-400 border-amber-500/30 font-medium"
-              >
-                <Lock className="w-3 h-3" />
-                Dilindungi Sistem
-              </Badge>
-            ) : statusKonfigurasiTool(tool) === 'terkonfigurasi-routex' ? (
+            {statusKonfigurasiTool(tool) === 'terkonfigurasi-routex' ? (
               <Badge variant="lime" className="gap-1 font-medium">
                 <CheckCircle2 className="w-3 h-3" />
                 Terarah ke Route-X
@@ -168,42 +153,28 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
         </div>
 
         {/* Ringkasan Konfigurasi Aktif */}
-        {!isAgy && (
-          <div className="flex items-center justify-between text-xs font-mono text-text-muted pt-0.5">
-            <span className="truncate">
-              Mode:{' '}
-              <strong className="text-text-secondary font-medium">
-                {modeLabels[config.mode]}
-              </strong>
-              {config.target ? ` (${config.target})` : ''}
-            </span>
-            <button
-              type="button"
-              onClick={() => setIsConfigOpen(!isConfigOpen)}
-              className="inline-flex items-center gap-1 text-[11px] text-text-muted hover:text-white transition-colors cursor-pointer ml-2 shrink-0"
-              aria-label={isConfigOpen ? "Ciutkan konfigurasi target" : "Buka konfigurasi target"}
-            >
-              <span>{isConfigOpen ? 'Tutup' : 'Ubah'}</span>
-              {isConfigOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-          </div>
-        )}
+        <div className="flex items-center justify-between text-xs font-mono text-text-muted pt-0.5">
+          <span className="truncate">
+            Mode:{' '}
+            <strong className="text-text-secondary font-medium">
+              {modeLabels[config.mode]}
+            </strong>
+            {config.target ? ` (${config.target})` : ''}
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsConfigOpen(!isConfigOpen)}
+            className="inline-flex items-center gap-1 text-[11px] text-text-muted hover:text-white transition-colors cursor-pointer ml-2 shrink-0"
+            aria-label={isConfigOpen ? "Ciutkan konfigurasi target" : "Buka konfigurasi target"}
+          >
+            <span>{isConfigOpen ? 'Tutup' : 'Ubah'}</span>
+            {isConfigOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          </button>
+        </div>
 
-        {/* Pengamanan Khusus Antigravity CLI */}
-        {isAgy ? (
-          <div className="p-3 rounded-inner bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400 space-y-1">
-            <div className="flex items-center gap-1.5 font-semibold">
-              <Lock className="w-3.5 h-3.5" /> Antigravity CLI (Read-Only)
-            </div>
-            <p className="text-[11px] leading-relaxed text-amber-300/80">
-              Antigravity CLI dikelola langsung oleh sistem inti DeepMind. Konfigurasi terkunci untuk
-              memastikan stabilitas sesi pair-programming Anda.
-            </p>
-          </div>
-        ) : (
-          /* Collapsible Accordion: Konfigurasi Target & Mode */
-          isConfigOpen && (
-            <div className="space-y-3 pt-3 border-t border-border animate-fade-in">
+        {/* Collapsible Accordion: Konfigurasi Target & Mode */}
+        {isConfigOpen && (
+          <div className="space-y-3 pt-3 border-t border-border animate-fade-in">
               <div>
                 <label className="text-xs font-medium text-text-secondary block mb-1.5">
                   Mode Konfigurasi:
@@ -367,8 +338,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                   </button>
                 </div>
               </div>
-            </div>
-          )
+          </div>
         )}
       </div>
 
@@ -419,36 +389,23 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
 
         <div className="flex items-center gap-2">
           {/* Tombol Terapkan ke CLI */}
-          {isAgy ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled
-              className="flex-1 text-xs min-h-[36px] opacity-60 cursor-not-allowed font-medium"
-              title="Antigravity CLI dilindungi oleh sistem"
-            >
-              <Lock className="w-3 h-3 mr-1.5 text-amber-400" />
-              Terkunci (Sistem)
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              className="flex-1 text-xs min-h-[36px] font-semibold cursor-pointer"
-              disabled={isApplying}
-              onClick={() => onApply(tool.id)}
-              title="Simpan preferensi dan sinkronkan langsung ke berkas konfigurasi host"
-            >
-              {isApplying ? (
-                <>
-                  <RefreshCw className="w-3 h-3 animate-spin mr-1.5" />
-                  Menerapkan...
-                </>
-              ) : (
-                'Terapkan ke CLI'
-              )}
-            </Button>
-          )}
+          <Button
+            variant="primary"
+            size="sm"
+            className="flex-1 text-xs min-h-[36px] font-semibold cursor-pointer"
+            disabled={isApplying}
+            onClick={() => onApply(tool.id)}
+            title="Simpan preferensi dan sinkronkan langsung ke berkas konfigurasi host"
+          >
+            {isApplying ? (
+              <>
+                <RefreshCw className="w-3 h-3 animate-spin mr-1.5" />
+                Menerapkan...
+              </>
+            ) : (
+              'Terapkan ke CLI'
+            )}
+          </Button>
 
           {/* Tombol Uji Sambungan Inferensi Real */}
           <button

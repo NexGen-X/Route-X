@@ -32,6 +32,7 @@ Rangkaian perubahan sesudah v1.5.1 yang belum ditag sebagai rilis: kampanye hard
 - **Invalidasi kebijakan seketika** (Batch B2): perubahan batas laju & filter konten dari admin kini menginvalidasi salinan gateway seketika (`Invalidate`), bukan menunggu TTL 5 detik.
 - **Halaman web lebih jujur & aksesibel** (audit3 grup 12–13 + Batch A1): kontrak agregasi FE↔BE selaras (`window` dihormati, persen breakdown dari total keseluruhan + baris "Lainnya"), penanda daftar terpotong tampil di UI, feed Dashboard satu tombol asli (axe `nested-interactive` 0), jenjang heading diperbaiki, dan ringkasan provider menampilkan penanda gagal-muat, bukan daftar kosong.
 - **Dokumentasi repo dirombak** (PR dokumentasi): README ditulis ulang profesional; `CONTRIBUTING.md` dan `SECURITY.md` dibuat; klaim basi (enkripsi API key, hitungan migrasi, perilaku anggaran pra-reservasi) dikoreksi ke kondisi kode.
+- **CLI Antigravity (`agy`) disetarakan dengan CLI lain** (B-081): kunci read-only khusus agy dicabut — cabang khusus di manajer konfigurasi CLI, penjaga mode/target/terapkan di halaman Integrasi CLI, serta rendering khusus kartu tool (badge "Dilindungi Sistem", banner kunci, tombol "Terkunci (Sistem)") dihapus. `agy` kini tool env-only normal yang dapat dikonfigurasi persis seperti 19 CLI lainnya.
 
 ### Fixed
 - **RCE via restore backup (Kritis, B-045)**: meta-command psql (`\!`) dari berkas unggahan tidak lagi bisa tereksekusi — pemindai lexer menolaknya sebelum psql (lihat Changed di atas).

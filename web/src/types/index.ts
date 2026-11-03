@@ -137,10 +137,17 @@ export interface Price {
   provider_model_id: string;
   input_per_1m_usd: string;
   output_per_1m_usd: string;
-  cached_input_per_1m_usd?: string;
+  cached_input_per_1m_usd?: string | null;
+  reasoning_per_1m_usd?: string | null;
   currency: string;
   effective_from: string;
+  // effective_to null/absen berarti baris harga masih terbuka; apakah baris
+  // itu yang menagih saat ini ditentukan rentang efektifnya (lihat
+  // hargaEfektifSekarang di PricingDrawer), bukan kolom ini saja.
+  effective_to?: string | null;
+  source?: string;
   created_at: string;
+  created_by?: string | null;
 }
 
 // ReferencePrice adalah tawaran harga acuan dari katalog bawaan untuk satu
@@ -150,9 +157,11 @@ export interface ReferencePrice {
   available: boolean;
   provider_kind: string;
   upstream_model: string;
-  input_per_1m_usd?: string;
-  output_per_1m_usd?: string;
-  cached_input_per_1m_usd?: string;
+  // Saat available=false backend mengirim null (bukan absen) untuk ketiga
+  // harga ini — terverifikasi QA live Langkah 4.
+  input_per_1m_usd?: string | null;
+  output_per_1m_usd?: string | null;
+  cached_input_per_1m_usd?: string | null;
   source?: string;
   fetched_on?: string;
 }

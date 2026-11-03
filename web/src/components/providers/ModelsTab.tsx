@@ -15,7 +15,9 @@ import {
   Search,
   FlaskConical,
   AlertTriangle,
+  DollarSign,
 } from 'lucide-react';
+import { PricingDrawer } from './PricingDrawer';
 
 export interface ModelsTabProps {
   models: ProviderModel[];
@@ -43,6 +45,8 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
   copyWithFeedback,
 }) => {
   const [modelSearch, setModelSearch] = useState('');
+  // Pemetaan yang drawer harganya sedang dibuka; null = drawer tertutup.
+  const [pricingModel, setPricingModel] = useState<ProviderModel | null>(null);
   const [copiedModelId, setCopiedModelId] = useState<string | null>(null);
   const copyTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -146,6 +150,14 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
                   </button>
                   <button
                     type="button"
+                    onClick={() => setPricingModel(model)}
+                    aria-label={`Atur harga model ${model.upstream_model_name}`}
+                    className="p-1.5 rounded-md text-text-muted hover:text-white hover:bg-bg-surface transition-colors cursor-pointer flex-shrink-0 min-w-[44px] min-h-[44px] sm:min-w-[28px] sm:min-h-[28px] inline-flex items-center justify-center"
+                  >
+                    <DollarSign className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleDeleteModel(model)}
                     aria-label={`Hapus model ${model.upstream_model_name}`}
                     className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer flex-shrink-0 min-w-[44px] min-h-[44px] sm:min-w-[28px] sm:min-h-[28px] inline-flex items-center justify-center"
@@ -177,6 +189,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
           </div>
         </div>
       )}
+      <PricingDrawer mapping={pricingModel} provider={selectedProvider} onClose={() => setPricingModel(null)} />
     </div>
   );
 };

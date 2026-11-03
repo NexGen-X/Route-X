@@ -543,3 +543,109 @@ func TestCredentialEgressPoolIntegration(t *testing.T) {
 		t.Errorf("Cleared EgressPoolID = %v, ingin nil", cleared.EgressPoolID)
 	}
 }
+
+// TestCredentialNonaktifB103 adalah separuh basis-data dari repro live B-103
+// (Langkah 7, A-045): provider uji ber-kind openai_compatible yang satu-satunya
+// kredensialnya dinonaktifkan tetap melayani chat. Dua fakta harus berlaku
+// bersamaan di sini supaya pabrik gateway bisa membedakan keadaannya:
+// Active TIDAK PERNAH memilih kredensial nonaktif (termasuk saat kredensial
+// lain dipakai bergiliran), dan HasCredentials tetap true sesudah semua
+// kredensial dinonaktifkan — itulah penanda "pernah berkredensial" yang
+// mengubah ErrNotFound menjadi kegagalan eksplisit di pabrik, bukan mode
+// tanpa autentikasi.
+func TestCredentialNonaktifB103(t *testing.T) {
+	if testing.Short() {
+		t.Skip("butuh PostgreSQL")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	pool := newTestPool(ctx, t)
+	cipher := testCipher(t, 0xB3)
+	credentials, err := NewCredentialRepo(pool, cipher)
+	if err != nil {
+		t.Fatalf("NewCredentialRepo: %v", err)
+	}
+	provider := seedProvider(ctx, t, pool, "provider-b103-nonaktif")
+	admin := seedUser(ctx, t, pool)
+
+	// Provider yang belum pernah diberi kredensial: tidak ada baris, dan
+	// Active menjawab tidak ditemukan — pasangan fakta mode lokal yang sah.
+	ada, err := credentials.HasCredentials(ctx, provider.ID)
+	if err != nil {
+		t.Fatalf("HasCredentials sebelum ada kredensial: %v", err)
+	}
+	if ada {
+		t.Error("HasCredentials = true sebelum kredensial apa pun dibuat")
+	}
+	if _, err := credentials.Active(ctx, provider.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Errorf("Active tanpa kredensial = %v, ingin ErrNotFound", err)
+	}
+
+	pertama, err := credentials.Create(ctx, CreateCredentialParams{
+		ProviderID: provider.ID, Label: "b103-pertama",
+		Secret: security.Secret("GANTI_rahasia-b103-pertama"), CreatedBy: &admin,
+	})
+	if err != nil {
+		t.Fatalf("Create pertama: %v", err)
+	}
+	kedua, err := credentials.Create(ctx, CreateCredentialParams{
+		ProviderID: provider.ID, Label: "b103-kedua",
+		Secret: security.Secret("GANTI_rahasia-b103-kedua"), CreatedBy: &admin,
+	})
+	if err != nil {
+		t.Fatalf("Create kedua: %v", err)
+	}
+	ada, err = credentials.HasCredentials(ctx, provider.ID)
+	if err != nil {
+		t.Fatalf("HasCredentials sesudah Create: %v", err)
+	}
+	if !ada {
+		t.Fatal("HasCredentials = false padahal dua kredensial baru dibuat")
+	}
+
+	// Nonaktifkan yang pertama: berapa kali pun pemilihan berjalan — termasuk
+	// sesudah yang aktif ditandai terpakai supaya giliran berpindah — yang
+	// nonaktif tidak pernah terpilih.
+	if _, err := credentials.SetEnabled(ctx, pertama.ID, false); err != nil {
+		t.Fatalf("SetEnabled pertama: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		active, err := credentials.Active(ctx, provider.ID)
+		if err != nil {
+			t.Fatalf("Active putaran %d: %v", i, err)
+		}
+		if active.ID != kedua.ID {
+			t.Fatalf("Active putaran %d memilih %s, mau selalu kredensial aktif %s", i, active.Label, kedua.Label)
+		}
+		if err := credentials.MarkUsed(ctx, active.ID); err != nil {
+			t.Fatalf("MarkUsed putaran %d: %v", i, err)
+		}
+	}
+	metaKedua, err := credentials.Get(ctx, kedua.ID)
+	if err != nil {
+		t.Fatalf("Get kedua: %v", err)
+	}
+	if metaKedua.LastUsedAt == nil {
+		t.Error("last_used_at kredensial aktif tidak bergerak sesudah MarkUsed")
+	}
+
+	// Nonaktifkan juga yang terakhir: Active kini tidak menemukan apa pun,
+	// TETAPI HasCredentials tetap true. Di pabrik gateway, pasangan fakta
+	// inilah (ErrNotFound + pernah berkredensial) yang menggagalkan request
+	// secara eksplisit — keadaan persis repro live B-103.
+	if _, err := credentials.SetEnabled(ctx, kedua.ID, false); err != nil {
+		t.Fatalf("SetEnabled kedua: %v", err)
+	}
+	if _, err := credentials.Active(ctx, provider.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Errorf("Active semua nonaktif = %v, ingin ErrNotFound", err)
+	}
+	ada, err = credentials.HasCredentials(ctx, provider.ID)
+	if err != nil {
+		t.Fatalf("HasCredentials semua nonaktif: %v", err)
+	}
+	if !ada {
+		t.Error("HasCredentials = false padahal kredensial hanya dinonaktifkan, bukan dihapus: " +
+			"pabrik akan salah membaca provider ini sebagai mode lokal tanpa autentikasi")
+	}
+}

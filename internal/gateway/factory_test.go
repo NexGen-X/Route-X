@@ -28,6 +28,11 @@ type sumberKredensial struct {
 	cred    *upstream.ActiveCredential
 	err     error
 	panggil int
+	// adaBaris meniru HasCredentials repo: provider ini PERNAH punya baris
+	// kredensial, terlepas dari aktif/tidaknya. Bawaan false = provider yang
+	// memang tidak pernah diberi kredensial (mode lokal tanpa autentikasi).
+	adaBaris    bool
+	adaBarisErr error
 }
 
 func (s *sumberKredensial) Active(_ context.Context, _ string) (*upstream.ActiveCredential, error) {
@@ -40,6 +45,16 @@ func (s *sumberKredensial) Active(_ context.Context, _ string) (*upstream.Active
 	// Salinan, bukan pointer yang sama: pemanggil tidak boleh bisa mengubah isi sumber.
 	salinan := *s.cred
 	return &salinan, nil
+}
+
+// HasCredentials meniru pemeriksaan keberadaan baris kredensial di repo.
+func (s *sumberKredensial) HasCredentials(_ context.Context, _ string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.adaBarisErr != nil {
+		return false, s.adaBarisErr
+	}
+	return s.adaBaris, nil
 }
 
 func (s *sumberKredensial) ganti(id string, rahasia security.Secret) {
@@ -424,6 +439,156 @@ func TestFactoryKegagalanSumberKredensialDiteruskan(t *testing.T) {
 		if _, err := f.Provider(context.Background(), kandidatUji(kind, srv.URL)); err == nil {
 			t.Errorf("kind %s: kegagalan dekripsi diperlakukan sebagai tanpa kredensial", kind)
 		}
+	}
+}
+
+// --- B-103: kredensial nonaktif tidak boleh berubah menjadi tanpa kredensial ---
+
+// serverHitungUji adalah upstream tiruan yang menghitung berapa kali ia benar-benar
+// dihubungi dan merekam header Authorization setiap hit. Inilah pembeda repro live
+// B-103: bug-nya bukan pada jawaban gateway semata, melainkan pada fakta bahwa
+// request MENCAPAI upstream tanpa kredensial.
+type serverHitungUji struct {
+	srv  *httptest.Server
+	mu   sync.Mutex
+	hits int
+	auth []string
+}
+
+func serverHitungBaru(t *testing.T) *serverHitungUji {
+	t.Helper()
+	s := &serverHitungUji{}
+	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		s.hits++
+		s.auth = append(s.auth, r.Header.Get("Authorization"))
+		s.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"c1","model":"m","created":1,
+			"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	t.Cleanup(s.srv.Close)
+	return s
+}
+
+func (s *serverHitungUji) jumlahHit() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hits
+}
+
+func (s *serverHitungUji) authHit() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.auth...)
+}
+
+// TestFactoryB103SemuaKredensialNonaktifGagalEksplisit adalah repro Langkah 7 baris
+// A-045 di tingkat pabrik: satu-satunya kredensial provider dinonaktifkan, Active
+// menjawab ErrNotFound, tetapi provider PUNYA baris kredensial (adaBaris). Untuk
+// SEMUA kind — termasuk openai_compatible/custom yang dulu lolos diam-diam —
+// pembuatan adapter harus gagal eksplisit dan upstream tidak boleh tersentuh.
+func TestFactoryB103SemuaKredensialNonaktifGagalEksplisit(t *testing.T) {
+	up := serverHitungBaru(t)
+
+	for _, kind := range []string{
+		providers.KindOpenAI, providers.KindOpenAICompatible, providers.KindCustom,
+		providers.KindAnthropic, providers.KindGoogle,
+	} {
+		t.Run(kind, func(t *testing.T) {
+			creds := &sumberKredensial{
+				err:      fmt.Errorf("mengambil kredensial aktif provider: %w", repo.ErrNotFound),
+				adaBaris: true,
+			}
+			f := pabrikUji(t, creds, nil)
+			p, err := f.Provider(context.Background(), kandidatUji(kind, up.srv.URL))
+			if err == nil {
+				t.Fatalf("kind %s: adapter terbentuk padahal semua kredensial nonaktif; provider=%v", kind, p)
+			}
+			if p != nil {
+				t.Errorf("kind %s: provider tidak nil bersama error", kind)
+			}
+		})
+	}
+	if got := up.jumlahHit(); got != 0 {
+		t.Errorf("upstream tersentuh %d kali padahal semua kredensial nonaktif, mau 0", got)
+	}
+
+	// Gagal memeriksa keberadaan kredensial pun harus gagal-tertutup untuk kind
+	// opsional: tanpa bukti mode tanpa kredensial itu sah, tidak ada penerusan.
+	creds := &sumberKredensial{
+		err:         repo.ErrNotFound,
+		adaBarisErr: errors.New("basis data tidak menjawab"),
+	}
+	f := pabrikUji(t, creds, nil)
+	if _, err := f.Provider(context.Background(), kandidatUji(providers.KindOpenAICompatible, up.srv.URL)); err == nil {
+		t.Error("pemeriksaan keberadaan kredensial gagal tetapi adapter tetap terbentuk")
+	}
+	if got := up.jumlahHit(); got != 0 {
+		t.Errorf("upstream tersentuh %d kali pada jalur gagal-tertutup, mau 0", got)
+	}
+}
+
+// TestFactoryB103KredensialAktifChatNormal membuktikan arah sebaliknya pada kind
+// yang dulu bocor: kredensial aktif terpilih, chat sampai ke upstream DENGAN
+// header autentikasinya, dan pemakaiannya ditandai (last_used_at bergerak lewat
+// penanda yang sama dengan produksi).
+func TestFactoryB103KredensialAktifChatNormal(t *testing.T) {
+	up := serverHitungBaru(t)
+	tanda := &penandaTiruan{selesai: make(chan struct{}, 4)}
+	f := pabrikUji(t, kredensialUji(), nil, WithCredentialUseMarker(tanda))
+
+	p, err := f.Provider(context.Background(), kandidatUji(providers.KindOpenAICompatible, up.srv.URL))
+	if err != nil {
+		t.Fatalf("Provider: %v", err)
+	}
+	resp, err := p.ChatCompletion(context.Background(), &providers.ChatRequest{
+		Model:    "m",
+		Messages: []providers.Message{{Role: providers.RoleUser, Content: "hai"}},
+	})
+	if err != nil {
+		t.Fatalf("ChatCompletion: %v", err)
+	}
+	if len(resp.Choices) != 1 {
+		t.Errorf("jumlah choice = %d, mau 1", len(resp.Choices))
+	}
+	if got := up.jumlahHit(); got != 1 {
+		t.Fatalf("hit upstream = %d, mau 1", got)
+	}
+	if auth := up.authHit(); len(auth) != 1 || auth[0] != "Bearer "+rahasiaUji {
+		t.Errorf("header Authorization upstream = %v, mau [Bearer <kredensial aktif>]", auth)
+	}
+	tungguPenandaan(t, tanda)
+	if got := tanda.semua(); len(got) != 1 || got[0] != "cred-1" {
+		t.Errorf("penandaan pemakaian = %v, mau [cred-1] (last_used_at kredensial aktif yang bergerak)", got)
+	}
+}
+
+// TestFactoryB103TanpaKredensialSamaSekaliTetapModeLokal menjaga pembedaan yang
+// disengaja: provider openai_compatible yang TIDAK PERNAH punya baris kredensial
+// adalah mode lokal tanpa autentikasi yang sah (Ollama/vLLM/LM Studio) dan tetap
+// dilayani — tanpa header Authorization, karena memang tidak ada kredensial yang
+// dinonaktifkan siapa pun.
+func TestFactoryB103TanpaKredensialSamaSekaliTetapModeLokal(t *testing.T) {
+	up := serverHitungBaru(t)
+	creds := &sumberKredensial{err: repo.ErrNotFound} // adaBaris=false: tak pernah ada kredensial
+	f := pabrikUji(t, creds, nil)
+
+	p, err := f.Provider(context.Background(), kandidatUji(providers.KindOpenAICompatible, up.srv.URL))
+	if err != nil {
+		t.Fatalf("Provider mode lokal tanpa kredensial: %v", err)
+	}
+	if _, err := p.ChatCompletion(context.Background(), &providers.ChatRequest{
+		Model:    "m",
+		Messages: []providers.Message{{Role: providers.RoleUser, Content: "hai"}},
+	}); err != nil {
+		t.Fatalf("ChatCompletion mode lokal: %v", err)
+	}
+	if got := up.jumlahHit(); got != 1 {
+		t.Fatalf("hit upstream = %d, mau 1", got)
+	}
+	if auth := up.authHit(); len(auth) != 1 || auth[0] != "" {
+		t.Errorf("header Authorization upstream = %v, mau kosong pada mode lokal yang sah", auth)
 	}
 }
 

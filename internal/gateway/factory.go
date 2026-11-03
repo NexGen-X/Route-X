@@ -89,8 +89,15 @@ const jedaTandaiPemakaian = 5 * time.Second
 const batasTandaiPemakaian = 5 * time.Second
 
 // CredentialSource memasok kredensial aktif satu provider. Dipenuhi *upstream.CredentialRepo.
+//
+// HasCredentials ada di kontrak yang sama karena Active saja tidak cukup untuk
+// memutuskan mode tanpa kredensial: ErrNotFound dari Active menyatukan "provider
+// tidak pernah punya kredensial" dan "semua kredensialnya dinonaktifkan" menjadi
+// satu jawaban, padahal hanya keadaan pertama yang boleh berlanjut tanpa
+// autentikasi (B-103).
 type CredentialSource interface {
 	Active(ctx context.Context, providerID string) (*upstream.ActiveCredential, error)
+	HasCredentials(ctx context.Context, providerID string) (bool, error)
 }
 
 // CredentialUseMarker mencatat bahwa satu kredensial baru saja dipakai.
@@ -465,10 +472,29 @@ func (f *Factory) kredensialTarget(ctx context.Context, t ProviderTarget) (*upst
 		return cred, nil
 	}
 	if errors.Is(err, repo.ErrNotFound) && kredensialOpsional(t.Kind) {
-		// Server berdialek OpenAI yang dijalankan sendiri (Ollama, vLLM, LM Studio) umumnya
-		// berjalan tanpa autentikasi. Menuntut kredensial di sana hanya membuat operator
-		// mengisi nilai palsu supaya lolos.
-		return nil, nil
+		// Mode tanpa kredensial hanya sah untuk provider yang TIDAK PERNAH punya
+		// kredensial: server berdialek OpenAI yang dijalankan sendiri (Ollama, vLLM,
+		// LM Studio) umumnya berjalan tanpa autentikasi, dan menuntut kredensial di
+		// sana hanya membuat operator mengisi nilai palsu supaya lolos.
+		//
+		// Provider yang PUNYA baris kredensial tetapi tidak satu pun aktif adalah
+		// keadaan yang sama sekali berbeda (B-103): operator pernah memasang
+		// kredensial lalu menonaktifkannya — mis. karena bocor atau rotasi darurat.
+		// Versi lama menyamakan keduanya lewat ErrNotFound yang sama dan meneruskan
+		// request TANPA autentikasi apa pun, sehingga toggle kredensial tampak
+		// berhasil di panel tetapi trafik tetap berjalan. Kini keadaan itu jatuh ke
+		// kegagalan eksplisit di bawah, dan kegagalan memeriksa keberadaannya pun
+		// gagal-tertutup: tanpa bukti bahwa mode tanpa kredensial memang sah,
+		// gateway tidak meneruskan apa pun.
+		ada, herr := f.creds.HasCredentials(ctx, t.ID)
+		if herr != nil {
+			return nil, fmt.Errorf("keberadaan kredensial provider %q tidak bisa diperiksa: %w", t.Name, herr)
+		}
+		if !ada {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("provider %q punya kredensial tetapi tidak satu pun aktif "+
+			"(semua dinonaktifkan atau kedaluwarsa); request tidak diteruskan tanpa kredensial", t.Name)
 	}
 	if errors.Is(err, repo.ErrNotFound) {
 		// Pesan sendiri, bukan errornya: "data tidak ditemukan" tidak memberi tahu operator
@@ -855,12 +881,18 @@ func dilayani(kind string) bool {
 	return false
 }
 
-// kredensialOpsional melaporkan apakah kind ini sah dipakai tanpa kredensial.
+// kredensialOpsional melaporkan apakah kind ini BOLEH dipakai tanpa kredensial.
 //
 // Hanya dua: openai_compatible dan custom. Keduanya menunjuk ke server yang dijalankan
 // sendiri, dan server seperti itu umumnya tidak menuntut autentikasi sama sekali. Untuk
 // openai, anthropic, dan google, kredensial yang hilang berarti salah konfigurasi yang
 // harus terlihat sekarang, bukan 401 dari upstream nanti.
+//
+// "Boleh" di sini bukan izin tanpa syarat: kredensialTarget hanya menghormatinya bila
+// provider tidak pernah punya baris kredensial sama sekali. Begitu operator memasang
+// satu kredensial, provider itu beralih ke mode berkredensial secara permanen —
+// menonaktifkan seluruh kredensialnya adalah kegagalan eksplisit, bukan jalan diam-diam
+// kembali ke mode tanpa autentikasi (B-103).
 func kredensialOpsional(kind string) bool {
 	return kind == providers.KindOpenAICompatible || kind == providers.KindCustom
 }

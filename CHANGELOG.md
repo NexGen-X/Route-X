@@ -6,7 +6,9 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
-Rangkaian perubahan sesudah v1.5.1 yang belum ditag sebagai rilis: kampanye hardening **audit3** (15 grup fix atas 314 temuan terverifikasi dari audit 50 area, PR #204–#215), batch sisa A1/A2/B1/B2 (PR #225–#228), fitur Batch C (PR #229–#230), dan batch penutup (PR #231). Termasuk migrasi skema **0017–0019**; jalur upgrade dari database v1.5.1 (skema 0016) terverifikasi tanpa kehilangan data.
+## [1.6.0] - 2026-11-03
+
+Rangkaian perubahan sesudah v1.5.1: kampanye hardening **audit3** (15 grup fix atas 314 temuan terverifikasi dari audit 50 area, PR #204–#224), batch sisa A1/A2/B1/B2 (PR #225–#228), fitur Batch C (PR #229–#230), batch penutup (PR #231), batch kejujuran UI (PR #236), dan penyetaraan CLI (PR #238). Termasuk migrasi skema **0017–0019**; jalur upgrade dari database v1.5.1 (skema 0016) terverifikasi tanpa kehilangan data.
 
 ### Breaking Changes
 - **Tanda tangan webhook diganti** (audit3 grup 7, PR #210): delivery kini ditandatangani HMAC-SHA256 atas `"<timestamp>.<deliveryID>.<body final>"` dan dikirim lewat header **`X-RouteX-Signature`** (`sha256=<hex>`). Header warisan `X-Hub-Signature-256` **dibuang** — penerima webhook harus memverifikasi skema baru. Secret webhook kini wajib non-kosong; webhook tanpa secret ditolak `400`.
@@ -31,7 +33,7 @@ Rangkaian perubahan sesudah v1.5.1 yang belum ditag sebagai rilis: kampanye hard
 - **Routing menyisihkan egress pool tak sehat** (Batch A2): pool berstatus `unhealthy` segar (≤5 menit) dilewati selama ada alternatif sehat; fail-open tercatat di log bila semua pool tak sehat.
 - **Invalidasi kebijakan seketika** (Batch B2): perubahan batas laju & filter konten dari admin kini menginvalidasi salinan gateway seketika (`Invalidate`), bukan menunggu TTL 5 detik.
 - **Halaman web lebih jujur & aksesibel** (audit3 grup 12–13 + Batch A1): kontrak agregasi FE↔BE selaras (`window` dihormati, persen breakdown dari total keseluruhan + baris "Lainnya"), penanda daftar terpotong tampil di UI, feed Dashboard satu tombol asli (axe `nested-interactive` 0), jenjang heading diperbaiki, dan ringkasan provider menampilkan penanda gagal-muat, bukan daftar kosong.
-- **Dokumentasi repo dirombak** (PR dokumentasi): README ditulis ulang profesional; `CONTRIBUTING.md` dan `SECURITY.md` dibuat; klaim basi (enkripsi API key, hitungan migrasi, perilaku anggaran pra-reservasi) dikoreksi ke kondisi kode.
+- **Dokumentasi repo dirombak** (PR #232–#235; restyle presentasi README PR #237): README ditulis ulang profesional; `CONTRIBUTING.md` dan `SECURITY.md` dibuat; klaim basi (enkripsi API key, hitungan migrasi, perilaku anggaran pra-reservasi) dikoreksi ke kondisi kode.
 - **CLI Antigravity (`agy`) disetarakan dengan CLI lain** (B-081): kunci read-only khusus agy dicabut — cabang khusus di manajer konfigurasi CLI, penjaga mode/target/terapkan di halaman Integrasi CLI, serta rendering khusus kartu tool (badge "Dilindungi Sistem", banner kunci, tombol "Terkunci (Sistem)") dihapus. `agy` kini tool env-only normal yang dapat dikonfigurasi persis seperti 19 CLI lainnya.
 
 ### Fixed
@@ -50,6 +52,7 @@ Rangkaian perubahan sesudah v1.5.1 yang belum ditag sebagai rilis: kampanye hard
 - **Constraint pipeline** melempar 22P02 untuk bentuk buruk: ditulis ulang migrasi 0019 sehingga ditolak 23514; indeks ganda warisan dibuang (audit3 grup 11).
 - **`UPSTREAM_TIMEOUT` mati** dan gauge circuit breaker yatim: keduanya kini terpasang ujung-ke-ujung (audit3 grup 15).
 - **Berkas CLI tidak aman**: `opencode.json` kini 0600 tanpa kredensial hantu; `key.env` dibangun ulang dari semua tool (audit3 grup 15).
+- **Tab Payload inspektor tampil sebagai kegagalan padahal payload memang tidak disimpan** (B-078, PR #236): keadaan tak-tersimpan (`404 not_found`) kini ditampilkan sebagai penjelasan netral bahwa Route-X tidak merekam body request/respons; kegagalan muat sungguhan tetap tampil sebagai banner error.
 
 ## [1.5.1] - 2026-11-02
 

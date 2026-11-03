@@ -1,16 +1,33 @@
-# Route-X — Self-Hosted AI Gateway
-
 <div align="center">
 
-**One gateway for every AI provider: OpenAI- and Anthropic-compatible ingestion, multi-provider routing with failover, hard budget guardrails, and a full operations dashboard — shipped as a single Go binary.**
+<img src="docs/images/logo.svg" alt="Route-X — Ubin Rute logo" width="88">
 
-[![Release](https://img.shields.io/badge/Release-v1.5.1-10B981?style=for-the-badge&logo=github)](https://github.com/NexGen-X/Route-X/releases/tag/v1.5.1)
-[![Go Version](https://img.shields.io/badge/Go-1.27.3+-00ADD8?style=for-the-badge&logo=go)](https://go.dev)
-[![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql)](https://postgresql.org)
-[![Redis](https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis)](https://redis.io)
-[![CI](https://github.com/NexGen-X/Route-X/actions/workflows/ci.yml/badge.svg)](https://github.com/NexGen-X/Route-X/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
+<h1>Route-X</h1>
+
+<p><strong>One gateway for every AI provider.</strong></p>
+
+<p>OpenAI- and Anthropic-compatible ingestion, multi-provider routing with failover, hard budget guardrails, and a full operations dashboard — shipped as a single Go binary.</p>
+
+<p>
+<a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.5.1"><img src="https://img.shields.io/badge/Release-v1.5.1-10B981?style=for-the-badge&logo=github" alt="Release v1.5.1"></a>
+<a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27.3+-00ADD8?style=for-the-badge&logo=go" alt="Go 1.27.3+"></a>
+<a href="https://react.dev"><img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react" alt="React 18"></a>
+<a href="https://postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql" alt="PostgreSQL 16"></a>
+<a href="https://redis.io"><img src="https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis" alt="Redis 7"></a>
+<a href="https://github.com/NexGen-X/Route-X/actions/workflows/ci.yml"><img src="https://github.com/NexGen-X/Route-X/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License: MIT"></a>
+</p>
+
+<p>
+<a href="#quickstart"><strong>Quickstart</strong></a> ·
+<a href="#features"><strong>Features</strong></a> ·
+<a href="#architecture"><strong>Architecture</strong></a> ·
+<a href="#api-overview"><strong>API</strong></a> ·
+<a href="#installation"><strong>Deployment</strong></a> ·
+<a href="#documentation"><strong>Docs</strong></a>
+</p>
+
+<img src="docs/images/hero.png" alt="Every client converges on one Route-X gateway, which routes each request out to the right AI provider">
 
 </div>
 
@@ -22,10 +39,32 @@
 
 Calling heterogeneous AI provider APIs directly means dialect fragmentation (OpenAI vs. Anthropic schemas), API-key sprawl across tools, unpredictable rate limits, silent provider outages, and untracked token spend. Route-X sits in front of all of it as a self-hosted reverse proxy and control plane:
 
-- **One endpoint for both dialects** — OpenAI Chat Completions and Anthropic Messages are ingested natively and transpiled in both directions, including streaming.
-- **Routing that survives outages** — priority tiers, weighted / lowest-latency / lowest-cost / round-robin strategies, a 3-state circuit breaker, and cascade failover across providers.
-- **Budgets that actually hold** — estimated cost is *reserved atomically before* a request runs, so a parallel burst cannot overshoot a limit the way after-the-fact accounting can.
-- **A control plane, not just a proxy** — an embedded dashboard for providers, routing rules, API keys, budgets, webhooks, egress pools, backups, and observability, plus one-click synchronization of 20 developer CLI tools.
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**One endpoint for both dialects** — OpenAI Chat Completions and Anthropic Messages are ingested natively and transpiled in both directions, including streaming.
+
+</td>
+<td width="50%" valign="top">
+
+**Routing that survives outages** — priority tiers, weighted / lowest-latency / lowest-cost / round-robin strategies, a 3-state circuit breaker, and cascade failover across providers.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**Budgets that actually hold** — estimated cost is *reserved atomically before* a request runs, so a parallel burst cannot overshoot a limit the way after-the-fact accounting can.
+
+</td>
+<td width="50%" valign="top">
+
+**A control plane, not just a proxy** — an embedded dashboard for providers, routing rules, API keys, budgets, webhooks, egress pools, backups, and observability, plus one-click synchronization of 20 developer CLI tools.
+
+</td>
+</tr>
+</table>
 
 The application tier is a **single static Go binary** (dashboard embedded via `//go:embed` — no Node.js runtime or separate static host). **PostgreSQL 16** and **Redis 7** are required as separate state services.
 
@@ -33,24 +72,43 @@ The application tier is a **single static Go binary** (dashboard embedded via `/
 
 ## Features
 
+<table>
+<tr>
+<td width="50%" valign="top">
+
 ### Dual-protocol ingestion
+
 - **OpenAI-compatible**: `/v1/chat/completions`, `/v1/embeddings`, `/v1/models`, `/v1/models/{model}` — a drop-in target for the official OpenAI SDKs, LangChain, LiteLLM, Cursor, Cline, Open WebUI, and similar tools. `/v1/responses` is routed as a **compatibility alias** of the chat-completions handler; it is not a separate implementation of the OpenAI Responses API.
 - **Anthropic-native**: `/v1/messages` (plus the `/v1/v1/messages` alias) and `/v1/messages/count_tokens` — a drop-in target for the Anthropic SDK and Claude Code.
 - **Bidirectional transpilation** of roles, content blocks, base64 vision payloads, and tool/function calling between the two dialects, with a resilient SSE streaming engine (UTF-8 boundary safety, immediate upstream cancellation on client disconnect).
 - **Anthropic document blocks**: text documents and base64 `text/plain` documents are converted to canonical text at their block position and forwarded to any upstream; base64 **PDF** documents are passed through natively to Anthropic-kind upstreams only — if no Anthropic candidate is available the request is rejected with `400 unsupported_document_upstream` before any network call, never silently dropped. URL-sourced documents are rejected (SSRF). Maximum 10 MiB per document.
 
+</td>
+<td width="50%" valign="top">
+
 ### Routing, resiliency, and rate limiting
+
 - **Combo routing strategies**: strict priority tiering, Efraimidis-Spirakis weighted distribution, lowest tracked P95 latency, lowest cost per token, and atomic round-robin. Candidates without latency/pricing measurements are ranked last, never treated as fastest or free.
 - **3-state circuit breaker** (Closed → Open → Half-Open canary probes) with state shared through Redis, plus proactive context-overflow bypass to higher-context models.
 - **Distributed rate limiting**: an atomic Redis Lua fixed-window limiter (check-all-windows, then increment-all) enforces RPM/TPM and concurrency limits on the live path, shared across instances.
 - **Response cache (opt-in)**: identical non-streaming requests can be served from Redis. Cache keys are isolated **per API key** (domain-separated hash of the key identity + the full canonical request + surface + route fingerprint, so routing changes make old entries unreachable). Only successful, non-streaming responses **without tool calls** are cached in this phase; streaming is never cached. Enable it in **Settings → Performance & Cache**.
 
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
 ### Money: budgets and cost accounting
+
 - **Atomic budget reservation**: before a request runs, its estimated cost is held against every applicable budget (global, API key, provider, model) and settled against the real cost afterwards — a burst of parallel requests cannot spend past the cap.
 - **Budget periods follow your calendar**: daily (rolling 24 h), weekly (Monday 00:00), and monthly (the 1st, 00:00) windows are computed in the operator timezone set by `BUDGET_TIMEZONE` (default UTC).
 - **Provider-accurate pricing**: costs use the price effective at request time (8-decimal USD precision, no floats in the money path). Anthropic cache-creation tokens are priced from the reported breakdown — **1-hour cache writes at 2×** the input price, **5-minute writes and unattributed remainder at 1.25×**; without a breakdown the previous flat 1.25× behavior applies.
 
+</td>
+<td width="50%" valign="top">
+
 ### Control plane and integrations
+
 - **Embedded dashboard** ("Calm Console" design language: Claude-inspired dark theme, flat KPI strips instead of stacked cards, full Bahasa Indonesia UI, responsive + PWA for mobile — no separate native app).
 - **Webhooks with verifiable signatures**: deliveries are signed with HMAC-SHA256 over `"<timestamp>.<deliveryID>.<final body>"` and sent in the **`X-RouteX-Signature`** header (`sha256=<hex>`). A webhook secret is required (empty secrets are rejected), failed deliveries retry with backoff and terminate in an `abandoned` state instead of retrying forever, and cross-host redirects are refused.
 - **Egress pools & optional relays**: per-credential HTTP/SOCKS5 proxy pools with periodic health probing; unhealthy pools are skipped while a healthy alternative exists (fail-open if none is healthy). Deno Deploy and Cloudflare relays are **optional** intermediaries for egress — relays created by Route-X provisioning carry a random per-installation token generated on your own server; the repository contains code only, never your settings or secrets.
@@ -58,8 +116,18 @@ The application tier is a **single static Go binary** (dashboard embedded via `/
 - **Backup & restore**: one-click database export (streaming) and restore. Restores are **scratch-swap atomic**: the upload is scanned for psql meta-commands, restored into a scratch database in a single transaction, checked against the schema ledger, and only then swapped in — the previous database is kept as `<db>_pre_restore`.
 - **Observability**: request inspector with latency waterfall and event timeline, traffic breakdowns whose percentages are computed from true totals, Prometheus metrics, and `/healthz` + `/readyz` probes that return status only (`{"status":"ok"}` — no version or uptime leakage).
 
+</td>
+</tr>
+<tr>
+<td colspan="2" valign="top">
+
 ### Accessibility
+
 The dashboard is **designed toward WCAG 2.1 Level AA**: focus trapping in dialogs and the command palette, WAI-ARIA combobox semantics, labelled form controls, and internal axe-core audits reporting zero color-contrast violations across dashboard pages. It is a design target verified by internal checks — Route-X has **not** undergone external WCAG certification.
+
+</td>
+</tr>
+</table>
 
 ---
 
@@ -69,29 +137,56 @@ Every screenshot below was captured from a live install built from the current `
 
 ### Desktop
 
+<table>
+<tr>
+<td width="50%" valign="top">
+
 **Dashboard** — one plain status line, a flat KPI strip (requests, tokens & cost, P95 latency), a live request feed, and provider health as simple rows.
 
 ![Route-X Dashboard — desktop](docs/images/dashboard-desktop.png)
+
+</td>
+<td width="50%" valign="top">
 
 **Providers** — every upstream as a two-line row: status dot, model count, priority and weight. Provider presets (OpenAI, Anthropic, Google, OpenRouter, local runtimes, and more) are added with a single click, then mapped to models with per-provider pricing.
 
 ![Route-X Providers — desktop](docs/images/penyedia-desktop.png)
 
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
 **Observability** — underline metric tabs (Requests, Throughput, Tokens, Error Rate, Cost, P95 Latency) over one large chart, traffic composition broken down by provider / model / API key, and server & pool health as plain rows.
 
 ![Route-X Observability — desktop](docs/images/observabilitas-desktop.png)
+
+</td>
+<td width="50%" valign="top">
 
 **Command Palette (`Ctrl+K` / `⌘K`)** — a Raycast-style palette for the whole console: results grouped by category (Navigation, Quick Actions, CLI Tools), full keyboard navigation.
 
 ![Route-X Command Palette — desktop](docs/images/palet-perintah-desktop.png)
 
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
 **API Keys** — key rows with masked secret, RPM/TPM limits, last-used time, and model/provider scope. When a key has a budget registered in the Budgets system, the row also shows a thin **budget bar with real recorded spend versus its limit** (amber at the alert threshold, red at 100%) — keys without a budget show no bar at all.
 
 ![Route-X API Keys — desktop](docs/images/kunci-api-desktop.png)
 
+</td>
+<td width="50%" valign="top">
+
 **Settings** — Linear-style left sub-navigation with panel-free content: label–description–control rows for Domain & HTTPS (with DNS guidance and automatic Let's Encrypt), Performance & Cache, Backup & Recovery, and free-form Advanced runtime parameters.
 
 ![Route-X Settings — desktop](docs/images/pengaturan-desktop.png)
+
+</td>
+</tr>
+</table>
 
 ### Mobile (responsive web + PWA — no separate native app)
 
@@ -204,6 +299,9 @@ export INITIAL_ADMIN_PASSWORD="$(openssl rand -base64 24)"      # generate your 
 
 Route-X is configured entirely through environment variables. The table below lists the core set; the complete, commented reference is [`.env.example`](.env.example), and the authoritative source is `internal/config/config.go`. Note: the meaning of `0` is **not uniform** across knobs (for some it means "disabled", for others "use default" or "unlimited") — check `.env.example` per variable before setting `0`.
 
+<details>
+<summary><strong>Environment variables — the core set</strong></summary>
+
 | Variable | Required | Purpose / default |
 |---|:---:|---|
 | `DATABASE_URL` | ✅ | PostgreSQL connection string. |
@@ -226,64 +324,42 @@ Route-X is configured entirely through environment variables. The table below li
 | `AUDIT_LOG_RETENTION_DAYS` / `REQUEST_LOG_RETENTION_DAYS` / `REQUEST_BODY_RETENTION_DAYS` | – | Retention windows (defaults 365 / 30 / 7 days). |
 | `LOG_LEVEL`, `READ_TIMEOUT`, `WRITE_TIMEOUT`, `SHUTDOWN_GRACE`, `DB_MIN_CONNS`, `DB_MAX_CONNS`, `HEALTH_CHECK_INTERVAL`, `USAGE_ROLLUP_INTERVAL`, `MAX_REQUEST_MIB`, `RATE_LIMIT_FAIL_CLOSED` | – | Operational tuning — see `.env.example`. |
 
+</details>
+
 ---
 
 ## Architecture
 
 ```mermaid
-flowchart TD
-    subgraph Clients["1. Ingestion Layer"]
-        C1["OpenAI SDK / Python / TS"]
-        C2["Claude Code CLI / Anthropic SDK"]
-        C3["Developer IDEs (Cursor, Cline, Aider)"]
-        C4["AI Agents & WebUI"]
+flowchart LR
+    subgraph Clients["Clients"]
+        C1["OpenAI SDK & compatible tools"]
+        C2["Anthropic SDK & Claude Code"]
+        C3["IDEs, CLI tools & AI agents"]
     end
 
-    subgraph Gateway["2. Route-X Gateway Core (Single Binary)"]
-        subgraph Ingress["Security & Ingress"]
-            I1["Anti-SSRF Dialer / CSRF Guard"]
-            I2["Argon2id Passwords / API-Key Auth (HMAC-SHA256)"]
-            I3["Dual-Protocol Parser (/v1/chat & /v1/messages)"]
-        end
-
-        subgraph Engine["Policy & Routing Pipeline"]
-            R1["Distributed Rate Limiter (Redis Lua)"]
-            R2["Budget Reservation & Cost Accounting"]
-            R3["Rule Matching Engine (In-Memory)"]
-            R4["Combo Router (Priority / Weighted / Latency / Cost)"]
-            R5["3-State Circuit Breaker & Cascade Failover"]
-        end
-
-        subgraph Egress["Egress & Telemetry"]
-            E1["Per-Credential Proxy / Egress Pools"]
-            E2["SSE Streaming Normalizer & Transpiler"]
-            E3["Monthly Partitioned Request Log"]
-        end
-
-        subgraph UI["Embedded Dashboard"]
-            U1["React 18 + Tailwind 3.4 (go:embed)"]
-            U2["Calm Console UI (Bahasa Indonesia)"]
-        end
+    subgraph RouteX["Route-X — single Go binary"]
+        IN["Dual-protocol ingestion<br/>/v1/chat/completions · /v1/messages<br/>bidirectional transpilation & SSE streaming"]
+        ENG["Routing & policy engine<br/>Redis rate limiter · atomic budget reservation<br/>combo routing · 3-state circuit breaker · cascade failover"]
+        DASH["Embedded dashboard<br/>Calm Console — React 18 + Tailwind 3.4 (go:embed)"]
+        IN --> ENG
     end
 
-    subgraph State["3. Storage & State Layer"]
-        DB[("PostgreSQL 16\n(migrations 0001–0019, partitions & state)")]
-        RD[("Redis 7\n(rate limit, breaker, response cache)")]
+    subgraph State["State services"]
+        DB[("PostgreSQL 16")]
+        RD[("Redis 7<br/>rate limit · breaker state · response cache")]
     end
 
-    subgraph Upstreams["4. Upstream LLM Providers"]
+    subgraph Upstreams["Upstream providers"]
         P1["Anthropic"]
         P2["OpenAI"]
         P3["Google / OpenRouter / Groq / DeepSeek / Mistral"]
         P4["Local vLLM / Ollama"]
     end
 
-    Clients --> Ingress
-    Ingress --> Engine
-    Engine <--> State
-    Engine --> Egress
-    Egress --> Upstreams
-    UI -.-> Ingress
+    Clients --> IN
+    ENG <--> State
+    ENG --> Upstreams
 ```
 
 Schema changes are append-only migrations (`internal/database/migrations/`, currently **0001–0019**, checksum-verified against the migration ledger, each applied in its own transaction). There are no down-migrations — schema rollback means restoring from backup (see the Disaster Recovery runbook).
@@ -316,6 +392,9 @@ X-RouteX-Signature: sha256=<HMAC-SHA256(secret, "<timestamp>.<deliveryID>.<final
 Verify by recomputing the HMAC with your endpoint's secret over the exact timestamp, delivery ID, and raw request body. (The legacy `X-Hub-Signature-256` header was removed — receivers must migrate to the scheme above.)
 
 ### Practical examples
+
+<details>
+<summary><strong>Python · TypeScript · operations CLI — click to expand</strong></summary>
 
 **Python (OpenAI SDK)**
 
@@ -369,9 +448,14 @@ export API_KEY_PEPPER="<must match the server's pepper>"
 ./bin/routex-apikey list   # masked hints only; raw secrets are never persisted
 ```
 
+</details>
+
 ---
 
 ## Benchmarks & Performance
+
+<details>
+<summary><strong>Historical micro-benchmark snapshot (PR #78) — click to expand</strong></summary>
 
 Historical micro-benchmark results measured on a dedicated **Intel Xeon Platinum 8259CL @ 2.50 GHz** (PR #78). These figures are a snapshot from that machine and that PR — they are **not** re-measured per release, vary by hardware, and describe individual micro-benchmarks, not end-to-end request latency. Reproduce them with `go test -bench . ./internal/router/ ./internal/ratelimit/ ./internal/gateway/`:
 
@@ -389,6 +473,8 @@ Historical micro-benchmark results measured on a dedicated **Intel Xeon Platinum
 | `BenchmarkSelectCandidate_Weighted` | 1,139.00 ns | 48 B | 1 |
 
 Stated precisely: the allocation-free micro-benchmarks (rule matching, tie-breaking, the in-memory limiter component) run in **under 150 ns**, and full candidate selection measured **~155 ns – 1,139 ns** depending on strategy in the same snapshot. The in-memory limiter above is a benchmarked component — the limiter that enforces limits on live traffic is the Redis Lua limiter, which additionally costs a Redis round-trip by design. In all cases the gateway's own decision overhead is small next to an upstream LLM round-trip.
+
+</details>
 
 ---
 
@@ -432,6 +518,9 @@ To report a vulnerability, follow [`SECURITY.md`](SECURITY.md) — please do not
 
 ## Troubleshooting
 
+<details>
+<summary><strong>Common symptoms &amp; checks — click to expand</strong></summary>
+
 | Symptom | Check |
 |---|---|
 | Instance won't start; migration error | Read the boot log — migrations are checksum-verified and applied in order (0001–0019). A checksum mismatch means a migration file was edited after being applied; restore it from git instead of editing the ledger. |
@@ -440,6 +529,8 @@ To report a vulnerability, follow [`SECURITY.md`](SECURITY.md) — please do not
 | Login returns 429 | The login limiter allows a limited number of attempts per IP per 15 minutes — wait for the window to slide instead of retrying in a loop. Locked accounts unlock automatically when `locked_until` passes; an admin can also unlock a user from the Users page. |
 | Budget timezone seems wrong | Period boundaries are computed in `BUDGET_TIMEZONE` (default UTC). Changing it does not rewrite the `period_end` of budgets already in flight — the new zone applies from the next reset. |
 | Antigravity provider errors about a missing secret | Set `ANTIGRAVITY_CLIENT_SECRET` in the server environment — since the audit3 hardening it is never embedded in the binary. |
+
+</details>
 
 More operational procedures live in the [Operations Runbook](docs/runbook-operasi.md) and [Disaster Recovery](docs/DISASTER_RECOVERY.md) documents.
 

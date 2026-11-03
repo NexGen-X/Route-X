@@ -222,7 +222,7 @@ systemctl restart caddy || true
 # 8. Memasang Biner Route-X Core dari rilis resmi.
 # RELEASE_TAG adalah satu-satunya tempat versi rilis disebut di installer
 # ini — perbarui di sini saat menerbitkan rilis baru.
-RELEASE_TAG="v1.5.1"
+RELEASE_TAG="v1.6.0"
 echo ""
 echo "🛠️ [5/6] Menyiapkan biner resmi Route-X Gateway ${RELEASE_TAG}..."
 mkdir -p "$INSTALL_DIR"

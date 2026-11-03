@@ -6,7 +6,11 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Fixed
+- **Installer native macet total saat dijalankan ulang diperbaiki (B-084)**: operasi git atas direktori sumber installer sendiri kini memakai `git -c safe.directory=<src>` per panggilan — `fetch`/`reset --hard` atas `/opt/routex/src` pada jalur upgrade, dan `rev-parse` atas `SRC_DIR` pada fallback kompilasi. Sebelumnya installer yang berjalan sebagai root ditolak git (`detected dubious ownership`) karena src dimiliki pengguna layanan `routex`, sehingga upgrade instalasi native yang sudah berjalan gugur di tahap 0 (dan cap versi fallback diam-diam menjadi `dev-unknown`). Perbaikan terlingkup hanya pada src installer: konfigurasi global operator tidak diubah, perlindungan kepemilikan untuk direktori lain tidak dilemahkan, dan perilaku instalasi segar tidak berubah.
+
 ### Changed
+- **Templat Caddyfile native diselaraskan kosmetik ke templat compose (rider B-079)**: pada ketiga blok situs yang ditulis `install-native.sh` — `keepalive` 300s → 90s, `dial_timeout 5s` ditambahkan, dan `encode` kini memakai `minimum_length 512`; kedua blok HTTPS kini juga menyetel HSTS ber-token `preload` (`max-age=31536000; includeSubDomains; preload`) — semuanya mengikuti `deploy/caddy/Caddyfile`. Penyelarasan ini kosmetik, BUKAN perbaikan buffering: uji A/B B-079 sudah membuktikan penerusan SSE identik pada kedua bentuk konfigurasi, dan `flush_interval` sengaja tidak diubah.
 - **Kebijakan dependabot diperketat**: pembaruan minor/patch kini digabung menjadi satu PR grup per ekosistem (gomod, npm, github-actions, docker), dan bump major untuk dependensi terpaku — `react`, `react-dom`, `@types/react`, `@types/react-dom`, `vite`, `lucide-react` (npm) dan `node` (docker) — diabaikan agar menjadi pekerjaan upgrade terencana, bukan banjir PR mingguan. Batas PR terbuka diturunkan (npm/gomod/github-actions 5→3, docker 3→2). Hasil triase pendamping atas lima PR major yang menumpuk: `lucide-react` 0.453.0 → 1.66.0 digabung sesudah terbukti hijau (PR #218); `vite` 8 (konflik peer `@vitejs/plugin-react`), pasangan React 19 (konflik peer timbal-balik react/react-dom), dan `node` 26-alpine (bertentangan pin Node 24 LTS) ditutup sebagai pekerjaan upgrade terencana.
 
 ## [1.6.1] - 2026-11-03

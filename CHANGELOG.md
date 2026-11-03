@@ -6,6 +6,9 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Fixed
+- **Tiga gesekan installer & pesan dari uji VPS (B-082)**: deteksi mode eksekusi `install-native.sh` kini membedakan berkas lokal di luar checkout dari pipe/curl (dulu semua eksekusi di luar checkout dilaporkan sebagai pipe/curl); pesan penolakan `base_url` http di mode produksi kini menyebut obatnya (`UPSTREAM_ALLOW_HTTP=true`; alamat privat tetap dibatasi `UPSTREAM_ALLOWED_PRIVATE_ADDRS`); installer tanpa `DOMAIN` kini memperingatkan sejak awal dan di ringkasan akhir bahwa memasang domain belakangan wajib diikuti menjalankan ulang installer dengan `DOMAIN=` — tanpa itu domain gagal (di Cloudflare tampak sebagai error 525).
+
 ## [1.6.0] - 2026-11-03
 
 Rangkaian perubahan sesudah v1.5.1: kampanye hardening **audit3** (15 grup fix atas 314 temuan terverifikasi dari audit 50 area, PR #204–#224), batch sisa A1/A2/B1/B2 (PR #225–#228), fitur Batch C (PR #229–#230), batch penutup (PR #231), batch kejujuran UI (PR #236), dan penyetaraan CLI (PR #238). Termasuk migrasi skema **0017–0019**; jalur upgrade dari database v1.5.1 (skema 0016) terverifikasi tanpa kehilangan data.

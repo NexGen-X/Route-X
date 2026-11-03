@@ -29,7 +29,9 @@ if ! command -v apt-get &>/dev/null; then
     exit 1
 fi
 
-# 3. Menentukan lokasi kode sumber (lokal atau clone via curl pipe)
+# 3. Menentukan lokasi kode sumber: checkout repo dipakai langsung; di luar
+# checkout, source di-clone segar ke /opt/routex/src — baik skrip dijalankan
+# dari berkas lokal maupun via pipe/curl, hanya pesannya yang dibedakan.
 REPO_URL="https://github.com/NexGen-X/Route-X.git"
 INSTALL_DIR="/opt/routex"
 SRC_DIR=""
@@ -39,7 +41,15 @@ if [ -f "./go.mod" ] && grep -q "github.com/NexGen-X/Route-X" "./go.mod" 2>/dev/
 elif [ -f "$(dirname "$0")/go.mod" ] && grep -q "github.com/NexGen-X/Route-X" "$(dirname "$0")/go.mod" 2>/dev/null; then
     SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 else
-    echo "📥 Mendeteksi eksekusi via pipe/curl. Mengunduh source code Route-X ke /opt/routex/src..."
+    # Bedakan dua keadaan di luar checkout: berkas lokal di luar repo ($0
+    # adalah berkas skrip yang nyata) vs pipe/curl ($0 hanya nama shell,
+    # bukan berkas). Versi lama melaporkan keduanya sebagai pipe/curl,
+    # menyesatkan operator yang menjalankan berkas lokal (B-082).
+    if [ -f "$0" ]; then
+        echo "📥 Skrip dijalankan dari berkas lokal di luar checkout repo. Mengunduh source code Route-X ke /opt/routex/src..."
+    else
+        echo "📥 Mendeteksi eksekusi via pipe/curl. Mengunduh source code Route-X ke /opt/routex/src..."
+    fi
     mkdir -p /opt/routex/src
     if [ -d "/opt/routex/src/.git" ]; then
         git -C /opt/routex/src fetch origin main
@@ -79,6 +89,22 @@ case "$ROUTEX_HOST" in
         CADDY_TLS_LINE="    tls internal  # host berupa IP: sertifikat internal Caddy (self-signed)"
         ;;
 esac
+
+# Peringatan jebakan domain belakangan (B-082): instalasi tanpa DOMAIN
+# melayani sertifikat internal untuk alamat IP. Domain yang dipasang
+# SESUDAHNYA (apalagi diproksi Cloudflare) menunjuk ke instalasi ini, tetapi
+# Caddy tetap menjawab dengan sertifikat internal itu sehingga domain gagal
+# — gejala khasnya error 525 di Cloudflare. Jebakan ini sudah terbukti
+# memakan korban nyata, jadi peringatkan sejak awal dan di ringkasan akhir.
+if [ -n "$CADDY_TLS_LINE" ]; then
+    echo ""
+    echo "⚠️ PERINGATAN: Instalasi berjalan TANPA domain (DOMAIN tidak disetel) —"
+    echo "   Route-X dilayani lewat alamat IP dengan sertifikat internal Caddy."
+    echo "   Bila nanti Anda memasang domain (apalagi diproksi Cloudflare), WAJIB"
+    echo "   jalankan ulang installer ini dengan DOMAIN=<domain-anda>: tanpa itu"
+    echo "   Caddy tetap melayani sertifikat internal untuk IP dan domain akan"
+    echo "   gagal (gejala khas di Cloudflare: error 525)."
+fi
 
 # 4. Memperbarui paket sistem dan utilitas dasar
 echo ""
@@ -472,7 +498,10 @@ echo "   Produksi mewajibkan HTTPS (PUBLIC_URL=https://${ROUTEX_HOST})."
 [ -n "$CADDY_TLS_LINE" ] && \
     echo "   Host berupa IP sehingga Caddy memakai sertifikat internal (self-signed):" && \
     echo "   browser akan memperingatkan sertifikat tak terpercaya — lanjutkan untuk" && \
-    echo "   uji coba, atau pasang domain dan jalankan ulang dengan DOMAIN=domainanda."
+    echo "   uji coba, atau pasang domain dan jalankan ulang dengan DOMAIN=domainanda." && \
+    echo "   Tanpa menjalankan ulang itu, domain yang dipasang belakangan akan gagal" && \
+    echo "   (di Cloudflare tampak sebagai error 525) karena Caddy tetap melayani" && \
+    echo "   sertifikat internal untuk IP ini."
 [ -z "$CADDY_TLS_LINE" ] && \
     echo "   Sertifikat Let's Encrypt diterbitkan otomatis oleh Caddy untuk domain ini."
 echo "   Konfigurasi: /etc/routex/routex.env  |  Caddy: /etc/caddy/Caddyfile"

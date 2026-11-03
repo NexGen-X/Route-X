@@ -6,7 +6,8 @@ Wants=network-online.target postgresql.service redis-server.service
 [Service]
 Type=simple
 # Pengguna sistem khusus (dibuat installer native), BUKAN root (audit3
-# V-DP-22): gateway hanya butuh membaca env-nya dan menulis /var/lib/route-x.
+# V-DP-22): gateway hanya butuh membaca env-nya dan menulis /var/lib/route-x
+# serta home-nya sendiri ($HOME/.routex untuk konfigurasi CLI, B-095).
 User=routex
 Group=routex
 WorkingDirectory=/opt/routex
@@ -18,7 +19,11 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false
-ReadWritePaths=/tmp /var/lib/route-x
+# -/home/routex: home pengguna layanan harus tetap bisa ditulis di bawah
+# ProtectSystem=strict (gateway menulis $HOME/.routex, B-095); awalan '-'
+# membuat unit tetap bisa start bila home belum ada (installer native
+# membuatnya, pemasangan manual mungkin belum).
+ReadWritePaths=/tmp /var/lib/route-x -/home/routex
 LimitNOFILE=65536
 
 [Install]

@@ -458,6 +458,24 @@ if ! id routex &>/dev/null; then
     useradd --system --no-create-home --shell /usr/sbin/nologin routex
     echo "   Pengguna sistem 'routex' dibuat."
 fi
+# Direktori home pengguna layanan WAJIB ada dan dimiliki routex (B-095):
+# gateway menyelesaikan $HOME dari entri passwd pengguna ini dan menulis
+# konfigurasi CLI ke $HOME/.routex (internal/cliconfig) — useradd di atas
+# memakai --no-create-home, jadi tanpa langkah ini /home/routex tidak
+# pernah ada dan POST /api/admin/cli/configure gagal permanen dengan
+# "mkdir /home/routex: permission denied" (proses layanan tidak bisa
+# membuat direktori di /home yang dimiliki root). Langkah ini SENGAJA di
+# luar blok pembuatan pengguna: ia berjalan pada SETIAP lari installer,
+# sehingga menjalankan ulang installer (jalur upgrade) menyembuhkan
+# instalasi lama yang terlanjur tidak punya home.
+ROUTEX_HOME="$(getent passwd routex | cut -d: -f6)"
+if [ -z "$ROUTEX_HOME" ] || [ "$ROUTEX_HOME" = "/" ]; then
+    ROUTEX_HOME="/home/routex"
+fi
+mkdir -p "$ROUTEX_HOME"
+chown routex:routex "$ROUTEX_HOME"
+chmod 755 "$ROUTEX_HOME"
+echo "   Direktori home pengguna layanan dipastikan ada: $ROUTEX_HOME (milik routex:routex)."
 mkdir -p /var/lib/route-x
 chown -R routex:routex "$INSTALL_DIR" /etc/routex /var/lib/route-x
 chmod 600 /etc/routex/routex.env

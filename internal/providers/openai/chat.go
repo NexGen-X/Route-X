@@ -318,6 +318,16 @@ func (p *Provider) chatPayload(req *providers.ChatRequest, streaming bool) ([]by
 	if req.ReasoningEffort != "" {
 		body["reasoning_effort"] = req.ReasoningEffort
 	}
+	// ChatRequest.Thinking (parameter bergaya Anthropic) sengaja TIDAK
+	// diterjemahkan di sini. "enabled"/"disabled" memang sudah diabaikan
+	// adapter ini sejak awal (yang berlaku hanya ReasoningEffort), dan
+	// "adaptive" (B-096) mengikuti aturan yang sama: upstream
+	// OpenAI-compatible tidak punya konsep thinking adaptif, jadi
+	// representasi paling jujurnya adalah tidak mengirim parameter
+	// thinking apa pun — membiarkan bawaan upstream — bukan mengarang
+	// reasoning_effort atau budget. Gateway juga menstrip "adaptive"
+	// per kandidat non-Anthropic di untukKandidat; pengabaian di sini
+	// adalah lapis pengaman terakhirnya.
 	if req.User != "" {
 		body["user"] = req.User
 	}

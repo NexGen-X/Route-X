@@ -482,6 +482,13 @@ func responseFormatFor(raw json.RawMessage) (string, json.RawMessage) {
 // Hanya diaktifkan bila klien memintanya secara eksplisit. Bila model yang dituju tidak
 // mendukung thinking, Gemini akan menolak dengan sebab yang jelas — itu jawaban yang benar
 // untuk permintaan yang memang meminta penalaran.
+//
+// ChatRequest.Thinking bergaya Anthropic TIDAK dibaca di sini: "adaptive"
+// (B-096) tidak punya padanan di Gemini, dan maknanya — model memutuskan
+// sendiri — paling setia diwakili dengan tidak mengirim thinkingConfig
+// sama sekali (bawaan Gemini), bukan dengan mengarang thinkingBudget.
+// Gateway juga menstrip "adaptive" per kandidat non-Anthropic di
+// untukKandidat.
 func thinkingFor(effort string) *thinkingConfig {
 	budget := 0
 	switch strings.ToLower(strings.TrimSpace(effort)) {

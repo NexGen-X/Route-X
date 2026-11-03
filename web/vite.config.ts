@@ -19,11 +19,19 @@ export default defineConfig({
         return deps;
       },
     },
-    rollupOptions: {
+    // Vite 8 (Rolldown): bentuk objek `rollupOptions.output.manualChunks`
+    // sudah tidak didukung dan membuat build gagal ("manualChunks is not a
+    // function"); panduan migrasi resmi Vite 8 mengarahkan ke
+    // `rolldownOptions` + `output.codeSplitting`. Nama chunk dipertahankan
+    // persis (`vendor-charts`/`vendor-icons`) supaya penyaringan preload di
+    // atas dan perilaku pemuatan malas grafik/ikon tidak berubah.
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          'vendor-charts': ['recharts'],
-          'vendor-icons': ['lucide-react'],
+        codeSplitting: {
+          groups: [
+            { name: 'vendor-charts', test: /\/node_modules\/recharts\// },
+            { name: 'vendor-icons', test: /\/node_modules\/lucide-react\// },
+          ],
         },
       },
     },

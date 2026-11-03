@@ -119,7 +119,12 @@ restart. Tidak ada data persisten yang bergantung padanya.
 Hasil terakhir terverifikasi 2026-09-09: go mod verify bersih, npm prod 0 vuln.
 2 vuln dev-only (esbuild via vite, GHSA dev-server) DITERIMA:
 hanya memengaruhi `vite dev`, tidak ikut build produksi.
-Jangan `npm audit fix --force` (naik ke vite 8, breaking change).
+Catatan itu historis untuk pohon Vite 5. Sejak upgrade terkoordinasi
+Vite 8 + @vitejs/plugin-react 6 (Langkah 5a), vite tidak lagi membawa
+esbuild (esbuild yang tersisa di pohon hanya salinan bersarang milik
+vitest 2) dan larangan lama "jangan sampai naik ke vite 8" gugur —
+vite 8 kini versi yang dipakai. Angka audit terkini wajib diambil dari
+lari audit baru, bukan dari catatan ini.
 Jalankan ulang kedua perintah di atas untuk angka terkini — hasil
 bertanggal ini adalah catatan historis, bukan status kini.
 

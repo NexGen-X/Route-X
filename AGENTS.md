@@ -5,7 +5,7 @@ AI Gateway (Go 1.27 + React/Vite). Repo: github.com/NexGen-X/Route-X, branch uta
 ## Struktur
 - `cmd/ai-gateway/` — binary utama gateway; `cmd/routex-rotate/` — rotasi kredensial
 - `internal/` — admin, apikey, auth, billing, cache, config, database (+migrations, repo, seed), gateway, models, providers, router, worker, dsb.
-- `web/` — dashboard React 18 + Vite + TS (`routex-dashboard`); `docs/` — openapi.yaml + embed docs, panduan pengguna & runbook operasi
+- `web/` — dashboard React 19 + Vite + TS (`routex-dashboard`); `docs/` — openapi.yaml + embed docs, panduan pengguna & runbook operasi
 
 ## Perintah
 - Build: `go build ./...` (dari root repo)

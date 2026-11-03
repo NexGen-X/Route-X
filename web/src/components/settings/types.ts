@@ -49,7 +49,7 @@ export interface BackupTabProps {
   selectedBackupFile: File | null;
   isRestoring: boolean;
   backupFeedback: BackupFeedback;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   setExportFormat: (format: 'sql.gz' | 'sql') => void;
   onRefresh: () => void;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;

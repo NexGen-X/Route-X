@@ -255,22 +255,37 @@ export const APIKeys: React.FC = () => {
     }
   };
 
-  const handleRevoke = async (id: string) => {
+  const handleToggleEnabled = async (key: APIKey) => {
+    try {
+      await api.apiKeys.toggle(key.id, !key.enabled);
+      toast.success(
+        key.enabled
+          ? `Kunci API "${key.name}" dinonaktifkan. Klien yang memakainya akan ditolak sampai diaktifkan kembali.`
+          : `Kunci API "${key.name}" diaktifkan kembali.`,
+        key.enabled ? 'Kunci Nonaktif' : 'Kunci Aktif'
+      );
+      void queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
+    } catch (err: unknown) {
+      toast.error('Gagal mengubah status kunci: ' + getErrorMessage(err));
+    }
+  };
+
+  const handleDelete = async (key: APIKey) => {
     const ok = await confirmModal({
-      title: 'Cabut Kunci API Permanen?',
-      message: 'Cabut kunci API ini secara permanen? Seluruh klien dan skrip yang menggunakannya akan langsung ditolak.',
-      confirmText: 'Ya, Cabut Kunci',
+      title: 'Hapus Kunci API Permanen?',
+      message: `Hapus kunci "${key.name}" secara permanen? Tindakan ini tidak bisa dibatalkan: seluruh klien dan skrip yang memakainya akan langsung ditolak, dan kunci tidak bisa dipulihkan. Riwayat request milik kunci ini tetap tersimpan. Untuk mematikan sementara tanpa menghapus, gunakan Nonaktifkan.`,
+      confirmText: 'Ya, Hapus Permanen',
       cancelText: 'Batal',
       danger: true,
     });
     if (!ok) return;
 
     try {
-      await api.apiKeys.revoke(id);
-      toast.success('Kunci API berhasil dicabut secara permanen.', 'Kunci Dicabut');
+      await api.apiKeys.remove(key.id);
+      toast.success(`Kunci API "${key.name}" berhasil dihapus secara permanen.`, 'Kunci Dihapus');
       void queryClient.invalidateQueries({ queryKey: ['apiKeys'] });
     } catch (err: unknown) {
-      toast.error('Gagal mencabut key: ' + getErrorMessage(err));
+      toast.error('Gagal menghapus kunci: ' + getErrorMessage(err));
     }
   };
 
@@ -492,7 +507,8 @@ export const APIKeys: React.FC = () => {
               apiKey={k}
               onOpenAllowed={handleOpenAllowed}
               onRotate={handleRotate}
-              onRevoke={handleRevoke}
+              onToggleEnabled={handleToggleEnabled}
+              onDelete={handleDelete}
               budget={budgetByKeyId.get(k.id)}
             />
           ))}

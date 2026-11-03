@@ -5,7 +5,7 @@ import { test, expect, request as pwRequest } from '@playwright/test';
 //
 // Deterministik: traffic sampel dibuat sendiri via API di beforeAll
 // (pola sisa-kritis: 1 login admin, key RPM besar, prompt unik +
-// cache-buster, revoke di finally), jadi tak peduli urutan eksekusi.
+// cache-buster, hapus key di finally), jadi tak peduli urutan eksekusi.
 
 const ASAL = process.env.BASE_URL || 'http://127.0.0.1:18080';
 
@@ -44,7 +44,7 @@ test.beforeAll(async () => {
     }
   } finally {
     if (keyId) {
-      await ctx.post(`/api/admin/access/api-keys/${keyId}/revoke`, {
+      await ctx.delete(`/api/admin/access/api-keys/${keyId}`, {
         headers: H,
       });
     }

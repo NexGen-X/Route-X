@@ -19,7 +19,8 @@ export interface APIKeyCardProps {
   apiKey: APIKey;
   onOpenAllowed: (key: APIKey) => void;
   onRotate: (id: string) => void;
-  onRevoke: (id: string) => void;
+  onToggleEnabled: (key: APIKey) => void;
+  onDelete: (key: APIKey) => void;
   // Anggaran nyata per kunci dari entitas Budget (scope 'api_key'); absen = kunci
   // tidak punya anggaran terdaftar, batang anggaran tidak ditampilkan.
   budget?: {

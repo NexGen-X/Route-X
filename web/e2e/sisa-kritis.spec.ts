@@ -272,13 +272,13 @@ test('content filter: blokir respons RAHASIA lalu lolos setelah hapus', async ()
       });
     }
     if (keyId) {
-      await ctx.post(`/api/admin/access/api-keys/${keyId}/revoke`, {
+      await ctx.delete(`/api/admin/access/api-keys/${keyId}`, {
         headers: H,
       });
     }
   }
   // Setelah filter dihapus + TTL lewat, prompt yang sama lolos 200.
-  // Key lama sudah direvoke di finally: pakai key BARU agar yang diuji
+  // Key lama sudah dihapus di finally: pakai key BARU agar yang diuji
   // murni "filter sudah tidak ada", bukan status key.
   await new Promise((r) => setTimeout(r, 7000));
   const buatKey2 = await ctx.post('/api/admin/access/api-keys', {
@@ -301,7 +301,7 @@ test('content filter: blokir respons RAHASIA lalu lolos setelah hapus', async ()
     expect(lolos.status()).toBe(200);
   } finally {
     if (keyId2) {
-      await ctx.post(`/api/admin/access/api-keys/${keyId2}/revoke`, {
+      await ctx.delete(`/api/admin/access/api-keys/${keyId2}`, {
         headers: H,
       });
     }
@@ -340,7 +340,7 @@ test('negatif rate-limit: key 2 RPM, request ke-3 ditolak 429', async () => {
     expect(r3.status()).toBe(429);
   } finally {
     if (keyId) {
-      await ctx.post(`/api/admin/access/api-keys/${keyId}/revoke`, {
+      await ctx.delete(`/api/admin/access/api-keys/${keyId}`, {
         headers: H,
       });
     }
@@ -455,7 +455,7 @@ test('negatif kuota: harga mahal + budget 0,01 USD memblokir 402', async () => {
       });
     }
     if (keyId) {
-      await ctx.post(`/api/admin/access/api-keys/${keyId}/revoke`, {
+      await ctx.delete(`/api/admin/access/api-keys/${keyId}`, {
         headers: H,
       });
     }

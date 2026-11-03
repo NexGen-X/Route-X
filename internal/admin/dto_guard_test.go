@@ -479,10 +479,11 @@ func TestClientRouteMatching(t *testing.T) {
 		t.Errorf("PELANGGARAN KONTRAK RUTE: DELETE /gateway/bans/{id} tidak boleh dipanggil; gunakan POST .../lift")
 	}
 
-	// 2. DELETE /access/api-keys/{id} (server: POST .../revoke)
-	if strings.Contains(string(content), "/access/api-keys/${id}`, { method: 'DELETE'") ||
-		strings.Contains(string(content), "/access/api-keys/${id}\", { method: 'DELETE'") {
-		t.Errorf("PELANGGARAN KONTRAK RUTE: DELETE /access/api-keys/{id} tidak boleh dipanggil; gunakan POST .../revoke")
+	// 2. POST /access/api-keys/{id}/revoke (server: DELETE /{id}) — sejak B-080
+	// siklus hidup key disederhanakan: penghapusan permanen lewat DELETE, dan
+	// endpoint revoke tidak ada lagi di server.
+	if strings.Contains(string(content), "/access/api-keys/${id}/revoke") {
+		t.Errorf("PELANGGARAN KONTRAK RUTE: POST /access/api-keys/{id}/revoke tidak boleh dipanggil lagi; gunakan DELETE /access/api-keys/{id}")
 	}
 
 	// 3-7. Path API yang salah terdaftar

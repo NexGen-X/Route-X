@@ -51,7 +51,7 @@ test.describe('tulis admin via UI', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByText(nama).first()).toBeVisible({ timeout: 20000 });
 
-    // Bersihkan lewat sesi browser yang sama: revoke semua key e2e-tulis-*.
+    // Bersihkan lewat sesi browser yang sama: hapus semua key e2e-tulis-*.
     const H = await headerMutasi(page);
     const daftar = await page.request.get('/api/admin/access/api-keys');
     expect(daftar.ok()).toBeTruthy();
@@ -59,7 +59,7 @@ test.describe('tulis admin via UI', () => {
     const items = badan.items ?? badan.data ?? badan;
     for (const k of items as any[]) {
       if (k.name?.startsWith('e2e-tulis-')) {
-        await page.request.post(`/api/admin/access/api-keys/${k.id}/revoke`, {
+        await page.request.delete(`/api/admin/access/api-keys/${k.id}`, {
           headers: H,
         });
       }

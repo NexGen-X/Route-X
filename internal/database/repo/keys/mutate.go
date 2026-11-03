@@ -1,6 +1,11 @@
-// Operasi mutasi API key: rotasi, pencabutan, perubahan status, pembaruan sebagian,
-// penghapusan permanen, penonaktifan key yang kedaluwarsa, dan penelusuran rantai
-// rotasi.
+// Operasi mutasi API key: rotasi (yang mencabut pendahulunya), perubahan status
+// aktif/nonaktif, pembaruan sebagian, penghapusan permanen, penonaktifan key yang
+// kedaluwarsa, dan penelusuran rantai rotasi.
+//
+// Siklus hidup key disederhanakan (keputusan pemilik, B-080): hanya aktif ↔
+// nonaktif lewat SetStatus, penghapusan permanen lewat Delete, dan rotasi. Tidak
+// ada lagi operasi pencabutan tersendiri — status 'revoked' hanya lahir dari
+// rotasi dan dari baris warisan instalasi lama, dan keduanya tetap final.
 //
 // Semuanya jalur admin dan worker. Jalur request inferensi hanya memakai Authenticate
 // dan TouchUsage di keys.go, jadi tidak ada di berkas ini yang berjalan sekali per
@@ -198,47 +203,6 @@ func (r *Repo) RotateWithPool(ctx context.Context, pool *pgxpool.Pool, id string
 	return RotateKey(ctx, pool, r.pepper, id, createdBy)
 }
 
-// Revoke mencabut key selamanya: status menjadi 'revoked' dan waktu, pelaku, serta
-
-// alasan pencabutan dicatat.
-//
-// Idempoten. Mencabut key yang sudah dicabut bukan error dan tidak mengubah apa pun
-// selain updated_at — pencabutan yang pertama yang menentukan siapa, kapan, dan kenapa.
-// Itu penting karena pencabutan datang dari tempat yang bisa mengulang pekerjaannya:
-// worker yang jaringannya terputus setelah pernyataan terkirim, admin yang menekan
-// tombol dua kali, atau penanganan insiden yang mencabut sederet key sekaligus. Kalau
-// pengulangan menimpa jejaknya, alasan sebenarnya ("dilaporkan bocor di repositori
-// publik") bisa tertimpa alasan susulan yang tidak menjelaskan apa-apa.
-//
-// Keempat kolom disetel dalam satu pernyataan supaya tidak ada saat ketika baris
-// melanggar api_keys_revoked_consistent, yang memaksa status dan revoked_at sejalan.
-//
-// reason kosong disimpan sebagai NULL, bukan teks kosong: kolom itu berarti "tidak ada
-// alasan yang dicatat", dan dua bentuk untuk satu arti hanya menyulitkan pembacanya.
-func (r *Repo) Revoke(ctx context.Context, id string, revokedBy *string, reason string) (*Key, error) {
-	const op = "mencabut API key"
-	if !idOK(id) {
-		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
-	}
-	if err := refID(op, "revoked_by", revokedBy); err != nil {
-		return nil, err
-	}
-
-	key, err := scanKey(r.q.QueryRow(ctx, `
-		update api_keys set
-			status        = 'revoked',
-			revoked_at    = case when status = 'revoked' then revoked_at    else now() end,
-			revoked_by    = case when status = 'revoked' then revoked_by    else $2   end,
-			revoke_reason = case when status = 'revoked' then revoke_reason else $3   end
-		where id = $1
-		returning `+keyColumns,
-		id, revokedBy, nullIfEmpty(reason)))
-	if err != nil {
-		return nil, repo.Err(op, err)
-	}
-	return key, nil
-}
-
 // SetStatus mematikan atau menghidupkan kembali key: 'active' ↔ 'disabled'.
 //
 // 'revoked' tidak bisa disetel dari sini dan key yang sudah dicabut tidak bisa
@@ -246,16 +210,20 @@ func (r *Repo) Revoke(ctx context.Context, id string, revokedBy *string, reason 
 //
 //   - Menyetel 'revoked' lewat jalur ini akan menghasilkan pencabutan tanpa waktu,
 //     pelaku, dan alasan — tepatnya keterangan yang paling dibutuhkan ketika sebuah
-//     pencabutan dipertanyakan berbulan-bulan kemudian. Pakai Revoke.
+//     pencabutan dipertanyakan berbulan-bulan kemudian. Sejak B-080 tidak ada lagi
+//     operasi pencabutan tersendiri: status 'revoked' hanya disetel oleh Rotate
+//     pada key yang digantikannya (dengan jejak rotasinya sendiri), selain baris
+//     warisan dari instalasi lama.
 //   - Menghidupkan kembali key yang dicabut berarti membatalkan keputusan keamanan.
-//     Key dicabut karena bocor atau karena pemiliknya pergi; kalau pencabutan bisa
-//     dibatalkan, "sudah dicabut" tidak lagi berarti "tidak bisa dipakai lagi" dan
-//     setiap catatan insiden yang menyebutnya kehilangan artinya. Yang benar adalah
-//     membuat key baru.
+//     Key berubah 'revoked' karena digantikan rotasi atau dicabut pada masa
+//     pencabutan masih ada; kalau keadaan itu bisa dibatalkan, "sudah dicabut"
+//     tidak lagi berarti "tidak bisa dipakai lagi" dan kredensial lama hasil
+//     rotasi — yang mungkin bocor — akan hidup lagi. Yang benar adalah membuat
+//     key baru, atau menghapus barisnya permanen lewat Delete.
 //
 // Pagar terhadap kebangkitan itu ada di dalam pernyataan UPDATE, bukan sebagai
-// pemeriksaan terpisah lebih dulu: baca-lalu-tulis bisa disalip pencabutan yang berjalan
-// bersamaan, dan hasilnya justru key yang baru saja dicabut hidup kembali.
+// pemeriksaan terpisah lebih dulu: baca-lalu-tulis bisa disalip rotasi yang berjalan
+// bersamaan, dan hasilnya justru key yang baru saja digantikan hidup kembali.
 //
 // Key yang kedaluwarsa boleh disetel 'active' dan itu tidak membuatnya bisa dipakai —
 // Authenticate menolak kedaluwarsa dari expires_at, bukan dari status. Perpanjang
@@ -266,7 +234,7 @@ func (r *Repo) SetStatus(ctx context.Context, id, status string) (*Key, error) {
 	switch status {
 	case StatusActive, StatusDisabled:
 	case StatusRevoked:
-		return nil, fmt.Errorf("%s: %w: status %q hanya bisa disetel lewat Revoke, yang sekaligus mencatat waktu, pelaku, dan alasan pencabutan",
+		return nil, fmt.Errorf("%s: %w: status %q tidak bisa disetel lewat jalur ini — status itu hanya lahir dari rotasi atau baris warisan, dan bersifat final",
 			op, repo.ErrConstraint, status)
 	default:
 		return nil, fmt.Errorf("%s: %w: status %q tidak dikenali, hanya %q dan %q yang bisa disetel di sini",
@@ -395,19 +363,23 @@ func (r *Repo) Update(ctx context.Context, id string, p UpdateParams) (*Key, err
 // Delete menghapus baris key beserta daftar putihnya (lewat on delete cascade) secara
 // permanen.
 //
-// Revoke hampir selalu pilihan yang benar. requests menyimpan api_key_id TANPA foreign
-// key — disengaja, supaya log tidak ikut terhapus bersama keynya dan pencatatan tidak
-// bergantung pada baris key yang masih ada — sehingga setelah Delete, baris log lama
-// menunjuk pengenal yang tidak ada lagi. Akibatnya: laporan pemakaian kehilangan nama
-// key, tagihan tidak bisa dijelaskan per key, dan penyelidikan insiden kehilangan
-// pemiliknya. Key yang dicabut tetap ada, tetap tidak bisa dipakai, dan tetap bisa
-// menjelaskan riwayatnya sendiri.
+// Sejak penyederhanaan siklus hidup (B-080), inilah satu-satunya cara membuang key
+// selamanya — operasi pencabutan tersendiri sudah tidak ada. Matikan sementara lewat
+// SetStatus, ganti rahasia lewat Rotate, buang permanen lewat sini.
 //
-// Delete masuk akal untuk key yang salah dibuat dan belum pernah dipakai, untuk data uji,
-// dan untuk permintaan penghapusan data pribadi. Selain itu: Revoke.
+// Riwayat request TIDAK ikut terhapus dan tetap terbaca utuh: requests menyimpan
+// api_key_id TANPA foreign key — disengaja, supaya log tidak bergantung pada baris
+// key yang masih ada — dan membawa snapshot api_key_name dari saat request dicatat,
+// jadi daftar dan detail request tetap menampilkan nama key yang sudah dihapus.
+// Yang menyusut hanyalah agregat usage (usage_hourly/usage_daily hanya menyimpan
+// pengenal, tanpa nama), dan baris audit yang menunjuk pengenal key ini tetap ada
+// sebagai catatan bahwa penghapusan pernah terjadi.
 //
-// Satu akibat lain yang perlu diketahui: rotated_from key penerus menjadi NULL (on delete
-// set null), jadi rantai rotasi yang dibaca Lineage terputus di titik yang dihapus.
+// Dua akibat lain yang perlu diketahui: rotated_from key penerus menjadi NULL
+// (on delete set null), jadi rantai rotasi yang dibaca Lineage terputus di titik
+// yang dihapus; dan aturan routing yang khusus mencocokkan key ini ikut terhapus
+// (match_api_key_id on delete cascade) — aturan untuk key yang tidak ada lagi
+// memang sudah mati.
 func (r *Repo) Delete(ctx context.Context, id string) error {
 	const op = "menghapus API key"
 	if !idOK(id) {
@@ -639,13 +611,4 @@ func refID(op, field string, id *string) error {
 		return fmt.Errorf("%s: %w: %s bukan UUID", op, repo.ErrInvalidReference, field)
 	}
 	return nil
-}
-
-// nullIfEmpty mengubah teks kosong menjadi NULL. Kolom teks opsional di skema ini memang
-// bermakna "tidak ada", bukan "ada tapi kosong".
-func nullIfEmpty(s string) any {
-	if strings.TrimSpace(s) == "" {
-		return nil
-	}
-	return s
 }

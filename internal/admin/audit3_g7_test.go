@@ -179,12 +179,12 @@ func TestAdminEventAPIKeyDanBanDiproduksi(t *testing.T) {
 		t.Errorf("api_key.created tidak dipancarkan; events=%v", sink.events)
 	}
 
-	// Cabut API key → api_key.revoked.
-	res, body = c.do(http.MethodPost, "/api/admin/access/api-keys/"+dibuat.Key.ID+"/revoke", map[string]any{
-		"reason": "uji g7",
-	}, true)
+	// Hapus API key permanen → api_key.revoked (reason "dihapus permanen"):
+	// sejak B-080 produser matinya key secara permanen hidup di jalur DELETE,
+	// bukan lagi endpoint revoke yang sudah dicabut.
+	res, body = c.do(http.MethodDelete, "/api/admin/access/api-keys/"+dibuat.Key.ID, nil, true)
 	if res.StatusCode != http.StatusOK {
-		t.Fatalf("cabut api key: status %d, body %s", res.StatusCode, body)
+		t.Fatalf("hapus api key: status %d, body %s", res.StatusCode, body)
 	}
 	if !sink.punya("api_key.revoked") {
 		t.Errorf("api_key.revoked tidak dipancarkan; events=%v", sink.events)

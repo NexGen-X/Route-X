@@ -29,8 +29,8 @@ func (h *Handlers) accessRoutes(r chi.Router) {
 		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Post("/", h.createAPIKey)
 		kr.With(auth.RequirePermission(seed.PermAPIKeysRead)).Get("/{id}", h.getAPIKey)
 		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Put("/{id}", h.updateAPIKey)
+		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Delete("/{id}", h.deleteAPIKey)
 		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Post("/{id}/rotate", h.rotateAPIKey)
-		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Post("/{id}/revoke", h.revokeAPIKey)
 		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Post("/{id}/toggle", h.toggleAPIKey)
 		kr.With(auth.RequirePermission(seed.PermAPIKeysRead)).Get("/{id}/allowed", h.getAPIKeyAllowed)
 		kr.With(auth.RequirePermission(seed.PermAPIKeysWrite)).Post("/{id}/allowed", h.setAllowedAPIKey)
@@ -440,7 +440,7 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 // bersihkanCounterRateLimitKey menghapus seluruh counter rate limit Redis
 // milik satu API key (pola routex:rl:apikey:<id>:*).
 //
-// Tanpa ini, mencabut/merotasi/menonaktifkan kunci meninggalkan counter
+// Tanpa ini, menghapus/merotasi/menonaktifkan kunci meninggalkan counter
 // yatim sampai TTL jendelanya habis (audit3 V-LN-16) — paling lama jendela
 // bulanan — dan kunci BARU hasil rotasi yang kebetulan mewarisi id yang sama
 // di masa depan akan mewarisi pula hitungan kunci lama. Best-effort:
@@ -455,13 +455,13 @@ func (h *Handlers) bersihkanCounterRateLimitKey(ctx context.Context, id string) 
 	for {
 		kunci, berikut, err := h.redis.Scan(ctx, cursor, pola, 100).Result()
 		if err != nil {
-			h.logger.WarnContext(ctx, "gagal memindai counter rate limit kunci yang dicabut",
+			h.logger.WarnContext(ctx, "gagal memindai counter rate limit kunci",
 				"api_key_id", id, "error", err)
 			return
 		}
 		if len(kunci) > 0 {
 			if err := h.redis.Del(ctx, kunci...).Err(); err != nil {
-				h.logger.WarnContext(ctx, "gagal menghapus counter rate limit kunci yang dicabut",
+				h.logger.WarnContext(ctx, "gagal menghapus counter rate limit kunci",
 					"api_key_id", id, "error", err)
 				return
 			}
@@ -508,65 +508,63 @@ func (h *Handlers) rotateAPIKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handlers) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
+// deleteAPIKey menangani DELETE /api-keys/{id}: penghapusan permanen (B-080).
+//
+// Sejak siklus hidup kunci disederhanakan, inilah satu-satunya cara membuang
+// key selamanya — endpoint pencabutan tersendiri sudah dicabut. Matikan
+// sementara lewat toggle, ganti rahasia lewat rotate, buang lewat sini.
+// Riwayat request tidak ikut terhapus: baris requests menyimpan snapshot
+// nama key dari saat request dicatat (lihat keys.Repo.Delete).
+func (h *Handlers) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	var req struct {
-		Reason string `json:"reason"`
-	}
-	_ = decodeJSON(r, &req)
-
-	var actorID *string
-	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
-		actorID = &p.User.ID
-	}
-
-	reason := req.Reason
-	if reason == "" {
-		reason = "dicabut oleh admin"
-	}
-
-	k, err := h.keyRepo.Revoke(ctx, id, actorID, reason)
-	if err != nil {
+	if err := h.keyRepo.Delete(ctx, id); err != nil {
 		mapRepoError(w, r, err, "api key")
 		return
 	}
 
 	h.bersihkanCounterRateLimitKey(ctx, id)
-	h.writeAudit(ctx, r, "revoke", "api_key", id, map[string]any{"reason": reason})
+	h.writeAudit(ctx, r, "delete", "api_key", id, nil)
+	// Pelanggan webhook tetap diberi tahu bahwa key ini mati permanen, lewat
+	// event yang sama seperti matinya key oleh rotasi; reason membedakannya.
 	h.pancarkanEvent(ctx, "api_key.revoked", map[string]any{
 		"api_key_id": id,
-		"reason":     reason,
+		"reason":     "dihapus permanen",
 	})
-	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
-		Key:    toKeyDTO(k, nil, nil),
-		Masked: k.Masked(),
-	})
+	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
 func (h *Handlers) toggleAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
+	// Body selaras dengan semua toggle lain di sistem (B-080): {enabled: bool}.
+	// Bentuk lama {status: "active"|"disabled"} hanya dipakai toggle ini dan
+	// kini ditolak decodeJSON sebagai field tak dikenal.
 	var req struct {
-		Status string `json:"status"` // "active" atau "disabled"
+		Enabled bool `json:"enabled"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
 	}
 
-	k, err := h.keyRepo.SetStatus(ctx, id, req.Status)
+	status := keys.StatusDisabled
+	if req.Enabled {
+		status = keys.StatusActive
+	}
+
+	k, err := h.keyRepo.SetStatus(ctx, id, status)
 	if err != nil {
 		mapRepoError(w, r, err, "api key")
 		return
 	}
 
-	if req.Status == "disabled" {
+	if !req.Enabled {
 		h.bersihkanCounterRateLimitKey(ctx, id)
 	}
-	h.writeAudit(ctx, r, "toggle", "api_key", id, map[string]any{"status": req.Status})
+	h.writeAudit(ctx, r, "toggle", "api_key", id, map[string]any{"enabled": req.Enabled})
 	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
 		Key:    toKeyDTO(k, nil, nil),
 		Masked: k.Masked(),

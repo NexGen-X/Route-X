@@ -6,6 +6,9 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Changed
+- **Kebijakan dependabot diperketat**: pembaruan minor/patch kini digabung menjadi satu PR grup per ekosistem (gomod, npm, github-actions, docker), dan bump major untuk dependensi terpaku — `react`, `react-dom`, `@types/react`, `@types/react-dom`, `vite`, `lucide-react` (npm) dan `node` (docker) — diabaikan agar menjadi pekerjaan upgrade terencana, bukan banjir PR mingguan. Batas PR terbuka diturunkan (npm/gomod/github-actions 5→3, docker 3→2). Hasil triase pendamping atas lima PR major yang menumpuk: `lucide-react` 0.453.0 → 1.66.0 digabung sesudah terbukti hijau (PR #218); `vite` 8 (konflik peer `@vitejs/plugin-react`), pasangan React 19 (konflik peer timbal-balik react/react-dom), dan `node` 26-alpine (bertentangan pin Node 24 LTS) ditutup sebagai pekerjaan upgrade terencana.
+
 ## [1.6.1] - 2026-11-03
 
 Rilis sesudah v1.6.0: siklus hidup kunci API disederhanakan (B-080 — memuat **dua perubahan BREAKING** pada permukaan admin kunci API, lihat Changed), tiga gesekan installer & pesan dari uji instalasi VPS diperbaiki (B-082), dan dependensi uji web diperbarui. Tidak ada migrasi skema baru; jalur upgrade dari v1.6.0 lurus (biner diganti, skema tetap 0019).

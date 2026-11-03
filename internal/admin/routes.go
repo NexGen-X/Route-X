@@ -95,9 +95,10 @@ func (h *Handlers) Routes() http.Handler {
 	// Izin alias disamakan PERSIS dengan rute kanonisnya (audit3 V-AU-14):
 	// sebelumnya ketiga alias ini tidak membawa RequirePermission sama
 	// sekali, jadi setiap peran non-admin di masa depan yang tidak memegang
-	// izin baca kanonis tetap bisa membaca datanya lewat alias. Hari ini
-	// dampaknya nol (single-admin: principal selalu memegang "*"), tetapi
-	// alias tidak boleh menjadi pintu yang lebih longgar dari pintunya.
+	// izin baca kanonis tetap bisa membaca datanya lewat alias. Sejak
+	// B-102 pengguna non-admin adalah keadaan nyata (principal tanpa izin
+	// apa pun), jadi kesamaan penjagaan ini berdampak langsung — alias
+	// tidak boleh menjadi pintu yang lebih longgar dari pintunya.
 	r.With(auth.RequirePermission(seed.PermHealthRead)).Get("/overview", h.getSystemOverview)
 	r.With(auth.RequirePermission(seed.PermHealthRead)).Get("/diagnostics", h.getDiagnostics)
 	r.With(auth.RequirePermission(seed.PermUsageRead)).Get("/summary", h.getSummary)

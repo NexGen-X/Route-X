@@ -714,6 +714,7 @@ type UserDTO struct {
 	LastLoginAt         *time.Time `json:"last_login_at,omitempty"`
 	LastLoginIP         string     `json:"last_login_ip,omitempty"`
 	MustChangePassword  bool       `json:"must_change_password"`
+	IsAdmin             bool       `json:"is_admin"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
 	Roles               []string   `json:"roles,omitempty"`
@@ -1530,12 +1531,13 @@ func toKeyDTO(k *keys.Key, allowedModels, allowedProviders []string) KeyDTO {
 	}
 }
 
-func toUserDTO(u *identity.User, roles []string) UserDTO {
+// toUserDTO menyusun DTO pengguna. Peran diturunkan dari kolom is_admin
+// baris pengguna itu sendiri (B-102) — sebelum perbaikan, seluruh pemanggil
+// mengoper literal []string{"Admin"} sehingga SETIAP pengguna tampil dan
+// berlaku sebagai admin penuh.
+func toUserDTO(u *identity.User) UserDTO {
 	if u == nil {
 		return UserDTO{}
-	}
-	if roles == nil {
-		roles = make([]string, 0)
 	}
 	return UserDTO{
 		ID:                  u.ID,
@@ -1547,9 +1549,10 @@ func toUserDTO(u *identity.User, roles []string) UserDTO {
 		LastLoginAt:         u.LastLoginAt,
 		LastLoginIP:         u.LastLoginIP,
 		MustChangePassword:  u.MustChangePassword,
+		IsAdmin:             u.IsAdmin,
 		CreatedAt:           u.CreatedAt,
 		UpdatedAt:           u.UpdatedAt,
-		Roles:               roles,
+		Roles:               u.Roles(),
 	}
 }
 

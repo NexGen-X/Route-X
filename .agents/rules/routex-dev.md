@@ -25,9 +25,9 @@ Aturan ini berlaku wajib bagi AI agent dan pengembang yang bekerja di repositori
 
 ---
 
-## 3. Arsitektur Identitas & Otorisasi (Single-Admin)
-- **Prinsip Single-Admin**: Seluruh peran dan izin RBAC (`roles`, `permissions`, `user_roles`) telah dihapus secara permanen pada migrasi `0010_drop_roles.sql`.
-- **Hak Penuh**: Setiap pengguna terautentikasi adalah `Admin` dengan hak penuh (`*`). Dilarang merekonstruksi tabel atau middleware RBAC multi-role.
+## 3. Arsitektur Identitas & Otorisasi (Dua Tingkat, B-102)
+- **Tanpa RBAC**: Seluruh peran dan izin RBAC (`roles`, `permissions`, `user_roles`) telah dihapus secara permanen pada migrasi `0010_drop_roles.sql`. Dilarang merekonstruksi tabel atau middleware RBAC multi-role.
+- **Dua tingkat kewenangan**: sejak migrasi `0020`, kolom `users.is_admin` membedakan admin (`Admin`, hak penuh `*`) dari pengguna biasa (tanpa izin admin, 403 di rute admin). Bawaan pembuatan pengguna adalah NON-admin; admin hanya dari field `role: "admin"` yang eksplisit atau bootstrap admin pertama.
 - **Onboarding Awal**: Endpoint `GET /api/auth/setup-hint` digunakan untuk mendeteksi instalasi baru dan wajib dinonaktifkan otomatis segera setelah kata sandi awal diganti.
 
 ---

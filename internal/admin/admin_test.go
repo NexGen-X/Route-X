@@ -199,19 +199,23 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 	authSvc := auth.NewService(pool, cfg, logger)
 
-	// Buat Akun Super Admin
+	// Buat Akun Super Admin — admin EKSPILIT (B-102): sejak peran menjadi
+	// kolom sungguhan, fixture admin harus memintanya, bukan mengandalkan
+	// bawaan (bawaan kini non-admin).
 	usersRepo := identity.NewUsers(pool)
 	adminUser, err := usersRepo.Create(ctx, identity.NewUser{
 		Email:              "superadmin@routex.internal",
 		DisplayName:        "Super Admin",
 		Password:           security.Secret(testPassword),
 		MustChangePassword: false,
+		IsAdmin:            true,
 	})
 	if err != nil {
 		t.Fatalf("buat super admin: %v", err)
 	}
 
-	// Buat Akun Viewer
+	// Buat Akun Viewer — sengaja TANPA IsAdmin: pengguna biasa bawaan
+	// (B-102), dipakai test penolakan non-admin.
 	viewerUser, err := usersRepo.Create(ctx, identity.NewUser{
 		Email:              "viewer@routex.internal",
 		DisplayName:        "Viewer User",
@@ -403,20 +407,22 @@ func TestAdminAuthenticationRequired(t *testing.T) {
 	}
 }
 
-func TestAdminViewerSingleAdminAccess(t *testing.T) {
+// TestAdminViewerNonAdminDitolak menggantikan ekspektasi single-admin lama
+// (semua pengguna terautentikasi = admin penuh). Sesudah B-102, akun viewer
+// pada fixture adalah pengguna biasa: seluruh rute admin menolaknya 403.
+func TestAdminViewerNonAdminDitolak(t *testing.T) {
 	env := setupTestEnv(t)
 	client := env.newClient(t)
 
-	// Login sebagai admin kedua
 	client.login("viewer@routex.internal", testPassword)
 
-	// 1. Membaca diagnostics berhasil
+	// 1. Membaca diagnostics ditolak 403 (bukan lagi 200).
 	res, _ := client.do(http.MethodGet, "/api/admin/system/diagnostics", nil, false)
-	if res.StatusCode != http.StatusOK {
-		t.Errorf("viewer GET diagnostics status = %d, mau %d", res.StatusCode, http.StatusOK)
+	if res.StatusCode != http.StatusForbidden {
+		t.Errorf("viewer GET diagnostics status = %d, mau %d", res.StatusCode, http.StatusForbidden)
 	}
 
-	// 2. Admin terautentikasi memiliki akses penuh untuk membuat provider
+	// 2. Mutasi admin juga ditolak 403.
 	provPayload := map[string]any{
 		"name":         "test-provider-admin",
 		"display_name": "Test Provider Admin",
@@ -424,8 +430,8 @@ func TestAdminViewerSingleAdminAccess(t *testing.T) {
 		"base_url":     "https://api.openai.com/v1",
 	}
 	resMut, _ := client.do(http.MethodPost, "/api/admin/upstreams/providers", provPayload, true)
-	if resMut.StatusCode != http.StatusCreated {
-		t.Errorf("viewer POST providers status = %d, mau %d (Created)", resMut.StatusCode, http.StatusCreated)
+	if resMut.StatusCode != http.StatusForbidden {
+		t.Errorf("viewer POST providers status = %d, mau %d (Forbidden)", resMut.StatusCode, http.StatusForbidden)
 	}
 }
 

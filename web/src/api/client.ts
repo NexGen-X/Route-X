@@ -840,12 +840,12 @@ export const api = {
       return request<{ items: User[]; next_cursor?: string }>(`/api/admin/access/users?${q.toString()}`);
     },
     get: (id: string) => request<UserDetail>(`/api/admin/access/users/${encodeURIComponent(id)}`),
-    create: (data: { email: string; name: string; password?: string; must_change_password?: boolean }) =>
+    create: (data: { email: string; name: string; password?: string; must_change_password?: boolean; role?: 'admin' | 'user' }) =>
       request<User>('/api/admin/access/users', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (id: string, data: { name?: string; status?: string }) =>
+    update: (id: string, data: { name?: string; status?: string; role?: 'admin' | 'user' }) =>
       request<User>(`/api/admin/access/users/${encodeURIComponent(id)}`, {
         method: 'PUT',
         body: JSON.stringify(data),

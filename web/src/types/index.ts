@@ -11,6 +11,8 @@ export interface User {
   failed_login_attempts?: number;
   locked_until?: string | null;
   must_change_password: boolean;
+  // Kewenangan sungguhan dari backend (B-102): true = admin penuh.
+  is_admin?: boolean;
   created_at: string;
   updated_at: string;
   last_login_at?: string;

@@ -22,7 +22,7 @@ Verifikasi berkas cadangan di database buang:
   createdb routex_verifikasi
   gunzip -c <berkas>.sql.gz | psql -d routex_verifikasi -v ON_ERROR_STOP=1
   psql -d routex_verifikasi -tAc "SELECT count(*) FROM schema_migrations;"
-  # harus: 19 (migrasi 0001 sampai 0019)
+  # harus: 20 (migrasi 0001 sampai 0020)
   dropdb routex_verifikasi
 
 ## 2. Alert yang disarankan
@@ -78,7 +78,7 @@ mengeluarkan siapa pun — sesi lama tetap sah sampai kedaluwarsa/dicabut.
 Untuk memaksa semua perangkat masuk ulang (respons insiden), pakai saklar
 khususnya:
 
-  POST /api/admin/access/sessions/revoke-all   (sesi admin; arsitektur single-admin)
+  POST /api/admin/access/sessions/revoke-all   (sesi admin)
 
 atau cabut sesi per pengguna lewat halaman Akses. Rotasi SESSION_SECRET
 sendiri aman kapan pun (restart; token CSRF lama gugur, sesi tetap hidup).

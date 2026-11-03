@@ -27,7 +27,15 @@ export const UsersPage: React.FC = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ roles: string[]; permissions: string[] } | null>(null);
-  const [newUser, setNewUser] = useState({ email: '', name: '', password: '' });
+  const [newUser, setNewUser] = useState<{ email: string; name: string; password: string; role: 'admin' | 'user' }>({
+    email: '',
+    name: '',
+    password: '',
+    // Bawaan AMAN (B-102): pengguna baru adalah pengguna biasa; admin
+    // hanya bila pemilih peran memang diubah ke Admin secara eksplisit.
+    role: 'user',
+  });
+  const [peranDetail, setPeranDetail] = useState<'admin' | 'user'>('user');
   const [resetPw, setResetPw] = useState<{ userId: string; temp: string } | null>(null);
   const [renameName, setRenameName] = useState('');
   const [showNewUserPassword, setShowNewUserPassword] = useState(false);
@@ -57,7 +65,9 @@ export const UsersPage: React.FC = () => {
     if (u) setRenameName(u.display_name || '');
     try {
       const res = await api.users.get(id);
-      setDetail({ roles: res.roles || ['Admin'], permissions: res.permissions || ['*'] });
+      const roles = res.roles || res.user?.roles || [];
+      setDetail({ roles, permissions: res.permissions || [] });
+      setPeranDetail(roles.includes('Admin') ? 'admin' : 'user');
     } catch (err) {
       toast.error('Gagal memuat detail pengguna: ' + (err instanceof Error ? err.message : String(err)));
     }
@@ -81,10 +91,15 @@ export const UsersPage: React.FC = () => {
         name: newUser.name.trim(),
         password: newUser.password,
         must_change_password: true,
+        role: newUser.role,
       });
       setIsCreateOpen(false);
-      setNewUser({ email: '', name: '', password: '' });
-      toast.success('Pengguna admin baru berhasil dibuat. Ia wajib ganti password saat login pertama.');
+      setNewUser({ email: '', name: '', password: '', role: 'user' });
+      toast.success(
+        newUser.role === 'admin'
+          ? 'Pengguna admin baru berhasil dibuat. Ia wajib ganti password saat login pertama.'
+          : 'Pengguna biasa baru berhasil dibuat (tanpa akses admin). Ia wajib ganti password saat login pertama.'
+      );
       void loadAll();
     } catch (err) {
       toast.error('Gagal membuat pengguna: ' + (err instanceof Error ? err.message : String(err)));
@@ -110,7 +125,7 @@ export const UsersPage: React.FC = () => {
 
   const handleDelete = async (u: User) => {
     const ok = await confirmModal({
-      title: 'Hapus Pengguna Admin?',
+      title: 'Hapus Pengguna?',
       message: `Hapus ${u.email} secara permanen? Akun sendiri dan admin aktif terakhir dilindungi backend.`,
       confirmText: 'Ya, Hapus',
       danger: true,
@@ -161,6 +176,11 @@ export const UsersPage: React.FC = () => {
   // sementara oleh mekanisme brute force (locked_until masih di masa
   // depan walau status active). Hanya akun seperti ini yang menampilkan
   // tombol Buka Kunci (audit3 B-076).
+  // Peran ditampilkan dari data backend (B-102): is_admin adalah sumbernya,
+  // roles adalah cadangannya. Sebelumnya badge "Admin" ditulis mati untuk
+  // semua baris.
+  const adalahAdmin = (u: User) => u.is_admin ?? (u.roles?.includes('Admin') ?? false);
+
   const sedangTerkunci = (u: User) =>
     u.status === 'locked' ||
     (!!u.locked_until && new Date(u.locked_until).getTime() > Date.now());
@@ -285,9 +305,15 @@ export const UsersPage: React.FC = () => {
                     </td>
                     {/* Role */}
                     <td className={`${kelasSelIsi} hidden sm:table-cell`}>
-                      <Badge variant="lime" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1 w-fit">
-                        <Shield className="w-3 h-3" /> Admin
-                      </Badge>
+                      {adalahAdmin(u) ? (
+                        <Badge variant="lime" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1 w-fit">
+                          <Shield className="w-3 h-3" /> Admin
+                        </Badge>
+                      ) : (
+                        <Badge variant="neutral" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1 w-fit">
+                          <Shield className="w-3 h-3" /> User
+                        </Badge>
+                      )}
                     </td>
                     {/* Status */}
                     <td className={kelasSelIsi}>
@@ -379,9 +405,15 @@ export const UsersPage: React.FC = () => {
                 <Badge variant={statusVariant(u.status)}>{u.status}</Badge>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="lime" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1 w-fit">
-                  <Shield className="w-3 h-3" /> Admin
-                </Badge>
+                {adalahAdmin(u) ? (
+                  <Badge variant="lime" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1 w-fit">
+                    <Shield className="w-3 h-3" /> Admin
+                  </Badge>
+                ) : (
+                  <Badge variant="neutral" className="text-[10px] font-mono px-2 py-0.5 flex items-center gap-1 w-fit">
+                    <Shield className="w-3 h-3" /> User
+                  </Badge>
+                )}
                 {u.must_change_password && (
                   <span className="text-[11px] text-amber-300">Wajib ganti password</span>
                 )}
@@ -448,7 +480,7 @@ export const UsersPage: React.FC = () => {
       <Drawer
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
-        title="Tambah Pengguna Admin"
+        title="Tambah Pengguna"
         footer={
           <>
             <Button variant="ghost" onClick={() => setIsCreateOpen(false)}>
@@ -507,13 +539,28 @@ export const UsersPage: React.FC = () => {
               Minimal 12 karakter dan memuat minimal 2 dari: huruf, angka, simbol. Tanpa spasi di awal/akhir.
             </p>
           </div>
+          <div>
+            <label htmlFor="new-user-role" className="block text-xs font-medium text-text-secondary mb-1.5">Peran</label>
+            <select
+              id="new-user-role"
+              value={newUser.role}
+              onChange={(e) => setNewUser({ ...newUser, role: e.target.value as 'admin' | 'user' })}
+              className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+            >
+              <option value="user">Pengguna Biasa — tanpa akses admin</option>
+              <option value="admin">Admin — akses penuh</option>
+            </select>
+            <p className="text-[11px] text-text-muted mt-1.5">
+              Bawaan pengguna biasa. Pilih Admin hanya untuk akun yang memang harus mengelola gateway.
+            </p>
+          </div>
         </form>
       </Drawer>
 
       <Drawer
         isOpen={detailUserId !== null}
         onClose={() => { setDetailUserId(null); setDetail(null); }}
-        title="Kelola Pengguna Admin"
+        title="Kelola Pengguna"
         maxWidth="lg"
         footer={
           <Button variant="ghost" onClick={() => { setDetailUserId(null); setDetail(null); }}>
@@ -530,7 +577,45 @@ export const UsersPage: React.FC = () => {
                 <Shield className="w-4 h-4 text-accent-text" />
                 <span className="text-white font-semibold">Tingkat Akses</span>
               </div>
-              <Badge variant="lime" className="font-mono">Administrator Penuh</Badge>
+              {detail.roles.includes('Admin') ? (
+                <Badge variant="lime" className="font-mono">Administrator Penuh</Badge>
+              ) : (
+                <Badge variant="neutral" className="font-mono">Pengguna Biasa</Badge>
+              )}
+            </div>
+
+            <div>
+              <span className="block text-xs font-medium text-text-secondary mb-2">Ubah Peran:</span>
+              <div className="flex gap-2">
+                <select
+                  aria-label="Peran pengguna"
+                  value={peranDetail}
+                  onChange={(e) => setPeranDetail(e.target.value as 'admin' | 'user')}
+                  className="flex-1 px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+                >
+                  <option value="user">Pengguna Biasa — tanpa akses admin</option>
+                  <option value="admin">Admin — akses penuh</option>
+                </select>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    if (!detailUserId) return;
+                    void api.users.update(detailUserId, { role: peranDetail }).then(() => {
+                      toast.success('Peran diperbarui.');
+                      setDetail({
+                        roles: peranDetail === 'admin' ? ['Admin'] : ['User'],
+                        permissions: peranDetail === 'admin' ? ['*'] : [],
+                      });
+                      void loadAll();
+                    }).catch((err) => {
+                      toast.error('Gagal mengubah peran: ' + (err instanceof Error ? err.message : String(err)));
+                    });
+                  }}
+                >
+                  Simpan Peran
+                </Button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-text-muted">Perubahan berlaku pada request berikutnya dari sesi pengguna itu. Peran akun sendiri tidak bisa diturunkan.</p>
             </div>
 
             <div className="pt-3 border-t border-border">

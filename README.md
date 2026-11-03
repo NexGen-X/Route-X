@@ -9,7 +9,7 @@
 <p>OpenAI- and Anthropic-compatible ingestion, multi-provider routing with failover, hard budget guardrails, and a full operations dashboard — shipped as a single Go binary.</p>
 
 <p>
-<a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.6.0"><img src="https://img.shields.io/badge/Release-v1.6.0-10B981?style=for-the-badge&logo=github" alt="Release v1.6.0"></a>
+<a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.6.1"><img src="https://img.shields.io/badge/Release-v1.6.1-10B981?style=for-the-badge&logo=github" alt="Release v1.6.1"></a>
 <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27.3+-00ADD8?style=for-the-badge&logo=go" alt="Go 1.27.3+"></a>
 <a href="https://react.dev"><img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react" alt="React 18"></a>
 <a href="https://postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql" alt="PostgreSQL 16"></a>
@@ -31,7 +31,7 @@
 
 </div>
 
-> **Release status.** The latest release is **v1.6.0** — it packages the audit3 hardening campaign and all follow-up batches that landed on `main` after v1.5.1. Everything described in this README reflects the code in this repository; see [`CHANGELOG.md`](CHANGELOG.md) for the full release notes.
+> **Release status.** The latest release is **v1.6.1** — it simplifies the API key lifecycle (including two breaking changes on the admin API-key surface), fixes installer and error-message friction found during the v1.6.0 VPS trial, and updates the web test dependency. Everything described in this README reflects the code in this repository; see [`CHANGELOG.md`](CHANGELOG.md) for the full release notes.
 
 > **Scope — read before deploying.** Route-X is an open-source project built for **personal use and small, trusted teams**. Its identity model is **single-admin**: every authenticated dashboard user has full administrator rights — there is no role-based access control and no multi-tenant isolation between dashboard users. Do not expose a Route-X instance to untrusted users, and protect internet-facing instances like any other admin panel that stores paid upstream API credentials.
 
@@ -256,10 +256,10 @@ bash deploy.sh
 
 ```bash
 # 1. Download the official release (adjust the architecture if needed)
-curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.6.0/routex-v1.6.0-linux-amd64.tar.gz
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.6.1/routex-v1.6.1-linux-amd64.tar.gz
 
 # 2. Extract and run (migrations apply automatically on boot)
-tar -xzvf routex-v1.6.0-linux-amd64.tar.gz
+tar -xzvf routex-v1.6.1-linux-amd64.tar.gz
 ./ai-gateway
 ```
 

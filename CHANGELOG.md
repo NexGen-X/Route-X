@@ -6,12 +6,17 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-11-03
+
+Rilis sesudah v1.6.0: siklus hidup kunci API disederhanakan (B-080 — memuat **dua perubahan BREAKING** pada permukaan admin kunci API, lihat Changed), tiga gesekan installer & pesan dari uji instalasi VPS diperbaiki (B-082), dan dependensi uji web diperbarui. Tidak ada migrasi skema baru; jalur upgrade dari v1.6.0 lurus (biner diganti, skema tetap 0019).
+
 ### Added
 - **Endpoint `DELETE /api/admin/access/api-keys/{id}`** (B-080): penghapusan kunci API secara permanen dengan izin `apikeys:write`. Kunci yang terhapus seketika tidak bisa autentikasi lagi; riwayat request miliknya tetap tersimpan dan terbaca (baris request membawa snapshot nama kunci). Dashboard kini menampilkan tombol **Aktifkan/Nonaktifkan**, **Rotasi**, dan **Hapus** (dengan dialog konfirmasi yang menyebut nama kunci) pada halaman Kunci API.
 
 ### Changed
 - **BREAKING — Body toggle kunci API diselaraskan (B-080)**: `POST /api/admin/access/api-keys/{id}/toggle` kini membaca `{enabled: boolean}` seperti semua toggle lain di sistem. Body lama `{status: "active"|"disabled"}` ditolak `400` (field tak dikenal). Keputusan pemilik: siklus hidup kunci disederhanakan menjadi hanya aktif/nonaktif, rotasi, dan hapus permanen.
 - **BREAKING — Endpoint `POST /api/admin/access/api-keys/{id}/revoke` dihapus (B-080)**: pencabutan sebagai operasi tersendiri dicabut; perannya digantikan toggle nonaktif (sementara) dan DELETE (permanen). Status `revoked` tidak lagi diproduksi jalur admin — baris lama berstatus `revoked` tetap tertolak autentikasi, tetap final (tidak bisa diaktifkan lagi), dan bisa dihapus lewat DELETE. Webhook `api_key.revoked` tetap dipancarkan saat kunci mati permanen (kini oleh rotasi dan oleh DELETE, dibedakan lewat field `reason`).
+- **Dependensi uji web diperbarui**: `happy-dom` 20.14.6 → 21.0.4 (PR #223, dependabot) — devDependency lingkungan test dashboard; seluruh test web lulus tanpa penyesuaian kode, tanpa perubahan perilaku produk.
 
 ### Fixed
 - **Tiga gesekan installer & pesan dari uji VPS (B-082)**: deteksi mode eksekusi `install-native.sh` kini membedakan berkas lokal di luar checkout dari pipe/curl (dulu semua eksekusi di luar checkout dilaporkan sebagai pipe/curl); pesan penolakan `base_url` http di mode produksi kini menyebut obatnya (`UPSTREAM_ALLOW_HTTP=true`; alamat privat tetap dibatasi `UPSTREAM_ALLOWED_PRIVATE_ADDRS`); installer tanpa `DOMAIN` kini memperingatkan sejak awal dan di ringkasan akhir bahwa memasang domain belakangan wajib diikuti menjalankan ulang installer dengan `DOMAIN=` — tanpa itu domain gagal (di Cloudflare tampak sebagai error 525).

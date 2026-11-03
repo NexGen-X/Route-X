@@ -15,7 +15,7 @@ info:
     login konsol; mutasi (POST/PUT/DELETE) juga mensyaratkan header CSRF double-submit.
     Route-X memakai model admin tunggal: pengguna terautentikasi memegang izin penuh ("*");
     nama izin per operasi dicantumkan sebagai informasi granularitas akses internal.
-  version: 1.6.0
+  version: 1.6.1
   contact:
     name: Route-X Engineering Team
     email: admin@routex.internal

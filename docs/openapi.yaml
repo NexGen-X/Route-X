@@ -3911,6 +3911,43 @@ paths:
           $ref: "#/components/responses/404NotFound"
         '409':
           $ref: "#/components/responses/409Conflict"
+    delete:
+      tags:
+        - Admin Access
+      summary: "Hapus Kunci API Klien Permanen"
+      description: |
+        Izin internal yang disyaratkan: `apikeys:write`.
+
+        Menghapus kunci secara permanen dan tidak bisa dibatalkan: kunci
+        seketika tidak bisa autentikasi lagi. Inilah satu-satunya cara
+        membuang kunci selamanya — endpoint pencabutan (`revoke`) sudah
+        dihapus; untuk mematikan sementara gunakan toggle. Riwayat request
+        milik kunci ini tetap tersimpan dan terbaca, karena baris request
+        membawa snapshot nama kunci.
+      operationId: deleteAPIKey
+      security:
+        - SessionCookie: []
+          CSRFToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: "ID sumber daya (UUID)"
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Permintaan berhasil diproses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        '401':
+          $ref: "#/components/responses/401Unauthorized"
+        '403':
+          $ref: "#/components/responses/403Forbidden"
+        '404':
+          $ref: "#/components/responses/404NotFound"
   /api/admin/access/api-keys/{id}/rotate:
     post:
       tags:
@@ -3936,45 +3973,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/KeyCreatedResponse"
-        '400':
-          $ref: "#/components/responses/400BadRequest"
-        '401':
-          $ref: "#/components/responses/401Unauthorized"
-        '403':
-          $ref: "#/components/responses/403Forbidden"
-        '404':
-          $ref: "#/components/responses/404NotFound"
-  /api/admin/access/api-keys/{id}/revoke:
-    post:
-      tags:
-        - Admin Access
-      summary: "Cabut Kunci API Klien"
-      description: |
-        Izin internal yang disyaratkan: `apikeys:write`.
-      operationId: revokeAPIKey
-      security:
-        - SessionCookie: []
-          CSRFToken: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: "ID sumber daya (UUID)"
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RevokeAPIKeyRequest"
-      responses:
-        '200':
-          description: Permintaan berhasil diproses
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/KeyDetailResponse"
         '400':
           $ref: "#/components/responses/400BadRequest"
         '401':
@@ -7782,11 +7780,6 @@ components:
           type: string
         model:
           type: string
-    RevokeAPIKeyRequest:
-      type: object
-      properties:
-        reason:
-          type: string
     RoutingRuleDTO:
       type: object
       properties:
@@ -8108,8 +8101,8 @@ components:
     ToggleAPIKeyRequest:
       type: object
       properties:
-        status:
-          type: string
+        enabled:
+          type: boolean
     ToggleBudgetRequest:
       type: object
       properties:

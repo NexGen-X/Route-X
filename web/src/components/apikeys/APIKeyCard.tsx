@@ -3,6 +3,7 @@ import {
   KeyRound,
   RotateCw,
   Trash2,
+  Power,
   Copy,
   Check,
   Eye,
@@ -26,7 +27,8 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
   apiKey,
   onOpenAllowed,
   onRotate,
-  onRevoke,
+  onToggleEnabled,
+  onDelete,
   budget,
 }) => {
   const budgetPct =
@@ -248,7 +250,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
         )}
       </div>
 
-      {/* Action Buttons: Allowed Scope, Rotasi, Cabut */}
+      {/* Action Buttons: Allowed Scope, Aktif/Nonaktif, Rotasi, Hapus */}
       <div className="flex items-center gap-2 flex-wrap justify-between">
         <Button
           variant="secondary"
@@ -264,6 +266,20 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
           <Button
             variant="secondary"
             size="sm"
+            onClick={() => onToggleEnabled(apiKey)}
+            icon={<Power className="w-3.5 h-3.5" aria-hidden="true" />}
+            className="flex-1 sm:flex-initial min-h-[44px] sm:min-h-0 text-xs"
+            aria-label={
+              apiKey.enabled
+                ? `Nonaktifkan kunci API ${apiKey.name}`
+                : `Aktifkan kunci API ${apiKey.name}`
+            }
+          >
+            {apiKey.enabled ? 'Nonaktifkan' : 'Aktifkan'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => onRotate(apiKey.id)}
             icon={<RotateCw className="w-3.5 h-3.5" aria-hidden="true" />}
             className="flex-1 sm:flex-initial min-h-[44px] sm:min-h-0 text-xs"
@@ -274,12 +290,12 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
           <Button
             variant="danger"
             size="sm"
-            onClick={() => onRevoke(apiKey.id)}
+            onClick={() => onDelete(apiKey)}
             icon={<Trash2 className="w-3.5 h-3.5" aria-hidden="true" />}
             className="flex-1 sm:flex-initial min-h-[44px] sm:min-h-0 text-xs"
-            aria-label={`Cabut kunci API ${apiKey.name} secara permanen`}
+            aria-label={`Hapus kunci API ${apiKey.name} secara permanen`}
           >
-            Cabut
+            Hapus
           </Button>
         </div>
       </div>

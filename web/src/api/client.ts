@@ -811,10 +811,9 @@ export const api = {
       }),
     rotate: (id: string) =>
       request<APIKey>(`/api/admin/access/api-keys/${encodeURIComponent(id)}/rotate`, { method: 'POST' }),
-    revoke: (id: string, reason?: string) =>
-      request<void>(`/api/admin/access/api-keys/${encodeURIComponent(id)}/revoke`, {
-        method: 'POST',
-        body: JSON.stringify({ reason: reason || 'dicabut oleh admin' }),
+    remove: (id: string) =>
+      request<{ status: string }>(`/api/admin/access/api-keys/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
       }),
     toggle: (id: string, enabled: boolean) =>
       request<APIKey>(`/api/admin/access/api-keys/${encodeURIComponent(id)}/toggle`, {

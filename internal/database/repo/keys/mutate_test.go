@@ -141,6 +141,16 @@ func TestRotateInheritsEverySetting(t *testing.T) {
 	assertRejection(t, err, ReasonIPNotAllowed)
 }
 
+// jadikanRevoked menulis status 'revoked' langsung lewat SQL, meniru baris
+// warisan instalasi lama: sejak B-080 tidak ada lagi operasi repo yang
+// mencabut key (status itu hanya lahir dari rotasi), tetapi baris tercabut
+// lama tetap harus ditangani dengan benar oleh SetStatus, ExpireDue, dan
+// Authenticate — jadi test yang butuh key tercabut membuatnya begini.
+func jadikanRevoked(t *testing.T, ctx context.Context, pool *pgxpool.Pool, id string) {
+	t.Helper()
+	exec(t, ctx, pool, `update api_keys set status = 'revoked', revoked_at = now(), revoke_reason = 'uji baris warisan' where id = $1`, id)
+}
+
 func TestRotateGuards(t *testing.T) {
 	ctx, pool, r := testEnv(t)
 	owner := newUser(t, ctx, pool)
@@ -161,9 +171,7 @@ func TestRotateGuards(t *testing.T) {
 
 	// Key yang sudah dicabut tidak bisa diputar: kalau bisa, satu key mati bisa
 	// mengeluarkan kredensial hidup berulang kali.
-	if _, err := r.Revoke(ctx, created.Key.ID, nil, "uji"); err != nil {
-		t.Fatalf("Revoke: %v", err)
-	}
+	jadikanRevoked(t, ctx, pool, created.Key.ID)
 	_, err = RotateKey(ctx, pool, testPepper, created.Key.ID, nil)
 	if !errors.Is(err, repo.ErrConflict) {
 		t.Errorf("rotasi key tercabut: err = %v, mau ErrConflict", err)
@@ -248,54 +256,39 @@ func TestRotateIsAtomic(t *testing.T) {
 	})
 }
 
-func TestRevokeIsIdempotent(t *testing.T) {
+// Baris 'revoked' warisan tetap final sesudah operasi pencabutan dicabut
+// (B-080): jalur autentikasi menolaknya dengan alasan revoked, tidak ada
+// perubahan status yang bisa membangkitkannya, dan jejak pencabutannya
+// tetap terbaca — yang bisa dilakukan operator hanyalah menghapus barisnya
+// permanen lewat Delete.
+func TestRevokedWarisanTetapFinal(t *testing.T) {
 	ctx, pool, r := testEnv(t)
 	owner := newUser(t, ctx, pool)
-	admin := newUser(t, ctx, pool)
-	other := newUser(t, ctx, pool)
 	created := mustCreate(t, ctx, r, CreateParams{Name: "k", OwnerUserID: owner, Live: true})
+	jadikanRevoked(t, ctx, pool, created.Key.ID)
 
-	first, err := r.Revoke(ctx, created.Key.ID, &admin, "dilaporkan bocor di repositori publik")
+	key, err := r.GetByID(ctx, created.Key.ID)
 	if err != nil {
-		t.Fatalf("Revoke: %v", err)
+		t.Fatalf("GetByID: %v", err)
 	}
-	if first.Status != StatusRevoked || first.RevokedAt == nil {
-		t.Fatalf("hasil Revoke = status %q revoked_at %v", first.Status, first.RevokedAt)
-	}
-
-	// Pencabutan kedua oleh pelaku lain dengan alasan lain tidak boleh menimpa jejak
-	// pencabutan pertama, dan tidak boleh menjadi error.
-	second, err := r.Revoke(ctx, created.Key.ID, &other, "alasan susulan")
-	if err != nil {
-		t.Fatalf("Revoke kedua: %v", err)
-	}
-	if !second.RevokedAt.Equal(*first.RevokedAt) {
-		t.Errorf("revoked_at berubah: %v → %v", first.RevokedAt, second.RevokedAt)
-	}
-	if got := queryText(t, ctx, pool, `select revoked_by::text from api_keys where id = $1`, created.Key.ID); got != admin {
-		t.Errorf("revoked_by = %q, mau tetap pelaku pertama %q", got, admin)
-	}
-	if got := queryText(t, ctx, pool, `select revoke_reason from api_keys where id = $1`, created.Key.ID); got != "dilaporkan bocor di repositori publik" {
-		t.Errorf("revoke_reason = %q, mau tetap alasan pertama", got)
+	if key.Status != StatusRevoked || key.RevokedAt == nil {
+		t.Fatalf("key warisan = status %q revoked_at %v, mau tercabut dengan jejak waktu", key.Status, key.RevokedAt)
 	}
 
-	// Key yang tercabut ditolak jalur autentikasi.
 	_, err = r.Authenticate(ctx, created.Raw.Reveal(), netip.MustParseAddr("203.0.113.9"))
 	assertRejection(t, err, ReasonRevoked)
 
-	// Alasan dan pelaku memang boleh tidak diisi; keduanya harus tersimpan sebagai NULL,
-	// bukan teks kosong.
-	blank := mustCreate(t, ctx, r, CreateParams{Name: "k2", OwnerUserID: owner, Live: true})
-	if _, err := r.Revoke(ctx, blank.Key.ID, nil, "   "); err != nil {
-		t.Fatalf("Revoke tanpa alasan: %v", err)
-	}
-	if n := queryInt(t, ctx, pool, `select count(*) from api_keys
-		where id = $1 and revoke_reason is null and revoked_by is null and revoked_at is not null`, blank.Key.ID); n != 1 {
-		t.Error("alasan kosong seharusnya tersimpan sebagai NULL dengan waktu pencabutan tetap terisi")
+	for _, status := range []string{StatusActive, StatusDisabled} {
+		if _, err := r.SetStatus(ctx, created.Key.ID, status); !errors.Is(err, repo.ErrConflict) {
+			t.Errorf("SetStatus %q pada key tercabut: err = %v, mau ErrConflict", status, err)
+		}
 	}
 
-	if _, err := r.Revoke(ctx, missingID, nil, "uji"); !errors.Is(err, repo.ErrNotFound) {
-		t.Errorf("Revoke key tidak ada: err = %v, mau ErrNotFound", err)
+	if err := r.Delete(ctx, created.Key.ID); err != nil {
+		t.Fatalf("Delete key tercabut: %v", err)
+	}
+	if _, err := r.GetByID(ctx, created.Key.ID); !errors.Is(err, repo.ErrNotFound) {
+		t.Errorf("GetByID setelah Delete: err = %v, mau ErrNotFound", err)
 	}
 }
 
@@ -328,8 +321,8 @@ func TestSetStatusTransitions(t *testing.T) {
 		t.Errorf("key yang dihidupkan kembali seharusnya bisa dipakai: %v", err)
 	}
 
-	// Mencabut lewat SetStatus ditolak: pencabutan tanpa waktu, pelaku, dan alasan tidak
-	// bisa dijelaskan kepada siapa pun nanti.
+	// Menyetel 'revoked' lewat SetStatus ditolak: status itu hanya lahir dari
+	// rotasi atau baris warisan, bukan dari saklar aktif/nonaktif.
 	if _, err := r.SetStatus(ctx, created.Key.ID, StatusRevoked); !errors.Is(err, repo.ErrConstraint) {
 		t.Errorf("SetStatus revoked: err = %v, mau ErrConstraint", err)
 	}
@@ -342,9 +335,7 @@ func TestSetStatusTransitions(t *testing.T) {
 	}
 
 	// Pencabutan bersifat final: tidak ada status yang bisa membangkitkannya kembali.
-	if _, err := r.Revoke(ctx, created.Key.ID, nil, "uji"); err != nil {
-		t.Fatalf("Revoke: %v", err)
-	}
+	jadikanRevoked(t, ctx, pool, created.Key.ID)
 	for _, status := range []string{StatusActive, StatusDisabled} {
 		if _, err := r.SetStatus(ctx, created.Key.ID, status); !errors.Is(err, repo.ErrConflict) {
 			t.Errorf("SetStatus %q pada key tercabut: err = %v, mau ErrConflict", status, err)
@@ -601,9 +592,7 @@ func TestExpireDue(t *testing.T) {
 	upcoming := create("belum kedaluwarsa", &future)
 	perpetual := create("tanpa batas waktu", nil)
 	revoked := create("kedaluwarsa dan tercabut", &past)
-	if _, err := r.Revoke(ctx, revoked.Key.ID, nil, "uji"); err != nil {
-		t.Fatalf("Revoke: %v", err)
-	}
+	jadikanRevoked(t, ctx, pool, revoked.Key.ID)
 
 	n, err := r.ExpireDue(ctx)
 	if err != nil {
@@ -727,10 +716,6 @@ func TestMutationErrorsTranslatedAndDoNotLeakKey(t *testing.T) {
 		run  func() error
 		want error
 	}{
-		{"Revoke key tidak ada", func() error { _, err := r.Revoke(ctx, missingID, nil, "uji"); return err }, repo.ErrNotFound},
-		{"Revoke pengenal salah bentuk", func() error { _, err := r.Revoke(ctx, "bukan-uuid", nil, ""); return err }, repo.ErrNotFound},
-		{"Revoke pelaku bukan UUID", func() error { _, err := r.Revoke(ctx, id, ptr("bukan-uuid"), ""); return err }, repo.ErrInvalidReference},
-		{"Revoke pelaku tidak ada", func() error { _, err := r.Revoke(ctx, id, ptr(missingID), ""); return err }, repo.ErrInvalidReference},
 		{"SetStatus ke revoked", func() error { _, err := r.SetStatus(ctx, id, StatusRevoked); return err }, repo.ErrConstraint},
 		{"SetStatus status asing", func() error { _, err := r.SetStatus(ctx, id, "hidup"); return err }, repo.ErrConstraint},
 		{"SetStatus key tidak ada", func() error { _, err := r.SetStatus(ctx, missingID, StatusActive); return err }, repo.ErrNotFound},
@@ -796,8 +781,6 @@ func TestMutationGuardsBeforeDatabase(t *testing.T) {
 		{"Update tanpa perubahan", func() error { _, err := r.Update(ctx, id, UpdateParams{}); return err }, ErrNoChanges},
 		{"SetStatus ke revoked", func() error { _, err := r.SetStatus(ctx, id, StatusRevoked); return err }, repo.ErrConstraint},
 		{"SetStatus status asing", func() error { _, err := r.SetStatus(ctx, id, ""); return err }, repo.ErrConstraint},
-		{"Revoke pengenal salah bentuk", func() error { _, err := r.Revoke(ctx, "bukan-uuid", nil, ""); return err }, repo.ErrNotFound},
-		{"Revoke pelaku salah bentuk", func() error { _, err := r.Revoke(ctx, id, ptr("x"), ""); return err }, repo.ErrInvalidReference},
 		{"SetStatus pengenal salah bentuk", func() error { _, err := r.SetStatus(ctx, "bukan-uuid", StatusActive); return err }, repo.ErrNotFound},
 		{"Update pengenal salah bentuk", func() error {
 			_, err := r.Update(ctx, "bukan-uuid", UpdateParams{Name: ptr("x")})

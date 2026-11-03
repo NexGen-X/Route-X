@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { CLIIntegrations } from './CLIIntegrations';
+import { api } from '../api/client';
 import type { CLIDetectedResponse, Model, RoutingRule, APIKey } from '../types';
 
 const MOCK_MODELS: Model[] = [
@@ -94,8 +95,8 @@ const MOCK_CLI_DATA: CLIDetectedResponse = {
       installed: true,
       path: '/root/.gemini/antigravity-cli/bin/agy',
       version: '2.0.0',
-      description: 'Protected agent pair programming CLI.',
-      supported_modes: ['model_only'],
+      description: 'Google agentic coding CLI.',
+      supported_modes: ['model_only', 'routing', 'combo'],
       active_mode: 'model_only',
       active_target: 'gpt-4o',
       env_vars: {},
@@ -190,15 +191,29 @@ describe('CLIIntegrations — Pengujian Unit Dekomposisi', () => {
     expect(inputKey).toHaveValue('sk_live_abc123456789');
   });
 
-  it('memastikan Antigravity CLI berstatus terkunci sistem (read-only)', async () => {
+  it('memperlakukan Antigravity CLI setara tool lain (dapat dikonfigurasi)', async () => {
     render(<CLIIntegrations />);
 
     await waitFor(() => {
       expect(screen.getByText('Antigravity CLI')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('Dilindungi Sistem')).toBeInTheDocument();
-    expect(screen.getByText(/Antigravity CLI \(Read-Only\)/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Terkunci \(Sistem\)/i })).toBeDisabled();
+    // Tidak ada lagi penanda kunci sistem khusus agy (B-081)
+    expect(screen.queryByText('Dilindungi Sistem')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Antigravity CLI \(Read-Only\)/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Terkunci \(Sistem\)/i })).not.toBeInTheDocument();
+
+    // Kedua tool terpasang (claude + agy) memiliki tombol Terapkan yang aktif
+    const tombolTerapkan = screen.getAllByRole('button', { name: /Terapkan ke CLI/i });
+    expect(tombolTerapkan).toHaveLength(2);
+    tombolTerapkan.forEach((b) => expect(b).not.toBeDisabled());
+
+    // Menerapkan konfigurasi agy memanggil API configure sama seperti tool lain
+    fireEvent.click(tombolTerapkan[1]);
+    await waitFor(() => {
+      expect(vi.mocked(api.cli.configure)).toHaveBeenCalledWith(
+        expect.objectContaining({ tool_id: 'agy' }),
+      );
+    });
   });
 });

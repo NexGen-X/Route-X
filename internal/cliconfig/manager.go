@@ -831,10 +831,6 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 	}
 
 	switch tool.ID {
-	case "agy":
-		// CRITICAL: Jangan pernah mengubah atau menyentuh konfigurasi Antigravity CLI.
-		return nil
-
 	case "claude":
 		// Tulis ~/.claude/settings.json
 		claudeDir := filepath.Join(homeDir, ".claude")

@@ -15,7 +15,11 @@ Dua jalur resmi — rincian lengkap di `docs/DISASTER_RECOVERY.md`:
     dump dipindai, di-restore ke database skratch, dicek versi
     skemanya, lalu nama ditukar dan database lama dipertahankan
     sebagai <db>_pre_restore. Jangan memulihkan dump langsung ke
-    database produksi.
+    database produksi. Skratch-swap menuntut role aplikasi pemegang
+    hak CREATEDB (membuat skratch + rename saat penukaran; B-104):
+    installer native memberikannya dan menyelaraskannya pada setiap
+    lari ulang; pemasangan manual menyetelnya sendiri — rincian di
+    docs/DISASTER_RECOVERY.md §3.
 
 Verifikasi berkas cadangan di database buang:
 

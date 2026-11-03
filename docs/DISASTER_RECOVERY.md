@@ -58,6 +58,8 @@ Alur yang dijalankan server (audit3 B-045):
 4. Nama database **ditukar secara atomik**: database lama dipertahankan utuh sebagai **`<nama-db>_pre_restore`**, skratch menjadi database aktif. Respons sukses memuat `safety_database` dan `schema_version`.
 5. Gateway melanjutkan layanan memakai database hasil restore.
 
+**Syarat hak database (B-104):** langkah 2 dan 4 dijalankan gateway memakai role aplikasi dari `DATABASE_URL`, jadi role itu wajib memiliki hak **`CREATEDB`** — PostgreSQL mensyaratkannya untuk membuat database skratch dan untuk `ALTER DATABASE ... RENAME` pada penukaran (pemilik database saja tidak cukup untuk kedua operasi itu). Pemutusan koneksi (`pg_terminate_backend`) dan penghapusan salinan pengaman hanya menyentuh backend/database milik role itu sendiri. Installer native memberikan tepat hak ini — hanya `CREATEDB`, bukan `SUPERUSER`/`CREATEROLE` — sejak pembuatan role, dan **setiap menjalankan ulang installer menyelaraskannya kembali**, sehingga instalasi lama yang role-nya lahir tanpa `CREATEDB` sembuh cukup dengan menjalankan ulang installer (sebelum perbaikan ini, restore pada instalasi native standar selalu gagal `42501: permission denied to create database` sementara ekspor bekerja). Pemasangan manual di luar installer wajib menyetelnya sendiri, mis. `ALTER ROLE <role-aplikasi> WITH CREATEDB;` sebagai superuser. Jalur compose/Docker tidak terpengaruh: di sana role aplikasi adalah superuser bawaan image PostgreSQL.
+
 Sesudah restore:
 
 ```bash

@@ -230,7 +230,7 @@ func ValidateBaseURL(raw string, policy SSRFPolicy) error {
 	case "https":
 	case "http":
 		if !policy.AllowHTTP {
-			return fmt.Errorf("%w: http hanya diizinkan bila dinyalakan operator, karena kredensial provider akan melintas terbuka", ErrBlockedScheme)
+			return fmt.Errorf("%w: http hanya diizinkan bila dinyalakan operator — setel UPSTREAM_ALLOW_HTTP=true untuk mengizinkannya, karena kredensial provider akan melintas terbuka; alamat privat tetap dibatasi oleh UPSTREAM_ALLOWED_PRIVATE_ADDRS", ErrBlockedScheme)
 		}
 	default:
 		return fmt.Errorf("%w: %q", ErrBlockedScheme, u.Scheme)

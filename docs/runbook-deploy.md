@@ -16,6 +16,10 @@ acuan memahami apa yang installer lakukan.
   - DNS A untuk domain Anda (contoh di dokumen ini: `gateway.example.com`)
     menunjuk ke IP publik server — atau pakai alamat IP langsung sebagai
     host (sertifikat menjadi CA internal Caddy, tidak tepercaya publik).
+  - Bila domain dipasang BELAKANGAN pada instalasi yang awalnya memakai
+    alamat IP, jalankan ulang installer dengan `DOMAIN=<domain>`: tanpa
+    itu Caddy tetap melayani sertifikat internal untuk IP dan domain
+    gagal (di Cloudflare tampak sebagai error 525).
   - Caddy terpasang dari repo resmi; PostgreSQL dan Redis berjalan.
   - Database produksi (pola installer: `routex_prod`, owner `routex`),
     direktori /opt/routex dan /etc/routex, pengguna sistem `routex`.

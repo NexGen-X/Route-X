@@ -52,9 +52,19 @@ else
     fi
     mkdir -p /opt/routex/src
     if [ -d "/opt/routex/src/.git" ]; then
-        git -C /opt/routex/src fetch origin main
-        git -C /opt/routex/src reset --hard origin/main
+        # Instalasi ulang (B-084): pada lari berikutnya /opt/routex/src
+        # dimiliki pengguna layanan 'routex' (tahap konfigurasi di bawah
+        # me-chown -R $INSTALL_DIR), sedangkan installer berjalan sebagai
+        # root — git menolak membuka repo milik pengguna lain ("detected
+        # dubious ownership") dan jalur upgrade macet total di tahap ini.
+        # safe.directory diberikan PER-PANGGILAN lewat -c, hanya untuk src
+        # installer sendiri: konfigurasi global operator tidak disentuh dan
+        # perlindungan kepemilikan untuk direktori lain tidak dilemahkan.
+        git -c safe.directory=/opt/routex/src -C /opt/routex/src fetch origin main
+        git -c safe.directory=/opt/routex/src -C /opt/routex/src reset --hard origin/main
     else
+        # Clone membuat repo BARU (bukan membuka repo yang sudah ada), jadi
+        # pemeriksaan kepemilikan tidak berlaku di sini.
         apt-get update -y && apt-get install -y git
         git clone --depth 1 "$REPO_URL" /opt/routex/src
     fi
@@ -185,20 +195,27 @@ if [ -f /etc/caddy/Caddyfile ] && grep -q "127.0.0.1:8080" /etc/caddy/Caddyfile 
 fi
 if [ ! -f /etc/caddy/Caddyfile ] || grep -q "127.0.0.1:8080" /etc/caddy/Caddyfile 2>/dev/null; then
     # Belum ada Caddyfile, atau berisi blok Route-X versi lama: tulis ulang.
+    # Penyelarasan KOSMETIK ke templat compose (deploy/caddy/Caddyfile),
+    # rider B-079: keepalive 90s, dial_timeout 5s, encode minimum_length 512,
+    # dan HSTS ber-token preload pada blok HTTPS. Ini BUKAN perbaikan
+    # buffering — uji A/B B-079 membuktikan penerusan SSE identik pada kedua
+    # bentuk, jadi flush_interval sengaja TIDAK ditambahkan di sini.
     cat << EOF > /etc/caddy/Caddyfile
 {
     auto_https disable_redirects
 }
 
 http://${ROUTEX_HOST}, :80 {
-    encode zstd gzip
-
+    encode zstd gzip {
+        minimum_length 512
+    }
 
     handle {
         reverse_proxy 127.0.0.1:8080 {
             header_up X-Real-Ip {remote_host}
             transport http {
-                keepalive 300s
+                dial_timeout 5s
+                keepalive 90s
                 keepalive_idle_conns 250
             }
         }
@@ -208,14 +225,20 @@ http://${ROUTEX_HOST}, :80 {
 # Route-X Gateway — host publik: ${ROUTEX_HOST}
 ${ROUTEX_HOST} {
 ${CADDY_TLS_LINE}
-    encode zstd gzip
+    encode zstd gzip {
+        minimum_length 512
+    }
 
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    }
 
     handle {
         reverse_proxy 127.0.0.1:8080 {
             header_up X-Real-Ip {remote_host}
             transport http {
-                keepalive 300s
+                dial_timeout 5s
+                keepalive 90s
                 keepalive_idle_conns 250
             }
         }
@@ -229,13 +252,20 @@ else
 # Route-X Gateway — host publik: ${ROUTEX_HOST}
 ${ROUTEX_HOST} {
 ${CADDY_TLS_LINE}
-    encode zstd gzip
+    encode zstd gzip {
+        minimum_length 512
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    }
 
     reverse_proxy 127.0.0.1:8080 {
         header_up X-Real-Ip {remote_host}
 
         transport http {
-            keepalive 300s
+            dial_timeout 5s
+            keepalive 90s
             keepalive_idle_conns 250
         }
     }
@@ -339,7 +369,11 @@ if [ "$INSTALLED_FROM_RELEASE" -eq 0 ]; then
     echo "   Membangun Biner Core Route-X (go build)..."
     # Cap versi build sumber adalah dev-<sha pendek>: mencap ${RELEASE_TAG}
     # pada biner hasil kompilasi lokal adalah klaim palsu (audit3 V-DP-03).
-    CAP_VERSI="dev-$(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    # safe.directory per-panggilan juga di sini (B-084): $SRC_DIR dapat berupa
+    # src instalasi ulang di atas atau checkout milik pengguna lain sementara
+    # installer berjalan sebagai root — tanpa ini cap versi jatuh diam-diam
+    # ke "dev-unknown".
+    CAP_VERSI="dev-$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${CAP_VERSI}" -o ai-gateway ./cmd/ai-gateway
     install -m 755 ai-gateway "$INSTALL_DIR/ai-gateway"
 fi

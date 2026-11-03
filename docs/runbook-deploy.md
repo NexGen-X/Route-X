@@ -82,13 +82,20 @@ Installer menulis blok setara berikut (dan mencadangkan Caddyfile lama
 ke `Caddyfile.bak-<timestamp>` sebelum menimpa blok Route-X):
 
   gateway.example.com {
-      encode zstd gzip
+      encode zstd gzip {
+          minimum_length 512
+      }
+
+      header {
+          Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+      }
 
       reverse_proxy 127.0.0.1:8080 {
           header_up X-Real-Ip {remote_host}
 
           transport http {
-              keepalive 300s
+              dial_timeout 5s
+              keepalive 90s
               keepalive_idle_conns 250
           }
       }

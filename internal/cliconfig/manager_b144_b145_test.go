@@ -13,13 +13,18 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 )
 
-// TestConfigureOpenCommitBatasToken membuktikan B-144: Configure
-// OpenCommit menulis batas token skema v3 yang benar-benar dibaca tool
+// TestConfigureOpenCommitBatasToken membuktikan B-144 sebagaimana
+// diselaraskan oleh perbaikan regresinya (B-147): Configure OpenCommit
+// menulis batas token skema v3 yang benar-benar dibaca tool
 // (OCO_TOKENS_MAX_OUTPUT + OCO_REASONING_MAX_TOKENS, dari dokumentasi
 // resmi OpenCommit 3.x) dengan nilai 4000 — 8× plafon bawaan 500 yang
 // terbukti habis seluruhnya untuk reasoning intern-s2 pada Uji Live
-// Putaran 1 (reasoning 500, isi 0, EMPTY_MESSAGE) — di berkas
-// ~/.opencommit DAN di EnvVars hasil. Keluaran oco lain tidak berubah.
+// Putaran 1 (reasoning 500, isi 0, EMPTY_MESSAGE) — DAN anggaran input
+// pendampingnya OCO_TOKENS_MAX_INPUT=16384 (B-147: tanpa itu anggaran
+// request tool negatif dan oco gagal lokal pada setiap commit), di
+// berkas ~/.opencommit DAN di EnvVars hasil. Keluaran oco lain tidak
+// berubah. Koherensi hitungan ketiganya diperiksa tersendiri oleh
+// TestConfigureOpenCommitAnggaranKoheren (B-147).
 func TestConfigureOpenCommitBatasToken(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -30,7 +35,7 @@ func TestConfigureOpenCommitBatasToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Configure opencommit: %v", err)
 	}
-	if res.EnvVars["OCO_TOKENS_MAX_OUTPUT"] != "4000" || res.EnvVars["OCO_REASONING_MAX_TOKENS"] != "4000" {
+	if res.EnvVars["OCO_TOKENS_MAX_INPUT"] != "16384" || res.EnvVars["OCO_TOKENS_MAX_OUTPUT"] != "4000" || res.EnvVars["OCO_REASONING_MAX_TOKENS"] != "4000" {
 		t.Errorf("EnvVars batas token opencommit salah: %v", res.EnvVars)
 	}
 	data, err := os.ReadFile(filepath.Join(home, ".opencommit"))
@@ -40,6 +45,7 @@ func TestConfigureOpenCommitBatasToken(t *testing.T) {
 	for _, mau := range []string{
 		"OCO_AI_PROVIDER=openai", "OCO_API_KEY=kunci-oco-123",
 		"OCO_API_URL=http://localhost:8080/v1", "OCO_MODEL=intern-s2",
+		"OCO_TOKENS_MAX_INPUT=16384",
 		"OCO_TOKENS_MAX_OUTPUT=4000", "OCO_REASONING_MAX_TOKENS=4000",
 	} {
 		if !strings.Contains(string(data), mau) {
@@ -129,25 +135,9 @@ func TestDeteksiVersiToolLainTidakBerubah(t *testing.T) {
 	}
 }
 
-// TestChatbladeTanpaDeteksiVersi membuktikan B-145(b): VersionArg
-// chatblade kosong (build teruji live menolak --version dan tidak
-// menyediakan jalur versi lain yang sah), dan deteksi TIDAK
-// mengeksekusi binernya sama sekali — versi kosong secara jujur.
-func TestChatbladeTanpaDeteksiVersi(t *testing.T) {
-	def, ok := cariToolDef("chatblade")
-	if !ok {
-		t.Fatal("chatblade tidak ditemukan")
-	}
-	if def.VersionArg != "" {
-		t.Fatalf("VersionArg chatblade = %q, mau kosong (B-145)", def.VersionArg)
-	}
-	penanda := filepath.Join(t.TempDir(), "pernah-dijalankan")
-	bin := tulisBinerPalsu(t, "chatblade", "#!/bin/sh\necho ran > "+penanda+"\necho 'chatblade 0.7.0'\n")
-	mgr := NewManager(newMockSettingsStore(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if got := mgr.detectVersionUntukTool(context.Background(), def, bin); got != "" {
-		t.Errorf("versi chatblade = %q, mau kosong secara jujur", got)
-	}
-	if _, err := os.Stat(penanda); !os.IsNotExist(err) {
-		t.Errorf("biner chatblade tidak boleh dieksekusi untuk deteksi versi")
-	}
-}
+// Test chatblade B-145(b) yang lama (VersionArg kosong, biner tidak
+// dieksekusi) SENGAJA digantikan oleh TestChatbladeDeteksiVersiKembali
+// di manager_b146_b147_b148_test.go: putusan B-146 berdasarkan bukti
+// Uji Live Putaran 2 (build resmi 0.7.0) mengembalikan VersionArg
+// chatblade ke "--version", membalik pencabutan B-145(b) untuk entri
+// ini saja.

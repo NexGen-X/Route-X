@@ -233,17 +233,19 @@ func SupportedTools() []ToolDef {
 			Description: "Perkakas CLI cepat untuk interaksi dengan model bahasa dan ekstraksi output JSON.",
 			BinaryNames: []string{"chatblade"},
 			ConfigPaths: []string{".chatblade.yaml"},
-			// B-145: VersionArg SENGAJA kosong. Pada build chatblade
-			// yang terpasang & teruji live di Uji Live Putaran 1,
-			// `--version` ditolak argparse ("unrecognized arguments:
-			// --version") — definisi lama menjanjikan flag yang tidak
-			// ada pada build itu, sehingga versinya selalu kosong
-			// lewat jalur kegagalan. Keluaran --help build itu juga
-			// tidak memuat nomor versi apa pun, dan tidak ada perintah
-			// versi lain yang sah, jadi deteksi versi dicabut:
-			// Version tampil kosong secara jujur (omitempty di API),
-			// bukan hasil eksekusi yang pasti gagal.
-			VersionArg: "",
+			// B-146 (menutup kontradiksi B-145(b) dengan putusan
+			// koordinator): VersionArg adalah "--version". Pencabutan
+			// pada B-145 mengikuti build terpasang Putaran 1 yang
+			// menolak flag itu, tetapi Uji Live Putaran 2 membuktikan
+			// build itu BUKAN rilis resmi: build resmi chatblade
+			// 0.7.0 (pip, venv Python 3.13; rilis resmi 0.4–0.7.0
+			// memang mengimplementasikan --version di parser.py/cli.py
+			// resminya) menjalankan `chatblade --version` dengan exit
+			// 0 dan stdout persis "chatblade 0.7.0". Build lama
+			// (0.1–0.3) yang menolak flag ini tetap tampil tanpa
+			// versi secara jujur — deteksi menelan kegagalan perintah
+			// versi menjadi versi kosong, bukan error.
+			VersionArg: "--version",
 			// B-126: chatblade membaca base URL dari OPENAI_BASE_URL
 			// (SDK) dan model dari OPENAI_API_MODEL; OPENAI_API_BASE
 			// dan CHATBLADE_MODEL warisan tidak dibaca tool.

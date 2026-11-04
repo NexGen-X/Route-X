@@ -126,7 +126,41 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 		defaultGatewayURL = "http://localhost:8080/v1"
 	}
 
-	for _, tool := range tools {
+	// Deteksi path + versi dihitung lebih dulu, dan eksekusi perintah
+	// versi berjalan PARALEL terbatas (B-148): batas per-tool kini
+	// 5 detik (timeoutDeteksiVersi) untuk menampung startup tool
+	// Python nyata, jadi jalur sekuensial akan membuat waktu Scan
+	// terburuk melonjak dari ±20×1,5 detik menjadi ±20×5 detik.
+	// Dengan maksimal 8 proses versi serentak, waktu deteksi
+	// terburuk Scan tertahan di ±3 gelombang × 5 detik — di bawah
+	// waktu terburuk lama — sementara cache versi 5 menit membuat
+	// biaya ini hanya terbayar pada pindaian pertama. Setiap
+	// goroutine menulis indeks versinya sendiri; cache versi
+	// sendiri bergembok (cacheVersiMu).
+	execPaths := make([]string, len(tools))
+	for i, tool := range tools {
+		execPaths[i] = m.findBinary(tool.BinaryNames, homeDir)
+	}
+	versiTools := make([]string, len(tools))
+	{
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 8)
+		for i, tool := range tools {
+			if execPaths[i] == "" || tool.VersionArg == "" {
+				continue
+			}
+			wg.Add(1)
+			go func(i int, tool ToolDef, path string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				versiTools[i] = m.detectVersionUntukTool(ctx, tool, path)
+			}(i, tool, execPaths[i])
+		}
+		wg.Wait()
+	}
+
+	for i, tool := range tools {
 		status := ToolStatus{
 			ID:             tool.ID,
 			Name:           tool.Name,
@@ -144,12 +178,13 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 			UnsupportedReason: tool.UnsupportedReason,
 		}
 
-		// 1. Deteksi executable path
-		execPath := m.findBinary(tool.BinaryNames, homeDir)
+		// 1. Deteksi executable path (path + versi sudah dihitung
+		// paralel di atas, sebelum putaran ini).
+		execPath := execPaths[i]
 		if execPath != "" {
 			status.Installed = true
 			status.Path = execPath
-			status.Version = m.detectVersionUntukTool(ctx, tool, execPath)
+			status.Version = versiTools[i]
 		}
 
 		// 2. Deteksi lokasi config file jika ada di sistem
@@ -639,8 +674,8 @@ func bandingVersiNode(a, b string) int {
 
 // detectVersionUntukTool menjalankan deteksi versi untuk satu tool.
 //
-// Tool tanpa VersionArg (B-145 chatblade) tidak dieksekusi sama sekali:
-// versinya kosong secara jujur. Tool ber-VersionNeedsStoredKey (B-145
+// Tool tanpa VersionArg tidak dieksekusi sama sekali: versinya
+// kosong secara jujur. Tool ber-VersionNeedsStoredKey (B-145
 // sgpt) dijalankan dengan kunci tersimpan tool itu di env proses anak
 // bila konfigurasi tersimpan punya kunci — tanpa itu perintah versinya
 // gugur saat import dan versi tool yang sehat selalu tampil kosong.
@@ -696,10 +731,24 @@ func (m *Manager) detectVersion(ctx context.Context, path string, versionArg str
 	return versi
 }
 
+// timeoutDeteksiVersi adalah batas waktu SATU perintah versi tool
+// (B-148). Batas lama 1500 ms terbukti lebih kecil dari waktu start
+// nyata tool Python yang sah: `sgpt --version` berkunci terukur
+// konsisten 1,66–1,68 detik pada Uji Live Putaran 2 (startup Python +
+// impor shell-gpt), sehingga versi sgpt selalu tampil kosong walau
+// mekanisme kunci tersimpan B-145 bekerja benar. 5 detik menampung
+// startup itu dengan ruang ±3×, dan tetap merupakan batas keras per
+// tool yang berlaku SAMA untuk semua tool (bukan pengkhususan sgpt):
+// biner yang menggantung tetap terpotong pada batas ini. Biaya total
+// tertahan oleh cache versi 5 menit dan deteksi paralel terbatas di
+// Scan (lihat komentar di Scan); jalur Configure hanya mendeteksi
+// satu tool, jadi paling lama tertahan batas ini sekali.
+const timeoutDeteksiVersi = 5 * time.Second
+
 // detectVersionLangsung adalah eksekusi versi yang sebenarnya, tanpa cache.
 func (m *Manager) detectVersionLangsung(ctx context.Context, path string, versionArg string, env []string) string {
 
-	tctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	tctx, cancel := context.WithTimeout(ctx, timeoutDeteksiVersi)
 	defer cancel()
 
 	cmd := exec.CommandContext(tctx, path, versionArg)
@@ -761,29 +810,53 @@ func modelAider(target string) string {
 	return "openai/" + target
 }
 
-// Batas token OpenCommit yang ditulis Configure (B-144).
+// Batas token OpenCommit yang ditulis Configure (B-144, diperbaiki
+// B-147).
 //
 // Nama variabelnya adalah skema v3 yang benar-benar dibaca OpenCommit
-// 3.x (dokumentasi resmi tool): OCO_TOKENS_MAX_OUTPUT = "max response
-// tokens" (bawaan 500) dan OCO_REASONING_MAX_TOKENS = "max completion
-// token budget for reasoning models, including hidden reasoning
-// tokens" (bawaan 1000). Keduanya ditulis, bukan hanya satu: respons
-// Putaran 1 terpotong tepat pada 500 (plafon keluaran yang efektif),
-// sementara plafon reasoning bawaan 1000 akan menjadi batas efektif
-// berikutnya bagi model reasoning bila hanya keluaran yang dinaikkan —
-// menyamakan keduanya menghilangkan ambiguitas jalur mana yang menang.
+// 3.x (dokumentasi resmi tool): OCO_TOKENS_MAX_INPUT = anggaran token
+// input per request (bawaan 4096), OCO_TOKENS_MAX_OUTPUT = "max
+// response tokens" (bawaan 500) dan OCO_REASONING_MAX_TOKENS = "max
+// completion token budget for reasoning models, including hidden
+// reasoning tokens" (bawaan 1000). Ketiganya ditulis, bukan hanya
+// plafon keluaran: respons Putaran 1 terpotong tepat pada 500 (plafon
+// keluaran yang efektif), sementara plafon reasoning bawaan 1000 akan
+// menjadi batas efektif berikutnya bagi model reasoning bila hanya
+// keluaran yang dinaikkan — menyamakan keduanya menghilangkan
+// ambiguitas jalur mana yang menang.
 //
-// Nilai 4000 dipilih dari bukti, bukan karangan: pada Uji Live Putaran 1
-// reasoning intern-s2 menghabiskan SELURUH plafon 500 untuk satu pesan
-// commit sederhana (input 508 token, reasoning 500, isi 0 →
-// EMPTY_MESSAGE), padahal isi pesan commit itu sendiri pendek (judul
-// konvensional + deskripsi singkat, orde puluhan–ratusan token). 4000
-// adalah 8× plafon yang terbukti gagal — ruang reasoning beberapa kali
-// lipat dari konsumsi teramati untuk tugas commit, plus isi pesannya —
-// dan tetap plafon (model berhenti saat selesai, bukan target), bukan
-// angka tanpa batas. Ini konfigurasi produk: operator dapat mengubahnya
+// Nilai keluaran/reasoning 4000 dipilih dari bukti, bukan karangan:
+// pada Uji Live Putaran 1 reasoning intern-s2 menghabiskan SELURUH
+// plafon 500 untuk satu pesan commit sederhana (input 508 token,
+// reasoning 500, isi 0 → EMPTY_MESSAGE), padahal isi pesan commit itu
+// sendiri pendek (judul konvensional + deskripsi singkat, orde
+// puluhan–ratusan token). 4000 adalah 8× plafon yang terbukti gagal —
+// ruang reasoning beberapa kali lipat dari konsumsi teramati untuk
+// tugas commit, plus isi pesannya — dan tetap plafon (model berhenti
+// saat selesai, bukan target), bukan angka tanpa batas.
+//
+// B-147 (REGRESI B-144, terbukti Uji Live Putaran 2): menulis
+// keluaran/reasoning 4000 TANPA menaikkan input membuat oco gagal
+// LOKAL pada setiap commit. Rumus tool 3.3.11
+// (generateCommitMessageByDiff): anggaran request =
+// OCO_TOKENS_MAX_INPUT − 20 − panjang prompt awal − maxOutputTokens;
+// dengan input bawaan 4096 hasilnya NEGATIF untuk prompt awal mana
+// pun, sehingga splitDiff melempar "Token limit exceeded…" dan UI
+// tool menampilkannya sebagai "Insufficient Credits" yang menyesatkan
+// (tak satu pun request mencapai gateway). Karena itu Configure kini
+// juga menulis OCO_TOKENS_MAX_INPUT=16384: (1) kontrafaktualnya
+// terverifikasi live pada Putaran 2 — dengan 16384 oco benar-benar
+// mencapai gateway; (2) hitungannya koheren menurut rumus tool:
+// 16384 − 20 − prompt awal (orde ratusan token; request teramati
+// 508 token) − plafon 4000 menyisakan ±12 ribu token ruang diff per
+// request, dan diff yang lebih besar memang dipecah tool per
+// anggaran ini. Keluaran/reasoning TETAP 4000: dasar B-144 tidak
+// berubah, dan catatan kecepatan reasoning intern-s2 pada prompt oco
+// adalah karakteristik upstream, bukan alasan menurunkan plafon.
+// Ketiga nilai ini konfigurasi produk: operator dapat mengubahnya
 // sesudah Configure lewat `oco config set` / menyunting ~/.opencommit.
 const (
+	ocoTokensMaxInput     = "16384"
 	ocoTokensMaxOutput    = "4000"
 	ocoReasoningMaxTokens = "4000"
 )
@@ -832,9 +905,13 @@ func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[str
 		// B-125: skema v3 opencommit menolak berjalan tanpa
 		// OCO_AI_PROVIDER ("set AI provider first").
 		vars["OCO_AI_PROVIDER"] = "openai"
-		// B-144: batas token yang memadai untuk model reasoning —
-		// bawaan tool (500/1000) habis seluruhnya untuk reasoning
-		// dan pesan commit tidak pernah dihasilkan (EMPTY_MESSAGE).
+		// B-144+B-147: batas token yang memadai DAN koheren untuk
+		// model reasoning — bawaan tool (500/1000) habis seluruhnya
+		// untuk reasoning (EMPTY_MESSAGE), tetapi plafon 4000 tanpa
+		// anggaran input pendamping membuat anggaran request tool
+		// negatif (regresi B-147); ketiganya ditulis bersama (lihat
+		// konstanta oco* di atas buildEnvVars).
+		vars["OCO_TOKENS_MAX_INPUT"] = ocoTokensMaxInput
 		vars["OCO_TOKENS_MAX_OUTPUT"] = ocoTokensMaxOutput
 		vars["OCO_REASONING_MAX_TOKENS"] = ocoReasoningMaxTokens
 	case "copilot":
@@ -1467,9 +1544,12 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 		}
 		fmt.Fprintf(&ob, "OCO_API_URL=%s\n", gwURL)
 		fmt.Fprintf(&ob, "OCO_MODEL=%s\n", target)
-		// B-144: batas token skema v3 (lihat konstanta oco* di atas
-		// buildEnvVars) — tanpa ini bawaan tool 500/1000 habis untuk
-		// reasoning model reasoning dan oco gagal EMPTY_MESSAGE.
+		// B-144+B-147: batas token skema v3 (lihat konstanta oco* di
+		// atas buildEnvVars) — tanpa ini bawaan tool 500/1000 habis
+		// untuk reasoning model reasoning dan oco gagal EMPTY_MESSAGE;
+		// tanpa OCO_TOKENS_MAX_INPUT pendamping, plafon 4000 membuat
+		// anggaran request tool negatif dan oco gagal lokal (B-147).
+		fmt.Fprintf(&ob, "OCO_TOKENS_MAX_INPUT=%s\n", ocoTokensMaxInput)
 		fmt.Fprintf(&ob, "OCO_TOKENS_MAX_OUTPUT=%s\n", ocoTokensMaxOutput)
 		fmt.Fprintf(&ob, "OCO_REASONING_MAX_TOKENS=%s\n", ocoReasoningMaxTokens)
 		if err := tulisAtomik(ocoPath, []byte(ob.String()), 0600); err != nil {

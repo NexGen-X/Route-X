@@ -153,7 +153,7 @@ lalu jadwalkan sendiri, contoh cron harian 02:00 UTC:
   0 2 * * * root /usr/local/bin/routex-backup.sh
 
 Verifikasi berkala: pulihkan dump terbaru ke database buang dan pastikan
-`SELECT count(*) FROM schema_migrations;` = 19 (prosedur lengkap di
+`SELECT count(*) FROM schema_migrations;` harus sama dengan jumlah berkas migrasi di internal/database/migrations/ pada versi biner yang dipakai (sumber kebenaran hitungan migrasi; jangan menulis angka mati di sini) (prosedur lengkap di
 docs/DISASTER_RECOVERY.md §4). Restore produksi hanya lewat panel admin
 (skratch-swap), bukan psql langsung.
 

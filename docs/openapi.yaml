@@ -831,9 +831,13 @@ paths:
       parameters:
         - name: dimension
           in: query
-          description: "Dimensi rincian"
+          description: "Dimensi rincian. Hanya provider, model, atau api_key; nilai lain (termasuk status, yang bukan dimensi) ditolak 400."
           schema:
             type: string
+            enum:
+              - provider
+              - model
+              - api_key
         - name: by
           in: query
           description: "Alias dimensi rincian"
@@ -918,6 +922,8 @@ paths:
       summary: "Metrik Langsung (Jendela Geser)"
       description: |
         Izin internal yang disyaratkan: `usage:read`.
+
+        Cakupan respons ini adalah metrik infrastruktur SAJA (pool database dan status Redis). Counter request (total/sukses/gagal/latensi) tidak termasuk di sini; sumbernya adalah /api/admin/observability/summary dan metrik Prometheus di /metrics.
       operationId: getLiveMetrics
       security:
         - SessionCookie: []
@@ -2467,6 +2473,22 @@ paths:
           $ref: "#/components/responses/403Forbidden"
         '404':
           $ref: "#/components/responses/404NotFound"
+  /api/admin/upstreams/models/pricing/reference-catalog:
+    get:
+      tags:
+        - Upstreams
+      summary: Katalog harga acuan global
+      description: 'Mengembalikan SELURUH harga acuan bawaan yang dikenal sistem (katalog seed) beserta pernyataan cakupannya. Bukan katalog harga pasar: model tanpa entri di sini tidak punya acuan yang bisa dipertanggungjawabkan.'
+      operationId: listReferencePriceCatalog
+      responses:
+        '200':
+          description: Katalog harga acuan global
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReferencePriceCatalogDTO'
+        default:
+          $ref: '#/components/responses/Error'
   /api/admin/upstreams/models/mappings/{mapping_id}/pricing/reference:
     get:
       tags:
@@ -6457,16 +6479,20 @@ components:
           type: string
         kind:
           type: string
+          enum: [blocked_pattern, allowed_pattern, model_restriction, provider_restriction, request_size, moderation]
         priority:
           type: integer
         applies_to:
           type: string
+          enum: [request, response, both]
         action:
           type: string
+          enum: [block, warn]
         pattern:
           type: string
         pattern_type:
           type: string
+          enum: [substring, regex]
         case_sensitive:
           type: boolean
         max_eval_ms:
@@ -6655,20 +6681,28 @@ components:
           type: string
         kind:
           type: string
+          enum: [blocked_pattern, allowed_pattern, model_restriction, provider_restriction, request_size, moderation]
         priority:
           type: integer
+          minimum: 0
+          maximum: 100000
         applies_to:
           type: string
+          enum: [request, response, both]
         action:
           type: string
+          enum: [block, warn]
         pattern:
           type: string
         pattern_type:
           type: string
+          enum: [substring, regex]
         case_sensitive:
           type: boolean
         max_eval_ms:
           type: integer
+          minimum: 1
+          maximum: 5000
         model_id:
           type: string
         provider_id:
@@ -7096,10 +7130,14 @@ components:
           type: string
         name:
           type: string
+        description:
+          type: string
+          description: "Deskripsi bebas pool sebagaimana ditetapkan operator (kolom egress_pool.description); kosong bila tidak diisi."
         kind:
           type: string
         masked_hint:
           type: string
+          description: "Petunjuk URL proxy tersamar: skema://****@host — seluruh userinfo (nama pengguna DAN kata sandi) selalu disamarkan."
         enabled:
           type: boolean
         weight:
@@ -7910,6 +7948,19 @@ components:
         fetched_on:
           type: string
       required: [available, provider_kind, upstream_model]
+    ReferencePriceCatalogDTO:
+      type: object
+      required:
+        - items
+        - note
+      description: 'Katalog harga acuan global (B-090). Items adalah seluruh entri acuan bawaan sistem; note menyatakan cakupannya apa adanya.'
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReferencePriceDTO'
+        note:
+          type: string
     RefreshOAuthSessionRequest:
       type: object
       properties:
@@ -8759,16 +8810,20 @@ components:
           type: string
         kind:
           type: string
+          enum: [blocked_pattern, allowed_pattern, model_restriction, provider_restriction, request_size, moderation]
         priority:
           type: integer
         applies_to:
           type: string
+          enum: [request, response, both]
         action:
           type: string
+          enum: [block, warn]
         pattern:
           type: string
         pattern_type:
           type: string
+          enum: [substring, regex]
         case_sensitive:
           type: boolean
         max_eval_ms:

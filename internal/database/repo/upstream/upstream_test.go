@@ -422,15 +422,16 @@ func TestMaskCredential(t *testing.T) {
 	}
 }
 
-// Cuplikan URL proxy harus menutup sandinya dan menyisakan host supaya masih bisa dikenali.
+// Cuplikan URL proxy harus menutup SELURUH userinfo (username + sandi, B-116)
+// dan menyisakan host supaya masih bisa dikenali.
 func TestMaskProxyURL(t *testing.T) {
 	for _, tc := range []struct {
 		in   string
 		want string
 	}{
-		{"http://pengguna:sandi@proxy.test:3128", "http://pengguna:****@proxy.test:3128"},
-		{"socks5://pengguna:sandi@proxy.test:1080", "socks5://pengguna:****@proxy.test:1080"},
-		{"http://pengguna@proxy.test:3128", "http://pengguna@proxy.test:3128"},
+		{"http://pengguna:sandi@proxy.test:3128", "http://****@proxy.test:3128"},
+		{"socks5://pengguna:sandi@proxy.test:1080", "socks5://****@proxy.test:1080"},
+		{"http://pengguna@proxy.test:3128", "http://****@proxy.test:3128"},
 		{"http://proxy.test:3128", "http://proxy.test:3128"},
 		{"bukan url", "****"},
 		{"", "****"},
@@ -442,6 +443,9 @@ func TestMaskProxyURL(t *testing.T) {
 			}
 			if strings.Contains(got, "sandi") {
 				t.Errorf("cuplikan %q masih memuat sandi", got)
+			}
+			if strings.Contains(got, "pengguna") {
+				t.Errorf("cuplikan %q masih memuat username (B-116)", got)
 			}
 		})
 	}

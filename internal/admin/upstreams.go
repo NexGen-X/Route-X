@@ -102,6 +102,10 @@ func (h *Handlers) upstreamsRoutes(r chi.Router) {
 		mr.With(auth.RequirePermission(seed.PermModelsWrite)).Post("/{id}/mappings", h.attachProviderModel)
 		mr.With(auth.RequirePermission(seed.PermModelsWrite)).Delete("/mappings/{mapping_id}", h.detachProviderModel)
 
+		// Katalog acuan global (B-090) — segmen statis, terdaftar sebelum
+		// "/{id}" supaya tidak tertangkap sebagai ID model.
+		mr.With(auth.RequirePermission(seed.PermModelsRead)).Get("/pricing/reference-catalog", h.listReferencePriceCatalog)
+
 		// Pricing
 		mr.With(auth.RequirePermission(seed.PermModelsWrite)).Post("/mappings/{mapping_id}/pricing", h.setPricing)
 		mr.With(auth.RequirePermission(seed.PermModelsRead)).Get("/mappings/{mapping_id}/pricing/history", h.listPricingHistory)
@@ -526,8 +530,93 @@ func (h *Handlers) probeProvider(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// modelLifecycle adalah metadata siklus hidup model SEBAGAIMANA disediakan
+// respons discovery upstream (B-089). Hanya field yang benar-benar dikirim
+// upstream yang diisi — gateway tidak menebak status untuk vendor yang
+// tidak menyediakannya.
+type modelLifecycle struct {
+	Status           string
+	ShutdownDate     string
+	ReplacementModel string
+}
+
+// ada melaporkan apakah upstream menyediakan metadata lifecycle apa pun.
+func (l *modelLifecycle) ada() bool {
+	return l != nil && (l.Status != "" || l.ShutdownDate != "" || l.ReplacementModel != "")
+}
+
+// usang melaporkan apakah metadata ini menandai model sebagai usang /
+// terjadwal mati: status yang dikenal sebagai penanda akhir masa, atau
+// adanya tanggal shutdown. Model usang TIDAK dinonaktifkan otomatis —
+// deprecated_at dan metadata adalah peringatan untuk operator, dan
+// gateway tetap melayaninya (keputusan eksplisit B-089; menonaktifkan
+// adalah keputusan operator, bukan tebakan gateway).
+func (l *modelLifecycle) usang() bool {
+	if l == nil {
+		return false
+	}
+	if l.ShutdownDate != "" {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(l.Status)) {
+	case "deprecated", "shutdown", "sunset", "retired", "decommissioned", "end_of_life", "eol":
+		return true
+	}
+	return false
+}
+
+// modelDiscovery adalah satu model hasil discovery beserta bukti upstream
+// yang menyertainya: lifecycle (bila disediakan) dan kapabilitas yang
+// DITURUNKAN DARI BUKTI respons (bukan tebakan nama — B-116 butir 9).
+// Capabilities nil berarti upstream tidak menyediakan bukti kapabilitas.
+type modelDiscovery struct {
+	ID           string
+	Lifecycle    *modelLifecycle
+	Capabilities []string
+}
+
+// metadataSyncModel menggabungkan metadata lifecycle + asal kapabilitas ke
+// metadata model yang sudah ada, TANPA menghapus kunci lain milik operator.
+// existing yang rusak/tidak terurai diperlakukan sebagai objek kosong —
+// data lifecycle dari upstream tidak boleh hilang gara-gara metadata lama.
+func metadataSyncModel(existing []byte, lc *modelLifecycle, capsSource string) []byte {
+	obj := map[string]any{}
+	if len(existing) > 0 {
+		_ = json.Unmarshal(existing, &obj)
+		if obj == nil {
+			obj = map[string]any{}
+		}
+	}
+	if lc != nil && lc.ada() {
+		obj["lifecycle_source"] = "upstream_discovery"
+		if lc.Status != "" {
+			obj["lifecycle_status"] = lc.Status
+		}
+		if lc.ShutdownDate != "" {
+			obj["lifecycle_shutdown_date"] = lc.ShutdownDate
+		}
+		if lc.ReplacementModel != "" {
+			obj["lifecycle_replacement_model"] = lc.ReplacementModel
+		}
+	}
+	if capsSource != "" {
+		obj["capabilities_source"] = capsSource
+	}
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return existing
+	}
+	return out
+}
+
 type openAIModelDiscoveryItem struct {
 	ID string `json:"id"`
+	// Field lifecycle gaya Intern-AI / OpenAI-compatible (B-089): tidak
+	// semua vendor mengirimnya; yang tidak mengirim membiarkannya kosong
+	// dan gateway tidak mengarangnya.
+	Status           string `json:"status"`
+	ShutdownDate     string `json:"shutdown_date"`
+	ReplacementModel string `json:"replacement_model"`
 }
 
 type openAIModelDiscoveryResponse struct {
@@ -546,6 +635,31 @@ type ollamaModelDiscoveryResponse struct {
 type googleModelItem struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"displayName"`
+	// SupportedGenerationMethods adalah bukti kapabilitas dari API Google
+	// sendiri (B-116 butir 9): "generateContent" → text, "embedContent" →
+	// embeddings. Kosong berarti upstream tidak menyatakannya.
+	SupportedGenerationMethods []string `json:"supportedGenerationMethods"`
+}
+
+// kapabilitasGoogle menurunkan kapabilitas kanonik dari metode generasi
+// yang dinyatakan API Google untuk model ini. Metode lain (countTokens,
+// predict, dst.) tidak punya padanan kapabilitas di skema Route-X dan
+// sengaja tidak dipetakan.
+func kapabilitasGoogle(methods []string) []string {
+	var caps []string
+	for _, m := range methods {
+		switch m {
+		case "generateContent":
+			if !slices.Contains(caps, upstream.CapText) {
+				caps = append(caps, upstream.CapText)
+			}
+		case "embedContent", "batchEmbedContents":
+			if !slices.Contains(caps, upstream.CapEmbeddings) {
+				caps = append(caps, upstream.CapEmbeddings)
+			}
+		}
+	}
+	return caps
 }
 
 type googleModelDiscoveryResponse struct {
@@ -740,12 +854,21 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var rawIDs []string
+	// ditemukan memuat model beserta bukti upstreamnya (lifecycle dan
+	// kapabilitas terbukti). Katalog fallback terkurasi hanya menyediakan
+	// ID — tanpa lifecycle dan tanpa bukti kapabilitas.
+	var ditemukan []modelDiscovery
+	dariKatalogFallback := func() {
+		ditemukan = ditemukan[:0]
+		for _, id := range getCuratedProviderModels(lowerKind, lowerName) {
+			ditemukan = append(ditemukan, modelDiscovery{ID: id})
+		}
+	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		h.logger.WarnContext(ctx, "panggilan discovery model gagal, mencoba katalog fallback terkurasi", "error", webhooks.SanitizeErrorMessage(err.Error()))
-		rawIDs = getCuratedProviderModels(lowerKind, lowerName)
-		if len(rawIDs) == 0 {
+		dariKatalogFallback()
+		if len(ditemukan) == 0 {
 			httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_unreachable", "Gagal menghubungi endpoint discovery provider")
 			return
 		}
@@ -755,8 +878,8 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
 			h.logger.WarnContext(ctx, "upstream mengembalikan status non-2xx saat discovery model, mencoba fallback", "status", resp.StatusCode)
-			rawIDs = getCuratedProviderModels(lowerKind, lowerName)
-			if len(rawIDs) == 0 {
+			dariKatalogFallback()
+			if len(ditemukan) == 0 {
 				httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d", resp.StatusCode))
 				return
 			}
@@ -784,32 +907,57 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if isAntigravity && json.Unmarshal(bodyBytes, &antigravityResp) == nil && (len(antigravityResp.Models) > 0 || len(antigravityResp.AgentModelSorts) > 0) {
+				// Bentuk respons Antigravity yang teramati tidak menyediakan
+				// metadata lifecycle/kapabilitas per model yang bisa
+				// dipertanggungjawabkan — hanya ID yang diambil (B-089).
 				for id := range antigravityResp.Models {
-					rawIDs = append(rawIDs, id)
+					ditemukan = append(ditemukan, modelDiscovery{ID: id})
 				}
 				for _, sort := range antigravityResp.AgentModelSorts {
 					for _, g := range sort.Groups {
-						rawIDs = append(rawIDs, g.ModelIDs...)
+						for _, id := range g.ModelIDs {
+							ditemukan = append(ditemukan, modelDiscovery{ID: id})
+						}
 					}
 				}
-				rawIDs = append(rawIDs, antigravityResp.CommandModelIds...)
+				for _, id := range antigravityResp.CommandModelIds {
+					ditemukan = append(ditemukan, modelDiscovery{ID: id})
+				}
 				for _, list := range antigravityResp.TieredModelIds {
-					rawIDs = append(rawIDs, list...)
+					for _, id := range list {
+						ditemukan = append(ditemukan, modelDiscovery{ID: id})
+					}
 				}
 			} else if err := json.Unmarshal(bodyBytes, &oaiResp); err == nil && len(oaiResp.Data) > 0 {
 				for _, item := range oaiResp.Data {
 					if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
-						rawIDs = append(rawIDs, trimmed)
+						d := modelDiscovery{ID: trimmed}
+						// Metadata lifecycle hanya ada bila vendor memang
+						// mengirimnya (Intern-AI: status/shutdown_date/
+						// replacement_model). Vendor OpenAI-compatible lain
+						// yang tidak mengirim field ini membiarkan Lifecycle
+						// nil — tidak dikarang (B-089).
+						lc := &modelLifecycle{
+							Status:           strings.TrimSpace(item.Status),
+							ShutdownDate:     strings.TrimSpace(item.ShutdownDate),
+							ReplacementModel: strings.TrimSpace(item.ReplacementModel),
+						}
+						if lc.ada() {
+							d.Lifecycle = lc
+						}
+						ditemukan = append(ditemukan, d)
 					}
 				}
 			} else if err := json.Unmarshal(bodyBytes, &ollamaResp); err == nil && len(ollamaResp.Models) > 0 {
+				// /api/tags Ollama tidak menyediakan lifecycle maupun
+				// kapabilitas yang bisa dipertanggungjawabkan — ID saja.
 				for _, item := range ollamaResp.Models {
 					name := strings.TrimSpace(item.Name)
 					if name == "" {
 						name = strings.TrimSpace(item.Model)
 					}
 					if name != "" {
-						rawIDs = append(rawIDs, name)
+						ditemukan = append(ditemukan, modelDiscovery{ID: name})
 					}
 				}
 			} else if err := json.Unmarshal(bodyBytes, &googleResp); err == nil && len(googleResp.Models) > 0 {
@@ -817,24 +965,42 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 					name := strings.TrimSpace(item.Name)
 					name = strings.TrimPrefix(name, "models/")
 					if name != "" {
-						rawIDs = append(rawIDs, name)
+						ditemukan = append(ditemukan, modelDiscovery{
+							ID:           name,
+							Capabilities: kapabilitasGoogle(item.SupportedGenerationMethods),
+						})
 					}
 				}
 			}
 
-			if len(rawIDs) == 0 {
-				rawIDs = getCuratedProviderModels(lowerKind, lowerName)
+			if len(ditemukan) == 0 {
+				dariKatalogFallback()
 			}
 		}
 	}
 
-	if len(rawIDs) == 0 {
+	if len(ditemukan) == 0 {
 		httpx.BadRequest(w, r, "no_models_found", "Tidak ada model yang ditemukan dalam respons upstream atau katalog terkurasi.")
 		return
 	}
 
-	slices.Sort(rawIDs)
-	uniqueIDs := slices.Compact(rawIDs)
+	// Urutkan + dedup menurut ID; duplikat menggabungkan bukti pertama yang
+	// tersedia (lifecycle/kapabilitas tidak saling menimpa dengan kekosongan).
+	slices.SortFunc(ditemukan, func(a, b modelDiscovery) int { return strings.Compare(a.ID, b.ID) })
+	unik := ditemukan[:0]
+	for _, d := range ditemukan {
+		if len(unik) > 0 && unik[len(unik)-1].ID == d.ID {
+			if unik[len(unik)-1].Lifecycle == nil {
+				unik[len(unik)-1].Lifecycle = d.Lifecycle
+			}
+			if len(unik[len(unik)-1].Capabilities) == 0 {
+				unik[len(unik)-1].Capabilities = d.Capabilities
+			}
+			continue
+		}
+		unik = append(unik, d)
+	}
+	ditemukan = unik
 
 	// 6. Simpan model dan pemetaan ke database secara idempoten.
 	// Kegagalan per-model DIKUMPULKAN dan dicatat (audit F5): versi lama
@@ -842,7 +1008,8 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	// dengan status 200 walau yang gagal adalah penyimpanan lokal.
 	var syncedModels []string
 	var gagal []string
-	for _, mid := range uniqueIDs {
+	for _, d := range ditemukan {
+		mid := d.ID
 		// Pastikan model kanonik ada
 		m, err := h.modelRepo.GetByModelID(ctx, mid)
 		if err != nil && !errors.Is(err, repo.ErrNotFound) {
@@ -851,14 +1018,51 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if errors.Is(err, repo.ErrNotFound) {
-			m, err = h.modelRepo.Create(ctx, upstream.CreateModelParams{
+			// Kapabilitas model BARU diturunkan dari bukti upstream bila
+			// ada (B-116 butir 9); tanpa bukti, bawaan {text} dipertahankan
+			// TETAPI ditandai di metadata sebagai belum terverifikasi,
+			// supaya operator tahu angka itu bukan pernyataan upstream —
+			// model embeddings tanpa bukti tidak lagi tertolak diam-diam
+			// tanpa penanda apa pun.
+			caps := d.Capabilities
+			capsSource := "upstream_discovery"
+			if len(caps) == 0 {
+				caps = []string{upstream.CapText}
+				capsSource = "default_unverified"
+			}
+			params := upstream.CreateModelParams{
 				ModelID:      mid,
 				DisplayName:  mid,
-				Capabilities: []string{"text"},
-			})
+				Capabilities: caps,
+				Metadata:     metadataSyncModel(nil, d.Lifecycle, capsSource),
+			}
+			if d.Lifecycle.usang() {
+				now := time.Now().UTC()
+				params.DeprecatedAt = &now
+			}
+			m, err = h.modelRepo.Create(ctx, params)
 			if err != nil {
 				// Bila balapan konkurensi, coba baca ulang
 				m, _ = h.modelRepo.GetByModelID(ctx, mid)
+			}
+		} else if err == nil && d.Lifecycle.ada() {
+			// Model yang sudah ada: lifecycle upstream DIPERTAHANKAN ke
+			// metadata (dan deprecated_at bila menandai usang) tanpa
+			// menyentuh kapabilitas/nama yang mungkin sudah diatur
+			// operator (B-089). Kegagalan pembaruan ini dicatat sebagai
+			// gagal per-model, bukan ditelan.
+			params := upstream.UpdateModelParams{
+				Metadata: metadataSyncModel(m.Metadata, d.Lifecycle, ""),
+			}
+			if d.Lifecycle.usang() && m.DeprecatedAt == nil {
+				params.DeprecatedAt = upstream.Set(time.Now().UTC())
+			}
+			if updated, uerr := h.modelRepo.Update(ctx, m.ID, params); uerr == nil {
+				m = updated
+			} else {
+				h.logger.WarnContext(ctx, "sinkronisasi model: gagal menyimpan metadata lifecycle", "model_id", mid, "error", uerr)
+				gagal = append(gagal, mid)
+				continue
 			}
 		}
 		if m == nil {
@@ -1751,19 +1955,50 @@ func (h *Handlers) getPricingReference(w http.ResponseWriter, r *http.Request) {
 
 	dto := ReferencePriceDTO{ProviderKind: prov.Kind, UpstreamModel: pm.UpstreamModelName}
 	if ref := seed.ReferencePriceFor(prov.Kind, pm.UpstreamModelName); ref != nil {
-		dto.Available = true
-		input := ref.Input.Decimal()
-		output := ref.Output.Decimal()
-		dto.InputPer1MUSD = &input
-		dto.OutputPer1MUSD = &output
-		if ref.CachedInput != nil {
-			cached := ref.CachedInput.Decimal()
-			dto.CachedInputPer1MUSD = &cached
-		}
-		dto.Source = ref.Source
-		dto.FetchedOn = ref.FetchedOn
+		dto = dtoReferencePrice(ref)
 	}
 	_ = h.respond(w, r, http.StatusOK, dto)
+}
+
+// dtoReferencePrice mengubah satu entri katalog seed menjadi DTO berstatus
+// tersedia. Satu jalur konversi untuk endpoint per-pemetaan maupun katalog
+// global, supaya angka dan asal yang ditampilkan tidak bisa berbeda.
+func dtoReferencePrice(ref *seed.ReferencePrice) ReferencePriceDTO {
+	dto := ReferencePriceDTO{
+		Available:     true,
+		ProviderKind:  ref.ProviderKind,
+		UpstreamModel: ref.UpstreamModelName,
+		Source:        ref.Source,
+		FetchedOn:     ref.FetchedOn,
+	}
+	input := ref.Input.Decimal()
+	output := ref.Output.Decimal()
+	dto.InputPer1MUSD = &input
+	dto.OutputPer1MUSD = &output
+	if ref.CachedInput != nil {
+		cached := ref.CachedInput.Decimal()
+		dto.CachedInputPer1MUSD = &cached
+	}
+	return dto
+}
+
+// listReferencePriceCatalog mengembalikan SELURUH katalog harga acuan
+// bawaan yang dikenal sistem (B-090).
+//
+// Sumbernya satu-satunya seed.ReferencePrices — himpunan kecil yang asal
+// angkanya tercatat. Endpoint ini TIDAK mengarang katalog pasar: field
+// note pada respons menyatakan cakupannya apa adanya, dan model yang tidak
+// punya entri di sini tetap "harga belum diatur" di dashboard.
+func (h *Handlers) listReferencePriceCatalog(w http.ResponseWriter, r *http.Request) {
+	prices := seed.ReferencePrices()
+	items := make([]ReferencePriceDTO, 0, len(prices))
+	for i := range prices {
+		items = append(items, dtoReferencePrice(&prices[i]))
+	}
+	_ = h.respond(w, r, http.StatusOK, ReferencePriceCatalogDTO{
+		Items: items,
+		Note:  "Daftar ini adalah seluruh harga acuan bawaan yang dikenal sistem (katalog seed), bukan katalog harga pasar yang lengkap. Model tanpa entri di sini tidak punya acuan yang bisa dipertanggungjawabkan dan harganya diisi operator sendiri.",
+	})
 }
 
 func (h *Handlers) listPricingHistory(w http.ResponseWriter, r *http.Request) {
@@ -1830,8 +2065,11 @@ func (h *Handlers) getEgressPool(w http.ResponseWriter, r *http.Request) {
 }
 
 type createEgressReq struct {
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
+	Name string `json:"name"`
+	// Description adalah pointer supaya PUT bisa membedakan "field tidak
+	// dikirim" (biarkan) dari "dikirim kosong" (kosongkan) — B-116 butir 1:
+	// field ini dulu diterima lalu hilang karena tidak ada kolom/DTO-nya.
+	Description *string `json:"description"`
 	Kind        string  `json:"kind"`
 	ProxyURL    string  `json:"proxy_url"`
 	Enabled     *bool   `json:"enabled"`
@@ -1866,14 +2104,19 @@ func (h *Handlers) createEgressPool(w http.ResponseWriter, r *http.Request) {
 		actorID = &p.User.ID
 	}
 
+	description := ""
+	if req.Description != nil {
+		description = *req.Description
+	}
 	ep, err := h.egressRepo.Create(ctx, upstream.CreateEgressParams{
-		Name:      req.Name,
-		Kind:      kind,
-		ProxyURL:  security.Secret(req.ProxyURL),
-		Enabled:   req.Enabled,
-		Weight:    req.Weight,
-		Region:    req.Region,
-		CreatedBy: actorID,
+		Name:        req.Name,
+		Kind:        kind,
+		Description: description,
+		ProxyURL:    security.Secret(req.ProxyURL),
+		Enabled:     req.Enabled,
+		Weight:      req.Weight,
+		Region:      req.Region,
+		CreatedBy:   actorID,
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "egress pool")
@@ -1909,6 +2152,9 @@ func (h *Handlers) updateEgressPool(w http.ResponseWriter, r *http.Request) {
 		kindNorm := strings.TrimSpace(strings.ToLower(req.Kind))
 		params.Kind = &kindNorm
 	}
+	// Description diteruskan apa adanya bila field-nya dikirim (termasuk
+	// kosong = kosongkan); absen berarti biarkan (B-116 butir 1).
+	params.Description = req.Description
 	params.Enabled = req.Enabled
 	params.Weight = req.Weight
 	if req.Region != nil {

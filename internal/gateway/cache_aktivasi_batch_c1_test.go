@@ -13,6 +13,7 @@ import (
 
 	"github.com/NexGen-X/Route-X/internal/cache"
 	"github.com/NexGen-X/Route-X/internal/config"
+	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
 	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/responsecache"
 	"github.com/NexGen-X/Route-X/internal/security"
@@ -258,6 +259,81 @@ func TestCacheHITTercatatDanTertagih(t *testing.T) {
 	}
 	if statusTerakhir != http.StatusOK || totalTerakhir <= 0 {
 		t.Errorf("catatan HIT: status = %d, total token = %d, mau 200 dan > 0 (tertagih)", statusTerakhir, totalTerakhir)
+	}
+}
+
+// TestCacheSatuMissMenghitungSatuB116 adalah regresi B-116 butir 6:
+// kampanye live Langkah 7 mengamati satu MISS menaikkan misses/entries
+// sebesar 2. Penyelidikan di main ini membuktikan setiap permukaan hanya
+// memanggil Get/Set tepat satu kali dan mesin menghitung tepat satu —
+// test ini mengunci semantik itu: satu MISS = misses 1 + entries 1, dan
+// satu HIT = hits 1 tanpa mengubah misses/entries.
+func TestCacheSatuMissMenghitungSatuB116(t *testing.T) {
+	prov := providerSukses()
+	s, mesin := susunDenganCache(t, prov)
+	ctx := ctxDenganKey("k-b116", "u-b116")
+
+	w := s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, ctx)
+	if w.Header().Get("X-RouteX-Cache") != "MISS" {
+		t.Fatalf("pertama: cache = %q, mau MISS (%s)", w.Header().Get("X-RouteX-Cache"), w.Body.String())
+	}
+	st, err := mesin.Stats(context.Background())
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if st.Misses != 1 || st.TotalEntries != 1 || st.Hits != 0 {
+		t.Fatalf("sesudah 1 MISS: hits=%d misses=%d entries=%d, mau 0/1/1", st.Hits, st.Misses, st.TotalEntries)
+	}
+
+	w = s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, ctx)
+	if w.Header().Get("X-RouteX-Cache") != "HIT" {
+		t.Fatalf("kedua: cache = %q, mau HIT", w.Header().Get("X-RouteX-Cache"))
+	}
+	st, err = mesin.Stats(context.Background())
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if st.Hits != 1 || st.Misses != 1 || st.TotalEntries != 1 {
+		t.Fatalf("sesudah 1 HIT: hits=%d misses=%d entries=%d, mau 1/1/1", st.Hits, st.Misses, st.TotalEntries)
+	}
+}
+
+// TestCacheHitMenghasilkanEventCacheHitB116 membuktikan B-116 butir 7:
+// catatan pemakaian untuk HIT membawa peristiwa timeline cache_hit,
+// sedangkan MISS tidak — supaya tab Events inspektor menjelaskan keadaan
+// HIT, bukan tampil kosong tanpa sebab.
+func TestCacheHitMenghasilkanEventCacheHitB116(t *testing.T) {
+	prov := providerSukses()
+	mesin := mesinCacheAktif(t)
+	s, sink := susunDenganPencatat(t, prov, func(_ *susunan, d *HandlersDeps) {
+		d.ResponseCache = mesin
+	})
+	ctx := ctxDenganKey("k-b116", "u-b116")
+
+	_ = s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, ctx)
+	w := s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, ctx)
+	if w.Header().Get("X-RouteX-Cache") != "HIT" {
+		t.Fatalf("kedua: cache = %q, mau HIT", w.Header().Get("X-RouteX-Cache"))
+	}
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.ev) != 2 {
+		t.Fatalf("catatan pemakaian = %d, mau 2", len(sink.ev))
+	}
+	punyaCacheHit := func(idx int) bool {
+		for _, n := range sink.ev[idx].Notes {
+			if n.Kind == traffic.EventCacheHit {
+				return true
+			}
+		}
+		return false
+	}
+	if punyaCacheHit(0) {
+		t.Errorf("catatan MISS ikut membawa event cache_hit")
+	}
+	if !punyaCacheHit(1) {
+		t.Errorf("catatan HIT tidak membawa event cache_hit; notes = %+v", sink.ev[1].Notes)
 	}
 }
 

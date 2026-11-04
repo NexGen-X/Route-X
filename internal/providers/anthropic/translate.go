@@ -92,6 +92,34 @@ type upstreamChoice struct {
 type thinkingConfig struct {
 	Type         string `json:"type"`
 	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	// Extra adalah sub-field thinking tak dikenal dari klien (B-137) yang
+	// diteruskan setia ke upstream Anthropic; kunci type/budget_tokens
+	// tidak boleh ada di sini (decode gateway sudah memisahkannya).
+	Extra map[string]json.RawMessage `json:"-"`
+}
+
+// MarshalJSON menulis type/budget_tokens lalu menggabungkan Extra apa
+// adanya, agar sub-field klien modern (mis. "display") sampai ke upstream.
+func (c thinkingConfig) MarshalJSON() ([]byte, error) {
+	type alias thinkingConfig
+	dasar, err := json.Marshal(alias(c))
+	if err != nil {
+		return nil, err
+	}
+	if len(c.Extra) == 0 {
+		return dasar, nil
+	}
+	gabungan := make(map[string]json.RawMessage, len(c.Extra)+2)
+	if err := json.Unmarshal(dasar, &gabungan); err != nil {
+		return nil, err
+	}
+	for k, v := range c.Extra {
+		if k == "type" || k == "budget_tokens" {
+			continue // field dikenal selalu menang dari salinan mentahnya
+		}
+		gabungan[k] = v
+	}
+	return json.Marshal(gabungan)
 }
 
 type upstreamMetadata struct {
@@ -208,12 +236,20 @@ func (p *Provider) buildMessagesRequest(req *providers.ChatRequest, stream bool)
 	default:
 		budget = thinkingBudget(req.ReasoningEffort)
 	}
+	// Sub-field tak dikenal dari thinking eksplisit klien diteruskan setia
+	// (B-137). Jalur ReasoningEffort dan "disabled" tidak membawa Extra:
+	// yang pertama memang tidak punya sumbernya, yang kedua tidak mengirim
+	// blok thinking sama sekali ke upstream.
+	var thinkingExtra map[string]json.RawMessage
+	if req.Thinking != nil {
+		thinkingExtra = req.Thinking.Extra
+	}
 	if adaptive {
-		body.Thinking = &thinkingConfig{Type: "adaptive"}
+		body.Thinking = &thinkingConfig{Type: "adaptive", Extra: thinkingExtra}
 		body.Temperature = nil
 		body.TopP = nil
 	} else if budget > 0 {
-		body.Thinking = &thinkingConfig{Type: "enabled", BudgetTokens: budget}
+		body.Thinking = &thinkingConfig{Type: "enabled", BudgetTokens: budget, Extra: thinkingExtra}
 		if body.MaxTokens <= budget {
 			body.MaxTokens = budget + p.maxTokens
 		}

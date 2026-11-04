@@ -5105,6 +5105,18 @@ paths:
           description: "Filter menurut jenis sumber daya audit"
           schema:
             type: string
+        - name: actor_user_id
+          in: query
+          description: "Filter menurut ID pengguna pelaku (UUID); nilai bukan UUID ditolak 400"
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          description: "Ukuran halaman (bawaan 50, dijepit maksimum 500)"
+          schema:
+            type: integer
+            minimum: 1
         - name: window
           in: query
           description: "Jendela waktu agregasi (mis. 1h, 24h, 7d, 30d)"

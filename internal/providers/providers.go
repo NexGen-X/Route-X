@@ -154,9 +154,18 @@ func (m *Message) Text() string {
 // jujurnya di sana adalah membiarkan bawaan upstream, bukan mengarang
 // anggaran. Nilai lain tidak diteruskan — permukaan yang mengurai permintaan
 // menolaknya sebelum sampai ke sini.
+//
+// Extra memuat sub-field thinking yang TIDAK dikenal gateway (mis. "display"
+// pada klien Claude Code modern), dipertahankan mentah apa adanya sejak
+// decode (B-137). Hanya adapter Anthropic yang meneruskannya ke upstream —
+// di sanalah sub-field itu bermakna. Untuk upstream non-Anthropic, Extra
+// dibuang BERSAMA seluruh parameter thinking, konsisten dengan perlakuan
+// B-096: upstream itu tidak punya konsep thinking bergaya Anthropic, jadi
+// representasi jujurnya adalah tidak mengirimnya, bukan mengarang padanan.
 type ThinkingParam struct {
 	Type         string
 	BudgetTokens int
+	Extra        map[string]json.RawMessage
 }
 
 // FunctionDef mendeskripsikan satu fungsi yang boleh dipanggil model.

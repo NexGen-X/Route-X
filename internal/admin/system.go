@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -224,8 +225,18 @@ func (h *Handlers) listAuditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// limit dihormati seperti endpoint daftar lain (pola listAPIKeys):
+	// nilai tak sah/diabaikan memakai bawaan, dan repo.Page.Normalize
+	// menjepitnya ke MaxPageLimit (B-139).
+	limit := repo.DefaultPageLimit
+	if s := r.URL.Query().Get("limit"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
 	page := repo.Page{
-		Limit:  repo.DefaultPageLimit,
+		Limit:  limit,
 		Cursor: r.URL.Query().Get("cursor"),
 	}
 
@@ -234,10 +245,22 @@ func (h *Handlers) listAuditLogs(w http.ResponseWriter, r *http.Request) {
 		To:           to,
 		Action:       r.URL.Query().Get("action"),
 		ResourceType: r.URL.Query().Get("resource_type"),
+		// Filter aktor didukung repo sejak lama (AuditFilter.ActorUserID,
+		// teruji di tingkat repo) tetapi tidak pernah dibaca handler ini,
+		// jadi penyaringan per aktor tak terjangkau lewat API (B-139).
+		ActorUserID: r.URL.Query().Get("actor_user_id"),
 	}
 
 	auditPage, err := h.auditRepo.List(ctx, filter, page)
 	if err != nil {
+		// identity.ErrInvalidInput (mis. actor_user_id bukan UUID) adalah
+		// kesalahan pemanggil, bukan kegagalan server: mapRepoError tidak
+		// mengenal sentinel paket identity itu dan akan menjawab 500, jadi
+		// handler ini menerjemahkannya ke 400 di sini (B-139).
+		if errors.Is(err, identity.ErrInvalidInput) {
+			httpx.BadRequest(w, r, "invalid_parameter", "parameter actor_user_id harus berupa UUID pengguna")
+			return
+		}
 		mapRepoError(w, r, err, "audit log")
 		return
 	}

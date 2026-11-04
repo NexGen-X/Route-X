@@ -38,9 +38,10 @@ type ToolDef struct {
 	// prinsip. Tool seperti ini tetap terdaftar dan terdeteksi apa
 	// adanya, tetapi Configure DITOLAK dengan alasan ini: produk tidak
 	// boleh lagi mengklaim "berhasil diterapkan" untuk integrasi yang
-	// tidak ada. Kosong = didukung. (Registri hasil perombakan Tahap 1
-	// hanya memuat tool yang didukung — semua entri berkosong — tetapi
-	// mekanismenya dipertahankan sebagai pagar kejujuran katalog.)
+	// tidak ada. Kosong = didukung. (Sejak Tahap 3 mekanisme ini hidup
+	// lagi untuk SATU entri SEMENTARA: codex (B-153) — terdaftar dan
+	// terdeteksi, tetapi Configure-nya ditolak sampai gateway
+	// mendukung streaming pada /v1/responses.)
 	UnsupportedReason string
 }
 

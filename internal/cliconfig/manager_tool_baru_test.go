@@ -71,7 +71,53 @@ func TestToolBaruDefResmi(t *testing.T) {
 	}
 }
 
-func TestConfigureCodexConfigTOML(t *testing.T) {
+// TestConfigureCodexDitolakSementaraB153 membuktikan kejujuran
+// Tahap 3 (B-153): selama gateway belum mendukung streaming pada
+// /v1/responses, Configure codex DITOLAK dengan alasan sementaranya
+// — sebelum efek samping apa pun (berkas lama utuh, tidak ada
+// key.env, tidak ada setelan tersimpan). Uji live Tahap 2
+// membuktikan codex mati pada permintaan pertamanya, jadi klaim
+// "berhasil diterapkan" tidak boleh lagi keluar untuk tool ini.
+func TestConfigureCodexDitolakSementaraB153(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".codex")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	lama := "model = \"model-lama\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(lama), 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := newMockSettingsStore()
+	mgr := manajerUjiToolBaru(store)
+	_, err := mgr.Configure(context.Background(), ConfigureParams{
+		ToolID: "codex", Mode: ModeModelOnly, Target: "gpt-5",
+		GatewayURL: "http://localhost:8080/v1", APIKey: "kunci-codex",
+	}, "http://localhost:8080/v1")
+	if err == nil {
+		t.Fatalf("Configure codex harus ditolak sementara (B-153)")
+	}
+	if !strings.Contains(err.Error(), "tidak dapat dikonfigurasi ke gateway") || !strings.Contains(err.Error(), "B-153") {
+		t.Errorf("pesan penolakan codex harus memuat alasan B-153, didapat: %v", err)
+	}
+	if got := bacaBerkasUji(t, filepath.Join(dir, "config.toml")); got != lama {
+		t.Errorf("config.toml codex berubah padahal Configure ditolak:\n%s", got)
+	}
+	if _, errStat := os.Stat(filepath.Join(home, ".routex", "key.env")); !os.IsNotExist(errStat) {
+		t.Errorf("key.env tidak boleh ditulis oleh Configure codex yang ditolak")
+	}
+	if _, errGet := store.Get(context.Background(), "cli:config:codex"); errGet == nil {
+		t.Errorf("Configure codex yang ditolak tidak boleh menyimpan setelan")
+	}
+}
+
+// TestTulisConfigCodexTOMLTetapSah membuktikan penulis config.toml
+// codex SENGAJA dipertahankan dan formatnya tetap sah selama masa
+// penolakan B-153: penulisnya dipanggil langsung di sini (bukan lewat
+// Configure yang ditolak), supaya begitu alasan sementara dicabut
+// jalur Configure hidup lagi dengan penulis yang sudah teruji.
+func TestTulisConfigCodexTOMLTetapSah(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	// Berkas lama dengan kunci root & seksi pengguna lain.
@@ -83,13 +129,13 @@ func TestConfigureCodexConfigTOML(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(lama), 0644); err != nil {
 		t.Fatal(err)
 	}
+	def, ok := cariToolDef("codex")
+	if !ok {
+		t.Fatal("codex tidak ditemukan di registri")
+	}
 	mgr := manajerUjiToolBaru(newMockSettingsStore())
-	_, err := mgr.Configure(context.Background(), ConfigureParams{
-		ToolID: "codex", Mode: ModeModelOnly, Target: "gpt-5",
-		GatewayURL: "http://localhost:8080/v1", APIKey: "kunci-codex",
-	}, "http://localhost:8080/v1")
-	if err != nil {
-		t.Fatalf("Configure codex: %v", err)
+	if err := mgr.applyToolSpecificConfig(context.Background(), home, def, ModeModelOnly, "gpt-5", "http://localhost:8080/v1", "kunci-codex"); err != nil {
+		t.Fatalf("applyToolSpecificConfig codex: %v", err)
 	}
 	konten := bacaBerkasUji(t, filepath.Join(dir, "config.toml"))
 	// Kunci root di preamble, sebelum seksi pertama.
@@ -105,9 +151,6 @@ func TestConfigureCodexConfigTOML(t *testing.T) {
 	// Konten pengguna lain dipertahankan.
 	harusMemuat(t, konten, `notify = ["echo"]`)
 	harusMemuat(t, konten, `[projects."/kerja"]`)
-	// Kunci yang dirujuk env_key benar-benar diekspor ke key.env.
-	keyEnv := bacaBerkasUji(t, filepath.Join(home, ".routex", "key.env"))
-	harusMemuat(t, keyEnv, "export OPENAI_API_KEY='kunci-codex'")
 }
 
 func TestConfigureGrokBuildConfigTOML(t *testing.T) {

@@ -230,6 +230,32 @@ func (p *Pricer) Cost(providerModelID string, est router.TokenEstimate) (upstrea
 	return b.Total, true
 }
 
+// CostCurrent adalah Cost yang didahului penyegaran cuplikan bila sudah
+// kedaluwarsa (B-106).
+//
+// Cost biasa SENGAJA tidak menyentuh database: router memanggilnya per
+// kandidat di jalur request. Tetapi Cost juga satu-satunya sumber estimasi
+// reservasi anggaran (gateway.estimasiBiaya), dan cuplikan hanya pernah
+// dimuat oleh Warm saat boot serta oleh Price — sedangkan jalur pencatatan
+// memakai PriceAt yang membaca database langsung dan tidak pernah mengisi
+// cuplikan. Akibatnya harga yang dibuat atau diubah SESUDAH boot tidak
+// pernah masuk cuplikan: Cost menjawab "tidak diketahui" selamanya,
+// estimasi reservasi selalu nol, dan penegakan anggaran jatuh ke
+// pemeriksaan pasca-bayar tanpa reservasi — plafon terlampaui berkali-kali
+// lipat oleh burst sebelum blokir berlaku (terbukti live Langkah 7:
+// 4,2× plafon). CostCurrent menutup celah itu untuk pemanggil jalur
+// request yang boleh membayar satu pemeriksaan kesegaran: segarkan
+// memakai mutex + TTL yang sama seperti Price, jadi biaya per request
+// hanyalah satu pemeriksaan waktu selama cuplikan masih segar, dan satu
+// query hanya saat cuplikan kedaluwarsa (bawaan 30 detik).
+func (p *Pricer) CostCurrent(ctx context.Context, providerModelID string, est router.TokenEstimate) (upstream.USD, bool) {
+	if p == nil {
+		return 0, false
+	}
+	p.segarkan(ctx)
+	return p.Cost(providerModelID, est)
+}
+
 // segarkan memuat ulang cuplikan bila sudah kedaluwarsa.
 func (p *Pricer) segarkan(ctx context.Context) {
 	if p.source == nil {

@@ -956,6 +956,7 @@ func (h *Handlers) createBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "budget", b.ID, map[string]any{"name": b.Name, "limit_usd": limitUSD.String()})
+	h.invalidateBudgets()
 	_ = h.respond(w, r, http.StatusCreated, toBudgetDTO(b))
 }
 
@@ -1011,6 +1012,7 @@ func (h *Handlers) updateBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "budget", id, map[string]any{"name": b.Name})
+	h.invalidateBudgets()
 	_ = h.respond(w, r, http.StatusOK, toBudgetDTO(b))
 }
 
@@ -1024,6 +1026,7 @@ func (h *Handlers) deleteBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "budget", id, nil)
+	h.invalidateBudgets()
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 
@@ -1046,6 +1049,7 @@ func (h *Handlers) toggleBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "toggle", "budget", id, map[string]any{"enabled": req.Enabled})
+	h.invalidateBudgets()
 	_ = h.respond(w, r, http.StatusOK, toBudgetDTO(b))
 }
 
@@ -1075,6 +1079,7 @@ func (h *Handlers) resetBudget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "reset", "budget", id, nil)
+	h.invalidateBudgets()
 	_ = h.respond(w, r, http.StatusOK, toBudgetDTO(b))
 }
 

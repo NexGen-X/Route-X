@@ -272,6 +272,8 @@ export interface Budget {
   spent_usd: string;
   alert_threshold: number;
   alert_threshold_pct?: number;
+  alerted_at?: string | null;
+  exceeded_alerted_at?: string | null;
   action: string;
   action_on_exceed?: string;
   period_start: string;

@@ -26,7 +26,7 @@ Verifikasi berkas cadangan di database buang:
   createdb routex_verifikasi
   gunzip -c <berkas>.sql.gz | psql -d routex_verifikasi -v ON_ERROR_STOP=1
   psql -d routex_verifikasi -tAc "SELECT count(*) FROM schema_migrations;"
-  # harus: 20 (migrasi 0001 sampai 0020)
+  # harus sama dengan jumlah berkas migrasi di internal/database/migrations/ pada versi biner yang dipakai (sumber kebenaran hitungan migrasi; jangan menulis angka mati di sini)
   dropdb routex_verifikasi
 
 ## 2. Alert yang disarankan

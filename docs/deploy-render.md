@@ -65,7 +65,7 @@ Selama proses deploy:
 2. **Stage 2 (Backend Build)**: Binary Go `ai-gateway` (Go 1.27.3) dikompilasi dengan menyematkan aset `web/dist` ke dalamnya.
 3. **Stage 3 (Runtime)**: Image Alpine 3.24 minimalis dijalankan (memuat `postgresql-client`, yang dibutuhkan fitur Backup/Restore admin).
 4. **Bootstrapping**:
-   - `ai-gateway` otomatis terhubung ke `DATABASE_URL` dan menjalankan migrasi skema database (migrasi `0001` sampai `0019`).
+   - `ai-gateway` otomatis terhubung ke `DATABASE_URL` dan menjalankan migrasi skema database (seluruh berkas di `internal/database/migrations/`).
    - `seed.Run` membuat akun Admin pertama hanya jika tabel pengguna kosong DAN `INITIAL_ADMIN_PASSWORD` disetel (email dari `INITIAL_ADMIN_EMAIL`, bawaan `admin@routex.local`; tanpa password, tidak ada admin yang dibuat).
    - Server mendengarkan pada port yang diatur Render (`PORT=10000`).
 

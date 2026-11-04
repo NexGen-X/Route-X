@@ -11,6 +11,7 @@ import type { EgressPool } from '../../types';
 
 interface EditEgressFormData {
   name: string;
+  description: string;
   kind: string;
   proxy_url: string;
   weight: number;
@@ -27,6 +28,7 @@ export interface EditEgressDrawerProps {
 
 const INITIAL_EDIT_FORM: EditEgressFormData = {
   name: '',
+  description: '',
   kind: 'socks5',
   proxy_url: '',
   weight: 100,
@@ -50,6 +52,7 @@ export const EditEgressDrawer: React.FC<EditEgressDrawerProps> = ({
     if (pool) {
       setEditForm({
         name: pool.name,
+        description: pool.description || '',
         kind: pool.kind || 'socks5',
         proxy_url: '',
         weight: pool.weight ?? 100,
@@ -68,6 +71,7 @@ export const EditEgressDrawer: React.FC<EditEgressDrawerProps> = ({
     try {
       const payload: Partial<EgressPool> & { proxy_url?: string } = {
         name: editForm.name,
+        description: editForm.description,
         kind: editForm.kind,
         weight: editForm.weight,
         region: editForm.region,
@@ -113,6 +117,16 @@ export const EditEgressDrawer: React.FC<EditEgressDrawerProps> = ({
             required
             value={editForm.name}
             onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+            className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">Deskripsi</label>
+          <input
+            type="text"
+            placeholder="Catatan bebas untuk pool ini (opsional)"
+            value={editForm.description}
+            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
             className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
           />
         </div>

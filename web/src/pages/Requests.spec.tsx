@@ -220,7 +220,7 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     });
 
     // 3. Pencarian teks dengan tombol Enter
-    const searchInput = screen.getByPlaceholderText('Cari ID request, model, IP...');
+    const searchInput = screen.getByPlaceholderText('Cari ID request, model, atau provider...');
     fireEvent.change(searchInput, { target: { value: 'gpt-4o' } });
     fireEvent.keyDown(searchInput, { key: 'Enter', code: 'Enter' });
 

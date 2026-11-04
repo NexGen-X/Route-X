@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -174,6 +175,28 @@ func (h *Handlers) getDomainConfigFromDB(ctx context.Context) (*StoredDomainConf
 	return &cfg, nil
 }
 
+// domainDariPublicURL mengekstrak nama domain dari PUBLIC_URL konfigurasi
+// env (h.publicURL), atau "" bila tidak ada / hostnya bukan domain.
+//
+// PUBLIC_URL adalah sumber kebenaran yang ditulis installer native dari
+// variabel DOMAIN (routex.env + Caddyfile melayani host itu), jadi domain
+// produksi bisa sepenuhnya bekerja TANPA pernah disimpan lewat panel —
+// status domain wajib mencerminkannya (B-116 butir 8).
+func (h *Handlers) domainDariPublicURL() string {
+	if h.publicURL == "" {
+		return ""
+	}
+	u, err := url.Parse(strings.TrimSpace(h.publicURL))
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	host := u.Hostname()
+	if net.ParseIP(host) != nil || !domainRegex.MatchString(host) {
+		return ""
+	}
+	return host
+}
+
 // getDomainStatus mengembalikan informasi status domain dan konfigurasi HTTPS saat ini.
 func (h *Handlers) getDomainStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -181,6 +204,26 @@ func (h *Handlers) getDomainStatus(w http.ResponseWriter, r *http.Request) {
 
 	cfg, err := h.getDomainConfigFromDB(ctx)
 	if err != nil || cfg == nil || cfg.Domain == "" {
+		// Panel belum menyimpan konfigurasi domain, tetapi domain produksi
+		// bisa datang dari installer (PUBLIC_URL env ← DOMAIN, dilayani
+		// Caddyfile). Melaporkannya "unconfigured" menyesatkan operator
+		// instalasi standar (B-116 butir 8): laporkan domain itu sebagai
+		// aktif dari sumber installer, dengan pesan yang menyebut sumber
+		// DAN batasnya (panel belum memverifikasi DNS untuk domain ini).
+		if dom := h.domainDariPublicURL(); dom != "" {
+			res := DomainConfigDTO{
+				Domain:     dom,
+				Mode:       "installer",
+				Status:     "active",
+				PublicURL:  fmt.Sprintf("https://%s", dom),
+				BaseURL:    fmt.Sprintf("https://%s/v1", dom),
+				ServerIP:   serverIP,
+				DNSMatched: false,
+				Message:    "Domain berasal dari konfigurasi installer (PUBLIC_URL/DOMAIN, dilayani Caddy) dan sedang melayani produksi. Panel belum menyimpan konfigurasi domain sendiri, jadi DNS untuk domain ini belum diverifikasi panel — simpan lewat formulir ini bila ingin panel mengelolanya.",
+			}
+			_ = h.respond(w, r, http.StatusOK, res)
+			return
+		}
 		res := DomainConfigDTO{
 			Domain:     "",
 			Mode:       "letsencrypt",

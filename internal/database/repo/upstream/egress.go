@@ -19,7 +19,11 @@ type EgressPool struct {
 	ID   string
 	Name string
 	Kind string
-	// MaskedHint bukan rahasia, mis. "http://user:****@host:3128".
+	// Description adalah deskripsi bebas operator (migrasi 0022, B-116):
+	// diterima API admin saat tulis dan dikembalikan apa adanya di DTO.
+	// Sebelumnya field ini diterima handler lalu hilang — tidak ada kolomnya.
+	Description string
+	// MaskedHint bukan rahasia, mis. "http://****@host:3128" (seluruh userinfo ditutup, B-116).
 	MaskedHint      string
 	EncryptionKeyID string
 
@@ -53,7 +57,7 @@ func NewEgressRepo(q repo.Querier, cipher *security.Cipher) (*EgressRepo, error)
 
 // egressColumns tidak memuat proxy_url_encrypted.
 const egressColumns = `
-	id::text, name, kind, masked_hint, encryption_key_id,
+	id::text, name, kind, description, masked_hint, encryption_key_id,
 	enabled, weight, region,
 	last_health_status, last_health_at, last_latency_ms,
 	created_at, updated_at, created_by::text`
@@ -62,7 +66,7 @@ const egressColumns = `
 func scanEgress(row pgxRow) (*EgressPool, error) {
 	var e EgressPool
 	err := row.Scan(
-		&e.ID, &e.Name, &e.Kind, &e.MaskedHint, &e.EncryptionKeyID,
+		&e.ID, &e.Name, &e.Kind, &e.Description, &e.MaskedHint, &e.EncryptionKeyID,
 		&e.Enabled, &e.Weight, &e.Region,
 		&e.LastHealthStatus, &e.LastHealthAt, &e.LastLatencyMS,
 		&e.CreatedAt, &e.UpdatedAt, &e.CreatedBy,
@@ -78,6 +82,8 @@ type CreateEgressParams struct {
 	Name string
 	// Kind adalah EgressHTTP, EgressHTTPS, atau EgressSOCKS5.
 	Kind string
+	// Description adalah deskripsi bebas operator; boleh kosong.
+	Description string
 	// ProxyURL lengkap dengan kredensialnya, mis. "http://user:sandi@host:3128".
 	ProxyURL security.Secret
 
@@ -115,11 +121,11 @@ func (r *EgressRepo) Create(ctx context.Context, p CreateEgressParams) (*EgressP
 
 	row := r.q.QueryRow(ctx, `
 		insert into egress_pool (
-			id, name, kind, proxy_url_encrypted, encryption_key_id, masked_hint,
+			id, name, kind, description, proxy_url_encrypted, encryption_key_id, masked_hint,
 			enabled, weight, region, created_by
-		) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		returning `+egressColumns,
-		id, p.Name, p.Kind, ciphertext, r.cipher.KeyID(), maskProxyURL(p.ProxyURL),
+		id, p.Name, p.Kind, p.Description, ciphertext, r.cipher.KeyID(), maskProxyURL(p.ProxyURL),
 		boolOr(p.Enabled, true), intOr(p.Weight, DefaultWeight), p.Region, p.CreatedBy,
 	)
 
@@ -254,11 +260,14 @@ func (r *EgressRepo) SetProxyURL(ctx context.Context, id string, proxyURL securi
 // UpdateEgressParams adalah pembaruan sebagian sebuah jalur keluar. URL proxy diganti
 // lewat SetProxyURL, bukan di sini, supaya jalur enkripsinya hanya satu.
 type UpdateEgressParams struct {
-	Name    *string
-	Kind    *string
-	Enabled *bool
-	Weight  *int
-	Region  Opt[string]
+	Name *string
+	Kind *string
+	// Description nil berarti biarkan; pointer ke string (termasuk kosong)
+	// berarti ganti — mengosongkan deskripsi harus mungkin (B-116).
+	Description *string
+	Enabled     *bool
+	Weight      *int
+	Region      Opt[string]
 }
 
 // Update mengubah field yang diminta saja.
@@ -274,6 +283,9 @@ func (r *EgressRepo) Update(ctx context.Context, id string, p UpdateEgressParams
 	}
 	if p.Kind != nil {
 		set.add("kind", *p.Kind)
+	}
+	if p.Description != nil {
+		set.add("description", *p.Description)
 	}
 	if p.Enabled != nil {
 		set.add("enabled", *p.Enabled)

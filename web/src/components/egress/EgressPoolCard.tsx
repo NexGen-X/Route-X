@@ -36,6 +36,9 @@ export const EgressPoolCard: React.FC<EgressPoolCardProps> = ({
               <span className="text-[11px] text-text-muted font-mono uppercase">
                 {(pool.kind || 'PROXY')} • {pool.region || 'global'}
               </span>
+              {pool.description ? (
+                <p className="text-[11px] text-text-secondary mt-0.5">{pool.description}</p>
+              ) : null}
             </div>
           </div>
           <Badge variant={pool.enabled ? 'success' : 'neutral'}>

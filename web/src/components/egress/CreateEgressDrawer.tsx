@@ -9,6 +9,7 @@ import { useToast } from '../../context/ToastContext';
 
 interface CreateEgressFormData {
   name: string;
+  description: string;
   kind: string;
   proxy_url: string;
   weight: number;
@@ -23,6 +24,7 @@ export interface CreateEgressDrawerProps {
 
 const INITIAL_FORM: CreateEgressFormData = {
   name: '',
+  description: '',
   kind: 'socks5',
   proxy_url: '',
   weight: 100,
@@ -94,6 +96,16 @@ export const CreateEgressDrawer: React.FC<CreateEgressDrawerProps> = ({
             placeholder="residential-sg-1 atau my-proxy"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-text-secondary mb-1.5">Deskripsi</label>
+          <input
+            type="text"
+            placeholder="Catatan bebas untuk pool ini (opsional)"
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             className="w-full px-3 py-2 bg-bg-surface-2 border border-border rounded-nav text-white focus:outline-none focus:border-accent"
           />
         </div>

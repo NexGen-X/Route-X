@@ -171,6 +171,8 @@ export interface ReferencePrice {
 export interface EgressPool {
   id: string;
   name: string;
+  // Deskripsi bebas dari API (B-116): selalu string, "" bila tidak diisi.
+  description: string;
   kind: string;
   masked_hint?: string;
   enabled: boolean;

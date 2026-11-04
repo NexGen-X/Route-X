@@ -112,11 +112,11 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" aria-hidden="true" />
           <input
             type="text"
-            placeholder="Cari ID request, model, IP..."
+            placeholder="Cari ID request, model, atau provider..."
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onSearchSubmit?.()}
-            aria-label="Cari request berdasarkan ID, model, atau IP"
+            aria-label="Cari request berdasarkan ID request, model yang diminta, atau nama provider"
             className="w-full min-h-[44px] sm:min-h-[36px] pl-9 pr-8 py-2 bg-bg-surface-2 border border-border rounded-nav text-xs text-text-primary placeholder:text-text-muted/60 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/40 transition-colors"
           />
           {search && (

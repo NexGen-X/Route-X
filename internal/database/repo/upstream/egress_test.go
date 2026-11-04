@@ -44,7 +44,7 @@ func TestEgressPoolIntegration(t *testing.T) {
 	}
 
 	switch {
-	case created.MaskedHint != "http://keluar:****@proxy.contoh.test:3128":
+	case created.MaskedHint != "http://****@proxy.contoh.test:3128":
 		t.Errorf("masked_hint = %q", created.MaskedHint)
 	case created.EncryptionKeyID != cipher.KeyID():
 		t.Errorf("encryption_key_id = %q, ingin %q", created.EncryptionKeyID, cipher.KeyID())
@@ -99,7 +99,7 @@ func TestEgressPoolIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("SetProxyURL: %v", err)
 		}
-		if updated.MaskedHint != "https://keluar2:****@proxy2.contoh.test:8443" {
+		if updated.MaskedHint != "https://****@proxy2.contoh.test:8443" {
 			t.Errorf("masked_hint = %q", updated.MaskedHint)
 		}
 		got, err := egress.ProxyURL(ctx, created.ID)

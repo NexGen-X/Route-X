@@ -606,6 +606,11 @@ export const api = {
       request<{ items: Price[] }>(`/api/admin/upstreams/models/mappings/${encodeURIComponent(mappingId)}/pricing/history`),
     pricingReference: (mappingId: string) =>
       request<ReferencePrice>(`/api/admin/upstreams/models/mappings/${encodeURIComponent(mappingId)}/pricing/reference`),
+    // Katalog acuan global (B-090): seluruh harga acuan bawaan yang dikenal
+    // sistem, bukan katalog pasar. Dipakai untuk meninjau cakupan acuan;
+    // drawer harga per pemetaan tetap memakai pricingReference di atas.
+    pricingReferenceCatalog: () =>
+      request<{ items: ReferencePrice[]; note: string }>('/api/admin/upstreams/models/pricing/reference-catalog'),
   },
 
   egress: {

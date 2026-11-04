@@ -200,7 +200,7 @@ elif [ "$BUILD_WEB" = "auto" ] && command -v git &>/dev/null; then
         # Tanpa state tidak ada dasar perbandingan yang bisa dipercaya:
         # bangun selalu (aman), jangan menebak dari reflog.
         SHOULD_BUILD_WEB=1
-    elif git -C "$SRC_DIR" diff --name-only "$LAST_DEPLOYED" HEAD 2>/dev/null | grep -q "^web/"; then
+    elif git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" diff --name-only "$LAST_DEPLOYED" HEAD 2>/dev/null | grep -q "^web/"; then
         SHOULD_BUILD_WEB=1
     fi
 fi
@@ -222,8 +222,15 @@ fi
 # ------------------------------------------------------------------------------
 # 5. Dapatkan Versi Git & Kompilasi Biner Baru
 # ------------------------------------------------------------------------------
-GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")"
-VERSION="$(git describe --tags --always 2>/dev/null || echo "v1.6.1-live")"
+# safe.directory diberikan PER-PANGGILAN lewat -c, hanya untuk $SRC_DIR
+# milik jalur update ini (B-085, pola yang sama dengan perbaikan installer
+# B-084): checkout dapat dimiliki pengguna layanan sementara skrip berjalan
+# sebagai root — tanpa ini git menolak repo ("detected dubious ownership")
+# dan cap versi/deteksi perubahan jatuh diam-diam ke nilai bawaan.
+# Konfigurasi global operator tidak disentuh dan direktori lain tidak
+# dilemahkan perlindungannya.
+GIT_COMMIT="$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
+VERSION="$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" describe --tags --always 2>/dev/null || echo "v1.6.1-live")"
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 echo "🔨 [2/5] Mengompilasi biner baru (${VERSION} @ ${GIT_COMMIT})..."
@@ -309,7 +316,7 @@ if [ "$HEALTHY" -eq 1 ]; then
     # Penukaran berhasil dan layanan sehat, batalkan kebutuhan rollback
     ROLLBACK_REQUIRED=0
     # Catat commit yang terdeploy untuk deteksi perubahan berikutnya.
-    git -C "$SRC_DIR" rev-parse HEAD > "$STATE_FILE" 2>/dev/null || true
+    git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" rev-parse HEAD > "$STATE_FILE" 2>/dev/null || true
 
     echo "=================================================================="
     echo " ✅ LIVE UPDATE SUKSES & ONLINE!"

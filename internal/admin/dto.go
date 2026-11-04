@@ -486,12 +486,25 @@ type ReferencePriceDTO struct {
 
 func (ReferencePriceDTO) adalahDTO() {}
 
+// ReferencePriceCatalogDTO adalah daftar katalog harga acuan global (B-090).
+// Note adalah pernyataan cakupan yang jujur: isinya SELURUH acuan bawaan
+// yang dikenal sistem (seed.ReferencePrices) — bukan katalog harga pasar
+// yang lengkap, dan ketiadaan entri berarti tidak ada acuan yang bisa
+// dipertanggungjawabkan untuk model itu.
+type ReferencePriceCatalogDTO struct {
+	Items []ReferencePriceDTO `json:"items"`
+	Note  string              `json:"note"`
+}
+
+func (ReferencePriceCatalogDTO) adalahDTO() {}
+
 // EgressPoolDTO adalah konfigurasi proxy pool keluar.
 // Catatan Keamanan: encryption_key_id dan proxy_url_encrypted DILARANG dipublikasikan ke API admin.
 type EgressPoolDTO struct {
 	ID               string     `json:"id"`
 	Name             string     `json:"name"`
 	Kind             string     `json:"kind"`
+	Description      string     `json:"description"`
 	MaskedHint       string     `json:"masked_hint"`
 	Enabled          bool       `json:"enabled"`
 	Weight           int        `json:"weight"`
@@ -1329,6 +1342,7 @@ func toEgressPoolDTO(e *upstream.EgressPool) EgressPoolDTO {
 		ID:               e.ID,
 		Name:             e.Name,
 		Kind:             e.Kind,
+		Description:      e.Description,
 		MaskedHint:       e.MaskedHint,
 		Enabled:          e.Enabled,
 		Weight:           e.Weight,

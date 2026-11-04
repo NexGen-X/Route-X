@@ -29,8 +29,9 @@ const MOCK_POOLS: EgressPool[] = [
   {
     id: 'pool-sg-1',
     name: 'Singapore SOCKS5',
+    description: 'Pool residensial utama',
     kind: 'socks5',
-    masked_hint: 'socks5://user:***@sg.proxy.com:1080',
+    masked_hint: 'socks5://****@sg.proxy.com:1080',
     enabled: true,
     weight: 100,
     region: 'ap-southeast-1',
@@ -41,6 +42,7 @@ const MOCK_POOLS: EgressPool[] = [
   {
     id: 'pool-us-2',
     name: 'US HTTP Gateway',
+    description: '',
     kind: 'http',
     masked_hint: 'http://us-east.proxy.corp:8080',
     enabled: false,
@@ -98,7 +100,7 @@ describe('Egress Page — Unit & Modular Decomposition Tests', () => {
     expect(screen.getByText(/HTTP • us-east-1/i)).toBeInTheDocument();
 
     // Verifikasi masked hint
-    expect(screen.getByText('socks5://user:***@sg.proxy.com:1080')).toBeInTheDocument();
+    expect(screen.getByText('socks5://****@sg.proxy.com:1080')).toBeInTheDocument();
     expect(screen.getByText('http://us-east.proxy.corp:8080')).toBeInTheDocument();
 
     // Verifikasi status koneksi
@@ -161,6 +163,7 @@ describe('Egress Page — Unit & Modular Decomposition Tests', () => {
     await waitFor(() => {
       expect(mockCreateFn).toHaveBeenCalledWith({
         name: 'Tokyo SOCKS5',
+        description: '',
         kind: 'socks5',
         proxy_url: 'socks5://tokyo.proxy:1080',
         weight: 100,
@@ -204,6 +207,7 @@ describe('Egress Page — Unit & Modular Decomposition Tests', () => {
     await waitFor(() => {
       expect(mockUpdateFn).toHaveBeenCalledWith('pool-sg-1', {
         name: 'Singapore SOCKS5',
+        description: 'Pool residensial utama',
         kind: 'socks5',
         weight: 200,
         region: 'ap-southeast-1',

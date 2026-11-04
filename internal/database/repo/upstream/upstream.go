@@ -251,12 +251,15 @@ func maskCredential(s security.Secret) string {
 }
 
 // maskProxyURL membentuk cuplikan URL proxy yang aman ditampilkan, mis.
-// "http://user:****@host:3128".
+// "http://****@host:3128".
 //
-// URL proxy hampir selalu memuat kredensial di userinfo, jadi hanya passwordnya yang
-// ditutup: host dan port tetap terbaca supaya operator bisa mengenali jalur keluar
-// mana yang dimaksud. URL yang tidak bisa diurai disamarkan seluruhnya — lebih baik
-// cuplikan yang tidak berguna daripada bocor karena bentuk yang tak terduga.
+// URL proxy hampir selalu memuat kredensial di userinfo. Versi lama hanya
+// menutup password dan membiarkan USERNAME tampil utuh — padahal username
+// proxy adalah kredensial juga (B-116 butir 1: masked_hint menampilkan URL
+// nyaris utuh). Kini seluruh userinfo ditutup; host dan port tetap terbaca
+// supaya operator bisa mengenali jalur keluar mana yang dimaksud. URL yang
+// tidak bisa diurai disamarkan seluruhnya — lebih baik cuplikan yang tidak
+// berguna daripada bocor karena bentuk yang tak terduga.
 func maskProxyURL(s security.Secret) string {
 	u, err := url.Parse(strings.TrimSpace(s.Reveal()))
 	if err != nil || u.Host == "" {
@@ -265,10 +268,7 @@ func maskProxyURL(s security.Secret) string {
 	if u.User == nil {
 		return u.Scheme + "://" + u.Host
 	}
-	if _, hasPassword := u.User.Password(); !hasPassword {
-		return u.Scheme + "://" + u.User.Username() + "@" + u.Host
-	}
-	return u.Scheme + "://" + u.User.Username() + ":****@" + u.Host
+	return u.Scheme + "://****@" + u.Host
 }
 
 // nullIfEmpty mengubah string kosong menjadi NULL. Kolom teks opsional di skema ini

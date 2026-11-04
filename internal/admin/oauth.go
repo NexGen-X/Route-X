@@ -214,6 +214,13 @@ func (h *Handlers) listOAuthSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Daftar kosong harus ter serialisasi sebagai [] bukan null (B-116
+	// butir 2): repo mengembalikan nil untuk provider tanpa sesi, dan
+	// klien berhak membedakan "belum ada sesi" dari "field hilang".
+	if sessions == nil {
+		sessions = make([]*upstream.OAuthSessionMeta, 0)
+	}
+
 	_ = h.respond(w, r, http.StatusOK, OAuthSessionsResponseDTO{
 		Items: sessions,
 	})

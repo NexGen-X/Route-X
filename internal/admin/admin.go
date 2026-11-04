@@ -606,6 +606,32 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 			msg = "events wajib berisi minimal satu event yang dilanggani"
 		case "webhooks_name_not_empty":
 			msg = "nama webhook tidak boleh kosong"
+		// Filter konten (B-116 butir 10): pesan WAJIB menyebut field yang
+		// melanggar beserta enum sahnya — versi lama hanya menjawab
+		// "nilai input melanggar batasan untuk filter konten" tanpa field,
+		// sehingga operator menebak-nebak dari seluruh formulir.
+		case "content_filters_name_not_empty":
+			msg = "field name pada filter konten tidak boleh kosong"
+		case "content_filters_kind_valid":
+			msg = "field kind pada filter konten tidak valid. Pilihan yang didukung: blocked_pattern, allowed_pattern, model_restriction, provider_restriction, request_size, moderation"
+		case "content_filters_priority_range":
+			msg = "field priority pada filter konten harus berada di antara 0 dan 100000"
+		case "content_filters_applies_to_valid":
+			msg = "field applies_to pada filter konten tidak valid. Pilihan yang didukung: request, response, both"
+		case "content_filters_action_valid":
+			msg = "field action pada filter konten tidak valid. Pilihan yang didukung: block, warn"
+		case "content_filters_pattern_type_valid":
+			msg = "field pattern_type pada filter konten tidak valid. Pilihan yang didukung: substring, regex"
+		case "content_filters_pattern_not_empty":
+			msg = "field pattern pada filter konten tidak boleh kosong"
+		case "content_filters_eval_budget_range":
+			msg = "field max_eval_ms pada filter konten harus berada di antara 1 dan 5000"
+		case "content_filters_size_positive":
+			msg = "field max_request_bytes pada filter konten harus lebih besar dari 0"
+		case "content_filters_threshold_range":
+			msg = "field moderation_threshold pada filter konten harus berada di antara 0 dan 1"
+		case "content_filters_shape_valid":
+			msg = "field yang wajib untuk kind filter konten ini belum diisi: blocked_pattern/allowed_pattern membutuhkan pattern + pattern_type, model_restriction membutuhkan model_id, provider_restriction membutuhkan provider_id, request_size membutuhkan max_request_bytes, moderation membutuhkan moderation_integration_id"
 		}
 		httpx.BadRequest(w, r, "constraint_violation", msg)
 	default:

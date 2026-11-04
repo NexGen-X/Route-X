@@ -291,7 +291,7 @@ Agen dari Departemen QA & Keamanan (khususnya `qa_audit_engineer` dan `security_
 
 ### 6.5. Kewajiban Standar Teknologi (Sesuai Versi yang Dipakai Repo)
 Untuk mencegah *technical debt*, seluruh sub-agen wajib mengikuti versi & standar yang **benar-benar dipakai repo saat ini** — bukan standar aspiratif dari luar:
-- **Frontend / Arsitektur Web**: React **18** (lihat `web/package.json`) + Vite + TypeScript strict. Jangan mengusulkan fitur React 19 (React Compiler, Server Components) selama repo belum bermigrasi.
+- **Frontend / Arsitektur Web**: React **19** + Vite **8** dengan @vitejs/plugin-react **6** (lihat `web/package.json`) + TypeScript strict. Repo SUDAH bermigrasi ke React 19 dan Vite 8; jangan lagi menulis arahan seolah masih React 18/Vite lama.
 - **UI/UX Design Language**: Tema **Calm Console** (gelap ala Muse, token di `web/tailwind.config.js`, font **Noto Sans**) dan kepatuhan aksesibilitas **WCAG 2.1 AA** — target yang dipakai repo. Standar lama yang pernah tertulis di sini (*Adaptive Contrast* merespons ambient light, WCAG 2.2+) adalah **aspirasi tanpa dasar di kode dan telah dicabut**.
 - **Backend**: Go **1.27.3** (lihat `go.mod`); ikuti pola routing & pustaka yang sudah dipakai kode, jangan mengganti stack atas nama "terbaru".
 - **AI**: Permukaan yang didukung produk adalah Chat Completions (OpenAI-compat) dan Anthropic Messages, termasuk `/v1/responses` sebagai **alias** Chat Completions. Pola *Realtime WebRTC* **tidak** dimiliki produk saat ini — jangan diusulkan sebagai kewajiban.

@@ -219,6 +219,11 @@ type jejak struct {
 	attempts []Attempt
 	menang   *upstream.RouteCandidate
 
+	// cacheHit menandai request terjawab dari response cache (B-116
+	// butir 7): selesai() menambahkannya sebagai peristiwa timeline
+	// cache_hit karena tidak ada percobaan upstream yang bisa dicatat.
+	cacheHit bool
+
 	pemakaian providers.Usage
 	ttft      time.Duration
 	hulu      time.Duration
@@ -584,13 +589,26 @@ func (j *jejak) routing() usage.Routing {
 	return rt
 }
 
+// tandaiCacheHit menandai jejak ini terjawab dari response cache.
+func (j *jejak) tandaiCacheHit() {
+	if j != nil {
+		j.cacheHit = true
+	}
+}
+
 // catatan menyusun peristiwa timeline yang bukan percobaan upstream.
 func (j *jejak) catatan(kode, pesan string) []usage.Note {
-	kind, ok := peristiwaKebijakan[kode]
-	if !ok {
-		return nil
+	var notes []usage.Note
+	if j.cacheHit {
+		notes = append(notes, usage.Note{
+			Kind:    traffic.EventCacheHit,
+			Message: "respons dilayani dari response cache (cache HIT); tidak ada panggilan upstream untuk request ini",
+		})
 	}
-	return []usage.Note{{Kind: kind, Message: pesan}}
+	if kind, ok := peristiwaKebijakan[kode]; ok {
+		notes = append(notes, usage.Note{Kind: kind, Message: pesan})
+	}
+	return notes
 }
 
 // percobaanPemakaian menerjemahkan jejak percobaan ke bentuk yang dipakai pencatat.

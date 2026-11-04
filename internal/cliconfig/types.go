@@ -20,18 +20,26 @@ const (
 
 // ToolDef merepresentasikan definisi dan aturan deteksi satu perkakas AI CLI.
 type ToolDef struct {
-	ID            string   // Pengidentifikasi unik tool, misalnya "agy", "claude"
-	Name          string   // Nama tampilan perkakas
-	Category      string   // Kategori tool: "Coding Agent", "Terminal Chat", "Workflow"
-	Description   string   // Penjelasan ringkas fungsionalitas tool
-	BinaryNames   []string // Nama-nama biner eksekusi untuk pencarian di PATH
-	ConfigPaths   []string // Jalur relatif berkas konfigurasi di bawah direktori $HOME
-	VersionArg    string   // Argumen baris perintah untuk memeriksa versi (misal "--version")
-	EnvVarBaseURL string   // Nama variabel lingkungan untuk base URL API
-	EnvVarAPIKey  string   // Nama variabel lingkungan untuk API key
-	EnvVarModel   string   // Nama variabel lingkungan untuk model bawaan
-	DefaultMode   string   // Mode bawaan saat pertama kali terdeteksi
-	DefaultTarget string   // Target model/rule bawaan
+	ID          string   // Pengidentifikasi unik tool, misalnya "agy", "claude"
+	Name        string   // Nama tampilan perkakas
+	Category    string   // Kategori tool: "Coding Agent", "Terminal Chat", "Workflow"
+	Description string   // Penjelasan ringkas fungsionalitas tool
+	BinaryNames []string // Nama-nama biner eksekusi untuk pencarian di PATH
+	ConfigPaths []string // Jalur relatif berkas konfigurasi di bawah direktori $HOME
+	VersionArg  string   // Argumen baris perintah untuk memeriksa versi (misal "--version"); kosong = tool tidak punya jalur versi yang sah, versi ditampilkan kosong secara jujur
+	// VersionNeedsStoredKey true bila perintah versi tool gugur tanpa
+	// API key di env proses deteksi (B-145: `sgpt --version` gagal saat
+	// import bila OPENAI_API_KEY absen, karena gateway mendeteksi tanpa
+	// key.env). Untuk tool seperti ini deteksi versi dijalankan dengan
+	// kunci tersimpan tool itu (dari konfigurasi tersimpan produk) bila
+	// ada; kunci hanya masuk env proses anak perintah versi, tidak
+	// pernah ke log atau respons (yang diambil hanya baris versinya).
+	VersionNeedsStoredKey bool
+	EnvVarBaseURL         string // Nama variabel lingkungan untuk base URL API
+	EnvVarAPIKey          string // Nama variabel lingkungan untuk API key
+	EnvVarModel           string // Nama variabel lingkungan untuk model bawaan
+	DefaultMode           string // Mode bawaan saat pertama kali terdeteksi
+	DefaultTarget         string // Target model/rule bawaan
 	// UnsupportedReason diisi (non-kosong) bila tool secara arsitektur
 	// TIDAK dapat diarahkan ke gateway Route-X — terikat akun/protokol
 	// vendor, wajib server eksternal sendiri, atau perbedaan protokol

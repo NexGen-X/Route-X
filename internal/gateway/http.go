@@ -893,6 +893,14 @@ type diagnosaKandidat struct {
 	// kegagalan autentikasi (B-120): sementara dan pulih sendiri, bukan
 	// konfigurasi kosong.
 	semuaTakSehat bool
+	// semuaNonaktif: query kandidat biasa kosong DAN query dengan
+	// IncludeUnhealthy juga kosong, tetapi query dengan IncludeDisabled
+	// menghasilkan kandidat — artinya pemetaan provider ADA, hanya saja
+	// setiap provider/pemetaannya dinonaktifkan operator (B-143).
+	// Providernya terkonfigurasi penuh; yang dibutuhkan operator adalah
+	// mengaktifkannya kembali, bukan memeriksa konfigurasi yang
+	// diklaim "tidak ada" oleh kode lama no_provider_for_model.
+	semuaNonaktif bool
 }
 
 // kandidat mengambil kandidat rute lalu menyaringnya menurut pembatasan provider pada key.
@@ -931,6 +939,27 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 				"model", rreq.ModelName, "error", derr)
 		} else if len(diagCands) > 0 {
 			diag.semuaTakSehat = true
+		}
+
+		// Diagnosa nonaktif (B-143) hanya berjalan bila diagnosa
+		// kesehatan tidak menemukan apa pun: bila pemetaan AKTIF ada
+		// tetapi tak sehat, provider_unhealthy adalah sebab yang benar
+		// (dan sudah teruji live) — keadaan nonaktif tidak boleh
+		// menutupinya. Query IncludeDisabled di sini murni diagnosa;
+		// kandidatnya tidak pernah dipakai melayani request.
+		if !diag.semuaTakSehat {
+			diagNonaktif, derr2 := h.candidates.RouteCandidates(r.Context(), upstream.RouteQuery{
+				ModelID:          rreq.ModelID,
+				OwnerUserID:      rreq.OwnerUserID,
+				IncludeUnhealthy: true,
+				IncludeDisabled:  true,
+			})
+			if derr2 != nil {
+				h.logger.DebugContext(r.Context(), "diagnosa kandidat nonaktif gagal",
+					"model", rreq.ModelName, "error", derr2)
+			} else if len(diagNonaktif) > 0 {
+				diag.semuaNonaktif = true
+			}
 		}
 	}
 
@@ -1118,6 +1147,21 @@ func (h *Handlers) tolakTanpaKandidat(
 		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.ErrTypeAPI, "provider_unhealthy",
 			"semua provider untuk model "+nama+" sedang ditandai tidak sehat dan disisihkan sementara; "+
 				"coba lagi sesudah pemeriksaan kesehatan berikutnya")
+		return
+	}
+
+	// Pemetaan provider ADA dan terkonfigurasi, tetapi semua provider /
+	// pemetaannya dinonaktifkan operator (B-143). Menjawabnya
+	// no_provider_for_model mengklaim konfigurasi kosong dan menyuruh
+	// operator memeriksa pemetaan yang sebenarnya ada dan benar;
+	// sebab sebenarnya adalah penonaktifan, dan obatnya mengaktifkan
+	// kembali salah satu provider pemetaan itu.
+	if diag.semuaNonaktif && len(sebelumDisaring) == 0 {
+		h.logger.WarnContext(r.Context(), "semua provider model dinonaktifkan",
+			"model", model.ModelID)
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.ErrTypeAPI, "provider_disabled",
+			"semua provider untuk model "+nama+" dinonaktifkan; "+
+				"pemetaan provider ada tetapi tidak ada yang aktif — aktifkan kembali salah satu providernya")
 		return
 	}
 

@@ -16,9 +16,9 @@ import { RefreshCw, ScrollText, Search } from 'lucide-react';
 // mengonsumsinya — jejak audit hanya bisa dibaca lewat API mentah.
 //
 // Filter yang ditawarkan persis yang didukung handler-nya: `action`
-// (kecocokan persis), `resource_type` (kecocokan persis), dan rentang
-// waktu (`window` atau `from` eksplisit). Handler TIDAK membaca filter
-// aktor, jadi halaman ini tidak mengarangnya.
+// (kecocokan persis), `resource_type` (kecocokan persis),
+// `actor_user_id` (UUID pelaku, kecocokan persis — dihubungkan handler
+// pada B-139), dan rentang waktu (`window` atau `from` eksplisit).
 
 type JendelaAudit = '24h' | '7d' | '30d' | 'semua';
 
@@ -49,6 +49,7 @@ export const AuditLogs: React.FC = () => {
   const [jendela, setJendela] = useState<JendelaAudit>('24h');
   const [aksi, setAksi] = useState('');
   const [jenisSumberDaya, setJenisSumberDaya] = useState('');
+  const [aktor, setAktor] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -68,6 +69,7 @@ export const AuditLogs: React.FC = () => {
       else params.window = jendela;
       if (aksi.trim()) params.action = aksi.trim();
       if (jenisSumberDaya.trim()) params.resource_type = jenisSumberDaya.trim();
+      if (aktor.trim()) params.actor_user_id = aktor.trim();
 
       const res = await api.system.auditLogs(params);
       if (listReqRef.current !== reqId) return;
@@ -172,6 +174,16 @@ export const AuditLogs: React.FC = () => {
               value={jenisSumberDaya}
               onChange={(e) => setJenisSumberDaya(e.target.value)}
               placeholder="Jenis sumber daya, mis. provider"
+              className="w-full bg-bg-surface-1 border border-border rounded-md px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
+            />
+          </label>
+          <label className="flex-1">
+            <span className="sr-only">Filter aktor (ID pengguna, kecocokan persis)</span>
+            <input
+              type="text"
+              value={aktor}
+              onChange={(e) => setAktor(e.target.value)}
+              placeholder="ID pengguna aktor (UUID)"
               className="w-full bg-bg-surface-1 border border-border rounded-md px-3 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
             />
           </label>

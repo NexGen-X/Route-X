@@ -21,7 +21,18 @@ describe('Global Toast Duplication Audit & Verification (12 Mandated Tests)', ()
   });
 
   afterEach(() => {
-    vi.runOnlyPendingTimers();
+    // Diagnosis B-138: peringatan act(...) di berkas ini BUKAN dari klik
+    // test-nya (fireEvent sudah dibungkus act oleh testing-library),
+    // melainkan dari baris ini — flush timer di afterEach menjalankan
+    // timer auto-dismiss ToastNotificationCard yang masih tertunda,
+    // yang memanggil removeToast → setToasts di luar act. Buktinya:
+    // TEST 9 (toast ditutup manual, timer dibersihkan saat unmount)
+    // adalah satu-satunya test yang tidak pernah memancarkan peringatan.
+    // Flush-nya wajib dibungkus act(), sama seperti kesimpulan B-093 di
+    // berkas saudaranya tetapi terbukti ulang di sini dari pola test-nya.
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
     vi.useRealTimers();
   });
 

@@ -6,7 +6,8 @@ import type { AuditLogEntry } from '../types';
 
 // Spec halaman Log Audit (B-108): halaman mengonsumsi klien
 // `api.system.auditLogs` yang sudah ada, dengan filter yang persis
-// didukung handler backend (window/from, action, resource_type, cursor).
+// didukung handler backend (window/from, action, resource_type,
+// actor_user_id sejak B-139, cursor).
 
 const ENTRI: AuditLogEntry = {
   id: 42,
@@ -90,6 +91,23 @@ describe('AuditLogs (B-108)', () => {
         window: '24h',
         action: 'api_key.rotate',
         resource_type: 'api_key',
+      });
+    });
+  });
+
+  it('filter aktor dikirim sebagai actor_user_id yang didukung handler (B-139)', async () => {
+    renderHalaman();
+    expect(await screen.findByText('provider.create')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('ID pengguna aktor (UUID)'), {
+      target: { value: '0d6f2f3a-1111-4222-8333-444455556666' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Terapkan Filter/ }));
+
+    await waitFor(() => {
+      expect(mockAuditLogs).toHaveBeenLastCalledWith({
+        window: '24h',
+        actor_user_id: '0d6f2f3a-1111-4222-8333-444455556666',
       });
     });
   });

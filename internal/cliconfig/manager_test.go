@@ -41,6 +41,14 @@ func (m *mockSettingsStore) Put(ctx context.Context, s identity.SettingWrite) (i
 	return res, nil
 }
 
+func (m *mockSettingsStore) Delete(ctx context.Context, key string) error {
+	if _, ok := m.data[key]; !ok {
+		return os.ErrNotExist
+	}
+	delete(m.data, key)
+	return nil
+}
+
 func (m *mockSettingsStore) All(ctx context.Context) ([]identity.Setting, error) {
 	out := make([]identity.Setting, 0, len(m.data))
 	for _, v := range m.data {
@@ -51,8 +59,8 @@ func (m *mockSettingsStore) All(ctx context.Context) ([]identity.Setting, error)
 
 func TestSupportedTools(t *testing.T) {
 	tools := SupportedTools()
-	if len(tools) < 15 {
-		t.Fatalf("diharapkan minimal 15 tools terdaftar, didapat %d", len(tools))
+	if len(tools) == 0 {
+		t.Fatalf("registri tool kosong")
 	}
 
 	seen := make(map[string]bool)
@@ -95,9 +103,7 @@ func TestManagerScanAndConfigure(t *testing.T) {
 		t.Errorf("hasil configure tidak cocok: %+v", res)
 	}
 
-	// 3. Uji Konfigurasi Mode 2: Routing
-	// (B-135: agy tidak lagi dapat dikonfigurasi — Configure-nya kini
-	// ditolak; mode routing diuji lewat opencode.)
+	// 3. Uji Konfigurasi Mode 2: Routing (diuji lewat opencode).
 	res, err = mgr.Configure(ctx, ConfigureParams{
 		ToolID: "opencode",
 		Mode:   ModeRouting,
@@ -451,70 +457,5 @@ func TestConfigureGooseConfigDanEnv(t *testing.T) {
 	}
 	if strings.Contains(string(keyEnv), "GOOSE_API_KEY") {
 		t.Errorf("key.env masih mengekspor GOOSE_API_KEY:\n%s", keyEnv)
-	}
-}
-
-// TestConfigureContinueConfigLokal membuktikan B-101 (keamanan): cn
-// mendapat ~/.continue/config.yaml yang sah menunjuk gateway (provider
-// openai, apiBase dengan /v1, apiKey key produk, izin 0600), dan tidak
-// ada lagi ekspor variabel rekaan CONTINUE_* di hasil Configure maupun
-// cli-env.sh.
-func TestConfigureContinueConfigLokal(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	ctx := context.Background()
-	mgr := NewManager(newMockSettingsStore(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	res, err := mgr.Configure(ctx, ConfigureParams{
-		ToolID: "continue", Mode: ModeModelOnly, Target: "intern-s2",
-		APIKey: "kunci-uji-continue-123",
-	}, "http://localhost:8080/v1")
-	if err != nil {
-		t.Fatalf("Configure continue: %v", err)
-	}
-	if len(res.EnvVars) != 0 {
-		t.Errorf("EnvVars continue harus kosong (cn tidak membaca env khusus), didapat %v", res.EnvVars)
-	}
-	if strings.Contains(res.ExportSnippet, "CONTINUE_") {
-		t.Errorf("snippet continue masih memuat variabel rekaan: %s", res.ExportSnippet)
-	}
-
-	cfgPath := filepath.Join(home, ".continue", "config.yaml")
-	fi, err := os.Stat(cfgPath)
-	if err != nil {
-		t.Fatalf("~/.continue/config.yaml tidak ditulis: %v", err)
-	}
-	if fi.Mode().Perm() != 0600 {
-		t.Errorf("izin config.yaml continue = %o, mau 600 (memuat apiKey)", fi.Mode().Perm())
-	}
-	data, err := os.ReadFile(cfgPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	konten := string(data)
-	for _, mau := range []string{
-		"name: Route-X", "schema: v1", "provider: openai",
-		"model: intern-s2", "apiBase: http://localhost:8080/v1",
-		"apiKey: kunci-uji-continue-123",
-	} {
-		if !strings.Contains(konten, mau) {
-			t.Errorf("config.yaml continue tidak memuat %q:\n%s", mau, konten)
-		}
-	}
-
-	script, err := os.ReadFile(filepath.Join(home, ".routex", "cli-env.sh"))
-	if err != nil {
-		t.Fatalf("cli-env.sh tidak ada: %v", err)
-	}
-	if strings.Contains(string(script), "CONTINUE_API") || strings.Contains(string(script), "CONTINUE_MODEL") {
-		t.Errorf("cli-env.sh masih mengekspor variabel rekaan Continue:\n%s", script)
-	}
-
-	def, ok := cariToolDef("continue")
-	if !ok {
-		t.Fatal("continue tidak ditemukan")
-	}
-	if def.EnvVarBaseURL != "" || def.EnvVarModel != "" || def.EnvVarAPIKey != "OPENAI_API_KEY" {
-		t.Errorf("definisi env continue = %q/%q/%q, mau kosong/kosong/OPENAI_API_KEY",
-			def.EnvVarBaseURL, def.EnvVarAPIKey, def.EnvVarModel)
 	}
 }

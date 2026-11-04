@@ -89,23 +89,25 @@ const MOCK_CLI_DATA: CLIDetectedResponse = {
       export_snippet: '',
     },
     {
-      id: 'agy',
-      name: 'Antigravity CLI',
+      // Fixture fiktif (bukan entri registri): mewakili tool apa pun
+      // yang suatu saat backend tandai tidak dapat diarahkan ke
+      // gateway, supaya jalur tampilan jujur UI tetap teruji walau
+      // registri kini hanya memuat tool yang didukung.
+      id: 'contoh-non-gateway',
+      name: 'Contoh Non-Gateway',
       category: 'Coding Agent',
       installed: true,
-      path: '/root/.gemini/antigravity-cli/bin/agy',
+      path: '/usr/local/bin/contoh-non-gateway',
       version: '2.0.0',
-      description: 'Google agentic coding CLI.',
+      description: 'Fixture tool yang tidak dapat diarahkan ke gateway.',
       supported_modes: ['model_only', 'routing', 'combo'],
       active_mode: 'model_only',
       active_target: 'gpt-4o',
       env_vars: {},
       export_snippet: '',
-      // B-135: agy wajib login Google — terdaftar & terdeteksi apa
-      // adanya, tetapi tidak dapat diarahkan ke gateway.
       gateway_supported: false,
       unsupported_reason:
-        'Antigravity CLI (agy) wajib masuk dengan akun Google dan tidak membaca endpoint atau kunci OpenAI apa pun, sehingga tidak dapat diarahkan ke gateway Route-X.',
+        'Tool contoh ini terikat akun vendor dan tidak membaca endpoint atau kunci OpenAI apa pun, sehingga tidak dapat diarahkan ke gateway Route-X.',
     },
   ],
 };
@@ -159,10 +161,10 @@ describe('CLIIntegrations — Pengujian Unit Dekomposisi', () => {
       expect(screen.getByText('Integrasi CLI & Editor AI')).toBeInTheDocument();
     });
 
-    // Menampilkan tab CLI Terpasang dengan count 2 (claude + agy)
+    // Menampilkan tab CLI Terpasang dengan count 2 (claude + fixture non-gateway)
     expect(screen.getByRole('button', { name: /CLI Terpasang/i })).toBeInTheDocument();
     expect(screen.getByText('Claude Code')).toBeInTheDocument();
-    expect(screen.getByText('Antigravity CLI')).toBeInTheDocument();
+    expect(screen.getByText('Contoh Non-Gateway')).toBeInTheDocument();
     // OpenCode (belum ada) tidak muncul di tab default 'installed'
     expect(screen.queryByText('OpenCode Interpreter')).not.toBeInTheDocument();
   });
@@ -196,23 +198,21 @@ describe('CLIIntegrations — Pengujian Unit Dekomposisi', () => {
     expect(inputKey).toHaveValue('sk_live_abc123456789');
   });
 
-  it('memperlakukan Antigravity CLI setara tool lain, dengan label gateway yang jujur (B-081 + B-135)', async () => {
+  it('menampilkan label gateway yang jujur untuk tool bergateway_supported=false dari backend', async () => {
     render(<CLIIntegrations />);
 
     await waitFor(() => {
-      expect(screen.getByText('Antigravity CLI')).toBeInTheDocument();
+      expect(screen.getByText('Contoh Non-Gateway')).toBeInTheDocument();
     });
 
-    // Tidak ada lagi penanda kunci sistem khusus agy (B-081)
+    // Tidak ada penanda kunci sistem khusus untuk tool mana pun.
     expect(screen.queryByText('Dilindungi Sistem')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Antigravity CLI \(Read-Only\)/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Terkunci \(Sistem\)/i })).not.toBeInTheDocument();
 
-    // B-135: agy tetap terdaftar/terdeteksi setara tool lain, tetapi
-    // kartu menampilkan status + alasan jujur dari backend dan TIDAK
-    // menawarkan Configure — klaim dukungan gateway-nya dicabut.
+    // Kartu tool non-gateway menampilkan status + alasan jujur dari
+    // backend dan TIDAK menawarkan Configure.
     expect(screen.getByText('Tidak Dapat Diarahkan ke Gateway')).toBeInTheDocument();
-    expect(screen.getByText(/wajib masuk dengan akun Google/i)).toBeInTheDocument();
+    expect(screen.getByText(/terikat akun vendor/i)).toBeInTheDocument();
 
     // Hanya tool yang didukung gateway (claude) yang memiliki tombol
     // Terapkan; mengkliknya tetap memanggil API configure seperti biasa.
@@ -226,7 +226,7 @@ describe('CLIIntegrations — Pengujian Unit Dekomposisi', () => {
       );
     });
     expect(vi.mocked(api.cli.configure)).not.toHaveBeenCalledWith(
-      expect.objectContaining({ tool_id: 'agy' }),
+      expect.objectContaining({ tool_id: 'contoh-non-gateway' }),
     );
   });
 });

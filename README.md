@@ -9,7 +9,7 @@
 <p>OpenAI- and Anthropic-compatible ingestion, multi-provider routing with failover, hard budget guardrails, and a full operations dashboard — shipped as a single Go binary.</p>
 
 <p>
-<a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.6.1"><img src="https://img.shields.io/badge/Release-v1.6.1-10B981?style=for-the-badge&logo=github" alt="Release v1.6.1"></a>
+<a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.7.0"><img src="https://img.shields.io/badge/Release-v1.7.0-10B981?style=for-the-badge&logo=github" alt="Release v1.7.0"></a>
 <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27.3+-00ADD8?style=for-the-badge&logo=go" alt="Go 1.27.3+"></a>
 <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react" alt="React 19"></a>
 <a href="https://postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql" alt="PostgreSQL 16"></a>
@@ -31,7 +31,7 @@
 
 </div>
 
-> **Release status.** The latest release is **v1.6.1** — it simplifies the API key lifecycle (including two breaking changes on the admin API-key surface), fixes installer and error-message friction found during the v1.6.0 VPS trial, and updates the web test dependency. Everything described in this README reflects the code in this repository; see [`CHANGELOG.md`](CHANGELOG.md) for the full release notes.
+> **Release status.** The latest release is **v1.7.0** — it turns `/v1/responses` into a native OpenAI Responses API surface (non-streaming subset), adds real per-user roles, a per-mapping pricing UI with a global reference-price catalog endpoint, and an audit-log page, and it hardens the gateway end to end: budget enforcement that actually holds bursts, honest candidate errors (`provider_disabled`, `provider_unhealthy`), and disabled credentials/providers that truly stop traffic. The web toolchain moves to Vite 8, React 19, and Recharts 3. It carries behavior-breaking changes on the `/v1/responses` surface, admin user creation, and admin toggle bodies — see [`CHANGELOG.md`](CHANGELOG.md) for the full release notes. Everything described in this README reflects the code in this repository.
 
 > **Scope — read before deploying.** Route-X is an open-source project built for **personal use and small, trusted teams**. Its identity model is deliberately simple — there is no role-based access control and no multi-tenant isolation between dashboard users — but administrator rights are **not** automatic: a dashboard account is a full administrator only when it was explicitly created or promoted with the `admin` role, and accounts created without a role have no admin access at all. Do not expose a Route-X instance to untrusted users, and protect internet-facing instances like any other admin panel that stores paid upstream API credentials.
 
@@ -256,10 +256,10 @@ bash deploy.sh
 
 ```bash
 # 1. Download the official release (adjust the architecture if needed)
-curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.6.1/routex-v1.6.1-linux-amd64.tar.gz
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.7.0/routex-v1.7.0-linux-amd64.tar.gz
 
 # 2. Extract and run (migrations apply automatically on boot)
-tar -xzvf routex-v1.6.1-linux-amd64.tar.gz
+tar -xzvf routex-v1.7.0-linux-amd64.tar.gz
 ./ai-gateway
 ```
 

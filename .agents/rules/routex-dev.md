@@ -42,7 +42,7 @@ Aturan ini berlaku wajib bagi AI agent dan pengembang yang bekerja di repositori
 ---
 
 ## 5. Dual-Protocol Engine & Streaming (Standar Fitur Berjalan)
-- **Kompatibilitas OpenAI**: Rute `/v1/chat/completions` mematuhi spesifikasi OpenAI Chat Completions, baik non-streaming maupun streaming SSE. Rute `/v1/responses` adalah **alias** handler Chat Completions — BUKAN implementasi penuh OpenAI Responses API; jangan mengklaim kepatuhan Responses API penuh.
+- **Kompatibilitas OpenAI**: Rute `/v1/chat/completions` mematuhi spesifikasi OpenAI Chat Completions, baik non-streaming maupun streaming SSE. Rute `/v1/responses` adalah implementasi **OpenAI Responses API asli** pada subset non-streaming (B-105) — BUKAN alias Chat Completions; jangan mengklaim kepatuhan Responses API penuh (streaming dan respons tersimpan belum didukung).
 - **Kompatibilitas Anthropic**: Rute `/v1/messages` dan `/v1/v1/messages` harus menangani konversi dua arah secara presisi (roles, multi-modal content parts, tool calls).
 - **Integritas Streaming SSE**: Chunk streaming tidak boleh memotong karakter UTF-8 multibyte atau merusak framing JSON event `data: {...}`.
 - **Kesetaraan Alat CLI**: Konfigurasi otomatis berlaku sama untuk seluruh alat CLI pengembang yang terdaftar (Claude Code, OpenCode, Aider, SGPT, `agy`, dan lainnya) — tidak ada tool yang dikunci, dilindungi khusus, atau diistimewakan.

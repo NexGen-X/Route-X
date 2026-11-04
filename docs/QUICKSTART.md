@@ -37,7 +37,7 @@ x-api-key: sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 | Endpoint | Metode | Protokol | Deskripsi |
 |---|:---:|:---:|---|
 | `https://api.your-domain.com/v1/chat/completions` | `POST` | OpenAI | Inferensi percakapan standar OpenAI (streaming SSE & unary). |
-| `https://api.your-domain.com/v1/responses` | `POST` | OpenAI | **Alias** dari Chat Completions (handler yang sama), bukan implementasi penuh OpenAI Responses API. |
+| `https://api.your-domain.com/v1/responses` | `POST` | OpenAI | OpenAI Responses API asli (subset non-streaming), bukan alias Chat Completions dan bukan implementasi penuh (streaming/respons tersimpan belum didukung). |
 | `https://api.your-domain.com/v1/messages` | `POST` | Anthropic | Protokol Anthropic Messages (Claude Code, Cursor, dll.). |
 | `https://api.your-domain.com/v1/messages/count_tokens` | `POST` | Anthropic | Estimasi jumlah token sebuah pesan (tokenizer lokal). |
 | `https://api.your-domain.com/v1/models` | `GET` | OpenAI | Daftar model yang benar-benar memiliki rute aktif, beserta aliasnya (berpaginasi `limit`/`after_id`). |

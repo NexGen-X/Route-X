@@ -149,7 +149,7 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 		if execPath != "" {
 			status.Installed = true
 			status.Path = execPath
-			status.Version = m.detectVersion(ctx, execPath, tool.VersionArg)
+			status.Version = m.detectVersionUntukTool(ctx, tool, execPath)
 		}
 
 		// 2. Deteksi lokasi config file jika ada di sistem
@@ -341,7 +341,7 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 		Category:       toolDef.Category,
 		Installed:      execPath != "",
 		Path:           execPath,
-		Version:        m.detectVersion(ctx, execPath, toolDef.VersionArg),
+		Version:        m.detectVersionUntukTool(ctx, toolDef, execPath),
 		SupportedModes: []string{ModeModelOnly, ModeRouting, ModeCombo},
 		ActiveMode:     p.Mode,
 		ActiveTarget:   p.Target,
@@ -637,16 +637,47 @@ func bandingVersiNode(a, b string) int {
 	return strings.Compare(a, b)
 }
 
+// detectVersionUntukTool menjalankan deteksi versi untuk satu tool.
+//
+// Tool tanpa VersionArg (B-145 chatblade) tidak dieksekusi sama sekali:
+// versinya kosong secara jujur. Tool ber-VersionNeedsStoredKey (B-145
+// sgpt) dijalankan dengan kunci tersimpan tool itu di env proses anak
+// bila konfigurasi tersimpan punya kunci — tanpa itu perintah versinya
+// gugur saat import dan versi tool yang sehat selalu tampil kosong.
+// Kunci hanya hidup di env proses anak perintah versi; ia tidak
+// ditulis ke log, tidak masuk cache (kunci cache hanya mencatat ADA /
+// TIDAK adanya kunci), dan tidak kembali ke respons — yang diambil
+// dari keluaran hanyalah baris versi lewat ekstrakVersi. Tool lain
+// tidak berubah: env proses gateway apa adanya, seperti sebelumnya.
+func (m *Manager) detectVersionUntukTool(ctx context.Context, tool ToolDef, path string) string {
+	if path == "" || tool.VersionArg == "" {
+		return ""
+	}
+	var env []string
+	denganKunci := false
+	if tool.VersionNeedsStoredKey && tool.EnvVarAPIKey != "" {
+		if kt, ok := m.semuaKunciTersimpan(ctx)[tool.ID]; ok && kt.kunci != "" {
+			env = append(os.Environ(), tool.EnvVarAPIKey+"="+kt.kunci)
+			denganKunci = true
+		}
+	}
+	return m.detectVersion(ctx, path, tool.VersionArg, env, denganKunci)
+}
+
 // detectVersion menjalankan perintah versi untuk biner yang terdeteksi.
 // Hasilnya (termasuk kegagalan) ditahan ttlCacheVersi per path+argumen
 // supaya Scan tidak mengeksekusi ulang ±20 biner pada setiap panggilan
-// (audit3 V-LN-37).
-func (m *Manager) detectVersion(ctx context.Context, path string, versionArg string) string {
+// (audit3 V-LN-37). env nil berarti warisi env proses gateway; kunci
+// cache membedakan lari dengan / tanpa kunci tersimpan (B-145) supaya
+// hasil kosong dari lari tanpa kunci tidak menutupi lari berkunci
+// sesudah tool dikonfigurasi — nilai kuncinya sendiri tidak pernah
+// menjadi bagian kunci cache.
+func (m *Manager) detectVersion(ctx context.Context, path string, versionArg string, env []string, denganKunci bool) string {
 	if path == "" || versionArg == "" {
 		return ""
 	}
 
-	kunciCache := path + "\x00" + versionArg
+	kunciCache := path + "\x00" + versionArg + "\x00" + strconv.FormatBool(denganKunci)
 	m.cacheVersiMu.Lock()
 	if m.cacheVersi != nil {
 		if e, ok := m.cacheVersi[kunciCache]; ok && time.Since(e.pada) < ttlCacheVersi {
@@ -655,7 +686,7 @@ func (m *Manager) detectVersion(ctx context.Context, path string, versionArg str
 		}
 	}
 	m.cacheVersiMu.Unlock()
-	versi := m.detectVersionLangsung(ctx, path, versionArg)
+	versi := m.detectVersionLangsung(ctx, path, versionArg, env)
 	m.cacheVersiMu.Lock()
 	if m.cacheVersi == nil {
 		m.cacheVersi = make(map[string]entriVersi)
@@ -666,12 +697,15 @@ func (m *Manager) detectVersion(ctx context.Context, path string, versionArg str
 }
 
 // detectVersionLangsung adalah eksekusi versi yang sebenarnya, tanpa cache.
-func (m *Manager) detectVersionLangsung(ctx context.Context, path string, versionArg string) string {
+func (m *Manager) detectVersionLangsung(ctx context.Context, path string, versionArg string, env []string) string {
 
 	tctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 	defer cancel()
 
 	cmd := exec.CommandContext(tctx, path, versionArg)
+	if env != nil {
+		cmd.Env = env
+	}
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -727,6 +761,33 @@ func modelAider(target string) string {
 	return "openai/" + target
 }
 
+// Batas token OpenCommit yang ditulis Configure (B-144).
+//
+// Nama variabelnya adalah skema v3 yang benar-benar dibaca OpenCommit
+// 3.x (dokumentasi resmi tool): OCO_TOKENS_MAX_OUTPUT = "max response
+// tokens" (bawaan 500) dan OCO_REASONING_MAX_TOKENS = "max completion
+// token budget for reasoning models, including hidden reasoning
+// tokens" (bawaan 1000). Keduanya ditulis, bukan hanya satu: respons
+// Putaran 1 terpotong tepat pada 500 (plafon keluaran yang efektif),
+// sementara plafon reasoning bawaan 1000 akan menjadi batas efektif
+// berikutnya bagi model reasoning bila hanya keluaran yang dinaikkan —
+// menyamakan keduanya menghilangkan ambiguitas jalur mana yang menang.
+//
+// Nilai 4000 dipilih dari bukti, bukan karangan: pada Uji Live Putaran 1
+// reasoning intern-s2 menghabiskan SELURUH plafon 500 untuk satu pesan
+// commit sederhana (input 508 token, reasoning 500, isi 0 →
+// EMPTY_MESSAGE), padahal isi pesan commit itu sendiri pendek (judul
+// konvensional + deskripsi singkat, orde puluhan–ratusan token). 4000
+// adalah 8× plafon yang terbukti gagal — ruang reasoning beberapa kali
+// lipat dari konsumsi teramati untuk tugas commit, plus isi pesannya —
+// dan tetap plafon (model berhenti saat selesai, bukan target), bukan
+// angka tanpa batas. Ini konfigurasi produk: operator dapat mengubahnya
+// sesudah Configure lewat `oco config set` / menyunting ~/.opencommit.
+const (
+	ocoTokensMaxOutput    = "4000"
+	ocoReasoningMaxTokens = "4000"
+)
+
 // buildEnvVars menyusun map environment variables untuk tool tertentu.
 func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[string]string {
 	vars := make(map[string]string)
@@ -771,6 +832,11 @@ func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[str
 		// B-125: skema v3 opencommit menolak berjalan tanpa
 		// OCO_AI_PROVIDER ("set AI provider first").
 		vars["OCO_AI_PROVIDER"] = "openai"
+		// B-144: batas token yang memadai untuk model reasoning —
+		// bawaan tool (500/1000) habis seluruhnya untuk reasoning
+		// dan pesan commit tidak pernah dihasilkan (EMPTY_MESSAGE).
+		vars["OCO_TOKENS_MAX_OUTPUT"] = ocoTokensMaxOutput
+		vars["OCO_REASONING_MAX_TOKENS"] = ocoReasoningMaxTokens
 	case "copilot":
 		// B-128: mode BYOK resmi Copilot CLI menuntut jenis provider
 		// dinyatakan eksplisit; tanpa ini base URL tidak dipakai.
@@ -1401,6 +1467,11 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 		}
 		fmt.Fprintf(&ob, "OCO_API_URL=%s\n", gwURL)
 		fmt.Fprintf(&ob, "OCO_MODEL=%s\n", target)
+		// B-144: batas token skema v3 (lihat konstanta oco* di atas
+		// buildEnvVars) — tanpa ini bawaan tool 500/1000 habis untuk
+		// reasoning model reasoning dan oco gagal EMPTY_MESSAGE.
+		fmt.Fprintf(&ob, "OCO_TOKENS_MAX_OUTPUT=%s\n", ocoTokensMaxOutput)
+		fmt.Fprintf(&ob, "OCO_REASONING_MAX_TOKENS=%s\n", ocoReasoningMaxTokens)
 		if err := tulisAtomik(ocoPath, []byte(ob.String()), 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", ocoPath, err)
 		}

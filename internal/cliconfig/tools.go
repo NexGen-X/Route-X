@@ -92,6 +92,10 @@ func SupportedTools() []ToolDef {
 			BinaryNames: []string{"sgpt"},
 			ConfigPaths: []string{".config/shell_gpt/.sgptrc"},
 			VersionArg:  "--version",
+			// B-145: sgpt --version gugur saat import tanpa
+			// OPENAI_API_KEY di env; deteksi versinya dijalankan
+			// dengan kunci tersimpan sgpt bila ada.
+			VersionNeedsStoredKey: true,
 			// B-122: sgpt 1.5.x membaca base URL dari API_BASE_URL
 			// (sgpt/config.py); OPENAI_BASE_URL warisan tidak dibaca
 			// tool dan hanya tertolong fallback SDK tanpa sufiks /v1.
@@ -229,7 +233,17 @@ func SupportedTools() []ToolDef {
 			Description: "Perkakas CLI cepat untuk interaksi dengan model bahasa dan ekstraksi output JSON.",
 			BinaryNames: []string{"chatblade"},
 			ConfigPaths: []string{".chatblade.yaml"},
-			VersionArg:  "--version",
+			// B-145: VersionArg SENGAJA kosong. Pada build chatblade
+			// yang terpasang & teruji live di Uji Live Putaran 1,
+			// `--version` ditolak argparse ("unrecognized arguments:
+			// --version") — definisi lama menjanjikan flag yang tidak
+			// ada pada build itu, sehingga versinya selalu kosong
+			// lewat jalur kegagalan. Keluaran --help build itu juga
+			// tidak memuat nomor versi apa pun, dan tidak ada perintah
+			// versi lain yang sah, jadi deteksi versi dicabut:
+			// Version tampil kosong secara jujur (omitempty di API),
+			// bukan hasil eksekusi yang pasti gagal.
+			VersionArg: "",
 			// B-126: chatblade membaca base URL dari OPENAI_BASE_URL
 			// (SDK) dan model dari OPENAI_API_MODEL; OPENAI_API_BASE
 			// dan CHATBLADE_MODEL warisan tidak dibaca tool.

@@ -17,6 +17,11 @@ func SupportedTools() []ToolDef {
 			EnvVarModel:   "ANTIGRAVITY_MODEL",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
+			// B-135: agy wajib masuk dengan akun Google (Code Assist) dan
+			// tidak membaca endpoint/kunci OpenAI apa pun. Tool-nya sah
+			// dan kedudukannya setara tool lain (B-081) — yang dicabut
+			// hanya klaim Configure-nya.
+			UnsupportedReason: "Antigravity CLI (agy) wajib masuk dengan akun Google dan tidak membaca endpoint atau kunci OpenAI apa pun, sehingga tidak dapat diarahkan ke gateway Route-X.",
 		},
 		{
 			ID:            "claude",
@@ -73,30 +78,41 @@ func SupportedTools() []ToolDef {
 			EnvVarModel:   "OLLAMA_MODEL",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
+			// B-136: CLI ollama hanya berbicara protokol Ollama
+			// (/api/chat) ke daemon Ollama; gateway Route-X berbicara
+			// protokol OpenAI. Tidak ada nilai Configure yang dapat
+			// menjembatani keduanya.
+			UnsupportedReason: "Ollama CLI hanya berbicara protokol Ollama ke daemon Ollama, sedangkan gateway Route-X berbicara protokol OpenAI — keduanya tidak kompatibel, sehingga Ollama tidak dapat diarahkan ke gateway.",
 		},
 		{
-			ID:            "sgpt",
-			Name:          "Shell GPT",
-			Category:      "Terminal Assistant",
-			Description:   "Perkakas CLI bertenaga AI untuk generasi perintah shell, analisis log, dan obrolan terminal.",
-			BinaryNames:   []string{"sgpt"},
-			ConfigPaths:   []string{".config/shell_gpt/.sgptrc"},
-			VersionArg:    "--version",
-			EnvVarBaseURL: "OPENAI_BASE_URL",
+			ID:          "sgpt",
+			Name:        "Shell GPT",
+			Category:    "Terminal Assistant",
+			Description: "Perkakas CLI bertenaga AI untuk generasi perintah shell, analisis log, dan obrolan terminal.",
+			BinaryNames: []string{"sgpt"},
+			ConfigPaths: []string{".config/shell_gpt/.sgptrc"},
+			VersionArg:  "--version",
+			// B-122: sgpt 1.5.x membaca base URL dari API_BASE_URL
+			// (sgpt/config.py); OPENAI_BASE_URL warisan tidak dibaca
+			// tool dan hanya tertolong fallback SDK tanpa sufiks /v1.
+			EnvVarBaseURL: "API_BASE_URL",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "DEFAULT_MODEL",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
 		},
 		{
-			ID:            "fabric",
-			Name:          "Fabric AI",
-			Category:      "Workflow & Prompts",
-			Description:   "Framework modular untuk mengotomatiskan prompting cerdas dan ekstraksi pola via terminal.",
-			BinaryNames:   []string{"fabric"},
-			ConfigPaths:   []string{".config/fabric/.env"},
-			VersionArg:    "--version",
-			EnvVarBaseURL: "OPENAI_BASE_URL",
+			ID:          "fabric",
+			Name:        "Fabric AI",
+			Category:    "Workflow & Prompts",
+			Description: "Framework modular untuk mengotomatiskan prompting cerdas dan ekstraksi pola via terminal.",
+			BinaryNames: []string{"fabric"},
+			ConfigPaths: []string{".config/fabric/.env"},
+			VersionArg:  "--version",
+			// B-123: vendor OpenAI fabric membaca OPENAI_API_BASE_URL
+			// (bawaan hardcoded api.openai.com); OPENAI_BASE_URL warisan
+			// diabaikan sehingga kunci gateway terkirim ke OpenAI asli.
+			EnvVarBaseURL: "OPENAI_API_BASE_URL",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
 			EnvVarModel:   "DEFAULT_MODEL",
 			DefaultMode:   ModeModelOnly,
@@ -126,16 +142,22 @@ func SupportedTools() []ToolDef {
 			DefaultTarget: "gpt-5",
 		},
 		{
-			ID:            "llm",
-			Name:          "SimonW LLM",
-			Category:      "Terminal Assistant",
-			Description:   "CLI serbaguna Simon Willison untuk query model LLM, prompt templates, dan embeddings.",
-			BinaryNames:   []string{"llm"},
-			ConfigPaths:   []string{".config/io.datasette.llm/default_model.txt"},
-			VersionArg:    "--version",
-			EnvVarBaseURL: "OPENAI_API_BASE",
+			ID:          "llm",
+			Name:        "SimonW LLM",
+			Category:    "Terminal Assistant",
+			Description: "CLI serbaguna Simon Willison untuk query model LLM, prompt templates, dan embeddings.",
+			BinaryNames: []string{"llm"},
+			ConfigPaths: []string{".config/io.datasette.llm/extra-openai-models.yaml", ".config/io.datasette.llm/default_model.txt"},
+			VersionArg:  "--version",
+			// B-124: llm tidak membaca OPENAI_API_BASE/LLM_DEFAULT_MODEL
+			// untuk model gateway — model dikenal tool hanya lewat
+			// extra-openai-models.yaml dan model bawaan hanya lewat
+			// default_model.txt, keduanya ditulis
+			// applyToolSpecificConfig. Satu-satunya nama env yang
+			// berperan adalah OPENAI_API_KEY (api_key_name: openai).
+			EnvVarBaseURL: "",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
-			EnvVarModel:   "LLM_DEFAULT_MODEL",
+			EnvVarModel:   "",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
 		},
@@ -160,33 +182,27 @@ func SupportedTools() []ToolDef {
 			DefaultTarget: "gpt-5",
 		},
 		{
-			ID:            "opencommit",
-			Name:          "OpenCommit",
-			Category:      "Git Automation",
-			Description:   "Generator otomatis pesan commit konvensional git berbasis inferensi diff kode.",
-			BinaryNames:   []string{"opencommit", "oco"},
-			ConfigPaths:   []string{".opencommit"},
-			VersionArg:    "--version",
-			EnvVarBaseURL: "OCO_OPENAI_BASE_PATH",
-			EnvVarAPIKey:  "OCO_OPENAI_API_KEY",
+			ID:          "opencommit",
+			Name:        "OpenCommit",
+			Category:    "Git Automation",
+			Description: "Generator otomatis pesan commit konvensional git berbasis inferensi diff kode.",
+			BinaryNames: []string{"opencommit", "oco"},
+			ConfigPaths: []string{".opencommit"},
+			VersionArg:  "--version",
+			// B-125: opencommit v3 bermigrasi ke skema tunggal
+			// OCO_AI_PROVIDER/OCO_API_KEY/OCO_API_URL; nama warisan
+			// OCO_OPENAI_* tidak lagi dibaca dan tool gagal di migrasi
+			// internalnya sendiri tanpa OCO_AI_PROVIDER.
+			EnvVarBaseURL: "OCO_API_URL",
+			EnvVarAPIKey:  "OCO_API_KEY",
 			EnvVarModel:   "OCO_MODEL",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
 		},
-		{
-			ID:            "mentat",
-			Name:          "Mentat",
-			Category:      "Coding Agent",
-			Description:   "AI coding partner yang dapat mengoordinasikan pengeditan banyak berkas sekaligus.",
-			BinaryNames:   []string{"mentat"},
-			ConfigPaths:   []string{".mentat/config.json"},
-			VersionArg:    "--version",
-			EnvVarBaseURL: "OPENAI_API_BASE",
-			EnvVarAPIKey:  "OPENAI_API_KEY",
-			EnvVarModel:   "MENTAT_MODEL",
-			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "gpt-5",
-		},
+		// B-133: entri "mentat" DICABUT dari registri — biner resmi
+		// terakhir Mentat (1.0.19) hanyalah stub depresiasi yang
+		// mencetak pemberitahuan lalu keluar (proyek CLI dihentikan);
+		// tidak ada tool yang dapat dikonfigurasi.
 		{
 			ID:            "plandex",
 			Name:          "Plandex",
@@ -200,104 +216,120 @@ func SupportedTools() []ToolDef {
 			EnvVarModel:   "PLANDEX_MODEL",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
+			// B-134: Plandex adalah klien tipis yang wajib terhubung
+			// ke server Plandex (Cloud berakun atau self-hosted
+			// terpisah); tidak ada konfigurasi env yang mengarahkannya
+			// langsung ke gateway.
+			UnsupportedReason: "Plandex wajib terhubung ke server Plandex (Cloud berakun atau self-hosted terpisah) dan berhenti di pemilihan autentikasi sebelum panggilan model apa pun, sehingga tidak dapat diarahkan langsung ke gateway Route-X lewat Configure.",
 		},
 		{
-			ID:            "chatblade",
-			Name:          "Chatblade",
-			Category:      "Terminal Assistant",
-			Description:   "Perkakas CLI cepat untuk interaksi dengan model bahasa dan ekstraksi output JSON.",
-			BinaryNames:   []string{"chatblade"},
-			ConfigPaths:   []string{".chatblade.yaml"},
-			VersionArg:    "--version",
-			EnvVarBaseURL: "OPENAI_API_BASE",
+			ID:          "chatblade",
+			Name:        "Chatblade",
+			Category:    "Terminal Assistant",
+			Description: "Perkakas CLI cepat untuk interaksi dengan model bahasa dan ekstraksi output JSON.",
+			BinaryNames: []string{"chatblade"},
+			ConfigPaths: []string{".chatblade.yaml"},
+			VersionArg:  "--version",
+			// B-126: chatblade membaca base URL dari OPENAI_BASE_URL
+			// (SDK) dan model dari OPENAI_API_MODEL; OPENAI_API_BASE
+			// dan CHATBLADE_MODEL warisan tidak dibaca tool.
+			EnvVarBaseURL: "OPENAI_BASE_URL",
 			EnvVarAPIKey:  "OPENAI_API_KEY",
-			EnvVarModel:   "CHATBLADE_MODEL",
+			EnvVarModel:   "OPENAI_API_MODEL",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
 		},
-		{
-			ID:            "gpt-cli",
-			Name:          "GPT-CLI",
-			Category:      "Terminal Assistant",
-			Description:   "Klien baris perintah interaktif untuk percakapan dan penyelesaian tugas di terminal.",
-			BinaryNames:   []string{"gpt-cli", "gpt"},
-			ConfigPaths:   []string{".config/gpt-cli/gpt.yml"},
-			VersionArg:    "-v",
-			EnvVarBaseURL: "OPENAI_API_BASE",
-			EnvVarAPIKey:  "OPENAI_API_KEY",
-			EnvVarModel:   "GPT_CLI_MODEL",
-			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "gpt-5",
-		},
+		// B-127: entri "gpt-cli" DICABUT dari registri — identitasnya
+		// tidak pernah teridentifikasi: profil registri (biner
+		// gpt-cli/gpt, berkas gpt.yml) tidak cocok dengan satu pun dari
+		// dua paket resmi bernama gpt-cli (npm maupun PyPI), sehingga
+		// Configure-nya salah untuk kedua kandidat.
 		{
 			ID:            "cursor-agent",
 			Name:          "Cursor Agent",
 			Category:      "Coding Agent",
 			Description:   "CLI agent untuk antarmuka pengembang Cursor AI dan otomatisasi remote workflow.",
 			BinaryNames:   []string{"cursor-agent", "cursor"},
-			ConfigPaths:   []string{".cursor/settings.json"},
+			ConfigPaths:   []string{".cursor/cli-config.json"},
 			VersionArg:    "--version",
 			EnvVarBaseURL: "CURSOR_API_BASE",
 			EnvVarAPIKey:  "CURSOR_API_KEY",
 			EnvVarModel:   "CURSOR_MODEL",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
+			// B-130: Cursor Agent terikat cloud Cursor — endpoint-nya
+			// proprietari (bukan protokol OpenAI) dan kuncinya adalah
+			// kredensial akun Cursor; kunci gateway ditolak cloud
+			// Cursor dan endpoint gateway tidak pernah dicapai.
+			UnsupportedReason: "Cursor Agent terikat ke cloud Cursor: endpoint-nya memakai protokol proprietari Cursor dan kuncinya adalah kredensial akun Cursor, sehingga tidak dapat diarahkan ke gateway Route-X.",
 		},
 		{
-			ID:            "copilot",
-			Name:          "GitHub Copilot CLI",
-			Category:      "Terminal Assistant",
-			Description:   "Asisten CLI resmi GitHub untuk penjelasan perintah shell dan git command helper.",
-			BinaryNames:   []string{"github-copilot-cli", "copilot"},
-			ConfigPaths:   []string{".config/github-copilot/hosts.json"},
-			VersionArg:    "--version",
-			EnvVarBaseURL: "GITHUB_COPILOT_API_BASE",
-			EnvVarAPIKey:  "GITHUB_COPILOT_API_KEY",
+			ID:          "copilot",
+			Name:        "GitHub Copilot CLI",
+			Category:    "Terminal Assistant",
+			Description: "Asisten CLI resmi GitHub untuk penjelasan perintah shell dan git command helper.",
+			BinaryNames: []string{"github-copilot-cli", "copilot"},
+			// B-128: CLI generasi kini memakai $COPILOT_HOME (bawaan
+			// $HOME/.copilot), bukan hosts.json generasi lama.
+			ConfigPaths: []string{".copilot"},
+			VersionArg:  "--version",
+			// B-128: jalur resmi ke gateway adalah mode BYOK
+			// COPILOT_PROVIDER_* (dari `copilot help environment`);
+			// GITHUB_COPILOT_* warisan adalah rekaan yang tidak dibaca
+			// tool ("No authentication information found").
+			EnvVarBaseURL: "COPILOT_PROVIDER_BASE_URL",
+			EnvVarAPIKey:  "COPILOT_PROVIDER_API_KEY",
 			EnvVarModel:   "COPILOT_MODEL",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
 		},
 		{
-			ID:            "cody",
-			Name:          "Sourcegraph Cody",
-			Category:      "Coding Agent",
-			Description:   "CLI asisten kode cerdas Sourcegraph dengan pemahaman konteks grafik kode menyeluruh.",
-			BinaryNames:   []string{"cody"},
-			ConfigPaths:   []string{".config/cody/config.json"},
+			ID:          "cody",
+			Name:        "Sourcegraph Cody",
+			Category:    "Coding Agent",
+			Description: "CLI asisten kode cerdas Sourcegraph dengan pemahaman konteks grafik kode menyeluruh.",
+			BinaryNames: []string{"cody"},
+			// B-131: ConfigPaths warisan (.config/cody/config.json)
+			// tidak dipakai CLI cody; entri dipertahankan tanpa jalur
+			// rekaan. CODY_DEFAULT_MODEL juga rekaan (model hanya
+			// lewat flag --model) dan dibuang.
+			ConfigPaths:   []string{},
 			VersionArg:    "--version",
 			EnvVarBaseURL: "SRC_ENDPOINT",
 			EnvVarAPIKey:  "SRC_ACCESS_TOKEN",
-			EnvVarModel:   "CODY_DEFAULT_MODEL",
+			EnvVarModel:   "",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "claude-sonnet-5",
+			// B-131: SRC_ENDPOINT/SRC_ACCESS_TOKEN adalah kredensial
+			// akun Sourcegraph ke instans Sourcegraph dan protokolnya
+			// GraphQL Sourcegraph — batas vendor, bukan gateway.
+			UnsupportedReason: "Cody terikat ke instans dan akun Sourcegraph (protokol GraphQL Sourcegraph, bukan protokol OpenAI), sehingga tidak dapat diarahkan ke gateway Route-X.",
 		},
 		{
-			ID:            "k8sgpt",
-			Name:          "K8sGPT",
-			Category:      "DevOps & SRE",
-			Description:   "Pemindai cluster Kubernetes berbasis AI untuk diagnosis otomatis insiden & error log.",
-			BinaryNames:   []string{"k8sgpt"},
-			ConfigPaths:   []string{".k8sgpt.yaml"},
-			VersionArg:    "version",
-			EnvVarBaseURL: "K8SGPT_OPENAI_BASE_URL",
-			EnvVarAPIKey:  "K8SGPT_OPENAI_API_KEY",
-			EnvVarModel:   "K8SGPT_MODEL",
+			ID:          "k8sgpt",
+			Name:        "K8sGPT",
+			Category:    "DevOps & SRE",
+			Description: "Pemindai cluster Kubernetes berbasis AI untuk diagnosis otomatis insiden & error log.",
+			BinaryNames: []string{"k8sgpt"},
+			// B-129: konfigurasi nyata k8sgpt 0.4.x adalah berkas
+			// YAML ini (setara `k8sgpt auth add`); jalur .k8sgpt.yaml
+			// adalah jalur versi lama.
+			ConfigPaths: []string{".config/k8sgpt/k8sgpt.yaml"},
+			VersionArg:  "version",
+			// B-129: pola env K8SGPT_OPENAI* tidak ada di biner —
+			// tidak ada nama env untuk base URL/kunci/model; semuanya
+			// hidup di berkas YAML yang ditulis
+			// applyToolSpecificConfig.
+			EnvVarBaseURL: "",
+			EnvVarAPIKey:  "",
+			EnvVarModel:   "",
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
 		},
-		{
-			ID:            "codecompanion",
-			Name:          "CodeCompanion CLI",
-			Category:      "Coding Agent",
-			Description:   "CLI adapter untuk ekosistem AI editor pengembang yang mendukung format OpenAI & Anthropic.",
-			BinaryNames:   []string{"codecompanion", "companion"},
-			ConfigPaths:   []string{".config/codecompanion/config.json"},
-			VersionArg:    "--version",
-			EnvVarBaseURL: "CODECOMPANION_API_BASE",
-			EnvVarAPIKey:  "CODECOMPANION_API_KEY",
-			EnvVarModel:   "CODECOMPANION_MODEL",
-			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "gpt-5",
-		},
+		// B-132: entri "codecompanion" DICABUT dari registri —
+		// CodeCompanion adalah plugin Neovim (codecompanion.nvim);
+		// tidak ada CLI bernama itu yang diterbitkan, sehingga
+		// seluruh env/ConfigPaths-nya adalah rekaan untuk program
+		// yang tidak eksis.
 	}
 }

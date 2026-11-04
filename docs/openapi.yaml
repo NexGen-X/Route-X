@@ -6218,7 +6218,13 @@ components:
           type: string
           format: date-time
           nullable: true
-      required: [id, name, description, category, installed, supported_modes, active_mode, active_target, env_vars, export_snippet]
+        gateway_supported:
+          type: boolean
+          description: "false bila tool secara arsitektur tidak dapat diarahkan ke gateway Route-X; Configure untuk tool itu ditolak 400."
+        unsupported_reason:
+          type: string
+          description: "Alasan tool tidak dapat diarahkan ke gateway (hanya ada bila gateway_supported false)."
+      required: [id, name, description, category, installed, supported_modes, active_mode, active_target, env_vars, export_snippet, gateway_supported]
     CacheFlushResponseDTO:
       type: object
       properties:

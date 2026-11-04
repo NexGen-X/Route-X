@@ -67,6 +67,11 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
   const [showKey, setShowKey] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const completeSnippet = getToolCompleteSnippet(tool, config, models, userApiKey, publicBaseURL);
+  // Kejujuran katalog: tool yang secara arsitektur tidak dapat
+  // diarahkan ke gateway ditampilkan apa adanya — tanpa tawaran
+  // Configure, snippet, atau tombol Terapkan yang akan mengklaim
+  // dukungan yang tidak ada.
+  const tidakDidukung = tool.gateway_supported === false;
 
   const modeLabels: Record<'model_only' | 'routing' | 'combo', string> = {
     model_only: 'Model Langsung',
@@ -108,7 +113,12 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
 
           {/* Status Badge Minimalis */}
           <div className="shrink-0 pt-0.5">
-            {statusKonfigurasiTool(tool) === 'terkonfigurasi-routex' ? (
+            {tidakDidukung ? (
+              <Badge variant="warn" className="gap-1 font-medium">
+                <AlertTriangle className="w-3 h-3" />
+                Tidak Dapat Diarahkan ke Gateway
+              </Badge>
+            ) : statusKonfigurasiTool(tool) === 'terkonfigurasi-routex' ? (
               <Badge variant="lime" className="gap-1 font-medium">
                 <CheckCircle2 className="w-3 h-3" />
                 Terarah ke Route-X
@@ -132,7 +142,16 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
           {tool.description}
         </p>
 
+        {/* Alasan jujur untuk tool yang tidak dapat diarahkan ke gateway */}
+        {tidakDidukung && (
+          <p className="text-xs text-text-muted leading-relaxed">
+            {tool.unsupported_reason ||
+              'Tool ini tidak dapat diarahkan ke gateway Route-X.'}
+          </p>
+        )}
+
         {/* Box Command 1-Baris Siap Salin di Kartu Muka */}
+        {!tidakDidukung && (
         <div className="bg-bg-surface-2 p-2.5 rounded-inner border border-border flex items-center justify-between text-xs font-mono">
           <span className="truncate pr-2 text-text-secondary select-all font-mono">
             {completeSnippet.split('\n')[0] || `export ${tool.env_var_api_key || 'API_KEY'}=...`}
@@ -151,8 +170,10 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
             )}
           </button>
         </div>
+        )}
 
         {/* Ringkasan Konfigurasi Aktif */}
+        {!tidakDidukung && (
         <div className="flex items-center justify-between text-xs font-mono text-text-muted pt-0.5">
           <span className="truncate">
             Mode:{' '}
@@ -171,9 +192,10 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
             {isConfigOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
         </div>
+        )}
 
         {/* Collapsible Accordion: Konfigurasi Target & Mode */}
-        {isConfigOpen && (
+        {!tidakDidukung && isConfigOpen && (
           <div className="space-y-3 pt-3 border-t border-border animate-fade-in">
               <div>
                 <label className="text-xs font-medium text-text-secondary block mb-1.5">
@@ -343,6 +365,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
       </div>
 
       {/* Action Buttons & Real Live Diagnostics */}
+      {!tidakDidukung && (
       <div className="mt-4 pt-3 border-t border-border space-y-2">
         {successMsg && (
           <div className="p-2 rounded bg-accent/10 border border-accent/30 text-[11px] font-mono text-accent-text flex items-center gap-1.5">
@@ -387,6 +410,7 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
           </div>
         )}
 
+        {!tidakDidukung && (
         <div className="flex items-center gap-2">
           {/* Tombol Terapkan ke CLI */}
           <Button
@@ -446,7 +470,9 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
             )}
           </Button>
         </div>
+        )}
       </div>
+      )}
     </Card>
   );
 };

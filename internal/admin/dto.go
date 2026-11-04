@@ -1737,6 +1737,10 @@ type CLIToolDTO struct {
 	EnvVarAPIKey   string            `json:"env_var_api_key,omitempty"`
 	ExportSnippet  string            `json:"export_snippet"`
 	UpdatedAt      *time.Time        `json:"updated_at,omitempty"`
+	// GatewaySupported false = tool tidak dapat diarahkan ke gateway
+	// Route-X (batas arsitektur tool); UnsupportedReason menjelaskannya.
+	GatewaySupported  bool   `json:"gateway_supported"`
+	UnsupportedReason string `json:"unsupported_reason,omitempty"`
 }
 
 func (CLIToolDTO) adalahDTO() {}

@@ -137,6 +137,11 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 			ActiveTarget:   tool.DefaultTarget,
 			EnvVars:        make(map[string]string),
 			EnvVarAPIKey:   tool.EnvVarAPIKey,
+			// Kejujuran katalog (B-130/B-131/B-134/B-135/B-136): tool
+			// yang tidak dapat diarahkan ke gateway ditandai apa
+			// adanya sejak pindaian, bukan sesudah Configure "sukses".
+			GatewaySupported:  tool.UnsupportedReason == "",
+			UnsupportedReason: tool.UnsupportedReason,
 		}
 
 		// 1. Deteksi executable path
@@ -193,6 +198,15 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	toolDef, found := m.findToolDef(p.ToolID)
 	if !found {
 		return nil, fmt.Errorf("perkakas CLI dengan id '%s' tidak didukung", p.ToolID)
+	}
+
+	// Kejujuran katalog: tool yang secara arsitektur tidak dapat
+	// diarahkan ke gateway DITOLAK di sini — sebelum penulisan berkas,
+	// key.env, atau database apa pun — dengan alasannya. Versi lama
+	// melaporkan "berhasil diterapkan" untuk integrasi yang terbukti
+	// tidak ada (B-130, B-131, B-134, B-135, B-136).
+	if toolDef.UnsupportedReason != "" {
+		return nil, fmt.Errorf("%s tidak dapat dikonfigurasi ke gateway: %s", toolDef.Name, toolDef.UnsupportedReason)
 	}
 
 	// Validasi mode
@@ -335,6 +349,9 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 		EnvVarAPIKey:   toolDef.EnvVarAPIKey,
 		ExportSnippet:  m.buildSnippet(fullEnvVars),
 		UpdatedAt:      stored.UpdatedAt,
+		// Configure hanya mencapai titik ini untuk tool yang didukung
+		// gateway (penolakan untuk yang tidak didukung ada di atas).
+		GatewaySupported: true,
 	}
 
 	return status, nil
@@ -445,6 +462,15 @@ func susunKontenKeyEnv(perTool map[string]kunciTersimpan) (string, error) {
 	var terbaru *kunciTersimpan
 	for toolID, kt := range perTool {
 		kt := kt
+		// Tool yang tidak didukung gateway tidak menyumbang variabel
+		// kunci apa pun — termasuk kandidat nama generik: konfigurasi
+		// warisannya (dari versi sebelum penolakan Configure) tidak
+		// boleh terus menyebarkan kunci gateway atas nama tool yang
+		// tidak pernah benar-benar memakainya.
+		def, dikenal := cariToolDef(toolID)
+		if !dikenal || def.UnsupportedReason != "" {
+			continue
+		}
 		if terbaru == nil || kt.diperbarui.After(terbaru.diperbarui) {
 			salin := kt
 			terbaru = &salin
@@ -467,6 +493,15 @@ func susunKontenKeyEnv(perTool map[string]kunciTersimpan) (string, error) {
 
 	var b strings.Builder
 	b.WriteString("# Route-X — API key per tool CLI (dibangun ulang otomatis; jangan edit manual)\n")
+	// Keputusan desain B-117 (terdokumentasi di backlog): nama generik
+	// di bawah (ROUTEX_API_KEY/ANTHROPIC_API_KEY/OPENAI_API_KEY/
+	// OPENCODE_API_KEY) SENGAJA dipertahankan karena Claude Code dan
+	// OpenCode terbukti bergantung padanya. Konsekuensinya dinyatakan
+	// apa adanya di sini: tool LAIN yang tidak dikonfigurasi Route-X
+	// tetapi berjalan di shell yang memuat berkas ini dapat membaca
+	// nama generik itu. Tool yang dikonfigurasi Route-X kini terikat
+	// config/nama khasnya masing-masing (B-101, B-122…B-129).
+	b.WriteString("# Catatan B-117: nama generik (OPENAI_API_KEY/ANTHROPIC_API_KEY/dsb.) dibaca tool apa pun\n# di shell yang memuat berkas ini; tool terkonfigurasi Route-X memakai config khasnya sendiri.\n")
 	for _, nama := range namaVars {
 		q, err := shellQuote(vars[nama].nilai)
 		if err != nil {
@@ -645,9 +680,33 @@ func (m *Manager) detectVersionLangsung(ctx context.Context, path string, versio
 		return ""
 	}
 
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) > 0 {
-		ver := strings.TrimSpace(lines[0])
+	return ekstrakVersi(out.String())
+}
+
+// ekstrakVersi memilih baris versi dari keluaran perintah versi tool.
+//
+// B-121: versi lama mengambil baris pertama apa adanya, sehingga tool
+// yang mencetak baris pembuka non-versi (pada uji live, Continue
+// menampilkan harfiah "None") melaporkan omong kosong itu sebagai
+// versinya. Keluaran nyata `cn --version` adalah semver polos
+// ("1.5.47"), dan tool lain mencetak bentuk seperti "llm, version
+// 0.37.1" atau "k8sgpt: 0.4.41 (3644ecf)" — semuanya baris yang memuat
+// angka. Aturannya: baris pertama yang memuat angka menang; baris
+// placeholder yang diketahui bukan versi ("none", "null", "unknown",
+// "undefined") tidak pernah dilaporkan sebagai versi.
+func ekstrakVersi(keluaran string) string {
+	for _, baris := range strings.Split(keluaran, "\n") {
+		ver := strings.TrimSpace(baris)
+		if ver == "" {
+			continue
+		}
+		switch strings.ToLower(ver) {
+		case "none", "null", "unknown", "undefined", "n/a":
+			continue
+		}
+		if !strings.ContainsAny(ver, "0123456789") {
+			continue
+		}
 		if len(ver) > 60 {
 			ver = ver[:60] + "..."
 		}
@@ -671,6 +730,13 @@ func modelAider(target string) string {
 // buildEnvVars menyusun map environment variables untuk tool tertentu.
 func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[string]string {
 	vars := make(map[string]string)
+
+	// Kejujuran katalog: tool yang tidak dapat diarahkan ke gateway
+	// tidak mendapat ekspor env apa pun — ekspor warisannya terbukti
+	// tidak dibaca tool dan hanya mengesankan dukungan yang tidak ada.
+	if tool.UnsupportedReason != "" {
+		return vars
+	}
 
 	// B-101: Continue (cn) tidak membaca variabel env khusus apa pun —
 	// konfigurasi sahnya hanya berkas ~/.continue/config.yaml yang
@@ -696,6 +762,19 @@ func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[str
 		vars["GOOSE_PROVIDER"] = "openai"
 	case "aider":
 		model = modelAider(target)
+	case "fabric":
+		// B-123: tanpa DEFAULT_VENDOR fabric menolak berjalan
+		// ("please run 'fabric --setup'"); vendor OpenAI adalah jalur
+		// gateway OpenAI-compatible Route-X.
+		vars["DEFAULT_VENDOR"] = "OpenAI"
+	case "opencommit":
+		// B-125: skema v3 opencommit menolak berjalan tanpa
+		// OCO_AI_PROVIDER ("set AI provider first").
+		vars["OCO_AI_PROVIDER"] = "openai"
+	case "copilot":
+		// B-128: mode BYOK resmi Copilot CLI menuntut jenis provider
+		// dinyatakan eksplisit; tanpa ini base URL tidak dipakai.
+		vars["COPILOT_PROVIDER_TYPE"] = "openai"
 	}
 
 	if tool.EnvVarBaseURL != "" {
@@ -768,6 +847,187 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 		hasil += p[0] + ": " + yamlKutip(p[1]) + "\n"
 	}
 	if hasil != "" && !strings.HasSuffix(hasil, "\n") {
+		hasil += "\n"
+	}
+	return hasil
+}
+
+// perbaruiExtraOpenAIModels memperbarui berkas extra-openai-models.yaml
+// milik SimonW llm (B-124): daftar YAML tingkat-atas berisi satu entri
+// per model. Entri untuk model target ditulis ulang dari nilai gateway
+// terkini; entri model LAIN milik pengguna dipertahankan apa adanya.
+func perbaruiExtraOpenAIModels(existing, target, gwURL string) string {
+	var kept []string
+	var cur []string
+	flush := func() {
+		if len(cur) == 0 {
+			return
+		}
+		milikTarget := false
+		for _, l := range cur {
+			t := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "- "))
+			if strings.HasPrefix(t, "model_id:") {
+				v := strings.Trim(strings.TrimSpace(strings.TrimPrefix(t, "model_id:")), `"'`)
+				if v == target {
+					milikTarget = true
+				}
+			}
+		}
+		if !milikTarget {
+			kept = append(kept, cur...)
+		}
+		cur = nil
+	}
+	for _, l := range strings.Split(existing, "\n") {
+		if strings.HasPrefix(l, "- ") || l == "-" {
+			flush()
+		}
+		if strings.TrimSpace(l) == "" && len(cur) == 0 && len(kept) == 0 {
+			continue
+		}
+		cur = append(cur, l)
+	}
+	flush()
+	for len(kept) > 0 && strings.TrimSpace(kept[len(kept)-1]) == "" {
+		kept = kept[:len(kept)-1]
+	}
+	var b strings.Builder
+	if len(kept) > 0 {
+		b.WriteString(strings.Join(kept, "\n"))
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "- model_id: %s\n", yamlKutip(target))
+	fmt.Fprintf(&b, "  model_name: %s\n", yamlKutip(target))
+	fmt.Fprintf(&b, "  api_base: %s\n", yamlKutip(gwURL))
+	b.WriteString("  api_key_name: openai\n")
+	return b.String()
+}
+
+// susunK8sGPTConfig menyusun isi k8sgpt.yaml (B-129) setara hasil
+// `k8sgpt auth add` + `auth default`: seksi ai memuat defaultprovider
+// openai dan satu entri provider openai (baseurl/model/password dari
+// gateway). Provider non-openai dan seksi tingkat-atas lain milik
+// pengguna dipertahankan; entri openai lama ditulis ulang.
+func susunK8sGPTConfig(existing, target, gwURL, apiKey string) string {
+	// Potong berkas menjadi seksi tingkat-atas (kunci di kolom 0).
+	type seksi struct {
+		kunci string
+		baris []string
+	}
+	var daftar []seksi
+	for _, l := range strings.Split(existing, "\n") {
+		kunci := ""
+		if l != "" && l[0] != ' ' && l[0] != '\t' && l[0] != '#' {
+			if i := strings.Index(l, ":"); i > 0 {
+				kunci = strings.TrimSpace(l[:i])
+			}
+		}
+		if kunci != "" || len(daftar) == 0 {
+			daftar = append(daftar, seksi{kunci: kunci})
+		}
+		daftar[len(daftar)-1].baris = append(daftar[len(daftar)-1].baris, l)
+	}
+
+	indentDari := func(l string) int {
+		return len(l) - len(strings.TrimLeft(l, " "))
+	}
+
+	// Saring isi seksi ai lama: buang defaultprovider dan entri
+	// provider bernama openai; sisanya (provider lain + kunci lain)
+	// dipertahankan.
+	var sisaAI []string
+	var providerLain []string
+	idxAI := -1
+	for i, s := range daftar {
+		if s.kunci != "ai" {
+			continue
+		}
+		idxAI = i
+		baris := s.baris
+		// Lewati baris header "ai:" itu sendiri.
+		isi := baris[1:]
+		for j := 0; j < len(isi); j++ {
+			l := isi[j]
+			t := strings.TrimSpace(l)
+			if strings.HasPrefix(t, "defaultprovider:") {
+				continue
+			}
+			if t == "providers:" {
+				induk := indentDari(l)
+				j++
+				var item []string
+				flushItem := func() {
+					if len(item) == 0 {
+						return
+					}
+					openai := false
+					for _, il := range item {
+						it := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(il), "- "))
+						if it == "name: openai" {
+							openai = true
+						}
+					}
+					if !openai {
+						providerLain = append(providerLain, item...)
+					}
+					item = nil
+				}
+				for ; j < len(isi); j++ {
+					il := isi[j]
+					if strings.TrimSpace(il) == "" {
+						continue
+					}
+					if indentDari(il) <= induk {
+						j--
+						break
+					}
+					if strings.HasPrefix(strings.TrimSpace(il), "- ") {
+						flushItem()
+					}
+					item = append(item, il)
+				}
+				flushItem()
+				continue
+			}
+			sisaAI = append(sisaAI, l)
+		}
+	}
+
+	var aiBaru []string
+	aiBaru = append(aiBaru, "ai:")
+	aiBaru = append(aiBaru, "  defaultprovider: openai")
+	aiBaru = append(aiBaru, "  providers:")
+	aiBaru = append(aiBaru, "    - name: openai")
+	aiBaru = append(aiBaru, "      baseurl: "+yamlKutip(gwURL))
+	aiBaru = append(aiBaru, "      model: "+yamlKutip(target))
+	if apiKey != "" {
+		aiBaru = append(aiBaru, "      password: "+yamlKutip(apiKey))
+	}
+	aiBaru = append(aiBaru, providerLain...)
+	aiBaru = append(aiBaru, sisaAI...)
+
+	var out []string
+	tertulis := false
+	for i, s := range daftar {
+		if i == idxAI {
+			out = append(out, aiBaru...)
+			tertulis = true
+			continue
+		}
+		// Buang baris kosong ekor dari potongan terakhir hasil Split.
+		baris := s.baris
+		if i == len(daftar)-1 {
+			for len(baris) > 0 && strings.TrimSpace(baris[len(baris)-1]) == "" {
+				baris = baris[:len(baris)-1]
+			}
+		}
+		out = append(out, baris...)
+	}
+	if !tertulis {
+		out = append(out, aiBaru...)
+	}
+	hasil := strings.Join(out, "\n")
+	if !strings.HasSuffix(hasil, "\n") {
 		hasil += "\n"
 	}
 	return hasil
@@ -1039,31 +1299,130 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 		}
 
 	case "fabric":
-		// Tulis ~/.config/fabric/.env
+		// Tulis ~/.config/fabric/.env dalam bentuk yang benar-benar
+		// dibaca fabric 1.4.x (B-123, terbukti live): vendor OpenAI
+		// membaca OPENAI_API_BASE_URL — OPENAI_BASE_URL warisan
+		// diabaikan dan kunci gateway justru terkirim ke
+		// api.openai.com asli. DEFAULT_VENDOR wajib ada, tanpa itu
+		// fabric menolak berjalan. Kunci ditulis ke .env ini (bentuk
+		// diagnostik yang terbukti) hanya bila Configure membawa
+		// kunci; berkas ditulis ulang penuh, jadi konfigurasi ulang
+		// tanpa kunci tidak meninggalkan kredensial hantu. Izin 0600
+		// karena berkas bisa memuat kunci.
 		fabricDir := filepath.Join(homeDir, ".config", "fabric")
 		_ = os.MkdirAll(fabricDir, 0755)
 		envPath := filepath.Join(fabricDir, ".env")
-		content := fmt.Sprintf("OPENAI_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
-		if err := tulisAtomik(envPath, []byte(content), 0644); err != nil {
+		var fb strings.Builder
+		if apiKey != "" {
+			fmt.Fprintf(&fb, "OPENAI_API_KEY=%s\n", apiKey)
+		}
+		fmt.Fprintf(&fb, "OPENAI_API_BASE_URL=%s\n", gwURL)
+		fb.WriteString("DEFAULT_VENDOR=OpenAI\n")
+		fmt.Fprintf(&fb, "DEFAULT_MODEL=%s\n", target)
+		if err := tulisAtomik(envPath, []byte(fb.String()), 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", envPath, err)
+		}
+		// Vendor OpenAI fabric memakai Responses API secara bawaan,
+		// yang dijawab gateway 400; disableResponsesAPI di
+		// config.yaml (dimuat otomatis fabric, terbukti live)
+		// mengembalikannya ke Chat Completions. Kunci tingkat-atas
+		// lain milik pengguna dipertahankan.
+		configPath := filepath.Join(fabricDir, "config.yaml")
+		var existingCfg string
+		if data, err := os.ReadFile(configPath); err == nil {
+			existingCfg = string(data)
+		}
+		cfgContent := perbaruiYAMLTopLevel(existingCfg, [][2]string{
+			{"disableResponsesAPI", "true"},
+		})
+		if err := tulisAtomik(configPath, []byte(cfgContent), 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", configPath, err)
+		}
+		// Fabric menuntut pola untuk mode non-interaktif; sediakan
+		// satu pola minimal milik Route-X. Pola yang sudah ada tidak
+		// ditimpa (mungkin sudah disesuaikan pengguna).
+		patternPath := filepath.Join(fabricDir, "patterns", "routex", "system.md")
+		if _, err := os.Stat(patternPath); os.IsNotExist(err) {
+			_ = os.MkdirAll(filepath.Dir(patternPath), 0755)
+			isi := "You are a helpful assistant accessed through the Route-X gateway. Follow the user's instructions and answer directly and concisely.\n"
+			if err := tulisAtomik(patternPath, []byte(isi), 0644); err != nil {
+				return fmt.Errorf("menulis %s: %w", patternPath, err)
+			}
 		}
 
 	case "sgpt":
-		// Tulis ~/.config/shell_gpt/.sgptrc
+		// Tulis ~/.config/shell_gpt/.sgptrc (B-122): sgpt membaca
+		// base URL dari kunci API_BASE_URL (sgpt/config.py), BUKAN
+		// OPENAI_BASE_URL — nilai warisan hanya tertolong fallback
+		// SDK tanpa sufiks /v1 dan jatuh ke POST /chat/completions.
 		sgptDir := filepath.Join(homeDir, ".config", "shell_gpt")
 		_ = os.MkdirAll(sgptDir, 0755)
 		sgptPath := filepath.Join(sgptDir, ".sgptrc")
-		content := fmt.Sprintf("OPENAI_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
+		content := fmt.Sprintf("API_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
 		if err := tulisAtomik(sgptPath, []byte(content), 0644); err != nil {
 			return fmt.Errorf("menulis %s: %w", sgptPath, err)
 		}
 
+	case "llm":
+		// Tulis konfigurasi SimonW llm (B-124, terbukti live): model
+		// gateway hanya dikenal tool lewat extra-openai-models.yaml
+		// (api_key_name: openai membuat llm memakai OPENAI_API_KEY
+		// dari lingkungan — tanpanya llm menahan kunci untuk api_base
+		// kustom), dan model bawaan hanya lewat default_model.txt
+		// (LLM_DEFAULT_MODEL tidak dibaca llm sama sekali). Entri
+		// model lain milik pengguna di berkas extra dipertahankan.
+		llmDir := filepath.Join(homeDir, ".config", "io.datasette.llm")
+		_ = os.MkdirAll(llmDir, 0755)
+		extraPath := filepath.Join(llmDir, "extra-openai-models.yaml")
+		var existingExtra string
+		if data, err := os.ReadFile(extraPath); err == nil {
+			existingExtra = string(data)
+		}
+		if err := tulisAtomik(extraPath, []byte(perbaruiExtraOpenAIModels(existingExtra, target, gwURL)), 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", extraPath, err)
+		}
+		defaultPath := filepath.Join(llmDir, "default_model.txt")
+		if err := tulisAtomik(defaultPath, []byte(target+"\n"), 0644); err != nil {
+			return fmt.Errorf("menulis %s: %w", defaultPath, err)
+		}
+
 	case "opencommit":
-		// Tulis ~/.opencommit
+		// Tulis ~/.opencommit dalam skema v3 (B-125, terbukti live):
+		// OCO_AI_PROVIDER/OCO_API_KEY/OCO_API_URL. Tanpa
+		// OCO_AI_PROVIDER, opencommit v3 gagal di migrasi internalnya
+		// sendiri sebelum panggilan model apa pun. Berkas ditulis
+		// ulang penuh (kunci lama tidak tertinggal) dan berizin 0600
+		// karena bisa memuat kunci.
 		ocoPath := filepath.Join(homeDir, ".opencommit")
-		content := fmt.Sprintf("OCO_OPENAI_BASE_PATH=%s\nOCO_MODEL=%s\n", gwURL, target)
-		if err := tulisAtomik(ocoPath, []byte(content), 0644); err != nil {
+		var ob strings.Builder
+		ob.WriteString("OCO_AI_PROVIDER=openai\n")
+		if apiKey != "" {
+			fmt.Fprintf(&ob, "OCO_API_KEY=%s\n", apiKey)
+		}
+		fmt.Fprintf(&ob, "OCO_API_URL=%s\n", gwURL)
+		fmt.Fprintf(&ob, "OCO_MODEL=%s\n", target)
+		if err := tulisAtomik(ocoPath, []byte(ob.String()), 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", ocoPath, err)
+		}
+
+	case "k8sgpt":
+		// Tulis ~/.config/k8sgpt/k8sgpt.yaml (B-129, setara hasil
+		// `k8sgpt auth add -b openai -u <gateway>/v1 -m <target>
+		// -p <kunci>` + `k8sgpt auth default -p openai`, keduanya
+		// terbukti pada diagnostik live): struktur ai.providers +
+		// ai.defaultprovider yang dibaca k8sgpt 0.4.x. Env rekaan
+		// K8SGPT_OPENAI* tidak ada di biner dan tidak lagi ditulis.
+		// Provider non-openai dan seksi lain milik pengguna
+		// dipertahankan. Izin 0600 karena berkas memuat password.
+		k8sDir := filepath.Join(homeDir, ".config", "k8sgpt")
+		_ = os.MkdirAll(k8sDir, 0755)
+		k8sPath := filepath.Join(k8sDir, "k8sgpt.yaml")
+		var existingK8s string
+		if data, err := os.ReadFile(k8sPath); err == nil {
+			existingK8s = string(data)
+		}
+		if err := tulisAtomik(k8sPath, []byte(susunK8sGPTConfig(existingK8s, target, gwURL, apiKey)), 0600); err != nil {
+			return fmt.Errorf("menulis %s: %w", k8sPath, err)
 		}
 
 	case "opencode":
@@ -1155,7 +1514,11 @@ func (m *Manager) GetExportScript(homeDir string) (string, error) {
 // tidak dibaca Goose; B-101: CONTINUE_API_KEY tidak dibaca cn). Keduanya
 // tetap masuk himpunan redaksi/pembersihan supaya skrip warisan yang
 // masih memuatnya dibersihkan, bukan bocor.
-var namaVarKunciWarisan = []string{"GOOSE_API_KEY", "CONTINUE_API_KEY"}
+// B-125/B-128/B-132: nama kunci skema warisan yang diganti atau entri
+// registri yang dicabut (OCO_OPENAI_API_KEY → OCO_API_KEY,
+// GITHUB_COPILOT_API_KEY → COPILOT_PROVIDER_API_KEY, CODECOMPANION_*
+// untuk tool yang tidak eksis) tetap masuk himpunan yang sama.
+var namaVarKunciWarisan = []string{"GOOSE_API_KEY", "CONTINUE_API_KEY", "OCO_OPENAI_API_KEY", "GITHUB_COPILOT_API_KEY", "CODECOMPANION_API_KEY"}
 
 func himpunanVarKunci() map[string]bool {
 	keyVars := map[string]bool{}

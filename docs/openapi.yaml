@@ -148,14 +148,24 @@ paths:
     post:
       tags:
         - Inferencing
-      summary: Eksekusi Chat Completions (alias nama /responses)
+      summary: Buat respons (OpenAI Responses API, non-streaming)
       description: |
-        Nama baru OpenAI untuk permukaan percakapan yang sama, dilayani handler
-        Chat Completions. PERHATIAN: bentuk asli OpenAI Responses API
-        (`{model, input}` dan respons ber-`object: response`) BELUM didukung —
-        body wajib mengikuti skema Chat Completions (`messages`) dan responsnya
-        berbentuk `chat.completion`. Klien yang mengirim bentuk Responses API
-        asli menerima 400 karena `messages` kosong.
+        Permukaan OpenAI Responses API asli (B-105): body `{model, input, ...}`
+        diterjemahkan ke perancah kanonik gateway yang sama seperti Chat
+        Completions (resolusi model, anggaran, rute, penyaring, cache), dan
+        jawabannya adalah objek `response` yang benar.
+
+        Subset yang didukung: input string atau daftar item (message dengan
+        content string/part `input_text`/`output_text`/`input_image`,
+        `function_call`, `function_call_output`; item `reasoning` diterima
+        dan dilewati), `instructions`, `tools` bentuk datar (function,
+        termasuk `strict`), `tool_choice`, `max_output_tokens`,
+        `reasoning.effort`, dan `text.format` (text/json_object/json_schema).
+
+        DITOLAK EKSPLISIT (400): `stream: true` (streaming Responses belum
+        didukung), `previous_response_id` dan item `item_reference` (gateway
+        tidak menyimpan respons), part `input_file`, dan
+        `tool_choice: allowed_tools`.
       operationId: createResponse
       security:
         - BearerAuth: []
@@ -165,14 +175,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ChatCompletionRequest'
+              $ref: '#/components/schemas/ResponsesRequest'
       responses:
         '200':
-          description: Berhasil memproses permintaan (bentuk chat.completion)
+          description: Berhasil — objek response Responses API
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChatCompletionResponse'
+                $ref: '#/components/schemas/ResponsesObject'
         '400':
           $ref: '#/components/responses/400BadRequest'
         '401':
@@ -5770,6 +5780,106 @@ components:
                 example: stop
         usage:
           $ref: '#/components/schemas/UsageInfo'
+
+    ResponsesRequest:
+      type: object
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+          example: gpt-4o
+        input:
+          description: String bebas (menjadi satu pesan user) atau daftar item (message, function_call, function_call_output, reasoning).
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+        instructions:
+          type: string
+          description: Menjadi pesan system terdepan.
+        tools:
+          type: array
+          description: Bentuk datar Responses API ({type:"function", name, description, parameters, strict}).
+          items:
+            type: object
+        tool_choice:
+          description: String ("auto"/"none"/"required") atau objek fungsi {type:"function", name}.
+          oneOf:
+            - type: string
+            - type: object
+        parallel_tool_calls:
+          type: boolean
+        temperature:
+          type: number
+        top_p:
+          type: number
+        max_output_tokens:
+          type: integer
+        reasoning:
+          type: object
+          properties:
+            effort:
+              type: string
+              enum: [minimal, low, medium, high]
+        text:
+          type: object
+          description: Hanya format yang dibaca ({type: text|json_object|json_schema, name, schema, strict}).
+          properties:
+            format:
+              type: object
+        stream:
+          type: boolean
+          description: Wajib false/absen — stream:true ditolak 400 (streaming Responses belum didukung).
+
+    ResponsesObject:
+      type: object
+      required:
+        - id
+        - object
+        - created_at
+        - status
+        - model
+        - output
+      properties:
+        id:
+          type: string
+          example: resp_8k123abc456
+        object:
+          type: string
+          example: response
+        created_at:
+          type: integer
+          example: 1725380000
+        status:
+          type: string
+          enum: [completed, incomplete]
+        model:
+          type: string
+          example: gpt-4o
+        output:
+          type: array
+          description: Item message (content berisi part output_text), function_call, dan reasoning (summary kosong).
+          items:
+            type: object
+        error:
+          nullable: true
+        incomplete_details:
+          nullable: true
+          description: Terisi {reason: "max_output_tokens"} bila status incomplete.
+        usage:
+          type: object
+          properties:
+            input_tokens:
+              type: integer
+            output_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+        parallel_tool_calls:
+          type: boolean
 
     EmbeddingRequest:
       type: object

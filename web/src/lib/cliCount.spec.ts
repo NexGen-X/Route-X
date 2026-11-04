@@ -18,8 +18,8 @@ describe('muatJumlahToolCli (audit3 V-FJ-11)', () => {
       total_detected: 0,
     });
     const { muatJumlahToolCli } = await import('./cliCount');
-    // Registri berisi 20 tool tetapi tidak ada yang terdeteksi di mesin:
-    // badge harus 0, bukan 20.
+    // Registri (mock) berisi banyak tool tetapi tidak ada yang
+    // terdeteksi di mesin: badge harus 0, bukan panjang registri.
     await expect(muatJumlahToolCli()).resolves.toBe(0);
   });
 

@@ -21,9 +21,7 @@ func TestSusunKontenKeyEnvGabungan(t *testing.T) {
 	lama := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
 	baru := lama.Add(time.Hour)
 	perTool := map[string]kunciTersimpan{
-		// B-136: ollama tidak lagi didukung gateway sehingga kunci
-		// warisannya tidak disumbangkan ke key.env; peran "variabel
-		// khas per tool" diuji lewat copilot (B-128).
+		// Peran "variabel khas per tool" diuji lewat copilot (B-128).
 		"copilot":  {kunci: "kunci-copilot", diperbarui: lama},
 		"goose":    {kunci: "kunci-goose", diperbarui: lama},
 		"opencode": {kunci: "kunci-opencode", diperbarui: baru},
@@ -95,8 +93,8 @@ func TestConfigureDuaToolKeyEnvUtuh(t *testing.T) {
 	}
 	mgr := NewManager(store, cipher, logger)
 
-	// B-136: ollama tidak lagi dapat dikonfigurasi; pasangan uji
-	// memakai copilot (variabel khas COPILOT_PROVIDER_API_KEY).
+	// Pasangan uji memakai copilot (variabel khas
+	// COPILOT_PROVIDER_API_KEY) dan goose.
 	if _, err := mgr.Configure(ctx, ConfigureParams{
 		ToolID: "copilot", Mode: ModeRouting, Target: "llama3",
 		APIKey: "kunci-copilot-123",

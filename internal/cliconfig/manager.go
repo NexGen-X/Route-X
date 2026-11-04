@@ -27,6 +27,14 @@ type SettingsStore interface {
 	All(ctx context.Context) ([]identity.Setting, error)
 }
 
+// penghapusSetelan adalah kemampuan OPSIONAL store untuk menghapus
+// setelan (repo identity.Settings memenuhinya). Pembersihan preferensi
+// tool yang dicabut dari registri memakainya bila tersedia; store
+// tanpa kemampuan ini cukup mengabaikan id tak dikenal saat memuat.
+type penghapusSetelan interface {
+	Delete(ctx context.Context, key string) error
+}
+
 // Manager mengelola pemindaian perkakas CLI dan penerapan konfigurasi multi-mode.
 type Manager struct {
 	settings SettingsStore
@@ -36,7 +44,7 @@ type Manager struct {
 
 	// cacheVersi menahan hasil detectVersion per path biner (audit3
 	// V-LN-37): Scan mengeksekusi `--version` SETIAP biner pada SETIAP
-	// panggilan, jadi membuka halaman CLI berarti ±20 proses anak. Versi
+	// panggilan, jadi membuka halaman CLI berarti belasan proses anak. Versi
 	// biner tidak berubah di tengah jalan; TTL beberapa menit cukup.
 	cacheVersiMu sync.Mutex
 	cacheVersi   map[string]entriVersi
@@ -118,6 +126,11 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	// Preferensi tersimpan milik tool yang sudah dicabut dari
+	// registri dibersihkan/diabaikan di jalur pemuatan ini, tanpa
+	// menyentuh preferensi tool yang bertahan.
+	m.bersihkanPreferensiToolTercabut(ctx)
+
 	tools := SupportedTools()
 	results := make([]ToolStatus, 0, len(tools))
 	homeDir, _ := os.UserHomeDir()
@@ -130,9 +143,9 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 	// versi berjalan PARALEL terbatas (B-148): batas per-tool kini
 	// 5 detik (timeoutDeteksiVersi) untuk menampung startup tool
 	// Python nyata, jadi jalur sekuensial akan membuat waktu Scan
-	// terburuk melonjak dari ±20×1,5 detik menjadi ±20×5 detik.
+	// terburuk melonjak beberapa kali lipat.
 	// Dengan maksimal 8 proses versi serentak, waktu deteksi
-	// terburuk Scan tertahan di ±3 gelombang × 5 detik — di bawah
+	// terburuk Scan tertahan di beberapa gelombang × 5 detik — di bawah
 	// waktu terburuk lama — sementara cache versi 5 menit membuat
 	// biaya ini hanya terbayar pada pindaian pertama. Setiap
 	// goroutine menulis indeks versinya sendiri; cache versi
@@ -392,6 +405,42 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	return status, nil
 }
 
+// bersihkanPreferensiToolTercabut menangani data preferensi
+// tersimpan `cli:config:<id>` untuk id yang TIDAK lagi ada di
+// registri (perombakan Tahap 1 mencabut 12 id): entri seperti itu
+// diabaikan saat memuat dan — bila store mendukung penghapusan —
+// dihapus dari store, TANPA menyentuh entri id yang bertahan.
+// Kegagalan membaca/menghapus tidak pernah menggagalkan pemuatan:
+// entri tak dikenal tetap diabaikan oleh semua jalur baca lain
+// (Scan hanya memuat id registri; susunKontenKeyEnv melewati id tak
+// dikenal), jadi pembersihan di sini adalah pemeliharaan, bukan
+// syarat kebenaran.
+func (m *Manager) bersihkanPreferensiToolTercabut(ctx context.Context) {
+	if m.settings == nil {
+		return
+	}
+	semua, err := m.settings.All(ctx)
+	if err != nil {
+		return
+	}
+	penghapus, bisaHapus := m.settings.(penghapusSetelan)
+	for _, s := range semua {
+		toolID, ok := strings.CutPrefix(s.Key, "cli:config:")
+		if !ok {
+			continue
+		}
+		if _, dikenal := cariToolDef(toolID); dikenal {
+			continue
+		}
+		if bisaHapus {
+			if err := penghapus.Delete(ctx, s.Key); err != nil && m.logger != nil {
+				m.logger.WarnContext(ctx, "gagal membersihkan preferensi CLI tool tercabut",
+					"tool", toolID, "error", err)
+			}
+		}
+	}
+}
+
 // kunciTersimpan adalah API key plaintext satu tool beserta waktu
 // konfigurasi terakhirnya, hasil dekripsi StoredConfig di database.
 type kunciTersimpan struct {
@@ -476,8 +525,8 @@ func (m *Manager) tulisUlangKeyEnv(ctx context.Context, keyEnvPath, toolID, apiK
 // generik yang diisi kunci tool yang PALING BARU dikonfigurasi.
 //
 // Versi lama berkas ini hanya memuat empat nama generik dari tool terakhir
-// yang membawa kunci: variabel khas 10 dari 20 tool (OLLAMA_API_KEY,
-// OPENAI_API_KEY khas goose, SRC_ACCESS_TOKEN, dst.) tidak pernah terisi sama sekali
+// yang membawa kunci: variabel khas tiap tool (COPILOT_PROVIDER_API_KEY,
+// OPENAI_API_KEY khas goose, dst.) tidak pernah terisi sama sekali
 // (audit3 V-LN-24), dan mengonfigurasi tool B menghapus jejak tool A.
 func susunKontenKeyEnv(perTool map[string]kunciTersimpan) (string, error) {
 	type entriVar struct {
@@ -535,7 +584,7 @@ func susunKontenKeyEnv(perTool map[string]kunciTersimpan) (string, error) {
 	// apa adanya di sini: tool LAIN yang tidak dikonfigurasi Route-X
 	// tetapi berjalan di shell yang memuat berkas ini dapat membaca
 	// nama generik itu. Tool yang dikonfigurasi Route-X kini terikat
-	// config/nama khasnya masing-masing (B-101, B-122…B-129).
+	// config/nama khasnya masing-masing.
 	b.WriteString("# Catatan B-117: nama generik (OPENAI_API_KEY/ANTHROPIC_API_KEY/dsb.) dibaca tool apa pun\n# di shell yang memuat berkas ini; tool terkonfigurasi Route-X memakai config khasnya sendiri.\n")
 	for _, nama := range namaVars {
 		q, err := shellQuote(vars[nama].nilai)
@@ -675,44 +724,24 @@ func bandingVersiNode(a, b string) int {
 // detectVersionUntukTool menjalankan deteksi versi untuk satu tool.
 //
 // Tool tanpa VersionArg tidak dieksekusi sama sekali: versinya
-// kosong secara jujur. Tool ber-VersionNeedsStoredKey (B-145
-// sgpt) dijalankan dengan kunci tersimpan tool itu di env proses anak
-// bila konfigurasi tersimpan punya kunci — tanpa itu perintah versinya
-// gugur saat import dan versi tool yang sehat selalu tampil kosong.
-// Kunci hanya hidup di env proses anak perintah versi; ia tidak
-// ditulis ke log, tidak masuk cache (kunci cache hanya mencatat ADA /
-// TIDAK adanya kunci), dan tidak kembali ke respons — yang diambil
-// dari keluaran hanyalah baris versi lewat ekstrakVersi. Tool lain
-// tidak berubah: env proses gateway apa adanya, seperti sebelumnya.
+// kosong secara jujur.
 func (m *Manager) detectVersionUntukTool(ctx context.Context, tool ToolDef, path string) string {
 	if path == "" || tool.VersionArg == "" {
 		return ""
 	}
-	var env []string
-	denganKunci := false
-	if tool.VersionNeedsStoredKey && tool.EnvVarAPIKey != "" {
-		if kt, ok := m.semuaKunciTersimpan(ctx)[tool.ID]; ok && kt.kunci != "" {
-			env = append(os.Environ(), tool.EnvVarAPIKey+"="+kt.kunci)
-			denganKunci = true
-		}
-	}
-	return m.detectVersion(ctx, path, tool.VersionArg, env, denganKunci)
+	return m.detectVersion(ctx, path, tool.VersionArg)
 }
 
 // detectVersion menjalankan perintah versi untuk biner yang terdeteksi.
 // Hasilnya (termasuk kegagalan) ditahan ttlCacheVersi per path+argumen
-// supaya Scan tidak mengeksekusi ulang ±20 biner pada setiap panggilan
-// (audit3 V-LN-37). env nil berarti warisi env proses gateway; kunci
-// cache membedakan lari dengan / tanpa kunci tersimpan (B-145) supaya
-// hasil kosong dari lari tanpa kunci tidak menutupi lari berkunci
-// sesudah tool dikonfigurasi — nilai kuncinya sendiri tidak pernah
-// menjadi bagian kunci cache.
-func (m *Manager) detectVersion(ctx context.Context, path string, versionArg string, env []string, denganKunci bool) string {
+// supaya Scan tidak mengeksekusi ulang seluruh biner registri pada
+// setiap panggilan (audit3 V-LN-37).
+func (m *Manager) detectVersion(ctx context.Context, path string, versionArg string) string {
 	if path == "" || versionArg == "" {
 		return ""
 	}
 
-	kunciCache := path + "\x00" + versionArg + "\x00" + strconv.FormatBool(denganKunci)
+	kunciCache := path + "\x00" + versionArg
 	m.cacheVersiMu.Lock()
 	if m.cacheVersi != nil {
 		if e, ok := m.cacheVersi[kunciCache]; ok && time.Since(e.pada) < ttlCacheVersi {
@@ -721,7 +750,7 @@ func (m *Manager) detectVersion(ctx context.Context, path string, versionArg str
 		}
 	}
 	m.cacheVersiMu.Unlock()
-	versi := m.detectVersionLangsung(ctx, path, versionArg, env)
+	versi := m.detectVersionLangsung(ctx, path, versionArg, nil)
 	m.cacheVersiMu.Lock()
 	if m.cacheVersi == nil {
 		m.cacheVersi = make(map[string]entriVersi)
@@ -733,16 +762,15 @@ func (m *Manager) detectVersion(ctx context.Context, path string, versionArg str
 
 // timeoutDeteksiVersi adalah batas waktu SATU perintah versi tool
 // (B-148). Batas lama 1500 ms terbukti lebih kecil dari waktu start
-// nyata tool Python yang sah: `sgpt --version` berkunci terukur
-// konsisten 1,66–1,68 detik pada Uji Live Putaran 2 (startup Python +
-// impor shell-gpt), sehingga versi sgpt selalu tampil kosong walau
-// mekanisme kunci tersimpan B-145 bekerja benar. 5 detik menampung
+// nyata tool Python yang sah (terukur konsisten 1,66–1,68 detik pada
+// Uji Live Putaran 2 untuk satu tool Python registri lama), sehingga
+// versi tool seperti itu selalu tampil kosong. 5 detik menampung
 // startup itu dengan ruang ±3×, dan tetap merupakan batas keras per
-// tool yang berlaku SAMA untuk semua tool (bukan pengkhususan sgpt):
-// biner yang menggantung tetap terpotong pada batas ini. Biaya total
-// tertahan oleh cache versi 5 menit dan deteksi paralel terbatas di
-// Scan (lihat komentar di Scan); jalur Configure hanya mendeteksi
-// satu tool, jadi paling lama tertahan batas ini sekali.
+// tool yang berlaku SAMA untuk semua tool: biner yang menggantung
+// tetap terpotong pada batas ini. Biaya total tertahan oleh cache
+// versi 5 menit dan deteksi paralel terbatas di Scan (lihat komentar
+// di Scan); jalur Configure hanya mendeteksi satu tool, jadi paling
+// lama tertahan batas ini sekali.
 const timeoutDeteksiVersi = 5 * time.Second
 
 // detectVersionLangsung adalah eksekusi versi yang sebenarnya, tanpa cache.
@@ -769,14 +797,14 @@ func (m *Manager) detectVersionLangsung(ctx context.Context, path string, versio
 // ekstrakVersi memilih baris versi dari keluaran perintah versi tool.
 //
 // B-121: versi lama mengambil baris pertama apa adanya, sehingga tool
-// yang mencetak baris pembuka non-versi (pada uji live, Continue
+// yang mencetak baris pembuka non-versi (pada uji live, satu tool
 // menampilkan harfiah "None") melaporkan omong kosong itu sebagai
-// versinya. Keluaran nyata `cn --version` adalah semver polos
-// ("1.5.47"), dan tool lain mencetak bentuk seperti "llm, version
-// 0.37.1" atau "k8sgpt: 0.4.41 (3644ecf)" — semuanya baris yang memuat
-// angka. Aturannya: baris pertama yang memuat angka menang; baris
-// placeholder yang diketahui bukan versi ("none", "null", "unknown",
-// "undefined") tidak pernah dilaporkan sebagai versi.
+// versinya. Keluaran nyata tool registri berbentuk semver polos
+// ("1.5.47") atau berprefiks nama seperti "codex-cli 0.153.4" —
+// semuanya baris yang memuat angka. Aturannya: baris pertama yang
+// memuat angka menang; baris placeholder yang diketahui bukan versi
+// ("none", "null", "unknown", "undefined") tidak pernah dilaporkan
+// sebagai versi.
 func ekstrakVersi(keluaran string) string {
 	for _, baris := range strings.Split(keluaran, "\n") {
 		ver := strings.TrimSpace(baris)
@@ -810,57 +838,6 @@ func modelAider(target string) string {
 	return "openai/" + target
 }
 
-// Batas token OpenCommit yang ditulis Configure (B-144, diperbaiki
-// B-147).
-//
-// Nama variabelnya adalah skema v3 yang benar-benar dibaca OpenCommit
-// 3.x (dokumentasi resmi tool): OCO_TOKENS_MAX_INPUT = anggaran token
-// input per request (bawaan 4096), OCO_TOKENS_MAX_OUTPUT = "max
-// response tokens" (bawaan 500) dan OCO_REASONING_MAX_TOKENS = "max
-// completion token budget for reasoning models, including hidden
-// reasoning tokens" (bawaan 1000). Ketiganya ditulis, bukan hanya
-// plafon keluaran: respons Putaran 1 terpotong tepat pada 500 (plafon
-// keluaran yang efektif), sementara plafon reasoning bawaan 1000 akan
-// menjadi batas efektif berikutnya bagi model reasoning bila hanya
-// keluaran yang dinaikkan — menyamakan keduanya menghilangkan
-// ambiguitas jalur mana yang menang.
-//
-// Nilai keluaran/reasoning 4000 dipilih dari bukti, bukan karangan:
-// pada Uji Live Putaran 1 reasoning intern-s2 menghabiskan SELURUH
-// plafon 500 untuk satu pesan commit sederhana (input 508 token,
-// reasoning 500, isi 0 → EMPTY_MESSAGE), padahal isi pesan commit itu
-// sendiri pendek (judul konvensional + deskripsi singkat, orde
-// puluhan–ratusan token). 4000 adalah 8× plafon yang terbukti gagal —
-// ruang reasoning beberapa kali lipat dari konsumsi teramati untuk
-// tugas commit, plus isi pesannya — dan tetap plafon (model berhenti
-// saat selesai, bukan target), bukan angka tanpa batas.
-//
-// B-147 (REGRESI B-144, terbukti Uji Live Putaran 2): menulis
-// keluaran/reasoning 4000 TANPA menaikkan input membuat oco gagal
-// LOKAL pada setiap commit. Rumus tool 3.3.11
-// (generateCommitMessageByDiff): anggaran request =
-// OCO_TOKENS_MAX_INPUT − 20 − panjang prompt awal − maxOutputTokens;
-// dengan input bawaan 4096 hasilnya NEGATIF untuk prompt awal mana
-// pun, sehingga splitDiff melempar "Token limit exceeded…" dan UI
-// tool menampilkannya sebagai "Insufficient Credits" yang menyesatkan
-// (tak satu pun request mencapai gateway). Karena itu Configure kini
-// juga menulis OCO_TOKENS_MAX_INPUT=16384: (1) kontrafaktualnya
-// terverifikasi live pada Putaran 2 — dengan 16384 oco benar-benar
-// mencapai gateway; (2) hitungannya koheren menurut rumus tool:
-// 16384 − 20 − prompt awal (orde ratusan token; request teramati
-// 508 token) − plafon 4000 menyisakan ±12 ribu token ruang diff per
-// request, dan diff yang lebih besar memang dipecah tool per
-// anggaran ini. Keluaran/reasoning TETAP 4000: dasar B-144 tidak
-// berubah, dan catatan kecepatan reasoning intern-s2 pada prompt oco
-// adalah karakteristik upstream, bukan alasan menurunkan plafon.
-// Ketiga nilai ini konfigurasi produk: operator dapat mengubahnya
-// sesudah Configure lewat `oco config set` / menyunting ~/.opencommit.
-const (
-	ocoTokensMaxInput     = "16384"
-	ocoTokensMaxOutput    = "4000"
-	ocoReasoningMaxTokens = "4000"
-)
-
 // buildEnvVars menyusun map environment variables untuk tool tertentu.
 func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[string]string {
 	vars := make(map[string]string)
@@ -869,15 +846,6 @@ func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[str
 	// tidak mendapat ekspor env apa pun — ekspor warisannya terbukti
 	// tidak dibaca tool dan hanya mengesankan dukungan yang tidak ada.
 	if tool.UnsupportedReason != "" {
-		return vars
-	}
-
-	// B-101: Continue (cn) tidak membaca variabel env khusus apa pun —
-	// konfigurasi sahnya hanya berkas ~/.continue/config.yaml yang
-	// ditulis applyToolSpecificConfig. Mengekspor nama rekaan lagi
-	// hanya akan menyesatkan dan membiarkan cn jatuh ke config default
-	// dari env generik.
-	if tool.ID == "continue" {
 		return vars
 	}
 
@@ -896,24 +864,6 @@ func (m *Manager) buildEnvVars(tool ToolDef, mode, target, gwURL string) map[str
 		vars["GOOSE_PROVIDER"] = "openai"
 	case "aider":
 		model = modelAider(target)
-	case "fabric":
-		// B-123: tanpa DEFAULT_VENDOR fabric menolak berjalan
-		// ("please run 'fabric --setup'"); vendor OpenAI adalah jalur
-		// gateway OpenAI-compatible Route-X.
-		vars["DEFAULT_VENDOR"] = "OpenAI"
-	case "opencommit":
-		// B-125: skema v3 opencommit menolak berjalan tanpa
-		// OCO_AI_PROVIDER ("set AI provider first").
-		vars["OCO_AI_PROVIDER"] = "openai"
-		// B-144+B-147: batas token yang memadai DAN koheren untuk
-		// model reasoning — bawaan tool (500/1000) habis seluruhnya
-		// untuk reasoning (EMPTY_MESSAGE), tetapi plafon 4000 tanpa
-		// anggaran input pendamping membuat anggaran request tool
-		// negatif (regresi B-147); ketiganya ditulis bersama (lihat
-		// konstanta oco* di atas buildEnvVars).
-		vars["OCO_TOKENS_MAX_INPUT"] = ocoTokensMaxInput
-		vars["OCO_TOKENS_MAX_OUTPUT"] = ocoTokensMaxOutput
-		vars["OCO_REASONING_MAX_TOKENS"] = ocoReasoningMaxTokens
 	case "copilot":
 		// B-128: mode BYOK resmi Copilot CLI menuntut jenis provider
 		// dinyatakan eksplisit; tanpa ini base URL tidak dipakai.
@@ -990,187 +940,6 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 		hasil += p[0] + ": " + yamlKutip(p[1]) + "\n"
 	}
 	if hasil != "" && !strings.HasSuffix(hasil, "\n") {
-		hasil += "\n"
-	}
-	return hasil
-}
-
-// perbaruiExtraOpenAIModels memperbarui berkas extra-openai-models.yaml
-// milik SimonW llm (B-124): daftar YAML tingkat-atas berisi satu entri
-// per model. Entri untuk model target ditulis ulang dari nilai gateway
-// terkini; entri model LAIN milik pengguna dipertahankan apa adanya.
-func perbaruiExtraOpenAIModels(existing, target, gwURL string) string {
-	var kept []string
-	var cur []string
-	flush := func() {
-		if len(cur) == 0 {
-			return
-		}
-		milikTarget := false
-		for _, l := range cur {
-			t := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(l), "- "))
-			if strings.HasPrefix(t, "model_id:") {
-				v := strings.Trim(strings.TrimSpace(strings.TrimPrefix(t, "model_id:")), `"'`)
-				if v == target {
-					milikTarget = true
-				}
-			}
-		}
-		if !milikTarget {
-			kept = append(kept, cur...)
-		}
-		cur = nil
-	}
-	for _, l := range strings.Split(existing, "\n") {
-		if strings.HasPrefix(l, "- ") || l == "-" {
-			flush()
-		}
-		if strings.TrimSpace(l) == "" && len(cur) == 0 && len(kept) == 0 {
-			continue
-		}
-		cur = append(cur, l)
-	}
-	flush()
-	for len(kept) > 0 && strings.TrimSpace(kept[len(kept)-1]) == "" {
-		kept = kept[:len(kept)-1]
-	}
-	var b strings.Builder
-	if len(kept) > 0 {
-		b.WriteString(strings.Join(kept, "\n"))
-		b.WriteString("\n")
-	}
-	fmt.Fprintf(&b, "- model_id: %s\n", yamlKutip(target))
-	fmt.Fprintf(&b, "  model_name: %s\n", yamlKutip(target))
-	fmt.Fprintf(&b, "  api_base: %s\n", yamlKutip(gwURL))
-	b.WriteString("  api_key_name: openai\n")
-	return b.String()
-}
-
-// susunK8sGPTConfig menyusun isi k8sgpt.yaml (B-129) setara hasil
-// `k8sgpt auth add` + `auth default`: seksi ai memuat defaultprovider
-// openai dan satu entri provider openai (baseurl/model/password dari
-// gateway). Provider non-openai dan seksi tingkat-atas lain milik
-// pengguna dipertahankan; entri openai lama ditulis ulang.
-func susunK8sGPTConfig(existing, target, gwURL, apiKey string) string {
-	// Potong berkas menjadi seksi tingkat-atas (kunci di kolom 0).
-	type seksi struct {
-		kunci string
-		baris []string
-	}
-	var daftar []seksi
-	for _, l := range strings.Split(existing, "\n") {
-		kunci := ""
-		if l != "" && l[0] != ' ' && l[0] != '\t' && l[0] != '#' {
-			if i := strings.Index(l, ":"); i > 0 {
-				kunci = strings.TrimSpace(l[:i])
-			}
-		}
-		if kunci != "" || len(daftar) == 0 {
-			daftar = append(daftar, seksi{kunci: kunci})
-		}
-		daftar[len(daftar)-1].baris = append(daftar[len(daftar)-1].baris, l)
-	}
-
-	indentDari := func(l string) int {
-		return len(l) - len(strings.TrimLeft(l, " "))
-	}
-
-	// Saring isi seksi ai lama: buang defaultprovider dan entri
-	// provider bernama openai; sisanya (provider lain + kunci lain)
-	// dipertahankan.
-	var sisaAI []string
-	var providerLain []string
-	idxAI := -1
-	for i, s := range daftar {
-		if s.kunci != "ai" {
-			continue
-		}
-		idxAI = i
-		baris := s.baris
-		// Lewati baris header "ai:" itu sendiri.
-		isi := baris[1:]
-		for j := 0; j < len(isi); j++ {
-			l := isi[j]
-			t := strings.TrimSpace(l)
-			if strings.HasPrefix(t, "defaultprovider:") {
-				continue
-			}
-			if t == "providers:" {
-				induk := indentDari(l)
-				j++
-				var item []string
-				flushItem := func() {
-					if len(item) == 0 {
-						return
-					}
-					openai := false
-					for _, il := range item {
-						it := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(il), "- "))
-						if it == "name: openai" {
-							openai = true
-						}
-					}
-					if !openai {
-						providerLain = append(providerLain, item...)
-					}
-					item = nil
-				}
-				for ; j < len(isi); j++ {
-					il := isi[j]
-					if strings.TrimSpace(il) == "" {
-						continue
-					}
-					if indentDari(il) <= induk {
-						j--
-						break
-					}
-					if strings.HasPrefix(strings.TrimSpace(il), "- ") {
-						flushItem()
-					}
-					item = append(item, il)
-				}
-				flushItem()
-				continue
-			}
-			sisaAI = append(sisaAI, l)
-		}
-	}
-
-	var aiBaru []string
-	aiBaru = append(aiBaru, "ai:")
-	aiBaru = append(aiBaru, "  defaultprovider: openai")
-	aiBaru = append(aiBaru, "  providers:")
-	aiBaru = append(aiBaru, "    - name: openai")
-	aiBaru = append(aiBaru, "      baseurl: "+yamlKutip(gwURL))
-	aiBaru = append(aiBaru, "      model: "+yamlKutip(target))
-	if apiKey != "" {
-		aiBaru = append(aiBaru, "      password: "+yamlKutip(apiKey))
-	}
-	aiBaru = append(aiBaru, providerLain...)
-	aiBaru = append(aiBaru, sisaAI...)
-
-	var out []string
-	tertulis := false
-	for i, s := range daftar {
-		if i == idxAI {
-			out = append(out, aiBaru...)
-			tertulis = true
-			continue
-		}
-		// Buang baris kosong ekor dari potongan terakhir hasil Split.
-		baris := s.baris
-		if i == len(daftar)-1 {
-			for len(baris) > 0 && strings.TrimSpace(baris[len(baris)-1]) == "" {
-				baris = baris[:len(baris)-1]
-			}
-		}
-		out = append(out, baris...)
-	}
-	if !tertulis {
-		out = append(out, aiBaru...)
-	}
-	hasil := strings.Join(out, "\n")
-	if !strings.HasSuffix(hasil, "\n") {
 		hasil += "\n"
 	}
 	return hasil
@@ -1413,169 +1182,6 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 			return fmt.Errorf("menulis %s: %w", goosePath, err)
 		}
 
-	case "continue":
-		// Tulis ~/.continue/config.yaml (B-101, perbaikan keamanan):
-		// config lokal sah Continue 1.5.x (dokumentasi resmi Continue,
-		// config.yaml Reference: name/version/schema wajib, entri
-		// models ber-provider openai dengan apiBase + apiKey). Dengan
-		// berkas ini cn memakai gateway Route-X; tanpa berkas ini cn
-		// membangun config default dari env generik dan mengirim key
-		// gateway (ANTHROPIC_API_KEY dari key.env) ke vendor asli.
-		// apiBase memakai URL gateway DENGAN sufiks /v1 (bentuk yang
-		// dibuktikan run diagnostik Langkah 6). Berkas 0600 karena
-		// memuat apiKey.
-		continueDir := filepath.Join(homeDir, ".continue")
-		_ = os.MkdirAll(continueDir, 0755)
-		continuePath := filepath.Join(continueDir, "config.yaml")
-		var b strings.Builder
-		b.WriteString("name: Route-X\nversion: 1.0.0\nschema: v1\nmodels:\n")
-		fmt.Fprintf(&b, "  - name: %s\n", yamlKutip("Route-X "+target))
-		b.WriteString("    provider: openai\n")
-		fmt.Fprintf(&b, "    model: %s\n", yamlKutip(target))
-		fmt.Fprintf(&b, "    apiBase: %s\n", yamlKutip(gwURL))
-		if apiKey != "" {
-			fmt.Fprintf(&b, "    apiKey: %s\n", yamlKutip(apiKey))
-		}
-		b.WriteString("    roles:\n      - chat\n      - edit\n      - apply\n      - summarize\n")
-		if err := tulisAtomik(continuePath, []byte(b.String()), 0600); err != nil {
-			return fmt.Errorf("menulis %s: %w", continuePath, err)
-		}
-
-	case "fabric":
-		// Tulis ~/.config/fabric/.env dalam bentuk yang benar-benar
-		// dibaca fabric 1.4.x (B-123, terbukti live): vendor OpenAI
-		// membaca OPENAI_API_BASE_URL — OPENAI_BASE_URL warisan
-		// diabaikan dan kunci gateway justru terkirim ke
-		// api.openai.com asli. DEFAULT_VENDOR wajib ada, tanpa itu
-		// fabric menolak berjalan. Kunci ditulis ke .env ini (bentuk
-		// diagnostik yang terbukti) hanya bila Configure membawa
-		// kunci; berkas ditulis ulang penuh, jadi konfigurasi ulang
-		// tanpa kunci tidak meninggalkan kredensial hantu. Izin 0600
-		// karena berkas bisa memuat kunci.
-		fabricDir := filepath.Join(homeDir, ".config", "fabric")
-		_ = os.MkdirAll(fabricDir, 0755)
-		envPath := filepath.Join(fabricDir, ".env")
-		var fb strings.Builder
-		if apiKey != "" {
-			fmt.Fprintf(&fb, "OPENAI_API_KEY=%s\n", apiKey)
-		}
-		fmt.Fprintf(&fb, "OPENAI_API_BASE_URL=%s\n", gwURL)
-		fb.WriteString("DEFAULT_VENDOR=OpenAI\n")
-		fmt.Fprintf(&fb, "DEFAULT_MODEL=%s\n", target)
-		if err := tulisAtomik(envPath, []byte(fb.String()), 0600); err != nil {
-			return fmt.Errorf("menulis %s: %w", envPath, err)
-		}
-		// Vendor OpenAI fabric memakai Responses API secara bawaan,
-		// yang dijawab gateway 400; disableResponsesAPI di
-		// config.yaml (dimuat otomatis fabric, terbukti live)
-		// mengembalikannya ke Chat Completions. Kunci tingkat-atas
-		// lain milik pengguna dipertahankan.
-		configPath := filepath.Join(fabricDir, "config.yaml")
-		var existingCfg string
-		if data, err := os.ReadFile(configPath); err == nil {
-			existingCfg = string(data)
-		}
-		cfgContent := perbaruiYAMLTopLevel(existingCfg, [][2]string{
-			{"disableResponsesAPI", "true"},
-		})
-		if err := tulisAtomik(configPath, []byte(cfgContent), 0644); err != nil {
-			return fmt.Errorf("menulis %s: %w", configPath, err)
-		}
-		// Fabric menuntut pola untuk mode non-interaktif; sediakan
-		// satu pola minimal milik Route-X. Pola yang sudah ada tidak
-		// ditimpa (mungkin sudah disesuaikan pengguna).
-		patternPath := filepath.Join(fabricDir, "patterns", "routex", "system.md")
-		if _, err := os.Stat(patternPath); os.IsNotExist(err) {
-			_ = os.MkdirAll(filepath.Dir(patternPath), 0755)
-			isi := "You are a helpful assistant accessed through the Route-X gateway. Follow the user's instructions and answer directly and concisely.\n"
-			if err := tulisAtomik(patternPath, []byte(isi), 0644); err != nil {
-				return fmt.Errorf("menulis %s: %w", patternPath, err)
-			}
-		}
-
-	case "sgpt":
-		// Tulis ~/.config/shell_gpt/.sgptrc (B-122): sgpt membaca
-		// base URL dari kunci API_BASE_URL (sgpt/config.py), BUKAN
-		// OPENAI_BASE_URL — nilai warisan hanya tertolong fallback
-		// SDK tanpa sufiks /v1 dan jatuh ke POST /chat/completions.
-		sgptDir := filepath.Join(homeDir, ".config", "shell_gpt")
-		_ = os.MkdirAll(sgptDir, 0755)
-		sgptPath := filepath.Join(sgptDir, ".sgptrc")
-		content := fmt.Sprintf("API_BASE_URL=%s\nDEFAULT_MODEL=%s\n", gwURL, target)
-		if err := tulisAtomik(sgptPath, []byte(content), 0644); err != nil {
-			return fmt.Errorf("menulis %s: %w", sgptPath, err)
-		}
-
-	case "llm":
-		// Tulis konfigurasi SimonW llm (B-124, terbukti live): model
-		// gateway hanya dikenal tool lewat extra-openai-models.yaml
-		// (api_key_name: openai membuat llm memakai OPENAI_API_KEY
-		// dari lingkungan — tanpanya llm menahan kunci untuk api_base
-		// kustom), dan model bawaan hanya lewat default_model.txt
-		// (LLM_DEFAULT_MODEL tidak dibaca llm sama sekali). Entri
-		// model lain milik pengguna di berkas extra dipertahankan.
-		llmDir := filepath.Join(homeDir, ".config", "io.datasette.llm")
-		_ = os.MkdirAll(llmDir, 0755)
-		extraPath := filepath.Join(llmDir, "extra-openai-models.yaml")
-		var existingExtra string
-		if data, err := os.ReadFile(extraPath); err == nil {
-			existingExtra = string(data)
-		}
-		if err := tulisAtomik(extraPath, []byte(perbaruiExtraOpenAIModels(existingExtra, target, gwURL)), 0644); err != nil {
-			return fmt.Errorf("menulis %s: %w", extraPath, err)
-		}
-		defaultPath := filepath.Join(llmDir, "default_model.txt")
-		if err := tulisAtomik(defaultPath, []byte(target+"\n"), 0644); err != nil {
-			return fmt.Errorf("menulis %s: %w", defaultPath, err)
-		}
-
-	case "opencommit":
-		// Tulis ~/.opencommit dalam skema v3 (B-125, terbukti live):
-		// OCO_AI_PROVIDER/OCO_API_KEY/OCO_API_URL. Tanpa
-		// OCO_AI_PROVIDER, opencommit v3 gagal di migrasi internalnya
-		// sendiri sebelum panggilan model apa pun. Berkas ditulis
-		// ulang penuh (kunci lama tidak tertinggal) dan berizin 0600
-		// karena bisa memuat kunci.
-		ocoPath := filepath.Join(homeDir, ".opencommit")
-		var ob strings.Builder
-		ob.WriteString("OCO_AI_PROVIDER=openai\n")
-		if apiKey != "" {
-			fmt.Fprintf(&ob, "OCO_API_KEY=%s\n", apiKey)
-		}
-		fmt.Fprintf(&ob, "OCO_API_URL=%s\n", gwURL)
-		fmt.Fprintf(&ob, "OCO_MODEL=%s\n", target)
-		// B-144+B-147: batas token skema v3 (lihat konstanta oco* di
-		// atas buildEnvVars) — tanpa ini bawaan tool 500/1000 habis
-		// untuk reasoning model reasoning dan oco gagal EMPTY_MESSAGE;
-		// tanpa OCO_TOKENS_MAX_INPUT pendamping, plafon 4000 membuat
-		// anggaran request tool negatif dan oco gagal lokal (B-147).
-		fmt.Fprintf(&ob, "OCO_TOKENS_MAX_INPUT=%s\n", ocoTokensMaxInput)
-		fmt.Fprintf(&ob, "OCO_TOKENS_MAX_OUTPUT=%s\n", ocoTokensMaxOutput)
-		fmt.Fprintf(&ob, "OCO_REASONING_MAX_TOKENS=%s\n", ocoReasoningMaxTokens)
-		if err := tulisAtomik(ocoPath, []byte(ob.String()), 0600); err != nil {
-			return fmt.Errorf("menulis %s: %w", ocoPath, err)
-		}
-
-	case "k8sgpt":
-		// Tulis ~/.config/k8sgpt/k8sgpt.yaml (B-129, setara hasil
-		// `k8sgpt auth add -b openai -u <gateway>/v1 -m <target>
-		// -p <kunci>` + `k8sgpt auth default -p openai`, keduanya
-		// terbukti pada diagnostik live): struktur ai.providers +
-		// ai.defaultprovider yang dibaca k8sgpt 0.4.x. Env rekaan
-		// K8SGPT_OPENAI* tidak ada di biner dan tidak lagi ditulis.
-		// Provider non-openai dan seksi lain milik pengguna
-		// dipertahankan. Izin 0600 karena berkas memuat password.
-		k8sDir := filepath.Join(homeDir, ".config", "k8sgpt")
-		_ = os.MkdirAll(k8sDir, 0755)
-		k8sPath := filepath.Join(k8sDir, "k8sgpt.yaml")
-		var existingK8s string
-		if data, err := os.ReadFile(k8sPath); err == nil {
-			existingK8s = string(data)
-		}
-		if err := tulisAtomik(k8sPath, []byte(susunK8sGPTConfig(existingK8s, target, gwURL, apiKey)), 0600); err != nil {
-			return fmt.Errorf("menulis %s: %w", k8sPath, err)
-		}
-
 	case "opencode":
 		// Tulis atau perbarui ~/.config/opencode/opencode.json
 		opencodeDir := filepath.Join(homeDir, ".config", "opencode")
@@ -1662,14 +1268,13 @@ func (m *Manager) GetExportScript(homeDir string) (string, error) {
 // paling utama — tidak pernah dibersihkan/diredaksi (audit3 V-LN-34).
 // namaVarKunciWarisan adalah nama variabel kunci yang pernah diekspor
 // versi lama tetapi sudah tidak diproduksi lagi (B-099: GOOSE_API_KEY
-// tidak dibaca Goose; B-101: CONTINUE_API_KEY tidak dibaca cn). Keduanya
-// tetap masuk himpunan redaksi/pembersihan supaya skrip warisan yang
-// masih memuatnya dibersihkan, bukan bocor.
-// B-125/B-128/B-132: nama kunci skema warisan yang diganti atau entri
-// registri yang dicabut (OCO_OPENAI_API_KEY → OCO_API_KEY,
-// GITHUB_COPILOT_API_KEY → COPILOT_PROVIDER_API_KEY, CODECOMPANION_*
-// untuk tool yang tidak eksis) tetap masuk himpunan yang sama.
-var namaVarKunciWarisan = []string{"GOOSE_API_KEY", "CONTINUE_API_KEY", "OCO_OPENAI_API_KEY", "GITHUB_COPILOT_API_KEY", "CODECOMPANION_API_KEY"}
+// tidak dibaca Goose). Semuanya tetap masuk himpunan
+// redaksi/pembersihan supaya skrip warisan yang masih memuatnya
+// dibersihkan, bukan bocor. Nama khas tool yang dicabut pada
+// perombakan registri Tahap 1 (opencommit, cody, cursor-agent,
+// plandex, ollama, continue, sgpt, dan kawanannya) ikut didaftar di
+// sini dengan alasan yang sama.
+var namaVarKunciWarisan = []string{"GOOSE_API_KEY", "CONTINUE_API_KEY", "OCO_OPENAI_API_KEY", "OCO_API_KEY", "GITHUB_COPILOT_API_KEY", "CODECOMPANION_API_KEY", "SRC_ACCESS_TOKEN", "CURSOR_API_KEY", "PLANDEX_OPENAI_API_KEY", "OLLAMA_API_KEY"}
 
 func himpunanVarKunci() map[string]bool {
 	keyVars := map[string]bool{}

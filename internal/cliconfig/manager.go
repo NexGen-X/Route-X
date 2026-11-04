@@ -361,7 +361,7 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	}
 
 	// Tulis file konfigurasi lokal spesifik jika ada direktorinya.
-	if err := m.applyToolSpecificConfig(homeDir, toolDef, p.Mode, p.Target, gwURL, p.APIKey); err != nil {
+	if err := m.applyToolSpecificConfig(ctx, homeDir, toolDef, p.Mode, p.Target, gwURL, p.APIKey); err != nil {
 		pulihkanKeyEnv()
 		return nil, fmt.Errorf("menulis konfigurasi lokal %s: %w", toolDef.Name, err)
 	}
@@ -1094,7 +1094,8 @@ func (m *Manager) ensureShellAutoLoad(homeDir string) error {
 }
 
 // applyToolSpecificConfig menulis berkas konfigurasi lokal jika aplikabel.
-func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, target, gwURL, apiKey string) error {
+// ctx dipakai kasus cline yang menjalankan perintah resmi CLI itu sendiri.
+func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, tool ToolDef, mode, target, gwURL, apiKey string) error {
 	if homeDir == "" {
 		return nil
 	}
@@ -1239,9 +1240,511 @@ func (m *Manager) applyToolSpecificConfig(homeDir string, tool ToolDef, mode, ta
 		if err := tulisAtomik(configPath, data, 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", configPath, err)
 		}
+
+	case "codex":
+		// Tulis ~/.codex/config.toml sesuai referensi konfigurasi
+		// resmi Codex: kunci root model_provider/model di preamble,
+		// lalu seksi [model_providers.routex]. base_url memakai
+		// gwURL apa adanya (berakhiran /v1) karena Codex memanggil
+		// POST {base_url}/responses. env_key menunjuk OPENAI_API_KEY
+		// — nama yang sama dengan yang ditulis produk ke key.env
+		// untuk tool ini. Kunci root dan seksi lain milik pengguna
+		// dipertahankan.
+		codexDir := filepath.Join(homeDir, ".codex")
+		_ = os.MkdirAll(codexDir, 0755)
+		codexPath := filepath.Join(codexDir, "config.toml")
+		var existingCodex string
+		if data, err := os.ReadFile(codexPath); err == nil {
+			existingCodex = string(data)
+		}
+		kontenCodex := perbaruiPreambleTOML(existingCodex, [][2]string{
+			{"model_provider", "routex"},
+			{"model", target},
+		})
+		kontenCodex = gantiSeksiTOML(kontenCodex, "model_providers.routex", []string{
+			"name = " + tomlKutip("Route-X"),
+			"base_url = " + tomlKutip(gwURL),
+			"env_key = " + tomlKutip("OPENAI_API_KEY"),
+			"wire_api = " + tomlKutip("responses"),
+		})
+		if err := tulisAtomik(codexPath, []byte(kontenCodex), permBerkasAtau(codexPath, 0644)); err != nil {
+			return fmt.Errorf("menulis %s: %w", codexPath, err)
+		}
+
+	case "grok-build":
+		// Tulis ~/.grok/config.toml sesuai user guide resmi Grok
+		// Build (model kustom): [models] default menunjuk entri
+		// [model.routex] yang memuat model, name, base_url, env_key.
+		// Kunci [models] lain milik pengguna dipertahankan.
+		grokDir := filepath.Join(homeDir, ".grok")
+		_ = os.MkdirAll(grokDir, 0755)
+		grokPath := filepath.Join(grokDir, "config.toml")
+		var existingGrok string
+		if data, err := os.ReadFile(grokPath); err == nil {
+			existingGrok = string(data)
+		}
+		kontenGrok := perbaruiKunciSeksiTOML(existingGrok, "models", [][2]string{{"default", "routex"}})
+		kontenGrok = gantiSeksiTOML(kontenGrok, "model.routex", []string{
+			"model = " + tomlKutip(target),
+			"name = " + tomlKutip("Route-X"),
+			"base_url = " + tomlKutip(gwURL),
+			"env_key = " + tomlKutip("XAI_API_KEY"),
+		})
+		if err := tulisAtomik(grokPath, []byte(kontenGrok), permBerkasAtau(grokPath, 0644)); err != nil {
+			return fmt.Errorf("menulis %s: %w", grokPath, err)
+		}
+
+	case "qwen":
+		// Tulis ~/.qwen/settings.json sesuai dokumentasi resmi Qwen
+		// Code: modelProviders.openai memuat entri provider (entri
+		// ber-id sama diganti, entri lain dipertahankan),
+		// security.auth.selectedType "openai", dan model.name.
+		// envKey menunjuk OPENAI_API_KEY yang memang diekspor produk
+		// di key.env untuk tool ini.
+		qwenDir := filepath.Join(homeDir, ".qwen")
+		_ = os.MkdirAll(qwenDir, 0755)
+		qwenPath := filepath.Join(qwenDir, "settings.json")
+		qcfg := make(map[string]any)
+		if data, err := os.ReadFile(qwenPath); err == nil {
+			_ = json.Unmarshal(data, &qcfg)
+			if qcfg == nil {
+				qcfg = make(map[string]any)
+			}
+		}
+		providersQ, ok := qcfg["modelProviders"].(map[string]any)
+		if !ok || providersQ == nil {
+			providersQ = make(map[string]any)
+			qcfg["modelProviders"] = providersQ
+		}
+		var openaiList []any
+		if lama, ok := providersQ["openai"].([]any); ok {
+			for _, e := range lama {
+				if mEntri, ok := e.(map[string]any); ok {
+					if idEntri, _ := mEntri["id"].(string); idEntri == target {
+						continue
+					}
+				}
+				openaiList = append(openaiList, e)
+			}
+		}
+		openaiList = append(openaiList, map[string]any{
+			"id": target, "name": target, "baseUrl": gwURL, "envKey": "OPENAI_API_KEY",
+		})
+		providersQ["openai"] = openaiList
+		securityQ, ok := qcfg["security"].(map[string]any)
+		if !ok || securityQ == nil {
+			securityQ = make(map[string]any)
+			qcfg["security"] = securityQ
+		}
+		authQ, ok := securityQ["auth"].(map[string]any)
+		if !ok || authQ == nil {
+			authQ = make(map[string]any)
+			securityQ["auth"] = authQ
+		}
+		authQ["selectedType"] = "openai"
+		modelQ, ok := qcfg["model"].(map[string]any)
+		if !ok || modelQ == nil {
+			modelQ = make(map[string]any)
+			qcfg["model"] = modelQ
+		}
+		modelQ["name"] = target
+		dataQ, err := json.MarshalIndent(qcfg, "", "  ")
+		if err != nil {
+			return fmt.Errorf("mengkodekan settings.json Qwen: %w", err)
+		}
+		if err := tulisAtomik(qwenPath, dataQ, permBerkasAtau(qwenPath, 0644)); err != nil {
+			return fmt.Errorf("menulis %s: %w", qwenPath, err)
+		}
+
+	case "crush":
+		// Tulis ~/.config/crush/crush.json sesuai dokumentasi
+		// konfigurasi Crush: providers.routex bertipe openai-compat
+		// dengan base_url + api_key, models milik provider memuat
+		// model target, dan models.large/small tingkat atas menunjuk
+		// provider itu. Kunci hidup di berkas ini (tidak ada jalur env
+		// per-tool), jadi izin 0600; konfigurasi ulang tanpa kunci
+		// menghapus api_key lama (kredensial hantu).
+		crushDir := filepath.Join(homeDir, ".config", "crush")
+		_ = os.MkdirAll(crushDir, 0755)
+		crushPath := filepath.Join(crushDir, "crush.json")
+		ccfg := make(map[string]any)
+		if data, err := os.ReadFile(crushPath); err == nil {
+			_ = json.Unmarshal(data, &ccfg)
+			if ccfg == nil {
+				ccfg = make(map[string]any)
+			}
+		}
+		if _, ok := ccfg["$schema"]; !ok {
+			ccfg["$schema"] = "https://charm.land/crush.json"
+		}
+		providersC, ok := ccfg["providers"].(map[string]any)
+		if !ok || providersC == nil {
+			providersC = make(map[string]any)
+			ccfg["providers"] = providersC
+		}
+		routexC, ok := providersC["routex"].(map[string]any)
+		if !ok || routexC == nil {
+			routexC = make(map[string]any)
+			providersC["routex"] = routexC
+		}
+		routexC["name"] = "Route-X"
+		routexC["type"] = "openai-compat"
+		routexC["base_url"] = gwURL
+		if apiKey != "" {
+			routexC["api_key"] = apiKey
+		} else {
+			delete(routexC, "api_key")
+		}
+		var modelsC []any
+		if lama, ok := routexC["models"].([]any); ok {
+			for _, e := range lama {
+				if mEntri, ok := e.(map[string]any); ok {
+					if idEntri, _ := mEntri["id"].(string); idEntri == target {
+						continue
+					}
+				}
+				modelsC = append(modelsC, e)
+			}
+		}
+		modelsC = append(modelsC, map[string]any{"id": target, "name": target})
+		routexC["models"] = modelsC
+		modelsTop, ok := ccfg["models"].(map[string]any)
+		if !ok || modelsTop == nil {
+			modelsTop = make(map[string]any)
+			ccfg["models"] = modelsTop
+		}
+		modelsTop["large"] = map[string]any{"provider": "routex", "model": target}
+		modelsTop["small"] = map[string]any{"provider": "routex", "model": target}
+		dataC, err := json.MarshalIndent(ccfg, "", "  ")
+		if err != nil {
+			return fmt.Errorf("mengkodekan crush.json: %w", err)
+		}
+		if err := tulisAtomik(crushPath, dataC, 0600); err != nil {
+			return fmt.Errorf("menulis %s: %w", crushPath, err)
+		}
+
+	case "hermes":
+		// Tulis blok model: di ~/.hermes/config.yaml sesuai
+		// dokumentasi resmi Hermes (Configuring Models): provider
+		// "custom", default = model target, base_url = gwURL,
+		// api_mode chat_completions. Seksi lain di config.yaml
+		// dipertahankan; hanya blok model yang diganti. Kunci —
+		// yang dibaca provider kustom Hermes dari OPENAI_API_KEY —
+		// digabung ke ~/.hermes/.env (0600) bila Configure membawa
+		// kunci; tanpa kunci baru berkas .env tidak disentuh.
+		hermesDir := filepath.Join(homeDir, ".hermes")
+		_ = os.MkdirAll(hermesDir, 0755)
+		hermesPath := filepath.Join(hermesDir, "config.yaml")
+		var existingHermes string
+		if data, err := os.ReadFile(hermesPath); err == nil {
+			existingHermes = string(data)
+		}
+		kontenHermes := susunBlokModelHermes(existingHermes, target, gwURL)
+		if err := tulisAtomik(hermesPath, []byte(kontenHermes), permBerkasAtau(hermesPath, 0644)); err != nil {
+			return fmt.Errorf("menulis %s: %w", hermesPath, err)
+		}
+		if apiKey != "" {
+			envPath := filepath.Join(hermesDir, ".env")
+			var existingEnv string
+			if data, err := os.ReadFile(envPath); err == nil {
+				existingEnv = string(data)
+			}
+			if err := tulisAtomik(envPath, []byte(perbaruiBarisEnv(existingEnv, "OPENAI_API_KEY", apiKey)), 0600); err != nil {
+				return fmt.Errorf("menulis %s: %w", envPath, err)
+			}
+		}
+
+	case "cline":
+		// Cline CLI menyimpan kredensial di store-nya sendiri dan
+		// skema berkasnya spesifik-versi, jadi Configure menjalankan
+		// perintah resmi CLI itu sendiri (dokumentasi CLI Cline):
+		// `cline auth -p openai -k <key> -b <url> -m <model>`.
+		// Bila biner tidak terpasang, Configure gagal jujur — tidak
+		// ada jalur berkas yang sah untuk ditulis.
+		binCline := m.findBinary(tool.BinaryNames, homeDir)
+		if binCline == "" {
+			return fmt.Errorf("biner cline tidak ditemukan: Configure Cline menjalankan perintah resmi `cline auth` dari CLI itu sendiri, jadi Cline CLI harus terpasang lebih dulu")
+		}
+		argsCline := []string{"auth", "-p", "openai", "-b", gwURL, "-m", target}
+		if apiKey != "" {
+			argsCline = append(argsCline, "-k", apiKey)
+		}
+		ctxCline, batalCline := context.WithTimeout(ctx, 30*time.Second)
+		defer batalCline()
+		cmdCline := exec.CommandContext(ctxCline, binCline, argsCline...)
+		var keluaranCline bytes.Buffer
+		cmdCline.Stdout = &keluaranCline
+		cmdCline.Stderr = &keluaranCline
+		if err := cmdCline.Run(); err != nil {
+			ringkas := strings.TrimSpace(keluaranCline.String())
+			if apiKey != "" {
+				ringkas = strings.ReplaceAll(ringkas, apiKey, "***")
+			}
+			if len(ringkas) > 300 {
+				ringkas = ringkas[:300]
+			}
+			return fmt.Errorf("menjalankan cline auth: %w: %s", err, ringkas)
+		}
 	}
 
 	return nil
+}
+
+// permBerkasAtau mengembalikan izin berkas yang sudah ada (supaya
+// penulisan ulang tidak melonggarkan/mengetatkan izin pilihan
+// pengguna), atau izin bawaan bila berkas belum ada.
+func permBerkasAtau(path string, bawaan os.FileMode) os.FileMode {
+	if fi, err := os.Stat(path); err == nil {
+		return fi.Mode().Perm()
+	}
+	return bawaan
+}
+
+// tomlKutip mengutip nilai sebagai string dasar TOML.
+func tomlKutip(v string) string {
+	return strconv.Quote(v)
+}
+
+// terapkanPasanganTOML mengganti baris pasangan kelolaan di dalam
+// daftar baris (preamble atau isi seksi), mempertahankan baris lain,
+// dan menambahkan pasangan yang belum ada di akhir daftar.
+func terapkanPasanganTOML(baris []string, pairs [][2]string) []string {
+	nilai := make(map[string]string, len(pairs))
+	for _, p := range pairs {
+		nilai[p[0]] = p[1]
+	}
+	tertulis := map[string]bool{}
+	hasil := make([]string, 0, len(baris)+len(pairs))
+	for _, l := range baris {
+		kunci := ""
+		if eq := strings.Index(l, "="); eq > 0 {
+			if _, ok := nilai[strings.TrimSpace(l[:eq])]; ok {
+				kunci = strings.TrimSpace(l[:eq])
+			}
+		}
+		if kunci == "" {
+			hasil = append(hasil, l)
+			continue
+		}
+		if tertulis[kunci] {
+			continue // duplikat kunci kelolaan dibuang
+		}
+		tertulis[kunci] = true
+		hasil = append(hasil, kunci+" = "+tomlKutip(nilai[kunci]))
+	}
+	for _, p := range pairs {
+		if !tertulis[p[0]] {
+			hasil = append(hasil, p[0]+" = "+tomlKutip(p[1]))
+		}
+	}
+	return hasil
+}
+
+// perbaruiPreambleTOML memperbarui kunci tingkat-atas (sebelum seksi
+// pertama) dokumen TOML — tempat kunci root seperti model_provider
+// dan model milik Codex sah berada (kunci root SESUDAH seksi bukan
+// lagi tingkat-atas dalam TOML).
+func perbaruiPreambleTOML(existing string, pairs [][2]string) string {
+	baris := strings.Split(existing, "\n")
+	idx := len(baris)
+	for i, l := range baris {
+		if strings.HasPrefix(strings.TrimSpace(l), "[") {
+			idx = i
+			break
+		}
+	}
+	hasil := append(terapkanPasanganTOML(baris[:idx], pairs), baris[idx:]...)
+	keluaran := strings.Join(hasil, "\n")
+	if !strings.HasSuffix(keluaran, "\n") {
+		keluaran += "\n"
+	}
+	return keluaran
+}
+
+// rentangSeksiTOML mencari rentang isi seksi [nama] (indeks baris isi
+// awal dan akhir eksklusif) di dokumen yang sudah dipecah per baris.
+// ok=false bila seksi tidak ada.
+func rentangSeksiTOML(baris []string, nama string) (awal, akhir int, ok bool) {
+	header := "[" + nama + "]"
+	for i, l := range baris {
+		if strings.TrimSpace(l) != header {
+			continue
+		}
+		akhir = len(baris)
+		for j := i + 1; j < len(baris); j++ {
+			if strings.HasPrefix(strings.TrimSpace(baris[j]), "[") {
+				akhir = j
+				break
+			}
+		}
+		return i + 1, akhir, true
+	}
+	return 0, 0, false
+}
+
+// perbaruiKunciSeksiTOML memperbarui kunci di dalam seksi TOML yang
+// sudah ada tanpa membuang kunci lain di seksi itu; seksi dibuat di
+// akhir dokumen bila belum ada.
+func perbaruiKunciSeksiTOML(existing, seksi string, pairs [][2]string) string {
+	baris := strings.Split(existing, "\n")
+	awal, akhir, ok := rentangSeksiTOML(baris, seksi)
+	if !ok {
+		keluaran := existing
+		if keluaran != "" && !strings.HasSuffix(keluaran, "\n") {
+			keluaran += "\n"
+		}
+		var b strings.Builder
+		b.WriteString(keluaran)
+		if keluaran != "" {
+			b.WriteString("\n")
+		}
+		b.WriteString("[" + seksi + "]\n")
+		for _, p := range pairs {
+			b.WriteString(p[0] + " = " + tomlKutip(p[1]) + "\n")
+		}
+		return b.String()
+	}
+	isi := terapkanPasanganTOML(baris[awal:akhir], pairs)
+	hasil := make([]string, 0, len(baris)+len(pairs))
+	hasil = append(hasil, baris[:awal]...)
+	hasil = append(hasil, isi...)
+	hasil = append(hasil, baris[akhir:]...)
+	keluaran := strings.Join(hasil, "\n")
+	if !strings.HasSuffix(keluaran, "\n") {
+		keluaran += "\n"
+	}
+	return keluaran
+}
+
+// gantiSeksiTOML mengganti SELURUH isi seksi [nama] dengan baris baru
+// (seksi dikelola penuh oleh Route-X), atau menambahkan seksi di
+// akhir dokumen bila belum ada. Seksi lain tidak disentuh.
+func gantiSeksiTOML(existing, seksi string, isiBaru []string) string {
+	baris := strings.Split(existing, "\n")
+	awal, akhir, ok := rentangSeksiTOML(baris, seksi)
+	if !ok {
+		keluaran := existing
+		if keluaran != "" && !strings.HasSuffix(keluaran, "\n") {
+			keluaran += "\n"
+		}
+		var b strings.Builder
+		b.WriteString(keluaran)
+		if keluaran != "" {
+			b.WriteString("\n")
+		}
+		b.WriteString("[" + seksi + "]\n")
+		for _, l := range isiBaru {
+			b.WriteString(l + "\n")
+		}
+		return b.String()
+	}
+	hasil := make([]string, 0, len(baris)+len(isiBaru))
+	hasil = append(hasil, baris[:awal]...)
+	hasil = append(hasil, isiBaru...)
+	hasil = append(hasil, baris[akhir:]...)
+	keluaran := strings.Join(hasil, "\n")
+	if !strings.HasSuffix(keluaran, "\n") {
+		keluaran += "\n"
+	}
+	return keluaran
+}
+
+// susunBlokModelHermes mengganti blok `model:` tingkat-atas di
+// config.yaml Hermes dengan blok provider kustom Route-X,
+// mempertahankan seksi lain apa adanya. Bentuk skalar warisan
+// (`model: "..."`) diganti menjadi blok peta; blok ditambahkan di
+// akhir bila belum ada.
+func susunBlokModelHermes(existing, target, gwURL string) string {
+	blok := []string{
+		"model:",
+		"  provider: custom",
+		"  default: " + yamlKutip(target),
+		"  base_url: " + yamlKutip(gwURL),
+		"  api_mode: chat_completions",
+	}
+	baris := strings.Split(existing, "\n")
+	for i, l := range baris {
+		if !strings.HasPrefix(l, "model:") {
+			continue
+		}
+		sisa := strings.TrimSpace(strings.TrimPrefix(l, "model:"))
+		if sisa != "" {
+			// Bentuk skalar satu baris: ganti baris itu saja.
+			hasil := make([]string, 0, len(baris)+len(blok))
+			hasil = append(hasil, baris[:i]...)
+			hasil = append(hasil, blok...)
+			hasil = append(hasil, baris[i+1:]...)
+			return gabungBarisYAML(hasil)
+		}
+		// Bentuk peta: isi blok adalah baris kosong/berindentasi
+		// sesudahnya, sampai kunci tingkat-atas berikutnya.
+		j := i + 1
+		for j < len(baris) && (baris[j] == "" || strings.HasPrefix(baris[j], " ") || strings.HasPrefix(baris[j], "\t")) {
+			j++
+		}
+		hasil := make([]string, 0, len(baris)+len(blok))
+		hasil = append(hasil, baris[:i]...)
+		hasil = append(hasil, blok...)
+		if j < len(baris) {
+			hasil = append(hasil, "")
+		}
+		hasil = append(hasil, baris[j:]...)
+		return gabungBarisYAML(hasil)
+	}
+	keluaran := existing
+	if keluaran != "" && !strings.HasSuffix(keluaran, "\n") {
+		keluaran += "\n"
+	}
+	if keluaran != "" {
+		keluaran += "\n"
+	}
+	return keluaran + strings.Join(blok, "\n") + "\n"
+}
+
+// gabungBarisYAML menyatukan baris dan memastikan newline penutup.
+func gabungBarisYAML(baris []string) string {
+	keluaran := strings.Join(baris, "\n")
+	if !strings.HasSuffix(keluaran, "\n") {
+		keluaran += "\n"
+	}
+	return keluaran
+}
+
+// perbaruiBarisEnv menetapkan satu variabel di konten berkas .env
+// (baris NAMA=nilai), mengganti baris lama atau menambahkan di akhir;
+// variabel lain dipertahankan.
+func perbaruiBarisEnv(existing, nama, nilai string) string {
+	baris := strings.Split(existing, "\n")
+	tertulis := false
+	for i, l := range baris {
+		if strings.HasPrefix(l, nama+"=") {
+			if tertulis {
+				baris[i] = ""
+				continue
+			}
+			baris[i] = nama + "=" + nilai
+			tertulis = true
+		}
+	}
+	hasil := make([]string, 0, len(baris)+1)
+	for _, l := range baris {
+		if l == "" && tertulis {
+			continue
+		}
+		hasil = append(hasil, l)
+	}
+	keluaran := strings.Join(hasil, "\n")
+	if !tertulis {
+		if keluaran != "" && !strings.HasSuffix(keluaran, "\n") {
+			keluaran += "\n"
+		}
+		keluaran += nama + "=" + nilai + "\n"
+		return keluaran
+	}
+	if !strings.HasSuffix(keluaran, "\n") {
+		keluaran += "\n"
+	}
+	return keluaran
 }
 
 // GetExportScript membaca seluruh skrip lingkungan gabungan.

@@ -6,6 +6,14 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Added
+
+- **Enam tool CLI baru di registri Integrasi CLI** (perombakan registri Tahap 1), masing-masing dikonfigurasi lewat format resmi yang terverifikasi dari dokumentasi/repo upstream-nya: **OpenAI Codex CLI** (`~/.codex/config.toml` — provider `routex` dengan `wire_api = "responses"` dan `env_key = "OPENAI_API_KEY"`; Codex tidak lagi mendukung chat completions), **Grok Build** (`~/.grok/config.toml` — `[model.routex]` dengan `env_key = "XAI_API_KEY"`), **Qwen Code** (env `OPENAI_*` resmi + `~/.qwen/settings.json`), **Crush** (`~/.config/crush/crush.json` — provider `openai-compat`), **Hermes Agent** (blok `model:` provider `custom` di `~/.hermes/config.yaml` + kunci di `~/.hermes/.env`), dan **Cline CLI** (Configure menjalankan perintah resmi `cline auth` dari CLI itu sendiri; gagal jujur bila biner tidak terpasang).
+
+### Removed
+
+- **BREAKING — 12 tool CLI dicabut total dari registri Integrasi CLI**: `agy`, `cursor-agent`, `cody`, `plandex`, `ollama`, `continue`, `sgpt`, `fabric`, `llm`, `opencommit`, `chatblade`, dan `k8sgpt`. Registri kini tepat 11 entri (Claude Code, OpenCode, OpenAI Codex CLI, Grok Build, Qwen Code, Crush, Hermes Agent, Cline, Aider, Goose, GitHub Copilot CLI) — hanya CLI terkemuka, stabil, dan berkomunitas besar yang dipertahankan/ditambah. Configure untuk id yang dicabut kini menjawab tidak dikenal; preferensi tersimpan `cli:config:<id>` milik id tercabut dibersihkan saat pemuatan tanpa menyentuh preferensi tool yang bertahan.
+
 ## [1.7.0] - 2026-11-04
 
 Rilis ini menghimpun seluruh pekerjaan sejak v1.6.1: permukaan `/v1/responses` menjadi OpenAI Responses API asli (B-105 — memuat **perubahan BREAKING perilaku**, lihat Added), peran pengguna menjadi data sungguhan (B-102 — **BREAKING perilaku** untuk pembuatan pengguna tanpa peran admin), seluruh toggle admin kini menuntut field `enabled` eksplisit (B-088 — **BREAKING perilaku**), UI harga per pemetaan beserta endpoint katalog harga acuan global, halaman Log Audit di dashboard, pengerasan gateway (penegakan anggaran yang benar-benar efektif B-106, error kandidat yang jujur B-111/B-120/B-143, kredensial/provider nonaktif benar-benar menghentikan trafik B-103), perbaikan keluaran Configure CLI dan kejujuran katalog integrasi (registri kini 17 tool), perbaikan installer (B-084, B-095, B-104), dan kenaikan toolchain web terkoordinasi (Vite 8, React 19, Recharts 3). Tiga migrasi skema baru: `0020` (kolom peran pengguna), `0021` (riwayat delivery webhook dilepas dari induknya), `0022` (kolom deskripsi egress berfungsi ujung-ke-ujung + peristiwa timeline `cache_hit`). Jalur upgrade dari v1.6.1 lurus: jalankan ulang installer; migrasi diterapkan otomatis saat biner baru mulai.

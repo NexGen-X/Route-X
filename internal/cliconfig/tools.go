@@ -4,10 +4,12 @@ package cliconfig
 // Seluruh perkakas secara default mengarah ke model kanonik riil yang terdaftar di katalog sistem.
 //
 // Perombakan registri Tahap 1: registri dipangkas hanya ke tool yang
-// terbukti dapat diarahkan ke gateway Route-X. Dua belas entri dicabut
-// total: agy, cursor-agent, cody, dan plandex (sebelumnya berstatus
-// tidak-didukung-gateway), ollama (protokol daemon Ollama tidak
-// kompatibel), serta continue, sgpt, fabric, llm, opencommit,
+// terbukti dapat diarahkan ke gateway Route-X, lalu diisi tool baru
+// yang format konfigurasinya terverifikasi dari dokumentasi resmi
+// masing-masing. Registri final TEPAT 11 entri. Dua belas entri
+// dicabut total: agy, cursor-agent, cody, dan plandex (sebelumnya
+// berstatus tidak-didukung-gateway), ollama (protokol daemon Ollama
+// tidak kompatibel), serta continue, sgpt, fabric, llm, opencommit,
 // chatblade, dan k8sgpt (didukung pada rilis sebelumnya, kini keluar
 // dari kriteria registri: hanya CLI terkemuka, stabil, dan
 // berkomunitas besar yang dipertahankan/ditambah).
@@ -92,6 +94,129 @@ func SupportedTools() []ToolDef {
 			EnvVarBaseURL: "COPILOT_PROVIDER_BASE_URL",
 			EnvVarAPIKey:  "COPILOT_PROVIDER_API_KEY",
 			EnvVarModel:   "COPILOT_MODEL",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
+		},
+		{
+			// OpenAI Codex CLI (openai/codex). Format resmi dari docs
+			// konfigurasi Codex (developers.openai.com/codex/config-reference):
+			// config.toml memuat model_provider + [model_providers.<id>]
+			// dengan base_url, env_key, dan wire_api "responses"
+			// (satu-satunya wire API yang didukung versi kini; chat
+			// completions sudah tidak didukung). Codex memanggil POST
+			// {base_url}/responses dan membaca kunci dari variabel
+			// lingkungan bernama env_key — produk menulis kunci per
+			// tool ini ke key.env di bawah OPENAI_API_KEY (nama env
+			// resminya untuk provider kustom di dokumentasi Codex).
+			ID:          "codex",
+			Name:        "OpenAI Codex CLI",
+			Category:    "Coding Agent",
+			Description: "CLI agentic coding resmi OpenAI yang berjalan lokal di terminal.",
+			BinaryNames: []string{"codex"},
+			ConfigPaths: []string{".codex/config.toml"},
+			VersionArg:  "--version",
+			// Konfigurasi hidup di config.toml; satu-satunya jalur env
+			// adalah kunci lewat env_key (OPENAI_API_KEY di key.env).
+			EnvVarAPIKey:  "OPENAI_API_KEY",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
+		},
+		{
+			// xAI Grok Build (xai-org/grok-build). Format model kustom
+			// resmi dari user guide repo (11-custom-models.md):
+			// ~/.grok/config.toml memuat [models] default = "<nama>"
+			// dan [model.<nama>] dengan model, base_url, env_key.
+			// Binernya `grok`; `grok --version` mencetak
+			// "grok X.Y.Z (<hash>) [stable]".
+			ID:          "grok-build",
+			Name:        "Grok Build",
+			Category:    "Coding Agent",
+			Description: "CLI coding agent resmi xAI dengan mode TUI dan headless.",
+			BinaryNames: []string{"grok"},
+			ConfigPaths: []string{".grok/config.toml"},
+			VersionArg:  "--version",
+			// env_key TOML merujuk variabel yang memuat kunci; nama
+			// XAI_API_KEY adalah nama resmi bawaan Grok Build untuk
+			// kredensial xAI dan ditulis produk ke key.env.
+			EnvVarAPIKey:  "XAI_API_KEY",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
+		},
+		{
+			// Qwen Code (QwenLM/qwen-code). Jalur resmi dari dokumentasi
+			// (qwenlm.github.io/qwen-code-docs): env OPENAI_BASE_URL/
+			// OPENAI_API_KEY/OPENAI_MODEL untuk provider OpenAI-
+			// compatible, plus berkas ~/.qwen/settings.json dengan
+			// modelProviders.openai dan security.auth.selectedType
+			// "openai". Kedua jalur ditulis Configure.
+			ID:            "qwen",
+			Name:          "Qwen Code",
+			Category:      "Coding Agent",
+			Description:   "CLI agentic coding open-source dari tim Qwen (Alibaba) untuk terminal.",
+			BinaryNames:   []string{"qwen"},
+			ConfigPaths:   []string{".qwen/settings.json"},
+			VersionArg:    "--version",
+			EnvVarBaseURL: "OPENAI_BASE_URL",
+			EnvVarAPIKey:  "OPENAI_API_KEY",
+			EnvVarModel:   "OPENAI_MODEL",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
+		},
+		{
+			// Crush (charmbracelet/crush). Konfigurasi global resmi di
+			// ~/.config/crush/crush.json (docs konfigurasi Crush):
+			// providers.<id> bertipe "openai-compat" dengan base_url
+			// dan api_key, dan models.large/small menunjuk provider
+			// itu. Kunci hidup di berkas (izin 0600), bukan env.
+			ID:            "crush",
+			Name:          "Crush",
+			Category:      "Coding Agent",
+			Description:   "Coding agent terminal dari Charm dengan dukungan banyak provider model.",
+			BinaryNames:   []string{"crush"},
+			ConfigPaths:   []string{".config/crush/crush.json"},
+			VersionArg:    "--version",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
+		},
+		{
+			// Hermes Agent (NousResearch/hermes-agent). Dokumentasi
+			// resmi "Configuring Models" (hermes-agent.nousresearch.com):
+			// blok model: di ~/.hermes/config.yaml dengan provider
+			// "custom", default, base_url, api_mode; kunci untuk
+			// provider kustom dibaca dari OPENAI_API_KEY di
+			// ~/.hermes/.env. Hermes sengaja mengabaikan env
+			// OPENAI_BASE_URL, jadi konfigurasi memang harus berkas.
+			ID:          "hermes",
+			Name:        "Hermes Agent",
+			Category:    "Developer Agent",
+			Description: "Agent otonom open-source dari Nous Research dengan perangkat terminal dan memori persisten.",
+			BinaryNames: []string{"hermes"},
+			ConfigPaths: []string{".hermes/config.yaml"},
+			VersionArg:  "--version",
+			// Kunci ditulis ke ~/.hermes/.env oleh Configure dan juga
+			// diekspor lewat key.env dengan nama yang sama.
+			EnvVarAPIKey:  "OPENAI_API_KEY",
+			DefaultMode:   ModeModelOnly,
+			DefaultTarget: "gpt-5",
+		},
+		{
+			// Cline CLI (cline/cline). CLI mandiri v3 dengan perintah
+			// resmi `cline auth` (dokumentasi CLI di docs.cline.bot):
+			// `cline auth -p openai -k <key> -b <url> -m <model>`
+			// mengonfigurasi provider OpenAI-compatible; kredensial
+			// disimpan CLI sendiri di ~/.cline/data/settings/.
+			// Configure MENJALANKAN perintah resmi itu (bukan menulis
+			// berkas internal cline yang spesifik-versi), dan gagal
+			// jujur bila biner cline tidak terpasang.
+			ID:          "cline",
+			Name:        "Cline CLI",
+			Category:    "Coding Agent",
+			Description: "CLI coding agent open-source dari tim Cline untuk terminal dan CI.",
+			BinaryNames: []string{"cline"},
+			ConfigPaths: []string{".cline/data/settings/providers.json"},
+			VersionArg:  "--version",
+			// Tidak ada jalur env: kunci diserahkan ke store cline
+			// sendiri lewat `cline auth`.
 			DefaultMode:   ModeModelOnly,
 			DefaultTarget: "gpt-5",
 		},

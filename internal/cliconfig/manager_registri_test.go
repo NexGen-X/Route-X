@@ -21,21 +21,22 @@ var idToolTercabutTahap1 = []string{
 	"sgpt", "fabric", "llm", "opencommit", "chatblade", "k8sgpt",
 }
 
-// TestRegistriTahap1TepatLimaBertahan membuktikan sasaran PR
-// pencabutan: registri tepat berisi lima tool yang dipertahankan,
-// semuanya didukung gateway (UnsupportedReason kosong), dan ke-12
-// id tercabut tidak dikenal lagi.
-func TestRegistriTahap1TepatLimaBertahan(t *testing.T) {
+// TestRegistriTahap1TepatSebelas membuktikan sasaran final Tahap 1:
+// registri tepat berisi 11 tool (lima yang dipertahankan ditambah
+// enam tool baru), semuanya didukung gateway (UnsupportedReason
+// kosong), dan ke-12 id tercabut tidak dikenal lagi.
+func TestRegistriTahap1TepatSebelas(t *testing.T) {
 	tools := SupportedTools()
-	if len(tools) != 5 {
-		t.Fatalf("jumlah tool registri = %d, mau 5 sesudah pencabutan Tahap 1", len(tools))
+	if len(tools) != 11 {
+		t.Fatalf("jumlah tool registri = %d, mau 11 sesudah perombakan Tahap 1", len(tools))
 	}
 	mau := map[string]bool{
 		"claude": true, "opencode": true, "copilot": true, "goose": true, "aider": true,
+		"codex": true, "grok-build": true, "qwen": true, "crush": true, "hermes": true, "cline": true,
 	}
 	for _, tool := range tools {
 		if !mau[tool.ID] {
-			t.Errorf("tool %s tidak seharusnya ada di registri hasil pencabutan", tool.ID)
+			t.Errorf("tool %s tidak seharusnya ada di registri hasil perombakan Tahap 1", tool.ID)
 		}
 		delete(mau, tool.ID)
 		if tool.UnsupportedReason != "" {
@@ -116,8 +117,8 @@ func TestScanMembersihkanPreferensiToolTercabut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Scan dengan preferensi campuran gagal: %v", err)
 	}
-	if len(statuses) != 5 {
-		t.Fatalf("Scan mengembalikan %d status, mau 5 (hanya registri)", len(statuses))
+	if len(statuses) != len(SupportedTools()) {
+		t.Fatalf("Scan mengembalikan %d status, mau %d (seluruh registri)", len(statuses), len(SupportedTools()))
 	}
 	for _, st := range statuses {
 		switch st.ID {

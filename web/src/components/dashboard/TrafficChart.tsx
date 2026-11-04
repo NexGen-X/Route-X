@@ -7,7 +7,7 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
-  type TooltipProps,
+  type TooltipContentProps,
 } from 'recharts';
 import { BarChart3, Activity } from 'lucide-react';
 import type { TimeSeriesPoint } from '../../types';
@@ -54,7 +54,16 @@ export function formatLabelTooltip(label: string): string {
   }
 }
 
-const CustomDarkTooltip: React.FC<TooltipProps<number, string>> = ({ active, payload, label }) => {
+// Recharts 3 (B-094): tipe props konten tooltip kustom kini
+// `TooltipContentProps` (pengganti `TooltipProps` dari 2.x) — membawa
+// `payload` dan `label` yang dulu menempel di TooltipProps. Field-nya
+// wajib di tipe itu, jadi komponen ini mengambil subset yang dipakai
+// sebagai Partial agar elemen polos tetap lolos tipe.
+type CustomDarkTooltipProps = Partial<
+  Pick<TooltipContentProps<number, string>, 'active' | 'payload' | 'label'>
+>;
+
+const CustomDarkTooltip: React.FC<CustomDarkTooltipProps> = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
     const item = payload[0];
     const val = typeof item.value === 'number' ? item.value.toLocaleString() : item.value;

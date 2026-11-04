@@ -16,6 +16,7 @@ import {
   Code2,
   Users,
   Webhook,
+  ScrollText,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Tooltip } from '../common/Tooltip';
@@ -97,6 +98,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'Sistem & Pengaturan',
       items: [
         { name: 'Webhooks', path: '/system/webhooks', icon: Webhook },
+        { name: 'Log Audit', path: '/system/audit-logs', icon: ScrollText },
         { name: 'Pengaturan', path: '/system/settings', icon: Sliders },
       ],
     },

@@ -31,7 +31,11 @@ export interface ProviderCardProps {
   onProbe: (provider: Provider) => Promise<void> | void;
   onQuickAddAccount: (provider: Provider) => void;
   onCopyBaseUrl: (url: string) => Promise<void> | void;
+  // Aksi enable/disable provider (B-086): saklar memanggil toggle resmi
+  // provider di halaman induk; pola saklar sama dengan RuleCard.
+  onToggle: (provider: Provider) => Promise<void> | void;
   isProbing?: boolean;
+  isToggling?: boolean;
 }
 
 // Fase 4 (Calm Console): kartu provider menjadi baris daftar polos —
@@ -46,7 +50,9 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
   onProbe,
   onQuickAddAccount,
   onCopyBaseUrl,
+  onToggle,
   isProbing = false,
+  isToggling = false,
 }) => {
   const pool = poolSummary || { credentials: [], oauthSessions: [] };
   const directCreds = (pool.credentials || []).filter(
@@ -126,7 +132,29 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center flex-shrink-0">
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={p.enabled}
+            disabled={isToggling}
+            onClick={() => void onToggle(p)}
+            title={p.enabled ? 'Nonaktifkan provider' : 'Aktifkan provider'}
+            aria-label={
+              p.enabled
+                ? `Nonaktifkan provider ${p.display_name || p.name}`
+                : `Aktifkan provider ${p.display_name || p.name}`
+            }
+            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border border-border/80 transition-colors duration-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50 ${
+              isToggling ? 'cursor-wait' : 'cursor-pointer'
+            } ${p.enabled ? 'bg-emerald-500/90' : 'bg-bg-surface-3'}`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-3.5 w-3.5 mt-[2px] ml-[2px] transform rounded-full bg-white shadow transition duration-200 ${
+                p.enabled ? 'translate-x-4' : 'translate-x-0'
+              }`}
+            />
+          </button>
           <StatusDot status={providerStatus} latencyMs={p.last_latency_ms} />
         </div>
       </div>

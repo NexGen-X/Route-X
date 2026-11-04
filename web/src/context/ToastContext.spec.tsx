@@ -29,7 +29,12 @@ describe('ToastContext & ToastNotificationCard', () => {
   });
 
   afterEach(() => {
-    vi.runOnlyPendingTimers();
+    // Menjalankan timer yang tertunda memicu pembaruan state provider
+    // (auto-dismiss toast) — wajib dibungkus act() agar tidak memicu
+    // peringatan "not wrapped in act(...)" di React 19 (B-093).
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
     vi.useRealTimers();
   });
 

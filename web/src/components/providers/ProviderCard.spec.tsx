@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ProviderCard } from './ProviderCard';
 import type { Provider } from '../../types';
 
@@ -25,6 +25,7 @@ const handlers = {
   onProbe: vi.fn(),
   onQuickAddAccount: vi.fn(),
   onCopyBaseUrl: vi.fn(),
+  onToggle: vi.fn(),
 };
 
 describe('ProviderCard (audit3 B-075 & B-007)', () => {
@@ -67,5 +68,51 @@ describe('ProviderCard (audit3 B-075 & B-007)', () => {
     const judul = screen.getByRole('heading', { name: 'OpenAI Production' });
     expect(judul.tagName).toBe('H3');
     expect(container.querySelector('h4')).toBeNull();
+  });
+});
+
+describe('ProviderCard — saklar enable/disable provider (B-086)', () => {
+  it('provider aktif: saklar tercentang dan klik memanggil onToggle dengan provider itu', async () => {
+    const onToggle = vi.fn();
+    render(
+      <ProviderCard
+        provider={buatProvider({ enabled: true })}
+        poolSummary={{ credentials: [], oauthSessions: [] }}
+        isCustom={false}
+        {...handlers}
+        onToggle={onToggle}
+      />
+    );
+    const saklar = screen.getByRole('switch', { name: 'Nonaktifkan provider OpenAI Production' });
+    expect(saklar).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(saklar);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle.mock.calls[0][0]).toMatchObject({ id: 'prov-1', enabled: true });
+  });
+
+  it('provider nonaktif: saklar tidak tercentang dengan label Aktifkan', () => {
+    render(
+      <ProviderCard
+        provider={buatProvider({ enabled: false })}
+        poolSummary={{ credentials: [], oauthSessions: [] }}
+        isCustom={false}
+        {...handlers}
+      />
+    );
+    const saklar = screen.getByRole('switch', { name: 'Aktifkan provider OpenAI Production' });
+    expect(saklar).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('saklar nonaktif selama toggle berjalan (isToggling)', () => {
+    render(
+      <ProviderCard
+        provider={buatProvider({ enabled: true })}
+        poolSummary={{ credentials: [], oauthSessions: [] }}
+        isCustom={false}
+        isToggling
+        {...handlers}
+      />
+    );
+    expect(screen.getByRole('switch')).toBeDisabled();
   });
 });

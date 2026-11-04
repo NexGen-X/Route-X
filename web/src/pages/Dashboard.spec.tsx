@@ -258,7 +258,13 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
     expect(screen.getByText('320 ms')).toBeInTheDocument();
 
     // 5. Traffic Chart & Live Requests Feed
-    expect(screen.getByText('Volume & Dinamika Lalu Lintas')).toBeInTheDocument();
+    // TrafficChart dimuat React.lazy secara dinamis (B-091: tidak lagi
+    // ikut modul statis lewat barrel), jadi judulnya ditunggu asinkron
+    // dengan batas tunggu longgar: di suite paralel, pemuatan modul
+    // grafik bisa melewati batas bawaan findByText (1 detik).
+    expect(
+      await screen.findByText('Volume & Dinamika Lalu Lintas', {}, { timeout: 10000 })
+    ).toBeInTheDocument();
     expect(screen.getByText('Live Requests Feed')).toBeInTheDocument();
     expect(screen.getByText('gpt-4o')).toBeInTheDocument();
     expect(screen.getByText('claude-3-5-sonnet')).toBeInTheDocument();
@@ -267,7 +273,9 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
     expect(screen.getByText('Status Kesehatan Penyedia Upstream')).toBeInTheDocument();
     expect(screen.getByText('OpenAI Production')).toBeInTheDocument();
     expect(screen.getByText('Claude Anthropic')).toBeInTheDocument();
-  });
+    // Batas test diperlonggar: test ini menunggu pemuatan dinamis modul
+    // grafik yang di suite paralel bisa lambat (lihat langkah 5).
+  }, 20000);
 
   it('menangani tombol Segarkan (Refresh) dan memicu pembaruan data telemetri', async () => {
     render(<Dashboard onNavigate={mockNavigate} />);

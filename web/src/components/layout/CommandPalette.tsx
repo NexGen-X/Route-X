@@ -11,6 +11,7 @@ import {
   KeyRound,
   Coins,
   Sliders,
+  ScrollText,
   HeartPulse,
   Copy,
   Globe,
@@ -193,6 +194,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       icon: Sliders,
       action: () => {
         onNavigate('/system/settings');
+        onClose();
+      },
+    },
+    {
+      id: 'nav-audit-logs',
+      title: 'Log Audit',
+      subtitle: 'Jejak aksi administratif: siapa melakukan apa dan kapan',
+      category: 'Navigasi',
+      icon: ScrollText,
+      action: () => {
+        onNavigate('/system/audit-logs');
         onClose();
       },
     },

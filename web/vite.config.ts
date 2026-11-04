@@ -12,7 +12,8 @@ export default defineConfig({
     modulePreload: {
       resolveDependencies(filename, deps, { hostType }) {
         if (hostType === 'html') {
-          // Jangan preload vendor-charts (Recharts ~517KB) pada HTML awal / Login;
+          // Jangan preload vendor-charts (Recharts ~378KB, terverifikasi
+          // dari build Recharts 3 di tahap 4/B-094) pada HTML awal / Login;
           // pustaka grafik hanya dimuat ketika membuka Dashboard atau Observabilitas.
           return deps.filter((dep) => !dep.includes('vendor-charts'));
         }

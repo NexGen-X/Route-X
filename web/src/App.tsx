@@ -22,6 +22,7 @@ const Budgets = React.lazy(() => import('./pages/Budgets').then((m) => ({ defaul
 const APIKeys = React.lazy(() => import('./pages/APIKeys').then((m) => ({ default: m.APIKeys })));
 const Webhooks = React.lazy(() => import('./pages/Webhooks').then((m) => ({ default: m.Webhooks })));
 const Settings = React.lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const AuditLogs = React.lazy(() => import('./pages/AuditLogs').then((m) => ({ default: m.AuditLogs })));
 const CLIIntegrations = React.lazy(() => import('./pages/CLIIntegrations').then((m) => ({ default: m.CLIIntegrations })));
 // Halaman identitas: daftar akun admin dan status sesi.
 const UsersPage = React.lazy(() => import('./pages/Users').then((m) => ({ default: m.UsersPage })));
@@ -187,6 +188,12 @@ const Shell: React.FC = () => {
         return {
           title: 'Pengaturan Runtime',
           content: <Settings />,
+        };
+      case '/system/audit-logs':
+      case '/audit-logs':
+        return {
+          title: 'Log Audit',
+          content: <AuditLogs />,
         };
       case '/system/jobs':
       case '/system/diagnostics':

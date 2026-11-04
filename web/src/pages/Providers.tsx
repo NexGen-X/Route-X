@@ -123,6 +123,7 @@ export const Providers: React.FC = () => {
 
   // Status Aksi & Pengujian
   const [probingId, setProbingId] = useState<string | null>(null);
+  const [togglingProviderId, setTogglingProviderId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [testingModelId, setTestingModelId] = useState<string | null>(null);
   const [modelTestResults, setModelTestResults] = useState<Record<string, ModelTestResult>>({});
@@ -258,6 +259,26 @@ export const Providers: React.FC = () => {
       toast.error('Gagal melakukan probe provider: ' + errMsg);
     } finally {
       setProbingId(null);
+    }
+  };
+
+  // Toggle enable/disable provider (B-086): memakai rute toggle resmi
+  // dengan `enabled` eksplisit (kontrak B-088 — klien wajib mengirim
+  // nilai tujuan, bukan mengandalkan body kosong).
+  const handleToggleProvider = async (prov: Provider) => {
+    setTogglingProviderId(prov.id);
+    try {
+      await api.providers.toggle(prov.id, !prov.enabled);
+      toast.success(
+        `Provider "${prov.display_name || prov.name}" ${!prov.enabled ? 'diaktifkan' : 'dinonaktifkan'}`
+      );
+      await loadData();
+    } catch (err) {
+      toast.error(
+        'Gagal mengubah status provider: ' + (err instanceof Error ? err.message : String(err))
+      );
+    } finally {
+      setTogglingProviderId(null);
     }
   };
 
@@ -576,7 +597,9 @@ export const Providers: React.FC = () => {
                 onProbe={handleProbe}
                 onQuickAddAccount={handleQuickAddAccount}
                 onCopyBaseUrl={(url) => void copyWithFeedback(url, 'Base URL disalin ke clipboard')}
+                onToggle={handleToggleProvider}
                 isProbing={probingId === p.id}
+                isToggling={togglingProviderId === p.id}
               />
             );
           })}

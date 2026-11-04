@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Providers } from './Providers';
 import { ToastProvider } from '../context/ToastContext';
@@ -31,12 +31,14 @@ const PROVIDER: Provider = {
 const mockListAll = vi.fn(async () => ({ items: [PROVIDER] as Provider[], terpotong: undefined as boolean | undefined }));
 const mockCredentialsList = vi.fn(async (_id: string) => ({ items: [] as unknown[] }));
 const mockOAuthSessions = vi.fn(async (_id: string) => ({ items: [] as unknown[] }));
+const mockToggleProvider = vi.fn(async (_id: string, _enabled: boolean) => ({}));
 
 vi.mock('../api/client', () => ({
   api: {
     providers: {
       listAll: () => mockListAll(),
       listOAuthSessions: (id: string) => mockOAuthSessions(id),
+      toggle: (id: string, enabled: boolean) => mockToggleProvider(id, enabled),
     },
     egress: {
       list: async () => ({ items: [] }),
@@ -85,5 +87,28 @@ describe('Providers — ringkasan pool & penanda terpotong', () => {
     mockListAll.mockResolvedValue({ items: [PROVIDER], terpotong: true });
     renderHalaman();
     expect(await screen.findByText(/Daftar provider mungkin tidak lengkap/)).toBeInTheDocument();
+  });
+
+  it('B-086: klik saklar kartu memanggil toggle resmi dengan enabled eksplisit false', async () => {
+    renderHalaman();
+    const saklar = await screen.findByRole('switch', {
+      name: 'Nonaktifkan provider OpenAI Production',
+    });
+    fireEvent.click(saklar);
+    await waitFor(() => {
+      expect(mockToggleProvider).toHaveBeenCalledWith('prov-1', false);
+    });
+  });
+
+  it('B-086: kegagalan toggle tampil sebagai toast error yang jujur', async () => {
+    mockToggleProvider.mockRejectedValue(new Error('server menolak toggle'));
+    renderHalaman();
+    const saklar = await screen.findByRole('switch', {
+      name: 'Nonaktifkan provider OpenAI Production',
+    });
+    fireEvent.click(saklar);
+    expect(
+      await screen.findByText(/Gagal mengubah status provider: server menolak toggle/)
+    ).toBeInTheDocument();
   });
 });

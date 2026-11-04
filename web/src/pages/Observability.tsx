@@ -74,17 +74,21 @@ export const Observability: React.FC = () => {
     return [`${num.toLocaleString()} reqs`, 'Permintaan'];
   };
 
-  const formatTooltipLabel = (label: string) => {
+  // Recharts 3 (B-094): label yang diserahkan labelFormatter bertipe
+  // ReactNode (bisa string | number | undefined), bukan string murni —
+  // normalkan ke teks dulu, perilaku formatnya tidak berubah.
+  const formatTooltipLabel = (label: React.ReactNode) => {
+    const teks = typeof label === 'string' || typeof label === 'number' ? String(label) : '';
     try {
-      if (!label) return '';
-      const d = new Date(label);
-      if (isNaN(d.getTime())) return label;
+      if (!teks) return '';
+      const d = new Date(teks);
+      if (isNaN(d.getTime())) return teks;
       return d.toLocaleString([], {
         dateStyle: 'medium',
         timeStyle: 'short',
       });
     } catch {
-      return label;
+      return teks;
     }
   };
 

@@ -32,6 +32,14 @@ type ToolDef struct {
 	EnvVarModel   string   // Nama variabel lingkungan untuk model bawaan
 	DefaultMode   string   // Mode bawaan saat pertama kali terdeteksi
 	DefaultTarget string   // Target model/rule bawaan
+	// UnsupportedReason diisi (non-kosong) bila tool secara arsitektur
+	// TIDAK dapat diarahkan ke gateway Route-X — terikat akun/protokol
+	// vendor, wajib server eksternal sendiri, atau perbedaan protokol
+	// prinsip (B-130, B-131, B-134, B-135, B-136). Tool seperti ini tetap
+	// terdaftar dan terdeteksi apa adanya, tetapi Configure DITOLAK
+	// dengan alasan ini: produk tidak boleh lagi mengklaim "berhasil
+	// diterapkan" untuk integrasi yang tidak ada. Kosong = didukung.
+	UnsupportedReason string
 }
 
 // ToolStatus adalah hasil pemindaian dan status terkini satu perkakas AI CLI.
@@ -51,6 +59,11 @@ type ToolStatus struct {
 	EnvVarAPIKey   string            `json:"env_var_api_key,omitempty"`
 	ExportSnippet  string            `json:"export_snippet"`
 	UpdatedAt      time.Time         `json:"updated_at,omitempty"`
+	// GatewaySupported false berarti tool tidak dapat diarahkan ke
+	// gateway (lihat ToolDef.UnsupportedReason); UI menampilkannya apa
+	// adanya dan tidak menawarkan Configure.
+	GatewaySupported  bool   `json:"gateway_supported"`
+	UnsupportedReason string `json:"unsupported_reason,omitempty"`
 }
 
 // ConfigureParams memuat parameter mutasi konfigurasi CLI dari admin request.

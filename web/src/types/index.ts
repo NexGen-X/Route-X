@@ -592,6 +592,11 @@ export interface CLITool {
   env_var_api_key?: string;
   export_snippet: string;
   updated_at?: string;
+  // false bila tool secara arsitektur tidak dapat diarahkan ke
+  // gateway Route-X; unsupported_reason menjelaskannya (backend yang
+  // menentukan — UI hanya menampilkannya apa adanya).
+  gateway_supported?: boolean;
+  unsupported_reason?: string;
 }
 
 export interface CLIDetectedResponse {

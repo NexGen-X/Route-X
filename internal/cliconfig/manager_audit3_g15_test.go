@@ -21,7 +21,10 @@ func TestSusunKontenKeyEnvGabungan(t *testing.T) {
 	lama := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
 	baru := lama.Add(time.Hour)
 	perTool := map[string]kunciTersimpan{
-		"ollama":   {kunci: "kunci-ollama", diperbarui: lama},
+		// B-136: ollama tidak lagi didukung gateway sehingga kunci
+		// warisannya tidak disumbangkan ke key.env; peran "variabel
+		// khas per tool" diuji lewat copilot (B-128).
+		"copilot":  {kunci: "kunci-copilot", diperbarui: lama},
 		"goose":    {kunci: "kunci-goose", diperbarui: lama},
 		"opencode": {kunci: "kunci-opencode", diperbarui: baru},
 	}
@@ -30,8 +33,8 @@ func TestSusunKontenKeyEnvGabungan(t *testing.T) {
 		t.Fatalf("susunKontenKeyEnv: %v", err)
 	}
 	// Variabel khas tool yang dulu tidak pernah terisi.
-	if !strings.Contains(konten, "export OLLAMA_API_KEY='kunci-ollama'") {
-		t.Errorf("OLLAMA_API_KEY tidak terisi dari konfigurasi ollama:\n%s", konten)
+	if !strings.Contains(konten, "export COPILOT_PROVIDER_API_KEY='kunci-copilot'") {
+		t.Errorf("COPILOT_PROVIDER_API_KEY tidak terisi dari konfigurasi copilot:\n%s", konten)
 	}
 	// B-099: kunci goose kini diekspor sebagai OPENAI_API_KEY (nama yang
 	// benar-benar dibaca Goose); GOOSE_API_KEY tidak diproduksi lagi.
@@ -92,11 +95,13 @@ func TestConfigureDuaToolKeyEnvUtuh(t *testing.T) {
 	}
 	mgr := NewManager(store, cipher, logger)
 
+	// B-136: ollama tidak lagi dapat dikonfigurasi; pasangan uji
+	// memakai copilot (variabel khas COPILOT_PROVIDER_API_KEY).
 	if _, err := mgr.Configure(ctx, ConfigureParams{
-		ToolID: "ollama", Mode: ModeRouting, Target: "llama3",
-		APIKey: "kunci-ollama-123",
+		ToolID: "copilot", Mode: ModeRouting, Target: "llama3",
+		APIKey: "kunci-copilot-123",
 	}, "http://localhost:8080/v1"); err != nil {
-		t.Fatalf("Configure ollama: %v", err)
+		t.Fatalf("Configure copilot: %v", err)
 	}
 	if _, err := mgr.Configure(ctx, ConfigureParams{
 		ToolID: "goose", Mode: ModeRouting, Target: "llama3",
@@ -110,8 +115,8 @@ func TestConfigureDuaToolKeyEnvUtuh(t *testing.T) {
 		t.Fatalf("key.env tidak ada: %v", err)
 	}
 	konten := string(data)
-	if !strings.Contains(konten, "OLLAMA_API_KEY") || !strings.Contains(konten, "kunci-ollama-123") {
-		t.Errorf("key.env kehilangan konfigurasi ollama sesudah goose dikonfigurasi:\n%s", konten)
+	if !strings.Contains(konten, "COPILOT_PROVIDER_API_KEY") || !strings.Contains(konten, "kunci-copilot-123") {
+		t.Errorf("key.env kehilangan konfigurasi copilot sesudah goose dikonfigurasi:\n%s", konten)
 	}
 	// B-099: konfigurasi goose terbaca lewat OPENAI_API_KEY, bukan
 	// GOOSE_API_KEY yang tidak dibaca Goose.

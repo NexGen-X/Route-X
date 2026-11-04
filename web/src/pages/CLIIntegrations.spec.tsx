@@ -101,6 +101,11 @@ const MOCK_CLI_DATA: CLIDetectedResponse = {
       active_target: 'gpt-4o',
       env_vars: {},
       export_snippet: '',
+      // B-135: agy wajib login Google — terdaftar & terdeteksi apa
+      // adanya, tetapi tidak dapat diarahkan ke gateway.
+      gateway_supported: false,
+      unsupported_reason:
+        'Antigravity CLI (agy) wajib masuk dengan akun Google dan tidak membaca endpoint atau kunci OpenAI apa pun, sehingga tidak dapat diarahkan ke gateway Route-X.',
     },
   ],
 };
@@ -191,7 +196,7 @@ describe('CLIIntegrations — Pengujian Unit Dekomposisi', () => {
     expect(inputKey).toHaveValue('sk_live_abc123456789');
   });
 
-  it('memperlakukan Antigravity CLI setara tool lain (dapat dikonfigurasi)', async () => {
+  it('memperlakukan Antigravity CLI setara tool lain, dengan label gateway yang jujur (B-081 + B-135)', async () => {
     render(<CLIIntegrations />);
 
     await waitFor(() => {
@@ -203,17 +208,25 @@ describe('CLIIntegrations — Pengujian Unit Dekomposisi', () => {
     expect(screen.queryByText(/Antigravity CLI \(Read-Only\)/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Terkunci \(Sistem\)/i })).not.toBeInTheDocument();
 
-    // Kedua tool terpasang (claude + agy) memiliki tombol Terapkan yang aktif
-    const tombolTerapkan = screen.getAllByRole('button', { name: /Terapkan ke CLI/i });
-    expect(tombolTerapkan).toHaveLength(2);
-    tombolTerapkan.forEach((b) => expect(b).not.toBeDisabled());
+    // B-135: agy tetap terdaftar/terdeteksi setara tool lain, tetapi
+    // kartu menampilkan status + alasan jujur dari backend dan TIDAK
+    // menawarkan Configure — klaim dukungan gateway-nya dicabut.
+    expect(screen.getByText('Tidak Dapat Diarahkan ke Gateway')).toBeInTheDocument();
+    expect(screen.getByText(/wajib masuk dengan akun Google/i)).toBeInTheDocument();
 
-    // Menerapkan konfigurasi agy memanggil API configure sama seperti tool lain
-    fireEvent.click(tombolTerapkan[1]);
+    // Hanya tool yang didukung gateway (claude) yang memiliki tombol
+    // Terapkan; mengkliknya tetap memanggil API configure seperti biasa.
+    const tombolTerapkan = screen.getAllByRole('button', { name: /Terapkan ke CLI/i });
+    expect(tombolTerapkan).toHaveLength(1);
+    expect(tombolTerapkan[0]).not.toBeDisabled();
+    fireEvent.click(tombolTerapkan[0]);
     await waitFor(() => {
       expect(vi.mocked(api.cli.configure)).toHaveBeenCalledWith(
-        expect.objectContaining({ tool_id: 'agy' }),
+        expect.objectContaining({ tool_id: 'claude' }),
       );
     });
+    expect(vi.mocked(api.cli.configure)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ tool_id: 'agy' }),
+    );
   });
 });

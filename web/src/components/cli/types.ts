@@ -64,6 +64,12 @@ export const getToolCompleteSnippet = (
   userApiKey: string,
   publicBaseURL: string,
 ): string => {
+  // Tool yang tidak dapat diarahkan ke gateway tidak punya snippet:
+  // merakit ekspor env untuknya akan mengesankan dukungan yang tidak
+  // ada (kejujuran katalog B-130/B-131/B-134/B-135/B-136).
+  if (tool.gateway_supported === false) {
+    return '';
+  }
   const target = config?.target || tool.active_target || models[0]?.model_id || '';
   // Claude Code dan Goose membaca base URL TANPA sufiks /v1 (B-097/B-099:
   // goose menambahkan v1/chat/completions sendiri ke OPENAI_HOST).

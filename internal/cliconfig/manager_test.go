@@ -96,8 +96,10 @@ func TestManagerScanAndConfigure(t *testing.T) {
 	}
 
 	// 3. Uji Konfigurasi Mode 2: Routing
+	// (B-135: agy tidak lagi dapat dikonfigurasi — Configure-nya kini
+	// ditolak; mode routing diuji lewat opencode.)
 	res, err = mgr.Configure(ctx, ConfigureParams{
-		ToolID: "agy",
+		ToolID: "opencode",
 		Mode:   ModeRouting,
 		Target: "coding-fast",
 	}, "http://localhost:8080/v1")

@@ -584,6 +584,12 @@ type BudgetDTO struct {
 	AlertThresholdPct int        `json:"alert_threshold_pct"`
 	AlertThreshold    int        `json:"alert_threshold"`
 	AlertedAt         *time.Time `json:"alerted_at"`
+	// ExceededAlertedAt adalah penanda pengumuman budget.exceeded. Ia
+	// diekspos terpisah dari AlertedAt (ambang) sejak B-107: tanpa field
+	// ini, bukti peringatan "terlampaui" yang tersimpan di database tidak
+	// terlihat dari API sama sekali, sehingga anggaran warn tampak tidak
+	// pernah menghasilkan bukti apa pun.
+	ExceededAlertedAt *time.Time `json:"exceeded_alerted_at"`
 	Enabled           bool       `json:"enabled"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
@@ -1432,6 +1438,7 @@ func toBudgetDTO(b *policy.Budget) BudgetDTO {
 		AlertThresholdPct: b.AlertThresholdPct,
 		AlertThreshold:    b.AlertThresholdPct,
 		AlertedAt:         b.AlertedAt,
+		ExceededAlertedAt: b.ExceededAlertedAt,
 		Enabled:           b.Enabled,
 		CreatedAt:         b.CreatedAt,
 		UpdatedAt:         b.UpdatedAt,

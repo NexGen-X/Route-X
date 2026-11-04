@@ -324,7 +324,7 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 		Tokens:       EstimateTokens(req),
 	}
 
-	cands, dilarangKey, ok := h.kandidat(w, r, rreq, p)
+	cands, diagKand, ok := h.kandidat(w, r, rreq, p)
 	if !ok {
 		return nil, false
 	}
@@ -390,7 +390,7 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 	}
 
 	if len(keputusan.Candidates) == 0 {
-		h.tolakTanpaKandidat(w, r, rreq, model, cands, dilarangKey)
+		h.tolakTanpaKandidat(w, r, rreq, model, cands, diagKand)
 		return nil, false
 	}
 
@@ -432,11 +432,35 @@ func (h *Handlers) estimasiBiaya(ctx context.Context, model *upstream.Model, req
 	est := EstimateTokens(req)
 	var maks upstream.USD
 	for _, pm := range pemetaan {
-		if biaya, ok := h.penaksir.Cost(pm.ID, est); ok && biaya > maks {
+		if biaya, ok := h.biayaPenaksir(ctx, pm.ID, est); ok && biaya > maks {
 			maks = biaya
 		}
 	}
 	return maks
+}
+
+// penaksirSegar adalah kemampuan tambahan penaksir harga: menghitung biaya
+// dari cuplikan harga TERKINI, menyegarkan cuplikan dulu bila kedaluwarsa.
+// Dipenuhi *usage.Pricer (CostCurrent).
+//
+// Antarmuka terpisah karena kontrak router.CostSource yang lama (Cost)
+// memang tanpa context dan tanpa database — router memanggilnya per
+// kandidat. Tetapi estimasi reservasi anggaran yang membaca cuplikan beku
+// sejak boot tidak pernah melihat harga yang dibuat/diubah sesudah server
+// menyala, sehingga estimasinya nol dan reservasi tidak pernah terpasang
+// (B-106). Penaksir yang tidak punya kemampuan ini tetap sah: estimasi
+// jatuh ke Cost apa adanya.
+type penaksirSegar interface {
+	CostCurrent(ctx context.Context, providerModelID string, est router.TokenEstimate) (upstream.USD, bool)
+}
+
+// biayaPenaksir menghitung estimasi biaya satu pemetaan lewat penaksir,
+// memakai jalur cuplikan terkini bila penaksir menyediakannya.
+func (h *Handlers) biayaPenaksir(ctx context.Context, providerModelID string, est router.TokenEstimate) (upstream.USD, bool) {
+	if segar, ok := h.penaksir.(penaksirSegar); ok {
+		return segar.CostCurrent(ctx, providerModelID, est)
+	}
+	return h.penaksir.Cost(providerModelID, est)
 }
 
 // kebijakan menjalankan pemeriksaan yang menuntut model sudah diketahui: pembatasan model,
@@ -848,6 +872,29 @@ func (h *Handlers) izinModel(w http.ResponseWriter, r *http.Request, p *apikey.P
 	return true
 }
 
+// diagnosaKandidat merangkum MENGAPA daftar kandidat bisa kosong, supaya
+// penolakan tanpa kandidat menyebut sebab yang sebenarnya (B-111/B-120).
+// Setiap sebab punya tindak lanjut yang berbeda bagi operator, dan pesan
+// generik "tidak ada provider yang dikonfigurasi" mengklaim kekosongan
+// konfigurasi juga pada keadaan yang sebenarnya sementara.
+type diagnosaKandidat struct {
+	// dilarangKey: model PUNYA pemetaan provider, tetapi semuanya gugur
+	// KHUSUS karena pembatasan provider pada API key (bukan penyaring
+	// kebijakan/anggaran). Keadaan itu milik klien — 403 — dan
+	// menyamakannya dengan "tidak ada provider yang dikonfigurasi" (503)
+	// mengirim operator maupun pemegang key mencari konfigurasi yang
+	// sebenarnya tidak rusak (audit3 V-GW-42).
+	dilarangKey bool
+	// semuaTakSehat: query kandidat biasa kosong, tetapi query yang sama
+	// dengan IncludeUnhealthy menghasilkan kandidat — artinya pemetaan
+	// provider ADA dan aktif, hanya saja seluruh providernya sedang
+	// disisihkan cuplikan kesehatan terakhir (snapshot 'unhealthy' yang
+	// segar). Inilah keadaan cooldown sesudah kegagalan beruntun termasuk
+	// kegagalan autentikasi (B-120): sementara dan pulih sendiri, bukan
+	// konfigurasi kosong.
+	semuaTakSehat bool
+}
+
 // kandidat mengambil kandidat rute lalu menyaringnya menurut pembatasan provider pada key.
 //
 // Penyaringan provider berbiaya satu query per provider YANG BERBEDA, dan hasilnya
@@ -857,14 +904,7 @@ func (h *Handlers) izinModel(w http.ResponseWriter, r *http.Request, p *apikey.P
 // ketika API admin Fase 11 membuat pembatasan ini benar-benar banyak dipakai. Yang tidak
 // dilakukan adalah melewatkan pemeriksaannya: key yang dibatasi ke satu provider tidak
 // boleh dirutekan ke provider lain hanya karena pemeriksaannya mahal.
-//
-// Nilai kedua, dilarangKey, melaporkan keadaan yang harus dibedakan pemanggil:
-// model PUNYA pemetaan provider, tetapi semuanya gugur KHUSUS karena
-// pembatasan provider pada API key (bukan penyaring kebijakan/anggaran).
-// Keadaan itu milik klien — 403 — dan menyamakannya dengan "tidak ada
-// provider yang dikonfigurasi" (503) mengirim operator maupun pemegang key
-// mencari konfigurasi yang sebenarnya tidak rusak (audit3 V-GW-42).
-func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.Request, p *apikey.Principal) (terpilih []*upstream.RouteCandidate, dilarangKey bool, ok bool) {
+func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.Request, p *apikey.Principal) (terpilih []*upstream.RouteCandidate, diag diagnosaKandidat, ok bool) {
 	cands, err := h.candidates.RouteCandidates(r.Context(), upstream.RouteQuery{
 		ModelID:     rreq.ModelID,
 		OwnerUserID: rreq.OwnerUserID,
@@ -873,7 +913,25 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 		h.logger.ErrorContext(r.Context(), "pengambilan kandidat rute gagal",
 			"model", rreq.ModelName, "error", err)
 		httpx.InternalError(w, r)
-		return nil, false, false
+		return nil, diag, false
+	}
+
+	// Diagnosa kesehatan hanya berjalan pada jalur kosong — jalur panas
+	// yang menghasilkan kandidat tidak membayar query kedua. Kegagalan
+	// querynya tidak menggagalkan permintaan: diagnosanya hanya hilang,
+	// dan penolakan jatuh ke sebab generik seperti sebelumnya.
+	if len(cands) == 0 {
+		diagCands, derr := h.candidates.RouteCandidates(r.Context(), upstream.RouteQuery{
+			ModelID:          rreq.ModelID,
+			OwnerUserID:      rreq.OwnerUserID,
+			IncludeUnhealthy: true,
+		})
+		if derr != nil {
+			h.logger.DebugContext(r.Context(), "diagnosa kandidat tak sehat gagal",
+				"model", rreq.ModelName, "error", derr)
+		} else if len(diagCands) > 0 {
+			diag.semuaTakSehat = true
+		}
 	}
 
 	periksaKey := h.restrict != nil && p.ID() != ""
@@ -907,7 +965,7 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 					h.logger.ErrorContext(r.Context(), "pemeriksaan pembatasan provider gagal",
 						"api_key", p.Masked(), "error", err)
 					httpx.InternalError(w, r)
-					return nil, false, false
+					return nil, diag, false
 				}
 				if !boleh {
 					sebabGugur[c.ProviderID] = "key"
@@ -923,8 +981,8 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 			gugurLain++
 		}
 	}
-	dilarangKey = len(cands) > 0 && len(out) == 0 && gugurKey > 0 && gugurLain == 0
-	return out, dilarangKey, true
+	diag.dilarangKey = len(cands) > 0 && len(out) == 0 && gugurKey > 0 && gugurLain == 0
+	return out, diag, true
 }
 
 // kandidatCombo mengumpulkan kandidat dari seluruh model dalam resep combo pipeline,
@@ -1028,12 +1086,12 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 
 // Pesan tunggal "tidak ada provider" adalah jawaban yang tidak bisa ditindaklanjuti
 // siapa pun: operator tidak tahu apakah harus menambah provider, menyalakan streaming pada
-// pemetaan model, atau melonggarkan pembatasan API key. Empat sebab yang mungkin dibedakan
+// pemetaan model, atau melonggarkan pembatasan API key. Sebab-sebab yang mungkin dibedakan
 // di sini karena tindak lanjutnya berbeda, dan hanya kode ini yang tahu bedanya.
 func (h *Handlers) tolakTanpaKandidat(
 	w http.ResponseWriter, r *http.Request,
 	rreq router.Request, model *upstream.Model, sebelumDisaring []*upstream.RouteCandidate,
-	dilarangKey bool,
+	diag diagnosaKandidat,
 ) {
 	nama := kutip(model.ModelID)
 
@@ -1041,9 +1099,25 @@ func (h *Handlers) tolakTanpaKandidat(
 	// semuanya. Itu penolakan kewenangan milik klien (403), bukan kekosongan
 	// konfigurasi: menjawabnya 503 "tidak ada provider yang dikonfigurasi"
 	// mengklaim hal yang salah tentang instalasi ini (audit3 V-GW-42).
-	if dilarangKey {
+	if diag.dilarangKey {
 		httpx.WriteError(w, r, http.StatusForbidden, httpx.ErrTypePermission, "provider_not_allowed",
 			"API key ini tidak diizinkan memakai provider mana pun untuk model "+nama)
+		return
+	}
+
+	// Pemetaan provider ADA dan aktif, tetapi seluruh providernya sedang
+	// disisihkan cuplikan kesehatan (B-120). Keadaannya sementara —
+	// cooldown sesudah kegagalan beruntun, termasuk kegagalan autentikasi
+	// yang membuat probe kesehatan ikut gagal — dan pulih sendiri pada
+	// pemeriksaan kesehatan berikutnya. Menjawabnya no_provider_for_model
+	// mengklaim konfigurasi kosong dan mengarahkan diagnosis operator ke
+	// tempat yang salah.
+	if diag.semuaTakSehat && len(sebelumDisaring) == 0 {
+		h.logger.WarnContext(r.Context(), "semua provider model sedang ditandai tidak sehat",
+			"model", model.ModelID)
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.ErrTypeAPI, "provider_unhealthy",
+			"semua provider untuk model "+nama+" sedang ditandai tidak sehat dan disisihkan sementara; "+
+				"coba lagi sesudah pemeriksaan kesehatan berikutnya")
 		return
 	}
 
@@ -1075,12 +1149,45 @@ func (h *Handlers) tolakTanpaKandidat(
 	case butuhTools(rreq) && tidakAdaYangMendukung(sebelumDisaring, func(c *upstream.RouteCandidate) bool { return c.SupportsTools }):
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "tools_not_supported",
 			"tidak ada provider untuk model "+nama+" yang mendukung pemanggilan tool")
-	default:
-		// Sisanya praktis selalu jendela konteks: permintaan lebih besar daripada yang
-		// dideklarasikan pemetaan model mana pun.
+	case semuaKandidatKekecilanUntukPermintaan(sebelumDisaring, rreq.Tokens):
+		// Jendela konteks hanya boleh diklaim bila BUKTINYA ada: setiap
+		// kandidat menyatakan jendela yang lebih kecil daripada kebutuhan
+		// permintaan ini (semantik muatKonteks di router: masukan +
+		// keluaran). Versi lama menjadikan cabang ini bawaan bagi SEMUA
+		// sisa keadaan, sehingga kandidat yang tersisih kesehatan/aturan
+		// ikut terjawab context_length_exceeded dan operator mengejar
+		// diagnosis prompt-terlalu-panjang yang salah (B-111).
 		httpx.WriteError(w, r, http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "context_length_exceeded",
 			"permintaan melebihi jendela konteks setiap provider yang melayani model "+nama)
+	default:
+		// Sisa keadaan: kandidat ada tetapi tersisih aturan rute
+		// (rule.Providers membatasi ke provider lain) atau penyaring
+		// sementara lain di mesin rute. Itu keadaan ketersediaan 503,
+		// bukan kesalahan bentuk permintaan klien.
+		h.logger.WarnContext(r.Context(), "semua kandidat model tersisih aturan rute",
+			"model", model.ModelID, "kandidat", len(sebelumDisaring))
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, httpx.ErrTypeAPI, "no_available_provider",
+			"tidak ada kandidat yang tersedia untuk model "+nama+" saat ini; "+
+				"semua kandidat tersisih oleh aturan rute atau keadaan sementara — periksa aturan routing model ini")
 	}
+}
+
+// semuaKandidatKekecilanUntukPermintaan melaporkan apakah SETIAP kandidat
+// menyatakan jendela konteks yang lebih kecil daripada kebutuhan
+// permintaan ini (masukan + keluaran, semantik yang sama dengan
+// muatKonteks di paket router). Kandidat tanpa jendela terdeklarasi
+// dihitung sanggup — sama seperti penyaringnya — jadi satu kandidat
+// seperti itu cukup menggugurkan klaim konteks.
+func semuaKandidatKekecilanUntukPermintaan(cands []*upstream.RouteCandidate, tokens router.TokenEstimate) bool {
+	if len(cands) == 0 || tokens.InputTokens+tokens.OutputTokens <= 0 {
+		return false
+	}
+	for _, c := range cands {
+		if c.MaxContextWindow == nil || *c.MaxContextWindow >= tokens.InputTokens+tokens.OutputTokens {
+			return false
+		}
+	}
+	return true
 }
 
 // perluEmbeddings melaporkan apakah permintaan ini menuntut kemampuan embeddings.
@@ -2212,7 +2319,7 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 		OwnerUserID:  p.OwnerUserID(),
 		Capabilities: []string{upstream.CapEmbeddings},
 	}
-	cands, dilarangKey, ok := h.kandidat(w, r, rreq, p)
+	cands, diagKand, ok := h.kandidat(w, r, rreq, p)
 	if !ok {
 		return
 	}
@@ -2224,7 +2331,7 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 		// dibedakan — 403 bila key dilarang ke semua provider, 503 bila
 		// memang tidak ada pemetaan, 400 bila aturan menyaring semuanya —
 		// bukan satu 503 untuk segala keadaan.
-		h.tolakTanpaKandidat(w, r, rreq, model, cands, dilarangKey)
+		h.tolakTanpaKandidat(w, r, rreq, model, cands, diagKand)
 		return
 	}
 	plan := PlanFromRule(keputusan.Rule, model.ModelID, keputusan.Candidates)

@@ -639,10 +639,41 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Ambil kredensial aktif jika ada dan dekripsi API key
+	// 3. Ambil kredensial aktif jika ada dan dekripsi API key.
+	//
+	// Kegagalan mengambil kredensial TIDAK lagi ditelan (B-118): versi lama
+	// meneruskan discovery TANPA API key pada setiap kegagalan Active —
+	// termasuk keadaan "provider punya kredensial tetapi tidak satu pun
+	// aktif", pola senyap yang sama dengan akar B-103 di jalur request.
+	// Operator lalu melihat sync berjalan (atau hasil katalog publik) tanpa
+	// tahu kredensialnya tidak dipakai. Kini keadaannya dibedakan persis
+	// seperti pabrik adapter gateway (factory B-103):
+	//   - punya kredensial, tak satu pun aktif → sync GAGAL eksplisit 409;
+	//   - tidak pernah punya kredensial sama sekali → mode lokal tanpa
+	//     key memang sah (Ollama/vLLM/LM Studio tanpa autentikasi);
+	//   - kegagalan baca lain (dekripsi, database) → gagal eksplisit 500,
+	//     bukan discovery tanpa key yang menyamar sebagai sukses.
 	var apiKey string
-	if activeCred, credErr := h.credentialRepo.Active(ctx, p.ID); credErr == nil && activeCred != nil {
+	activeCred, credErr := h.credentialRepo.Active(ctx, p.ID)
+	switch {
+	case credErr == nil && activeCred != nil:
 		apiKey = activeCred.Secret.Reveal()
+	case credErr != nil && errors.Is(credErr, repo.ErrNotFound):
+		ada, herr := h.credentialRepo.HasCredentials(ctx, p.ID)
+		if herr != nil {
+			h.gagalInternal(w, r, "keberadaan kredensial provider tidak bisa diperiksa untuk sinkronisasi model", herr)
+			return
+		}
+		if ada {
+			httpx.WriteError(w, r, http.StatusConflict, httpx.ErrTypeInvalidRequest, "provider_credentials_inactive",
+				fmt.Sprintf("provider %q punya kredensial tetapi tidak satu pun aktif "+
+					"(semua dinonaktifkan atau kedaluwarsa); sinkronisasi model tidak diteruskan tanpa kredensial", p.Name))
+			return
+		}
+		// Tidak pernah punya kredensial: mode lokal tanpa API key.
+	case credErr != nil:
+		h.gagalInternal(w, r, "kredensial provider tidak bisa diambil untuk sinkronisasi model", credErr)
+		return
 	}
 
 	// 4. Siapkan HTTP client dengan kebijakan SSRF wajib

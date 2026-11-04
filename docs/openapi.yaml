@@ -6107,6 +6107,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        exceeded_alerted_at:
+          type: string
+          format: date-time
+          nullable: true
         enabled:
           type: boolean
         created_at:

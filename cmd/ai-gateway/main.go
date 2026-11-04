@@ -739,6 +739,7 @@ func buildGatewaySurface(
 		PriceCache:     pricer,
 		RateLimits:     rates,
 		ContentFilters: filters,
+		BudgetCache:    budgets,
 		Version:        version,
 		Commit:         commit,
 		BuiltAt:        builtAt,

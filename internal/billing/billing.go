@@ -342,37 +342,19 @@ func (e *Enforcer) Announce(ctx context.Context, budgets []*policy.Budget) {
 	for _, b := range budgets {
 		// 1. Periksa dan kirim peringatan ambang batas (budget.threshold)
 		if b.ShouldAlertThreshold() {
-			pertama, err := e.source.MarkThresholdAlerted(ctx, b.ID)
-			if err != nil {
-				e.logger.WarnContext(ctx, "penandaan peringatan ambang anggaran gagal",
-					"anggaran", b.Name, "error", err)
-			} else if pertama {
-				e.logger.WarnContext(ctx, "anggaran melewati ambang peringatan",
-					"anggaran", b.Name,
-					"cakupan", b.Scope,
-					"periode", b.Period,
-					"ambang_persen", b.AlertThresholdPct,
-					"terpakai_usd", b.SpentUSD.String(),
-					"batas_usd", b.LimitUSD.String())
-
-				if e.enqueuer != nil {
-					payload := map[string]any{
-						"budget_id":     b.ID,
-						"budget_name":   b.Name,
-						"scope":         b.Scope,
-						"scope_id":      b.ScopeID,
-						"spent_usd":     b.SpentUSD.Decimal(),
-						"limit_usd":     b.LimitUSD.Decimal(),
-						"timestamp":     time.Now().UTC().Format(time.RFC3339),
-						"event":         "budget.threshold",
-						"threshold_pct": b.AlertThresholdPct,
-					}
-					if _, err := e.enqueuer.Enqueue(ctx, "budget.threshold", payload); err != nil {
-						e.logger.WarnContext(ctx, "gagal memasukkan notifikasi budget.threshold ke antrean webhook",
-							"anggaran", b.Name, "error", err)
-					}
-				}
-			}
+			e.umumkanAmbang(ctx, b)
+		} else if b.ShouldAlertExceeded() && b.AlertedAt == nil && b.AlertThresholdPct > 0 {
+			// Ambang TERLOMPAT (B-107): satu request bisa membawa spent dari
+			// bawah ambang langsung melewati batas (biaya per request lebih
+			// besar daripada lebar jendela ambang), sehingga pada setiap
+			// pemeriksaan ShouldAlertThreshold sudah false — ia mensyaratkan
+			// spent BELUM terlampaui. Tanpa cabang ini peringatan ambangnya
+			// hilang permanen: alerted_at tidak pernah terisi dan anggaran
+			// warn tampak tidak pernah memperingatkan sama sekali, padahal
+			// ambangnya jelas terlewati. Ambang yang terlewati tetap
+			// diumumkan — terlambat, bersamaan dengan pengumuman
+			// terlampauinya, tetapi tepat satu kali seperti rancangannya.
+			e.umumkanAmbang(ctx, b)
 		}
 
 		// 2. Periksa dan kirim peringatan batas anggaran terlampaui (budget.exceeded)
@@ -413,6 +395,47 @@ func (e *Enforcer) Announce(ctx context.Context, budgets []*policy.Budget) {
 	// Salinan di memori dibatalkan agar pembacaan berikutnya memuat status alerted_at
 	// dan exceeded_alerted_at terbaru dari database.
 	e.Invalidate()
+}
+
+// umumkanAmbang menandai dan mengumumkan SATU peringatan ambang anggaran:
+// penanda alerted_at di database, baris log peringatan, dan event webhook
+// budget.threshold. Penandaan bersyarat di repo (hanya yang pertama yang
+// menandai yang mengumumkan), jadi memanggilnya berulang aman.
+func (e *Enforcer) umumkanAmbang(ctx context.Context, b *policy.Budget) {
+	pertama, err := e.source.MarkThresholdAlerted(ctx, b.ID)
+	if err != nil {
+		e.logger.WarnContext(ctx, "penandaan peringatan ambang anggaran gagal",
+			"anggaran", b.Name, "error", err)
+		return
+	}
+	if !pertama {
+		return
+	}
+	e.logger.WarnContext(ctx, "anggaran melewati ambang peringatan",
+		"anggaran", b.Name,
+		"cakupan", b.Scope,
+		"periode", b.Period,
+		"ambang_persen", b.AlertThresholdPct,
+		"terpakai_usd", b.SpentUSD.String(),
+		"batas_usd", b.LimitUSD.String())
+
+	if e.enqueuer != nil {
+		payload := map[string]any{
+			"budget_id":     b.ID,
+			"budget_name":   b.Name,
+			"scope":         b.Scope,
+			"scope_id":      b.ScopeID,
+			"spent_usd":     b.SpentUSD.Decimal(),
+			"limit_usd":     b.LimitUSD.Decimal(),
+			"timestamp":     time.Now().UTC().Format(time.RFC3339),
+			"event":         "budget.threshold",
+			"threshold_pct": b.AlertThresholdPct,
+		}
+		if _, err := e.enqueuer.Enqueue(ctx, "budget.threshold", payload); err != nil {
+			e.logger.WarnContext(ctx, "gagal memasukkan notifikasi budget.threshold ke antrean webhook",
+				"anggaran", b.Name, "error", err)
+		}
+	}
 }
 
 // Remaining mengembalikan sisa anggaran paling sedikit di antara yang berlaku, dan apakah

@@ -85,6 +85,9 @@ type Handlers struct {
 	// nil bila tidak di-injeksi (lihat Config.RateLimits/Config.ContentFilters).
 	rateLimits     PolicyCache
 	contentFilters PolicyCache
+	// budgetCache adalah salinan anggaran milik penegak gateway; nil bila
+	// tidak di-injeksi (lihat Config.BudgetCache).
+	budgetCache PolicyCache
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	version string
 	commit  string
@@ -172,6 +175,14 @@ type Config struct {
 	// admin, dengan alasan yang sama seperti RateLimits. Opsional: nil
 	// berarti tidak ada invalidasi instan (triage B-005).
 	ContentFilters PolicyCache
+	// BudgetCache adalah penegak anggaran gateway (billing.Enforcer).
+	// Dipakai membatalkan salinan anggarannya sesudah mutasi anggaran
+	// lewat API admin — buat, ubah, toggle, reset, hapus — supaya
+	// perubahan plafon/status berlaku di jalur request SEKETIKA di
+	// instance ini, bukan sesudah TTL salinan 5 detik (B-106: jeda
+	// buat/reset/toggle anggaran adalah separuh temuan penegakan
+	// asinkron). Opsional: nil berarti tidak ada invalidasi instan.
+	BudgetCache PolicyCache
 	// Identitas biner untuk diagnostics: diisi dari ldflags main.
 	Version string
 	Commit  string
@@ -246,6 +257,7 @@ func NewHandlers(cfg Config) *Handlers {
 		priceCache:     cfg.PriceCache,
 		rateLimits:     cfg.RateLimits,
 		contentFilters: cfg.ContentFilters,
+		budgetCache:    cfg.BudgetCache,
 		oauthRepo:      cfg.OAuthRepo,
 		oauthClient:    cfg.OAuthClient,
 		version:        cfg.Version,
@@ -382,6 +394,17 @@ func (h *Handlers) invalidateRateLimits() {
 func (h *Handlers) invalidateContentFilters() {
 	if h.contentFilters != nil {
 		h.contentFilters.Invalidate()
+	}
+}
+
+// invalidateBudgets membatalkan salinan anggaran penegak gateway bila
+// di-injeksi. Dipanggil sesudah mutasi anggaran (create/update/delete/
+// toggle/reset) supaya plafon, status, dan angka spent hasil reset
+// terbaca jalur request seketika di instance ini (B-106). Pola yang sama
+// seperti invalidateRateLimits; lintas instance tetap TTL salinan.
+func (h *Handlers) invalidateBudgets() {
+	if h.budgetCache != nil {
+		h.budgetCache.Invalidate()
 	}
 }
 

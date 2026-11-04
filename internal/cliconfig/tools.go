@@ -13,6 +13,14 @@ package cliconfig
 // chatblade, dan k8sgpt (didukung pada rilis sebelumnya, kini keluar
 // dari kriteria registri: hanya CLI terkemuka, stabil, dan
 // berkomunitas besar yang dipertahankan/ditambah).
+//
+// Tahap 3 (B-153): uji live Tahap 2 membuktikan SATU pengecualian —
+// codex mati pada permintaan pertamanya karena gateway belum
+// mendukung streaming pada /v1/responses. Codex TETAP terdaftar
+// (format konfigurasinya benar dan terbaca tool-nya), tetapi kini
+// membawa UnsupportedReason SEMENTARA sehingga Configure-nya ditolak
+// dengan jujur sampai dukungan streaming Responses tiba: registri
+// kini 11 entri, 10 didukung + codex beralasan sementara.
 func SupportedTools() []ToolDef {
 	return []ToolDef{
 		{
@@ -117,9 +125,20 @@ func SupportedTools() []ToolDef {
 			VersionArg:  "--version",
 			// Konfigurasi hidup di config.toml; satu-satunya jalur env
 			// adalah kunci lewat env_key (OPENAI_API_KEY di key.env).
-			EnvVarAPIKey:  "OPENAI_API_KEY",
-			DefaultMode:   ModeModelOnly,
-			DefaultTarget: "gpt-5",
+			EnvVarAPIKey: "OPENAI_API_KEY",
+			// B-153 (SEMENTARA, Tahap 3): uji live Tahap 2 membuktikan
+			// Configure di bawah ini BENAR dan terbaca codex, tetapi
+			// permintaan pertamanya mati 400 streaming_not_supported —
+			// codex hanya berbicara Responses API streaming sedangkan
+			// /v1/responses gateway baru mendukung non-streaming.
+			// Selama itu, Configure DITOLAK dengan alasan ini daripada
+			// mengklaim didukung untuk tool yang mati di permintaan
+			// pertama. Penulis config.toml di manager.go SENGAJA
+			// dipertahankan: begitu streaming Responses tiba, cukup
+			// cabut alasan ini untuk menghidupkan codex kembali.
+			UnsupportedReason: "Codex CLI hanya berbicara Responses API dengan streaming (stream: true), sedangkan /v1/responses gateway saat ini baru mendukung non-streaming, sehingga Codex belum dapat diarahkan ke gateway sampai dukungan streaming Responses tiba (B-153).",
+			DefaultMode:       ModeModelOnly,
+			DefaultTarget:     "gpt-5",
 		},
 		{
 			// xAI Grok Build (xai-org/grok-build). Format model kustom
@@ -189,7 +208,7 @@ func SupportedTools() []ToolDef {
 			ID:          "hermes",
 			Name:        "Hermes Agent",
 			Category:    "Developer Agent",
-			Description: "Agent otonom open-source dari Nous Research dengan perangkat terminal dan memori persisten.",
+			Description: "Agent otonom open-source dari Nous Research dengan perangkat terminal dan memori persisten. Catatan (B-154): jalan headless dapat meninggalkan daemon gateway latar yang keluar saat idle — matikan manual bila tidak dipakai lagi.",
 			BinaryNames: []string{"hermes"},
 			ConfigPaths: []string{".hermes/config.yaml"},
 			VersionArg:  "--version",
@@ -211,7 +230,7 @@ func SupportedTools() []ToolDef {
 			ID:          "cline",
 			Name:        "Cline CLI",
 			Category:    "Coding Agent",
-			Description: "CLI coding agent open-source dari tim Cline untuk terminal dan CI.",
+			Description: "CLI coding agent open-source dari tim Cline untuk terminal dan CI. Konfigurasinya disimpan dan dikelola store internal CLI Cline sendiri lewat perintah resmi `cline auth` — status konfigurasinya dikelola tool itu, bukan berkas Route-X (B-149). Catatan (B-154): jalan headless dapat meninggalkan daemon hub latar yang perlu dimatikan operator.",
 			BinaryNames: []string{"cline"},
 			ConfigPaths: []string{".cline/data/settings/providers.json"},
 			VersionArg:  "--version",

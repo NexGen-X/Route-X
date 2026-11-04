@@ -6,6 +6,10 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Changed
+
+- **Kejujuran registri CLI (Tahap 3 — B-153, B-149, B-154)**: **OpenAI Codex CLI kini berstatus sementara tidak-didukung** — uji live membuktikan Codex hanya berbicara Responses API dengan streaming (`stream: true`) sedangkan `/v1/responses` gateway baru mendukung non-streaming, sehingga permintaan pertamanya mati `400 streaming_not_supported`. Configure Codex kini DITOLAK dengan alasan itu (B-153) sampai dukungan streaming Responses tiba, alih-alih mengklaim berhasil untuk tool yang mati di permintaan pertama; penulis `~/.codex/config.toml` dipertahankan agar jalur Configure hidup lagi begitu alasannya dicabut. Registri tetap 11 entri: 10 didukung + Codex beralasan sementara. Deskripsi **Cline** kini menyatakan konfigurasinya disimpan dan dikelola store internal CLI Cline sendiri lewat perintah resmi `cline auth` — statusnya dikelola tool itu, bukan berkas Route-X (B-149) — dan deskripsi **Hermes Agent** serta **Cline** kini mencatat jalan headless-nya dapat meninggalkan daemon latar yang perlu dimatikan operator (B-154).
+
 ### Added
 
 - **Enam tool CLI baru di registri Integrasi CLI** (perombakan registri Tahap 1), masing-masing dikonfigurasi lewat format resmi yang terverifikasi dari dokumentasi/repo upstream-nya: **OpenAI Codex CLI** (`~/.codex/config.toml` — provider `routex` dengan `wire_api = "responses"` dan `env_key = "OPENAI_API_KEY"`; Codex tidak lagi mendukung chat completions), **Grok Build** (`~/.grok/config.toml` — `[model.routex]` dengan `env_key = "XAI_API_KEY"`), **Qwen Code** (env `OPENAI_*` resmi + `~/.qwen/settings.json`), **Crush** (`~/.config/crush/crush.json` — provider `openai-compat`), **Hermes Agent** (blok `model:` provider `custom` di `~/.hermes/config.yaml` + kunci di `~/.hermes/.env`), dan **Cline CLI** (Configure menjalankan perintah resmi `cline auth` dari CLI itu sendiri; gagal jujur bila biner tidak terpasang).

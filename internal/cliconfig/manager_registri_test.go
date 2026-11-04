@@ -21,10 +21,20 @@ var idToolTercabutTahap1 = []string{
 	"sgpt", "fabric", "llm", "opencommit", "chatblade", "k8sgpt",
 }
 
-// TestRegistriTahap1TepatSebelas membuktikan sasaran final Tahap 1:
-// registri tepat berisi 11 tool (lima yang dipertahankan ditambah
-// enam tool baru), semuanya didukung gateway (UnsupportedReason
-// kosong), dan ke-12 id tercabut tidak dikenal lagi.
+// TestRegistriTahap1TepatSebelas membuktikan sasaran registri:
+// tepat 11 tool (lima yang dipertahankan ditambah enam tool baru
+// Tahap 1), dan ke-12 id tercabut tidak dikenal lagi.
+//
+// Asersi dukungan DIUBAH SECARA EKSPLISIT pada Tahap 3 (B-153) —
+// bukan dilonggarkan: versi Tahap 1 menuntut SEMUA entri didukung
+// (UnsupportedReason kosong), tetapi uji live Tahap 2 membuktikan
+// codex mati pada permintaan pertamanya (400 streaming_not_supported
+// di /v1/responses). Kini asersinya tepat: 10 tool didukung, dan
+// codex — satu-satunya pengecualian — membawa alasan SEMENTARA yang
+// menyebut B-153 dan streaming. Begitu streaming Responses tiba dan
+// alasan codex dicabut, asersi pengecualian di bawah ini WAJIB ikut
+// dicabut (test ini akan gagal pada codex beralasan-kosong lewat
+// cabang khususnya, yang memang disengaja).
 func TestRegistriTahap1TepatSebelas(t *testing.T) {
 	tools := SupportedTools()
 	if len(tools) != 11 {
@@ -34,14 +44,28 @@ func TestRegistriTahap1TepatSebelas(t *testing.T) {
 		"claude": true, "opencode": true, "copilot": true, "goose": true, "aider": true,
 		"codex": true, "grok-build": true, "qwen": true, "crush": true, "hermes": true, "cline": true,
 	}
+	didukung := 0
 	for _, tool := range tools {
 		if !mau[tool.ID] {
 			t.Errorf("tool %s tidak seharusnya ada di registri hasil perombakan Tahap 1", tool.ID)
 		}
 		delete(mau, tool.ID)
+		if tool.ID == "codex" {
+			// B-153: satu-satunya entri beralasan sementara.
+			if tool.UnsupportedReason == "" {
+				t.Errorf("codex seharusnya beralasan sementara (B-153) sampai streaming /v1/responses tiba")
+			} else if !strings.Contains(tool.UnsupportedReason, "B-153") || !strings.Contains(tool.UnsupportedReason, "stream") {
+				t.Errorf("alasan sementara codex harus menyebut B-153 dan streaming, didapat: %q", tool.UnsupportedReason)
+			}
+			continue
+		}
 		if tool.UnsupportedReason != "" {
 			t.Errorf("tool %s seharusnya didukung gateway, alasan terisi: %q", tool.ID, tool.UnsupportedReason)
 		}
+		didukung++
+	}
+	if didukung != 10 {
+		t.Errorf("tool didukung = %d, mau tepat 10 (11 entri minus codex sementara, B-153)", didukung)
 	}
 	for id := range mau {
 		t.Errorf("tool bertahan %s hilang dari registri", id)
@@ -232,5 +256,33 @@ func TestDeteksiVersiBinerMenggantungTerpotong(t *testing.T) {
 	}
 	if lama > timeoutDeteksiVersi+10*time.Second {
 		t.Errorf("deteksi biner menggantung memakan %v — batas %v tidak memotongnya", lama, timeoutDeteksiVersi)
+	}
+}
+
+// TestDeskripsiPenandaJujurTahap3 membuktikan penanda jujur Tahap 3
+// pada deskripsi katalog: cline menyatakan status konfigurasinya
+// dikelola store internal Cline sendiri lewat `cline auth` (B-149),
+// dan hermes + cline menyatakan jalan headless-nya dapat
+// meninggalkan daemon latar (B-154). Deskripsi adalah yang
+// ditampilkan katalog ke operator, jadi penandanya diuji di sini,
+// bukan hanya ditulis.
+func TestDeskripsiPenandaJujurTahap3(t *testing.T) {
+	cline, ok := cariToolDef("cline")
+	if !ok {
+		t.Fatal("cline tidak ditemukan di registri")
+	}
+	for _, mau := range []string{"store internal CLI Cline sendiri", "cline auth", "bukan berkas Route-X", "B-149", "daemon hub", "B-154"} {
+		if !strings.Contains(cline.Description, mau) {
+			t.Errorf("deskripsi cline tidak memuat penanda %q: %q", mau, cline.Description)
+		}
+	}
+	hermes, ok := cariToolDef("hermes")
+	if !ok {
+		t.Fatal("hermes tidak ditemukan di registri")
+	}
+	for _, mau := range []string{"daemon gateway latar", "B-154"} {
+		if !strings.Contains(hermes.Description, mau) {
+			t.Errorf("deskripsi hermes tidak memuat penanda %q: %q", mau, hermes.Description)
+		}
 	}
 }

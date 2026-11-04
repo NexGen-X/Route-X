@@ -79,9 +79,37 @@ type anthropicRequest struct {
 }
 
 // anthropicThinking adalah parameter extended thinking pada body /v1/messages.
+//
+// Sub-field selain type/budget_tokens (mis. "display" dari klien modern)
+// TIDAK dibuang saat decode (B-137): UnmarshalJSON mempertahankannya mentah
+// di Extra agar adapter Anthropic dapat meneruskannya setia ke upstream
+// Anthropic. Untuk upstream non-Anthropic seluruh thinking memang dibuang
+// secara terdokumentasi (B-096) — Extra mengikuti nasib yang sama.
 type anthropicThinking struct {
-	Type         string `json:"type"`
-	BudgetTokens int    `json:"budget_tokens,omitempty"`
+	Type         string                     `json:"type"`
+	BudgetTokens int                        `json:"budget_tokens,omitempty"`
+	Extra        map[string]json.RawMessage `json:"-"`
+}
+
+// UnmarshalJSON mengurai type/budget_tokens dan menyimpan sub-field lain
+// apa adanya di Extra.
+func (t *anthropicThinking) UnmarshalJSON(data []byte) error {
+	type alias anthropicThinking
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	var mentah map[string]json.RawMessage
+	if err := json.Unmarshal(data, &mentah); err != nil {
+		return err
+	}
+	delete(mentah, "type")
+	delete(mentah, "budget_tokens")
+	*t = anthropicThinking(a)
+	if len(mentah) > 0 {
+		t.Extra = mentah
+	}
+	return nil
 }
 
 // anthropicMetadata adalah block metadata pada body /v1/messages.
@@ -496,6 +524,7 @@ func decodeAnthropicMessagesRequest(body []byte, wajibMaxTokens bool) (*provider
 			out.Thinking = &providers.ThinkingParam{
 				Type:         aReq.Thinking.Type,
 				BudgetTokens: aReq.Thinking.BudgetTokens,
+				Extra:        aReq.Thinking.Extra,
 			}
 		default:
 			return nil, fmt.Errorf("thinking.type %q tidak dikenal; gunakan \"enabled\", \"disabled\", atau \"adaptive\"", aReq.Thinking.Type)

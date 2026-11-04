@@ -60,7 +60,7 @@ Calling heterogeneous AI provider APIs directly means dialect fragmentation (Ope
 </td>
 <td width="50%" valign="top">
 
-**A control plane, not just a proxy** — an embedded dashboard for providers, routing rules, API keys, budgets, webhooks, egress pools, backups, and observability, plus one-click synchronization of 11 developer CLI tools.
+**A control plane, not just a proxy** — an embedded dashboard for providers, routing rules, API keys, budgets, webhooks, egress pools, backups, and observability, plus one-click synchronization of developer CLI tools — 10 of the 11 registered tools (OpenAI Codex CLI is registered and detected, but not yet configurable).
 
 </td>
 </tr>
@@ -112,7 +112,7 @@ The application tier is a **single static Go binary** (dashboard embedded via `/
 - **Embedded dashboard** ("Calm Console" design language: Claude-inspired dark theme, flat KPI strips instead of stacked cards, full Bahasa Indonesia UI, responsive + PWA for mobile — no separate native app).
 - **Webhooks with verifiable signatures**: deliveries are signed with HMAC-SHA256 over `"<timestamp>.<deliveryID>.<final body>"` and sent in the **`X-RouteX-Signature`** header (`sha256=<hex>`). A webhook secret is required (empty secrets are rejected), failed deliveries retry with backoff and terminate in an `abandoned` state instead of retrying forever, and cross-host redirects are refused.
 - **Egress pools & optional relays**: per-credential HTTP/SOCKS5 proxy pools with periodic health probing; unhealthy pools are skipped while a healthy alternative exists (fail-open if none is healthy). Deno Deploy and Cloudflare relays are **optional** intermediaries for egress — relays created by Route-X provisioning carry a random per-installation token generated on your own server; the repository contains code only, never your settings or secrets.
-- **Developer CLI synchronization**: one-click provisioning for 11 terminal tools (Claude Code, OpenCode, OpenAI Codex CLI, Grok Build, Qwen Code, Crush, Hermes Agent, Cline, Aider, Goose, and GitHub Copilot CLI) — every tool is treated equally and configured the same way.
+- **Developer CLI synchronization**: one-click provisioning for 10 of the 11 registered terminal tools (Claude Code, OpenCode, Grok Build, Qwen Code, Crush, Hermes Agent, Cline, Aider, Goose, and GitHub Copilot CLI) — every supported tool is treated equally and configured the same way. OpenAI Codex CLI is also registered and detected, but it cannot be configured yet: Codex only speaks the Responses API in streaming mode, which the gateway does not support yet.
 - **Backup & restore**: one-click database export (streaming) and restore. Restores are **scratch-swap atomic**: the upload is scanned for psql meta-commands, restored into a scratch database in a single transaction, checked against the schema ledger, and only then swapped in — the previous database is kept as `<db>_pre_restore`.
 - **Observability**: request inspector with latency waterfall and event timeline, traffic breakdowns whose percentages are computed from true totals, Prometheus metrics, and `/healthz` + `/readyz` probes that return status only (`{"status":"ok"}` — no version or uptime leakage).
 

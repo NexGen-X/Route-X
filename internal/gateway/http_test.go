@@ -396,11 +396,59 @@ func TestChatCompletionsMemakaiNamaModelUpstream(t *testing.T) {
 	}
 }
 
-// TestResponsesDilayaniHandlerYangSama memastikan nama baru OpenAI ikut dilayani.
-func TestResponsesDilayaniHandlerYangSama(t *testing.T) {
+// TestResponsesMelayaniDialekResponsesAsli memastikan /v1/responses melayani
+// dialek Responses API yang asli (B-105): body {model, input} dijawab objek
+// response — BUKAN alias chat-completions seperti sebelumnya (test lama
+// mengunci perilaku alias itu dan diganti bersama kontraknya di B-105).
+func TestResponsesMelayaniDialekResponsesAsli(t *testing.T) {
+	prov := providerSukses()
+	s := susun(t, prov, nil)
+	w := s.panggil(t, http.MethodPost, "/responses",
+		`{"model":"gpt-4o-mini","input":"halo"}`, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, mau 200 (body: %s)", w.Code, w.Body.String())
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &obj); err != nil {
+		t.Fatalf("jawaban bukan JSON: %v", err)
+	}
+	if obj["object"] != "response" {
+		t.Errorf("object = %v, mau \"response\"", obj["object"])
+	}
+	if id, _ := obj["id"].(string); !strings.HasPrefix(id, "resp_") {
+		t.Errorf("id = %q, mau berawalan resp_", id)
+	}
+	out, _ := obj["output"].([]any)
+	if len(out) != 1 {
+		t.Fatalf("output = %d item, mau 1", len(out))
+	}
+	item, _ := out[0].(map[string]any)
+	isi, _ := item["content"].([]any)
+	if item["type"] != "message" || len(isi) != 1 ||
+		isi[0].(map[string]any)["type"] != "output_text" ||
+		isi[0].(map[string]any)["text"] != "hai" {
+		t.Errorf("item keluaran salah: %v", item)
+	}
+	// Permintaan kanonik yang mencapai adapter harus membawa pesan dari input.
+	if got := prov.terakhir(t).Messages; len(got) != 1 || got[0].Content != "halo" {
+		t.Errorf("pesan kanonik = %+v, mau satu pesan user 'halo'", got)
+	}
+}
+
+// TestResponsesMenolakBentukChatDanStream memastikan alias lama benar-benar
+// mati dan streaming ditolak eksplisit, bukan diterjemahkan diam-diam.
+func TestResponsesMenolakBentukChatDanStream(t *testing.T) {
 	s := susun(t, providerSukses(), nil)
-	if w := s.panggil(t, http.MethodPost, "/responses", bodyChatMinimal, nil); w.Code != http.StatusOK {
-		t.Errorf("status = %d, mau 200 (body: %s)", w.Code, w.Body.String())
+	if w := s.panggil(t, http.MethodPost, "/responses", bodyChatMinimal, nil); w.Code != http.StatusBadRequest {
+		t.Errorf("body chat-completions: status = %d, mau 400 (body: %s)", w.Code, w.Body.String())
+	}
+	w := s.panggil(t, http.MethodPost, "/responses",
+		`{"model":"gpt-4o-mini","input":"halo","stream":true}`, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("stream:true: status = %d, mau 400 (body: %s)", w.Code, w.Body.String())
+	}
+	if d := galat(t, w); d.Code == nil || *d.Code != "streaming_not_supported" {
+		t.Errorf("code = %v, mau streaming_not_supported", d.Code)
 	}
 }
 

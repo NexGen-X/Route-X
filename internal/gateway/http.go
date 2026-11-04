@@ -228,7 +228,7 @@ func (h *Handlers) Routes() http.Handler {
 		// percakapan biasa. Dilayani handler yang sama supaya klien yang sudah pindah ke nama
 		// itu tetap bekerja; perbedaan bentuk body-nya yang belum didukung diteruskan lewat
 		// ChatRequest.Extra, bukan ditelan diam-diam.
-		r.Post("/responses", h.ChatCompletions)
+		r.Post("/responses", h.Responses)
 		// /v1/messages melayani Anthropic Messages API (Claude Code, dsb.)
 		r.Post("/messages", h.AnthropicMessages)
 		r.Post("/v1/messages", h.AnthropicMessages)

@@ -404,11 +404,17 @@ if state == 'half_open' then
 	-- DEL, bukan HDEL per field: episode berikutnya — closed maupun open — dimulai
 	-- dengan jendela bersih dan kuota probe kosong, dan menyisakan salah satunya berarti
 	-- breaker yang baru menutup langsung membawa rasio yang sudah pernah memicunya.
+	-- Satu-satunya yang diselamatkan dari hash lama adalah open_failures (B-110):
+	-- tanpa itu, breaker terbuka tidak menyisakan satu pun angka kegagalan untuk
+	-- dibaca panel (ember f* ikut terhapus), dan failure_count tampil 0 tepat pada
+	-- provider yang sedang diisolasi. Probe yang gagal ini menambahnya satu.
+	local prev_open_failures = num(h, 'open_failures')
 	redis.call('DEL', KEYS[1])
 	if ok == 1 then
 		return {'closed', 0, 0, 0, 1}
 	end
-	redis.call('HSET', KEYS[1], 'open_until', string.format('%d', now + open_ms))
+	redis.call('HSET', KEYS[1], 'open_until', string.format('%d', now + open_ms),
+		'open_failures', string.format('%d', prev_open_failures + 1))
 	redis.call('PEXPIRE', KEYS[1], ARGV[8])
 	return {'open', open_ms, 0, 0, 1}
 end
@@ -460,7 +466,13 @@ end
 -- atas jendela kosong menghasilkan rasio 1/1 dan langsung membuka breaker.
 if total >= tonumber(ARGV[4]) and failures >= tonumber(ARGV[3]) * total then
 	redis.call('DEL', KEYS[1])
-	redis.call('HSET', KEYS[1], 'open_until', string.format('%d', now + open_ms))
+	-- open_failures menyelamatkan jumlah kegagalan pemicu dari penghapusan
+	-- hash di atas (B-110): selama breaker terbuka, field inilah yang dibaca
+	-- panel/API sebagai failure_count. Ia dihapus bersama hash saat breaker
+	-- menutup (jalur half_open sukses), jadi breaker tertutup tidak pernah
+	-- melaporkan angka sisa episode sebelumnya.
+	redis.call('HSET', KEYS[1], 'open_until', string.format('%d', now + open_ms),
+		'open_failures', string.format('%d', failures))
 	redis.call('PEXPIRE', KEYS[1], ARGV[8])
 	return {'open', open_ms, total, failures, 1}
 end

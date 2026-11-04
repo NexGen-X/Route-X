@@ -24,8 +24,11 @@ type refreshOAuthSessionReq struct {
 	SessionID string `json:"session_id"`
 }
 
+// toggleOAuthSessionReq memakai *bool untuk alasan yang sama dengan
+// toggleEnabledReq (B-088): enabled yang absen wajib ditolak 400, bukan
+// dibaca sebagai false.
 type toggleOAuthSessionReq struct {
-	Enabled bool `json:"enabled"`
+	Enabled *bool `json:"enabled"`
 }
 
 type setCredentialStrategyReq struct {
@@ -356,25 +359,30 @@ func (h *Handlers) toggleOAuthSession(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
 	}
+	if req.Enabled == nil {
+		tolakToggle(w, r, errEnabledAbsen)
+		return
+	}
+	enabled := *req.Enabled
 
 	if !h.pastikanSesiMilikProvider(w, r, providerID, sessionID) {
 		return
 	}
 
-	if err := h.oauthRepo.SetEnabled(ctx, sessionID, req.Enabled); err != nil {
+	if err := h.oauthRepo.SetEnabled(ctx, sessionID, enabled); err != nil {
 		mapRepoError(w, r, err, "oauth_session")
 		return
 	}
 
 	h.writeAudit(ctx, r, "toggle_oauth_session", "provider", providerID, map[string]any{
 		"session_id": sessionID,
-		"enabled":    req.Enabled,
+		"enabled":    enabled,
 	})
 
 	_ = h.respond(w, r, http.StatusOK, OAuthToggleResponseDTO{
 		Status:    "updated",
 		SessionID: sessionID,
-		Enabled:   req.Enabled,
+		Enabled:   enabled,
 	})
 }
 

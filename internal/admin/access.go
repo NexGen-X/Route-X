@@ -146,11 +146,26 @@ func (h *Handlers) getAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mIDs, pIDs, _ := h.keyRepo.GetAllowed(ctx, id)
-	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
+	_ = h.respond(w, r, http.StatusOK, h.keyDetailResponse(ctx, k))
+}
+
+// keyDetailResponse membangun respons detail kunci dari keadaan TERSIMPAN
+// penuh — baris kunci PLUS daftar putih model/provider yang benar-benar
+// melekat padanya di database.
+//
+// Jalur ini satu-satunya yang boleh dipakai respons baca maupun respons
+// MUTASI (B-112): update, toggle, dan rotate sebelumnya membangun DTO
+// dengan cakupan nil sehingga allowed_models/allowed_providers tampil []
+// padahal cakupan di database utuh — klien yang memercayai respons mutasi
+// bisa menyimpulkan cakupan terhapus lalu "memperbaikinya" dengan menimpa
+// cakupan yang benar. Kegagalan membaca cakupan ditelan seperti jalur baca
+// lama (DTO tetap terkirim); cakupan yang terbaca selalu yang tersimpan.
+func (h *Handlers) keyDetailResponse(ctx context.Context, k *keys.Key) KeyDetailResponse {
+	mIDs, pIDs, _ := h.keyRepo.GetAllowed(ctx, k.ID)
+	return KeyDetailResponse{
 		Key:    toKeyDTO(k, mIDs, pIDs),
 		Masked: k.Masked(),
-	})
+	}
 }
 
 type createAPIKeyReq struct {
@@ -431,10 +446,7 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "update", "api_key", id, nil)
-	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
-		Key:    toKeyDTO(k, nil, nil),
-		Masked: k.Masked(),
-	})
+	_ = h.respond(w, r, http.StatusOK, h.keyDetailResponse(ctx, k))
 }
 
 // bersihkanCounterRateLimitKey menghapus seluruh counter rate limit Redis
@@ -473,6 +485,19 @@ func (h *Handlers) bersihkanCounterRateLimitKey(ctx context.Context, id string) 
 	}
 }
 
+// rotateAPIKey menangani POST /api-keys/{id}/rotate.
+//
+// Semantik rotasi yang BERLAKU dan disengaja (putusan B-113, dikunci test
+// TestRotateAPIKeySemantikBuatBaruB113): rotasi MENERBITKAN kunci baru
+// ber-ID baru yang mewarisi seluruh setelan kunci lama, lalu MENCABUT
+// kunci lama (status revoked, final). ID kunci lama TIDAK berpindah ke
+// kunci baru, dan riwayat request tetap terpisah per ID — itulah gunanya
+// rantai rotated_from/Lineage di repo keys, pasangan event
+// api_key.revoked + api_key.created, dan field new_key_id pada audit
+// aksi ini. "Rotate" di sini berarti mengganti KREDENSIAL (rahasia) yang
+// dipakai klien, bukan menulis ulang rahasia pada baris yang sama;
+// operator yang ingin mematikan sementara tanpa mengganti kredensial
+// memakai toggle, dan yang ingin membuang baris memakai DELETE.
 func (h *Handlers) rotateAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -501,8 +526,11 @@ func (h *Handlers) rotateAPIKey(w http.ResponseWriter, r *http.Request) {
 		"name":       created.Key.Name,
 		"prefix":     created.Key.Prefix,
 	})
+	// DTO dibangun dari cakupan tersimpan kunci BARU (yang disalin rotasi
+	// dari kunci lama), bukan nil — lihat keyDetailResponse (B-112).
+	mIDs, pIDs, _ := h.keyRepo.GetAllowed(ctx, created.Key.ID)
 	_ = h.respond(w, r, http.StatusOK, KeyCreatedResponse{
-		Key:    toKeyDTO(created.Key, nil, nil),
+		Key:    toKeyDTO(created.Key, mIDs, pIDs),
 		Masked: created.Key.Masked(),
 		RawKey: created.Raw.Reveal(),
 	})
@@ -541,17 +569,17 @@ func (h *Handlers) toggleAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	// Body selaras dengan semua toggle lain di sistem (B-080): {enabled: bool}.
 	// Bentuk lama {status: "active"|"disabled"} hanya dipakai toggle ini dan
-	// kini ditolak decodeJSON sebagai field tak dikenal.
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
+	// kini ditolak decodeJSON sebagai field tak dikenal. Field enabled yang
+	// ABSEN juga ditolak 400 (B-088, decodeToggleEnabled) — tidak pernah
+	// ditafsirkan sebagai false.
+	enabled, err := decodeToggleEnabled(r)
+	if err != nil {
+		tolakToggle(w, r, err)
 		return
 	}
 
 	status := keys.StatusDisabled
-	if req.Enabled {
+	if enabled {
 		status = keys.StatusActive
 	}
 
@@ -561,14 +589,11 @@ func (h *Handlers) toggleAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !req.Enabled {
+	if !enabled {
 		h.bersihkanCounterRateLimitKey(ctx, id)
 	}
-	h.writeAudit(ctx, r, "toggle", "api_key", id, map[string]any{"enabled": req.Enabled})
-	_ = h.respond(w, r, http.StatusOK, KeyDetailResponse{
-		Key:    toKeyDTO(k, nil, nil),
-		Masked: k.Masked(),
-	})
+	h.writeAudit(ctx, r, "toggle", "api_key", id, map[string]any{"enabled": enabled})
+	_ = h.respond(w, r, http.StatusOK, h.keyDetailResponse(ctx, k))
 }
 
 func (h *Handlers) getAPIKeyAllowed(w http.ResponseWriter, r *http.Request) {

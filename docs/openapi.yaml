@@ -3965,6 +3965,13 @@ paths:
       summary: "Rotasi Kunci API Klien"
       description: |
         Izin internal yang disyaratkan: `apikeys:write`.
+
+        Semantik rotasi (putusan B-113): rotasi MENERBITKAN kunci baru
+        ber-ID BARU yang mewarisi seluruh setelan kunci lama (termasuk
+        cakupan model/provider), lalu MENCABUT kunci lama (status
+        `revoked`, final). ID kunci tidak bertahan — riwayat request
+        tetap terpisah per ID dan rantai penerusnya terbaca lewat kolom
+        `rotated_from`. Respons adalah kunci baru beserta `raw_key`-nya.
       operationId: rotateAPIKey
       security:
         - SessionCookie: []
@@ -4618,6 +4625,13 @@ paths:
       summary: "Hapus Webhook"
       description: |
         Izin internal yang disyaratkan: `webhooks:write`.
+
+        Riwayat delivery webhook ini TIDAK ikut terhapus (B-115):
+        baris `webhook_deliveries` bertahan dan tetap terbaca lewat
+        `GET /api/admin/automation/deliveries/{delivery_id}` maupun
+        daftar delivery per ID webhook. Delivery yang masih antre untuk
+        webhook yang sudah terhapus ditandai `abandoned` oleh
+        dispatcher, bukan dikirim.
       operationId: deleteWebhook
       security:
         - SessionCookie: []
@@ -4688,6 +4702,10 @@ paths:
       summary: "Kirim Ping Uji ke Webhook"
       description: |
         Izin internal yang disyaratkan: `webhooks:write`.
+
+        Webhook berstatus nonaktif (`enabled: false`) DITOLAK dengan
+        400 `webhook_disabled` dan tidak ada ping yang terkirim (B-109)
+        — samakan dengan jalur event otomatis yang menghormati toggle.
       operationId: testWebhookPing
       security:
         - SessionCookie: []
@@ -8224,49 +8242,76 @@ components:
           type: string
     ToggleAPIKeyRequest:
       type: object
+      required:
+        - enabled
       properties:
         enabled:
           type: boolean
+          description: "Wajib diisi eksplisit (B-088): body tanpa field enabled ditolak 400 enabled_required — tidak pernah ditafsirkan sebagai false."
     ToggleBudgetRequest:
       type: object
+      required:
+        - enabled
       properties:
         enabled:
           type: boolean
+          description: "Wajib diisi eksplisit (B-088): body tanpa field enabled ditolak 400 enabled_required — tidak pernah ditafsirkan sebagai false."
     ToggleContentFilterRequest:
       type: object
+      required:
+        - enabled
       properties:
         enabled:
           type: boolean
+          description: "Wajib diisi eksplisit (B-088): body tanpa field enabled ditolak 400 enabled_required — tidak pernah ditafsirkan sebagai false."
     ToggleCredentialRequest:
       type: object
+      required:
+        - enabled
       properties:
         enabled:
           type: boolean
+          description: "Wajib diisi eksplisit (B-088): body tanpa field enabled ditolak 400 enabled_required — tidak pernah ditafsirkan sebagai false."
     ToggleOAuthSessionRequest:
       type: object
+      required:
+        - enabled
       properties:
         enabled:
           type: boolean
+          description: "Wajib diisi eksplisit (B-088): body tanpa field enabled ditolak 400 enabled_required — tidak pernah ditafsirkan sebagai false."
     ToggleProviderRequest:
       type: object
+      required:
+        - enabled
       properties:
         enabled:
           type: boolean
+          description: "Wajib diisi eksplisit (B-088): body tanpa field enabled ditolak 400 enabled_required — tidak pernah ditafsirkan sebagai false."
     ToggleRateLimitRequest:
       type: object
+      required:
+        - enabled
       properties:
         enabled:
           type: boolean
+          description: "Wajib diisi eksplisit (B-088): body tanpa field enabled ditolak 400 enabled_required — tidak pernah ditafsirkan sebagai false."
     ToggleRoutingRuleRequest:
       type: object
+      required:
+        - enabled
       properties:
         enabled:
           type: boolean
+          description: "Wajib diisi eksplisit (B-088): body tanpa field enabled ditolak 400 enabled_required — tidak pernah ditafsirkan sebagai false."
     ToggleWebhookRequest:
       type: object
+      required:
+        - enabled
       properties:
         enabled:
           type: boolean
+          description: "Wajib diisi eksplisit (B-088): body tanpa field enabled ditolak 400 enabled_required — tidak pernah ditafsirkan sebagai false."
     TrafficBreakdownResponse:
       type: object
       properties:

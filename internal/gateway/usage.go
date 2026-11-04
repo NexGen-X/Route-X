@@ -154,6 +154,7 @@ var tipeKesalahan = map[string]string{
 	"provider_not_allowed":     "permission",
 	"embeddings_not_supported": "invalid_request",
 	"no_provider_for_model":    "no_provider",
+	"provider_disabled":        "no_provider",
 	"streaming_not_supported":  "invalid_request",
 	"tools_not_supported":      "invalid_request",
 	"context_length_exceeded":  "invalid_request",

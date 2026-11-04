@@ -503,6 +503,14 @@ type RouteQuery struct {
 	// IncludeUnhealthy menyertakan provider yang health check terakhirnya gagal. Dipakai
 	// dashboard dan worker health check; jalur request membiarkannya false.
 	IncludeUnhealthy bool
+
+	// IncludeDisabled menyertakan pemetaan/provider yang dinonaktifkan
+	// (pm.enabled / p.enabled false). TIDAK PERNAH dipakai jalur request
+	// untuk melayani — hanya diagnosa gateway (B-143): membedakan
+	// "pemetaan ada tetapi semuanya nonaktif" dari "memang tidak ada
+	// pemetaan sama sekali", dua keadaan dengan tindak lanjut operator
+	// yang berbeda.
+	IncludeDisabled bool
 }
 
 // routeCandidateColumns dipisah supaya bentuk barisnya bisa dibaca sekali pandang.
@@ -547,6 +555,26 @@ const routeCandidatesSQL = `
 	  end)
 	order by effective_priority asc, effective_weight desc, p.name asc`
 
+// routeCandidatesDiagnosaNonaktifSQL adalah varian diagnosa dari query
+// kandidat (B-143): sama persis kecuali TANPA saringan pm.enabled /
+// p.enabled, sehingga pemetaan yang ada tetapi nonaktif tetap terlihat.
+// Hanya dipakai bila RouteQuery.IncludeDisabled — yaitu jalur kandidat
+// kosong di gateway untuk membedakan "semua nonaktif" dari "tidak ada
+// pemetaan sama sekali". BUKAN untuk melayani request: kandidat dari
+// query ini tidak pernah dieksekusi ke upstream oleh pemanggilnya.
+const routeCandidatesDiagnosaNonaktifSQL = `
+	select ` + routeCandidateColumns + `
+	from provider_models pm
+	join providers p on p.id = pm.provider_id
+	where pm.model_id = $1
+	  and ($2::boolean or p.last_health_status is null or p.last_health_status <> 'unhealthy'
+	       or p.last_health_at is null or p.last_health_at < now() - interval '10 minutes')
+	  and (case
+		when $3::uuid is null then not p.is_byok
+		else not p.is_byok or p.owner_user_id = $3::uuid
+	  end)
+	order by effective_priority asc, effective_weight desc, p.name asc`
+
 // RouteCandidates mengembalikan provider aktif dan sehat yang bisa melayani satu model,
 // terurut dari yang paling diutamakan.
 //
@@ -578,7 +606,17 @@ func (r *ProviderRepo) RouteCandidates(ctx context.Context, q RouteQuery) ([]*Ro
 		owner = q.OwnerUserID
 	}
 
-	rows, err := r.q.Query(ctx, routeCandidatesSQL, q.ModelID, q.IncludeUnhealthy, owner)
+	// Jalur diagnosa nonaktif memakai SQL-nya sendiri (B-143): query
+	// terpanas di atas TIDAK diubah bentuknya — predikat pm.enabled /
+	// p.enabled di sana adalah yang dilayani indeks parsial routing, dan
+	// menjadikannya kondisional berparameter akan menggugurkan bukti
+	// pemakaian indeks itu. Query diagnosa hanya berjalan pada jalur
+	// kandidat kosong, jadi biayanya tidak penting.
+	sqlTeks := routeCandidatesSQL
+	if q.IncludeDisabled {
+		sqlTeks = routeCandidatesDiagnosaNonaktifSQL
+	}
+	rows, err := r.q.Query(ctx, sqlTeks, q.ModelID, q.IncludeUnhealthy, owner)
 	if err != nil {
 		return nil, repo.Err(op, err)
 	}

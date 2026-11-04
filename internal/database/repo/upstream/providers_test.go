@@ -474,6 +474,19 @@ func TestRouteCandidatesIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("pemetaan nonaktif ikut hanya bila diminta untuk diagnosa (B-143)", func(t *testing.T) {
+		got, err := providers.RouteCandidates(ctx, RouteQuery{ModelID: model.ID, IncludeUnhealthy: true, IncludeDisabled: true})
+		if err != nil {
+			t.Fatalf("RouteCandidates: %v", err)
+		}
+		// aaa (prioritas pemetaan 1), ggg pemetaan mati (2), eee provider
+		// mati (5), fff tidak sehat (6), lalu kelompok prioritas 10.
+		want := []string{aaa.Name, ggg.Name, eee.Name, fff.Name, bbb.Name, ccc.Name, ddd.Name}
+		if !equal(namesOf(got), want) {
+			t.Errorf("urutan kandidat diagnosa = %v, ingin %v", namesOf(got), want)
+		}
+	})
+
 	t.Run("BYOK hanya milik pemintanya", func(t *testing.T) {
 		got, err := providers.RouteCandidates(ctx, RouteQuery{ModelID: model.ID, OwnerUserID: owner})
 		if err != nil {
@@ -501,6 +514,15 @@ func TestRouteCandidatesIntegration(t *testing.T) {
 		}
 		if len(got) != 0 {
 			t.Errorf("kandidat = %v, ingin kosong", namesOf(got))
+		}
+		// Diagnosa nonaktif pun kosong: memang tidak ada pemetaan sama
+		// sekali (arah sebaliknya B-143 — no_provider_for_model sah).
+		got, err = providers.RouteCandidates(ctx, RouteQuery{ModelID: orphan.ID, IncludeUnhealthy: true, IncludeDisabled: true})
+		if err != nil {
+			t.Fatalf("RouteCandidates diagnosa: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("kandidat diagnosa = %v, ingin kosong", namesOf(got))
 		}
 	})
 }

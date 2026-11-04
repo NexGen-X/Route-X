@@ -9151,7 +9151,7 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     503ServiceUnavailable:
-      description: Tidak ada provider yang bisa melayani model saat ini (code no_provider_for_model / upstream_overloaded) atau dependensi internal tidak tersedia
+      description: Tidak ada provider yang bisa melayani model saat ini (code no_provider_for_model / provider_disabled / provider_unhealthy / no_available_provider / upstream_overloaded) atau dependensi internal tidak tersedia
       content:
         application/json:
           schema:

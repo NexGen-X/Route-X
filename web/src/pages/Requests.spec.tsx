@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { Requests } from './Requests';
 import { ApiError } from '../api/client';
 import type { RequestLog, RequestEvent, RequestPayload } from '../types';
@@ -426,9 +426,14 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
       });
       render(<Requests />);
 
-      await vi.waitFor(() => {
-        expect(screen.getByText('Muat Lebih Banyak...')).toBeInTheDocument();
-      });
+      // B-138: dengan fake timers, vi.waitFor memolling tanpa act —
+      // kelanjutan async loadRequests (setRequests/setNextCursor/
+      // setIsLoading) mendarat di luar act dan memancarkan peringatan
+      // act(...). Pola tunggu di test ini karena itu: kosongkan antrean
+      // promise di dalam act(async), lalu asersi sinkron seperti biasa
+      // (vi.waitFor di dalam act justru membekukan polling-nya sendiri).
+      await act(async () => {});
+      expect(screen.getByText('Muat Lebih Banyak...')).toBeInTheDocument();
 
       // Muat halaman kedua.
       mockListFn.mockResolvedValueOnce({
@@ -436,9 +441,8 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
         next_cursor: undefined,
       });
       fireEvent.click(screen.getByText('Muat Lebih Banyak...'));
-      await vi.waitFor(() => {
-        expect(screen.getAllByText('req-uuid-2').length).toBeGreaterThan(0);
-      });
+      await act(async () => {});
+      expect(screen.getAllByText('req-uuid-2').length).toBeGreaterThan(0);
 
       // Polling live: halaman pertama kini memuat item yang lebih baru.
       const BARU: RequestLog = {
@@ -452,12 +456,16 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
         next_cursor: 'cursor-page-2',
       });
       fireEvent.click(screen.getByRole('button', { name: /Live Stream/i }));
-      await vi.advanceTimersByTimeAsync(4000);
+      // Interval polling Live menembak loadRequests asinkron: majukan
+      // timer di dalam act(async) agar seluruh rantai (interval → fetch
+      // tiruan → setRequests penggabungan + setLoadError) selesai di
+      // dalam act, bukan mendarat telanjang di luarnya (B-138).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
 
       // Item baru tampil DAN item halaman kedua tidak hilang.
-      await vi.waitFor(() => {
-        expect(screen.getAllByText('req-uuid-3').length).toBeGreaterThan(0);
-      });
+      expect(screen.getAllByText('req-uuid-3').length).toBeGreaterThan(0);
       expect(screen.getAllByText('req-uuid-2').length).toBeGreaterThan(0);
       expect(screen.getAllByText('req-uuid-1').length).toBeGreaterThan(0);
     } finally {

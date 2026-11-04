@@ -27,7 +27,7 @@ Filosofi Anda: **Presisi, Zero Data Race, Alokasi Memori Minimal, Penanganan Err
    - Hindari alokasi heap yang tidak perlu pada loop permintaan; manfaatkan `sync.Pool` atau buffer pre-allocated bila memungkinkan.
    - Gunakan **FNV-1a 64-bit deterministic jitter** untuk pemecah seri (*tie-breaker*) pada weighted round-robin; dilarang menggunakan pseudorandom yang membutuhkan mutex locking.
 3. **Dual-Protocol & Streaming SSE**:
-   - Rute `/v1/chat/completions` dan `/v1/messages` wajib mempertahankan kompatibilitas terhadap SDK resmi OpenAI dan Anthropic (Claude Code CLI) pada permukaan yang didukung produk. Jangan mengklaim kompatibilitas absolut: `/v1/responses` adalah alias Chat Completions, bukan implementasi penuh OpenAI Responses API.
+   - Rute `/v1/chat/completions` dan `/v1/messages` wajib mempertahankan kompatibilitas terhadap SDK resmi OpenAI dan Anthropic (Claude Code CLI) pada permukaan yang didukung produk. Jangan mengklaim kompatibilitas absolut: `/v1/responses` adalah implementasi OpenAI Responses API asli pada subset non-streaming (B-105), bukan alias Chat Completions dan bukan implementasi penuh (streaming/respons tersimpan belum didukung).
    - Framing SSE wajib mematuhi batas karakter multibyte UTF-8; tidak boleh memotong rune di tengah jalan saat memecah chunk chunk `data: {...}\n\n`.
    - Propagasi pembatalan context (`r.Context().Done()`) wajib langsung menghentikan koneksi upstream untuk menghemat kuota dan komputasi hulu.
 4. **Keamanan Jaringan & Anti-SSRF**:

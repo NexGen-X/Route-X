@@ -78,7 +78,7 @@ The application tier is a **single static Go binary** (dashboard embedded via `/
 
 ### Dual-protocol ingestion
 
-- **OpenAI-compatible**: `/v1/chat/completions`, `/v1/embeddings`, `/v1/models`, `/v1/models/{model}` — a drop-in target for the official OpenAI SDKs, LangChain, LiteLLM, Cursor, Cline, Open WebUI, and similar tools. `/v1/responses` is routed as a **compatibility alias** of the chat-completions handler; it is not a separate implementation of the OpenAI Responses API.
+- **OpenAI-compatible**: `/v1/chat/completions`, `/v1/embeddings`, `/v1/models`, `/v1/models/{model}` — a drop-in target for the official OpenAI SDKs, LangChain, LiteLLM, Cursor, Cline, Open WebUI, and similar tools. `/v1/responses` is a native **OpenAI Responses API** surface (non-streaming subset; streaming and stored responses are not supported yet, and chat-completions-shaped bodies sent to it are rejected).
 - **Anthropic-native**: `/v1/messages` (plus the `/v1/v1/messages` alias) and `/v1/messages/count_tokens` — a drop-in target for the Anthropic SDK and Claude Code.
 - **Bidirectional transpilation** of roles, content blocks, base64 vision payloads, and tool/function calling between the two dialects, with a resilient SSE streaming engine (UTF-8 boundary safety, immediate upstream cancellation on client disconnect).
 - **Anthropic document blocks**: text documents and base64 `text/plain` documents are converted to canonical text at their block position and forwarded to any upstream; base64 **PDF** documents are passed through natively to Anthropic-kind upstreams only — if no Anthropic candidate is available the request is rejected with `400 unsupported_document_upstream` before any network call, never silently dropped. URL-sourced documents are rejected (SSRF). Maximum 10 MiB per document.
@@ -373,7 +373,7 @@ Public inference surface (mounted under `/v1`):
 | Endpoint | Notes |
 |---|---|
 | `POST /v1/chat/completions` | OpenAI Chat Completions, streaming & non-streaming. |
-| `POST /v1/responses` | Compatibility **alias** of chat completions — not a full Responses API implementation. |
+| `POST /v1/responses` | OpenAI Responses API (native, non-streaming subset) — not a chat-completions alias. |
 | `POST /v1/messages` | Anthropic Messages (alias: `POST /v1/v1/messages`). |
 | `POST /v1/messages/count_tokens` | Token counting for Anthropic-dialect requests. |
 | `POST /v1/embeddings` | OpenAI Embeddings. |

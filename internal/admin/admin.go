@@ -278,8 +278,21 @@ func (h Handlers) LogValue() slog.Value { return slog.StringValue(h.String()) }
 // Memastikan integritas ACID: bila transaksi dibatalkan (rollback), catatan audit ikut
 // dibatalkan agar tidak meninggalkan jejak mutasi yang sebenarnya gagal.
 func (h *Handlers) writeAuditTx(ctx context.Context, q repo.Querier, r *http.Request, action, resourceType, resourceID string, metadata any) error {
+	return h.writeAuditTxAktor(ctx, q, r, action, resourceType, resourceID, metadata, nil)
+}
+
+// writeAuditTxAktor adalah writeAuditTx dengan aktor yang ditentukan
+// pemanggil (aktorPengganti != nil). Dipakai jalur yang aktor dari
+// principal-nya tidak sah di database tujuan — saat ini hanya audit
+// restore lintas-instance (B-114, lihat writeAuditRestore): di sana
+// pemanggil menyerahkan aktor bercuplikan email/peran yang sama tetapi
+// TANPA UserID, supaya baris audit lolos dari foreign key actor_user_id
+// dan tetap menjawab "siapa yang melakukan ini" lewat cuplikannya.
+func (h *Handlers) writeAuditTxAktor(ctx context.Context, q repo.Querier, r *http.Request, action, resourceType, resourceID string, metadata any, aktorPengganti *identity.Actor) error {
 	var actor identity.Actor
-	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
+	if aktorPengganti != nil {
+		actor = *aktorPengganti
+	} else if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
 		role := ""
 		if len(p.Roles) > 0 {
 			role = p.Roles[0]
@@ -454,6 +467,48 @@ func decodeJSON(r *http.Request, v any) error {
 		return errBodyJSON
 	}
 	return nil
+}
+
+// toggleEnabledReq adalah body bersama SEMUA endpoint toggle admin
+// (provider, kredensial, sesi OAuth, kunci API, webhook, aturan routing,
+// batas laju, anggaran, filter konten).
+//
+// Enabled bertipe *bool dengan sengaja (B-088): bool polos tidak bisa
+// membedakan "field enabled tidak dikirim" dari "enabled: false", sehingga
+// body kosong {} atau body tanpa field itu dulu terbaca sebagai perintah
+// MEMATIKAN resource dan dijawab 200 — klien yang salah bentuk bisa
+// mematikan provider/kredensial/kunci tanpa sadar. Kini field yang absen
+// (termasuk "enabled": null) ditolak 400 oleh decodeToggleEnabled; toggle
+// tidak pernah menebak niat pemanggil.
+type toggleEnabledReq struct {
+	Enabled *bool `json:"enabled"`
+}
+
+// errEnabledAbsen menandai body toggle tanpa field enabled yang eksplisit.
+var errEnabledAbsen = errors.New("field enabled wajib diisi pada body toggle")
+
+// decodeToggleEnabled membaca body toggle dan mengembalikan nilai enabled
+// yang diminta. Error pertama adalah errBodyJSON (dari decodeJSON) atau
+// errEnabledAbsen; keduanya dipetakan pemanggil ke 400 yang sama.
+func decodeToggleEnabled(r *http.Request) (bool, error) {
+	var req toggleEnabledReq
+	if err := decodeJSON(r, &req); err != nil {
+		return false, err
+	}
+	if req.Enabled == nil {
+		return false, errEnabledAbsen
+	}
+	return *req.Enabled, nil
+}
+
+// tolakToggle membalas 400 untuk body toggle yang tidak sah (JSON rusak,
+// field tak dikenal, atau enabled absen — B-088).
+func tolakToggle(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, errEnabledAbsen) {
+		httpx.BadRequest(w, r, "enabled_required", err.Error())
+		return
+	}
+	httpx.BadRequest(w, r, "invalid_json", err.Error())
 }
 
 // tidakTersedia membalas 503 untuk dependensi internal yang tidak terpasang

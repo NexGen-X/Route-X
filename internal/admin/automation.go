@@ -260,21 +260,19 @@ func (h *Handlers) toggleWebhook(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
+	enabled, err := decodeToggleEnabled(r)
+	if err != nil {
+		tolakToggle(w, r, err)
 		return
 	}
 
-	wh, err := h.webhooksRepo.SetEnabled(ctx, id, req.Enabled)
+	wh, err := h.webhooksRepo.SetEnabled(ctx, id, enabled)
 	if err != nil {
 		mapRepoError(w, r, err, "webhook")
 		return
 	}
 
-	h.writeAudit(ctx, r, "toggle", "webhook", id, map[string]any{"enabled": req.Enabled})
+	h.writeAudit(ctx, r, "toggle", "webhook", id, map[string]any{"enabled": enabled})
 	_ = h.respond(w, r, http.StatusOK, toWebhookDTO(wh))
 }
 
@@ -285,6 +283,15 @@ func (h *Handlers) testWebhookPing(w http.ResponseWriter, r *http.Request) {
 	wh, err := h.webhooksRepo.Get(ctx, id)
 	if err != nil {
 		mapRepoError(w, r, err, "webhook")
+		return
+	}
+
+	// Webhook nonaktif tidak boleh menerima trafik apa pun dari gateway,
+	// termasuk ping uji (B-109): jalur event otomatis sudah menghormati
+	// enabled:false, jadi jalur uji manual tidak boleh menjadi celahnya.
+	// Ditolak 400 sebelum dispatcher disentuh — tidak ada yang terkirim.
+	if !wh.Enabled {
+		httpx.BadRequest(w, r, "webhook_disabled", "webhook nonaktif; aktifkan dulu untuk mengirim ping uji")
 		return
 	}
 

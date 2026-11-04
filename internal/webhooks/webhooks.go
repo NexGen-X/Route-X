@@ -730,7 +730,13 @@ func (r *Repo) SetEnabled(ctx context.Context, id string, enabled bool) (*Webhoo
 	return r.Update(ctx, id, UpdateWebhookParams{Enabled: &enabled})
 }
 
-// Delete menghapus konfigurasi webhook beserta seluruh data delivery terkait.
+// Delete menghapus konfigurasi webhook — TANPA menghapus riwayat
+// delivery-nya (B-115): sejak migrasi 0021 webhook_deliveries.webhook_id
+// tidak lagi ber-foreign key, jadi baris delivery bertahan sebagai
+// riwayat berkunci pengenal snapshot webhook ini (kebijakan yang sama
+// dengan requests.api_key_id). Baris yang masih antre ditandai abandoned
+// oleh dispatcher saat diambil ("webhook induk tidak ditemukan"), dan
+// sisanya dibersihkan retensi menurut umur seperti biasa.
 func (r *Repo) Delete(ctx context.Context, id string) error {
 	const op = "menghapus webhook"
 	tag, err := r.q.Exec(ctx, `delete from webhooks where id = $1::uuid`, id)

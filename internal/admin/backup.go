@@ -19,7 +19,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/database"
+	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/observability"
 )
@@ -399,9 +401,22 @@ var (
 // audit persistennya hilang. Bila tulisan pertama gagal, tulisan dicoba
 // SATU kali lagi lewat pool baru yang mengikat nama database yang sama —
 // sesudah penukaran, nama itu menunjuk database HASIL restore, jadi
-// catatan mendarat di tempat yang benar. Kegagalan tetap fail-open
-// (cukup dilog): audit tidak boleh menggagalkan restore yang sudah
-// berhasil, tetapi tidak boleh hilang diam-diam pada jalur sukses normal.
+// catatan mendarat di tempat yang benar.
+//
+// Bila tulisan kedua pun gagal, masih ada satu sebab yang bisa
+// disembuhkan (B-114): restore LINTAS-INSTANCE. Database hasil restore
+// berasal dari instance lain, jadi baris users di sana tidak memuat
+// aktor yang melakukan restore di instance ini — insert audit ditolak
+// foreign key audit_logs_actor_user_id walau koneksinya sehat. Skema
+// audit memang dirancang untuk pelaku yang tidak (lagi) ada: email dan
+// peran disimpan sebagai cuplikan dan actor_user_id boleh NULL (ia
+// di-set null juga saat akun pelaku dihapus). Jadi percobaan terakhir
+// menulis aktor yang sama lewat cuplikannya saja — UserID dikosongkan,
+// email/peran dipertahankan, dan ID aktor asal dicatat di metadata
+// sebagai actor_user_id_unmapped supaya pemetaan yang hilang ini tetap
+// terlihat, bukan disamarkan. Kegagalan tetap fail-open (cukup dilog):
+// audit tidak boleh menggagalkan restore yang sudah berhasil, tetapi
+// tidak boleh hilang diam-diam pada jalur sukses normal.
 func (h *Handlers) writeAuditRestore(ctx context.Context, r *http.Request, metadata map[string]any) {
 	if err := h.writeAuditTx(ctx, h.pool, r, "restore", "database_backup", "all", metadata); err == nil {
 		return
@@ -417,14 +432,38 @@ func (h *Handlers) writeAuditRestore(ctx context.Context, r *http.Request, metad
 	}
 	defer segar.Close()
 
-	if err := h.writeAuditTx(ctx, segar, r, "restore", "database_backup", "all", metadata); err != nil {
-		h.logger.LogAttrs(ctx, slog.LevelError, "gagal menulis audit log",
-			slog.String("action", "restore"),
-			slog.String("resource_type", "database_backup"),
-			slog.String("resource_id", "all"),
-			slog.String("error", err.Error()),
-		)
+	err = h.writeAuditTx(ctx, segar, r, "restore", "database_backup", "all", metadata)
+	if err == nil {
+		return
 	}
+
+	// Percobaan terakhir B-114: aktor lintas-instance lewat cuplikan saja.
+	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil && p.User.ID != "" {
+		role := ""
+		if len(p.Roles) > 0 {
+			role = p.Roles[0]
+		}
+		aktor := &identity.Actor{Email: p.User.Email, Role: role}
+		meta := make(map[string]any, len(metadata)+1)
+		for k, v := range metadata {
+			meta[k] = v
+		}
+		meta["actor_user_id_unmapped"] = p.User.ID
+		if err2 := h.writeAuditTxAktor(ctx, segar, r, "restore", "database_backup", "all", meta, aktor); err2 == nil {
+			h.logger.WarnContext(ctx, "audit restore ditulis tanpa actor_user_id: aktor tidak ada di database hasil restore (lintas-instance)",
+				slog.String("actor_user_id", p.User.ID))
+			return
+		} else {
+			err = err2
+		}
+	}
+
+	h.logger.LogAttrs(ctx, slog.LevelError, "gagal menulis audit log",
+		slog.String("action", "restore"),
+		slog.String("resource_type", "database_backup"),
+		slog.String("resource_id", "all"),
+		slog.String("error", err.Error()),
+	)
 }
 
 // spoolDumpUnggahan menulis isi unggahan (mentah atau gzip) ke berkas

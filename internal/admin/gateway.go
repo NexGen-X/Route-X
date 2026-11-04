@@ -571,21 +571,19 @@ func (h *Handlers) toggleRoutingRule(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
+	enabled, err := decodeToggleEnabled(r)
+	if err != nil {
+		tolakToggle(w, r, err)
 		return
 	}
 
-	rule, err := h.routingRepo.SetEnabled(ctx, id, req.Enabled)
+	rule, err := h.routingRepo.SetEnabled(ctx, id, enabled)
 	if err != nil {
 		mapRepoError(w, r, err, "aturan routing")
 		return
 	}
 
-	h.writeAudit(ctx, r, "toggle", "routing_rule", id, map[string]any{"enabled": req.Enabled})
+	h.writeAudit(ctx, r, "toggle", "routing_rule", id, map[string]any{"enabled": enabled})
 	h.invalidateRules(ctx)
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
@@ -801,21 +799,19 @@ func (h *Handlers) toggleRateLimit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
+	enabled, err := decodeToggleEnabled(r)
+	if err != nil {
+		tolakToggle(w, r, err)
 		return
 	}
 
-	l, err := h.policyRepo.SetRateLimitEnabled(ctx, id, req.Enabled)
+	l, err := h.policyRepo.SetRateLimitEnabled(ctx, id, enabled)
 	if err != nil {
 		mapRepoError(w, r, err, "batas laju")
 		return
 	}
 
-	h.writeAudit(ctx, r, "toggle", "rate_limit", id, map[string]any{"enabled": req.Enabled})
+	h.writeAudit(ctx, r, "toggle", "rate_limit", id, map[string]any{"enabled": enabled})
 	h.invalidateRateLimits()
 	_ = h.respond(w, r, http.StatusOK, toRateLimitDTO(l))
 }
@@ -1034,21 +1030,19 @@ func (h *Handlers) toggleBudget(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
+	enabled, err := decodeToggleEnabled(r)
+	if err != nil {
+		tolakToggle(w, r, err)
 		return
 	}
 
-	b, err := h.policyRepo.SetBudgetEnabled(ctx, id, req.Enabled)
+	b, err := h.policyRepo.SetBudgetEnabled(ctx, id, enabled)
 	if err != nil {
 		mapRepoError(w, r, err, "anggaran")
 		return
 	}
 
-	h.writeAudit(ctx, r, "toggle", "budget", id, map[string]any{"enabled": req.Enabled})
+	h.writeAudit(ctx, r, "toggle", "budget", id, map[string]any{"enabled": enabled})
 	h.invalidateBudgets()
 	_ = h.respond(w, r, http.StatusOK, toBudgetDTO(b))
 }
@@ -1367,21 +1361,19 @@ func (h *Handlers) toggleContentFilter(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
 
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
+	enabled, err := decodeToggleEnabled(r)
+	if err != nil {
+		tolakToggle(w, r, err)
 		return
 	}
 
-	f, err := h.policyRepo.SetFilterEnabled(ctx, id, req.Enabled)
+	f, err := h.policyRepo.SetFilterEnabled(ctx, id, enabled)
 	if err != nil {
 		mapRepoError(w, r, err, "filter konten")
 		return
 	}
 
-	h.writeAudit(ctx, r, "toggle", "content_filter", id, map[string]any{"enabled": req.Enabled})
+	h.writeAudit(ctx, r, "toggle", "content_filter", id, map[string]any{"enabled": enabled})
 	h.invalidateContentFilters()
 	_ = h.respond(w, r, http.StatusOK, toContentFilterDTO(f))
 }
@@ -1447,6 +1439,19 @@ func (h *Handlers) listCircuitBreakers(w http.ResponseWriter, r *http.Request) {
 				if strings.HasPrefix(fKey, "f") {
 					if cnt, err := strconv.ParseInt(fVal, 10, 64); err == nil {
 						failureCount += cnt
+					}
+				}
+			}
+			// Breaker yang TERBUKA tidak lagi mempunyai ember f*: pencatat
+			// menghapus hash saat membuka dan menyisakan open_until saja,
+			// jadi jumlah di atas selalu 0 tepat pada breaker yang sedang
+			// mengisolasi provider (B-110). Pencatat kini juga menulis
+			// open_failures pada transisi membuka — angka itulah jumlah
+			// kegagalan pemicunya, dan itulah yang dilaporkan di sini.
+			if failureCount == 0 {
+				if v, ok := hashData["open_failures"]; ok {
+					if cnt, err := strconv.ParseInt(v, 10, 64); err == nil {
+						failureCount = cnt
 					}
 				}
 			}

@@ -54,7 +54,7 @@ Alur yang dijalankan server (audit3 B-045):
 
 1. Unggahan dispool ke berkas sementara dan **dipindai**: meta-command psql (`\!` dan sejenisnya) serta `COPY ... PROGRAM` ditolak dengan `400 invalid_backup_content` — berkas cadangan tidak bisa menjadi jalur eksekusi perintah OS.
 2. Dump di-restore ke **database skratch** sekali pakai memakai `psql --single-transaction` + `ON_ERROR_STOP` — kegagalan di tengah membatalkan seluruhnya; database produksi belum tersentuh.
-3. Versi skema skratch diperiksa ke ledger migrasi: lebih baru dari biner → ditolak; lebih lama → dimigrasikan di skratch sampai versi terkini (saat ini 0020).
+3. Versi skema skratch diperiksa ke ledger migrasi: lebih baru dari biner → ditolak; lebih lama → dimigrasikan di skratch sampai versi terkini (saat ini 0021).
 4. Nama database **ditukar secara atomik**: database lama dipertahankan utuh sebagai **`<nama-db>_pre_restore`**, skratch menjadi database aktif. Respons sukses memuat `safety_database` dan `schema_version`.
 5. Gateway melanjutkan layanan memakai database hasil restore.
 
@@ -86,6 +86,6 @@ gzip -t /var/backups/routex/routex_prod_YYYYMMDD_HHMMSS.sql.gz
 
 sudo -u postgres createdb routex_verifikasi
 gunzip -c /var/backups/routex/routex_prod_YYYYMMDD_HHMMSS.sql.gz | psql -d routex_verifikasi -v ON_ERROR_STOP=1
-psql -d routex_verifikasi -tAc "SELECT count(*) FROM schema_migrations;"   # harus: 19
+psql -d routex_verifikasi -tAc "SELECT count(*) FROM schema_migrations;"   # harus: 21
 sudo -u postgres dropdb routex_verifikasi
 ```

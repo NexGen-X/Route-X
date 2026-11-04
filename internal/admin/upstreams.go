@@ -403,23 +403,21 @@ func (h *Handlers) toggleProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
+	enabled, err := decodeToggleEnabled(r)
+	if err != nil {
+		tolakToggle(w, r, err)
 		return
 	}
 
 	var p *upstream.Provider
-	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txRepo := h.providerRepo.WithQuerier(q)
 		var err error
-		p, err = txRepo.SetEnabled(ctx, id, req.Enabled)
+		p, err = txRepo.SetEnabled(ctx, id, enabled)
 		if err != nil {
 			return err
 		}
-		return h.writeAuditTx(ctx, q, r, "toggle", "provider", id, map[string]any{"enabled": req.Enabled})
+		return h.writeAuditTx(ctx, q, r, "toggle", "provider", id, map[string]any{"enabled": enabled})
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "provider")
@@ -1213,24 +1211,22 @@ func (h *Handlers) toggleCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		httpx.BadRequest(w, r, "invalid_json", err.Error())
+	enabled, err := decodeToggleEnabled(r)
+	if err != nil {
+		tolakToggle(w, r, err)
 		return
 	}
 
 	// 5.1 & 5.8: Modifikasi status kredensial bersyarat provider_id dan lakukan audit log di dalam transaksi
 	var cred *upstream.CredentialMeta
-	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txRepo := h.credentialRepo.WithQuerier(q)
 		var err error
-		cred, err = txRepo.SetEnabledOfProvider(ctx, providerID, credID, req.Enabled)
+		cred, err = txRepo.SetEnabledOfProvider(ctx, providerID, credID, enabled)
 		if err != nil {
 			return err
 		}
-		return h.writeAuditTx(ctx, q, r, "toggle", "credential", credID, map[string]any{"provider_id": providerID, "enabled": req.Enabled})
+		return h.writeAuditTx(ctx, q, r, "toggle", "credential", credID, map[string]any{"provider_id": providerID, "enabled": enabled})
 	})
 	if err != nil {
 		mapRepoError(w, r, err, "kredensial")

@@ -337,8 +337,18 @@ func (p *Provider) newRequest(ctx context.Context, method, endpoint string, body
 	} else if cred != "" {
 		req.Header.Set(headerAPIKey, cred)
 	}
-	if p.isAntigravity() && req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", "antigravity/1.0.0")
+	if p.isAntigravity() {
+		// User-Agent hub dipaksa untuk SEMUA jalur Antigravity, bukan hanya
+		// discovery: upstream menggerbang model permukaan hub (keluarga
+		// Gemini 4 Argon dan Gemini 3.8 Flash) juga di jalur generate/stream
+		// — dengan User-Agent lama adapter model-model itu menjawab 404
+		// model_not_found walau ada di katalog (B-158; bukti matriks probe
+		// Tahap 0 kampanye uji live CLI: amplop persis produk, hanya
+		// User-Agent yang divariasikan). User-Agent adalah penentu
+		// tunggalnya, sama seperti discovery pada B-157 tahap 4, jadi
+		// nilainya disamakan ke konstanta bersama dan menimpa header dari
+		// operator khusus untuk mode Antigravity.
+		req.Header.Set("User-Agent", providers.AntigravityHubUserAgent)
 	}
 	req.Header.Set("Accept", accept)
 	if body != nil {
@@ -584,17 +594,16 @@ func (p *Provider) postJSON(ctx context.Context, endpoint string, body []byte, o
 // (POST /v1internal:fetchAvailableModels) dengan body project
 // terselesaikan dan mengembalikan respons yang body-nya belum dibaca.
 //
-// User-Agent panggilan ini dipaksa ke providers.AntigravityHubUserAgent:
+// User-Agent panggilan ini adalah providers.AntigravityHubUserAgent,
+// dipaksa terpusat di newRequest untuk semua jalur Antigravity:
 // User-Agent adalah penentu katalog yang dikembalikan upstream (B-157
 // tahap 4) — dengan User-Agent bawaan adapter, upstream menjawab
-// himpunan generik yang lebih kecil. Hanya panggilan discovery yang
-// lewat sini; generate/stream mempertahankan perilaku header lamanya.
+// himpunan generik yang lebih kecil.
 func (p *Provider) fetchAvailableModels(ctx context.Context) (*http.Response, error) {
 	req, err := p.newRequest(ctx, http.MethodPost, p.endpoint("/v1internal:fetchAvailableModels"), p.modelsRequestBody(), "application/json")
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", providers.AntigravityHubUserAgent)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, providers.FromTransport(p.name, err)

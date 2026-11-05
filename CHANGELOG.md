@@ -6,6 +6,10 @@ Format berkas ini mengacu pada prinsip [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-11-05
+
+Rilis perbaikan untuk katalog model Antigravity (B-157): gateway kini menyelesaikan project Code Assist akun lewat `loadCodeAssist` — disimpan per sesi OAuth (migrasi baru `0023`), diselesaikan sesudah exchange dan secara malas pada pemakaian sesi sehingga **login yang sudah ada sembuh tanpa login ulang** — lalu meneruskannya ke `fetchAvailableModels` dan amplop generate/stream, sehingga model tergating-project yang terlihat di aplikasi Antigravity/agy milik akun yang sama (mis. "Argon") bisa masuk katalog Route-X. Sync model juga menangkap `displayName` upstream. **OpenAI Codex CLI masih berlabel sementara tidak-didukung** menunggu keputusan B-153 (dukungan streaming Responses API). Jalur upgrade dari v1.7.1 lurus: pasang biner baru dan migrasi `0023` diterapkan otomatis saat biner mulai; sesudah upgrade, satu klik sync model pada provider Antigravity menyelesaikan project sesi yang ada.
+
 ### Fixed
 
 - **Model Antigravity tergating-project kini bisa terlihat (B-157)**: gateway tidak pernah menyelesaikan project Code Assist akun — `loadCodeAssist` tidak pernah dipanggil, `fetchAvailableModels` selalu diminta dengan body kosong, dan amplop generate/stream membawa `"project": ""` — sehingga katalog Antigravity hanya berisi himpunan generik dan model per-project (mis. model yang tampil sebagai "Argon" di agy milik akun yang sama) tidak pernah muncul. Kini project Code Assist diselesaikan sesudah exchange OAuth dan secara malas pada pemakaian sesi (sinkronisasi model serta konstruksi adapter di factory), disimpan per sesi (migrasi `0023`), lalu diteruskan ke body `fetchAvailableModels` dan field `project` pada amplop generate/stream. Kegagalan resolusi tidak menggagalkan alur utama: perilaku generik tanpa project berlanjut dan kegagalannya tercatat di log. Sinkronisasi model juga kini menangkap `displayName` upstream ke katalog — nama model bukan lagi ID mentah; nama yang sudah diatur operator tidak ditimpa.

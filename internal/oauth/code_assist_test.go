@@ -1,9 +1,11 @@
 package oauth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,17 +50,74 @@ func TestParseCodeAssistProject(t *testing.T) {
 	}
 }
 
+// TestParseCodeAssistTierSummary mengunci ringkasan tier aman-log dari
+// bentuk respons yang tertangkap pada pembuktian B-157: konteks Antigravity
+// yang berhasil membawa tier akun dan project, sedangkan konteks generik
+// lama hanya membawa tier yang diizinkan/ditolak tanpa currentTier.
+func TestParseCodeAssistTierSummary(t *testing.T) {
+	body := []byte(`{
+		"currentTier":{"id":"free-tier"},
+		"paidTier":{"id":"g1-pro-tier"},
+		"allowedTiers":[{"id":"free-tier"},{"id":"standard-tier"}],
+		"cloudaicompanionProject":"project-uji",
+		"gcpManaged":false,
+		"upgradeSubscriptionUri":"https://example.invalid/?Email=rahasia%40example.invalid"
+	}`)
+	summary, err := parseCodeAssistTierSummary(body, "project-uji")
+	if err != nil {
+		t.Fatalf("parseCodeAssistTierSummary: %v", err)
+	}
+	if summary.CurrentTier != "free-tier" || summary.PaidTier != "g1-pro-tier" {
+		t.Errorf("tier saat ini/berbayar = %q/%q, ingin free-tier/g1-pro-tier", summary.CurrentTier, summary.PaidTier)
+	}
+	if strings.Join(summary.AllowedTiers, ",") != "free-tier,standard-tier" {
+		t.Errorf("allowedTiers = %v, ingin [free-tier standard-tier]", summary.AllowedTiers)
+	}
+	if summary.GCPManaged || !summary.ProjectAda || summary.IneligibleAda {
+		t.Errorf("ringkasan = %+v, ingin gcpManaged=false, projectAda=true, ineligibleAda=false", summary)
+	}
+
+	generik, err := parseCodeAssistTierSummary([]byte(`{
+		"allowedTiers":[{"id":"standard-tier"}],
+		"ineligibleTiers":[{"id":"free-tier","reasonCode":"UNSUPPORTED_CLIENT"}]
+	}`), "")
+	if err != nil {
+		t.Fatalf("parseCodeAssistTierSummary generik: %v", err)
+	}
+	if generik.CurrentTier != "" || generik.ProjectAda || !generik.IneligibleAda {
+		t.Errorf("ringkasan generik = %+v, ingin currentTier kosong, projectAda=false, ineligibleAda=true", generik)
+	}
+	if _, err := parseCodeAssistTierSummary([]byte(`{"currentTier":`), ""); err == nil {
+		t.Error("JSON rusak harus menghasilkan error ringkasan tier")
+	}
+}
+
 // TestLoadCodeAssistProject membuktikan panggilan keluarnya: endpoint dari
-// seam pengujian, header Authorization dari access token, body metadata
-// Code Assist, dan penguraian kedua bentuk project.
+// seam pengujian, header Authorization dari access token, sidik jari klien
+// yang terbukti pada B-157, body metadata Code Assist, penguraian project,
+// dan log tier yang tidak membocorkan body mentah respons.
 func TestLoadCodeAssistProject(t *testing.T) {
+	var logBuf bytes.Buffer
+	loggerLama := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, nil)))
+	defer slog.SetDefault(loggerLama)
+
 	var reqBody []byte
-	var reqAuth string
+	var reqAuth, reqUA, reqClientMetadata string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqBody, _ = io.ReadAll(r.Body)
 		reqAuth = r.Header.Get("Authorization")
+		reqUA = r.Header.Get("User-Agent")
+		reqClientMetadata = r.Header.Get("Client-Metadata")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"cloudaicompanionProject":{"id":"proj-dari-server"}}`))
+		_, _ = w.Write([]byte(`{
+			"cloudaicompanionProject":{"id":"proj-dari-server"},
+			"currentTier":{"id":"free-tier"},
+			"paidTier":{"id":"g1-pro-tier"},
+			"allowedTiers":[{"id":"free-tier"},{"id":"standard-tier"}],
+			"gcpManaged":false,
+			"upgradeSubscriptionUri":"https://example.invalid/?Email=rahasia%40example.invalid"
+		}`))
 	}))
 	defer srv.Close()
 
@@ -73,14 +132,38 @@ func TestLoadCodeAssistProject(t *testing.T) {
 	if reqAuth != "Bearer token-akses-uji" {
 		t.Errorf("header Authorization = %q, ingin Bearer token sesi", reqAuth)
 	}
+	if reqUA != codeAssistUserAgent {
+		t.Errorf("header User-Agent = %q, ingin %q", reqUA, codeAssistUserAgent)
+	}
+	var clientMetadata map[string]string
+	if err := json.Unmarshal([]byte(reqClientMetadata), &clientMetadata); err != nil {
+		t.Fatalf("header Client-Metadata bukan JSON sah: %v", err)
+	}
+	if len(clientMetadata) != 3 || clientMetadata["ideType"] != "ANTIGRAVITY" ||
+		clientMetadata["platform"] != "PLATFORM_UNSPECIFIED" || clientMetadata["pluginType"] != "GEMINI" {
+		t.Errorf("header Client-Metadata = %v, ingin sidik jari Antigravity terbukti", clientMetadata)
+	}
 	var body struct {
 		Metadata map[string]string `json:"metadata"`
 	}
 	if err := json.Unmarshal(reqBody, &body); err != nil {
 		t.Fatalf("body request bukan JSON sah: %v", err)
 	}
-	if body.Metadata["pluginType"] != "GEMINI" {
-		t.Errorf("metadata pluginType = %q, ingin GEMINI", body.Metadata["pluginType"])
+	if len(body.Metadata) != 4 || body.Metadata["ideType"] != "ANTIGRAVITY" ||
+		body.Metadata["platform"] != "PLATFORM_UNSPECIFIED" || body.Metadata["pluginType"] != "GEMINI" ||
+		body.Metadata["ideVersion"] != codeAssistClientVersion {
+		t.Errorf("metadata = %v, ingin sidik jari Antigravity lengkap", body.Metadata)
+	}
+	logText := logBuf.String()
+	for _, ingin := range []string{"respons loadCodeAssist diterima", "current_tier=free-tier", "paid_tier=g1-pro-tier", "project_tersedia=true"} {
+		if !strings.Contains(logText, ingin) {
+			t.Errorf("log tier tidak memuat %q: %s", ingin, logText)
+		}
+	}
+	for _, terlarang := range []string{"proj-dari-server", "rahasia@example.invalid", "upgradeSubscriptionUri"} {
+		if strings.Contains(logText, terlarang) {
+			t.Errorf("log tier membocorkan %q: %s", terlarang, logText)
+		}
 	}
 }
 

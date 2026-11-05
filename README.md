@@ -9,7 +9,7 @@
 <p>OpenAI- and Anthropic-compatible ingestion, multi-provider routing with failover, hard budget guardrails, and a full operations dashboard — shipped as a single Go binary.</p>
 
 <p>
-<a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.7.3"><img src="https://img.shields.io/badge/Release-v1.7.3-10B981?style=for-the-badge&logo=github" alt="Release v1.7.3"></a>
+<a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.7.4"><img src="https://img.shields.io/badge/Release-v1.7.4-10B981?style=for-the-badge&logo=github" alt="Release v1.7.4"></a>
 <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27.3+-00ADD8?style=for-the-badge&logo=go" alt="Go 1.27.3+"></a>
 <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react" alt="React 19"></a>
 <a href="https://postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql" alt="PostgreSQL 16"></a>
@@ -31,7 +31,7 @@
 
 </div>
 
-> **Release status.** The latest release is **v1.7.3** — a follow-up fix release completing the Antigravity catalog work of v1.7.2. Live stage-4 proof (replaying discovery with the production session) showed that the catalog returned by `fetchAvailableModels` is decided by the **User-Agent**: v1.7.3 sends the Antigravity hub User-Agent at both discovery points (the Google adapter's `Models()`/`HealthCheck()` and the admin model sync), so the full account catalog is returned — for the owner's Pro account that verifiably includes the **Gemini 4 Argon** family (`gemini-4-argon-high/medium/low`; 26 models in total, proven through the gateway's own discovery code path against the production session). This corrects the v1.7.2 release note: forwarding the Code Assist project alone did not surface those models. The project resolution shipped in v1.7.2 remains and feeds the generate/stream envelopes, `loadCodeAssist` is now also called with the Antigravity client fingerprint so the account's project and tier resolve correctly, and model sync continues to capture upstream display names so catalog names are not raw model IDs. OpenAI Codex CLI remains honestly labelled temporarily unsupported pending Responses API streaming support. This repository is **public** again by the owner's decision (so GitHub Actions runners can run), so release assets are downloadable anonymously. See [`CHANGELOG.md`](CHANGELOG.md) for the full release notes. Everything described in this README reflects the code in this repository.
+> **Release status.** The latest release is **v1.7.4** — a fix release for **B-158**, completing the Antigravity work of v1.7.3. After the v1.7.3 upgrade and one model sync refreshed the catalog to 26 models, stage 0 of the live CLI test campaign proved that the 6 hub-surface models (the `gemini-4-argon-*` and `gemini-3.8-flash-*` families) still could not be used: every chat, streaming, and test-model call for them ended in **404 `model_not_found`**, while the 20 older models of the same provider answered 200. A probe matrix (the product's exact generate envelope with the production session, varying only the User-Agent) proved upstream gates those models on the generate/stream paths too: hub User-Agent → 200, the adapter's old User-Agent → 404, older models → 200 under every User-Agent. v1.7.3 had aligned only the discovery path; v1.7.4 sends the shared hub User-Agent constant (`providers.AntigravityHubUserAgent`) on **every** Antigravity-mode upstream path from the Google adapter's single request builder — discovery, generate, and stream. Behaviour for non-Antigravity Google providers is unchanged, and no catalog re-sync is needed after upgrading. The Code Assist project resolution and upstream display-name capture from v1.7.2/v1.7.3 remain in place. OpenAI Codex CLI remains honestly labelled temporarily unsupported pending Responses API streaming support. This repository is **public** by the owner's decision (so GitHub Actions runners can run), so release assets are downloadable anonymously. See [`CHANGELOG.md`](CHANGELOG.md) for the full release notes. Everything described in this README reflects the code in this repository.
 
 > **Scope — read before deploying.** Route-X is an open-source project built for **personal use and small, trusted teams**. Its identity model is deliberately simple — there is no role-based access control and no multi-tenant isolation between dashboard users — but administrator rights are **not** automatic: a dashboard account is a full administrator only when it was explicitly created or promoted with the `admin` role, and accounts created without a role have no admin access at all. Do not expose a Route-X instance to untrusted users, and protect internet-facing instances like any other admin panel that stores paid upstream API credentials.
 
@@ -256,10 +256,10 @@ bash deploy.sh
 
 ```bash
 # 1. Download the official release (adjust the architecture if needed)
-curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.7.3/routex-v1.7.3-linux-amd64.tar.gz
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.7.4/routex-v1.7.4-linux-amd64.tar.gz
 
 # 2. Extract and run (migrations apply automatically on boot)
-tar -xzvf routex-v1.7.3-linux-amd64.tar.gz
+tar -xzvf routex-v1.7.4-linux-amd64.tar.gz
 ./ai-gateway
 ```
 

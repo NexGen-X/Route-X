@@ -9,7 +9,7 @@
 <p>OpenAI- and Anthropic-compatible ingestion, multi-provider routing with failover, hard budget guardrails, and a full operations dashboard — shipped as a single Go binary.</p>
 
 <p>
-<a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.7.2"><img src="https://img.shields.io/badge/Release-v1.7.2-10B981?style=for-the-badge&logo=github" alt="Release v1.7.2"></a>
+<a href="https://github.com/NexGen-X/Route-X/releases/tag/v1.7.3"><img src="https://img.shields.io/badge/Release-v1.7.3-10B981?style=for-the-badge&logo=github" alt="Release v1.7.3"></a>
 <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27.3+-00ADD8?style=for-the-badge&logo=go" alt="Go 1.27.3+"></a>
 <a href="https://react.dev"><img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react" alt="React 19"></a>
 <a href="https://postgresql.org"><img src="https://img.shields.io/badge/PostgreSQL-16-336791?style=for-the-badge&logo=postgresql" alt="PostgreSQL 16"></a>
@@ -31,7 +31,7 @@
 
 </div>
 
-> **Release status.** The latest release is **v1.7.2** — a fix release on top of v1.7.1. It fixes the Antigravity model catalog: the gateway now resolves the account's Code Assist project (via `loadCodeAssist`, stored per OAuth session, with lazy backfill so existing logins heal without reconnecting) and forwards it to model discovery and to the generate/stream envelopes, so project-gated models that the same account sees in the Antigravity app and agy — for example the model displayed there as "Argon" — can appear in the Route-X catalog too. Model sync also captures upstream display names, so catalog names are no longer raw model IDs. OpenAI Codex CLI remains honestly labelled temporarily unsupported pending Responses API streaming support. This repository is **private** by the owner's decision, so release assets require authenticated GitHub access to download. See [`CHANGELOG.md`](CHANGELOG.md) for the full release notes. Everything described in this README reflects the code in this repository.
+> **Release status.** The latest release is **v1.7.3** — a follow-up fix release completing the Antigravity catalog work of v1.7.2. Live stage-4 proof (replaying discovery with the production session) showed that the catalog returned by `fetchAvailableModels` is decided by the **User-Agent**: v1.7.3 sends the Antigravity hub User-Agent at both discovery points (the Google adapter's `Models()`/`HealthCheck()` and the admin model sync), so the full account catalog is returned — for the owner's Pro account that verifiably includes the **Gemini 4 Argon** family (`gemini-4-argon-high/medium/low`; 26 models in total, proven through the gateway's own discovery code path against the production session). This corrects the v1.7.2 release note: forwarding the Code Assist project alone did not surface those models. The project resolution shipped in v1.7.2 remains and feeds the generate/stream envelopes, `loadCodeAssist` is now also called with the Antigravity client fingerprint so the account's project and tier resolve correctly, and model sync continues to capture upstream display names so catalog names are not raw model IDs. OpenAI Codex CLI remains honestly labelled temporarily unsupported pending Responses API streaming support. This repository is **public** again by the owner's decision (so GitHub Actions runners can run), so release assets are downloadable anonymously. See [`CHANGELOG.md`](CHANGELOG.md) for the full release notes. Everything described in this README reflects the code in this repository.
 
 > **Scope — read before deploying.** Route-X is an open-source project built for **personal use and small, trusted teams**. Its identity model is deliberately simple — there is no role-based access control and no multi-tenant isolation between dashboard users — but administrator rights are **not** automatic: a dashboard account is a full administrator only when it was explicitly created or promoted with the `admin` role, and accounts created without a role have no admin access at all. Do not expose a Route-X instance to untrusted users, and protect internet-facing instances like any other admin panel that stores paid upstream API credentials.
 
@@ -256,10 +256,10 @@ bash deploy.sh
 
 ```bash
 # 1. Download the official release (adjust the architecture if needed)
-curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.7.2/routex-v1.7.2-linux-amd64.tar.gz
+curl -fsSLO https://github.com/NexGen-X/Route-X/releases/download/v1.7.3/routex-v1.7.3-linux-amd64.tar.gz
 
 # 2. Extract and run (migrations apply automatically on boot)
-tar -xzvf routex-v1.7.2-linux-amd64.tar.gz
+tar -xzvf routex-v1.7.3-linux-amd64.tar.gz
 ./ai-gateway
 ```
 

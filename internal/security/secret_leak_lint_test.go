@@ -30,6 +30,8 @@ import (
 // Pengecualian (Whitelist):
 // Hanya diperbolehkan untuk berkas pengujian tertentu yang secara sah membutuhkan string tiruan
 // untuk memverifikasi logika enkripsi, hashing, atau redaksi. Setiap entri wajib disertai alasan teknis.
+// Selain whitelist per-berkas ada pengecualian PER-BARIS bernama (pengecualianBaris di dalam test)
+// untuk satu baris deklarasi spesifik yang keputusannya tercatat, tanpa membebaskan berkasnya.
 func TestSecretLeakLint(t *testing.T) {
 	akar := akarModul(t)
 
@@ -83,6 +85,21 @@ func TestSecretLeakLint(t *testing.T) {
 		"docs/QUICKSTART.md": "Panduan integrasi cepat dengan contoh panggilan API sk_live_ placeholder.",
 	}
 
+	// Pengecualian PER-BARIS bernama (lebih sempit dari whitelist berkas di
+	// atas): hanya baris yang memuat substring terdaftar untuk berkas itu
+	// yang dilewati; seluruh baris lain di berkas yang sama tetap diperiksa.
+	//
+	// - B-156 (keputusan Arpay, 5 Nov 2026): baris deklarasi konstanta
+	//   cadanganClientSecretAntigravity di internal/oauth/google.go memuat
+	//   client secret bawaan aplikasi desktop Google Antigravity yang
+	//   ditanam kembali secara sadar sebagai cadangan otomatis (env
+	//   ANTIGRAVITY_CLIENT_SECRET tetap menimpa). Nilai kelas installed-app
+	//   ini non-rahasia menurut desain Google (beredar di setiap salinan
+	//   aplikasi); pengecualian hanya menamai baris deklarasi konstanta itu.
+	pengecualianBaris := map[string][]string{
+		"internal/oauth/google.go": {"cadanganClientSecretAntigravity ="},
+	}
+
 	// 1. Pola pendeteksian sk- atau sk_live_ >= 20 karakter
 	reAPIKey := regexp.MustCompile(`(sk-[a-zA-Z0-9_-]{20,}|sk_live_[a-zA-Z0-9_-]{20,})`)
 
@@ -111,6 +128,20 @@ func TestSecretLeakLint(t *testing.T) {
 
 		lines := strings.Split(string(content), "\n")
 		for lineNum, line := range lines {
+			// Lewati baris yang dikecualikan secara bernama (lihat
+			// pengecualianBaris di atas).
+			if subs, ok := pengecualianBaris[filePath]; ok {
+				lewati := false
+				for _, s := range subs {
+					if strings.Contains(line, s) {
+						lewati = true
+						break
+					}
+				}
+				if lewati {
+					continue
+				}
+			}
 			trimmed := strings.TrimSpace(line)
 			// Abaikan baris komentar penuh
 			if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") || strings.HasPrefix(trimmed, "/*") {

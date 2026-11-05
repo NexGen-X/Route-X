@@ -28,6 +28,31 @@ const (
 	GoogleTokenEndpoint = "https://oauth2.googleapis.com/token"
 )
 
+// cadanganClientSecretAntigravity adalah client secret bawaan aplikasi
+// desktop Google Antigravity, tertanam sebagai CADANGAN OTOMATIS: nilai ini
+// hanya dipakai bila env ANTIGRAVITY_CLIENT_SECRET kosong atau tidak
+// disetel; env yang terisi non-kosong selalu menang (lihat
+// GetDefaultAntigravityClientSecret).
+//
+// Provenans & sifat: nilai ini adalah kredensial client OAuth yang Google
+// distribusikan di dalam aplikasi Antigravity itu sendiri. Menurut desain
+// OAuth untuk aplikasi desktop (installed app), client secret kelas ini
+// bersifat NON-RAHASIA: ia beredar di setiap salinan aplikasi yang
+// terpasang, dan fungsinya identitas aplikasi — bukan pengaman akun.
+// Keamanan akun pengguna dijaga oleh login Google dan oleh refresh token
+// yang gateway simpan terenkripsi, bukan oleh nilai ini.
+//
+// Riwayat keputusan: fallback tertanam seperti ini pernah dicabut pada
+// audit3 grup 8 (B-036) sehingga env menjadi satu-satunya sumber. Akibatnya
+// instalasi yang tidak menyetel env gagal menghubungkan Antigravity
+// sebelum sempat login Google (error eksplisit dari lengkapiClientSecret;
+// terbukti live pada diagnosis 5 Nov 2026). Arpay membatalkan keputusan
+// B-036 secara sadar (keputusan B-156, 5 Nov 2026): nilai ditanam kembali
+// TANPA obfuskasi — tertulis apa adanya pada konstanta ini — agar alur
+// OAuth bekerja tanpa langkah konfigurasi manual. Bila Google suatu saat
+// merotasi client ini, perbarui konstanta ini atau timpa lewat env.
+const cadanganClientSecretAntigravity = "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"
+
 // ErrTokenDitolakPermanen menandai penolakan token yang TIDAK akan sembuh
 // dengan mencoba lagi: invalid_grant berarti refresh token sudah dicabut,
 // kedaluwarsa permanen, atau tidak pernah sah. Pemanggil (worker refresh,
@@ -37,27 +62,34 @@ const (
 var ErrTokenDitolakPermanen = errors.New("token ditolak permanen oleh penyedia OAuth")
 
 // GetDefaultAntigravityClientSecret mengembalikan client secret Antigravity
-// dari env ANTIGRAVITY_CLIENT_SECRET, atau string kosong bila tidak disetel.
+// yang berlaku dengan precedence: env ANTIGRAVITY_CLIENT_SECRET bila terisi
+// non-kosong, selain itu cadangan tertanam cadanganClientSecretAntigravity.
 //
-// Dulu ada fallback berupa array byte ter-obfuskasi XOR satu byte yang
-// terdekode menjadi client secret asli. Obfuskasi itu tidak menyembunyikan
-// apa pun (kunci XOR-nya tertulis di sebelah arraynya), membuat nilai lolos
-// dari pemindaian rahasia berbasis teks, dan menyembunyikan fakta bahwa
-// integrasi ini butuh konfigurasi (audit3 V-EO-24). Sekarang env adalah
-// satu-satunya sumber; jalur Antigravity yang membutuhkannya dan tidak
-// menemukannya gagal dengan pesan eksplisit dari lengkapiClientSecret.
+// Sejarah singkatnya: nilai ini semula tertanam ter-obfuskasi XOR, lalu
+// fallback itu dicabut pada audit3 grup 8 (B-036, V-EO-24) sehingga env
+// menjadi satu-satunya sumber dan ketiadaannya menggagalkan alur OAuth
+// secara eksplisit. Keputusan B-156 (5 Nov 2026) memulihkan cadangan
+// tertanam TANPA obfuskasi — lihat komentar pada konstanta cadangannya
+// untuk provenans, sifat non-rahasianya, dan alasan pembatalan B-036.
 func GetDefaultAntigravityClientSecret() string {
-	return strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLIENT_SECRET"))
+	if s := strings.TrimSpace(os.Getenv("ANTIGRAVITY_CLIENT_SECRET")); s != "" {
+		return s
+	}
+	return cadanganClientSecretAntigravity
 }
 
 // lengkapiClientSecret menentukan client secret yang dipakai untuk client ID
 // bawaan Antigravity bila pemanggil tidak menyediakannya.
 //
 // Untuk client ID lain, secret kosong dibiarkan apa adanya (client publik
-// memang tidak punya secret). Untuk Antigravity, kosong berarti konfigurasi
-// belum lengkap dan pertukaran/refresh pasti ditolak Google — lebih baik
-// gagal di sini dengan pesan yang bisa ditindaklanjuti operator daripada
-// menerima penolakan buram dari endpoint token.
+// memang tidak punya secret). Untuk Antigravity, resolusinya diambil dari
+// GetDefaultAntigravityClientSecret (env menimpa, cadangan tertanam
+// mengisi — B-156), yang dipakai bersama oleh penukaran kode DAN refresh
+// sesi sehingga kedua jalur tidak bisa berbeda secret. Cabang error di
+// bawah kini tidak terjangkau selama konstanta cadangan terisi; ia
+// dipertahankan sebagai penjaga agar bila cadangan itu suatu saat sengaja
+// dikosongkan pada sebuah build, kegagalannya tetap eksplisit di sini —
+// bukan penolakan buram dari endpoint token Google.
 func lengkapiClientSecret(clientID, clientSecret string) (string, error) {
 	if clientSecret != "" || clientID != DefaultAntigravityClientID {
 		return clientSecret, nil

@@ -319,7 +319,7 @@ Route-X is configured entirely through environment variables. The table below li
 | `TRUSTED_PROXIES` | – | Proxy addresses whose `X-Forwarded-For` is trusted. On native installs the installer sets loopback only; the Docker stack pins its compose subnet. Leave unset if Route-X is directly exposed. |
 | `UPSTREAM_TIMEOUT` | – | Default per-request upstream timeout (default 120 s). |
 | `UPSTREAM_ALLOW_HTTP` / `UPSTREAM_ALLOWED_PRIVATE_ADDRS` | – | Controlled exceptions to the anti-SSRF egress policy (e.g. local runtimes). Off/empty by default. |
-| `ANTIGRAVITY_CLIENT_SECRET` | ⚠️ | **Required for the Antigravity/Google OAuth provider.** It is read from the environment only — no value is embedded in the binary. |
+| `ANTIGRAVITY_CLIENT_SECRET` | – | Optional override for the Antigravity/Google OAuth provider. The binary embeds the public desktop-app client value as an automatic fallback (non-secret by Google's design for installed apps); set this only to override the embedded value. |
 | `METRICS_TOKEN` / `METRICS_ALLOW_LOOPBACK` | – | Protect the Prometheus `/metrics` endpoint (token and/or loopback-only access). |
 | `AUDIT_LOG_RETENTION_DAYS` / `REQUEST_LOG_RETENTION_DAYS` / `REQUEST_BODY_RETENTION_DAYS` | – | Retention windows (defaults 365 / 30 / 7 days). |
 | `LOG_LEVEL`, `READ_TIMEOUT`, `WRITE_TIMEOUT`, `SHUTDOWN_GRACE`, `DB_MIN_CONNS`, `DB_MAX_CONNS`, `HEALTH_CHECK_INTERVAL`, `USAGE_ROLLUP_INTERVAL`, `MAX_REQUEST_MIB`, `RATE_LIMIT_FAIL_CLOSED` | – | Operational tuning — see `.env.example`. |
@@ -528,7 +528,7 @@ To report a vulnerability, follow [`SECURITY.md`](SECURITY.md) — please do not
 | Dashboard loads but requests fail with 502/503 | Check `/readyz` for the failing dependency, then provider health on the Observability page; a fully open circuit breaker returns `503 upstream_overloaded` until its half-open probe succeeds. |
 | Login returns 429 | The login limiter allows a limited number of attempts per IP per 15 minutes — wait for the window to slide instead of retrying in a loop. Locked accounts unlock automatically when `locked_until` passes; an admin can also unlock a user from the Users page. |
 | Budget timezone seems wrong | Period boundaries are computed in `BUDGET_TIMEZONE` (default UTC). Changing it does not rewrite the `period_end` of budgets already in flight — the new zone applies from the next reset. |
-| Antigravity provider errors about a missing secret | Set `ANTIGRAVITY_CLIENT_SECRET` in the server environment — since the audit3 hardening it is never embedded in the binary. |
+| Antigravity OAuth rejected by Google with an invalid-client error | The embedded fallback client value may have been rotated by Google — set `ANTIGRAVITY_CLIENT_SECRET` in the server environment to override it. |
 
 </details>
 

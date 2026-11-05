@@ -54,7 +54,7 @@ Blueprint `render.yaml` di repositori ini secara otomatis mendirikan Web Service
    - `INITIAL_ADMIN_PASSWORD`: **Wajib diisi** agar akun admin pertama dibuat. Tidak ada password default — bila kosong, tidak ada admin yang dibuat sama sekali.
 6. Klik **Apply**. Render akan mulai membangun container Docker dan menginisialisasi database serta Redis.
 
-Catatan: `render.yaml` tidak mendeklarasikan `ANTIGRAVITY_CLIENT_SECRET`. Bila Anda memakai integrasi Antigravity (Google OAuth), tambahkan variabel itu secara manual di Render Dashboard → Environment — client secret dibaca dari environment saja, tidak tertanam di biner. Daftar variabel lengkap: `.env.render.example`.
+Catatan: `render.yaml` tidak mendeklarasikan `ANTIGRAVITY_CLIENT_SECRET` karena variabel itu kini opsional: biner membawa nilai client bawaan aplikasi desktop Antigravity sebagai cadangan otomatis, dan variabel env hanya diperlukan bila Anda ingin menimpa nilai cadangan itu (mis. sesudah Google merotasinya) — tambahkan secara manual di Render Dashboard → Environment. Daftar variabel lengkap: `.env.render.example`.
 
 ---
 

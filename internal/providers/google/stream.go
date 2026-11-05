@@ -35,7 +35,7 @@ func (p *Provider) ChatCompletionStream(ctx context.Context, req *providers.Chat
 		modelName := strings.TrimPrefix(req.Model, "models/")
 		envelope := map[string]any{
 			"model":   modelName,
-			"project": "",
+			"project": p.project,
 			"request": reqObj,
 		}
 		envelopeBytes, err := json.Marshal(envelope)

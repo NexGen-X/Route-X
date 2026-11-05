@@ -15,22 +15,23 @@ import (
 
 // OAuthSessionMeta adalah metadata sesi otorisasi OAuth upstream untuk pemantauan UI.
 type OAuthSessionMeta struct {
-	ID               string     `json:"id"`
-	ProviderID       string     `json:"provider_id"`
-	CredentialID     string     `json:"credential_id"`
-	AccountEmail     string     `json:"account_email"`
-	AccountName      *string    `json:"account_name,omitempty"`
-	ClientID         string     `json:"client_id"`
-	RedirectURI      string     `json:"redirect_uri"`
-	Scopes           []string   `json:"scopes"`
-	LastRefreshedAt  *time.Time `json:"last_refreshed_at,omitempty"`
-	LastRefreshError *string    `json:"last_refresh_error,omitempty"`
-	Enabled          bool       `json:"enabled"`
-	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
-	MaskedHint       string     `json:"masked_hint,omitempty"`
-	EgressPoolID     *string    `json:"egress_pool_id,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID                string     `json:"id"`
+	ProviderID        string     `json:"provider_id"`
+	CredentialID      string     `json:"credential_id"`
+	AccountEmail      string     `json:"account_email"`
+	AccountName       *string    `json:"account_name,omitempty"`
+	ClientID          string     `json:"client_id"`
+	CodeAssistProject *string    `json:"code_assist_project,omitempty"`
+	RedirectURI       string     `json:"redirect_uri"`
+	Scopes            []string   `json:"scopes"`
+	LastRefreshedAt   *time.Time `json:"last_refreshed_at,omitempty"`
+	LastRefreshError  *string    `json:"last_refresh_error,omitempty"`
+	Enabled           bool       `json:"enabled"`
+	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
+	MaskedHint        string     `json:"masked_hint,omitempty"`
+	EgressPoolID      *string    `json:"egress_pool_id,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 // ActiveOAuthSession adalah sesi OAuth aktif dengan refresh token terdekripsi.
@@ -43,6 +44,9 @@ type ActiveOAuthSession struct {
 	RedirectURI  string
 	RefreshToken security.Secret
 	EgressPoolID *string
+	// CodeAssistProject adalah project Code Assist terselesaikan milik sesi
+	// (B-157); kosong berarti belum pernah terselesaikan.
+	CodeAssistProject string
 }
 
 // UpsertOAuthSessionParams adalah masukan penyimpanan atau pembaruan sesi OAuth.
@@ -78,7 +82,7 @@ func (r *OAuthRepo) WithQuerier(q repo.Querier) *OAuthRepo {
 
 const oauthSessionJoinedColumns = `
 	s.id::text, s.provider_id::text, s.credential_id::text, s.account_email, s.account_name,
-	s.client_id, s.redirect_uri, s.scopes, s.last_refreshed_at, s.last_refresh_error,
+	s.client_id, s.code_assist_project, s.redirect_uri, s.scopes, s.last_refreshed_at, s.last_refresh_error,
 	s.enabled, c.expires_at, c.masked_hint, s.created_at, s.updated_at, c.egress_pool_id::text`
 
 func scanOAuthSessionJoined(row pgxRow) (*OAuthSessionMeta, error) {
@@ -86,7 +90,7 @@ func scanOAuthSessionJoined(row pgxRow) (*OAuthSessionMeta, error) {
 	var scopesRaw []byte
 	err := row.Scan(
 		&m.ID, &m.ProviderID, &m.CredentialID, &m.AccountEmail, &m.AccountName,
-		&m.ClientID, &m.RedirectURI, &scopesRaw, &m.LastRefreshedAt, &m.LastRefreshError,
+		&m.ClientID, &m.CodeAssistProject, &m.RedirectURI, &scopesRaw, &m.LastRefreshedAt, &m.LastRefreshError,
 		&m.Enabled, &m.ExpiresAt, &m.MaskedHint, &m.CreatedAt, &m.UpdatedAt, &m.EgressPoolID,
 	)
 	if err != nil {
@@ -272,7 +276,7 @@ func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold tim
 	query := `
 		select s.id::text, s.provider_id::text, s.credential_id::text,
 		       s.account_email, s.client_id, s.redirect_uri, s.refresh_token_encrypted,
-		       c.egress_pool_id::text
+		       c.egress_pool_id::text, coalesce(s.code_assist_project, '')
 		from provider_oauth_sessions s
 		join provider_credentials c on c.id = s.credential_id
 		where s.enabled
@@ -290,7 +294,8 @@ func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold tim
 	for rows.Next() {
 		var id, provID, credID, email, clientID, redirectURI, ciphertext string
 		var egressPoolID *string
-		if err := rows.Scan(&id, &provID, &credID, &email, &clientID, &redirectURI, &ciphertext, &egressPoolID); err != nil {
+		var codeAssistProject string
+		if err := rows.Scan(&id, &provID, &credID, &email, &clientID, &redirectURI, &ciphertext, &egressPoolID, &codeAssistProject); err != nil {
 			return nil, repo.Err(op, err)
 		}
 
@@ -319,14 +324,15 @@ func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold tim
 		}
 
 		out = append(out, &ActiveOAuthSession{
-			ID:           id,
-			ProviderID:   provID,
-			CredentialID: credID,
-			AccountEmail: email,
-			ClientID:     clientID,
-			RedirectURI:  redirectURI,
-			RefreshToken: secret,
-			EgressPoolID: egressPoolID,
+			ID:                id,
+			ProviderID:        provID,
+			CredentialID:      credID,
+			AccountEmail:      email,
+			ClientID:          clientID,
+			RedirectURI:       redirectURI,
+			RefreshToken:      secret,
+			EgressPoolID:      egressPoolID,
+			CodeAssistProject: codeAssistProject,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -344,11 +350,12 @@ func (r *OAuthRepo) GetActiveSession(ctx context.Context, sessionID string) (*Ac
 
 	var provID, credID, email, clientID, redirectURI, ciphertext string
 	var egressPoolID *string
+	var codeAssistProject string
 	err := r.q.QueryRow(ctx, `
-		select s.provider_id::text, s.credential_id::text, s.account_email, s.client_id, s.redirect_uri, s.refresh_token_encrypted, c.egress_pool_id::text
+		select s.provider_id::text, s.credential_id::text, s.account_email, s.client_id, s.redirect_uri, s.refresh_token_encrypted, c.egress_pool_id::text, coalesce(s.code_assist_project, '')
 		from provider_oauth_sessions s
 		join provider_credentials c on c.id = s.credential_id
-		where s.id = $1`, sessionID).Scan(&provID, &credID, &email, &clientID, &redirectURI, &ciphertext, &egressPoolID)
+		where s.id = $1`, sessionID).Scan(&provID, &credID, &email, &clientID, &redirectURI, &ciphertext, &egressPoolID, &codeAssistProject)
 	if err != nil {
 		return nil, repo.Err(op, err)
 	}
@@ -359,14 +366,15 @@ func (r *OAuthRepo) GetActiveSession(ctx context.Context, sessionID string) (*Ac
 	}
 
 	return &ActiveOAuthSession{
-		ID:           sessionID,
-		ProviderID:   provID,
-		CredentialID: credID,
-		AccountEmail: email,
-		ClientID:     clientID,
-		RedirectURI:  redirectURI,
-		RefreshToken: secret,
-		EgressPoolID: egressPoolID,
+		ID:                sessionID,
+		ProviderID:        provID,
+		CredentialID:      credID,
+		AccountEmail:      email,
+		ClientID:          clientID,
+		RedirectURI:       redirectURI,
+		RefreshToken:      secret,
+		EgressPoolID:      egressPoolID,
+		CodeAssistProject: codeAssistProject,
 	}, nil
 }
 
@@ -486,6 +494,62 @@ func (r *OAuthRepo) Delete(ctx context.Context, sessionID string) error {
 	// Hapus kredensial yang terikat; error-nya diteruskan, bukan ditelan.
 	if _, err := r.q.Exec(ctx, `delete from provider_credentials where id = $1`, credID); err != nil {
 		return repo.Err(op, err)
+	}
+	return nil
+}
+
+// GetSessionByCredentialID mengambil metadata sesi OAuth yang terikat pada
+// satu kredensial provider.
+//
+// Jalur pemakaian sesi (factory gateway, sinkronisasi model admin) hanya
+// memegang ID kredensial aktif — sesi dicari dari ikatan itu, bukan dari ID
+// sesi yang tidak mereka ketahui. Kredensial non-OAuth (API key biasa) tidak
+// punya sesi: ErrNotFound adalah jawaban yang diharapkan untuk mereka, bukan
+// kegagalan.
+func (r *OAuthRepo) GetSessionByCredentialID(ctx context.Context, credentialID string) (*OAuthSessionMeta, error) {
+	const op = "mengambil sesi oauth berdasarkan kredensial"
+	if !idOK(credentialID) {
+		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	query := `
+		select ` + oauthSessionJoinedColumns + `
+		from provider_oauth_sessions s
+		join provider_credentials c on c.id = s.credential_id
+		where s.credential_id = $1`
+
+	meta, err := scanOAuthSessionJoined(r.q.QueryRow(ctx, query, credentialID))
+	if err != nil {
+		return nil, repo.Err(op, err)
+	}
+	return meta, nil
+}
+
+// UpdateCodeAssistProject menyimpan project Code Assist hasil resolusi
+// loadCodeAssist pada satu sesi (B-157).
+//
+// Project adalah identifikator, bukan kredensial — disimpan teks biasa
+// mengikuti pola client_id. Nilai kosong ditolak: "belum terselesaikan"
+// dinyatakan dengan membiarkan kolom NULL, bukan menulis string kosong yang
+// akan terbaca sebagai hasil resolusi.
+func (r *OAuthRepo) UpdateCodeAssistProject(ctx context.Context, sessionID string, project string) error {
+	const op = "menyimpan project code assist sesi oauth"
+	if !idOK(sessionID) {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	if project == "" {
+		return fmt.Errorf("%s: %w: project kosong", op, repo.ErrConstraint)
+	}
+
+	tag, err := r.q.Exec(ctx, `
+		update provider_oauth_sessions
+		set code_assist_project = $2, updated_at = now()
+		where id = $1`, sessionID, project)
+	if err != nil {
+		return repo.Err(op, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 	return nil
 }

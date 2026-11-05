@@ -132,6 +132,20 @@ type OAuthRefresher interface {
 	RefreshProvider(ctx context.Context, providerID string) error
 }
 
+// CodeAssistProjectResolver menyelesaikan project Code Assist milik
+// kredensial yang akan dipakai, menyimpannya pada sesi OAuth, dan
+// mengembalikannya untuk diteruskan ke adapter Antigravity. Dipenuhi
+// *worker.PenyegarOAuth.
+//
+// Dipasang lewat WithCodeAssistProjectResolver dengan alasan yang sama
+// seperti OAuthRefresher: memasangnya MENGUBAH perilaku jalur request
+// (konstruksi adapter Antigravity kini bisa memicu panggilan loadCodeAssist
+// satu kali per sesi), dan perubahan seperti itu harus terlihat di tempat
+// perakitannya (B-157).
+type CodeAssistProjectResolver interface {
+	ResolveCodeAssistProject(ctx context.Context, providerID, credentialID string, accessToken security.Secret) (string, error)
+}
+
 // Factory membuat dan menyimpan adapter provider.
 //
 // Aman dipakai bersamaan oleh banyak goroutine.
@@ -150,6 +164,11 @@ type Factory struct {
 	// yang bisa dipakai. nil berarti perilaku lama: kegagalan itu final
 	// sampai worker berkala memulihkannya.
 	penyegar OAuthRefresher
+
+	// penyelesaiProject menyelesaikan project Code Assist untuk adapter
+	// Antigravity (B-157). nil berarti adapter dibangun tanpa project —
+	// perilaku generik lama.
+	penyelesaiProject CodeAssistProjectResolver
 
 	// timeoutBawaan adalah UPSTREAM_TIMEOUT dari config; dipakai saat
 	// kandidat tidak menentukan timeout-nya sendiri (TimeoutMS<=0). Nol
@@ -215,6 +234,19 @@ func WithCredentialUseMarker(m CredentialUseMarker) FactoryOption {
 func WithOAuthRefresher(r OAuthRefresher) FactoryOption {
 	return func(f *Factory) {
 		f.penyegar = r
+	}
+}
+
+// WithCodeAssistProjectResolver memasang resolusi project Code Assist di
+// jalur konstruksi adapter Antigravity (B-157): sebelum adapter Google
+// untuk target Antigravity dibangun, factory meminta project milik
+// kredensial aktif — tersimpan di sesi OAuth, atau diselesaikan sekali lewat
+// loadCodeAssist lalu disimpan (backfill malas). Kegagalan resolusi tidak
+// menggagalkan konstruksi: adapter dibangun tanpa project dan kegagalannya
+// tercatat, sama seperti ketiadaan resolver ini.
+func WithCodeAssistProjectResolver(r CodeAssistProjectResolver) FactoryOption {
+	return func(f *Factory) {
+		f.penyelesaiProject = r
 	}
 }
 
@@ -745,6 +777,26 @@ func (f *Factory) buatTarget(
 		})
 
 	case providers.KindGoogle:
+		// Project Code Assist (B-157): hanya target Antigravity yang
+		// membutuhkannya — predikatnya menyamai isAntigravity() milik
+		// adapter (host cloudcode-pa atau nama memuat "antigravity"),
+		// dinilai pada base URL FINAL sesudah pengarahan relay agar kedua
+		// lapisan tidak pernah berbeda pendapat tentang provider yang
+		// sama. Resolusi yang gagal dicatat lalu adapter dibangun tanpa
+		// project: daftar model generik tetap lebih baik daripada
+		// konstruksi yang gagal total.
+		project := ""
+		if f.penyelesaiProject != nil && cred != nil &&
+			(strings.Contains(baseURL, "cloudcode-pa.googleapis.com") ||
+				strings.Contains(strings.ToLower(t.Name), "antigravity")) {
+			pj, err := f.penyelesaiProject.ResolveCodeAssistProject(ctx, t.ID, cred.ID, rahasia)
+			if err != nil {
+				f.logger.WarnContext(ctx, "resolusi project code assist gagal; adapter dibangun tanpa project",
+					"provider_id", t.ID, "provider", t.Name, "error", err)
+			} else {
+				project = pj
+			}
+		}
 		return google.New(google.Config{
 			Name:         t.Name,
 			Kind:         t.Kind,
@@ -754,6 +806,7 @@ func (f *Factory) buatTarget(
 			SSRFPolicy:   kebijakan,
 			ProxyURL:     proxyURL,
 			ExtraHeaders: headerRelay,
+			Project:      project,
 		})
 
 	default:

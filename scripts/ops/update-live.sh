@@ -230,7 +230,7 @@ fi
 # Konfigurasi global operator tidak disentuh dan direktori lain tidak
 # dilemahkan perlindungannya.
 GIT_COMMIT="$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")"
-VERSION="$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" describe --tags --always 2>/dev/null || echo "v1.7.0-live")"
+VERSION="$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" describe --tags --always 2>/dev/null || echo "v1.7.1-live")"
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 echo "🔨 [2/5] Mengompilasi biner baru (${VERSION} @ ${GIT_COMMIT})..."

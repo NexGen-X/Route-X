@@ -93,8 +93,9 @@ fly secrets set \
 # Anda juga dapat menyetelnya secara eksplisit:
 # fly secrets set INITIAL_ADMIN_EMAIL="admin@domain.com" INITIAL_ADMIN_PASSWORD="<password>"
 
-# Wajib HANYA bila memakai integrasi Antigravity (Google OAuth): client
-# secret dibaca dari environment saja — tidak ada nilai tertanam di biner.
+# Opsional, HANYA untuk menimpa cadangan bawaan: integrasi Antigravity
+# (Google OAuth) membawa nilai client bawaan aplikasinya sebagai cadangan
+# otomatis di biner; setel env ini hanya bila perlu menimpa nilai itu.
 # fly secrets set ANTIGRAVITY_CLIENT_SECRET="<client-secret-antigravity>"
 ```
 

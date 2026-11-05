@@ -5,32 +5,87 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
-// TestAntigravitySecretHanyaDariEnv membuktikan fallback tertanam XOR sudah
-// dihapus (audit3 V-EO-24): tanpa env, fungsi mengembalikan string kosong dan
-// exchange/refresh client Antigravity gagal dengan pesan yang menunjuk env —
-// bukan diam-diam memakai rahasia publik dari biner.
-func TestAntigravitySecretHanyaDariEnv(t *testing.T) {
+// TestAntigravitySecretPrecedenceEnvVsCadangan membuktikan precedence
+// resolusi secret Antigravity sesudah keputusan B-156 (5 Nov 2026) yang
+// membatalkan B-036: env non-kosong selalu menang; env kosong/tidak disetel
+// memakai cadangan tertanam (cadanganClientSecretAntigravity) — bukan lagi
+// string kosong seperti pada masa B-036, ketika test pendahulu test ini
+// (TestAntigravitySecretHanyaDariEnv) mengunci perilaku "tanpa env =
+// kosong" dan refresh ditolak dengan error "belum disetel". Pesan kegagalan
+// di sini sengaja TIDAK mencetak nilai cadangan (nilai itu tidak boleh
+// mengalir ke log test); perbandingan dilakukan terhadap konstantanya.
+func TestAntigravitySecretPrecedenceEnvVsCadangan(t *testing.T) {
 	t.Setenv("ANTIGRAVITY_CLIENT_SECRET", "")
-	if got := GetDefaultAntigravityClientSecret(); got != "" {
-		t.Fatalf("tanpa env, GetDefaultAntigravityClientSecret() = %q, ingin kosong", got)
+	got := GetDefaultAntigravityClientSecret()
+	if got == "" {
+		t.Fatal("tanpa env, GetDefaultAntigravityClientSecret() kosong; ingin cadangan tertanam (B-156)")
+	}
+	if got != cadanganClientSecretAntigravity {
+		t.Fatal("tanpa env, GetDefaultAntigravityClientSecret() tidak sama dengan cadangan tertanam")
 	}
 
 	t.Setenv("ANTIGRAVITY_CLIENT_SECRET", "rahasia-dari-env-uji")
 	if got := GetDefaultAntigravityClientSecret(); got != "rahasia-dari-env-uji" {
-		t.Fatalf("dengan env, GetDefaultAntigravityClientSecret() = %q", got)
+		t.Fatalf("dengan env, GetDefaultAntigravityClientSecret() = %q, ingin nilai env", got)
+	}
+
+	// Env berisi spasi saja diperlakukan kosong -> cadangan yang berlaku.
+	t.Setenv("ANTIGRAVITY_CLIENT_SECRET", "   ")
+	if got := GetDefaultAntigravityClientSecret(); got != cadanganClientSecretAntigravity {
+		t.Fatal("env hanya spasi harus dianggap kosong dan memakai cadangan tertanam")
 	}
 }
 
-func TestRefreshAntigravityTanpaEnvDitolakJelas(t *testing.T) {
-	t.Setenv("ANTIGRAVITY_CLIENT_SECRET", "")
-	client := NewGoogleOAuthClient(nil)
-	_, err := client.RefreshAccessToken(context.Background(), "1//refresh", "", "")
-	if err == nil || !strings.Contains(err.Error(), "ANTIGRAVITY_CLIENT_SECRET") {
-		t.Fatalf("refresh tanpa env = %v, ingin error menyebut ANTIGRAVITY_CLIENT_SECRET", err)
+// TestExchangeRefreshPrecedenceSecretDiKawat membuktikan precedence yang
+// sama pada level protokol untuk KEDUA konsumen resolusi bersama
+// (lengkapiClientSecret): penukaran kode otorisasi dan refresh token
+// mengirim client_secret dari env bila env terisi, dan client_secret
+// cadangan tertanam bila env kosong. Server tiruan menolak secret yang
+// tidak cocok dengan harapan kasusnya, jadi keberhasilan panggilan adalah
+// buktinya; nilai yang terkirim tidak pernah dicetak.
+func TestExchangeRefreshPrecedenceSecretDiKawat(t *testing.T) {
+	kasus := []struct {
+		nama    string
+		env     string
+		harapan func() string
+	}{
+		{"env_kosong_memakai_cadangan", "", func() string { return cadanganClientSecretAntigravity }},
+		{"env_terisi_memakai_env", "rahasia-dari-env-uji", func() string { return "rahasia-dari-env-uji" }},
+	}
+	for _, k := range kasus {
+		t.Run(k.nama, func(t *testing.T) {
+			t.Setenv("ANTIGRAVITY_CLIENT_SECRET", k.env)
+			terlihat := map[string]bool{}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := r.ParseForm(); err != nil {
+					http.Error(w, `{"error":"bad_form"}`, http.StatusBadRequest)
+					return
+				}
+				grant := r.FormValue("grant_type")
+				terlihat[grant] = true
+				if r.FormValue("client_secret") != k.harapan() {
+					http.Error(w, `{"error":"invalid_client_secret"}`, http.StatusBadRequest)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"access_token":"akses-uji","expires_in":3600,"refresh_token":"1//refresh-uji","token_type":"Bearer"}`))
+			}))
+			defer srv.Close()
+
+			client := NewGoogleOAuthClient(srv.Client()).WithTokenEndpoint(srv.URL)
+			if _, err := client.ExchangeAuthCode(context.Background(), "4/kode-uji", "", "", ""); err != nil {
+				t.Fatalf("exchange grant_type=authorization_code gagal: %v", err)
+			}
+			if _, err := client.RefreshAccessToken(context.Background(), "1//refresh-uji", "", ""); err != nil {
+				t.Fatalf("refresh grant_type=refresh_token gagal: %v", err)
+			}
+			if !terlihat["authorization_code"] || !terlihat["refresh_token"] {
+				t.Fatalf("server tiruan tidak menerima kedua grant: %v", terlihat)
+			}
+		})
 	}
 }
 

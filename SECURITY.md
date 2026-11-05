@@ -32,5 +32,5 @@ How secrets are handled in code:
 
 - Keep `ENCRYPTION_KEY`, `API_KEY_PEPPER`, and `SESSION_SECRET` strong, private, and backed up separately from the database. Losing `ENCRYPTION_KEY` makes stored provider credentials unrecoverable; leaking `API_KEY_PEPPER` weakens every API key.
 - Do **not** rotate `API_KEY_PEPPER` routinely — rotating it invalidates all existing API keys. Follow the rotation procedures in the [Operations Runbook](docs/runbook-operasi.md) for the other secrets.
-- Set `ANTIGRAVITY_CLIENT_SECRET` from your environment if you use the Antigravity provider; it is never embedded in the binary.
+- The Antigravity/Google OAuth integration embeds Google's public desktop-app client value as an automatic fallback (non-secret by design for installed-app OAuth clients); set `ANTIGRAVITY_CLIENT_SECRET` in the server environment to override it.
 - Keep the host, PostgreSQL, and Redis patched, and upgrade Route-X promptly when a security fix is released.

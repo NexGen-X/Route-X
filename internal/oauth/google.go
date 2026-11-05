@@ -117,9 +117,10 @@ type TokenResult struct {
 
 // GoogleOAuthClient menangani pertukaran kode otorisasi dan pembaharuan token ke Google.
 type GoogleOAuthClient struct {
-	httpClient    *http.Client
-	defaultClient string
-	tokenEndpoint string
+	httpClient         *http.Client
+	defaultClient      string
+	tokenEndpoint      string
+	codeAssistEndpoint string
 }
 
 // NewGoogleOAuthClient membuat instance klien Google OAuth.
@@ -128,9 +129,10 @@ func NewGoogleOAuthClient(client *http.Client) *GoogleOAuthClient {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	return &GoogleOAuthClient{
-		httpClient:    client,
-		defaultClient: DefaultAntigravityClientID,
-		tokenEndpoint: GoogleTokenEndpoint,
+		httpClient:         client,
+		defaultClient:      DefaultAntigravityClientID,
+		tokenEndpoint:      GoogleTokenEndpoint,
+		codeAssistEndpoint: DefaultCodeAssistEndpoint,
 	}
 }
 

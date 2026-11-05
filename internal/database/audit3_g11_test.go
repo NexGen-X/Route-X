@@ -61,7 +61,7 @@ func TestMigrasiTertanamBerkesinambungan(t *testing.T) {
 	if err := checkMigrationContinuity(migs); err != nil {
 		t.Errorf("set tertanam tidak berkesinambungan: %v", err)
 	}
-	if got := migs[len(migs)-1].version; got != 22 {
-		t.Errorf("migrasi terakhir = %d, mau 22 (perbarui angka ini saat menambah migrasi)", got)
+	if got := migs[len(migs)-1].version; got != 23 {
+		t.Errorf("migrasi terakhir = %d, mau 23 (perbarui angka ini saat menambah migrasi)", got)
 	}
 }

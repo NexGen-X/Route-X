@@ -169,6 +169,23 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolusi project Code Assist (B-157): sesi yang baru terhubung
+	// langsung diselesaikan project-nya lewat loadCodeAssist dan disimpan,
+	// agar daftar model provider bersifat project-scoped sejak sync
+	// pertama. Kegagalan di sini TIDAK menggagalkan koneksi yang sudah
+	// berhasil — sesi tetap "connected" dan resolusi akan dicoba lagi
+	// secara malas pada pemakaian berikutnya (sync/factory); kegagalannya
+	// tercatat, bukan ditelan.
+	if project, perr := h.oauthClient.LoadCodeAssistProject(ctx, tokenRes.AccessToken.Reveal(), proxyURL); perr != nil {
+		h.logger.WarnContext(ctx, "resolusi project code assist setelah exchange oauth gagal; dicoba lagi pada pemakaian berikutnya",
+			"provider_id", providerID, "session_id", sessionMeta.ID, "error", perr)
+	} else if project != "" {
+		if uerr := h.oauthRepo.UpdateCodeAssistProject(ctx, sessionMeta.ID, project); uerr != nil {
+			h.logger.WarnContext(ctx, "gagal menyimpan project code assist setelah exchange oauth",
+				"provider_id", providerID, "session_id", sessionMeta.ID, "error", uerr)
+		}
+	}
+
 	// Otomatis sinkronkan kind & base_url ke endpoint resmi Gemini.
 	// Kegagalan dicatat keras (audit F5): sesi sudah tersimpan, jadi handler
 	// tetap "connected", tetapi operator harus tahu sinkronisasi provider

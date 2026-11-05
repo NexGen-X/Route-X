@@ -544,6 +544,9 @@ func buildGatewaySurface(
 	factory := gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
 		gateway.WithCredentialUseMarker(creds),
 		gateway.WithOAuthRefresher(penyegarOAuth),
+		// Project Code Assist untuk adapter Antigravity (B-157): resolusi
+		// + backfill malas lewat instance penyegar yang sama.
+		gateway.WithCodeAssistProjectResolver(penyegarOAuth),
 		// UPSTREAM_TIMEOUT dari config akhirnya benar-benar terpasang
 		// (audit3 V-LN-19).
 		gateway.WithDefaultTimeout(cfg.UpstreamTimeout))

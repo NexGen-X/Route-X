@@ -571,6 +571,7 @@ func (l *modelLifecycle) usang() bool {
 // Capabilities nil berarti upstream tidak menyediakan bukti kapabilitas.
 type modelDiscovery struct {
 	ID           string
+	DisplayName  string
 	Lifecycle    *modelLifecycle
 	Capabilities []string
 }
@@ -815,7 +816,18 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(discoveryURL, "http") {
 			discoveryURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
 		}
+		// Project Code Assist (B-157): daftar model upstream bersifat
+		// project-scoped — tanpa project, jawabannya hanya himpunan
+		// generik dan model tergating-project tidak pernah terlihat.
+		// Project diselesaikan dari sesi OAuth kredensial aktif (tersimpan
+		// atau backfill sekali lewat loadCodeAssist); kegagalan resolusi
+		// membiarkan body kosong seperti perilaku lama.
 		reqBody = strings.NewReader("{}")
+		if project := h.projectCodeAssistSync(ctx, p, activeCred, apiKey); project != "" {
+			if b, merr := json.Marshal(map[string]string{"project": project}); merr == nil {
+				reqBody = strings.NewReader(string(b))
+			}
+		}
 	} else if lowerKind == "google" || strings.Contains(trimmedBase, "generativelanguage.googleapis.com") {
 		discoveryURL = "https://generativelanguage.googleapis.com/v1beta/models"
 	} else if lowerKind == "ollama" || strings.Contains(lowerName, "ollama") {
@@ -896,7 +908,7 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 			var ollamaResp ollamaModelDiscoveryResponse
 			var googleResp googleModelDiscoveryResponse
 			var antigravityResp struct {
-				Models          map[string]any `json:"models"`
+				Models          map[string]json.RawMessage `json:"models"`
 				AgentModelSorts []struct {
 					Groups []struct {
 						ModelIDs []string `json:"modelIds"`
@@ -909,9 +921,20 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 			if isAntigravity && json.Unmarshal(bodyBytes, &antigravityResp) == nil && (len(antigravityResp.Models) > 0 || len(antigravityResp.AgentModelSorts) > 0) {
 				// Bentuk respons Antigravity yang teramati tidak menyediakan
 				// metadata lifecycle/kapabilitas per model yang bisa
-				// dipertanggungjawabkan — hanya ID yang diambil (B-089).
-				for id := range antigravityResp.Models {
-					ditemukan = append(ditemukan, modelDiscovery{ID: id})
+				// dipertanggungjawabkan — yang diambil ID-nya (B-089),
+				// ditambah displayName sebagai bukti nama tampilan sejak
+				// B-157. Nilai per model diurai longgar (RawMessage):
+				// satu nilai berbentuk tak dikenal tidak boleh menggagalkan
+				// pengambilan ID seluruh katalog.
+				for id, mentah := range antigravityResp.Models {
+					d := modelDiscovery{ID: id}
+					var info struct {
+						DisplayName string `json:"displayName"`
+					}
+					if json.Unmarshal(mentah, &info) == nil {
+						d.DisplayName = strings.TrimSpace(info.DisplayName)
+					}
+					ditemukan = append(ditemukan, d)
 				}
 				for _, sort := range antigravityResp.AgentModelSorts {
 					for _, g := range sort.Groups {
@@ -996,6 +1019,9 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 			if len(unik[len(unik)-1].Capabilities) == 0 {
 				unik[len(unik)-1].Capabilities = d.Capabilities
 			}
+			if unik[len(unik)-1].DisplayName == "" {
+				unik[len(unik)-1].DisplayName = d.DisplayName
+			}
 			continue
 		}
 		unik = append(unik, d)
@@ -1030,9 +1056,15 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 				caps = []string{upstream.CapText}
 				capsSource = "default_unverified"
 			}
+			// Nama tampilan dari bukti upstream bila ada (B-157); tanpa
+			// bukti, nama = ID seperti sebelumnya — tidak dikarang.
+			displayName := d.DisplayName
+			if displayName == "" {
+				displayName = mid
+			}
 			params := upstream.CreateModelParams{
 				ModelID:      mid,
-				DisplayName:  mid,
+				DisplayName:  displayName,
 				Capabilities: caps,
 				Metadata:     metadataSyncModel(nil, d.Lifecycle, capsSource),
 			}
@@ -1045,17 +1077,24 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 				// Bila balapan konkurensi, coba baca ulang
 				m, _ = h.modelRepo.GetByModelID(ctx, mid)
 			}
-		} else if err == nil && d.Lifecycle.ada() {
+		} else if err == nil && (d.Lifecycle.ada() || (d.DisplayName != "" && m.DisplayName == m.ModelID)) {
 			// Model yang sudah ada: lifecycle upstream DIPERTAHANKAN ke
 			// metadata (dan deprecated_at bila menandai usang) tanpa
 			// menyentuh kapabilitas/nama yang mungkin sudah diatur
-			// operator (B-089). Kegagalan pembaruan ini dicatat sebagai
+			// operator (B-089). Satu pengecualian nama sejak B-157: nama
+			// yang MASIH berupa ID mentah (belum pernah disentuh operator)
+			// diisi displayName upstream bila upstream kini
+			// menyediakannya — nama yang sudah diatur operator tidak
+			// pernah ditimpa. Kegagalan pembaruan ini dicatat sebagai
 			// gagal per-model, bukan ditelan.
 			params := upstream.UpdateModelParams{
 				Metadata: metadataSyncModel(m.Metadata, d.Lifecycle, ""),
 			}
 			if d.Lifecycle.usang() && m.DeprecatedAt == nil {
 				params.DeprecatedAt = upstream.Set(time.Now().UTC())
+			}
+			if d.DisplayName != "" && m.DisplayName == m.ModelID {
+				params.DisplayName = &d.DisplayName
 			}
 			if updated, uerr := h.modelRepo.Update(ctx, m.ID, params); uerr == nil {
 				m = updated
@@ -1106,6 +1145,53 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		Models:  syncedModels,
 		Message: pesan,
 	})
+}
+
+// projectCodeAssistSync menyelesaikan project Code Assist untuk jalur
+// sinkronisasi model admin (B-157).
+//
+// Nilai tersimpan pada sesi OAuth kredensial aktif dikembalikan apa adanya;
+// sesi yang project-nya kosong diselesaikan SEKALI lewat loadCodeAssist
+// memakai access token yang sama dengan yang dipakai discovery, lalu
+// disimpan pada sesi (backfill malas — sesi yang login sebelum fitur ini
+// ada sembuh tanpa login ulang). Setiap kegagalan menghasilkan "" dan sync
+// berlanjut generik dengan body kosong seperti perilaku lama; kegagalannya
+// tercatat, project tidak pernah dikarang.
+func (h *Handlers) projectCodeAssistSync(ctx context.Context, p *upstream.Provider, activeCred *upstream.ActiveCredential, apiKey string) string {
+	if h.oauthRepo == nil || activeCred == nil {
+		return ""
+	}
+	meta, err := h.oauthRepo.GetSessionByCredentialID(ctx, activeCred.ID)
+	if err != nil {
+		if !errors.Is(err, repo.ErrNotFound) {
+			h.logger.WarnContext(ctx, "gagal memuat sesi oauth untuk resolusi project code assist",
+				"provider_id", p.ID, "error", err)
+		}
+		return ""
+	}
+	if !meta.Enabled {
+		return ""
+	}
+	if meta.CodeAssistProject != nil && *meta.CodeAssistProject != "" {
+		return *meta.CodeAssistProject
+	}
+	if h.oauthClient == nil || apiKey == "" {
+		return ""
+	}
+	project, err := h.oauthClient.LoadCodeAssistProject(ctx, apiKey, security.Secret(""))
+	if err != nil {
+		h.logger.WarnContext(ctx, "loadCodeAssist gagal saat sinkronisasi model; sync berlanjut tanpa project",
+			"provider_id", p.ID, "error", err)
+		return ""
+	}
+	if project == "" {
+		return ""
+	}
+	if err := h.oauthRepo.UpdateCodeAssistProject(ctx, meta.ID, project); err != nil {
+		h.logger.WarnContext(ctx, "gagal menyimpan project code assist hasil resolusi sync",
+			"provider_id", p.ID, "error", err)
+	}
+	return project
 }
 
 // listProviderModels mengembalikan daftar pemetaan model yang terhubung ke provider tertentu.

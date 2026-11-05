@@ -85,6 +85,12 @@ type Config struct {
 	ProxyURL security.Secret
 	// ExtraHeaders adalah header tambahan dari operator.
 	ExtraHeaders map[string]string
+	// Project adalah project Code Assist (cloudaicompanionProject) milik
+	// sesi OAuth di balik kredensial ini; hanya bermakna untuk Antigravity
+	// (B-157). Kosong berarti project belum/tidak terselesaikan dan adapter
+	// berperilaku generik seperti sebelumnya: fetchAvailableModels dipanggil
+	// dengan body kosong dan amplop generate membawa project kosong.
+	Project string
 }
 
 // Provider adalah adapter Gemini generateContent API.
@@ -94,6 +100,8 @@ type Provider struct {
 	baseURL    string
 	credential security.Secret
 	headers    map[string]string
+	// project adalah project Code Assist dari Config (B-157).
+	project string
 
 	client *http.Client
 	// streamClient tidak memasang http.Client.Timeout; batas itu mencakup pembacaan body.
@@ -158,6 +166,7 @@ func New(cfg Config) (*Provider, error) {
 		baseURL:       strings.TrimRight(base, "/"),
 		credential:    cfg.Credential,
 		headers:       headers,
+		project:       strings.TrimSpace(cfg.Project),
 		client:        client,
 		streamClient:  streamClient,
 		healthTimeout: healthTimeoutFor(cfg.Timeout),
@@ -227,6 +236,23 @@ var (
 
 // endpoint menyusun URL absolut satu endpoint Gemini.
 func (p *Provider) endpoint(path string) string { return providers.JoinURL(p.baseURL, path) }
+
+// modelsRequestBody menyusun body fetchAvailableModels Antigravity.
+//
+// Daftar model upstream bersifat project-scoped: dengan project Code Assist
+// yang terselesaikan, body membawa {"project": "..."} agar model
+// tergating-project ikut ditawarkan; tanpa project, body tetap "{}" persis
+// perilaku lama (B-157).
+func (p *Provider) modelsRequestBody() []byte {
+	if p.project == "" {
+		return []byte("{}")
+	}
+	body, err := json.Marshal(map[string]string{"project": p.project})
+	if err != nil {
+		return []byte("{}")
+	}
+	return body
+}
 
 // methodURL menyusun URL satu method model, mis. ":generateContent".
 //
@@ -407,7 +433,7 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 		modelName := strings.TrimPrefix(req.Model, "models/")
 		envelope := map[string]any{
 			"model":   modelName,
-			"project": "",
+			"project": p.project,
 			"request": reqObj,
 		}
 		envelopeBytes, err := json.Marshal(envelope)
@@ -558,7 +584,7 @@ func (p *Provider) postJSON(ctx context.Context, endpoint string, body []byte, o
 func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 	if p.isAntigravity() {
 		endpoint := p.endpoint("/v1internal:fetchAvailableModels")
-		resp, err := p.do(ctx, p.client, http.MethodPost, endpoint, []byte("{}"), "application/json")
+		resp, err := p.do(ctx, p.client, http.MethodPost, endpoint, p.modelsRequestBody(), "application/json")
 		if err != nil {
 			return nil, err
 		}
@@ -673,7 +699,7 @@ func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 	start := time.Now()
 	if p.isAntigravity() {
 		endpoint := p.endpoint("/v1internal:fetchAvailableModels")
-		resp, err := p.do(ctx, p.client, http.MethodPost, endpoint, []byte("{}"), "application/json")
+		resp, err := p.do(ctx, p.client, http.MethodPost, endpoint, p.modelsRequestBody(), "application/json")
 		latency := time.Since(start)
 		if err != nil {
 			res := providers.HealthResult{Healthy: false, Latency: latency, ErrorKind: providers.ErrKindUnknown}

@@ -848,7 +848,9 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("Accept", "application/json")
 	if isAntigravity {
-		req.Header.Set("User-Agent", "antigravity/1.0.0")
+		// User-Agent hub adalah penentu katalog fetchAvailableModels
+		// (B-157 tahap 4): nilai lain menerima himpunan generik.
+		req.Header.Set("User-Agent", providers.AntigravityHubUserAgent)
 		req.Header.Set("Content-Type", "application/json")
 	} else {
 		req.Header.Set("User-Agent", "Route-X-Discovery/1.0")

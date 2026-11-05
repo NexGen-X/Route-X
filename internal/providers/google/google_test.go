@@ -832,8 +832,11 @@ func TestAntigravityMode(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/v1internal:fetchAvailableModels" && r.Method == http.MethodPost {
 				called = true
-				if ua := r.Header.Get("User-Agent"); ua != "antigravity/1.0.0" {
-					t.Errorf("User-Agent = %q, ingin antigravity/1.0.0", ua)
+				// HealthCheck adalah panggilan discovery: User-Agent-nya
+				// User-Agent hub penentu katalog (B-157 tahap 4), bukan
+				// User-Agent bawaan adapter untuk generate.
+				if ua := r.Header.Get("User-Agent"); ua != providers.AntigravityHubUserAgent {
+					t.Errorf("User-Agent = %q, ingin %q", ua, providers.AntigravityHubUserAgent)
 				}
 				if auth := r.Header.Get("Authorization"); auth != "Bearer ya29.test" {
 					t.Errorf("Authorization = %q, ingin Bearer ya29.test", auth)

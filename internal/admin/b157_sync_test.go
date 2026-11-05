@@ -14,6 +14,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/gateway"
 	"github.com/NexGen-X/Route-X/internal/oauth"
+	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/security"
 )
 
@@ -36,6 +37,7 @@ func TestSyncModelsAntigravityProjectDanDisplayName(t *testing.T) {
 	var mu sync.Mutex
 	panggilanLoad := 0
 	var bodyDiscovery [][]byte
+	var uaDiscovery []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mentah, _ := io.ReadAll(r.Body)
 		mu.Lock()
@@ -47,6 +49,7 @@ func TestSyncModelsAntigravityProjectDanDisplayName(t *testing.T) {
 			_, _ = w.Write([]byte(`{"cloudaicompanionProject":"proj-b157"}`))
 		case strings.HasSuffix(r.URL.Path, ":fetchAvailableModels"):
 			bodyDiscovery = append(bodyDiscovery, mentah)
+			uaDiscovery = append(uaDiscovery, r.Header.Get("User-Agent"))
 			mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
@@ -147,6 +150,11 @@ func TestSyncModelsAntigravityProjectDanDisplayName(t *testing.T) {
 	if kiriman["project"] != "proj-b157" {
 		t.Errorf("body discovery project = %v, ingin proj-b157 (body %s)", kiriman["project"], bodyDiscovery[0])
 	}
+	// User-Agent discovery adalah kunci katalog B-157 tahap 4: handler
+	// sync wajib mengirim konstanta hub bersama, bukan UA generik.
+	if len(uaDiscovery) != 1 || uaDiscovery[0] != providers.AntigravityHubUserAgent {
+		t.Errorf("User-Agent discovery pertama = %v, ingin tepat [%q]", uaDiscovery, providers.AntigravityHubUserAgent)
+	}
 	mu.Unlock()
 
 	// Project tersimpan pada sesi.
@@ -189,5 +197,8 @@ func TestSyncModelsAntigravityProjectDanDisplayName(t *testing.T) {
 	}
 	if kiriman["project"] != "proj-b157" {
 		t.Errorf("body discovery kedua project = %v, ingin proj-b157", kiriman["project"])
+	}
+	if len(uaDiscovery) != 2 || uaDiscovery[1] != providers.AntigravityHubUserAgent {
+		t.Errorf("User-Agent discovery kedua = %v, ingin elemen kedua %q", uaDiscovery, providers.AntigravityHubUserAgent)
 	}
 }

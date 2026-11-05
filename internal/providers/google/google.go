@@ -580,11 +580,36 @@ func (p *Provider) postJSON(ctx context.Context, endpoint string, body []byte, o
 	return nil
 }
 
+// fetchAvailableModels memanggil discovery model Antigravity
+// (POST /v1internal:fetchAvailableModels) dengan body project
+// terselesaikan dan mengembalikan respons yang body-nya belum dibaca.
+//
+// User-Agent panggilan ini dipaksa ke providers.AntigravityHubUserAgent:
+// User-Agent adalah penentu katalog yang dikembalikan upstream (B-157
+// tahap 4) — dengan User-Agent bawaan adapter, upstream menjawab
+// himpunan generik yang lebih kecil. Hanya panggilan discovery yang
+// lewat sini; generate/stream mempertahankan perilaku header lamanya.
+func (p *Provider) fetchAvailableModels(ctx context.Context) (*http.Response, error) {
+	req, err := p.newRequest(ctx, http.MethodPost, p.endpoint("/v1internal:fetchAvailableModels"), p.modelsRequestBody(), "application/json")
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", providers.AntigravityHubUserAgent)
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, providers.FromTransport(p.name, err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		defer resp.Body.Close()
+		return nil, p.errorFromResponse(resp)
+	}
+	return resp, nil
+}
+
 // Models mengambil daftar model dari provider.
 func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 	if p.isAntigravity() {
-		endpoint := p.endpoint("/v1internal:fetchAvailableModels")
-		resp, err := p.do(ctx, p.client, http.MethodPost, endpoint, p.modelsRequestBody(), "application/json")
+		resp, err := p.fetchAvailableModels(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -698,8 +723,7 @@ func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 
 	start := time.Now()
 	if p.isAntigravity() {
-		endpoint := p.endpoint("/v1internal:fetchAvailableModels")
-		resp, err := p.do(ctx, p.client, http.MethodPost, endpoint, p.modelsRequestBody(), "application/json")
+		resp, err := p.fetchAvailableModels(ctx)
 		latency := time.Since(start)
 		if err != nil {
 			res := providers.HealthResult{Healthy: false, Latency: latency, ErrorKind: providers.ErrKindUnknown}

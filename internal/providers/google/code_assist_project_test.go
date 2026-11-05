@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/security"
 )
 
@@ -72,6 +73,43 @@ func TestModelsAntigravityMeneruskanProject(t *testing.T) {
 	}
 	if got := string(log2.raw(t, 0)); got != "{}" {
 		t.Errorf("body tanpa project = %s, ingin {}", got)
+	}
+}
+
+// TestDiscoveryAntigravityUserAgentHub membuktikan kunci katalog
+// B-157 tahap 4 di lapisan adapter: kedua panggilan fetchAvailableModels
+// (Models dan HealthCheck) mengirim User-Agent hub Antigravity persis
+// seperti konstanta bersama, sedangkan panggilan generate
+// mempertahankan User-Agent bawaan adapter — cakupan perubahan memang
+// hanya discovery, sesuai bukti kontrol tahap 4 (User-Agent adalah
+// penentu tunggal; header lain tidak ditambahkan).
+func TestDiscoveryAntigravityUserAgentHub(t *testing.T) {
+	p, log := newAntigravityServer(t, "proj-b157", jsonHandler(http.StatusOK, daftarModelAntigravity))
+	if _, err := p.Models(context.Background()); err != nil {
+		t.Fatalf("Models: %v", err)
+	}
+	if ua := log.Header("User-Agent"); ua != providers.AntigravityHubUserAgent {
+		t.Errorf("User-Agent Models = %q, ingin %q", ua, providers.AntigravityHubUserAgent)
+	}
+
+	p2, log2 := newAntigravityServer(t, "proj-b157", jsonHandler(http.StatusOK, daftarModelAntigravity))
+	if res := p2.HealthCheck(context.Background()); !res.Healthy {
+		t.Fatalf("health check tidak sehat: %+v", res)
+	}
+	if ua := log2.Header("User-Agent"); ua != providers.AntigravityHubUserAgent {
+		t.Errorf("User-Agent HealthCheck = %q, ingin %q", ua, providers.AntigravityHubUserAgent)
+	}
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"response": `+textResponse+`}`)
+	}
+	p3, log3 := newAntigravityServer(t, "proj-b157", handler)
+	if _, err := p3.ChatCompletion(context.Background(), simpleRequest()); err != nil {
+		t.Fatalf("ChatCompletion: %v", err)
+	}
+	if ua := log3.Header("User-Agent"); ua != "antigravity/1.0.0" {
+		t.Errorf("User-Agent generate = %q, ingin tetap antigravity/1.0.0 (perubahan hanya discovery)", ua)
 	}
 }
 

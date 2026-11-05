@@ -26,6 +26,20 @@ const (
 	KindCustom           = "custom"
 )
 
+// AntigravityHubUserAgent adalah User-Agent klien hub Antigravity yang
+// dikirim pada panggilan fetchAvailableModels (discovery model), dirujuk
+// bersama oleh handler sync admin dan adapter Google.
+//
+// Pembuktian bertahap B-157 tahap 4 (5 Nov 2026) menunjukkan User-Agent
+// adalah penentu tunggal katalog yang dikembalikan upstream untuk token
+// yang sama: dengan nilai ini fetchAvailableModels mengembalikan katalog
+// lengkap akun (pada akun Pro Arpay: 26 model termasuk keluarga
+// Gemini 4 Argon); dengan User-Agent lain upstream mengembalikan
+// himpunan generik yang lebih kecil (20 model). Nilai ini adalah
+// snapshot bukti tangkapan klien hub resmi saat itu; perbarui hanya dari
+// bukti baru, bukan tebakan.
+const AntigravityHubUserAgent = "antigravity/hub/2.24.0 darwin/arm64"
+
 // Role pengirim pesan.
 type Role string
 

@@ -2488,7 +2488,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReferencePriceCatalogDTO'
         default:
-          $ref: '#/components/responses/Error'
+          description: Galat tak terduga dari server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /api/admin/upstreams/models/mappings/{mapping_id}/pricing/reference:
     get:
       tags:
@@ -5878,7 +5882,7 @@ components:
               enum: [minimal, low, medium, high]
         text:
           type: object
-          description: Hanya format yang dibaca ({type: text|json_object|json_schema, name, schema, strict}).
+          description: 'Hanya format yang dibaca ({type: text|json_object|json_schema, name, schema, strict}).'
           properties:
             format:
               type: object
@@ -5920,7 +5924,7 @@ components:
           nullable: true
         incomplete_details:
           nullable: true
-          description: Terisi {reason: "max_output_tokens"} bila status incomplete.
+          description: 'Terisi {reason: "max_output_tokens"} bila status incomplete.'
         usage:
           type: object
           properties:

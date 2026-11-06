@@ -453,7 +453,13 @@ func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, provi
 			} else if id, ok := modelMap[raw]; ok {
 				resolvedModelIDs = append(resolvedModelIDs, id)
 			} else {
-				resolvedModelIDs = append(resolvedModelIDs, raw)
+				// Slug yang tidak terpecahkan TIDAK boleh diteruskan
+				// mentah (B-201): ia akan meledak sebagai 22P02 pada
+				// unnest(uuid[]) dan terbaca 500, padahal ini referensi
+				// tak dikenal — kesalahan klien yang harus disebut
+				// nilainya. Transaksi pemanggil membatalkan seluruh
+				// penggantian, jadi daftar lama tidak rusak sebagian.
+				return fmt.Errorf("model_ids: model %q tidak ditemukan: %w", raw, repo.ErrInvalidReference)
 			}
 		}
 
@@ -512,7 +518,10 @@ func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, provi
 			} else if id, ok := providerMap[raw]; ok {
 				resolvedProviderIDs = append(resolvedProviderIDs, id)
 			} else {
-				resolvedProviderIDs = append(resolvedProviderIDs, raw)
+				// Sama seperti model di atas (B-201): nama provider yang
+				// tidak terpecahkan ditolak dengan nilainya disebut,
+				// bukan diteruskan mentah ke unnest(uuid[]).
+				return fmt.Errorf("provider_ids: provider %q tidak ditemukan: %w", raw, repo.ErrInvalidReference)
 			}
 		}
 

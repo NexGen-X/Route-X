@@ -437,5 +437,9 @@ func (h *Handlers) setProviderCredentialStrategy(w http.ResponseWriter, r *http.
 		"credential_strategy": req.Strategy,
 	})
 
+	// Strategi kredensial mengubah akun hulu mana yang melayani —
+	// konteks jawaban berubah tanpa mengubah sidik rute (B-258).
+	h.kosongkanCacheRespons(ctx)
+
 	_ = h.respond(w, r, http.StatusOK, toProviderDTO(p))
 }

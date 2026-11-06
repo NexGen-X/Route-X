@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net"
+	"reflect"
 	"sync"
 	"time"
 
@@ -892,6 +893,26 @@ func dikecualikanDariPencatatanBreaker(err *providers.Error) bool {
 // cobaKandidat mengulang satu kandidat sampai berhasil, kehabisan percobaan, atau menemui
 // kegagalan yang tidak boleh diulang.
 //
+// hasilNil melaporkan apakah hasil adapter adalah nil — termasuk nil
+// bertipe (typed nil) yang lolos dari pemeriksaan antarmuka biasa
+// (B-335): adapter mengembalikan *ChatResponse nil di dalam
+// antarmuka, dan == nil pada nilainya sendiri tidak menangkapnya.
+// T pada executor selalu pointer hasil atau providers.Stream, jadi
+// refleksi di sini terbatas pada jenis yang memang bisa nil; nilai
+// bukan-pointer yang sah tidak pernah dilaporkan nil.
+func hasilNil[T any](v T) bool {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() {
+		return true
+	}
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice, reflect.Chan, reflect.Func:
+		return rv.IsNil()
+	default:
+		return false
+	}
+}
+
 // Fungsi bebas, bukan method, karena Go tidak mengizinkan method bergenerik.
 //
 // Selalu mengembalikan minimal satu Attempt, sehingga pemanggil boleh membaca elemen
@@ -972,6 +993,24 @@ func cobaKandidat[T any](
 			ProviderModelID: c.ProviderModelID, UpstreamModel: c.UpstreamModelName,
 			Nth: n, Started: mulai, Duration: time.Since(mulai),
 			BreakerState: state,
+		}
+
+		if perr == nil && hasilNil(nilai) {
+			// B-335: adapter yang mengembalikan (nil, nil) melanggar
+			// kontrak Provider, dan jalur sukses di bawah akan
+			// mengeluarkannya sebagai Outcome sukses ber-Value nil —
+			// handler lalu men-dereference-nya dan panic. Invariant
+			// executor sendiri ("Outcome tanpa Err dan tanpa Value
+			// TIDAK boleh keluar") sebelumnya hanya ditegakkan pada
+			// jalur semua-kandidat-gagal; kini hasil nil tanpa error
+			// diperlakukan sebagai kegagalan percobaan berkind
+			// server, dengan pencatatan breaker dan percobaan ulang
+			// yang sama seperti kegagalan upstream biasa.
+			perr = &providers.Error{
+				Kind:     providers.ErrKindServer,
+				Provider: c.ProviderName,
+				Message:  "adapter mengembalikan respons kosong (nil) tanpa error",
+			}
 		}
 
 		if perr == nil {

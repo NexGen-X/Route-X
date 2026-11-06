@@ -448,25 +448,33 @@ func decodePesanAnthropic(m anthropicMsg) ([]providers.Message, error) {
 
 // teksSystemAnthropic mengekstrak teks dari field system (string atau daftar
 // block teks) pada body Anthropic.
-func teksSystemAnthropic(raw json.RawMessage) string {
+//
+// B-337: kesalahan unmarshal kini DIKEMBALIKAN, bukan ditelan. Versi
+// lama mengembalikan "" untuk bentuk apa pun yang tak terurai —
+// system berbentuk block dengan text bukan-string ter-decode
+// "sukses" dengan system prompt hilang senyap, sementara kesalahan
+// decode di tempat lain pada permukaan yang sama adalah 400.
+// Bentuk kosong yang sah (tidak ada field, null, larik kosong)
+// tetap "" tanpa error.
+func teksSystemAnthropic(raw json.RawMessage) (string, error) {
 	if len(raw) == 0 {
-		return ""
+		return "", nil
 	}
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
+		return s, nil
 	}
 	var blocks []anthropicBlock
-	if err := json.Unmarshal(raw, &blocks); err == nil {
-		var parts []string
-		for _, b := range blocks {
-			if b.Type == "text" && b.Text != "" {
-				parts = append(parts, b.Text)
-			}
-		}
-		return strings.Join(parts, "\n\n")
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return "", fmt.Errorf("field 'system' tidak sah: %w", pesanDecodeAnthropic(err))
 	}
-	return ""
+	var parts []string
+	for _, b := range blocks {
+		if b.Type == "text" && b.Text != "" {
+			parts = append(parts, b.Text)
+		}
+	}
+	return strings.Join(parts, "\n\n"), nil
 }
 
 // DecodeAnthropicMessagesRequest menerjemahkan permintaan Anthropic Messages API ke bentuk kanonik providers.ChatRequest.
@@ -547,6 +555,15 @@ func decodeAnthropicMessagesRequest(body []byte, wajibMaxTokens bool) (*provider
 		out.User = aReq.Metadata.UserID
 	}
 	if aReq.Thinking != nil && aReq.Thinking.Type != "" {
+		// B-338: budget_tokens negatif adalah satu-satunya nilai tak
+		// sah untuk field ini, dan dulu satu-satunya validasi numerik
+		// yang hilang (temperature/top_p/top_k semuanya divalidasi).
+		// Nol TIDAK ditolak: field ini int polos, jadi 0 tak
+		// terbedakan dari "tidak disetel" — menolaknya menghukum
+		// klien yang mengirim type "enabled" tanpa budget.
+		if aReq.Thinking.BudgetTokens < 0 {
+			return nil, fmt.Errorf("field 'thinking.budget_tokens' tidak boleh negatif: %d", aReq.Thinking.BudgetTokens)
+		}
 		switch aReq.Thinking.Type {
 		case "enabled", "disabled", "adaptive":
 			// "adaptive" DITERIMA di sini (B-096): decode belum tahu upstream
@@ -584,8 +601,12 @@ func decodeAnthropicMessagesRequest(body []byte, wajibMaxTokens bool) (*provider
 	// permintaan yang sama berarti dua hal berbeda tergantung upstream yang
 	// melayaninya (audit3 V-GW-33).
 	var sistem []string
-	if t := teksSystemAnthropic(aReq.System); t != "" {
-		sistem = append(sistem, t)
+	teksSistem, err := teksSystemAnthropic(aReq.System)
+	if err != nil {
+		return nil, err
+	}
+	if teksSistem != "" {
+		sistem = append(sistem, teksSistem)
 	}
 
 	for _, m := range aReq.Messages {
@@ -601,11 +622,35 @@ func decodeAnthropicMessagesRequest(body []byte, wajibMaxTokens bool) (*provider
 			}
 			continue
 		}
+		// B-334: peran selain user/assistant (system sudah ditangani
+		// di atas) ditolak di pintu dengan menyebut perannya. Dulu
+		// peran asing — dan peran "" — diteruskan apa adanya ke
+		// bentuk kanonik, tidak seperti decoder Messages OpenAI
+		// yang menolaknya; upstream lalu menerima pesan berperan
+		// karangan atau tanpa peran.
+		if m.Role != "user" && m.Role != "assistant" {
+			return nil, fmt.Errorf("role pesan %q tidak dikenal; gunakan \"user\" atau \"assistant\"", m.Role)
+		}
 		msgs, err := decodePesanAnthropic(m)
 		if err != nil {
 			return nil, err
 		}
 		out.Messages = append(out.Messages, msgs...)
+	}
+
+	// B-331: sesudah penguraian, nol pesan percakapan berarti
+	// permintaan ini tidak sah — messages hilang/kosong, atau setiap
+	// pesan menguap saat decode (content "" / [] menghasilkan
+	// (nil, nil) dari decodePesanAnthropic). Meloloskannya
+	// meneruskan permintaan nol-percakapan ke upstream dan
+	// mencatat penolakannya sebagai kegagalan provider. System
+	// prompt saja tidak menyelamatkan permintaan: yang dihitung
+	// hanya pesan percakapan (pesan system dalam daftar sudah
+	// dialihkan ke `sistem` di atas). Pemeriksaan ini hidup di
+	// pengurai bersama, jadi count_tokens — yang memakai pengurai
+	// yang sama — tunduk pada kontrak yang sama.
+	if len(out.Messages) == 0 {
+		return nil, errors.New("messages tidak boleh kosong: sertakan minimal satu pesan user atau assistant")
 	}
 
 	if len(sistem) > 0 {

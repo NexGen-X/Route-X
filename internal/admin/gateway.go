@@ -295,6 +295,24 @@ func tolakAliasYatim(alias string, pipeline []byte) error {
 	return fmt.Errorf("virtual_alias %q wajib disertai pipeline combo; kirim pipeline atau kosongkan virtual_alias", alias)
 }
 
+// tolakAliasTanpaModel menolak alias yang disertai pipeline tetapi
+// tanpa match_model_id (B-165).
+//
+// Resolusi nama di permukaan chat (engine.FindRuleTargetModelID)
+// hanya mengembalikan target bila aturan memiliki MatchModelID —
+// alias + pipeline saja tidak pernah cukup, terbukti live: combo
+// tanpa model target menjawab 404 model_not_found untuk setiap
+// panggilan, dan 404 resolusi itu bahkan tidak tercatat di tabel
+// requests. Menolaknya di jalur tulis menyelaraskan validasi simpan
+// dengan kenyataan resolusi: operator menerima 400 yang menyebut
+// syaratnya, bukan endpoint virtual mati yang tampak sah.
+func tolakAliasTanpaModel(alias, matchModelID string) error {
+	if alias == "" || strings.TrimSpace(matchModelID) != "" {
+		return nil
+	}
+	return fmt.Errorf("virtual_alias %q wajib disertai match_model_id; alias combo harus menunjuk model target (jangkar resolusi) atau kosongkan virtual_alias", alias)
+}
+
 func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req createRoutingRuleReq
@@ -315,6 +333,17 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 	_, alias := aliasPermintaan(req.VirtualAlias)
 	if err := tolakAliasYatim(alias, pipeline); err != nil {
 		httpx.BadRequest(w, r, "alias_tanpa_pipeline", err.Error())
+		return
+	}
+	// Nilai efektif yang benar-benar akan disimpan adalah hasil
+	// cleanUUID — string non-UUID tersimpan sebagai NULL, jadi
+	// pemeriksaan B-165 berjalan atas nilai efektif itu.
+	matchModel := ""
+	if v := cleanUUID(req.MatchModelID); v != nil {
+		matchModel = *v
+	}
+	if err := tolakAliasTanpaModel(alias, matchModel); err != nil {
+		httpx.BadRequest(w, r, "alias_tanpa_model", err.Error())
 		return
 	}
 	if err := h.pastikanAliasBebas(ctx, alias, ""); err != nil {
@@ -454,6 +483,14 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.MatchModelID != nil {
 		modelAkhir = strings.TrimSpace(*req.MatchModelID)
+	}
+	// B-165 di jalur ubah berjalan atas keadaan AKHIR gabungan:
+	// menghapus match_model_id dari aturan ber-alias (atau memberi
+	// alias ke aturan bermodel kosong) sama mematikannya dengan
+	// membuat combo tanpa model sejak awal.
+	if err := tolakAliasTanpaModel(aliasAkhir, modelAkhir); err != nil {
+		httpx.BadRequest(w, r, "alias_tanpa_model", err.Error())
+		return
 	}
 
 	var p upstream.UpdateRoutingRuleParams

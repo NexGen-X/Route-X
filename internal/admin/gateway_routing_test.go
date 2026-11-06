@@ -30,13 +30,20 @@ type routingRuleResp struct {
 }
 
 // simpanAlias adalah singkatan untuk membuat aturan combo lengkap dipakai beberapa test.
-func simpanAlias(t *testing.T, client *adminClient, nama, alias string) *routingRuleResp {
+// Sejak B-165 alias wajib disertai match_model_id (jangkar resolusi), jadi helper
+// menanam UUID model gpt-5 yang di-seed setupTestEnv.
+func simpanAlias(t *testing.T, env *testEnv, client *adminClient, nama, alias string) *routingRuleResp {
 	t.Helper()
+	var model string
+	if err := env.pool.QueryRow(context.Background(), "select id from models where model_id = 'gpt-5' limit 1").Scan(&model); err != nil {
+		t.Fatalf("cari UUID model gpt-5: %v", err)
+	}
 	res, body := client.do(http.MethodPost, "/api/admin/gateway/routing-rules", map[string]any{
-		"name":          nama,
-		"strategy":      "priority",
-		"virtual_alias": alias,
-		"pipeline":      pipelineValid,
+		"name":           nama,
+		"strategy":       "priority",
+		"match_model_id": model,
+		"virtual_alias":  alias,
+		"pipeline":       pipelineValid,
 	}, true)
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("buat %q gagal: status %d, body: %s", nama, res.StatusCode, string(body))
@@ -94,7 +101,7 @@ func TestCreateRoutingRuleDenganPipelineDanAlias(t *testing.T) {
 	client := env.newClient(t)
 	client.login("superadmin@routex.internal", testPassword)
 
-	got := simpanAlias(t, client, "Combo Uji Alias", "murah-cerdas")
+	got := simpanAlias(t, env, client, "Combo Uji Alias", "murah-cerdas")
 
 	if got.Pipeline == nil || got.Pipeline.Strategy != "round_robin" {
 		t.Fatalf("Pipeline DTO = %+v, mau round_robin", got.Pipeline)
@@ -155,6 +162,70 @@ func TestCreateRoutingRuleAliasYatimDitolak(t *testing.T) {
 	}
 }
 
+// TestCreateRoutingRuleAliasTanpaModelDitolak mengunci B-165 di jalur buat:
+// alias + pipeline TANPA match_model_id lolos validasi lama, tetapi resolusi
+// nama tidak pernah mengembalikannya (404 model_not_found untuk setiap
+// panggilan, terbukti live di v1.7.4). Jalur tulis sekarang menolaknya 400
+// dengan pesan yang menyebut match_model_id, sebelum aturan tersimpan.
+func TestCreateRoutingRuleAliasTanpaModelDitolak(t *testing.T) {
+	env := setupTestEnv(t)
+	client := env.newClient(t)
+	client.login("superadmin@routex.internal", testPassword)
+
+	res, body := client.do(http.MethodPost, "/api/admin/gateway/routing-rules", map[string]any{
+		"name":          "Combo Tanpa Model",
+		"strategy":      "priority",
+		"virtual_alias": "tanpa-model",
+		"pipeline":      pipelineValid,
+	}, true)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, mau 400 (alias tanpa match_model_id), body: %s", res.StatusCode, string(body))
+	}
+	if !strings.Contains(string(body), "match_model_id") {
+		t.Errorf("pesan 400 tidak menyebut syarat match_model_id: %s", string(body))
+	}
+
+	// Aturan TIDAK tersimpan.
+	resList, bodyList := client.do(http.MethodGet, "/api/admin/gateway/routing-rules", nil, false)
+	if resList.StatusCode != http.StatusOK {
+		t.Fatalf("list rules status = %d", resList.StatusCode)
+	}
+	if strings.Contains(string(bodyList), "Combo Tanpa Model") {
+		t.Error("aturan alias tanpa model tersimpan di database; seharusnya ditolak")
+	}
+}
+
+// TestUpdateRoutingRuleAliasTanpaModelDitolak mengunci B-165 di jalur ubah
+// atas keadaan AKHIR gabungan: mengosongkan match_model_id pada aturan yang
+// ber-alias ditolak 400, sementara ubahan sebagian yang tidak menyentuh
+// model (keadaan akhir tetap sah) tetap diterima.
+func TestUpdateRoutingRuleAliasTanpaModelDitolak(t *testing.T) {
+	env := setupTestEnv(t)
+	client := env.newClient(t)
+	client.login("superadmin@routex.internal", testPassword)
+
+	got := simpanAlias(t, env, client, "Combo Ubah Model", "ubah-model")
+
+	res, body := client.do(http.MethodPut,
+		"/api/admin/gateway/routing-rules/"+got.ID,
+		map[string]any{"match_model_id": ""}, true)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, mau 400 (mengosongkan model pada aturan ber-alias), body: %s", res.StatusCode, string(body))
+	}
+	if !strings.Contains(string(body), "match_model_id") {
+		t.Errorf("pesan 400 tidak menyebut syarat match_model_id: %s", string(body))
+	}
+
+	// Ubahan sebagian yang tidak menyentuh model tetap sah: keadaan
+	// akhir (alias + model lama) tidak berubah.
+	res, body = client.do(http.MethodPut,
+		"/api/admin/gateway/routing-rules/"+got.ID,
+		map[string]any{"description": "ubahan sebagian tanpa menyentuh model"}, true)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, mau 200 untuk ubahan sebagian yang sah, body: %s", res.StatusCode, string(body))
+	}
+}
+
 // TestCreateRoutingRuleAliasGandaRollback: dua aturan memakai alias yang sama. Yang kedua
 // wajib gagal, DAN gagalnya itu membatalkan seluruh transaksi — aturan kedua tidak boleh
 // ada meski insert baris aturan dilakukan lebih dulu daripada penolakan unik index.
@@ -166,13 +237,21 @@ func TestCreateRoutingRuleAliasGandaRollback(t *testing.T) {
 	client := env.newClient(t)
 	client.login("superadmin@routex.internal", testPassword)
 
-	simpanAlias(t, client, "Combo Pertama", "sudah-diambil")
+	simpanAlias(t, env, client, "Combo Pertama", "sudah-diambil")
 
+	// B-165: create kedua pun wajib membawa match_model_id, kalau
+	// tidak ia berhenti di 400 validasi sebelum mencapai pemeriksaan
+	// konflik alias yang menjadi subjek test ini.
+	var modelKedua string
+	if err := env.pool.QueryRow(context.Background(), "select id from models where model_id = 'gpt-5' limit 1").Scan(&modelKedua); err != nil {
+		t.Fatalf("cari UUID model gpt-5: %v", err)
+	}
 	res, body := client.do(http.MethodPost, "/api/admin/gateway/routing-rules", map[string]any{
-		"name":          "Combo Kedua Ganda",
-		"strategy":      "priority",
-		"virtual_alias": "sudah-diambil",
-		"pipeline":      pipelineValid,
+		"name":           "Combo Kedua Ganda",
+		"strategy":       "priority",
+		"match_model_id": modelKedua,
+		"virtual_alias":  "sudah-diambil",
+		"pipeline":       pipelineValid,
 	}, true)
 	if res.StatusCode != http.StatusConflict {
 		t.Fatalf("status = %d, mau 409 untuk alias ganda, body: %s", res.StatusCode, string(body))
@@ -239,7 +318,7 @@ func TestUpdateRoutingRulePertahankanAlias(t *testing.T) {
 	client := env.newClient(t)
 	client.login("superadmin@routex.internal", testPassword)
 
-	got := simpanAlias(t, client, "Combo Dipertahankan", "tetap-ada")
+	got := simpanAlias(t, env, client, "Combo Dipertahankan", "tetap-ada")
 
 	res, body := client.do(http.MethodPut,
 		"/api/admin/gateway/routing-rules/"+got.ID,
@@ -265,7 +344,7 @@ func TestUpdateRoutingRuleGantiAlias(t *testing.T) {
 	client := env.newClient(t)
 	client.login("superadmin@routex.internal", testPassword)
 
-	got := simpanAlias(t, client, "Combo Ganti Alias", "alias-lama")
+	got := simpanAlias(t, env, client, "Combo Ganti Alias", "alias-lama")
 
 	res, body := client.do(http.MethodPut,
 		"/api/admin/gateway/routing-rules/"+got.ID,
@@ -283,7 +362,7 @@ func TestUpdateRoutingRuleGantiAlias(t *testing.T) {
 	}
 
 	// Alias lama bebas: aturan lain bisa memakainya sekarang.
-	kedua := simpanAlias(t, client, "Combo Rebut Alias Lama", "alias-lama")
+	kedua := simpanAlias(t, env, client, "Combo Rebut Alias Lama", "alias-lama")
 	if kedua.VirtualAlias == nil || *kedua.VirtualAlias != "alias-lama" {
 		t.Errorf("alias lama seharusnya sudah bebas: %v", kedua.VirtualAlias)
 	}
@@ -296,7 +375,7 @@ func TestUpdateRoutingRuleHapusAliasPipeline(t *testing.T) {
 	client := env.newClient(t)
 	client.login("superadmin@routex.internal", testPassword)
 
-	got := simpanAlias(t, client, "Combo Dibersihkan", "akan-dihapus")
+	got := simpanAlias(t, env, client, "Combo Dibersihkan", "akan-dihapus")
 
 	res, body := client.do(http.MethodPut,
 		"/api/admin/gateway/routing-rules/"+got.ID,
@@ -331,8 +410,8 @@ func TestUpdateRoutingRuleAliasGandaDitolak(t *testing.T) {
 	client := env.newClient(t)
 	client.login("superadmin@routex.internal", testPassword)
 
-	simpanAlias(t, client, "Combo Pemilik Alias", "milik-saya")
-	got := simpanAlias(t, client, "Combo Penerima Alias", "alias-bebas")
+	simpanAlias(t, env, client, "Combo Pemilik Alias", "milik-saya")
+	got := simpanAlias(t, env, client, "Combo Penerima Alias", "alias-bebas")
 
 	res, body := client.do(http.MethodPut,
 		"/api/admin/gateway/routing-rules/"+got.ID,
@@ -363,7 +442,7 @@ func TestRoutingRuleDTOTidakMembocorkanFieldSensitif(t *testing.T) {
 	client := env.newClient(t)
 	client.login("superadmin@routex.internal", testPassword)
 
-	got := simpanAlias(t, client, "Combo Audit DTO", "audit-dto")
+	got := simpanAlias(t, env, client, "Combo Audit DTO", "audit-dto")
 
 	for _, jalur := range []string{
 		"/api/admin/gateway/routing-rules/" + got.ID,
@@ -429,7 +508,7 @@ func TestRoutingRuleFindByAliasRepo(t *testing.T) {
 
 	client := env.newClient(t)
 	client.login("superadmin@routex.internal", testPassword)
-	got := simpanAlias(t, client, "Combo Repo Alias", "alias-repo")
+	got := simpanAlias(t, env, client, "Combo Repo Alias", "alias-repo")
 
 	repoAturan := upstream.NewRoutingRepo(env.pool)
 

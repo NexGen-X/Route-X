@@ -1728,9 +1728,13 @@ func (CacheSettingsResponseDTO) adalahDTO() {}
 
 // SyncModelsResponseDTO adalah respons hasil sinkronisasi model dari provider (Fitur 2).
 type SyncModelsResponseDTO struct {
-	Count   int      `json:"count"`
-	Models  []string `json:"models"`
-	Message string   `json:"message"`
+	Count  int      `json:"count"`
+	Models []string `json:"models"`
+	// StaleModels adalah nama upstream model yang terpasang ke provider
+	// ini tetapi tidak lagi ditemukan pada discovery terakhir (B-207).
+	// Hanya laporan — modelnya tidak dilepas/dinonaktifkan oleh sync.
+	StaleModels []string `json:"stale_models"`
+	Message     string   `json:"message"`
 }
 
 func (SyncModelsResponseDTO) adalahDTO() {}

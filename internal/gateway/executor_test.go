@@ -820,6 +820,11 @@ func TestExecuteStreamPembatalanKlienTetapCanceled(t *testing.T) {
 
 // Adapter yang mengembalikan aliran nil tanpa error tidak boleh membuat pemanggil
 // dereference nil: itu panik di jalur permintaan, bukan kegagalan yang bisa dilaporkan.
+//
+// Sejak B-358 klasifikasinya adalah ErrKindServer dengan pesan yang
+// sama seperti jalur non-streaming (B-335) — sebelumnya unknown,
+// klasifikasi insidental dari jalur intipan; pelanggaran kontrak
+// yang sama kini bernama sama di kedua jalur.
 func TestExecuteStreamMenolakAliranNilTanpaError(t *testing.T) {
 	g := penjaga()
 	e, _ := executorUji(g)
@@ -829,8 +834,8 @@ func TestExecuteStreamMenolakAliranNilTanpaError(t *testing.T) {
 			return nil, nil
 		})
 
-	if out.Err == nil || out.Err.Kind != providers.ErrKindUnknown {
-		t.Fatalf("Err = %v, mau unknown", out.Err)
+	if out.Err == nil || out.Err.Kind != providers.ErrKindServer {
+		t.Fatalf("Err = %v, mau server", out.Err)
 	}
 	if out.Value != nil {
 		t.Error("Value tidak nil padahal adapter mengembalikan aliran kosong")

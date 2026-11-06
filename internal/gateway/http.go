@@ -504,17 +504,20 @@ func (h *Handlers) kebijakan(
 	// simpan (normalisasiScopeModel), dan mesin batas mencocokkan persis.
 	// Memakai ModelID (nama) membuat pencarian selalu meleset dan batas
 	// REQUEST per model tidak pernah menahan apa pun di jalur utama.
-	if rj := h.guard.PeriksaBatasModel(r.Context(), model.ID); rj != nil {
+	ctxModel, rj := h.guard.PeriksaBatasModel(r.Context(), model.ID)
+	if rj != nil {
 		rj.Tulis(w, r)
 		return false
 	}
 	// B-254: batas model LOLOS berarti penghitung cakupan model sudah
 	// naik. Bila tahap sesudah ini menolak (anggaran, gerbang token) —
 	// atau persiapan sesudah kebijakan gagal — penjaga kuota membatalkan
-	// kenaikan itu; tandanya ditanam pada *r yang sama dengan yang
+	// kenaikan itu; tandanya SUDAH ditanam PeriksaBatasModel pada
+	// context kembaliannya (B-363: satu bacaan jam untuk penilaian
+	// dan jangkar) dan dipasang pada *r yang sama dengan yang
 	// dipegang penjaga kuota, karena RefundRequest-nya resolver tidak
 	// mengenal cakupan model.
-	*r = *r.WithContext(h.guard.TandaiKuotaModel(r.Context(), model.ID))
+	*r = *r.WithContext(ctxModel)
 	if rj := h.guard.PeriksaAnggaranDenganReservasi(r.Context(), targets, estimasi); rj != nil {
 		rj.Tulis(w, r)
 		return false
@@ -1581,17 +1584,20 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 	if rj := h.guard.SaringPermintaan(ctx, contentfilter.Subject{ModelID: tModel.ID}); rj != nil {
 		return nil, nil, nil, rj
 	}
-	if rj := h.guard.PeriksaBatasModel(ctx, tModel.ID); rj != nil {
+	ctxBertanda, rj := h.guard.PeriksaBatasModel(ctx, tModel.ID)
+	if rj != nil {
 		return nil, nil, nil, rj
 	}
-	// B-294: kenaikan batas model tier kini DITANDAI pada pemegang
-	// bersama, dan setiap jalan keluar sesudah titik ini yang tidak
-	// berujung Execute mengembalikannya di tempat. Sebelumnya kenaikan
-	// ini anonim: penolakan gerbang sesudahnya, kandidat kosong, atau
-	// tier yang dilewati pemanggil membakar slot model tier secara
-	// permanen, dan refund B-254 tidak menjangkaunya karena tandanya
-	// (satu string di context induk) tidak pernah ditanam untuk tier.
-	ctx = h.guard.TandaiKuotaModel(ctx, tModel.ID)
+	// B-294: kenaikan batas model tier DITANDAI pada pemegang
+	// bersama (kini oleh PeriksaBatasModel sendiri pada context
+	// kembaliannya, B-363), dan setiap jalan keluar sesudah titik
+	// ini yang tidak berujung Execute mengembalikannya di tempat.
+	// Sebelumnya kenaikan ini anonim: penolakan gerbang sesudahnya,
+	// kandidat kosong, atau tier yang dilewati pemanggil membakar
+	// slot model tier secara permanen, dan refund B-254 tidak
+	// menjangkaunya karena tandanya (satu string di context induk)
+	// tidak pernah ditanam untuk tier.
+	ctx = ctxBertanda
 	batalkanTier := func() { h.guard.KembalikanKuotaModel(ctx, tModel.ID) }
 	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
 		batalkanTier()
@@ -1777,13 +1783,15 @@ func (h *Handlers) cobaTierFallbackEmbeddings(ctx context.Context, tier ComboTie
 	if rj := h.guard.SaringPermintaan(ctx, contentfilter.Subject{ModelID: tModel.ID}); rj != nil {
 		return nil, nil, rj
 	}
-	if rj := h.guard.PeriksaBatasModel(ctx, tModel.ID); rj != nil {
+	ctxBertanda, rj := h.guard.PeriksaBatasModel(ctx, tModel.ID)
+	if rj != nil {
 		return nil, nil, rj
 	}
 	// B-294: sama seperti siapkanTierFallback — kenaikan batas model
-	// tier ditandai pada pemegang bersama dan dikembalikan di tempat
-	// oleh setiap jalan keluar yang tidak berujung Execute.
-	ctx = h.guard.TandaiKuotaModel(ctx, tModel.ID)
+	// tier ditandai pada pemegang bersama (oleh PeriksaBatasModel
+	// sendiri, B-363) dan dikembalikan di tempat oleh setiap jalan
+	// keluar yang tidak berujung Execute.
+	ctx = ctxBertanda
 	batalkanTier := func() { h.guard.KembalikanKuotaModel(ctx, tModel.ID) }
 	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
 		batalkanTier()
@@ -2045,7 +2053,12 @@ func terapkanLantaiPemakaian(req *providers.ChatRequest, u providers.Usage, byte
 	if u.InputTokens <= 0 {
 		if est := EstimateTokens(req).InputTokens; est > 0 {
 			u.InputTokens = est
-			u.TotalTokens += est
+			// B-362: penjumlahan lantai memakai penjaga jenuh yang
+			// sama dengan adapter (B-352). Total bawaan upstream
+			// dekat MaxInt ditambah taksiran membungkus negatif —
+			// dan total negatif membuat pencatatan kuota token
+			// no-op (token <= 0 ditolak penjaga).
+			u.TotalTokens = providers.TambahToken(u.TotalTokens, est)
 		}
 	}
 	if u.OutputTokens <= 0 && byteKonten > 0 {
@@ -2054,7 +2067,7 @@ func terapkanLantaiPemakaian(req *providers.ChatRequest, u providers.Usage, byte
 			keluar = 1
 		}
 		u.OutputTokens = keluar
-		u.TotalTokens += keluar
+		u.TotalTokens = providers.TambahToken(u.TotalTokens, keluar)
 	}
 	return u
 }

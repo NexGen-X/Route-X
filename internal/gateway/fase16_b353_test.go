@@ -28,12 +28,15 @@ import (
 // waktu kenaikan — dibaca dari jam limiter yang sama — dan refund
 // memakainya.
 //
-// Test ini memakai API baru (Guard.TandaiKuotaModel +
-// Limiter.RefundScopesAt), jadi ia memang tidak terkompilasi di
-// kode lama — pola yang sama seperti pengunci B-210; bukti runtime
-// dua arah untuk mekanisme jangkarnya ada di paket apikey
-// (TestB353RefundBerjangkarKeJendelaKenaikan), yang hanya memakai
-// API lama dan gagal di sana.
+// Test ini memakai API B-363 (PeriksaBatasModel mengembalikan
+// context bertanda + Limiter.RefundScopesAt) — sejak B-363 tanda
+// ditanam PeriksaBatasModel sendiri dengan bacaan jam yang sama
+// dengan penilaiannya, jadi langkah TandaiKuotaModel terpisah di
+// versi awal test ini tidak ada lagi. Ia memang tidak
+// terkompilasi di kode lama — pola yang sama seperti pengunci
+// B-210; bukti runtime dua arah untuk mekanisme jangkarnya ada di
+// paket apikey (TestB353RefundBerjangkarKeJendelaKenaikan), yang
+// hanya memakai API lama dan gagal di sana.
 func TestB353RefundModelBerjangkarKeJendelaKenaikan(t *testing.T) {
 	mr := miniredis.RunT(t)
 	rdb, err := cache.Connect(context.Background(), &config.Config{
@@ -60,10 +63,11 @@ func TestB353RefundModelBerjangkarKeJendelaKenaikan(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	if rj := guard.PeriksaBatasModel(ctx, "m-b353"); rj != nil {
+	ctxBertanda, rj := guard.PeriksaBatasModel(ctx, "m-b353")
+	if rj != nil {
 		t.Fatalf("PeriksaBatasModel menolak: %+v", rj)
 	}
-	ctx = guard.TandaiKuotaModel(ctx, "m-b353")
+	ctx = ctxBertanda
 
 	kunciModel := func() string {
 		for _, k := range mr.Keys() {

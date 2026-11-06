@@ -667,64 +667,6 @@ type googleModelDiscoveryResponse struct {
 	Models []googleModelItem `json:"models"`
 }
 
-// getCuratedProviderModels menyediakan daftar model kanonik unggulan untuk provider terkenal.
-// Fungsi ini menjadi jaring pengaman (fallback) apabila upstream belum mendukung discovery dinamis
-// atau endpoint /v1/models mengalami kegagalan sementara, sehingga proses onboarding tidak terblokir.
-func getCuratedProviderModels(kind, name string) []string {
-	k := strings.ToLower(kind)
-	n := strings.ToLower(name)
-	switch {
-	case strings.Contains(n, "antigravity") || strings.Contains(n, "cloudcode"):
-		return []string{"gemini-3-flash", "gemini-pro-agent", "claude-sonnet-4-6", "gemini-3.6-flash-high", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"}
-	case strings.Contains(n, "anthropic") || k == "anthropic":
-		return []string{"claude-3-7-sonnet", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-opus"}
-	case strings.Contains(n, "openai") || k == "openai":
-		return []string{"gpt-4o", "gpt-4o-mini", "o3-mini", "o1", "gpt-4-turbo"}
-	case strings.Contains(n, "google") || strings.Contains(n, "gemini") || k == "google":
-		return []string{"gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"}
-	case strings.Contains(n, "deepseek"):
-		return []string{"deepseek-chat", "deepseek-reasoner"}
-	case strings.Contains(n, "groq"):
-		return []string{"llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "deepseek-r1-distill-llama-70b"}
-	case strings.Contains(n, "mistral"):
-		return []string{"mistral-large-latest", "mistral-small-latest", "codestral-latest"}
-	case strings.Contains(n, "openrouter"):
-		return []string{"anthropic/claude-3.7-sonnet", "openai/gpt-4o", "deepseek/deepseek-r1", "meta-llama/llama-3.3-70b-instruct"}
-	case strings.Contains(n, "cohere"):
-		return []string{"command-r-plus", "command-r"}
-	case strings.Contains(n, "together"):
-		return []string{"meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-R1", "Qwen/Qwen2.5-72B-Instruct-Turbo"}
-	case strings.Contains(n, "perplexity"):
-		return []string{"sonar-pro", "sonar", "sonar-reasoning"}
-	case strings.Contains(n, "cerebras"):
-		return []string{"llama-3.3-70b", "llama-3.1-8b", "deepseek-r1-distill-llama-70b"}
-	case strings.Contains(n, "sambanova"):
-		return []string{"Meta-Llama-3.1-405B-Instruct", "Meta-Llama-3.3-70B-Instruct", "DeepSeek-R1"}
-	case strings.Contains(n, "fireworks"):
-		return []string{"accounts/fireworks/models/deepseek-r1", "accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/qwen2p5-coder-32b-instruct"}
-	case strings.Contains(n, "qwen") || strings.Contains(n, "dashscope") || strings.Contains(n, "alibaba"):
-		return []string{"qwen2.5-coder-32b-instruct", "qwen2.5-72b-instruct", "qwen-max", "qwen-plus"}
-	case strings.Contains(n, "siliconflow") || strings.Contains(n, "siliconcloud"):
-		return []string{"deepseek-ai/DeepSeek-R1", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct"}
-	case strings.Contains(n, "novita"):
-		return []string{"deepseek/deepseek-r1", "meta-llama/llama-3.3-70b-instruct"}
-	case strings.Contains(n, "cloudflare"):
-		return []string{"@cf/meta/llama-3.3-70b-instruct", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b"}
-	case strings.Contains(n, "huggingface") || strings.Contains(n, "hf"):
-		return []string{"meta-llama/Llama-3.3-70B-Instruct", "deepseek-ai/DeepSeek-R1"}
-	case strings.Contains(n, "lmstudio") || strings.Contains(n, "lm-studio"):
-		return []string{"local-model:default"}
-	case strings.Contains(n, "vllm"):
-		return []string{"default-vllm-model"}
-	case strings.Contains(n, "xai") || strings.Contains(n, "grok"):
-		return []string{"grok-2", "grok-2-mini", "grok-beta"}
-	case strings.Contains(n, "ollama") || k == "ollama":
-		return []string{"llama3.2:latest", "qwen2.5-coder:latest", "deepseek-r1:8b"}
-	default:
-		return nil
-	}
-}
-
 // syncProviderModels menarik katalog model langsung dari discovery endpoint upstream
 // (/v1/models, /api/tags untuk Ollama, atau v1beta/models untuk Google Gemini) dan mendaftarkannya ke database secara idempoten.
 func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
@@ -868,144 +810,130 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ditemukan memuat model beserta bukti upstreamnya (lifecycle dan
-	// kapabilitas terbukti). Katalog fallback terkurasi hanya menyediakan
-	// ID — tanpa lifecycle dan tanpa bukti kapabilitas.
+	// ditemukan HANYA boleh memuat model beserta bukti upstreamnya
+	// (lifecycle dan kapabilitas terbukti) dari respons yang benar-benar
+	// diterima. Kegagalan discovery adalah kegagalan sync dan dilaporkan
+	// apa adanya: menutupinya dengan katalog terkurasi membuat upstream
+	// 401/5xx/tak terjangkau tampak seperti discovery berhasil dan
+	// memasang model karangan sebagai model aktif provider (B-204).
 	var ditemukan []modelDiscovery
-	dariKatalogFallback := func() {
-		ditemukan = ditemukan[:0]
-		for _, id := range getCuratedProviderModels(lowerKind, lowerName) {
-			ditemukan = append(ditemukan, modelDiscovery{ID: id})
-		}
-	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		h.logger.WarnContext(ctx, "panggilan discovery model gagal, mencoba katalog fallback terkurasi", "error", webhooks.SanitizeErrorMessage(err.Error()))
-		dariKatalogFallback()
-		if len(ditemukan) == 0 {
-			httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_unreachable", "Gagal menghubungi endpoint discovery provider")
-			return
+		h.logger.WarnContext(ctx, "panggilan discovery model gagal", "error", webhooks.SanitizeErrorMessage(err.Error()))
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_unreachable", "Gagal menghubungi endpoint discovery provider")
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
+		h.logger.WarnContext(ctx, "upstream mengembalikan status non-2xx saat discovery model", "status", resp.StatusCode)
+		httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d", resp.StatusCode))
+		return
+	}
+
+	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 5<<20)) // 5MB limit
+	if readErr != nil {
+		h.logger.ErrorContext(ctx, "gagal membaca respons discovery", "error", readErr)
+		httpx.InternalError(w, r)
+		return
+	}
+
+	// 6. Ekstraksi model IDs
+	var oaiResp openAIModelDiscoveryResponse
+	var ollamaResp ollamaModelDiscoveryResponse
+	var googleResp googleModelDiscoveryResponse
+	var antigravityResp struct {
+		Models          map[string]json.RawMessage `json:"models"`
+		AgentModelSorts []struct {
+			Groups []struct {
+				ModelIDs []string `json:"modelIds"`
+			} `json:"groups"`
+		} `json:"agentModelSorts"`
+		CommandModelIds []string            `json:"commandModelIds"`
+		TieredModelIds  map[string][]string `json:"tieredModelIds"`
+	}
+
+	if isAntigravity && json.Unmarshal(bodyBytes, &antigravityResp) == nil && (len(antigravityResp.Models) > 0 || len(antigravityResp.AgentModelSorts) > 0) {
+		// Bentuk respons Antigravity yang teramati tidak menyediakan
+		// metadata lifecycle/kapabilitas per model yang bisa
+		// dipertanggungjawabkan — yang diambil ID-nya (B-089),
+		// ditambah displayName sebagai bukti nama tampilan sejak
+		// B-157. Nilai per model diurai longgar (RawMessage):
+		// satu nilai berbentuk tak dikenal tidak boleh menggagalkan
+		// pengambilan ID seluruh katalog.
+		for id, mentah := range antigravityResp.Models {
+			d := modelDiscovery{ID: id}
+			var info struct {
+				DisplayName string `json:"displayName"`
+			}
+			if json.Unmarshal(mentah, &info) == nil {
+				d.DisplayName = strings.TrimSpace(info.DisplayName)
+			}
+			ditemukan = append(ditemukan, d)
 		}
-	} else {
-		defer resp.Body.Close()
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
-			h.logger.WarnContext(ctx, "upstream mengembalikan status non-2xx saat discovery model, mencoba fallback", "status", resp.StatusCode)
-			dariKatalogFallback()
-			if len(ditemukan) == 0 {
-				httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d", resp.StatusCode))
-				return
-			}
-		} else {
-			bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 5<<20)) // 5MB limit
-			if readErr != nil {
-				h.logger.ErrorContext(ctx, "gagal membaca respons discovery", "error", readErr)
-				httpx.InternalError(w, r)
-				return
-			}
-
-			// 6. Ekstraksi model IDs
-			var oaiResp openAIModelDiscoveryResponse
-			var ollamaResp ollamaModelDiscoveryResponse
-			var googleResp googleModelDiscoveryResponse
-			var antigravityResp struct {
-				Models          map[string]json.RawMessage `json:"models"`
-				AgentModelSorts []struct {
-					Groups []struct {
-						ModelIDs []string `json:"modelIds"`
-					} `json:"groups"`
-				} `json:"agentModelSorts"`
-				CommandModelIds []string            `json:"commandModelIds"`
-				TieredModelIds  map[string][]string `json:"tieredModelIds"`
-			}
-
-			if isAntigravity && json.Unmarshal(bodyBytes, &antigravityResp) == nil && (len(antigravityResp.Models) > 0 || len(antigravityResp.AgentModelSorts) > 0) {
-				// Bentuk respons Antigravity yang teramati tidak menyediakan
-				// metadata lifecycle/kapabilitas per model yang bisa
-				// dipertanggungjawabkan — yang diambil ID-nya (B-089),
-				// ditambah displayName sebagai bukti nama tampilan sejak
-				// B-157. Nilai per model diurai longgar (RawMessage):
-				// satu nilai berbentuk tak dikenal tidak boleh menggagalkan
-				// pengambilan ID seluruh katalog.
-				for id, mentah := range antigravityResp.Models {
-					d := modelDiscovery{ID: id}
-					var info struct {
-						DisplayName string `json:"displayName"`
-					}
-					if json.Unmarshal(mentah, &info) == nil {
-						d.DisplayName = strings.TrimSpace(info.DisplayName)
-					}
-					ditemukan = append(ditemukan, d)
-				}
-				for _, sort := range antigravityResp.AgentModelSorts {
-					for _, g := range sort.Groups {
-						for _, id := range g.ModelIDs {
-							ditemukan = append(ditemukan, modelDiscovery{ID: id})
-						}
-					}
-				}
-				for _, id := range antigravityResp.CommandModelIds {
+		for _, sort := range antigravityResp.AgentModelSorts {
+			for _, g := range sort.Groups {
+				for _, id := range g.ModelIDs {
 					ditemukan = append(ditemukan, modelDiscovery{ID: id})
 				}
-				for _, list := range antigravityResp.TieredModelIds {
-					for _, id := range list {
-						ditemukan = append(ditemukan, modelDiscovery{ID: id})
-					}
-				}
-			} else if err := json.Unmarshal(bodyBytes, &oaiResp); err == nil && len(oaiResp.Data) > 0 {
-				for _, item := range oaiResp.Data {
-					if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
-						d := modelDiscovery{ID: trimmed}
-						// Metadata lifecycle hanya ada bila vendor memang
-						// mengirimnya (Intern-AI: status/shutdown_date/
-						// replacement_model). Vendor OpenAI-compatible lain
-						// yang tidak mengirim field ini membiarkan Lifecycle
-						// nil — tidak dikarang (B-089).
-						lc := &modelLifecycle{
-							Status:           strings.TrimSpace(item.Status),
-							ShutdownDate:     strings.TrimSpace(item.ShutdownDate),
-							ReplacementModel: strings.TrimSpace(item.ReplacementModel),
-						}
-						if lc.ada() {
-							d.Lifecycle = lc
-						}
-						ditemukan = append(ditemukan, d)
-					}
-				}
-			} else if err := json.Unmarshal(bodyBytes, &ollamaResp); err == nil && len(ollamaResp.Models) > 0 {
-				// /api/tags Ollama tidak menyediakan lifecycle maupun
-				// kapabilitas yang bisa dipertanggungjawabkan — ID saja.
-				for _, item := range ollamaResp.Models {
-					name := strings.TrimSpace(item.Name)
-					if name == "" {
-						name = strings.TrimSpace(item.Model)
-					}
-					if name != "" {
-						ditemukan = append(ditemukan, modelDiscovery{ID: name})
-					}
-				}
-			} else if err := json.Unmarshal(bodyBytes, &googleResp); err == nil && len(googleResp.Models) > 0 {
-				for _, item := range googleResp.Models {
-					name := strings.TrimSpace(item.Name)
-					name = strings.TrimPrefix(name, "models/")
-					if name != "" {
-						ditemukan = append(ditemukan, modelDiscovery{
-							ID:           name,
-							Capabilities: kapabilitasGoogle(item.SupportedGenerationMethods),
-						})
-					}
-				}
 			}
-
-			if len(ditemukan) == 0 {
-				dariKatalogFallback()
+		}
+		for _, id := range antigravityResp.CommandModelIds {
+			ditemukan = append(ditemukan, modelDiscovery{ID: id})
+		}
+		for _, list := range antigravityResp.TieredModelIds {
+			for _, id := range list {
+				ditemukan = append(ditemukan, modelDiscovery{ID: id})
+			}
+		}
+	} else if err := json.Unmarshal(bodyBytes, &oaiResp); err == nil && len(oaiResp.Data) > 0 {
+		for _, item := range oaiResp.Data {
+			if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
+				d := modelDiscovery{ID: trimmed}
+				// Metadata lifecycle hanya ada bila vendor memang
+				// mengirimnya (Intern-AI: status/shutdown_date/
+				// replacement_model). Vendor OpenAI-compatible lain
+				// yang tidak mengirim field ini membiarkan Lifecycle
+				// nil — tidak dikarang (B-089).
+				lc := &modelLifecycle{
+					Status:           strings.TrimSpace(item.Status),
+					ShutdownDate:     strings.TrimSpace(item.ShutdownDate),
+					ReplacementModel: strings.TrimSpace(item.ReplacementModel),
+				}
+				if lc.ada() {
+					d.Lifecycle = lc
+				}
+				ditemukan = append(ditemukan, d)
+			}
+		}
+	} else if err := json.Unmarshal(bodyBytes, &ollamaResp); err == nil && len(ollamaResp.Models) > 0 {
+		// /api/tags Ollama tidak menyediakan lifecycle maupun
+		// kapabilitas yang bisa dipertanggungjawabkan — ID saja.
+		for _, item := range ollamaResp.Models {
+			name := strings.TrimSpace(item.Name)
+			if name == "" {
+				name = strings.TrimSpace(item.Model)
+			}
+			if name != "" {
+				ditemukan = append(ditemukan, modelDiscovery{ID: name})
+			}
+		}
+	} else if err := json.Unmarshal(bodyBytes, &googleResp); err == nil && len(googleResp.Models) > 0 {
+		for _, item := range googleResp.Models {
+			name := strings.TrimSpace(item.Name)
+			name = strings.TrimPrefix(name, "models/")
+			if name != "" {
+				ditemukan = append(ditemukan, modelDiscovery{
+					ID:           name,
+					Capabilities: kapabilitasGoogle(item.SupportedGenerationMethods),
+				})
 			}
 		}
 	}
 
 	if len(ditemukan) == 0 {
-		httpx.BadRequest(w, r, "no_models_found", "Tidak ada model yang ditemukan dalam respons upstream atau katalog terkurasi.")
+		httpx.BadRequest(w, r, "no_models_found", "Tidak ada model yang ditemukan dalam respons upstream.")
 		return
 	}
 

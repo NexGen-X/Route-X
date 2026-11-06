@@ -42,12 +42,34 @@ type oaMessage struct {
 	Content          *string      `json:"content"`
 	ReasoningContent string       `json:"reasoning_content,omitempty"`
 	ToolCalls        []oaToolCall `json:"tool_calls,omitempty"`
+	// ThoughtSignature (B-360): dialek streaming (oaDelta) sudah
+	// membawanya sejak B-324, dan kanonis mengisinya dari block
+	// thinking bertanda tangan — tanpa field ini jalur
+	// NON-streaming membuangnya, jadi giliran lanjutan multi-turn
+	// kehilangan signature yang justru disediakan jalur streaming.
+	ThoughtSignature string `json:"thought_signature,omitempty"`
+}
+
+// oaContentPart adalah satu part pada larik content sebuah delta
+// (B-361) — bentuk wire yang sama yang dipakai dialek Google.
+type oaContentPart struct {
+	Type     string      `json:"type"`
+	Text     string      `json:"text,omitempty"`
+	ImageURL *oaImageURL `json:"image_url,omitempty"`
+}
+
+type oaImageURL struct {
+	URL string `json:"url"`
 }
 
 type oaDelta struct {
-	Role             string  `json:"role,omitempty"`
-	Content          *string `json:"content,omitempty"`
-	ReasoningContent string  `json:"reasoning_content,omitempty"`
+	Role string `json:"role,omitempty"`
+	// Content bertipe any sejak B-361: *string untuk potongan teks
+	// biasa, []oaContentPart untuk peristiwa yang membawa part
+	// non-teks (gambar streaming) — sebelumnya *string memaksa
+	// peristiwa gambar mengirim Raw "diam" tanpa content.
+	Content          any    `json:"content,omitempty"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 	// ThoughtSignature membawa signature_delta block thinking (B-324):
 	// tanpanya peristiwa signature hanya hidup di kontrak kanonik
 	// (B-295) dan gateway melewatinya karena Raw-nya kosong.
@@ -184,6 +206,7 @@ func encodeCompletion(resp *providers.ChatResponse) json.RawMessage {
 			Role:             string(c.Message.Role),
 			ReasoningContent: c.Message.ReasoningContent,
 			ToolCalls:        encodeToolCalls(c.Message.ToolCalls, false),
+			ThoughtSignature: c.Message.ReasoningSignature,
 		}
 		if c.Message.Content != "" || len(c.Message.ToolCalls) == 0 {
 			content := c.Message.Content

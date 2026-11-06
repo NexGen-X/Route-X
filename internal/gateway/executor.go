@@ -70,6 +70,12 @@ const (
 	// Streaming dikecualikan — aliran yang sah hidup lebih lama daripada
 	// anggaran membuka mana pun; fase membukanya dibatasi tenggat per
 	// percobaan dan hidupnya dijaga tenggatDiamAliran.
+	//
+	// Nilai ini WAJIB tetap di bawah billing.HoldTTLBawaan: tahanan
+	// reservasi anggaran harus hidup lebih lama dari permintaan terlama
+	// yang sah, kalau tidak pagu anggaran terlampaui oleh permintaan
+	// paralel yang lambat (B-189). Relasinya dikunci
+	// TestBatasRencanaDiBawahTTLTahanB189.
 	batasTotalRencana = 5 * time.Minute
 )
 

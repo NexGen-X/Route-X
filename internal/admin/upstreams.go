@@ -731,11 +731,24 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. Siapkan HTTP client dengan kebijakan SSRF wajib
+	// 4. Selesaikan egress provider SEBELUM klien discovery dibuat
+	// (B-205): pool provider yang dipatok WAJIB dipakai jalur sync —
+	// mengabaikannya mengeluarkan kredensial dari IP server melewati
+	// kebijakan egress operator, dan provider yang hanya terjangkau
+	// lewat pool sync-nya pasti gagal. Kegagalan memuat pool adalah
+	// kegagalan eksplisit, bukan alasan jatuh ke koneksi langsung.
+	proxyURL, err := h.egressSync(ctx, p, activeCred)
+	if err != nil {
+		h.gagalInternal(w, r, "egress provider tidak bisa diselesaikan untuk sinkronisasi model", err)
+		return
+	}
+
+	// 5. Siapkan HTTP client dengan kebijakan SSRF wajib
 
 	httpClient, err := providers.NewHTTPClient(providers.ClientConfig{
 		Timeout:             15 * time.Second,
 		SSRFPolicy:          ssrfPolicy,
+		ProxyURL:            proxyURL,
 		MaxIdleConnsPerHost: 2,
 	}, false)
 	if err != nil {
@@ -743,7 +756,7 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. Susun discovery URL berdasarkan dialek provider
+	// 6. Susun discovery URL berdasarkan dialek provider
 	var discoveryURL string
 	var reqBody io.Reader
 	method := http.MethodGet
@@ -839,7 +852,7 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 6. Ekstraksi model IDs
+	// 7. Ekstraksi model IDs
 	var oaiResp openAIModelDiscoveryResponse
 	var ollamaResp ollamaModelDiscoveryResponse
 	var googleResp googleModelDiscoveryResponse
@@ -958,7 +971,7 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	}
 	ditemukan = unik
 
-	// 6. Simpan model dan pemetaan ke database secara idempoten.
+	// 8. Simpan model dan pemetaan ke database secara idempoten.
 	// Kegagalan per-model DIKUMPULKAN dan dicatat (audit F5): versi lama
 	// menelan semuanya lalu menjawab "Berhasil menyinkronkan 0 model"
 	// dengan status 200 walau yang gagal adalah penyimpanan lokal.
@@ -1077,6 +1090,34 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// egressSync menyelesaikan URL egress untuk jalur sinkronisasi model
+// (B-205) dengan urutan yang sama seperti pabrik adapter gateway:
+// pool milik provider, ditimpa pool khusus kredensial aktif bila ada.
+//
+// Provider tanpa pool menghasilkan Secret kosong — koneksi langsung
+// memang konfigurasinya. Sebaliknya pool yang DINYATAKAN tetapi tidak
+// bisa dimuat (tidak ada, nonaktif, atau gagal dekripsi) adalah error:
+// meneruskan discovery tanpa proxy akan mengeluarkan kredensial dari
+// IP server melewati kebijakan egress operator — pola yang ditolak
+// keras jalur refresh OAuth dengan gagal-keras (V-EO-21), dan di sini
+// pemanggil mengubahnya menjadi kegagalan sync yang eksplisit.
+func (h *Handlers) egressSync(ctx context.Context, p *upstream.Provider, activeCred *upstream.ActiveCredential) (security.Secret, error) {
+	poolID := ""
+	if p.EgressPoolID != nil {
+		poolID = *p.EgressPoolID
+	}
+	if activeCred != nil && activeCred.EgressPoolID != nil && *activeCred.EgressPoolID != "" {
+		poolID = *activeCred.EgressPoolID
+	}
+	if poolID == "" {
+		return "", nil
+	}
+	if h.egressRepo == nil {
+		return "", errors.New("provider memakai egress pool tetapi repo egress tidak tersedia")
+	}
+	return h.egressRepo.ProxyURL(ctx, poolID)
+}
+
 // projectCodeAssistSync menyelesaikan project Code Assist untuk jalur
 // sinkronisasi model admin (B-157).
 //
@@ -1108,7 +1149,28 @@ func (h *Handlers) projectCodeAssistSync(ctx context.Context, p *upstream.Provid
 	if h.oauthClient == nil || apiKey == "" {
 		return ""
 	}
-	project, err := h.oauthClient.LoadCodeAssistProject(ctx, apiKey, security.Secret(""))
+	// Egress sesi dihormati persis seperti jalur factory (B-205): sesi
+	// yang mematok egress pool memanggil loadCodeAssist LEWAT pool itu.
+	// Pool yang tidak bisa dimuat berarti panggilan DILEWATI — memanggil
+	// tanpa proxy mengeluarkan access token dari IP server melewati
+	// kebijakan egress sesi; sync berlanjut tanpa project seperti
+	// kegagalan resolusi lain di fungsi ini.
+	var proxyURL security.Secret
+	if meta.EgressPoolID != nil && *meta.EgressPoolID != "" {
+		if h.egressRepo == nil {
+			h.logger.WarnContext(ctx, "sesi memakai egress pool tetapi repo egress tidak tersedia; resolusi project saat sync dilewati",
+				"provider_id", p.ID)
+			return ""
+		}
+		px, perr := h.egressRepo.ProxyURL(ctx, *meta.EgressPoolID)
+		if perr != nil {
+			h.logger.WarnContext(ctx, "gagal memuat egress sesi untuk loadCodeAssist saat sync; resolusi project dilewati",
+				"provider_id", p.ID, "error", perr)
+			return ""
+		}
+		proxyURL = px
+	}
+	project, err := h.oauthClient.LoadCodeAssistProject(ctx, apiKey, proxyURL)
 	if err != nil {
 		h.logger.WarnContext(ctx, "loadCodeAssist gagal saat sinkronisasi model; sync berlanjut tanpa project",
 			"provider_id", p.ID, "error", err)

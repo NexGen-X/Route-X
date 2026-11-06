@@ -88,6 +88,26 @@ describe('Observability — kejujuran muatan parsial (B-225)', () => {
   });
 });
 
+describe('Observability — label data terakhir saat muat ulang gagal total (B-321)', () => {
+  it('angka lama di bawah banner gagal-total dilabeli sebagai data terakhir', async () => {
+    renderPage();
+    expect(await screen.findByText('75.0%')).toBeInTheDocument();
+
+    seriesMock.mockRejectedValue(new Error('deret tidak terjangkau'));
+    breakdownMock.mockRejectedValue(new Error('rincian tidak terjangkau'));
+    summaryMock.mockRejectedValue(new Error('ringkasan tidak terjangkau'));
+    cacheMock.mockRejectedValue(new Error('cache tidak terjangkau'));
+    fireEvent.click(screen.getByRole('button', { name: /segarkan data observabilitas/i }));
+
+    expect(await screen.findByText(/Seluruh layanan observabilitas gagal/)).toBeInTheDocument();
+    expect(await screen.findByText(/data terakhir/i)).toBeInTheDocument();
+    // Angka lama tetap tampil (ia memang pernah terukur) — yang berubah
+    // hanyalah label kejujurannya. (Sel cache memang dikosongkan oleh
+    // perilaku B-225; angka ringkasan/seri lama yang dipertahankan.)
+    expect(screen.getByText('100 tok')).toBeInTheDocument();
+  });
+});
+
 describe('Observability — strip KPI saat semua sumber gagal (B-284)', () => {
   it('banner kegagalan total tampil TANPA "0.00%" dan badge "Nominal" karangan', async () => {
     seriesMock.mockRejectedValue(new Error('deret tidak terjangkau'));

@@ -16,6 +16,10 @@ export interface SystemTelemetrySectionProps {
   overview: SystemOverview | null;
 }
 
+// B-313: selama overview belum tiba, SEMUA angka di seksi ini —
+// termasuk sub-angka — memakai penanda "—". Bawaan seperti
+// `?? 0`, `|| 'DIRECT'`, dan terutama `?? 1` pada container_cpu_cap
+// menampilkan konstanta karangan seolah terukur.
 export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ overview }) => {
   const hostRAMPct =
     overview?.host_ram_total_bytes && overview.host_ram_total_bytes > 0
@@ -64,7 +68,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             {/* Progress bar host RAM */}
             <div className="mt-3">
               <div className="flex items-center justify-between text-[11px] text-text-secondary mb-1.5 font-mono">
-                <span>{hostRAMPct.toFixed(1)}% host RAM</span>
+                <span>{overview ? `${hostRAMPct.toFixed(1)}% host RAM` : '— host RAM'}</span>
                 <span className="text-text-muted">
                   {overview
                     ? `${formatBytes(overview.host_ram_used_bytes)} / ${formatBytes(overview.host_ram_total_bytes)}`
@@ -97,7 +101,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             <div className="flex items-center justify-between">
               <span className="text-text-muted">Siklus GC</span>
               <span className="font-mono text-text-secondary font-medium">
-                {overview?.num_gc ?? 0}
+                {overview ? overview.num_gc : '—'}
               </span>
             </div>
           </div>
@@ -117,7 +121,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
                 </div>
               </div>
               <div className="px-2 py-0.5 rounded-full bg-bg-surface-2 border border-border text-[11px] font-mono text-text-secondary font-medium">
-                {(overview?.net_rate_mb_s ?? 0).toFixed(1)} MB/s
+                {overview ? `${(overview.net_rate_mb_s ?? 0).toFixed(1)} MB/s` : '—'}
               </div>
             </div>
 
@@ -211,13 +215,13 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
                 </div>
               </div>
               <div className="px-2 py-0.5 rounded-full bg-bg-surface-2 border border-border text-[11px] font-mono text-text-secondary font-medium">
-                {overview?.egress_active_mode || 'DIRECT'}
+                {overview ? overview.egress_active_mode || '—' : '—'}
               </div>
             </div>
 
             <div className="mt-3">
               <div className="text-lg font-bold text-white font-mono tracking-tight">
-                {overview?.egress_total_routes ?? 0}
+                {overview ? overview.egress_total_routes : '—'}
               </div>
               <span className="text-[11px] text-text-muted font-mono block mt-0.5">
                 Jalur keluar terdaftar
@@ -230,12 +234,14 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             <div className="flex items-center justify-between">
               <span className="text-text-muted">HTTP/SOCKS</span>
               <span className="font-mono text-text-secondary">
-                {overview?.egress_http_count ?? 0}
+                {overview ? overview.egress_http_count : '—'}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-text-muted">Status Tunnel</span>
-              {(overview?.egress_total_routes ?? 0) > 0 ? (
+              {!overview ? (
+                <span className="font-mono text-text-secondary">—</span>
+              ) : overview.egress_total_routes > 0 ? (
                 <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1 font-medium">
                   <CheckCircle2 className="w-3 h-3" /> Beroperasi
                 </span>
@@ -264,7 +270,9 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
                 </div>
               </div>
               <Badge variant="neutral" className="text-[11px] font-mono">
-                {(overview?.container_cpu_cap ?? 1).toFixed(1)} cores
+                {overview?.container_cpu_cap != null
+                  ? `${overview.container_cpu_cap.toFixed(1)} cores`
+                  : '—'}
               </Badge>
             </div>
 
@@ -279,7 +287,7 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
               <div className="flex items-center justify-between text-[11px] text-text-secondary mb-1.5 font-mono">
                 <span>Proxy CPU</span>
                 <span className="text-text-primary font-medium">
-                  {(overview?.proxy_cpu_pct ?? 0).toFixed(1)}%
+                  {overview ? `${(overview.proxy_cpu_pct ?? 0).toFixed(1)}%` : '—'}
                 </span>
               </div>
               <div className="w-full h-1.5 bg-bg-surface-3 rounded-full overflow-hidden">
@@ -296,13 +304,13 @@ export const SystemTelemetrySection: React.FC<SystemTelemetrySectionProps> = ({ 
             <div className="flex items-center justify-between">
               <span className="text-text-muted">Host CPU</span>
               <span className="font-mono text-text-secondary">
-                {(overview?.host_cpu_pct ?? 0).toFixed(1)}%
+                {overview ? `${(overview.host_cpu_pct ?? 0).toFixed(1)}%` : '—'}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-text-muted">Goroutines</span>
               <span className="font-mono text-text-secondary font-medium">
-                {overview?.num_goroutine ?? 0}
+                {overview ? overview.num_goroutine : '—'}
               </span>
             </div>
           </div>

@@ -132,9 +132,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   }, []);
 
   const loadData = useCallback(
-    async (showToast = false) => {
+    async (showToast = false, latar = false) => {
       const seq = ++loadSeqRef.current;
-      if (showToast) setIsRefreshing(true);
+      // B-322: polling berkala adalah penyegaran LATAR — memakai
+      // isRefreshing, bukan isLoading. Versi lama menyetel isLoading
+      // lagi tiap 30 detik sehingga hero berkedip ke "Memuat Status…"
+      // dan telemetri tampak belum terukur walau data lama tampil.
+      if (showToast || latar) setIsRefreshing(true);
       else setIsLoading(true);
 
       try {
@@ -304,7 +308,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   useEffect(() => {
     loadData();
     const slowInterval = setInterval(() => {
-      if (mountedRef.current) void loadData(false);
+      if (mountedRef.current) void loadData(false, true);
     }, 30000);
     const fastInterval = setInterval(() => {
       if (mountedRef.current) void refreshOverview();

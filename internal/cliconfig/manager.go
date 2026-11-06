@@ -453,21 +453,31 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	fullEnvVars := m.buildEnvVars(toolDef, p.Mode, p.Target, gwURL)
 
 	// Urutan penulisan (audit3 V-LN-35): BERKAS dulu, database TERAKHIR,
-	// dan key.env di-snapshot sebelum ditulis ulang. Versi lama menyimpan
-	// ke DB lebih dulu — kegagalan langkah berkas sesudahnya meninggalkan
-	// DB yang mengklaim konfigurasi yang tidak pernah diterapkan di disk.
+	// dan seluruh berkas yang disentuh di-snapshot sebelum ditulis.
+	// Versi lama menyimpan ke DB lebih dulu — kegagalan langkah berkas
+	// sesudahnya meninggalkan DB yang mengklaim konfigurasi yang tidak
+	// pernah diterapkan di disk.
+	//
+	// B-218: jepretan kini mencakup SEMUA berkas yang disentuh Configure
+	// (key.env, cli-env.sh, target hook shell, berkas tool), bukan hanya
+	// key.env. Versi sebelumnya: kegagalan syncGlobalEnvScript/
+	// applyToolSpecificConfig hanya memulihkan key.env — cli-env.sh,
+	// hook .bashrc/.zshrc, dan berkas tool tertinggal dalam keadaan
+	// baru — dan kegagalan Put di akhir tidak memulihkan apa pun,
+	// sehingga disk (baru) dan DB (lama) berakhir tidak konsisten.
+	jepretan := jepretSemuaBerkasConfigure(homeDir, p.ToolID)
+	pulihkanSemua := func() {
+		for _, j := range jepretan {
+			j.pulihkan()
+		}
+	}
 	var keyEnvPath string
-	var snapshotKeyEnv []byte
-	keyEnvAda := false
 	if homeDir != "" {
 		routexDir := filepath.Join(homeDir, ".routex")
 		if err := os.MkdirAll(routexDir, 0755); err != nil {
 			return nil, fmt.Errorf("menyiapkan direktori %s: %w", routexDir, err)
 		}
 		keyEnvPath = filepath.Join(routexDir, "key.env")
-		if data, errBaca := os.ReadFile(keyEnvPath); errBaca == nil {
-			snapshotKeyEnv, keyEnvAda = data, true
-		}
 		// key.env DIBANGUN ULANG dari seluruh konfigurasi tersimpan, bukan
 		// ditimpa empat nama generik milik tool terakhir saja (audit3
 		// V-LN-24/26/27): setiap tool berkonfigurasi mendapat baris
@@ -477,19 +487,9 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 			return nil, err
 		}
 	}
-	pulihkanKeyEnv := func() {
-		if keyEnvPath == "" {
-			return
-		}
-		if keyEnvAda {
-			_ = tulisAtomik(keyEnvPath, snapshotKeyEnv, 0600)
-		} else {
-			_ = os.Remove(keyEnvPath)
-		}
-	}
 
 	if err := m.syncGlobalEnvScript(homeDir, toolDef, fullEnvVars); err != nil {
-		pulihkanKeyEnv()
+		pulihkanSemua()
 		return nil, fmt.Errorf("menyinkronkan skrip env global CLI: %w", err)
 	}
 
@@ -507,7 +507,7 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 		kunciEfektif = m.kunciTersimpan(stored, p.ToolID)
 	}
 	if err := m.applyToolSpecificConfig(ctx, homeDir, toolDef, p.Mode, p.Target, gwURL, kunciEfektif); err != nil {
-		pulihkanKeyEnv()
+		pulihkanSemua()
 		return nil, fmt.Errorf("menulis konfigurasi lokal %s: %w", toolDef.Name, err)
 	}
 
@@ -522,6 +522,9 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 			// Kegagalan persistensi = Configure GAGAL (audit F5): versi lama
 			// hanya mencatat log lalu melaporkan sukses, sehingga operator
 			// mengira konfigurasi tersimpan padahal hilang saat restart.
+			// B-218: disk ikut dipulihkan ke jepretan, supaya keadaan
+			// lama di DB dan keadaan lama di disk tetap sepasang.
+			pulihkanSemua()
 			return nil, fmt.Errorf("menyimpan konfigurasi CLI %s ke database: %w", p.ToolID, err)
 		}
 	}
@@ -554,6 +557,124 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	}
 
 	return status, nil
+}
+
+// --- Jepretan & pemulihan Configure (B-218) ---
+
+// jepretanBerkas adalah potret satu berkas sebelum Configure menulis
+// ulang: isi + izin semula, penanda tidak-ada, atau penanda
+// takTersentuh untuk berkas yang ada tetapi tidak terbaca sebagai
+// berkas biasa (direktori, galat baca) — keadaan yang tidak diketahui
+// tidak ditebak saat pemulihan.
+type jepretanBerkas struct {
+	jalur        string
+	isi          []byte
+	ada          bool
+	izin         os.FileMode
+	takTersentuh bool
+}
+
+func jepretBerkasConfigure(jalur string) jepretanBerkas {
+	fi, err := os.Stat(jalur)
+	if err != nil {
+		return jepretanBerkas{jalur: jalur}
+	}
+	j := jepretanBerkas{jalur: jalur, ada: true, izin: fi.Mode().Perm()}
+	if fi.IsDir() {
+		j.takTersentuh = true
+		return j
+	}
+	isi, err := os.ReadFile(jalur)
+	if err != nil {
+		j.takTersentuh = true
+		return j
+	}
+	j.isi = isi
+	return j
+}
+
+// pulihkan mengembalikan berkas ke keadaan jepretan: semula tidak
+// ada → ciptaan Configure dihapus; semula ada → ditulis ulang atomik
+// dengan isi dan izin semula. Galat pemulihan diabaikan per berkas
+// (best effort): galat utama Configure sudah dikembalikan ke
+// pemanggil, dan satu berkas yang gagal pulih tidak boleh menghentikan
+// pemulihan berkas lain.
+func (j jepretanBerkas) pulihkan() {
+	if j.takTersentuh {
+		return
+	}
+	if !j.ada {
+		_ = os.Remove(j.jalur)
+		return
+	}
+	_ = tulisAtomik(j.jalur, j.isi, j.izin)
+}
+
+// jalurBerkasConfigure menyusun SEMUA jalur berkas yang mungkin
+// ditulis satu panggilan Configure untuk tool tertentu: key.env,
+// cli-env.sh, target hook shell, dan berkas tool dari
+// applyToolSpecificConfig.
+//
+// Target hook dinilai lewat penyelesaian symlink karena pasangHook
+// menulis ke berkas hasil EvalSymlinks. /etc/profile.d/routex.sh
+// SENGAJA dikecualikan: berkas sistem bersama itu ditulis best-effort,
+// isinya deterministik mengikuti key.env, dan menghapus/menimpanya
+// saat rollback justru bisa merusak salinan milik shell lain.
+//
+// WAJIB sinkron dengan penulisnya: jalur tool di sini harus sama
+// dengan yang ditulis applyToolSpecificConfig (dan hermes menulis dua
+// berkas berurutan — keduanya terdaftar). Menambah case penulisan baru
+// di sana tanpa memperbarui peta ini mengembalikan lubang B-218 untuk
+// tool itu. copilot (murni env) dan cline (menjalankan CLI resmi yang
+// menulis ke tokonya sendiri) tidak menulis berkas dari jalur tool,
+// jadi tidak mempunyai entri.
+func jalurBerkasConfigure(homeDir, toolID string) []string {
+	if homeDir == "" {
+		return nil
+	}
+	jalur := []string{
+		filepath.Join(homeDir, ".routex", "key.env"),
+		filepath.Join(homeDir, ".routex", "cli-env.sh"),
+	}
+	for _, rc := range []string{".bashrc", ".zshrc"} {
+		rcPath := filepath.Join(homeDir, rc)
+		if resolved, err := filepath.EvalSymlinks(rcPath); err == nil {
+			rcPath = resolved
+		}
+		jalur = append(jalur, rcPath)
+	}
+	switch toolID {
+	case "claude":
+		jalur = append(jalur, filepath.Join(homeDir, ".claude", "settings.json"))
+	case "aider":
+		jalur = append(jalur, filepath.Join(homeDir, ".aider.conf.yml"))
+	case "goose":
+		jalur = append(jalur, filepath.Join(homeDir, ".config", "goose", "config.yaml"))
+	case "opencode":
+		jalur = append(jalur, filepath.Join(homeDir, ".config", "opencode", "opencode.json"))
+	case "codex":
+		jalur = append(jalur, filepath.Join(homeDir, ".codex", "config.toml"))
+	case "grok-build":
+		jalur = append(jalur, filepath.Join(homeDir, ".grok", "config.toml"))
+	case "qwen":
+		jalur = append(jalur, filepath.Join(homeDir, ".qwen", "settings.json"))
+	case "crush":
+		jalur = append(jalur, filepath.Join(homeDir, ".config", "crush", "crush.json"))
+	case "hermes":
+		jalur = append(jalur,
+			filepath.Join(homeDir, ".hermes", "config.yaml"),
+			filepath.Join(homeDir, ".hermes", ".env"))
+	}
+	return jalur
+}
+
+func jepretSemuaBerkasConfigure(homeDir, toolID string) []jepretanBerkas {
+	jalur := jalurBerkasConfigure(homeDir, toolID)
+	jepretan := make([]jepretanBerkas, 0, len(jalur))
+	for _, p := range jalur {
+		jepretan = append(jepretan, jepretBerkasConfigure(p))
+	}
+	return jepretan
 }
 
 // bersihkanPreferensiToolTercabut menangani data preferensi

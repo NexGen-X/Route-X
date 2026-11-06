@@ -28,6 +28,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"sort"
 	"sync"
 	"time"
 
@@ -253,39 +254,142 @@ func (g *Guard) KembalikanKuota(ctx context.Context, p *apikey.Principal, ip net
 	g.limiter.RefundRequest(ctx, p, ip)
 	// Cakupan model tidak dikenal resolver principal, jadi RefundRequest
 	// tidak pernah menyentuhnya (B-254): kenaikan dari PeriksaBatasModel
-	// dibatalkan terpisah dari tanda yang ditanam kebijakan saat batas
-	// model lolos. Cakupan disusun ulang dari mesin kebijakan yang sama
-	// persis seperti saat kenaikannya, supaya jendelanya identik.
-	if modelID := KuotaModelTerbakar(ctx); modelID != "" && g.rates != nil {
-		scopes := g.rates.Requests(ctx, []policy.Target{{Scope: policy.ScopeModel, ID: modelID}}, apikey.Limits{})
-		g.limiter.RefundScopes(ctx, scopes)
+	// dibatalkan terpisah dari tanda yang ditanam saat batas model lolos.
+	// Yang dibatalkan hanya kenaikan yang BELUM dikembalikan — jalur
+	// tier fallback mengembalikan bagiannya sendiri di titik lewatinya
+	// (B-294), dan hitungan bersama di tanda menjamin tidak ada
+	// pengembalian ganda dari dua jalur.
+	for _, modelID := range SemuaKuotaModelTerbakar(ctx) {
+		for g.kembalikanSatuKuotaModel(ctx, modelID) {
+		}
 	}
 }
 
-// kunciKuotaModel adalah kunci context untuk tanda bahwa batas cakupan
-// model sudah dinaikkan bagi satu permintaan (B-254).
+// kembalikanSatuKuotaModel membatalkan SATU kenaikan penghitung cakupan
+// model yang masih tercatat belum dikembalikan pada tanda bersama, dan
+// melaporkan apakah ada yang dibatalkan. Cakupan disusun ulang dari
+// mesin kebijakan yang sama persis seperti saat kenaikannya, supaya
+// jendelanya identik.
+func (g *Guard) kembalikanSatuKuotaModel(ctx context.Context, modelID string) bool {
+	if g == nil || g.limiter == nil || g.rates == nil || modelID == "" {
+		return false
+	}
+	t := pemegangKuotaModel(ctx)
+	if t == nil || !t.klaim(modelID) {
+		return false
+	}
+	scopes := g.rates.Requests(ctx, []policy.Target{{Scope: policy.ScopeModel, ID: modelID}}, apikey.Limits{})
+	g.limiter.RefundScopes(ctx, scopes)
+	return true
+}
+
+// KembalikanKuotaModel membatalkan kenaikan penghitung cakupan SATU
+// model dalam permintaan ini (B-294). Dipakai jalur persiapan tier
+// fallback: tier menaikkan batas modelnya pada context turunan, lalu
+// batal melaju (gerbang menolak, kandidat kosong, tier dilewati) —
+// pembatalan keseluruhan di akhir permintaan tidak bisa menjadi
+// satu-satunya jalan, karena permintaan yang sama bisa tetap dilayani
+// tier lain (tidak ada pembatalan keseluruhan) atau tier yang disiapkan
+// dibuang pemanggilnya. Kenaikan yang sudah dibatalkan di sini tidak
+// akan dibatalkan ulang oleh KembalikanKuota.
+func (g *Guard) KembalikanKuotaModel(ctx context.Context, modelID string) {
+	g.kembalikanSatuKuotaModel(ctx, modelID)
+}
+
+// kunciKuotaModel adalah kunci context untuk tanda bersama bahwa batas
+// cakupan model sudah dinaikkan bagi satu permintaan (B-254, B-294).
 type kunciKuotaModel struct{}
+
+// tandaKuotaModel adalah pemegang tanda BERSAMA: satu pointer yang
+// hidup di context permintaan dan diwarisi semua context turunannya,
+// menghitung berapa kenaikan cakupan tiap model yang BELUM
+// dikembalikan. Bentuk lama (satu string model) tidak bisa mewakili
+// jalur tier fallback — context turunan tier menandai modelnya sendiri
+// dan string di context induk tidak pernah melihatnya, jadi refund
+// B-254 tidak menjangkau tier (B-294). Pointer bersama menutup itu:
+// tanda dari cabang mana pun terlihat oleh pembatal di cabang lain,
+// dan hitungan mencegah pengembalian ganda.
+type tandaKuotaModel struct {
+	mu     sync.Mutex
+	jumlah map[string]int
+}
+
+// tambah mencatat satu kenaikan untuk modelID.
+func (t *tandaKuotaModel) tambah(modelID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.jumlah == nil {
+		t.jumlah = map[string]int{}
+	}
+	t.jumlah[modelID]++
+}
+
+// klaim mengambil satu kenaikan modelID untuk dikembalikan; false bila
+// tidak ada yang belum dikembalikan.
+func (t *tandaKuotaModel) klaim(modelID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.jumlah[modelID] <= 0 {
+		return false
+	}
+	t.jumlah[modelID]--
+	return true
+}
+
+// terdaftar mengembalikan ID model yang masih punya kenaikan belum
+// dikembalikan, terurut supaya urutan refund deterministik.
+func (t *tandaKuotaModel) terdaftar() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ids := make([]string, 0, len(t.jumlah))
+	for id, n := range t.jumlah {
+		if n > 0 {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// pemegangKuotaModel mengambil pemegang tanda dari context, atau nil.
+func pemegangKuotaModel(ctx context.Context) *tandaKuotaModel {
+	if ctx == nil {
+		return nil
+	}
+	t, _ := ctx.Value(kunciKuotaModel{}).(*tandaKuotaModel)
+	return t
+}
 
 // TandaiKuotaModel menanam tanda pada context bahwa PeriksaBatasModel sudah
 // menaikkan penghitung cakupan model untuk modelID dalam permintaan ini.
 // kebijakan menanamnya lewat mutasi *http.Request yang sama dengan yang
 // dipegang penjaga kuota, supaya KembalikanKuota dapat membatalkan kenaikan
-// itu ketika permintaan akhirnya ditolak sebelum dilayani.
+// itu ketika permintaan akhirnya ditolak sebelum dilayani. Bila context
+// sudah membawa pemegang tanda, tanda ditambahkan ke pemegang yang sama
+// dan context dikembalikan apa adanya — context turunan (jalur tier)
+// dengan begitu menandai pemegang yang sama dengan induknya.
 func TandaiKuotaModel(ctx context.Context, modelID string) context.Context {
 	if ctx == nil || modelID == "" {
 		return ctx
 	}
-	return context.WithValue(ctx, kunciKuotaModel{}, modelID)
+	if t := pemegangKuotaModel(ctx); t != nil {
+		t.tambah(modelID)
+		return ctx
+	}
+	t := &tandaKuotaModel{}
+	t.tambah(modelID)
+	return context.WithValue(ctx, kunciKuotaModel{}, t)
 }
 
-// KuotaModelTerbakar mengembalikan ID model yang penghitung cakupan
-// modelnya sudah dinaikkan dalam permintaan ini, atau "" bila belum ada.
-func KuotaModelTerbakar(ctx context.Context) string {
-	if ctx == nil {
-		return ""
+// SemuaKuotaModelTerbakar mengembalikan ID semua model yang penghitung
+// cakupan modelnya sudah dinaikkan dalam permintaan ini dan belum
+// dikembalikan.
+func SemuaKuotaModelTerbakar(ctx context.Context) []string {
+	t := pemegangKuotaModel(ctx)
+	if t == nil {
+		return nil
 	}
-	id, _ := ctx.Value(kunciKuotaModel{}).(string)
-	return id
+	return t.terdaftar()
 }
 
 // ProviderDilarang melaporkan apakah satu provider dilarang penyaring konten.

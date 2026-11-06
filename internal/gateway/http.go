@@ -580,6 +580,30 @@ func teksPermintaan(req *providers.ChatRequest) string {
 	return b.String()
 }
 
+// responsKanonikKosong melaporkan apakah respons kanonik tidak memuat
+// SATU PUN konten yang bisa diteruskan ke klien di choice mana pun:
+// tanpa teks/bagian, tanpa tool call, tanpa penalaran, tanpa penolakan,
+// tanpa transkrip audio. Signature penalaran sendirian BUKAN konten —
+// ia hanya sah menemani teks penalarannya. Ini padanan gateway dari
+// penjaga B-261 di adapter Anthropic, dipakai permukaan Responses &
+// Messages (B-293): adapter yang "berhasil" dengan choice kosong total
+// dan Raw kosong melanggar kontrak providers.Provider — permukaan
+// chat menjawab keadaan yang sama dengan 500, jadi dua permukaan ini
+// tidak boleh mengarang sukses 200 darinya.
+func responsKanonikKosong(resp *providers.ChatResponse) bool {
+	if resp == nil {
+		return true
+	}
+	for i := range resp.Choices {
+		m := &resp.Choices[i].Message
+		if m.Content != "" || len(m.Parts) > 0 || len(m.ToolCalls) > 0 ||
+			m.ReasoningContent != "" || m.Refusal != "" || m.AudioTranscript != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // teksJawaban menggabungkan seluruh teks jawaban untuk diperiksa penyaring konten.
 func teksJawaban(resp *providers.ChatResponse) string {
 	if resp == nil {

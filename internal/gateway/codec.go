@@ -58,6 +58,7 @@ const (
 	fSeed                = "seed"
 	fReasoningEffort     = "reasoning_effort"
 	fUser                = "user"
+	fN                   = "n"
 
 	fInput          = "input"
 	fDimensions     = "dimensions"
@@ -197,6 +198,18 @@ func DecodeChatRequest(body []byte) (*providers.ChatRequest, error) {
 		var n int
 		if err := json.Unmarshal(raw, &n); err != nil || n <= 0 {
 			return nil, fmt.Errorf("field %s harus bilangan bulat lebih besar dari 0", kutip(fMaxCompletionTokens))
+		}
+	}
+	// "n" sama-sama dikenal gateway (EstimateTokens membacanya sebagai
+	// pengali estimasi keluaran), jadi ia menerima perlakuan B-250 yang
+	// sama (B-302): nilai negatif/nol/bukan-bilangan yang lolos akan
+	// diteruskan apa adanya ke upstream dan penolakannya tercatat
+	// sebagai kegagalan provider, padahal kesalahannya milik klien dan
+	// sudah terlihat di sini.
+	if raw, ok := fields[fN]; ok {
+		var n int
+		if err := json.Unmarshal(raw, &n); err != nil || n <= 0 {
+			return nil, fmt.Errorf("field %s harus bilangan bulat lebih besar dari 0", kutip(fN))
 		}
 	}
 	if len(fields) > 0 {

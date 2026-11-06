@@ -351,7 +351,11 @@ func decodePesanAnthropic(m anthropicMsg) ([]providers.Message, error) {
 	}
 	var blocks []anthropicBlock
 	if err := json.Unmarshal(m.Content, &blocks); err != nil {
-		return nil, fmt.Errorf("gagal mengurai pesan Anthropic: %w", err)
+		// B-292: jalur bersarang ini dulu meneruskan %w apa adanya —
+		// nama tipe internal (gateway.anthropicBlock) dan frasa stdlib
+		// "cannot unmarshal" bocor ke klien, padahal tingkat-atas sudah
+		// disanitasi B-253. Lewatkan penerjemah yang sama.
+		return nil, fmt.Errorf("konten pesan Anthropic tidak sah: %w", pesanDecodeAnthropic(err))
 	}
 
 	pb := &pembangunPesan{role: role}
@@ -640,7 +644,9 @@ func terjemahkanToolChoiceAnthropic(raw json.RawMessage) (json.RawMessage, *bool
 		DisableParallelToolUse bool   `json:"disable_parallel_tool_use"`
 	}
 	if err := json.Unmarshal(raw, &tc); err != nil {
-		return nil, nil, fmt.Errorf("tool_choice Anthropic tidak sah: %w", err)
+		// B-292: sama seperti decodePesanAnthropic — jangan teruskan
+		// jeroan stdlib/struct ke klien; sebut field JSON-nya.
+		return nil, nil, fmt.Errorf("tool_choice Anthropic tidak sah: %w", pesanDecodeAnthropic(err))
 	}
 	var parallel *bool
 	if tc.DisableParallelToolUse {
@@ -1119,12 +1125,15 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
-	if out.Value == nil || (len(out.Value.Choices) == 0 && len(out.Value.Raw) == 0) {
-		// Adapter yang "berhasil" tanpa pilihan maupun body mentah
-		// melanggar kontrak providers.Provider (B-247): permukaan chat
-		// dan embeddings menjawab keadaan yang sama dengan 500.
-		// Menyusun pesan end_turn berisi satu block teks kosong dari
-		// ketiadaan berarti mengarang sukses yang tidak pernah terjadi.
+	if out.Value == nil || (len(out.Value.Raw) == 0 && responsKanonikKosong(out.Value)) {
+		// Adapter yang "berhasil" tanpa body mentah dan tanpa satu pun
+		// konten kanonik melanggar kontrak providers.Provider (B-247,
+		// diperluas B-293): permukaan chat dan embeddings menjawab
+		// keadaan yang sama dengan 500. Varian choice-ada-tetapi-kosong
+		// total dulu lolos karena kriteria lama hanya menghitung
+		// choice; menyusun pesan end_turn berisi satu block teks
+		// kosong dari ketiadaan berarti mengarang sukses yang tidak
+		// pernah terjadi.
 		h.logger.ErrorContext(r.Context(), "adapter mengembalikan respons kosong",
 			"provider", namaProvider(out.Candidate), "model", pr.model.ModelID)
 		writeAnthropicError(w, http.StatusInternalServerError, "api_error",

@@ -223,7 +223,9 @@ func TestToggleKeluargaBodyKosongDitolakB088(t *testing.T) {
 
 	keyID := buatLewatAPI("kunci API", "/api/admin/access/api-keys", map[string]any{"name": "Kunci B-088"})
 	ruleID := buatLewatAPI("aturan routing", "/api/admin/gateway/routing-rules", map[string]any{
+		// match_model_id wajib menyertai virtual_alias sejak B-165.
 		"name": "aturan-b088", "strategy": "priority", "virtual_alias": "alias-b088", "pipeline": pipelineValid,
+		"match_model_id": model.ID,
 	})
 	limitID := buatLewatAPI("batas laju", "/api/admin/gateway/rate-limits/", map[string]any{
 		"scope": "model", "scope_id": model.ID, "tokens_per_minute": 100,

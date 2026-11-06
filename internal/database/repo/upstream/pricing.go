@@ -562,10 +562,37 @@ func (p *Price) Cost(u TokenUsage) (CostBreakdown, error) {
 	if err != nil {
 		return CostBreakdown{}, fmt.Errorf("menghitung biaya token cache creation 1 jam: %w", err)
 	}
-	out.CacheCreation = biaya5m + biaya1h
+	// Penjumlahan antar-komponen dijaga luapannya (B-259): setiap komponen
+	// sudah diperiksa IsInt64 oleh costOf/costOfScaled, tetapi JUMLAH dua
+	// komponen yang sama-sama sah dapat melewati MaxInt64 dan membungkus
+	// menjadi angka negatif — Total negatif yang lolos berarti biaya
+	// tercatat negatif dan AddSpend mengikis pengeluaran anggaran. Kontrak
+	// costOf berlaku untuk hasil akhir juga: menolak dengan jelas lebih
+	// baik daripada menyimpan biaya yang meluap.
+	out.CacheCreation, err = jumlahUSD(biaya5m, biaya1h)
+	if err != nil {
+		return CostBreakdown{}, fmt.Errorf("menghitung biaya token cache creation: %w", err)
+	}
 
-	out.Total = out.Input + out.CachedInput + out.CacheCreation + out.Output + out.Reasoning
+	out.Total, err = jumlahUSD(out.Input, out.CachedInput, out.CacheCreation, out.Output, out.Reasoning)
+	if err != nil {
+		return CostBreakdown{}, fmt.Errorf("menghitung total biaya: %w", err)
+	}
 	return out, nil
+}
+
+// jumlahUSD menjumlahkan komponen biaya dengan pemeriksaan luapan: hasil
+// di luar rentang int64 ditolak sebagai ErrInvalidAmount, bukan dibiarkan
+// membungkus (B-259).
+func jumlahUSD(komponen ...USD) (USD, error) {
+	total := new(big.Int)
+	for _, k := range komponen {
+		total.Add(total, big.NewInt(int64(k)))
+	}
+	if !total.IsInt64() {
+		return 0, fmt.Errorf("%w: jumlah biaya di luar rentang yang bisa disimpan", ErrInvalidAmount)
+	}
+	return USD(total.Int64()), nil
 }
 
 // costOfScaled menghitung tokens × perMTok × num/den ÷ 1.000.000 secara eksak,

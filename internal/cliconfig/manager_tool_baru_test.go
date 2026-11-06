@@ -264,7 +264,13 @@ func TestConfigureCrushJSON(t *testing.T) {
 	if fi.Mode().Perm() != 0600 {
 		t.Errorf("izin crush.json = %o, mau 600", fi.Mode().Perm())
 	}
-	// Konfigurasi ulang tanpa kunci menghapus api_key dari berkas.
+	// Konfigurasi ulang tanpa kunci: parameter kosong berarti
+	// "tidak diubah" di tingkat produk dan kunci tool ini TIDAK
+	// tersimpan (manajer uji ini tanpa cipher/store kunci), jadi
+	// api_key tidak boleh mengarang nilai apa pun — absen atau
+	// tetap nilai yang sama. Kelangsungan kunci yang BENAR-BENAR
+	// tersimpan dibuktikan tegas oleh test B-215
+	// (TestB215KunciTersimpanSelamatKonfigurasiUlang).
 	_, err = mgr.Configure(context.Background(), ConfigureParams{
 		ToolID: "crush", Mode: ModeModelOnly, Target: "gpt-5",
 		GatewayURL: "http://localhost:8080/v1",
@@ -278,9 +284,6 @@ func TestConfigureCrushJSON(t *testing.T) {
 	}
 	prov = cfg["providers"].(map[string]any)["routex"].(map[string]any)
 	if _, ada := prov["api_key"]; ada {
-		// Parameter tanpa kunci berarti "tidak diubah" di tingkat
-		// produk (stored key dipertahankan), jadi api_key dari kunci
-		// tersimpan tetap sah; yang dilarang adalah kunci ASING.
 		if prov["api_key"] != "kunci-crush" {
 			t.Errorf("api_key crush berubah menjadi nilai asing: %v", prov["api_key"])
 		}

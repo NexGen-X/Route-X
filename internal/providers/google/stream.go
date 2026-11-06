@@ -266,11 +266,20 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 			// seperti argumen bergaya OpenAI — jadi id, nama, dan argumen sudah lengkap
 			// pada potongan pertama. Penomorannya berjalan lintas peristiwa agar id yang
 			// disintesis tetap unik sepanjang aliran.
+			// Sama seperti jalur non-stream: id upstream dipertahankan bila
+			// ada (B-163), selain itu disintesis.
+			callID := part.FunctionCall.ID
+			if callID == "" {
+				callID = synthesizeCallID(s.nextTool, part.FunctionCall.Name)
+			}
 			calls = append(calls, providers.ToolCall{
 				Index:    s.nextTool,
-				ID:       synthesizeCallID(s.nextTool, part.FunctionCall.Name),
+				ID:       callID,
 				Type:     "function",
 				Function: providers.FunctionCall{Name: part.FunctionCall.Name, Arguments: args},
+				// Sama seperti jalur non-stream: tanda tangan berpikir disalin
+				// ke bentuk kanonik (B-162).
+				ThoughtSignature: part.ThoughtSignature,
 			})
 			s.nextTool++
 		case part.Thought:

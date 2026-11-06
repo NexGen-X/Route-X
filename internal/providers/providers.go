@@ -218,6 +218,12 @@ type ToolCall struct {
 	ID       string       `json:"id,omitempty"`
 	Type     string       `json:"type,omitempty"`
 	Function FunctionCall `json:"function"`
+	// ThoughtSignature adalah tanda tangan berpikir yang dikeluarkan model
+	// thinking Gemini bersama functionCall (B-162). Upstream mewajibkannya ikut
+	// kembali pada riwayat giliran berikutnya; tanpa representasi kanonik ini
+	// tanda tangan itu hilang di antara respons dan permintaan lanjutan dan
+	// sesi tool putus dengan 400. Adapter selain Google mengabaikannya.
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 // ChatRequest adalah permintaan completion dalam bentuk kanonik.

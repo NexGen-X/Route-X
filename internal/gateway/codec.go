@@ -410,9 +410,15 @@ type pesanMasuk struct {
 
 // toolCallMasuk adalah satu tool call dalam riwayat yang dikirim ulang klien.
 type toolCallMasuk struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	// ThoughtSignature adalah pengecualian bernama dari batas "field keluaran tak
+	// dikenal tidak diteruskan" di atas (B-162): tanda tangan berpikir Gemini WAJIB
+	// bolak-balik utuh, karena upstream menolak riwayat functionCall model thinking
+	// yang tidak membawanya — mengabaikannya di sini memutus sesi tool di giliran
+	// hasil pertama.
+	ThoughtSignature string `json:"thought_signature"`
+	Function         struct {
 		Name string `json:"name"`
 		// Mentah supaya bentuk yang salah bisa dilaporkan dengan tepat. Di dialek OpenAI
 		// arguments adalah STRING berisi JSON, bukan objek — mengirim objek adalah
@@ -477,6 +483,8 @@ func uraikanPesan(raw json.RawMessage) ([]providers.Message, error) {
 					Name:      tc.Function.Name,
 					Arguments: args,
 				},
+				// Tanda tangan berpikir diteruskan ke bentuk kanonik (B-162).
+				ThoughtSignature: tc.ThoughtSignature,
 			})
 		}
 

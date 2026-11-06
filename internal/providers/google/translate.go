@@ -34,7 +34,12 @@ type geminiContent struct {
 type geminiPart struct {
 	Text string `json:"text,omitempty"`
 	// Thought menandai part berisi ringkasan penalaran, bukan jawaban.
-	Thought          bool                `json:"thought,omitempty"`
+	Thought bool `json:"thought,omitempty"`
+	// ThoughtSignature adalah field part (sejajar functionCall) yang memuat
+	// tanda tangan berpikir model thinking; wajib dipertahankan lintas giliran
+	// (B-162) — sebelumnya field ini tidak ada sehingga unmarshal respons
+	// membuangnya diam-diam.
+	ThoughtSignature string              `json:"thoughtSignature,omitempty"`
 	InlineData       *geminiBlob         `json:"inlineData,omitempty"`
 	FileData         *geminiFileData     `json:"fileData,omitempty"`
 	FunctionCall     *geminiFunctionCall `json:"functionCall,omitempty"`
@@ -52,6 +57,11 @@ type geminiFileData struct {
 }
 
 type geminiFunctionCall struct {
+	// ID adalah identitas panggilan yang dipakai model Claude di belakang
+	// Code Assist/Vertex (padanan tool_use.id Anthropic) (B-163). Gemini murni
+	// tidak mengirim dan tidak memintanya — ia mengaitkan hasil lewat nama —
+	// jadi field ini hanya terisi pada permukaan Code Assist.
+	ID   string          `json:"id,omitempty"`
 	Name string          `json:"name"`
 	Args json.RawMessage `json:"args,omitempty"`
 }
@@ -265,10 +275,27 @@ func (p *Provider) partsFor(m *providers.Message, names map[string]string) (stri
 			if err != nil {
 				return "", nil, err
 			}
-			parts = append(parts, geminiPart{FunctionCall: &geminiFunctionCall{
+			fc := &geminiFunctionCall{
 				Name: tc.Function.Name,
 				Args: args,
-			}})
+			}
+			if p.isAntigravity() {
+				// Hanya permukaan Code Assist yang membawa id panggilan (B-163):
+				// di sana id kanonik adalah tool_use.id yang diwajibkan riwayat
+				// Vertex ("tool_use.id: Field required" bila hilang). Jalur
+				// Gemini murni dibiarkan persis seperti sebelumnya — validator
+				// Gemini mengaitkan hasil lewat nama dan field asing pada
+				// functionCall belum terbukti ditoleransi di sana; pembuktiannya
+				// adalah gerbang probe wire B-163, bukan tebakan di kode ini.
+				fc.ID = tc.ID
+			}
+			parts = append(parts, geminiPart{
+				FunctionCall: fc,
+				// Tanda tangan berpikir dari giliran model sebelumnya dipasang
+				// kembali pada part yang sama (B-162): upstream menolak riwayat
+				// functionCall model thinking yang tidak membawanya.
+				ThoughtSignature: tc.ThoughtSignature,
+			})
 		}
 		return roleModel, parts, nil
 
@@ -892,11 +919,23 @@ func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*prov
 				if len(bytes.TrimSpace(part.FunctionCall.Args)) > 0 {
 					args = string(part.FunctionCall.Args)
 				}
+				// ID dari upstream dipertahankan bila ada (B-163): untuk model
+				// Claude via Code Assist itulah tool_use.id yang akan diminta
+				// kembali oleh riwayat Vertex. Gemini murni tidak mengirim id,
+				// jadi di sana sintesis berjalan persis seperti sebelumnya.
+				callID := part.FunctionCall.ID
+				if callID == "" {
+					callID = synthesizeCallID(seq, part.FunctionCall.Name)
+				}
 				calls = append(calls, providers.ToolCall{
 					Index:    len(calls),
-					ID:       synthesizeCallID(seq, part.FunctionCall.Name),
+					ID:       callID,
 					Type:     "function",
 					Function: providers.FunctionCall{Name: part.FunctionCall.Name, Arguments: args},
+					// Tanda tangan berpikir disalin ke bentuk kanonik (B-162);
+					// tanpa ini ia berhenti di adapter dan tidak pernah sampai
+					// ke klien untuk dikirim balik pada giliran berikutnya.
+					ThoughtSignature: part.ThoughtSignature,
 				})
 				seq++
 			case part.Thought:

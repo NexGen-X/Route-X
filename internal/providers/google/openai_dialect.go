@@ -58,6 +58,11 @@ type oaToolCall struct {
 	ID       string     `json:"id,omitempty"`
 	Type     string     `json:"type,omitempty"`
 	Function oaFunction `json:"function"`
+	// ThoughtSignature adalah field ekstra di luar dialek OpenAI murni (B-162):
+	// tanda tangan berpikir Gemini harus sampai ke klien supaya klien bisa
+	// mengembalikannya pada riwayat giliran berikutnya, tempat upstream
+	// mewajibkannya. Klien yang tidak mengenalnya mengabaikannya.
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 type oaFunction struct {
@@ -137,9 +142,10 @@ func encodeToolCalls(calls []providers.ToolCall, withIndex bool) []oaToolCall {
 	for i := range calls {
 		tc := &calls[i]
 		item := oaToolCall{
-			ID:       tc.ID,
-			Type:     tc.Type,
-			Function: oaFunction{Name: tc.Function.Name, Arguments: tc.Function.Arguments},
+			ID:               tc.ID,
+			Type:             tc.Type,
+			Function:         oaFunction{Name: tc.Function.Name, Arguments: tc.Function.Arguments},
+			ThoughtSignature: tc.ThoughtSignature,
 		}
 		if withIndex {
 			idx := tc.Index

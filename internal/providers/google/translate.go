@@ -39,11 +39,11 @@ type geminiPart struct {
 	// tanda tangan berpikir model thinking; wajib dipertahankan lintas giliran
 	// (B-162) — sebelumnya field ini tidak ada sehingga unmarshal respons
 	// membuangnya diam-diam.
-	ThoughtSignature string              `json:"thoughtSignature,omitempty"`
-	InlineData       *geminiBlob         `json:"inlineData,omitempty"`
-	FileData         *geminiFileData     `json:"fileData,omitempty"`
-	FunctionCall     *geminiFunctionCall `json:"functionCall,omitempty"`
-	FunctionResponse *geminiFunctionResp `json:"functionResponse,omitempty"`
+	ThoughtSignature providers.SignatureToleran `json:"thoughtSignature,omitempty"`
+	InlineData       *geminiBlob                `json:"inlineData,omitempty"`
+	FileData         *geminiFileData            `json:"fileData,omitempty"`
+	FunctionCall     *geminiFunctionCall        `json:"functionCall,omitempty"`
+	FunctionResponse *geminiFunctionResp        `json:"functionResponse,omitempty"`
 	// ExecutableCode dan CodeExecutionResult adalah part keluaran fitur
 	// eksekusi kode Gemini (B-211): kode yang ditulis model untuk
 	// dijalankan lingkungannya, dan hasil jalannya. Sebelumnya kedua field
@@ -316,7 +316,7 @@ func (p *Provider) partsFor(m *providers.Message, names map[string]string) (stri
 				// Tanda tangan berpikir dari giliran model sebelumnya dipasang
 				// kembali pada part yang sama (B-162): upstream menolak riwayat
 				// functionCall model thinking yang tidak membawanya.
-				ThoughtSignature: tc.ThoughtSignature,
+				ThoughtSignature: providers.SignatureToleran(tc.ThoughtSignature),
 			})
 		}
 		return roleModel, parts, nil
@@ -968,6 +968,11 @@ func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*prov
 		cand := &u.Candidates[i]
 		var text, reasoning strings.Builder
 		var calls []providers.ToolCall
+		// sigPikiran menampung tanda tangan part thought PERTAMA yang
+		// membawanya (B-262): bentuk kanonik hanya punya satu slot
+		// ReasoningSignature per pesan, sejajar perlakuan signature pada
+		// thinking block Anthropic.
+		var sigPikiran string
 		// parts menampung urutan keluaran persis seperti dikirim upstream,
 		// termasuk segmen teksnya, dan hanya DIPAKAI bila ada part non-teks
 		// (B-211): Message.Text() membaca dari Parts bila terisi, jadi
@@ -1000,11 +1005,19 @@ func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*prov
 					// Tanda tangan berpikir disalin ke bentuk kanonik (B-162);
 					// tanpa ini ia berhenti di adapter dan tidak pernah sampai
 					// ke klien untuk dikirim balik pada giliran berikutnya.
-					ThoughtSignature: part.ThoughtSignature,
+					ThoughtSignature: string(part.ThoughtSignature),
 				})
 				seq++
 			case part.Thought:
 				reasoning.WriteString(part.Text)
+				// Signature part thought sebelumnya dibuang di sini —
+				// hanya part functionCall yang menyalinnya (B-162) —
+				// padahal untuk model thinking murni ia menempel pada
+				// part thought; kehilangannya memutus kelanjutan
+				// penalaran lintas giliran (B-262).
+				if sigPikiran == "" {
+					sigPikiran = string(part.ThoughtSignature)
+				}
 			case part.Text != "":
 				text.WriteString(part.Text)
 				parts = append(parts, providers.ContentPart{Type: providers.PartTypeText, Text: part.Text})
@@ -1033,10 +1046,11 @@ func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*prov
 			finish = providers.FinishToolCalls
 		}
 		msg := providers.Message{
-			Role:             providers.RoleAssistant,
-			Content:          text.String(),
-			ToolCalls:        calls,
-			ReasoningContent: reasoning.String(),
+			Role:               providers.RoleAssistant,
+			Content:            text.String(),
+			ToolCalls:          calls,
+			ReasoningContent:   reasoning.String(),
+			ReasoningSignature: sigPikiran,
 		}
 		if adaNonTeks {
 			msg.Parts = parts

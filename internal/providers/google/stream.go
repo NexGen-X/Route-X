@@ -283,7 +283,7 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 				Function: providers.FunctionCall{Name: part.FunctionCall.Name, Arguments: args},
 				// Sama seperti jalur non-stream: tanda tangan berpikir disalin
 				// ke bentuk kanonik (B-162).
-				ThoughtSignature: part.ThoughtSignature,
+				ThoughtSignature: string(part.ThoughtSignature),
 			})
 			s.nextTool++
 		case part.Thought:

@@ -1532,8 +1532,13 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 			"stop_reason":   nil,
 			"stop_sequence": nil,
 			"usage": map[string]any{
-				"input_tokens":  EstimateTokens(pr.req).InputTokens,
-				"output_tokens": 1,
+				"input_tokens": EstimateTokens(pr.req).InputTokens,
+				// B-330: nol, bukan 1. Belum ada satu token output pun
+				// saat message_start ditulis; angka 1 di sini adalah
+				// sisa penanda lama (komentar pendampingnya bahkan
+				// menyebut 16) dan dibaca klien sebagai usage awal.
+				// Angka sebenarnya tiba di message_delta penutup.
+				"output_tokens": 0,
 			},
 		},
 	})
@@ -1607,17 +1612,76 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 			}
 		}
 
-		// Catatan tentang reasoning: ev.ReasoningDelta sengaja TIDAK di-stream ke
-		// sini. Anthropic hanya menerima blok thinking yang disertai signature
-		// kriptografis dari sisi server. Sejak B-295 bentuk kanonik MEMANG
-		// membawa signature aliran (StreamEvent.ReasoningSignature), tetapi
-		// permukaan ini tetap tidak merender blok thinking dari aliran
-		// provider lain: signature hanya sah untuk penerbit dan model yang
-		// mengeluarkannya, dan merakit blok thinking lintas-provider dari
-		// potongan aliran adalah keputusan desain tersendiri di luar
-		// B-295. Jejak penalaran dilewati pada permukaan ini; signature
-		// aliran sendiri kini selamat di kontrak kanonik untuk konsumen
-		// yang merakit pesan dari aliran.
+		// Blok thinking (B-324, menutup juga B-336): penalaran kini
+		// DIRENDER, tidak lagi dilewati. Keputusan lama ("sengaja
+		// tidak dirender") digantikan butir ini dengan dasar:
+		//
+		//   - Perender NON-streaming pada handler yang sama sudah
+		//     menerbitkan blok thinking + signature untuk semua
+		//     provider (renderKontenAnthropic): kehati-hatian
+		//     "signature hanya sah untuk penerbitnya" di sana sudah
+		//     diterima, dan ketidaksimetrisan streaming/non-streaming
+		//     itulah anomali yang sebenarnya.
+		//   - Kontrak multi-giliran Anthropic MEWAJIBKAN blok
+		//     thinking dikembalikan utuh beserta signature-nya;
+		//     dekoder permintaan permukaan ini menangkapnya
+		//     (pembangunPesan). Tanpa render di sini, giliran
+		//     lanjutan lewat klien Anthropic mana pun kehilangan
+		//     blok itu secara struktural.
+		//
+		// Konsekuensi untuk B-336: byte penalaran kini sampai ke
+		// klien dan mengisi byteKonten, dan blok yang terbit sendiri
+		// menggerakkan blokBerikutnya — jadi gerbang respons-kosong
+		// B-301 tidak lagi menelan aliran sehat yang isinya murni
+		// penalaran.
+		if ev.ReasoningDelta != "" || ev.ReasoningSignature != "" {
+			if tipeBlokSekarang != "thinking" {
+				tutupBlok()
+				indexBlokSekarang = blokBerikutnya
+				blokBerikutnya++
+				blockStartPayload, _ := json.Marshal(map[string]any{
+					"type":  "content_block_start",
+					"index": indexBlokSekarang,
+					"content_block": map[string]any{
+						"type":     "thinking",
+						"thinking": "",
+					},
+				})
+				if !kirimEvent("content_block_start", blockStartPayload) {
+					return
+				}
+				blokTerbuka = true
+				tipeBlokSekarang = "thinking"
+			}
+			if ev.ReasoningDelta != "" {
+				byteKonten += int64(len(ev.ReasoningDelta))
+				deltaPayload, _ := json.Marshal(map[string]any{
+					"type":  "content_block_delta",
+					"index": indexBlokSekarang,
+					"delta": map[string]any{
+						"type":     "thinking_delta",
+						"thinking": ev.ReasoningDelta,
+					},
+				})
+				if !kirimEvent("content_block_delta", deltaPayload) {
+					return
+				}
+				j.tandaiTTFT()
+			}
+			if ev.ReasoningSignature != "" {
+				deltaPayload, _ := json.Marshal(map[string]any{
+					"type":  "content_block_delta",
+					"index": indexBlokSekarang,
+					"delta": map[string]any{
+						"type":      "signature_delta",
+						"signature": ev.ReasoningSignature,
+					},
+				})
+				if !kirimEvent("content_block_delta", deltaPayload) {
+					return
+				}
+			}
+		}
 
 		// Potongan teks: buka blok text bila belum ada blok text yang terbuka.
 		// Transisi tool -> text menutup blok tool lama lebih dulu.

@@ -320,8 +320,27 @@ export const CLIIntegrations: React.FC = () => {
     setDiagStatus((prev) => ({ ...prev, [toolId]: { testing: true } }));
     const start = performance.now();
     const cfg = toolConfigs[toolId];
-    const targetModel =
-      cfg?.target || tool.active_target || models[0]?.model_id || 'Atria-Dawn-Preview';
+    // B-227: target uji HARUS model nyata — dari konfigurasi tool,
+    // target aktifnya, atau kepala katalog. Versi lama jatuh ke
+    // literal 'Atria-Dawn-Preview' bila ketiganya kosong: model itu
+    // TIDAK ada di katalog (sudah deprecated, penggantinya intern-s2),
+    // sehingga uji "live" menembak model karangan dan hasilnya
+    // menyesatkan. Tanpa target nyata, uji dibatalkan dengan pesan
+    // eksplisit SEBELUM fetch apa pun diterbitkan.
+    const targetModel = cfg?.target || tool.active_target || models[0]?.model_id;
+    if (!targetModel) {
+      setDiagStatus((prev) => ({
+        ...prev,
+        [toolId]: {
+          testing: false,
+          latency: 0,
+          ok: false,
+          message:
+            'Uji koneksi dibatalkan: belum ada model terdaftar di katalog untuk diuji. Sinkronkan model dari provider terlebih dahulu.',
+        },
+      }));
+      return;
+    }
     const effectiveKey = cfg?.apiKey || userApiKey || '';
 
     // Tenggat uji koneksi (audit3 V-FF-30): fetch mentah versi lama tanpa

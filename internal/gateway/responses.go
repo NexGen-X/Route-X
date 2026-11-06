@@ -782,12 +782,14 @@ func (h *Handlers) responsesSekali(w http.ResponseWriter, r *http.Request, pr *p
 		return
 	}
 
-	if out.Value == nil || (len(out.Value.Choices) == 0 && len(out.Value.Raw) == 0) {
-		// Adapter yang "berhasil" tanpa pilihan maupun body mentah
-		// melanggar kontrak providers.Provider (B-247): permukaan chat
-		// dan embeddings menjawab keadaan yang sama dengan 500.
-		// Mengodekannya menjadi objek completed ber-output kosong
-		// berarti mengarang sukses yang tidak pernah terjadi.
+	if out.Value == nil || (len(out.Value.Raw) == 0 && responsKanonikKosong(out.Value)) {
+		// Adapter yang "berhasil" tanpa body mentah dan tanpa satu pun
+		// konten kanonik melanggar kontrak providers.Provider (B-247,
+		// diperluas B-293): permukaan chat dan embeddings menjawab
+		// keadaan yang sama dengan 500. Varian choice-ada-tetapi-kosong
+		// total dulu lolos karena kriteria lama hanya menghitung
+		// choice; mengodekannya menjadi objek completed ber-output
+		// kosong berarti mengarang sukses yang tidak pernah terjadi.
 		h.logger.ErrorContext(r.Context(), "adapter mengembalikan respons kosong",
 			"provider", namaProvider(out.Candidate), "model", pr.model.ModelID)
 		httpx.InternalError(w, r)

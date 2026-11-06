@@ -313,6 +313,14 @@ func (j *jejak) pasangKeputusan(d routerDecision, stream bool) {
 		if d.Rule.Strategy.Valid() {
 			j.strategi = string(d.Rule.Strategy)
 		}
+		// Aturan combo: urutan gabungan yang benar-benar dicoba diatur
+		// strategi PIPELINE (OrderCandidates menerima Rule.Pipeline.Strategy),
+		// sedangkan strategi aturan hanya berperan memilih kandidat jangkar.
+		// Mencatat strategi aturan untuk combo membuat baris requests
+		// menyatakan strategi yang tidak mengatur permintaan itu (B-185).
+		if d.Rule.Combo() && d.Rule.Pipeline.Strategy.Valid() {
+			j.strategi = string(d.Rule.Pipeline.Strategy)
+		}
 		j.rule = &routingRingkas{id: d.Rule.ID, name: d.Rule.Name}
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -1624,52 +1625,27 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if err != nil {
 			return err
 		}
-		cfg["$schema"] = "https://opencode.ai/config.json"
-		providers, ok := cfg["provider"].(map[string]any)
-		if !ok || providers == nil {
-			providers = make(map[string]any)
-			cfg["provider"] = providers
-		}
-		routexProv, ok := providers["routex"].(map[string]any)
-		if !ok || routexProv == nil {
-			routexProv = map[string]any{
-				"npm": "@ai-sdk/openai-compatible",
-				"options": map[string]any{
-					"baseURL": gwURL,
-				},
-				"models": map[string]any{},
+		// B-280: bila berkas yang ada memuat komentar JSONC, sunting
+		// TEKS aslinya secara bedah agar komentar pengguna bertahan —
+		// penulisan ulang dari peta (MarshalIndent) membuang seluruh
+		// komentar walau datanya selamat. Hasil sunting hanya dipakai
+		// bila lolos verifikasi semantik terhadap mutasi peta yang
+		// sama persis; selain itu penulis jatuh ke jalur marshal di
+		// bawah (data tetap benar, komentar hilang seperti dulu).
+		tertulis := false
+		if mentah, errBaca := os.ReadFile(configPath); errBaca == nil && jsoncMengandungKomentar(string(mentah)) {
+			if hasil, errSunting := suntingOpenCodeJSONC(string(mentah), target, gwURL, apiKey); errSunting == nil &&
+				hasilSuntingOpenCodeSah(hasil, cfg, target, gwURL, apiKey) {
+				if err := tulisAtomik(configPath, []byte(hasil), 0600); err != nil {
+					return fmt.Errorf("menulis %s: %w", configPath, err)
+				}
+				tertulis = true
 			}
-			providers["routex"] = routexProv
 		}
-		opts, ok := routexProv["options"].(map[string]any)
-		if !ok || opts == nil {
-			// B-221: berkas warisan/buatan tangan bisa memuat provider
-			// routex TANPA sub-objek options; dulu cabang ini senyap
-			// melewatkan baseURL/apiKey sementara models dan model
-			// tetap diperbarui — provider menunjuk URL lama tetapi
-			// Configure melaporkan sukses. Buat sub-objeknya.
-			opts = make(map[string]any)
-			routexProv["options"] = opts
+		if tertulis {
+			return nil
 		}
-		opts["baseURL"] = gwURL
-		// apiKey di sini adalah kunci EFEKTIF (B-215): kunci baru
-		// bila Configure membawanya, jika tidak kunci tersimpan
-		// produk diteruskan pemanggil. Field kosong berarti
-		// "tidak diubah", jadi konfigurasi ulang tanpa kunci
-		// TIDAK menghapus apiKey selama produk masih menyimpan
-		// kunci untuk tool ini.
-		if apiKey != "" {
-			opts["apiKey"] = apiKey
-		} else {
-			delete(opts, "apiKey")
-		}
-		models, ok := routexProv["models"].(map[string]any)
-		if !ok || models == nil {
-			models = make(map[string]any)
-			routexProv["models"] = models
-		}
-		models[target] = map[string]any{"name": target}
-		cfg["model"] = "routex/" + target
+		mutasiCfgOpenCode(cfg, target, gwURL, apiKey)
 		data, err := json.MarshalIndent(cfg, "", "  ")
 		if err != nil {
 			return fmt.Errorf("mengkodekan opencode.json: %w", err)
@@ -1936,6 +1912,167 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 	}
 
 	return nil
+}
+
+// mutasiCfgOpenCode menerapkan mutasi konfigurasi Route-X pada
+// peta opencode.json hasil urai: $schema, provider.routex (options
+// baseURL + apiKey efektif, models.<target>), dan model aktif.
+// Inilah SATU-SATUNYA definisi semantik penulis opencode — jalur
+// marshal memakainya langsung, dan jalur sunting teks B-280
+// diverifikasi terhadap hasil mutasi ini.
+func mutasiCfgOpenCode(cfg map[string]any, target, gwURL, apiKey string) {
+	cfg["$schema"] = "https://opencode.ai/config.json"
+	providers, ok := cfg["provider"].(map[string]any)
+	if !ok || providers == nil {
+		providers = make(map[string]any)
+		cfg["provider"] = providers
+	}
+	routexProv, ok := providers["routex"].(map[string]any)
+	if !ok || routexProv == nil {
+		routexProv = map[string]any{
+			"npm": "@ai-sdk/openai-compatible",
+			"options": map[string]any{
+				"baseURL": gwURL,
+			},
+			"models": map[string]any{},
+		}
+		providers["routex"] = routexProv
+	}
+	opts, ok := routexProv["options"].(map[string]any)
+	if !ok || opts == nil {
+		// B-221: berkas warisan/buatan tangan bisa memuat provider
+		// routex TANPA sub-objek options; dulu cabang ini senyap
+		// melewatkan baseURL/apiKey sementara models dan model
+		// tetap diperbarui — provider menunjuk URL lama tetapi
+		// Configure melaporkan sukses. Buat sub-objeknya.
+		opts = make(map[string]any)
+		routexProv["options"] = opts
+	}
+	opts["baseURL"] = gwURL
+	// apiKey di sini adalah kunci EFEKTIF (B-215): kunci baru
+	// bila Configure membawanya, jika tidak kunci tersimpan
+	// produk diteruskan pemanggil. Field kosong berarti
+	// "tidak diubah", jadi konfigurasi ulang tanpa kunci
+	// TIDAK menghapus apiKey selama produk masih menyimpan
+	// kunci untuk tool ini.
+	if apiKey != "" {
+		opts["apiKey"] = apiKey
+	} else {
+		delete(opts, "apiKey")
+	}
+	models, ok := routexProv["models"].(map[string]any)
+	if !ok || models == nil {
+		models = make(map[string]any)
+		routexProv["models"] = models
+	}
+	models[target] = map[string]any{"name": target}
+	cfg["model"] = "routex/" + target
+}
+
+// suntingOpenCodeJSONC menerapkan mutasi yang sama seperti
+// mutasiCfgOpenCode langsung pada TEKS JSONC, memakai penyunting
+// bedah jsonc_edit.go: hanya rentang nilai kunci terkelola yang
+// berubah, komentar dan format lain bertahan. Semantiknya meniru
+// jalur peta titik demi titik — termasuk rangka provider routex
+// lengkap (npm + options + models) bila provider itu belum ada
+// atau bukan objek.
+func suntingOpenCodeJSONC(s, target, gwURL, apiKey string) (string, error) {
+	kutip := func(v string) string {
+		b, _ := json.Marshal(v)
+		return string(b)
+	}
+	akar, err := akarObjekJSONC(s)
+	if err != nil {
+		return "", err
+	}
+	if s, err = tetapkanKunciJSONC(s, akar, "$schema", kutip("https://opencode.ai/config.json")); err != nil {
+		return "", err
+	}
+	var prov int
+	if s, prov, err = pastikanObjekAnakJSONC(s, akar, "provider"); err != nil {
+		return "", err
+	}
+	_, ada, bukanObjek, err := cariObjekAnakJSONC(s, prov, "routex")
+	if err != nil {
+		return "", err
+	}
+	if !ada || bukanObjek {
+		rangkaOpts := map[string]any{"baseURL": gwURL}
+		if apiKey != "" {
+			rangkaOpts["apiKey"] = apiKey
+		}
+		rangka, err := json.Marshal(map[string]any{
+			"npm":     "@ai-sdk/openai-compatible",
+			"options": rangkaOpts,
+			"models":  map[string]any{},
+		})
+		if err != nil {
+			return "", err
+		}
+		if s, err = tetapkanKunciJSONC(s, prov, "routex", string(rangka)); err != nil {
+			return "", err
+		}
+	} else {
+		var opt int
+		rx, _, _, err := cariObjekAnakJSONC(s, prov, "routex")
+		if err != nil {
+			return "", err
+		}
+		if s, opt, err = pastikanObjekAnakJSONC(s, rx, "options"); err != nil {
+			return "", err
+		}
+		if s, err = tetapkanKunciJSONC(s, opt, "baseURL", kutip(gwURL)); err != nil {
+			return "", err
+		}
+		if apiKey != "" {
+			if s, err = tetapkanKunciJSONC(s, opt, "apiKey", kutip(apiKey)); err != nil {
+				return "", err
+			}
+		} else {
+			if s, err = hapusKunciJSONC(s, opt, "apiKey"); err != nil {
+				return "", err
+			}
+		}
+	}
+	// models.<target> pada provider routex (dibuat bila belum ada).
+	rx, _, _, err := cariObjekAnakJSONC(s, prov, "routex")
+	if err != nil {
+		return "", err
+	}
+	var mdl int
+	if s, mdl, err = pastikanObjekAnakJSONC(s, rx, "models"); err != nil {
+		return "", err
+	}
+	if s, err = tetapkanKunciJSONC(s, mdl, target, `{"name": `+kutip(target)+`}`); err != nil {
+		return "", err
+	}
+	if s, err = tetapkanKunciJSONC(s, akar, "model", kutip("routex/"+target)); err != nil {
+		return "", err
+	}
+	return s, nil
+}
+
+// hasilSuntingOpenCodeSah memverifikasi hasil sunting teks B-280:
+// diurai ulang secara toleran, hasilnya wajib sama persis
+// (DeepEqual) dengan mutasiCfgOpenCode atas konfigurasi awal.
+// Gerbang ini yang membuat jalur sunting aman: bentuk JSONC apa
+// pun yang disalahartikan pemindai bedah gugur ke jalur marshal,
+// tidak pernah menjadi config yang salah.
+func hasilSuntingOpenCodeSah(hasil string, cfgAwal map[string]any, target, gwURL, apiKey string) bool {
+	terurai := make(map[string]any)
+	if err := json.Unmarshal(uraiJSONCToleran([]byte(hasil)), &terurai); err != nil {
+		return false
+	}
+	rawHarapan, err := json.Marshal(cfgAwal)
+	if err != nil {
+		return false
+	}
+	harapan := make(map[string]any)
+	if err := json.Unmarshal(rawHarapan, &harapan); err != nil {
+		return false
+	}
+	mutasiCfgOpenCode(harapan, target, gwURL, apiKey)
+	return reflect.DeepEqual(terurai, harapan)
 }
 
 // permBerkasAtau mengembalikan izin berkas yang sudah ada (supaya

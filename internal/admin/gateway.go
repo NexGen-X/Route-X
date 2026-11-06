@@ -1162,6 +1162,14 @@ func (h *Handlers) createBan(w http.ResponseWriter, r *http.Request) {
 			httpx.BadRequest(w, r, "invalid_expires_at", fmt.Sprintf("format expires_at tidak sah (harus RFC3339): %v", err))
 			return
 		}
+		// Ban yang lahir sudah kedaluwarsa tidak pernah berlaku sedetik
+		// pun — tolak seperti updateAPIKey menolak expires_at lampau
+		// (B-192). Repo sengaja tetap mengizinkannya untuk kebutuhan
+		// pencatatan/penyaringan riwayat; permukaan admin tidak.
+		if t.Before(time.Now()) {
+			httpx.BadRequest(w, r, "expires_in_past", "expires_at tidak boleh di masa lalu")
+			return
+		}
 		exp = &t
 	}
 

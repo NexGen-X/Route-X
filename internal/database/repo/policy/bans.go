@@ -3,6 +3,8 @@ package policy
 import (
 	"context"
 	"fmt"
+	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
@@ -51,6 +53,46 @@ type CreateBanParams struct {
 	CreatedBy string
 }
 
+// validasiSubjekBan memeriksa bentuk subjek sesuai jenisnya (B-192).
+//
+// Pemeriksaan ini adalah penjaga satu-satunya antara permukaan admin dan
+// query autentikasi API key: penegakan blokir mengevaluasi
+// `b.subject::inet` / `b.subject::cidr` di dalam subquery bans pada
+// Authenticate, jadi satu baris ip/ip_range bersubjek teks tak sah membuat
+// cast-nya melempar error dan SELURUH autentikasi gagal (jalur /v1
+// menjawab 500 untuk key lain yang sah). Constraint DB hanya memeriksa
+// jenis dikenal & subjek non-kosong — bentuknya tidak. Karena itu bentuk
+// divalidasi di sini, di titik tulis bersama semua pemanggil:
+//
+//   - ip: alamat IP tunggal yang bisa diurai (netip.ParseAddr; notasi
+//     CIDR dan zona ditolak — keduanya tak pernah setara dengan inet
+//     polos yang dibandingkan Authenticate);
+//   - ip_range: prefiks CIDR yang bisa diurai (netip.ParsePrefix);
+//   - api_key / user: UUID entitas yang diblokir.
+func validasiSubjekBan(kind, subject string) error {
+	if strings.TrimSpace(subject) == "" {
+		return fmt.Errorf("subjek blokir kosong: %w", repo.ErrInvalidReference)
+	}
+	switch kind {
+	case BanSubjectIP:
+		addr, err := netip.ParseAddr(subject)
+		if err != nil || addr.Zone() != "" {
+			return fmt.Errorf("subjek blokir ip %q bukan alamat IP yang sah: %w", subject, repo.ErrInvalidReference)
+		}
+	case BanSubjectIPRange:
+		if _, err := netip.ParsePrefix(subject); err != nil {
+			return fmt.Errorf("subjek blokir ip_range %q bukan prefiks CIDR yang sah: %w", subject, repo.ErrInvalidReference)
+		}
+	case BanSubjectAPIKey, BanSubjectUser:
+		if !idOK(subject) {
+			return fmt.Errorf("subjek blokir %s %q bukan UUID: %w", kind, subject, repo.ErrInvalidReference)
+		}
+	default:
+		return fmt.Errorf("jenis subjek blokir %q tidak dikenal: %w", kind, repo.ErrInvalidReference)
+	}
+	return nil
+}
+
 // CreateBan memblokir satu subjek.
 //
 // Blokir baru untuk subjek yang sudah diblokir TIDAK ditolak, dan itu disengaja: tabelnya
@@ -59,6 +101,10 @@ type CreateBanParams struct {
 // berlaku, jadi baris berlapis tidak mengubah hasilnya.
 func (r *Repo) CreateBan(ctx context.Context, p CreateBanParams) (*Ban, error) {
 	const op = "memblokir subjek"
+
+	if err := validasiSubjekBan(p.SubjectKind, p.Subject); err != nil {
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
 
 	var createdBy any
 	if p.CreatedBy != "" {

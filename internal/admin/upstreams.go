@@ -1581,7 +1581,9 @@ func (h *Handlers) catatJejakUjiModel(ctx context.Context, r *http.Request, p *u
 		rec.ReasoningTokens = max(resp.Usage.ReasoningTokens, 0)
 		rec.TotalTokens = max(resp.Usage.TotalTokens, 0)
 		if rec.TotalTokens == 0 {
-			rec.TotalTokens = rec.InputTokens + rec.OutputTokens
+			// B-352: jumlah cadangan yang sama kelasnya dengan
+			// adapter — jenuh lewat TambahToken, bukan membungkus.
+			rec.TotalTokens = providers.TambahToken(rec.InputTokens, rec.OutputTokens)
 		}
 		rec.Unpriced = rec.TotalTokens > 0
 	}

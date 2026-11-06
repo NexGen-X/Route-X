@@ -662,7 +662,10 @@ func truncate(s string, n int) string {
 //   - TotalTokens dijumlahkan sendiri. Anthropic tidak punya field total, dan menyalin
 //     input_tokens + output_tokens saja akan melewatkan seluruh token cache.
 func toCanonicalUsage(u upstreamUsage) providers.Usage {
-	input := u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+	// B-352: penjumlahan memakai TambahToken yang menjenuhkan —
+	// field-field ini datang dari JSON upstream tanpa batas dekode,
+	// dan jumlah polosnya bisa membungkus negatif melewati MaxInt.
+	input := providers.TambahToken(providers.TambahToken(u.InputTokens, u.CacheReadInputTokens), u.CacheCreationInputTokens)
 	out := providers.Usage{
 		InputTokens:       input,
 		CachedInputTokens: u.CacheReadInputTokens,
@@ -671,7 +674,7 @@ func toCanonicalUsage(u upstreamUsage) providers.Usage {
 		// biasa 1,0× (audit3 V-AB-11).
 		CacheCreationInputTokens: u.CacheCreationInputTokens,
 		OutputTokens:             u.OutputTokens,
-		TotalTokens:              input + u.OutputTokens,
+		TotalTokens:              providers.TambahToken(input, u.OutputTokens),
 	}
 	// Rincian TTL tulis cache ikut dibawa bila dilaporkan: penagihan
 	// membedakan tulis 1 jam (2×) dari 5 menit (1,25×). Tanpa objek

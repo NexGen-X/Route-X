@@ -480,7 +480,7 @@ func (u *wireUsage) toCanonical() providers.Usage {
 	// input dan output, jadi tidak ada yang hilang, tetapi total nol membuat baris
 	// pemakaian terlihat seperti request tanpa token.
 	if out.TotalTokens == 0 {
-		out.TotalTokens = out.InputTokens + out.OutputTokens
+		out.TotalTokens = providers.TambahToken(out.InputTokens, out.OutputTokens) // B-352
 	}
 	return out
 }

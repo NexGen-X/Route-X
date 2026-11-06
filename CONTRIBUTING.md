@@ -23,6 +23,8 @@ npm run build && npm test  # tsc + vite build, then the Vitest suite
 
 Database-backed Go tests use **disposable `test_*` schemas** (selected via `search_path` in the test DSN) and are cleaned up automatically. Never point tests at the `public` schema or at a development/production database. Tests skip automatically when no test database is configured.
 
+Two environment prerequisites for a fully green local suite: (1) the admin backup tests shell out to **`pg_dump`**, so PostgreSQL client tools must be on `PATH` — the backup test skips with an explicit reason when the binary is absent (CI provides it); (2) PostgreSQL advisory locks are **per-database, not per-schema**, so a test whose work holds or waits on the global migration/partition locks runs in its own throwaway database instead of a schema on the shared test database — otherwise parallel test packages migrating at the same time can starve it of the lock.
+
 ## Conventions
 
 - **Go**: `gofmt -l .` must print nothing; `go vet ./...` must pass. Comments and log messages in the codebase are written in **Bahasa Indonesia** — follow the surrounding style.

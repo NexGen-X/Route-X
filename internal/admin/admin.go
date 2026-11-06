@@ -569,11 +569,15 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 		// adalah 400, bukan 500: cabang default di bawah mengubahnya menjadi
 		// internal_error dan menyembunyikan kesalahan pemanggil (audit3 V-EM-31).
 		httpx.BadRequest(w, r, "invalid_parameter", fmt.Sprintf("parameter untuk %s tidak sah", resource))
-	case errors.Is(err, upstream.ErrNoChanges) || errors.Is(err, keys.ErrNoChanges):
+	case errors.Is(err, upstream.ErrNoChanges) || errors.Is(err, keys.ErrNoChanges) ||
+		errors.Is(err, policy.ErrNoChanges) || errors.Is(err, webhooks.ErrNoChanges):
 		// Pembaruan tanpa satu pun field yang diubah adalah kesalahan
 		// pemanggil (400 no_changes), bukan kegagalan server (B-306):
 		// sebelumnya ErrNoChanges dari repo upstream maupun keys jatuh
-		// ke cabang default dan menjadi 500 internal_error.
+		// ke cabang default dan menjadi 500 internal_error. B-354(ii)
+		// menyeragamkan kontraknya: repo policy (budgets/rate-limits)
+		// dan webhooks kini ikut menolak params kosong dengan
+		// sentinelnya masing-masing, bukan menjawab 200 idempoten.
 		httpx.BadRequest(w, r, "no_changes", fmt.Sprintf("tidak ada perubahan yang diminta untuk %s", resource))
 	case errors.Is(err, repo.ErrConstraint):
 		cName := repo.ConstraintName(err)

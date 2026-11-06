@@ -254,7 +254,9 @@ func (r *Repo) UpdateRateLimit(ctx context.Context, id string, p UpdateRateLimit
 	}
 
 	if len(setClauses) == 0 {
-		return r.GetRateLimit(ctx, id)
+		// B-354(ii): kontrak no_changes yang seragam (lihat
+		// ErrNoChanges di policy.go) — bukan lagi 200 idempoten.
+		return nil, fmt.Errorf("%s: %w", op, ErrNoChanges)
 	}
 
 	setClauses = append(setClauses, "updated_at = now()")

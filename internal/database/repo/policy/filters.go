@@ -231,6 +231,23 @@ func (r *Repo) SetFilterEnabled(ctx context.Context, id string, enabled bool) (*
 		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 
+	// B-326: MENYALAKAN ikut memvalidasi pola efektif tersimpan,
+	// seperti UpdateFilter (B-308). Tanpa ini baris warisan
+	// pra-B-308 — atau hasil suntingan SQL langsung — yang polanya
+	// rusak bisa dinyalakan dari dashboard: tampil aktif, padahal
+	// mesin penyaring menandainya Inert dan aturan tidak
+	// menegakkan apa pun. Mematikan TIDAK divalidasi: mematikan
+	// aturan rusak harus selalu bisa.
+	if enabled {
+		kini, err := r.GetFilter(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if err := validasiPolaRegex(op, kini.Kind, kini.PatternType, kini.Pattern, kini.CaseSensitive); err != nil {
+			return nil, err
+		}
+	}
+
 	row := r.q.QueryRow(ctx, `
 		update content_filters set enabled = $2, updated_at = now()
 		where id = $1

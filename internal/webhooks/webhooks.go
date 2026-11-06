@@ -117,6 +117,13 @@ type EnqueueSink interface {
 }
 
 // KnownEvents adalah katalog event yang boleh dilanggani webhook. Daftar ini
+// ErrNoChanges dikembalikan Update yang tidak diberi satu pun
+// field untuk diubah (B-354(ii)): kontrak yang sama seperti repo
+// upstream/keys/policy, dipetakan handler admin ke 400 no_changes.
+// Update sebelumnya menjawab params kosong dengan baris yang sudah
+// ada (200 idempoten).
+var ErrNoChanges = errors.New("tidak ada perubahan yang diminta")
+
 // WAJIB sama dengan constraint webhooks_events_known di migrasi 0008 — dan
 // setiap event di sini WAJIB punya produser nyata di kode (audit3 V-WH-08:
 // tujuh event sempat boleh dilanggani tetapi tidak pernah diproduksi, jadi
@@ -728,7 +735,9 @@ func (r *Repo) Update(ctx context.Context, id string, p UpdateWebhookParams) (*W
 	}
 
 	if len(setClauses) == 0 {
-		return r.Get(ctx, id)
+		// B-354(ii): kontrak no_changes yang seragam — bukan lagi
+		// 200 idempoten (lihat ErrNoChanges di atas).
+		return nil, fmt.Errorf("%s: %w", op, ErrNoChanges)
 	}
 
 	setClauses = append(setClauses, "updated_at = now()")

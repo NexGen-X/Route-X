@@ -471,34 +471,10 @@ func TestProviderModelCRUDIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("update sebagian termasuk mengosongkan penimpaan", func(t *testing.T) {
-		updated, err := models.UpdateProviderModel(ctx, pmFallback.ID, UpdateProviderModelParams{
-			UpstreamModelName: ptr("gpt-4o-2024-11-20"),
-			Priority:          Clear[int](),
-			Enabled:           ptr(false),
-		})
-		if err != nil {
-			t.Fatalf("UpdateProviderModel: %v", err)
-		}
-		switch {
-		case updated.UpstreamModelName != "gpt-4o-2024-11-20":
-			t.Errorf("upstream_model_name = %q", updated.UpstreamModelName)
-		case updated.Priority != nil:
-			t.Errorf("priority = %v, ingin dikosongkan", updated.Priority)
-		case updated.Weight == nil || *updated.Weight != 3:
-			t.Errorf("weight = %v, seharusnya tidak ikut berubah", updated.Weight)
-		case updated.Enabled:
-			t.Error("pemetaan masih aktif")
-		}
-
-		enabledOnly, err := models.ListProviderModels(ctx, ProviderModelFilter{ModelID: model.ID, Enabled: ptr(true)})
-		if err != nil {
-			t.Fatalf("ListProviderModels aktif: %v", err)
-		}
-		if len(enabledOnly) != 1 {
-			t.Errorf("pemetaan aktif = %d, ingin 1", len(enabledOnly))
-		}
-	})
+	// B-354(i): subtes "update sebagian" untuk UpdateProviderModel
+	// dihapus bersama metodenya — metode itu sudah tidak punya
+	// pemanggil produksi; yang tersisa dari perilakunya (pemetaan
+	// aktif/nonaktif) tercakup jalur Attach/Detach di bawah.
 
 	t.Run("detach lalu tidak ditemukan", func(t *testing.T) {
 		if err := models.DetachProvider(ctx, pmFallback.ID); err != nil {

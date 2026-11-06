@@ -75,31 +75,56 @@ type CreateBanParams struct {
 //     jaringan menulis alamat jaringannya (`10.0.0.0/24`);
 //   - api_key / user: UUID entitas yang diblokir.
 func validasiSubjekBan(kind, subject string) error {
+	_, err := normalisasiSubjekBan(kind, subject)
+	return err
+}
+
+// normalisasiSubjekBan menjalankan pemeriksaan validasiSubjekBan
+// dan sekaligus mengembalikan subjek KANONIS yang harus disimpan
+// (B-342). Perbedaannya pada keluarga 4-in-6: penegakan memeriksa
+// alamat klien yang sudah di-Unmap (httpx), sementara subjek ip
+// "::ffff:10.0.0.9" tersimpan apa adanya tidak akan pernah setara
+// dengannya — blokir tampil aktif, tidak menegakkan apa pun.
+// Keputusan B-342: bentuk 4-in-6 DINORMALKAN ke IPv4 polos di
+// titik tulis (bukan ditolak): alamatnya menunjuk jaringan yang
+// sama, dan nilai tersimpan selalu dalam bentuk yang benar-benar
+// dibandingkan penegakan. Khusus ip_range, prefiks 4-in-6 yang
+// bitnya < 96 mencakup ruang di luar peta IPv4-dalam-IPv6 sehingga
+// tidak punya bentuk IPv4 yang setara — itu tetap ditolak.
+func normalisasiSubjekBan(kind, subject string) (string, error) {
 	if strings.TrimSpace(subject) == "" {
-		return fmt.Errorf("subjek blokir kosong: %w", repo.ErrInvalidReference)
+		return "", fmt.Errorf("subjek blokir kosong: %w", repo.ErrInvalidReference)
 	}
 	switch kind {
 	case BanSubjectIP:
 		addr, err := netip.ParseAddr(subject)
 		if err != nil || addr.Zone() != "" {
-			return fmt.Errorf("subjek blokir ip %q bukan alamat IP yang sah: %w", subject, repo.ErrInvalidReference)
+			return "", fmt.Errorf("subjek blokir ip %q bukan alamat IP yang sah: %w", subject, repo.ErrInvalidReference)
 		}
+		return addr.Unmap().String(), nil
 	case BanSubjectIPRange:
 		p, err := netip.ParsePrefix(subject)
 		if err != nil {
-			return fmt.Errorf("subjek blokir ip_range %q bukan prefiks CIDR yang sah: %w", subject, repo.ErrInvalidReference)
+			return "", fmt.Errorf("subjek blokir ip_range %q bukan prefiks CIDR yang sah: %w", subject, repo.ErrInvalidReference)
+		}
+		if p.Addr().Is4In6() {
+			if p.Bits() < 96 {
+				return "", fmt.Errorf("subjek blokir ip_range %q mencakup ruang di luar peta IPv4-dalam-IPv6 dan tidak punya bentuk IPv4 yang setara: %w", subject, repo.ErrInvalidReference)
+			}
+			p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
 		}
 		if p != p.Masked() {
-			return fmt.Errorf("subjek blokir ip_range %q mengandung bit host (bentuk jaringannya %s): %w", subject, p.Masked(), repo.ErrInvalidReference)
+			return "", fmt.Errorf("subjek blokir ip_range %q mengandung bit host (bentuk jaringannya %s): %w", subject, p.Masked(), repo.ErrInvalidReference)
 		}
+		return p.String(), nil
 	case BanSubjectAPIKey, BanSubjectUser:
 		if !idOK(subject) {
-			return fmt.Errorf("subjek blokir %s %q bukan UUID: %w", kind, subject, repo.ErrInvalidReference)
+			return "", fmt.Errorf("subjek blokir %s %q bukan UUID: %w", kind, subject, repo.ErrInvalidReference)
 		}
+		return subject, nil
 	default:
-		return fmt.Errorf("jenis subjek blokir %q tidak dikenal: %w", kind, repo.ErrInvalidReference)
+		return "", fmt.Errorf("jenis subjek blokir %q tidak dikenal: %w", kind, repo.ErrInvalidReference)
 	}
-	return nil
 }
 
 // CreateBan memblokir satu subjek.
@@ -111,9 +136,13 @@ func validasiSubjekBan(kind, subject string) error {
 func (r *Repo) CreateBan(ctx context.Context, p CreateBanParams) (*Ban, error) {
 	const op = "memblokir subjek"
 
-	if err := validasiSubjekBan(p.SubjectKind, p.Subject); err != nil {
+	// B-342: subjek yang disimpan adalah bentuk kanonisnya
+	// (4-in-6 menjadi IPv4 polos) — lihat normalisasiSubjekBan.
+	subjekKanonis, err := normalisasiSubjekBan(p.SubjectKind, p.Subject)
+	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
+	p.Subject = subjekKanonis
 
 	var createdBy any
 	if p.CreatedBy != "" {

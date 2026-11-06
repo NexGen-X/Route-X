@@ -365,7 +365,6 @@ func TestRouteCandidatesIntegration(t *testing.T) {
 
 	pool := newTestPool(ctx, t)
 	providers := NewProviderRepo(pool)
-	models := NewModelRepo(pool)
 
 	owner := seedUser(ctx, t, pool)
 	otherUser := seedUser(ctx, t, pool)
@@ -406,8 +405,10 @@ func TestRouteCandidatesIntegration(t *testing.T) {
 		seedAttachment(ctx, t, pool, model.ID, p.ID, nil)
 	}
 	// Pemetaan yang dimatikan, providernya sendiri tetap aktif.
+	// (B-354(i): UpdateProviderModel dihapus; fixture menonaktifkan
+	// pemetaan langsung lewat SQL.)
 	disabledMapping := seedAttachment(ctx, t, pool, model.ID, ggg.ID, nil)
-	if _, err := models.UpdateProviderModel(ctx, disabledMapping.ID, UpdateProviderModelParams{Enabled: ptr(false)}); err != nil {
+	if _, err := pool.Exec(ctx, `update provider_models set enabled = false where id = $1`, disabledMapping.ID); err != nil {
 		t.Fatalf("mematikan pemetaan: %v", err)
 	}
 	if _, err := providers.SetEnabled(ctx, eee.ID, false); err != nil {

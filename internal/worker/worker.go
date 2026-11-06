@@ -194,7 +194,16 @@ type Supervisor struct {
 
 	cancel context.CancelFunc
 	runCtx context.Context
-	wg     sync.WaitGroup
+	// wg adalah WaitGroup PER-GENERASI (B-287): Start menciptakan
+	// instans baru di dalam kunci, Stop mengambil alih instans
+	// generasi berjalan di dalam kunci yang sama lalu Wait di
+	// instans itu. Pola lama (satu WaitGroup bersama, Add dari
+	// Start di luar kunci vs Wait dari Stop) melanggar kontrak
+	// WaitGroup dan ditangkap race detector pada Start/Stop
+	// bersamaan. Dengan instans per-generasi, seluruh Add pada
+	// satu instans selalu mendahului Wait-nya lewat rantai kunci,
+	// dan generasi berikutnya memakai instans berbeda.
+	wg *sync.WaitGroup
 }
 
 // NewSupervisor membuat instance baru Supervisor.
@@ -321,10 +330,13 @@ func (s *Supervisor) TriggerJob(ctx context.Context, name string) error {
 	// Nilai context pemicu (request ID/logger) dipertahankan, sedangkan lifecycle
 	// eksekusi mengikuti supervisor agar Stop membatalkan dan menunggunya.
 	runCtx := mergeContextValues(s.runCtx, context.WithoutCancel(ctx))
-	s.wg.Add(1)
+	// WaitGroup generasi berjalan ditangkap DI DALAM kunci (B-287):
+	// runCtx non-nil menjamin Start sudah memasang instansnya.
+	wg := s.wg
+	wg.Add(1)
 	s.mu.Unlock()
 	go func() {
-		defer s.wg.Done()
+		defer wg.Done()
 		s.executeClaimed(runCtx, target)
 	}()
 	return nil
@@ -346,11 +358,16 @@ func (s *Supervisor) Start(ctx context.Context) {
 	s.runCtx = runCtx
 	jobsCopy := make([]*jobRuntimeState, len(s.jobs))
 	copy(jobsCopy, s.jobs)
+	// Instans WaitGroup generasi ini dibuat dan di-Add DI DALAM
+	// kunci (B-287) — Stop hanya bisa mengambil instans yang
+	// Add-nya sudah tuntas, tidak pernah yang sedang dirakit.
+	wg := &sync.WaitGroup{}
+	s.wg = wg
+	wg.Add(len(jobsCopy))
 	s.mu.Unlock()
 
 	for _, sj := range jobsCopy {
-		s.wg.Add(1)
-		go s.runLoop(runCtx, sj)
+		go s.runLoop(runCtx, sj, wg)
 	}
 }
 
@@ -361,15 +378,27 @@ func (s *Supervisor) Stop(ctx context.Context) error {
 	cancel := s.cancel
 	s.cancel = nil
 	s.runCtx = nil
+	// Ambil alih WaitGroup generasi berjalan DI DALAM kunci
+	// (B-287): sesudah titik ini tidak ada Add baru yang bisa
+	// menyentuh instans ini — TriggerJob menolak (runCtx nil)
+	// dan Start berikutnya membuat instans baru.
+	wg := s.wg
+	s.wg = nil
 	s.mu.Unlock()
 
 	if cancel != nil {
 		cancel()
 	}
 
+	if wg == nil {
+		// Tidak pernah Start (atau sudah Stop): tidak ada yang
+		// ditunggu.
+		return nil
+	}
+
 	done := make(chan struct{})
 	go func() {
-		s.wg.Wait()
+		wg.Wait()
 		close(done)
 	}()
 
@@ -400,8 +429,9 @@ func mergeContextValues(lifecycle, values context.Context) context.Context {
 }
 
 // runLoop menjalankan perulangan satu job dengan penanganan panic dan pencatatan metrik.
-func (s *Supervisor) runLoop(ctx context.Context, st *jobRuntimeState) {
-	defer s.wg.Done()
+// wg adalah WaitGroup generasi Start yang melahirkan loop ini (B-287).
+func (s *Supervisor) runLoop(ctx context.Context, st *jobRuntimeState, wg *sync.WaitGroup) {
+	defer wg.Done()
 
 	if st.job.InitialDelay > 0 {
 		select {

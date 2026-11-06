@@ -21,6 +21,17 @@ type OAuthRefreshWorker struct {
 	oauthClient *oauth.GoogleOAuthClient
 	logger      *slog.Logger
 	threshold   time.Duration
+	// sesudahNonaktif diteruskan ke OAuthRefreshDeps.SesudahNonaktif
+	// (B-365); dipasang pemilik proses lewat SetSesudahNonaktif.
+	sesudahNonaktif func(ctx context.Context)
+}
+
+// SetSesudahNonaktif memasang callback yang dipanggil setiap kali
+// putaran refresh menonaktifkan sesi (refresh token ditolak
+// permanen) — pemilik proses memakainya untuk menyiram cache
+// respons (B-365).
+func (w *OAuthRefreshWorker) SetSesudahNonaktif(fn func(ctx context.Context)) {
+	w.sesudahNonaktif = fn
 }
 
 // NewOAuthRefreshWorker membuat instance baru OAuthRefreshWorker.
@@ -56,10 +67,11 @@ func NewOAuthRefreshWorker(
 // deps menyusun dependensi refresh bersama dari field worker.
 func (w *OAuthRefreshWorker) deps() OAuthRefreshDeps {
 	return OAuthRefreshDeps{
-		OAuth:  w.oauthRepo,
-		Egress: w.egressRepo,
-		Client: w.oauthClient,
-		Logger: w.logger,
+		OAuth:           w.oauthRepo,
+		Egress:          w.egressRepo,
+		Client:          w.oauthClient,
+		Logger:          w.logger,
+		SesudahNonaktif: w.sesudahNonaktif,
 	}
 }
 

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -299,11 +300,20 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 	// gagal-keras, percobaan ulang transien, validasi expires_in, refresh
 	// token rotasi tersimpan, dan penonaktifan saat ditolak permanen
 	// (audit3 V-EO-17 s.d. V-EO-21).
+	//
+	// B-365: penonaktifan di tengah refresh dicatat lewat callback —
+	// cabang kegagalan total di bawah menjawab 502 TANPA siraman
+	// B-339 di ujung handler, padahal himpunan kredensial sudah
+	// berubah oleh penonaktifan itu.
+	adaPenonaktifan := false
 	deps := worker.OAuthRefreshDeps{
 		OAuth:  h.oauthRepo,
 		Egress: h.egressRepo,
 		Client: h.oauthClient,
 		Logger: h.logger,
+		SesudahNonaktif: func(context.Context) {
+			adaPenonaktifan = true
+		},
 	}
 	for _, sessID := range sessionsToRefresh {
 		activeSess, err := h.oauthRepo.GetActiveSession(ctx, sessID)
@@ -320,6 +330,12 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if refreshedCount == 0 && lastErr != nil {
+		// B-365: kegagalan total yang mencakup penonaktifan sesi
+		// tetap menyiram cache respons — himpunan kredensial berubah
+		// walau refresh-nya sendiri gagal.
+		if adaPenonaktifan {
+			h.kosongkanCacheRespons(ctx)
+		}
 		// Sama seperti penukaran kode: sebab asli (error jaringan/token dari
 		// penyedia) hanya untuk log; klien menerima 502 berkode tetap.
 		h.gagalHulu(w, r, "refresh token oauth gagal untuk semua sesi", "refresh_failed",

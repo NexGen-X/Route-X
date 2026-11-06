@@ -36,6 +36,14 @@ type OAuthRefreshDeps struct {
 	Egress *upstream.EgressRepo
 	Client OAuthTokenRefresher
 	Logger *slog.Logger
+	// SesudahNonaktif (B-365) dipanggil sesudah sesi berhasil
+	// DINONAKTIFKAN karena refresh token-nya ditolak permanen.
+	// Penonaktifan mengubah himpunan kredensial yang bisa dipilih,
+	// tetapi rantai refresh tidak memegang cache respons gateway —
+	// pemilik proses (main / handler admin) memasang callback ini
+	// untuk menyiramnya. Nil berarti tidak ada yang disiram (test,
+	// atau cache memang tidak aktif).
+	SesudahNonaktif func(ctx context.Context)
 }
 
 // maksPercobaanRefresh adalah jumlah percobaan refresh per sesi dalam satu
@@ -124,6 +132,11 @@ func RefreshSesiOAuth(ctx context.Context, d OAuthRefreshDeps, sess *upstream.Ac
 			} else {
 				logger.ErrorContext(ctx, "sesi oauth dinonaktifkan: refresh token ditolak permanen, hubungkan ulang akun",
 					"session_id", sess.ID, "provider_id", sess.ProviderID, "email", sess.AccountEmail)
+				// B-365: himpunan kredensial berubah — beri tahu
+				// pemilik cache respons lewat callback.
+				if d.SesudahNonaktif != nil {
+					d.SesudahNonaktif(ctx)
+				}
 			}
 		}
 		return err

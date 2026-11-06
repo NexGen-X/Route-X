@@ -539,6 +539,24 @@ func buildGatewaySurface(
 	googleOAuthClient := oauth.NewGoogleOAuthClient(nil)
 	penyegarOAuth := worker.NewPenyegarOAuth(db.Pool, oauthRepo, egress, googleOAuthClient, logger)
 
+	// B-365: penonaktifan sesi oleh rantai refresh (refresh token
+	// ditolak permanen) mengubah himpunan kredensial yang bisa
+	// dipilih, tetapi tidak ada flush di jalur worker — entri cache
+	// yang dilayani akun yang baru dinonaktifkan bertahan sampai
+	// TTL. Callback ini menyiramnya, meniru semantik
+	// kosongkanCacheRespons di admin (hanya bila engine aktif;
+	// kegagalan dicatat, tidak menggagalkan refresh). Dipasang pada
+	// penyegar on-demand di sini dan pada worker berkala di bawah.
+	siramCacheSesudahNonaktif := func(cbCtx context.Context) {
+		if !respCache.IsEnabled() {
+			return
+		}
+		if _, err := respCache.Flush(cbCtx); err != nil {
+			logger.WarnContext(cbCtx, "gagal mengosongkan response cache sesudah penonaktifan sesi oauth", "error", err)
+		}
+	}
+	penyegarOAuth.SetSesudahNonaktif(siramCacheSesudahNonaktif)
+
 	// Pabrik adapter provider dipakai bersama antara permintaan inferensi dan health checker
 	// worker, menegakkan kebijakan SSRF dan cache instance yang konsisten (Aturan 14).
 	factory := gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
@@ -638,6 +656,7 @@ func buildGatewaySurface(
 	// 7. OAuth token refresher: memantau dan me-refresh token Google Antigravity & OAuth upstream
 	// (oauthRepo & googleOAuthClient dibuat di atas, sebelum pabrik).
 	oauthJob := worker.NewOAuthRefreshWorker(db.Pool, oauthRepo, egress, googleOAuthClient, logger)
+	oauthJob.SetSesudahNonaktif(siramCacheSesudahNonaktif)
 	workerSup.Register(oauthJob, 10*time.Minute, 1*time.Minute)
 
 	// 8. Pembersih sesi kedaluwarsa: Sessions.DeleteExpired sebelumnya

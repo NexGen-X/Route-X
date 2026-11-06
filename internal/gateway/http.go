@@ -2101,7 +2101,15 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 	rc := http.NewResponseController(w)
 	var (
 		terkirim int64
-		usage    providers.Usage
+		// byteKonten hanya menghitung byte KONTEN (delta teks + delta
+		// penalaran + argumen tool), BUKAN byte aliran terbingkai. Lantai
+		// taksiran output memakan angka ini: menaksir dari terkirim — yang
+		// memuat seluruh envelope JSON chat.completion.chunk per potongan —
+		// menggelembungkan taksiran belasan kali lipat (B-167; kontrak
+		// terapkanLantaiPemakaian memang mewajibkan byte konten, dan
+		// permukaan Anthropic sudah mematuhinya sejak audit3 V-AB-15).
+		byteKonten int64
+		usage      providers.Usage
 	)
 	// Pencatatan token dijalankan lewat defer, bukan hanya di jalur selesai-normal: aliran
 	// bisa berakhir karena klien menutup koneksi atau upstream terputus di tengah, dan token
@@ -2111,11 +2119,12 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		// Chunk usage final belum tentu tiba saat aliran diputus: tanpa lantai,
 		// CatatToken menerima TotalTokens 0 dan langsung return, sehingga token
 		// yang sudah terkirim tidak memakan kuota sama sekali. Lantainya
-		// menaksir DUA sisi (audit3 V-AB-14): output dari byte yang benar-benar
-		// terkirim, dan input dari prompt peminta — versi lama hanya menaksir
-		// output, jadi token input hilang total pada aliran tanpa chunk usage
-		// padahal prompt-nya nyata ditagihkan upstream.
-		usage = terapkanLantaiPemakaian(pr.req, usage, terkirim)
+		// menaksir DUA sisi (audit3 V-AB-14): output dari byte KONTEN yang
+		// dihasilkan (byteKonten, bukan byte terbingkai — B-167), dan input
+		// dari prompt peminta — versi lama hanya menaksir output, jadi token
+		// input hilang total pada aliran tanpa chunk usage padahal prompt-nya
+		// nyata ditagihkan upstream.
+		usage = terapkanLantaiPemakaian(pr.req, usage, byteKonten)
 		h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(usage.TotalTokens))
 		h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(usage.TotalTokens))
 		// Token juga diserahkan ke pencatat lewat defer yang sama, dan alasannya sama:
@@ -2140,6 +2149,17 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 			// Chunk penutup membawa jumlah token final. Ditimpa, bukan dijumlahkan: provider
 			// mengirim total, dan menjumlahkan beberapa laporan total akan menagih berkali-kali.
 			usage = *ev.Usage
+		}
+		// Konten yang dihasilkan peristiwa ini dihitung untuk lantai
+		// taksiran, SEBELUM saringan Raw di bawah: peristiwa kanonik tanpa
+		// Raw (tidak diteruskan ke klien) tetap keluaran yang dihasilkan
+		// upstream. Delta penalaran ikut dihitung — pada permukaan ini ia
+		// diteruskan ke klien dan ditagih upstream sebagai token keluaran,
+		// beda dengan permukaan Anthropic yang memang tidak mengalirkannya
+		// sama sekali (lihat catatan reasoning di anthropic.go).
+		byteKonten += int64(len(ev.Delta) + len(ev.ReasoningDelta))
+		for _, tc := range ev.ToolCalls {
+			byteKonten += int64(len(tc.Function.Arguments))
 		}
 		// Peristiwa tanpa muatan tidak punya padanan yang perlu diteruskan ke klien —
 		// mis. peristiwa pembuka Anthropic yang hanya membawa metadata. Diteruskan sebagai

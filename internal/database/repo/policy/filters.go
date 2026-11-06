@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -131,6 +132,32 @@ type CreateFilterParams struct {
 	CreatedBy string
 }
 
+// validasiPolaRegex memastikan pola bertipe regex benar-benar bisa
+// dikompilasi mesin penyaring (B-308). Kompilasinya meniru persis
+// contentfilter.siapkan: pola mentah, didahului "(?i)" bila tidak peka
+// huruf. Sebelum pemeriksaan ini ada, pola regex rusak tersimpan dengan
+// 201 dan tampil aktif di dashboard padahal mesin menandainya rusak
+// (Inert) dan aturan tidak menegakkan apa pun — penolakan di titik
+// tulis adalah satu-satunya tempat kegagalan itu bisa terlihat oleh
+// penulisnya. Kind moderasi tidak dikompilasi mesin (inert menurut
+// desain), jadi tidak diperiksa di sini.
+func validasiPolaRegex(op, kind, patternType, pattern string, caseSensitive bool) error {
+	if patternType != PatternRegex {
+		return nil
+	}
+	if kind != FilterBlockedPattern && kind != FilterAllowedPattern {
+		return nil
+	}
+	pola := pattern
+	if !caseSensitive {
+		pola = "(?i)" + pola
+	}
+	if _, err := regexp.Compile(pola); err != nil {
+		return fmt.Errorf("%s: %w: pattern: regex tidak dapat dikompilasi: %v", op, repo.ErrInvalidParameter, err)
+	}
+	return nil
+}
+
 // CreateFilter menyimpan satu penyaring konten baru.
 //
 // Kesesuaian bentuk dengan kind tidak diperiksa di sini: constraint
@@ -172,6 +199,10 @@ func (r *Repo) CreateFilter(ctx context.Context, p CreateFilterParams) (*Content
 	categories := p.ModerationCategories
 	if categories == nil {
 		categories = []string{}
+	}
+
+	if err := validasiPolaRegex(op, p.Kind, p.PatternType, p.Pattern, p.CaseSensitive); err != nil {
+		return nil, err
 	}
 
 	row := r.q.QueryRow(ctx, `
@@ -331,6 +362,34 @@ func (r *Repo) UpdateFilter(ctx context.Context, id string, p UpdateFilterParams
 	const op = "memperbarui penyaring konten"
 	if !idOK(id) {
 		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+
+	// B-308: bila salah satu dari kind/pola/tipe/kepekaan berubah, pola
+	// EFEKTIF sesudah pembaruan (gabungan nilai baru dan nilai tersimpan)
+	// harus tetap bisa dikompilasi — mengubah tipe menjadi regex atas
+	// pola lama yang bukan regex sama rusaknya dengan menulis pola baru
+	// yang rusak.
+	if p.Kind != nil || p.Pattern != nil || p.PatternType != nil || p.CaseSensitive != nil {
+		kini, err := r.GetFilter(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		kind, patternType, pattern, caseSensitive := kini.Kind, kini.PatternType, kini.Pattern, kini.CaseSensitive
+		if p.Kind != nil {
+			kind = *p.Kind
+		}
+		if p.PatternType != nil {
+			patternType = *p.PatternType
+		}
+		if p.Pattern != nil {
+			pattern = *p.Pattern
+		}
+		if p.CaseSensitive != nil {
+			caseSensitive = *p.CaseSensitive
+		}
+		if err := validasiPolaRegex(op, kind, patternType, pattern, caseSensitive); err != nil {
+			return nil, err
+		}
 	}
 
 	var (

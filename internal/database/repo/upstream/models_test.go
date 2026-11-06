@@ -235,10 +235,10 @@ func TestModelAliasIntegration(t *testing.T) {
 			t.Errorf("daftar alias = %+v, ingin dua alias terurut abjad", list)
 		}
 
-		if err := models.RemoveAlias(ctx, "claude-terbaru"); err != nil {
+		if err := models.RemoveAlias(ctx, canonical.ID, "claude-terbaru"); err != nil {
 			t.Fatalf("RemoveAlias: %v", err)
 		}
-		if err := models.RemoveAlias(ctx, "claude-terbaru"); !errors.Is(err, repo.ErrNotFound) {
+		if err := models.RemoveAlias(ctx, canonical.ID, "claude-terbaru"); !errors.Is(err, repo.ErrNotFound) {
 			t.Errorf("RemoveAlias kedua = %v, ingin ErrNotFound", err)
 		}
 	})

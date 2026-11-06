@@ -233,6 +233,14 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if p, err := netip.ParsePrefix(s); err == nil {
+			// B-307: awalan berbit host (mis. 10.0.0.1/24) ditolak di
+			// sini dengan menyebut entrinya — sebelumnya ia lolos
+			// validasi handler lalu ditolak kolom cidr[] DB sebagai
+			// 400 invalid_reference generik yang tidak menyebut field.
+			if p != p.Masked() {
+				httpx.BadRequest(w, r, "invalid_ip_allowlist", fmt.Sprintf("entri ip_allowlist %q memiliki bit host; gunakan bentuk jaringannya %q", s, p.Masked().String()))
+				return
+			}
 			ips = append(ips, p)
 		} else if addr, err := netip.ParseAddr(s); err == nil {
 			ips = append(ips, netip.PrefixFrom(addr, addr.BitLen()))
@@ -480,6 +488,13 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if p, err := netip.ParsePrefix(s); err == nil {
+				// B-307: sama seperti jalur buat — awalan berbit host
+				// ditolak dengan menyebut entrinya, bukan 400 generik
+				// dari penolakan kolom cidr[] DB.
+				if p != p.Masked() {
+					httpx.BadRequest(w, r, "invalid_ip_allowlist", fmt.Sprintf("entri ip_allowlist %q memiliki bit host; gunakan bentuk jaringannya %q", s, p.Masked().String()))
+					return
+				}
 				ips = append(ips, p)
 			} else if addr, err := netip.ParseAddr(s); err == nil {
 				ips = append(ips, netip.PrefixFrom(addr, addr.BitLen()))

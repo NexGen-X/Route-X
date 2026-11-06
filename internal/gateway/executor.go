@@ -514,6 +514,13 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 	// mereka dilewati dengan SkipReason, bukan dicoba.
 	var modelDitolak map[string]bool
 
+	// errLewatan adalah error lokal terakhir milik percobaan lewatan yang
+	// membawa Err (slot konkurensi penuh, B-186). Ia HANYA cadangan:
+	// menjadi kegagalan akhir bila tidak ada satu pun kegagalan upstream
+	// nyata dari kandidat mana pun, dan tidak pernah menimpa kegagalan
+	// nyata yang sudah tercatat.
+	var errLewatan *providers.Error
+
 	for idx, c := range plan.Candidates {
 		// Context yang sudah selesai diperiksa sebelum kandidat berikutnya disentuh:
 		// tanpa ini, klien yang sudah pergi tetap membuat gateway menghubungi seluruh
@@ -579,17 +586,28 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 		// kandidat berikutnya menimpanya. Yang dilaporkan ke klien adalah
 		// kegagalan TERAKHIR, bukan yang pertama: yang pertama sudah tidak
 		// menggambarkan keadaan setelah gateway mencoba tempat lain.
-		// Percobaan lewatan (SkipReason terisi, Err nil) tidak menimpa apa
-		// pun: kandidat yang dilewati pemutus arus tidak berkata apa-apa
-		// tentang kesehatan kandidat sebelumnya.
+		// Percobaan lewatan tidak ikut memilih error ini. Lewatan pemutus
+		// arus memang ber-Err nil, tetapi lewatan slot-penuh membawa Err
+		// lokal (RateLimit, Local): membiarkannya ikut serta membuat error
+		// lokal itu menimpa kegagalan upstream nyata kandidat sebelumnya —
+		// dan bahkan menggerakkan keputusan failover/berhenti di bawah —
+		// padahal kandidat yang dilewati tidak berkata apa-apa tentang
+		// kesehatan kandidat sebelumnya (B-186). Error lewatan hanya
+		// disimpan sebagai cadangan akhir.
 		var errTerakhir *providers.Error
 		for i := len(att) - 1; i >= 0; i-- {
-			if att[i].Err != nil {
+			if att[i].Err != nil && att[i].SkipReason == "" {
 				errTerakhir = att[i].Err
 				break
 			}
 		}
 		if errTerakhir == nil {
+			for i := len(att) - 1; i >= 0; i-- {
+				if att[i].Err != nil {
+					errLewatan = att[i].Err
+					break
+				}
+			}
 			continue
 		}
 		out.Err = errTerakhir
@@ -623,17 +641,24 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 		return out
 	}
 
-	// Tidak satu pun kandidat berhasil dan tidak satu pun kegagalan tercatat.
-	// Satu-satunya jalan sampai ke sini adalah semua kandidat dilewati pemutus
-	// arus (percobaan yang dicoba selalu meninggalkan Err pada Outcome).
+	// Tidak satu pun kandidat berhasil dan tidak satu pun kegagalan nyata
+	// tercatat. Jalan sampai ke sini: semua kandidat dilewati (pemutus arus
+	// dan/atau slot penuh). Error lewatan cadangan — bila ada — adalah
+	// jawaban yang jujur untuk keadaan itu (kandidat tunggal slot-penuh
+	// memang harus menjawab dengan error lokalnya, B-186); tanpa cadangan,
+	// satu-satunya lewatan yang mungkin adalah pemutus arus.
 	// Outcome tanpa Err dan tanpa Value TIDAK boleh keluar dari sini:
 	// pemanggil membacanya sebagai sukses lalu men-dereference Value yang nil —
 	// panic 500 persis pada keadaan "semua provider bermasalah", yang seharusnya
 	// dijawab 503 (audit3 V-GW-11).
 	if out.Err == nil {
-		out.Err = &providers.Error{
-			Kind:    providers.ErrKindOverloaded,
-			Message: "semua provider untuk model ini sedang tidak tersedia karena pemutus arusnya terbuka",
+		if errLewatan != nil {
+			out.Err = errLewatan
+		} else {
+			out.Err = &providers.Error{
+				Kind:    providers.ErrKindOverloaded,
+				Message: "semua provider untuk model ini sedang tidak tersedia karena pemutus arusnya terbuka",
+			}
 		}
 	}
 	return out

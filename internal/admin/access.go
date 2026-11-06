@@ -771,6 +771,54 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validasi seluruh body DI MUKA, sebelum mutasi pertama (B-194).
+	// Urutan lama bermutasi langkah demi langkah — nama ter-commit lebih
+	// dulu, validasi peran menyusul — sehingga body campuran sah+tak sah
+	// (mis. {name, role:"bogus"}) meninggalkan perubahan parsial yang
+	// terjadi TANPA catatan audit. Kini semua yang bisa divalidasi dari
+	// body dan keadaan awal target divalidasi di sini; penjaga yang
+	// bergantung keadaan berubah (admin aktif terakhir) tetap di dalam
+	// transaksinya masing-masing di bawah.
+	var peranBaru *bool
+	if req.Role != nil {
+		isAdmin, sah := uraiPeran(*req.Role)
+		if !sah {
+			httpx.BadRequest(w, r, "invalid_role", fmt.Sprintf("role %q tidak sah; nilai yang diterima: %q atau %q", *req.Role, peranAdmin, peranUser))
+			return
+		}
+		peranBaru = &isAdmin
+	}
+	if req.Status != "" && !identity.UserStatus(req.Status).Valid() {
+		httpx.BadRequest(w, r, "invalid_status", fmt.Sprintf("status %q tidak sah; nilai yang diterima: %q, %q, atau %q", req.Status, identity.UserStatusActive, identity.UserStatusDisabled, identity.UserStatusLocked))
+		return
+	}
+
+	// Target dibaca sekali di muka: 404 untuk pengguna yang tidak ada
+	// kini mendahului semua mutasi (bukan muncul sesudah sebagian
+	// ter-commit), dan keadaannya adalah dasar pemeriksaan diri.
+	target, err := h.usersRepo.GetByID(ctx, id)
+	if err != nil {
+		mapRepoError(w, r, err, "pengguna")
+		return
+	}
+	diriSendiri := false
+	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil && p.User.ID == id {
+		diriSendiri = true
+	}
+	// Menurunkan peran akun SENDIRI DITOLAK, sejajar penonaktifan
+	// akun sendiri: sesi curian tidak boleh dipakai mengunci
+	// admin keluar dari kewenangannya sendiri tanpa jejak khusus.
+	if diriSendiri && peranBaru != nil && target.IsAdmin && !*peranBaru {
+		httpx.BadRequest(w, r, "self_demote_forbidden", "peran akun sendiri tidak bisa diturunkan; minta admin lain yang melakukannya")
+		return
+	}
+	// Mengubah status akun SENDIRI menjadi non-aktif DITOLAK: salah klik
+	// atau sesi curian langsung mengunci admin keluar tanpa jejak khusus.
+	if diriSendiri && req.Status != "" && identity.UserStatus(req.Status) != identity.UserStatusActive {
+		httpx.BadRequest(w, r, "self_disable_forbidden", "akun sendiri tidak bisa dinonaktifkan; minta admin lain yang melakukannya")
+		return
+	}
+
 	if req.Name != "" {
 		_, err := h.usersRepo.UpdateProfile(ctx, id, identity.ProfileUpdate{
 			DisplayName: &req.Name,
@@ -783,18 +831,11 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Perubahan peran (B-102): "admin" menaikkan, "user" menurunkan. Field
 	// absen (nil) berarti peran tidak disentuh — berbeda dari pembuatan,
-	// ketiadaan field di sini tidak boleh menafsirkan apa pun.
-	if req.Role != nil {
-		isAdmin, sah := uraiPeran(*req.Role)
-		if !sah {
-			httpx.BadRequest(w, r, "invalid_role", fmt.Sprintf("role %q tidak sah; nilai yang diterima: %q atau %q", *req.Role, peranAdmin, peranUser))
-			return
-		}
-		target, err := h.usersRepo.GetByID(ctx, id)
-		if err != nil {
-			mapRepoError(w, r, err, "pengguna")
-			return
-		}
+	// ketiadaan field di sini tidak boleh menafsirkan apa pun. Nilai peran
+	// dan penolakan turun-peran-sendiri sudah divalidasi di muka (B-194);
+	// target di sini adalah bacaan awal yang sama.
+	if peranBaru != nil {
+		isAdmin := *peranBaru
 		if target.IsAdmin != isAdmin {
 			if isAdmin {
 				if _, err := h.usersRepo.SetAdmin(ctx, id, true); err != nil {
@@ -802,13 +843,6 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			} else {
-				// Menurunkan peran akun SENDIRI DITOLAK, sejajar penonaktifan
-				// akun sendiri: sesi curian tidak boleh dipakai mengunci
-				// admin keluar dari kewenangannya sendiri tanpa jejak khusus.
-				if p, ok := auth.PrincipalFrom(ctx); ok && p != nil && p.User.ID == id {
-					httpx.BadRequest(w, r, "self_demote_forbidden", "peran akun sendiri tidak bisa diturunkan; minta admin lain yang melakukannya")
-					return
-				}
 				// Menurunkan ADMIN AKTIF TERAKHIR DITOLAK (lockout total),
 				// dengan pola transaksi berkunci advisory yang sama seperti
 				// penonaktifan/penghapusan di bawah.
@@ -850,12 +884,7 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 
 	if req.Status != "" {
 		if identity.UserStatus(req.Status) != identity.UserStatusActive {
-			// Mengubah status akun SENDIRI menjadi non-aktif DITOLAK: salah klik atau
-			// sesi curian langsung mengunci admin keluar tanpa jejak khusus.
-			if p, ok := auth.PrincipalFrom(ctx); ok && p != nil && p.User.ID == id {
-				httpx.BadRequest(w, r, "self_disable_forbidden", "akun sendiri tidak bisa dinonaktifkan; minta admin lain yang melakukannya")
-				return
-			}
+			// (Penolakan non-aktif akun sendiri sudah divalidasi di muka, B-194.)
 			// Menonaktifkan admin aktif TERAKHIR DITOLAK: mencegah lockout sistem.
 			// Pemeriksaan dan mutasinya berjalan dalam SATU transaksi berkunci
 			// advisory (lihat kunciPenjagaAdmin): pola periksa-lalu-tulis tanpa
@@ -908,6 +937,12 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Audit ditulis SEBELUM baca-ulang (B-194): catatan perubahan tidak
+	// boleh bergantung pada keberhasilan membaca kembali baris yang baru
+	// diubah — kegagalan baca-ulang tetap menjawab 500, tetapi perubahan
+	// yang nyata itu wajib sudah teraudit.
+	h.writeAudit(ctx, r, "update", "user", id, nil)
+
 	// Gagal baca-ulang setelah update berarti 500, BUKAN 200 dengan user
 	// kosong: menjawab zero-value membuat operator mengira pengguna terhapus
 	// datanya.
@@ -916,7 +951,6 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		mapRepoError(w, r, err, "pengguna")
 		return
 	}
-	h.writeAudit(ctx, r, "update", "user", id, nil)
 	_ = h.respond(w, r, http.StatusOK, toUserDTO(&u))
 }
 

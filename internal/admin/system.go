@@ -105,10 +105,19 @@ func (h *Handlers) getSetting(w http.ResponseWriter, r *http.Request) {
 	_ = h.respond(w, r, http.StatusOK, toSettingDTO(s))
 }
 
+// kunciSettingTerlarang melaporkan apakah kunci setelan wajib diubah
+// lewat endpoint khusus dan tidak boleh disentuh endpoint setelan
+// generik — untuk TULIS maupun HAPUS. Penjaga ini dulu hanya ada di
+// putSetting, sehingga DELETE generik bisa menghapus cli:config:* dan
+// melewati alur khusus yang justru dijaga di jalur tulis (B-195).
+func kunciSettingTerlarang(key string) bool {
+	return strings.HasPrefix(key, "cli:config:")
+}
+
 func (h *Handlers) putSetting(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := chi.URLParam(r, "key")
-	if strings.HasPrefix(key, "cli:config:") {
+	if kunciSettingTerlarang(key) {
 		httpx.BadRequest(w, r, "reserved_setting", "Setelan rahasia wajib diubah melalui endpoint khusus")
 		return
 	}
@@ -145,6 +154,10 @@ func (h *Handlers) putSetting(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) deleteSetting(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	key := chi.URLParam(r, "key")
+	if kunciSettingTerlarang(key) {
+		httpx.BadRequest(w, r, "reserved_setting", "Setelan rahasia wajib diubah melalui endpoint khusus")
+		return
+	}
 
 	if err := h.settingsRepo.Delete(ctx, key); err != nil {
 		mapRepoError(w, r, err, "setelan sistem")

@@ -46,7 +46,18 @@ func (h *Handlers) authorizeProviderAccess(ctx context.Context, providerID strin
 	if !ok || principal == nil {
 		return nil, repo.ErrNotFound
 	}
-	return p, nil
+	// Pemiliknya sendiri, atau admin penuh (B-102: is_admin adalah
+	// satu-satunya pembeda kewenangan). Di luar keduanya provider
+	// diperlakukan seolah tidak ada. Perbandingan pemilik ini yang
+	// dijanjikan komentar di atas tetapi dulu tidak pernah dijalankan:
+	// principal mana pun yang terautentikasi lolos (B-193).
+	if principal.User.IsAdmin {
+		return p, nil
+	}
+	if p.OwnerUserID != nil && *p.OwnerUserID == principal.User.ID {
+		return p, nil
+	}
+	return nil, repo.ErrNotFound
 }
 
 func (h *Handlers) upstreamsRoutes(r chi.Router) {
@@ -152,6 +163,13 @@ func (h *Handlers) listProviders(w http.ResponseWriter, r *http.Request) {
 	}
 	if s := r.URL.Query().Get("owner_user_id"); s != "" {
 		filter.OwnerUserID = s
+	}
+	// Isolasi BYOK pada daftar (B-193): principal non-admin hanya melihat
+	// provider bersama dan BYOK miliknya sendiri — sejajar
+	// authorizeProviderAccess untuk akses per-ID. Filter repo untuk ini
+	// (AccessibleByUserID) sudah lama ada tetapi tidak pernah dipasang.
+	if principal, ok := auth.PrincipalFrom(ctx); ok && principal != nil && !principal.User.IsAdmin {
+		filter.AccessibleByUserID = principal.User.ID
 	}
 
 	page := repo.Page{

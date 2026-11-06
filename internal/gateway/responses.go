@@ -648,6 +648,12 @@ func kodekanResponsResponses(kanonik *providers.ChatResponse, modelDiminta strin
 		case providers.FinishLength:
 			obj.Status = "incomplete"
 			obj.IncompleteDetails = map[string]any{"reason": "max_output_tokens"}
+		case providers.FinishPauseTurn:
+			// Model berhenti di tengah giliran dan mengharapkan
+			// kelanjutan (kosakata Anthropic): bukan jawaban tuntas,
+			// jadi "completed" akan mengarang penyelesaian.
+			obj.Status = "incomplete"
+			obj.IncompleteDetails = map[string]any{"reason": "pause_turn"}
 		case providers.FinishContentFilter:
 			// Jawaban yang dihentikan filter konten BUKAN jawaban
 			// tuntas (B-173): melaporkannya "completed" — apalagi
@@ -657,6 +663,19 @@ func kodekanResponsResponses(kanonik *providers.ChatResponse, modelDiminta strin
 			// jujurnya incomplete dengan alasan content_filter.
 			obj.Status = "incomplete"
 			obj.IncompleteDetails = map[string]any{"reason": "content_filter"}
+		case providers.FinishStop, providers.FinishToolCalls, providers.FinishStopSequence, "":
+			// Kosakata kanonik yang memang berarti tuntas di permukaan
+			// ini: berhenti normal, panggilan tool selesai, berhenti
+			// pada stop sequence yang diminta klien, atau upstream
+			// tidak menyebut sebab sama sekali.
+		default:
+			// Finish reason asing di luar kosakata kanonik (B-248):
+			// permukaan chat meneruskannya apa adanya, jadi di sini
+			// pun ia tidak dilipat menjadi "completed" — bentuk
+			// jujurnya incomplete dengan nilai aslinya sebagai alasan,
+			// supaya klien bisa membedakannya dari selesai normal.
+			obj.Status = "incomplete"
+			obj.IncompleteDetails = map[string]any{"reason": pilihan.FinishReason}
 		}
 	}
 	if kanonik.Usage.TotalTokens > 0 || kanonik.Usage.InputTokens > 0 || kanonik.Usage.OutputTokens > 0 {
@@ -744,6 +763,18 @@ func (h *Handlers) responsesSekali(w http.ResponseWriter, r *http.Request, pr *p
 	if out.Err != nil {
 		j.pasangKegagalanUpstream(out.Err)
 		tulisKegagalan(w, r, out.Err)
+		return
+	}
+
+	if out.Value == nil || (len(out.Value.Choices) == 0 && len(out.Value.Raw) == 0) {
+		// Adapter yang "berhasil" tanpa pilihan maupun body mentah
+		// melanggar kontrak providers.Provider (B-247): permukaan chat
+		// dan embeddings menjawab keadaan yang sama dengan 500.
+		// Mengodekannya menjadi objek completed ber-output kosong
+		// berarti mengarang sukses yang tidak pernah terjadi.
+		h.logger.ErrorContext(r.Context(), "adapter mengembalikan respons kosong",
+			"provider", namaProvider(out.Candidate), "model", pr.model.ModelID)
+		httpx.InternalError(w, r)
 		return
 	}
 

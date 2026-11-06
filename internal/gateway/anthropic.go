@@ -1088,6 +1088,19 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 
+	if out.Value == nil || (len(out.Value.Choices) == 0 && len(out.Value.Raw) == 0) {
+		// Adapter yang "berhasil" tanpa pilihan maupun body mentah
+		// melanggar kontrak providers.Provider (B-247): permukaan chat
+		// dan embeddings menjawab keadaan yang sama dengan 500.
+		// Menyusun pesan end_turn berisi satu block teks kosong dari
+		// ketiadaan berarti mengarang sukses yang tidak pernah terjadi.
+		h.logger.ErrorContext(r.Context(), "adapter mengembalikan respons kosong",
+			"provider", namaProvider(out.Candidate), "model", pr.model.ModelID)
+		writeAnthropicError(w, http.StatusInternalServerError, "api_error",
+			"upstream mengembalikan respons kosong")
+		return
+	}
+
 	// Lantai pemakaian yang sama seperti permukaan OpenAI (audit3 V-GW-10):
 	// respons tanpa usage tetap memakan kuota dan tertagih.
 	pemakaian := terapkanLantaiPemakaian(pr.req, out.Value.Usage, int64(len(teksJawaban(out.Value))))
@@ -1206,6 +1219,12 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 			stopReason = "refusal"
 		default:
 			stopReason = "end_turn"
+			// Finish reason di luar kosakata kanonik (B-248):
+			// kosakata stop_reason Anthropic tertutup, jadi nilai
+			// asing tidak punya padanan jujur selain end_turn —
+			// tetapi pelipatannya dicatat di jejak supaya operator
+			// bisa melihat sebab berhenti yang sebenarnya.
+			j.pasangFinishAsing(choice.FinishReason)
 		}
 	}
 
@@ -1539,6 +1558,12 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 				stopReason = "pause_turn"
 			case providers.FinishContentFilter:
 				stopReason = "refusal"
+			default:
+				// Finish reason asing (B-248): dilipat ke end_turn
+				// seperti jalur non-streaming, dan dicatat di jejak
+				// supaya sebab berhenti sebenarnya tetap terlihat.
+				stopReason = "end_turn"
+				j.pasangFinishAsing(ev.FinishReason)
 			}
 		}
 

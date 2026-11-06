@@ -174,6 +174,12 @@ const (
 	// (migrasi 0022, B-116 butir 7): HIT tidak punya percobaan upstream,
 	// jadi tanpa jenis ini timeline-nya kosong dan tampak seperti data hilang.
 	EventCacheHit = "cache_hit"
+	// EventFinishReasonUnknown menandai finish reason upstream di luar
+	// kosakata kanonik yang dilipat permukaan Anthropic menjadi
+	// end_turn (migrasi 0025, B-248): tanpa jenis ini sebab berhenti
+	// yang sebenarnya hilang dari timeline dan lipatannya tidak
+	// terlihat operator.
+	EventFinishReasonUnknown = "finish_reason_unknown"
 )
 
 // Payload adalah body request dan respons untuk satu request.

@@ -199,3 +199,21 @@ describe('ApiError tetap terbawa untuk kegagalan jaringan', () => {
     await expect(api.providers.list()).rejects.toMatchObject({ code: 'network_error' });
   });
 });
+
+describe('kontrak metode rute (B-223)', () => {
+  it('setProviders memakai POST — satu-satunya metode yang didaftarkan backend untuk rute providers aturan', async () => {
+    fetchMock.mockResolvedValue(responsJson(200, { id: 'aturan-1' }));
+    await api.routing.setProviders('aturan-1', {
+      provider_ids: ['prov-1', 'prov-2'],
+      weights: { 'prov-1': 70, 'prov-2': 30 },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/admin/gateway/routing-rules/aturan-1/providers');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      provider_ids: ['prov-1', 'prov-2'],
+      weights: { 'prov-1': 70, 'prov-2': 30 },
+    });
+  });
+});

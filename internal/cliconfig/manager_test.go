@@ -459,3 +459,75 @@ func TestConfigureGooseConfigDanEnv(t *testing.T) {
 		t.Errorf("key.env masih mengekspor GOOSE_API_KEY:\n%s", keyEnv)
 	}
 }
+
+// TestConfigureHermesAPIKeyDiBlokModelDanIzin0600 mengunci B-164:
+// Configure Hermes menanam api_key di blok model config.yaml
+// (jalur chat provider kustom Hermes membaca kunci dari config,
+// bukan dari .env), dan config.yaml yang kini memuat kunci wajib
+// berizin 0600 — termasuk mengetatkan berkas lama yang 0644.
+func TestConfigureHermesAPIKeyDiBlokModelDanIzin0600(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	hermesDir := filepath.Join(home, ".hermes")
+	if err := os.MkdirAll(hermesDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	lama := "model:\n  provider: openai\n  default: model-lama\n\nui:\n  tema: gelap\n"
+	cfgPath := filepath.Join(hermesDir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(lama), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	mgr := NewManager(newMockSettingsStore(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	_, err := mgr.Configure(ctx, ConfigureParams{
+		ToolID: "hermes", Mode: ModeModelOnly, Target: "intern-s2",
+		APIKey: "kunci-uji-hermes-123",
+	}, "http://localhost:8080/v1")
+	if err != nil {
+		t.Fatalf("Configure hermes: %v", err)
+	}
+
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("config.yaml hermes tidak ditulis: %v", err)
+	}
+	konten := string(data)
+	for _, mau := range []string{
+		"provider: custom", "default: intern-s2",
+		"base_url: http://localhost:8080/v1", "api_mode: chat_completions",
+		"api_key: kunci-uji-hermes-123",
+		"ui:", "tema: gelap", // seksi lain dipertahankan
+	} {
+		if !strings.Contains(konten, mau) {
+			t.Errorf("config.yaml hermes tidak memuat %q:\n%s", mau, konten)
+		}
+	}
+	if strings.Contains(konten, "model-lama") {
+		t.Errorf("config.yaml hermes masih memuat model lama:\n%s", konten)
+	}
+	if strings.Count(konten, "api_key:") != 1 {
+		t.Errorf("api_key harus tepat satu:\n%s", konten)
+	}
+
+	fi, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0600 {
+		t.Errorf("izin config.yaml hermes = %o, mau 600 (berkas memuat api_key)", fi.Mode().Perm())
+	}
+
+	// .env tetap ditulis sebagai pendamping, juga 0600.
+	envPath := filepath.Join(hermesDir, ".env")
+	envData, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf(".env hermes tidak ditulis: %v", err)
+	}
+	if !strings.Contains(string(envData), "OPENAI_API_KEY=kunci-uji-hermes-123") {
+		t.Errorf(".env hermes tidak memuat OPENAI_API_KEY:\n%s", envData)
+	}
+	if fi, err := os.Stat(envPath); err != nil || fi.Mode().Perm() != 0600 {
+		t.Errorf("izin .env hermes harus 600, dapat %v / %v", fi, err)
+	}
+}

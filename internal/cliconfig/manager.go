@@ -443,18 +443,27 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 
 	settingKey := fmt.Sprintf("cli:config:%s", p.ToolID)
 
+	// Konfigurasi tersimpan sebelumnya dibaca utuh satu kali, untuk
+	// dua keperluan: (a) mempertahankan kunci bila Configure tidak
+	// membawa kunci baru (di bawah), dan (b) bahan kompensasi B-278
+	// bila persistensi gagal sesudah efek eksternal diterapkan.
+	var tersimpanLama *StoredConfig
+	if m.settings != nil {
+		if lama, errGet := m.settings.Get(ctx, settingKey); errGet == nil && len(lama.Value) > 0 {
+			var sl StoredConfig
+			if json.Unmarshal(lama.Value, &sl) == nil {
+				tersimpanLama = &sl
+			}
+		}
+	}
+
 	// Pertahankan kunci tersimpan tool ini bila Configure tidak membawa
 	// kunci baru: Put menimpa SELURUH StoredConfig, jadi tanpa langkah ini
 	// konfigurasi ulang tanpa kunci diam-diam menghapus kunci tersimpan
 	// tool itu sendiri (bagian dari audit3 V-LN-26). Tidak ada alur
 	// "hapus kunci" yang disengaja — field kosong berarti "tidak diubah".
-	if p.APIKey == "" && m.settings != nil {
-		if lama, errGet := m.settings.Get(ctx, settingKey); errGet == nil && len(lama.Value) > 0 {
-			var storedLama StoredConfig
-			if json.Unmarshal(lama.Value, &storedLama) == nil {
-				stored.APIKeyEncrypted = storedLama.APIKeyEncrypted
-			}
-		}
+	if p.APIKey == "" && tersimpanLama != nil {
+		stored.APIKeyEncrypted = tersimpanLama.APIKeyEncrypted
 	}
 
 	rawJSON, err := json.Marshal(stored)
@@ -538,6 +547,25 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 			// B-218: disk ikut dipulihkan ke jepretan, supaya keadaan
 			// lama di DB dan keadaan lama di disk tetap sepasang.
 			pulihkanSemua()
+			// B-278: khusus Cline, efek Configure yang sesungguhnya
+			// adalah store internal cline yang ditulis `cline auth`
+			// oleh applyToolSpecificConfig — di luar jangkauan
+			// jepretan berkas mana pun. Kompensasi best-effort:
+			// jalankan ulang auth dengan konfigurasi tersimpan
+			// sebelumnya supaya store cline kembali sepasang dengan
+			// DB yang tetap lama. Ini BUKAN rollback sejati (proses
+			// eksternalnya bisa gagal juga — kegagalannya dilaporkan
+			// menyatu di error), dan bila belum pernah ada
+			// konfigurasi tersimpan tidak ada keadaan lama untuk
+			// dipulihkan: Configure pertama yang gagal Put tetap
+			// meninggalkan store cline terkonfigurasi tanpa baris
+			// DB — jendela sisa yang dinyatakan apa adanya di sini,
+			// menyembuh sendiri pada Configure ulang yang berhasil.
+			if p.ToolID == "cline" && tersimpanLama != nil {
+				if errKomp := m.applyToolSpecificConfig(ctx, homeDir, toolDef, tersimpanLama.Mode, tersimpanLama.Target, tersimpanLama.GatewayURL, m.kunciTersimpan(*tersimpanLama, p.ToolID)); errKomp != nil {
+					return nil, fmt.Errorf("menyimpan konfigurasi CLI %s ke database: %w (kompensasi store cline dengan konfigurasi lama juga gagal: %v)", p.ToolID, err, errKomp)
+				}
+			}
 			return nil, fmt.Errorf("menyimpan konfigurasi CLI %s ke database: %w", p.ToolID, err)
 		}
 	}
@@ -640,7 +668,9 @@ func (j jepretanBerkas) pulihkan() {
 // di sana tanpa memperbarui peta ini mengembalikan lubang B-218 untuk
 // tool itu. copilot (murni env) dan cline (menjalankan CLI resmi yang
 // menulis ke tokonya sendiri) tidak menulis berkas dari jalur tool,
-// jadi tidak mempunyai entri.
+// jadi tidak mempunyai entri. Khusus cline, efek store-nya pada
+// kegagalan Put ditangani kompensasi B-278 di Configure (auth ulang
+// dengan konfigurasi lama), bukan oleh jepretan ini.
 func jalurBerkasConfigure(homeDir, toolID string) []string {
 	if homeDir == "" {
 		return nil

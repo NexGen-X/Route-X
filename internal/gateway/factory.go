@@ -388,13 +388,26 @@ func (f *Factory) ProviderForTarget(ctx context.Context, t ProviderTarget) (prov
 		return nil, err
 	}
 
-	kunci := kunciAdapterTarget(t, cred, proxy)
+	// Project Code Assist (B-231): untuk target Antigravity, project
+	// diselesaikan SEBELUM kunci cache disusun, dan hasilnya ikut masuk ke
+	// kunci. Sebelumnya resolusi hanya terjadi di dalam buatTarget — yaitu
+	// hanya saat cache miss — sementara kuncinya tidak memuat project:
+	// adapter yang kebetulan dibangun saat resolusi gagal transien (atau
+	// sesi belum ter-backfill) terkunci permanen sebagai adapter "tanpa
+	// project", dan project yang terselesaikan belakangan lewat sync atau
+	// exchange OAuth tidak pernah menghasilkan kunci baru. Menyelesaikan
+	// lebih dulu di sini membuat setiap perubahan project berarti adapter
+	// baru, dan adapter tanpa project tidak bisa lagi memenangkan balapan
+	// konstruksi melawan adapter ber-project untuk kunci yang sama.
+	project := f.selesaikanProjectCodeAssist(ctx, t, cred)
+
+	kunci := kunciAdapterTarget(t, cred, proxy, project)
 	if p, ok := f.dariCache(kunci); ok {
 		f.tandaiPemakaian(cred)
 		return p, nil
 	}
 
-	p, err := f.buatTarget(ctx, t, cred, proxy)
+	p, err := f.buatTarget(ctx, t, cred, proxy, project)
 	if err != nil {
 		return nil, err
 	}
@@ -551,13 +564,46 @@ func (f *Factory) proxyTarget(ctx context.Context, t ProviderTarget) (security.S
 	return url, nil
 }
 
+// selesaikanProjectCodeAssist menyelesaikan project Code Assist untuk
+// target yang membutuhkannya (B-157, B-231). Hanya target Google yang
+// terdeteksi Antigravity yang diselesaikan — predikatnya menyamai
+// isAntigravity() milik adapter (host cloudcode-pa atau nama memuat
+// "antigravity"), dinilai pada base URL target sebagaimana dikonfigurasi
+// operator. Penilaian di satu tempat ini menggantikan penilaian lama pada
+// base URL final di dalam buatTarget: sekarang hanya ada satu lapisan
+// yang memutuskan, jadi kedua lapisan tidak bisa lagi berbeda pendapat
+// tentang provider yang sama.
+//
+// Kegagalan resolusi dicatat lalu project kosong dipakai: daftar model
+// generik tetap lebih baik daripada konstruksi yang gagal total. Project
+// kosong BUKAN keadaan akhir yang terkunci — begitu resolusi berhasil,
+// kunci cache berubah dan adapter ber-project dibangun (B-231).
+func (f *Factory) selesaikanProjectCodeAssist(ctx context.Context, t ProviderTarget, cred *upstream.ActiveCredential) string {
+	if t.Kind != providers.KindGoogle || f.penyelesaiProject == nil || cred == nil {
+		return ""
+	}
+	if !strings.Contains(t.BaseURL, "cloudcode-pa.googleapis.com") &&
+		!strings.Contains(strings.ToLower(t.Name), "antigravity") {
+		return ""
+	}
+	pj, err := f.penyelesaiProject.ResolveCodeAssistProject(ctx, t.ID, cred.ID, cred.Secret)
+	if err != nil {
+		f.logger.WarnContext(ctx, "resolusi project code assist gagal; adapter dibangun tanpa project",
+			"provider_id", t.ID, "provider", t.Name, "error", err)
+		return ""
+	}
+	return pj
+}
+
 // kunciAdapterTarget menyusun kunci cache satu adapter dari ProviderTarget.
 //
 // Seluruh bahan yang dibekukan ke dalam adapter masuk ke SHA-256, lalu ID provider
 // ditempelkan di depan sebagai bagian yang boleh dibaca manusia. Nilai kredensial dan URL
 // proxy karena itu tidak pernah muncul apa adanya, sementara perubahan sekecil apa pun pada
-// keduanya tetap menghasilkan kunci yang berbeda.
-func kunciAdapterTarget(t ProviderTarget, cred *upstream.ActiveCredential, proxy security.Secret) string {
+// keduanya tetap menghasilkan kunci yang berbeda. Project Code Assist ikut di-hash
+// (B-231): project adalah bahan yang dibekukan ke dalam adapter Google, jadi dua
+// adapter yang hanya berbeda project tidak boleh berbagi satu entri cache.
+func kunciAdapterTarget(t ProviderTarget, cred *upstream.ActiveCredential, proxy security.Secret, project string) string {
 	h := sha256.New()
 	bagian := func(s string) {
 		_, _ = h.Write([]byte(strconv.Itoa(len(s))))
@@ -582,6 +628,7 @@ func kunciAdapterTarget(t ProviderTarget, cred *upstream.ActiveCredential, proxy
 		bagian("")
 	}
 	bagian(proxy.Reveal())
+	bagian(project)
 
 	return t.ID + ":" + hex.EncodeToString(h.Sum(nil))
 }
@@ -621,6 +668,7 @@ func (f *Factory) buatTarget(
 	t ProviderTarget,
 	cred *upstream.ActiveCredential,
 	proxy security.Secret,
+	project string,
 ) (providers.Provider, error) {
 	var rahasia security.Secret
 	if cred != nil {
@@ -777,26 +825,12 @@ func (f *Factory) buatTarget(
 		})
 
 	case providers.KindGoogle:
-		// Project Code Assist (B-157): hanya target Antigravity yang
-		// membutuhkannya — predikatnya menyamai isAntigravity() milik
-		// adapter (host cloudcode-pa atau nama memuat "antigravity"),
-		// dinilai pada base URL FINAL sesudah pengarahan relay agar kedua
-		// lapisan tidak pernah berbeda pendapat tentang provider yang
-		// sama. Resolusi yang gagal dicatat lalu adapter dibangun tanpa
-		// project: daftar model generik tetap lebih baik daripada
-		// konstruksi yang gagal total.
-		project := ""
-		if f.penyelesaiProject != nil && cred != nil &&
-			(strings.Contains(baseURL, "cloudcode-pa.googleapis.com") ||
-				strings.Contains(strings.ToLower(t.Name), "antigravity")) {
-			pj, err := f.penyelesaiProject.ResolveCodeAssistProject(ctx, t.ID, cred.ID, rahasia)
-			if err != nil {
-				f.logger.WarnContext(ctx, "resolusi project code assist gagal; adapter dibangun tanpa project",
-					"provider_id", t.ID, "provider", t.Name, "error", err)
-			} else {
-				project = pj
-			}
-		}
+		// Project Code Assist (B-157) sudah diselesaikan pemanggil lewat
+		// selesaikanProjectCodeAssist SEBELUM kunci cache disusun (B-231)
+		// dan tiba di sini sebagai parameter; adapter tinggal membekukan
+		// project itu. Resolusi tidak lagi terjadi di dalam konstruksi,
+		// karena konstruksi hanya berjalan saat cache miss — persis
+		// keadaan yang membuat adapter tanpa project terkunci permanen.
 		return google.New(google.Config{
 			Name:         t.Name,
 			Kind:         t.Kind,

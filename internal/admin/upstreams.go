@@ -585,6 +585,16 @@ func (l *modelLifecycle) usang() bool {
 	return false
 }
 
+// aktif melaporkan apakah metadata ini secara eksplisit menyatakan model
+// MASIH hidup: metadata benar-benar disediakan upstream dan tidak
+// menandai usang. Dipakai memulihkan deprecated_at yang terlanjur
+// terpasang (B-207) — hanya bukti positif dari upstream yang boleh
+// membersihkannya. Ketiadaan lifecycle BUKAN bukti apa pun: vendor yang
+// tidak mengirim lifecycle tidak menyimpulkan modelnya hidup atau mati.
+func (l *modelLifecycle) aktif() bool {
+	return l.ada() && !l.usang()
+}
+
 // modelDiscovery adalah satu model hasil discovery beserta bukti upstream
 // yang menyertainya: lifecycle (bila disediakan) dan kapabilitas yang
 // DITURUNKAN DARI BUKTI respons (bukan tebakan nama — B-116 butir 9).
@@ -1157,6 +1167,14 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 			if d.Lifecycle.usang() && m.DeprecatedAt == nil {
 				params.DeprecatedAt = upstream.Set(time.Now().UTC())
 			}
+			if d.Lifecycle.aktif() && m.DeprecatedAt != nil {
+				// B-207: upstream kini menyatakan model ini hidup lagi —
+				// deprecated_at dari sync sebelumnya dibersihkan.
+				// Sebelumnya branch ini hanya bisa memasang, tidak
+				// pernah membersihkan, sehingga model yang pulih
+				// tercatat usang selamanya (asimetri tulis-vs-pakai).
+				params.DeprecatedAt = upstream.Clear[time.Time]()
+			}
 			if d.DisplayName != "" && m.DisplayName == m.ModelID {
 				params.DisplayName = &d.DisplayName
 			}
@@ -1194,20 +1212,61 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeAudit(ctx, r, "sync_models", "provider", id, map[string]any{
+	// B-207: model yang terpasang ke provider ini tetapi TIDAK lagi
+	// ditemukan di upstream kini DILAPORKAN ke operator — sebelumnya
+	// sync hanya menambah/memutakhirkan dan kepergian model dari katalog
+	// upstream tidak terlihat di mana pun (model yatim terpasang
+	// selamanya). Pelaporan saja, TIDAK dilepas/dinonaktifkan:
+	// deprecated ≠ auto-disable adalah keputusan B-089, dan katalog
+	// upstream yang sedang tidak lengkap tidak boleh memutus rute yang
+	// masih bekerja. Himpunan pembanding adalah model yang DITEMUKAN
+	// (bukan yang berhasil disimpan — kegagalan simpan lokal sudah
+	// dilaporkan lewat daftar gagal, bukan sebagai model basi).
+	// Kegagalan membaca pemetaan hanya meniadakan laporan ini; sync
+	// yang sudah berhasil tidak digagalkan karenanya.
+	staleModels := []string{}
+	staleTerbaca := false
+	terpasang, lerr := h.modelRepo.ListProviderModels(ctx, upstream.ProviderModelFilter{ProviderID: id})
+	if lerr != nil {
+		h.logger.WarnContext(ctx, "sinkronisasi model: gagal membaca pemetaan untuk laporan model basi", "provider_id", id, "error", lerr)
+	} else {
+		staleTerbaca = true
+		ditemukanSet := make(map[string]bool, len(ditemukan))
+		for _, d := range ditemukan {
+			ditemukanSet[d.ID] = true
+		}
+		for _, pm := range terpasang {
+			if !ditemukanSet[pm.UpstreamModelName] {
+				staleModels = append(staleModels, pm.UpstreamModelName)
+			}
+		}
+		slices.Sort(staleModels)
+	}
+
+	detailSync := map[string]any{
 		"provider_name": p.Name,
 		"models_count":  len(syncedModels),
 		"failed_count":  len(gagal),
-	})
+	}
+	if staleTerbaca {
+		detailSync["stale_models"] = staleModels
+		detailSync["stale_count"] = len(staleModels)
+	}
+	h.writeAudit(ctx, r, "sync_models", "provider", id, detailSync)
 
 	pesan := fmt.Sprintf("Berhasil menyinkronkan %d model dari provider %s", len(syncedModels), p.DisplayName)
 	if len(gagal) > 0 {
 		pesan += fmt.Sprintf("; %d model gagal disimpan (lihat log server)", len(gagal))
 	}
+	if staleTerbaca && len(staleModels) > 0 {
+		pesan += fmt.Sprintf("; %d model terpasang tidak lagi ada di upstream: %s — tidak diubah, menunggu keputusan operator",
+			len(staleModels), strings.Join(staleModels, ", "))
+	}
 	_ = h.respond(w, r, http.StatusOK, SyncModelsResponseDTO{
-		Count:   len(syncedModels),
-		Models:  syncedModels,
-		Message: pesan,
+		Count:       len(syncedModels),
+		Models:      syncedModels,
+		StaleModels: staleModels,
+		Message:     pesan,
 	})
 }
 

@@ -481,7 +481,12 @@ func (h *Handlers) kebijakan(
 		rj.Tulis(w, r)
 		return false
 	}
-	if rj := h.guard.PeriksaBatasModel(r.Context(), model.ModelID); rj != nil {
+	// B-187: batas cakupan model dicari dengan ID internal (UUID), bukan
+	// nama klien — admin menormalkan scope_id model menjadi UUID saat
+	// simpan (normalisasiScopeModel), dan mesin batas mencocokkan persis.
+	// Memakai ModelID (nama) membuat pencarian selalu meleset dan batas
+	// REQUEST per model tidak pernah menahan apa pun di jalur utama.
+	if rj := h.guard.PeriksaBatasModel(r.Context(), model.ID); rj != nil {
 		rj.Tulis(w, r)
 		return false
 	}

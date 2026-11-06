@@ -294,13 +294,17 @@ func TestProviderAnggaranHabisMenyaringKandidat(t *testing.T) {
 // --- Batas laju cakupan model ------------------------------------------------
 
 func TestBatasLajuCakupanModel(t *testing.T) {
+	// Regresi B-187: scope_id yang tersimpan untuk cakupan model adalah
+	// UUID model kanonik — admin menormalkan nama yang diketik operator
+	// menjadi UUID saat simpan (normalisasiScopeModel), dan mesin batas
+	// mencocokkan persis. Fixture ini karena itu memakai ID internal
+	// modelUji, BUKAN namanya: dengan pencarian berdasar nama (perilaku
+	// lama http.go), batas ini tidak akan pernah menahan dan permintaan
+	// kedua di bawah akan lolos 200.
 	src := &sumberKebijakan{limits: []*policy.RateLimit{{
-		Scope: policy.ScopeModel, ScopeID: "gpt-4o-mini", RequestsPerMinute: pointerG(1), Enabled: true,
+		Scope: policy.ScopeModel, ScopeID: modelUji().ID, RequestsPerMinute: pointerG(1), Enabled: true,
 	}}}
 	s := susun(t, providerSukses(), func(_ *susunan, d *HandlersDeps) { d.Guard = guardUji(t, src) })
-
-	// Cakupan model memakai NAMA model kanonik, bukan UUID-nya: itulah nilai yang diketik
-	// operator di dashboard, dan yang muncul di log bersama nama modelnya.
 	if w := s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, nil); w.Code != http.StatusOK {
 		t.Fatalf("permintaan pertama status = %d, mau 200 (body: %s)", w.Code, w.Body.String())
 	}

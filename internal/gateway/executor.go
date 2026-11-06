@@ -479,13 +479,35 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 	// ada satu pun cabang di bawah yang boleh memperlakukan nol sebagai "habis".
 	sisa := plan.Budget
 
-	for _, c := range plan.Candidates {
+	// modelDitolak memuat model kanonik yang sudah menjawab invalid_request
+	// pada permintaan INI (B-178). invalid_request bersifat per-model —
+	// penerjemah/validator tiap model berbeda (pola B-161) — jadi failover
+	// lintas model masuk akal, tetapi kandidat lain dari model yang sama
+	// akan menolak permintaan yang sama dan hanya membakar anggaran:
+	// mereka dilewati dengan SkipReason, bukan dicoba.
+	var modelDitolak map[string]bool
+
+	for idx, c := range plan.Candidates {
 		// Context yang sudah selesai diperiksa sebelum kandidat berikutnya disentuh:
 		// tanpa ini, klien yang sudah pergi tetap membuat gateway menghubungi seluruh
 		// sisa daftar provider satu per satu.
 		if err := ctx.Err(); err != nil {
 			out.Err = providers.FromTransport(c.ProviderName, err)
 			return out
+		}
+
+		// Kandidat dari model yang sudah ditolak invalid_request pada
+		// permintaan ini dilewati tanpa menghubungi upstream (B-178).
+		// Dilewati TETAP dicatat sebagai percobaan lewatan, supaya "kenapa
+		// provider ini tidak dipakai" terjawab dari log.
+		if c.ModelID != "" && modelDitolak[c.ModelID] {
+			out.Attempts = append(out.Attempts, Attempt{
+				ProviderID: c.ProviderID, ProviderName: c.ProviderName,
+				ProviderModelID: c.ProviderModelID, UpstreamModel: c.UpstreamModelName,
+				Nth: 1, Started: time.Now(),
+				SkipReason: "model kandidat sudah ditolak invalid_request pada permintaan ini",
+			})
+			continue
 		}
 
 		// Jatah kandidat ini. Tanpa anggaran, tiap kandidat memakai MaxAttempts penuh.
@@ -550,9 +572,28 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 		if errTerakhir.StreamedBytes > 0 {
 			return out
 		}
-		if !errTerakhir.Failoverable() {
-			return out
+		if errTerakhir.Failoverable() {
+			continue
 		}
+		// invalid_request TIDAK failoverable antar-provider untuk model
+		// yang sama (permintaan yang sama akan ditolak lagi), tetapi
+		// failoverable ANTAR-model pada pipeline multi-model (B-178):
+		// penerjemah tiap model berbeda, jadi penolakan model ini bukan
+		// bukti model berikutnya menolak juga — persis skenario combo
+		// [anggota Google menolak skema, anggota lain menerima]. Syaratnya
+		// ketat: model kandidat ini diketahui, dan masih ada kandidat
+		// bermodel BERBEDA yang belum ditolak di sisa daftar. Model ini
+		// ditandai ditolak; kandidat semodel di sisa daftar dilewati di
+		// kepala loop.
+		if errTerakhir.Kind == providers.ErrKindInvalidRequest && c.ModelID != "" &&
+			adaModelLainTersisa(plan.Candidates[idx+1:], c.ModelID, modelDitolak) {
+			if modelDitolak == nil {
+				modelDitolak = make(map[string]bool)
+			}
+			modelDitolak[c.ModelID] = true
+			continue
+		}
+		return out
 	}
 
 	// Tidak satu pun kandidat berhasil dan tidak satu pun kegagalan tercatat.
@@ -569,6 +610,20 @@ func jalankanRencana[T any](ctx context.Context, e *Executor, plan Plan, jalanka
 		}
 	}
 	return out
+}
+
+// adaModelLainTersisa melaporkan apakah di sisa daftar masih ada kandidat
+// bermodel kanonik BERBEDA dari model yang baru ditolak — dan model itu
+// sendiri belum ditolak pada permintaan ini (B-178). Kandidat tanpa
+// ModelID tidak dihitung: identitasnya tidak diketahui, dan menebak
+// berarti mempertaruhkan failover yang tidak terbukti aman.
+func adaModelLainTersisa(sisa []*upstream.RouteCandidate, modelDitolakBaru string, modelDitolak map[string]bool) bool {
+	for _, c := range sisa {
+		if c.ModelID != "" && c.ModelID != modelDitolakBaru && !modelDitolak[c.ModelID] {
+			return true
+		}
+	}
+	return false
 }
 
 // saringKandidatEgress mengeluarkan kandidat yang egress pool-nya tercatat

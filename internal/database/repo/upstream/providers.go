@@ -461,6 +461,15 @@ func (r *ProviderRepo) ActiveProviders(ctx context.Context) ([]*Provider, error)
 // Priority dan Weight sudah efektif: nilai dari provider_models dipakai bila ada, kalau
 // tidak nilai dari provider. Dengan begitu pemanggil tidak perlu tahu penimpaan itu ada.
 type RouteCandidate struct {
+	// ModelID adalah models.id kanonik yang dilayani pemetaan ini, diisi
+	// RouteCandidates dari RouteQuery.ModelID. Mesin eksekusi memakainya
+	// untuk keputusan failover ANTAR-model (B-178): daftar kandidat combo
+	// mencampur beberapa model kanonik, dan tanpa identitas per kandidat
+	// executor tidak bisa membedakan "provider lain untuk model yang
+	// sama" dari "model lain". Kosong pada kandidat yang disusun manual
+	// (test, kandidat sintetis) — executor memperlakukan kosong sebagai
+	// tidak diketahui dan gagal-tertutup ke perilaku lama.
+	ModelID string
 	// ProviderModelID adalah baris pemetaan; inilah kunci yang dipakai tabel harga.
 	ProviderModelID   string
 	UpstreamModelName string
@@ -637,6 +646,9 @@ func (r *ProviderRepo) RouteCandidates(ctx context.Context, q RouteQuery) ([]*Ro
 		if err != nil {
 			return nil, repo.Err(op, err)
 		}
+		// Seluruh baris query ini melayani model yang diminta (q.ModelID):
+		// identitas kanoniknya ditempelkan ke tiap kandidat (B-178).
+		c.ModelID = q.ModelID
 		out = append(out, &c)
 	}
 	if err := rows.Err(); err != nil {

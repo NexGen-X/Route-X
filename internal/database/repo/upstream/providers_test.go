@@ -458,6 +458,13 @@ func TestRouteCandidatesIntegration(t *testing.T) {
 		if got[0].UpstreamModelName != model.ModelID {
 			t.Errorf("upstream_model_name = %q, ingin %q", got[0].UpstreamModelName, model.ModelID)
 		}
+		// B-178: identitas model kanonik ditempelkan ke tiap kandidat —
+		// executor memakainya untuk keputusan failover antar-model.
+		for _, c := range got {
+			if c.ModelID != model.ID {
+				t.Errorf("kandidat %s: ModelID = %q, mau %q", c.ProviderName, c.ModelID, model.ID)
+			}
+		}
 		if !got[0].SupportsStreaming || !got[0].SupportsTools {
 			t.Error("dukungan streaming dan tools seharusnya aktif secara bawaan")
 		}

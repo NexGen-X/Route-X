@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -120,6 +121,127 @@ func tulisAtomik(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmpName, path)
+}
+
+// muatKonfigJSON memuat berkas konfigurasi JSON berbentuk objek milik
+// sebuah tool untuk digabungkan dengan setelan Route-X (B-217).
+//
+// Pembedaan yang dijaga fungsi ini adalah antara "belum ada berkas" dan
+// "berkas ada tetapi tidak bisa kami baca":
+//   - Berkas tidak ada → peta kosong tanpa error: memulai dari nol
+//     memang sah.
+//   - Berkas ada tetapi gagal dibaca atau tidak terurai → error. Versi
+//     lama menelan kegagalan unmarshal (_ = json.Unmarshal) lalu menimpa
+//     seluruh berkas dengan data Route-X saja, sehingga setelan pengguna
+//     yang tidak terurai oleh pengurai ketat kami musnah pada Configure
+//     pertama. Kegagalannya kini jujur: Configure dibatalkan dan berkas
+//     tidak disentuh sama sekali.
+//   - toleranJSONC menyalakan penguraian toleran JSONC (komentar + koma
+//     menggantung) untuk tool yang format resminya memang JSONC
+//     (OpenCode): berkas yang sah menurut tool-nya tidak boleh gagal
+//     terurai di sini.
+func muatKonfigJSON(path string, toleranJSONC bool) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return make(map[string]any), nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("membaca %s: %w", path, err)
+	}
+	if toleranJSONC {
+		data = uraiJSONCToleran(data)
+	}
+	cfg := make(map[string]any)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("berkas konfigurasi %s tidak bisa diurai (%v); Configure dibatalkan agar setelan di dalamnya tidak tertimpa — perbaiki atau pindahkan berkas itu, lalu coba lagi", path, err)
+	}
+	if cfg == nil {
+		cfg = make(map[string]any)
+	}
+	return cfg, nil
+}
+
+// uraiJSONCToleran mengubah JSONC menjadi JSON ketat yang bisa diterima
+// encoding/json: komentar // dan /* */ DI LUAR string dibuang, begitu
+// pula koma yang menggantung persis sebelum } atau ]. Isi string —
+// termasuk "//" di dalam URL seperti "https://..." — tidak disentuh:
+// mesin keadaannya melacak apakah ia sedang di dalam string dan apakah
+// karakter sebelumnya backslash.
+func uraiJSONCToleran(data []byte) []byte {
+	var bersih []byte
+	dalamString := false
+	lolos := false // karakter sebelumnya backslash, di dalam string
+	for i := 0; i < len(data); i++ {
+		c := data[i]
+		if dalamString {
+			bersih = append(bersih, c)
+			switch {
+			case lolos:
+				lolos = false
+			case c == '\\':
+				lolos = true
+			case c == '"':
+				dalamString = false
+			}
+			continue
+		}
+		switch {
+		case c == '"':
+			dalamString = true
+			bersih = append(bersih, c)
+		case c == '/' && i+1 < len(data) && data[i+1] == '/':
+			// Komentar baris: lewati sampai newline; newline-nya sendiri
+			// dipertahankan sebagai pemisah token.
+			for i < len(data) && data[i] != '\n' {
+				i++
+			}
+			i-- // kompensasi increment loop: berhenti tepat sebelum newline
+		case c == '/' && i+1 < len(data) && data[i+1] == '*':
+			// Komentar blok: lewati sampai */.
+			i += 2
+			for i+1 < len(data) && !(data[i] == '*' && data[i+1] == '/') {
+				i++
+			}
+			i++ // berhenti di '/' penutup; increment loop melewatinya
+		default:
+			bersih = append(bersih, c)
+		}
+	}
+	// Koma menggantung: koma yang hanya diikuti whitespace sebelum } atau ].
+	var hasil []byte
+	dalamString = false
+	lolos = false
+	for i := 0; i < len(bersih); i++ {
+		c := bersih[i]
+		if dalamString {
+			hasil = append(hasil, c)
+			switch {
+			case lolos:
+				lolos = false
+			case c == '\\':
+				lolos = true
+			case c == '"':
+				dalamString = false
+			}
+			continue
+		}
+		if c == '"' {
+			dalamString = true
+			hasil = append(hasil, c)
+			continue
+		}
+		if c == ',' {
+			j := i + 1
+			for j < len(bersih) && (bersih[j] == ' ' || bersih[j] == '\t' || bersih[j] == '\n' || bersih[j] == '\r') {
+				j++
+			}
+			if j < len(bersih) && (bersih[j] == '}' || bersih[j] == ']') {
+				continue // buang koma ini
+			}
+		}
+		hasil = append(hasil, c)
+	}
+	return hasil
 }
 
 // cariConfigPath mengembalikan path absolut berkas konfigurasi
@@ -1169,12 +1291,12 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		_ = os.MkdirAll(claudeDir, 0755)
 		settingsPath := filepath.Join(claudeDir, "settings.json")
 		claudeURL := strings.TrimSuffix(gwURL, "/v1")
-		cfg := make(map[string]any)
-		if data, err := os.ReadFile(settingsPath); err == nil {
-			_ = json.Unmarshal(data, &cfg)
-			if cfg == nil {
-				cfg = make(map[string]any)
-			}
+		// Berkas yang ada tetapi tidak terurai membatalkan Configure
+		// (B-217), bukan ditimpa: isinya setelan pengguna yang tidak
+		// kami kelola.
+		cfg, err := muatKonfigJSON(settingsPath, false)
+		if err != nil {
+			return err
 		}
 		delete(cfg, "anthropic_base_url")
 		env, ok := cfg["env"].(map[string]any)
@@ -1252,12 +1374,12 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		opencodeDir := filepath.Join(homeDir, ".config", "opencode")
 		_ = os.MkdirAll(opencodeDir, 0755)
 		configPath := filepath.Join(opencodeDir, "opencode.json")
-		var cfg map[string]any
-		if data, err := os.ReadFile(configPath); err == nil {
-			_ = json.Unmarshal(data, &cfg)
-		}
-		if cfg == nil {
-			cfg = make(map[string]any)
+		// Format resmi OpenCode adalah JSONC: penguraian toleran wajib
+		// di sini (B-217), karena berkas JSONC yang sah menurut tool-nya
+		// selalu gagal di encoding/json dan dulu selalu berakhir ditimpa.
+		cfg, err := muatKonfigJSON(configPath, true)
+		if err != nil {
+			return err
 		}
 		cfg["$schema"] = "https://opencode.ai/config.json"
 		providers, ok := cfg["provider"].(map[string]any)
@@ -1371,12 +1493,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		qwenDir := filepath.Join(homeDir, ".qwen")
 		_ = os.MkdirAll(qwenDir, 0755)
 		qwenPath := filepath.Join(qwenDir, "settings.json")
-		qcfg := make(map[string]any)
-		if data, err := os.ReadFile(qwenPath); err == nil {
-			_ = json.Unmarshal(data, &qcfg)
-			if qcfg == nil {
-				qcfg = make(map[string]any)
-			}
+		qcfg, err := muatKonfigJSON(qwenPath, false)
+		if err != nil {
+			return err
 		}
 		providersQ, ok := qcfg["modelProviders"].(map[string]any)
 		if !ok || providersQ == nil {
@@ -1436,12 +1555,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		crushDir := filepath.Join(homeDir, ".config", "crush")
 		_ = os.MkdirAll(crushDir, 0755)
 		crushPath := filepath.Join(crushDir, "crush.json")
-		ccfg := make(map[string]any)
-		if data, err := os.ReadFile(crushPath); err == nil {
-			_ = json.Unmarshal(data, &ccfg)
-			if ccfg == nil {
-				ccfg = make(map[string]any)
-			}
+		ccfg, err := muatKonfigJSON(crushPath, false)
+		if err != nil {
+			return err
 		}
 		if _, ok := ccfg["$schema"]; !ok {
 			ccfg["$schema"] = "https://charm.land/crush.json"

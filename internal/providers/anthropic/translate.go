@@ -725,6 +725,12 @@ func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatRespo
 	var signature string
 	jumlahThinking := 0
 
+	// parts/adaGambar sejajar pola B-211 di adapter Google: urutan block
+	// dipertahankan utuh (termasuk segmen teksnya) dan Parts hanya
+	// terpasang bila ada block gambar (B-299).
+	var parts []providers.ContentPart
+	adaGambar := false
+
 	for i := range u.Content {
 		b := &u.Content[i]
 		switch b.Type {
@@ -733,6 +739,33 @@ func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatRespo
 			// sekitar tool_use, dan menambahkan baris baru berarti mengarang karakter
 			// yang tidak pernah dihasilkan model.
 			text.WriteString(b.Text)
+			parts = append(parts, providers.ContentPart{Type: providers.PartTypeText, Text: b.Text})
+		case blockImage:
+			// B-299: block image sebelumnya jatuh menembus switch ini
+			// tanpa case — hilang senyap sebelum pemetaan kanonik,
+			// sehingga respons berisi gambar saja tertangkap penjaga
+			// kekosongan B-261 dengan alasan yang salah ("kosong",
+			// padahal isinya gambar). Kini diterjemahkan ke bagian
+			// gambar kanonik: sumber base64 menjadi data URI, sumber
+			// url diteruskan apa adanya — kebalikan persis arah
+			// permintaan di toBlocks.
+			if b.Source == nil {
+				continue
+			}
+			var url string
+			switch {
+			case b.Source.Type == "url" && b.Source.URL != "":
+				url = b.Source.URL
+			case b.Source.Data != "":
+				url = "data:" + b.Source.MediaType + ";base64," + b.Source.Data
+			default:
+				continue
+			}
+			parts = append(parts, providers.ContentPart{
+				Type:     providers.PartTypeImageURL,
+				ImageURL: &providers.ImageURL{URL: url},
+			})
+			adaGambar = true
 		case blockThinking:
 			reasoning.WriteString(b.Thinking)
 			jumlahThinking++
@@ -760,6 +793,21 @@ func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatRespo
 		signature = ""
 	}
 
+	pesan := providers.Message{
+		Role:               providers.RoleAssistant,
+		Content:            text.String(),
+		ToolCalls:          calls,
+		ReasoningContent:   reasoning.String(),
+		ReasoningSignature: signature,
+	}
+	if adaGambar {
+		// Hanya terpasang bila ada gambar (B-299): respons teks murni
+		// mempertahankan bentuk persis seperti sebelumnya, dan
+		// Message.Text() membaca gabungan segmen dari Parts bila
+		// terisi — isinya identik dengan Content di atas.
+		pesan.Parts = parts
+	}
+
 	resp := &providers.ChatResponse{
 		ID:    u.ID,
 		Model: u.Model,
@@ -768,14 +816,8 @@ func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatRespo
 		// terdekat yang tersedia.
 		Created: time.Now().Unix(),
 		Choices: []providers.Choice{{
-			Index: 0,
-			Message: providers.Message{
-				Role:               providers.RoleAssistant,
-				Content:            text.String(),
-				ToolCalls:          calls,
-				ReasoningContent:   reasoning.String(),
-				ReasoningSignature: signature,
-			},
+			Index:        0,
+			Message:      pesan,
 			FinishReason: mapStopReason(u.StopReason),
 			StopSequence: u.StopSequence,
 		}},

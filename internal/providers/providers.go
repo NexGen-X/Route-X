@@ -377,6 +377,16 @@ type StreamEvent struct {
 	Delta string
 	// ReasoningDelta adalah potongan jejak penalaran.
 	ReasoningDelta string
+	// ReasoningSignature adalah tanda tangan kriptografis atas jejak
+	// penalaran yang tiba bersama aliran (B-295) — padanan streaming
+	// dari Message.ReasoningSignature. Tanpa field ini signature part
+	// thought Google dan signature_delta Anthropic terbuang secara
+	// struktural di jalur streaming, sehingga giliran lanjutan
+	// multi-turn lewat streaming tidak dapat membawanya walau jalur
+	// non-streaming bisa (B-262). Adapter mengisinya pada peristiwa
+	// yang membawa signature itu; konsumen yang merakit pesan dari
+	// aliran mengambil nilai non-kosong terakhir.
+	ReasoningSignature string
 	// RefusalDelta adalah potongan teks penolakan model (B-213), sejajar
 	// Delta tetapi dari field refusal upstream: akumulasinya membentuk
 	// Message.Refusal pada pesan akhir.

@@ -455,6 +455,20 @@ func (c *GoogleOAuthClient) RefreshAccessTokenWithProxy(
 // - Audience (aud) wajib cocok dengan expectedClientID (jika expectedClientID diberikan).
 // - Expiry (exp) wajib belum kadaluarsa dengan toleransi clock skew 60 detik (jika ada).
 // - Email verified (email_verified) wajib bernilai true bila klausa tersebut ada.
+//
+// Keputusan B-317 (Putaran Bersih #2, 7 Nov 2026) — validasi "bila ada"
+// di atas adalah KEPUTUSAN SADAR, bukan kelalaian, dan tidak diperketat:
+// satu-satunya jalur produksi ke fungsi ini adalah verifikasiIDToken
+// (idtoken.go), yang memverifikasi tanda tangan RS256 terhadap JWKS
+// Google secara fail-closed SEBELUM memanggil fungsi ini, atas token
+// yang tiba langsung dari endpoint token Google lewat TLS. Token yang
+// lolos verifikasi itu diterbitkan Google dan selalu memuat
+// iss/exp/email_verified; token yang menghilangkan klaim-klaim itu
+// hanya bisa dibuat oleh pemegang kunci privat Google. Mewajibkan
+// kehadiran klaim tidak menambah keamanan terhadap aktor mana pun,
+// dan berisiko menolak token Google yang sah bila bentuknya berubah.
+// aud berbeda: ia WAJIB ada bila expectedClientID diberikan — dan
+// pemanggil produksi selalu memberikannya.
 func parseIDTokenClaims(idToken string, expectedClientID ...string) (string, string, error) {
 	if idToken == "" {
 		return "", "", nil

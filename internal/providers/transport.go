@@ -177,7 +177,10 @@ func RetryAfterFromDetails(details []ErrorDetail) time.Duration {
 		if v, err := time.ParseDuration(strings.TrimSpace(d.RetryDelay)); err == nil && v > 0 {
 			return v
 		}
-		return 0
+		// Entri RetryInfo yang rusak TIDAK menghentikan pemindaian
+		// (B-318): sebelumnya return 0 di sini membuang petunjuk jeda
+		// sah yang mungkin ada pada entri RetryInfo berikutnya.
+		continue
 	}
 	return 0
 }
@@ -210,16 +213,27 @@ func ReadErrorBodyWithRetry(body io.Reader) (code, message string, retryAfter ti
 			Details []ErrorDetail   `json:"details"`
 		} `json:"error"`
 	}
-	if json.Unmarshal(raw, &shape) != nil || shape.Error.Message == "" {
+	if json.Unmarshal(raw, &shape) != nil {
 		return "", "", 0
 	}
+	code = firstNonEmpty(unquote(shape.Error.Code), shape.Error.Type, shape.Error.Status)
+	if shape.Error.Message == "" && code == "" {
+		// Tidak ada objek error yang terbaca sama sekali — perilaku
+		// lama dipertahankan persis: pemanggil memakai fallback-nya.
+		return "", "", 0
+	}
+	// B-297: message kosong TIDAK lagi membuang kode/type/status yang
+	// hadir. Sebelumnya body error tanpa message (mis. 200
+	// {"error":{"code":"rate_limit_exceeded",...}}) kehilangan
+	// klasifikasi & kode upstreamnya dan jatuh ke server generik,
+	// padahal kode adalah satu-satunya sinyal yang tersedia.
 	// Urutan pemilihan kode: "code" milik OpenAI paling spesifik, lalu "type", lalu
 	// "status" milik Google.
 	//
 	// Pesan disaring ScrubLogText SEBELUM dipotong (audit3 V-EM-33): pesan
 	// upstream bisa memantulkan URL berkredensial atau token dari permintaan,
 	// dan pesan ini mengalir ke log gateway serta requests.error_message.
-	return firstNonEmpty(unquote(shape.Error.Code), shape.Error.Type, shape.Error.Status),
+	return code,
 		truncate(observability.ScrubLogText(shape.Error.Message), 200),
 		RetryAfterFromDetails(shape.Error.Details)
 }

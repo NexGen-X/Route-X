@@ -1062,8 +1062,35 @@ func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*prov
 		})
 	}
 
+	// B-298: penjaga kekosongan kanonik, sejajar B-261 di adapter
+	// Anthropic. Sebelumnya kandidat STOP tanpa part sama sekali (atau
+	// hanya part yang tidak diteruskan, mis. inlineData video) lolos
+	// sebagai sukses kosong: gateway mencatat request berhasil tanpa
+	// jawaban. Kandidat yang berhenti karena filter konten dikecualikan
+	// — kekosongannya sah dan bermakna bagi klien.
+	semuaKosong := true
+	for _, c := range resp.Choices {
+		if c.FinishReason == providers.FinishContentFilter || !pesanKanonikKosong(c.Message) {
+			semuaKosong = false
+			break
+		}
+	}
+	if semuaKosong {
+		return nil, providers.Newf(providers.ErrKindServer, p.name, "respons Gemini tidak memuat konten yang bisa diterjemahkan")
+	}
+
 	resp.Raw = encodeCompletion(resp)
 	return resp, nil
+}
+
+// pesanKanonikKosong melaporkan apakah pesan kanonik tidak memuat apa
+// pun yang bisa diteruskan ke klien (B-298) — kriteria yang sama
+// dengan penjaga B-261 di adapter Anthropic: tanpa teks, tanpa bagian,
+// tanpa tool call, tanpa penalaran, tanpa penolakan, tanpa transkrip
+// audio. Signature penalaran sendirian BUKAN konten.
+func pesanKanonikKosong(m providers.Message) bool {
+	return m.Content == "" && len(m.Parts) == 0 && len(m.ToolCalls) == 0 &&
+		m.ReasoningContent == "" && m.Refusal == "" && m.AudioTranscript == ""
 }
 
 // checkBlocked menerjemahkan penolakan kebijakan konten dan error yang menumpang di body.

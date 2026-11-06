@@ -1609,11 +1609,15 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 
 		// Catatan tentang reasoning: ev.ReasoningDelta sengaja TIDAK di-stream ke
 		// sini. Anthropic hanya menerima blok thinking yang disertai signature
-		// kriptografis dari sisi server; bentuk kanonik gateway tidak membawa
-		// signature (providers.StreamEvent tidak punya field Signature), dan
-		// adapter Anthropic memang menjatuhkannya secara eksplisit. Memblokir
-		// thinking tanpa signature yang sah hanya membuang-buang output, jadi
-		// jejak penalaran dilewati pada permukaan ini.
+		// kriptografis dari sisi server. Sejak B-295 bentuk kanonik MEMANG
+		// membawa signature aliran (StreamEvent.ReasoningSignature), tetapi
+		// permukaan ini tetap tidak merender blok thinking dari aliran
+		// provider lain: signature hanya sah untuk penerbit dan model yang
+		// mengeluarkannya, dan merakit blok thinking lintas-provider dari
+		// potongan aliran adalah keputusan desain tersendiri di luar
+		// B-295. Jejak penalaran dilewati pada permukaan ini; signature
+		// aliran sendiri kini selamat di kontrak kanonik untuk konsumen
+		// yang merakit pesan dari aliran.
 
 		// Potongan teks: buka blok text bila belum ada blok text yang terbuka.
 		// Transisi tool -> text menutup blok tool lama lebih dulu.

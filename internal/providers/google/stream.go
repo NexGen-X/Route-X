@@ -257,6 +257,10 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 	// keluaran peristiwa ini dipertahankan utuh bila ada part non-teks.
 	var parts []providers.ContentPart
 	adaNonTeks := false
+	// sigThought adalah signature part thought pertama pada peristiwa
+	// ini (B-295); kosong bila peristiwa ini tidak membawa part thought
+	// bertanda tangan.
+	var sigThought string
 
 	for i := range cand.Content.Parts {
 		part := &cand.Content.Parts[i]
@@ -288,6 +292,16 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 			s.nextTool++
 		case part.Thought:
 			reasoning.WriteString(part.Text)
+			// Signature part thought disalin ke peristiwa (B-295):
+			// jalur non-streaming menyalinnya ke
+			// Message.ReasoningSignature (B-262), tetapi cabang ini
+			// dulu hanya mengakumulasi teksnya — StreamEvent bahkan
+			// tidak punya field untuk membawanya, jadi signature
+			// hilang secara struktural di jalur streaming. Yang
+			// pertama menang, sejajar sigPikiran non-streaming.
+			if sigThought == "" {
+				sigThought = string(part.ThoughtSignature)
+			}
 		case part.Text != "":
 			text.WriteString(part.Text)
 			parts = append(parts, providers.ContentPart{Type: providers.PartTypeText, Text: part.Text})
@@ -326,7 +340,7 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 		s.usageSent = true
 	}
 
-	if text.Len() == 0 && reasoning.Len() == 0 && len(calls) == 0 && !adaNonTeks && finish == "" && usage == nil {
+	if text.Len() == 0 && reasoning.Len() == 0 && len(calls) == 0 && !adaNonTeks && finish == "" && usage == nil && sigThought == "" {
 		return nil, nil
 	}
 
@@ -351,6 +365,7 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 	out := s.event(delta, finish, usage)
 	out.Delta = text.String()
 	out.ReasoningDelta = reasoning.String()
+	out.ReasoningSignature = sigThought
 	out.ToolCalls = calls
 	if adaNonTeks {
 		out.Parts = parts

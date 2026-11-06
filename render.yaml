@@ -56,7 +56,7 @@ services:
       - key: INITIAL_ADMIN_EMAIL
         sync: false # contoh: admin@example.com
       - key: INITIAL_ADMIN_PASSWORD
-        sync: false # minimal 12 karakter dengan variasi karakter
+        sync: false # minimal 16 karakter (validasi production menolak <16) dengan variasi karakter
       # Metrik Prometheus & Telemetri
       - key: METRICS_TOKEN
         generateValue: true

@@ -439,3 +439,37 @@ func FuzzSSEReader(f *testing.F) {
 		}
 	})
 }
+
+// FASE 11 B-266: ReadErrorBodyWithRetry mengekstrak RetryInfo.retryDelay dari
+// body error Google; bentuk tanpa detail / detail lain menghasilkan nol.
+func TestReadErrorBodyWithRetryB266(t *testing.T) {
+	const denganRetry = `{"error":{"code":429,"message":"kuota habis","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"7s"}]}}`
+	code, msg, jeda := ReadErrorBodyWithRetry(strings.NewReader(denganRetry))
+	// Kode numerik 429 didahulukan pemilih kode yang sudah ada (perilaku
+	// ReadErrorBody warisan); yang dikunci di sini adalah pesan + jedanya.
+	if code != "429" || msg != "kuota habis" || jeda != 7*time.Second {
+		t.Errorf("= (%q, %q, %v), mau (429, kuota habis, 7s)", code, msg, jeda)
+	}
+
+	const pecahan = `{"error":{"message":"kuota habis","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"0.5s"}]}}`
+	if _, _, jeda := ReadErrorBodyWithRetry(strings.NewReader(pecahan)); jeda != 500*time.Millisecond {
+		t.Errorf("jeda pecahan = %v, mau 500ms", jeda)
+	}
+
+	const tanpaDetail = `{"error":{"message":"kuota habis","status":"RESOURCE_EXHAUSTED"}}`
+	if _, _, jeda := ReadErrorBodyWithRetry(strings.NewReader(tanpaDetail)); jeda != 0 {
+		t.Errorf("jeda tanpa detail = %v, mau 0", jeda)
+	}
+
+	const detailLain = `{"error":{"message":"kuota habis","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"X"}]}}`
+	if _, _, jeda := ReadErrorBodyWithRetry(strings.NewReader(detailLain)); jeda != 0 {
+		t.Errorf("jeda detail lain = %v, mau 0", jeda)
+	}
+
+	if got := RetryAfterFromDetails(nil); got != 0 {
+		t.Errorf("RetryAfterFromDetails(nil) = %v, mau 0", got)
+	}
+	if got := RetryAfterFromDetails([]ErrorDetail{{Type: "type.googleapis.com/google.rpc.RetryInfo", RetryDelay: "bukan-durasi"}}); got != 0 {
+		t.Errorf("retryDelay rusak = %v, mau 0", got)
+	}
+}

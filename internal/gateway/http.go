@@ -1789,8 +1789,10 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.Raw) > 0 {
 			// HIT tetap memakan kuota token: tanpa ini prompt yang di-cache bisa
 			// diulang tanpa batas melewati token limit. Biayanya tetap nol —
-			// tidak ada panggilan upstream — karena pencatat menghitung biaya
-			// dari kandidat pemenang, dan jalur ini tidak punya pemenang.
+			// tidak ada panggilan upstream. Jalur ini MEMANG memasang pemenang
+			// demi atribusi provider (audit3 V-GW-09), jadi nolnya ditegakkan
+			// pencatat lewat penanda CacheHit eksplisit pada event (B-188),
+			// bukan dari absennya pemenang.
 			//
 			// Pemakaian yang ditagih dan yang dicatat disusun sekali lewat
 			// pemakaianCacheHIT (lantai taksiran untuk entri lama bertoken nol).

@@ -470,6 +470,10 @@ func (j *jejak) selesai(ctx context.Context) {
 
 		Stream: j.stream,
 
+		// Penanda HIT diteruskan eksplisit (B-188): pencatat memaksa biaya
+		// nol untuk event ini walau kandidat pemenang terpasang.
+		CacheHit: j.cacheHit,
+
 		InputTokens:                j.pemakaian.InputTokens,
 		CachedInputTokens:          j.pemakaian.CachedInputTokens,
 		CacheCreationInputTokens:   j.pemakaian.CacheCreationInputTokens,

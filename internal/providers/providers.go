@@ -354,6 +354,14 @@ type StreamEvent struct {
 	ReasoningDelta string
 	// ToolCalls adalah potongan pemanggilan tool; Index menandai tool mana.
 	ToolCalls []ToolCall
+	// Parts adalah potongan keluaran NON-TEKS peristiwa ini dalam urutan
+	// aslinya — gambar/audio hasil generasi model, beserta potongan teks
+	// yang menyertainya (B-211). Kosong pada peristiwa teks murni: teks
+	// mengalir lewat Delta seperti biasa, dan Parts hanya terisi bila
+	// peristiwa memuat part yang tidak bisa diwakili Delta. Permukaan yang
+	// tidak bisa merender jenis part tertentu melewatinya secara eksplisit
+	// di lapisannya sendiri; adapter tidak lagi membuangnya diam-diam.
+	Parts []ContentPart
 	// FinishReason terisi pada peristiwa terakhir satu choice.
 	FinishReason string
 	// StopSequence menyertai FinishReason FinishStopSequence pada peristiwa

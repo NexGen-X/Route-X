@@ -1572,6 +1572,45 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 			j.tandaiTTFT()
 		}
 
+		// Part non-teks (B-211): gambar hasil generasi upstream tiba utuh
+		// dalam satu peristiwa, jadi ia menjadi blok image lengkap
+		// (start+stop, tanpa delta) di index berikutnya. Teks TIDAK diambil
+		// dari ev.Parts — teks yang sama sudah mengalir lewat ev.Delta dan
+		// mengambilnya dari dua tempat akan menggandakannya. Part audio
+		// dilewati: protokol Anthropic tidak punya blok keluaran audio,
+		// dan part-nya tetap sampai ke permukaan OpenAI lewat Raw adapter.
+		// Byte gambar sengaja tidak masuk byteKonten: lantai pemakaian
+		// menaksir token dari byte TEKS, dan data base64 akan
+		// menggelembungkannya jauh dari kenyataan.
+		for _, part := range ev.Parts {
+			if part.Type != providers.PartTypeImageURL {
+				continue
+			}
+			blok, ok := blokGambarDariPart(part)
+			if !ok {
+				continue
+			}
+			tutupBlok()
+			idx := blokBerikutnya
+			blokBerikutnya++
+			startPayload, _ := json.Marshal(map[string]any{
+				"type":          "content_block_start",
+				"index":         idx,
+				"content_block": blok,
+			})
+			if !kirimEvent("content_block_start", startPayload) {
+				return
+			}
+			stopPayload, _ := json.Marshal(map[string]any{
+				"type":  "content_block_stop",
+				"index": idx,
+			})
+			if !kirimEvent("content_block_stop", stopPayload) {
+				return
+			}
+			j.tandaiTTFT()
+		}
+
 		// Potongan tool_calls. Adapter mengirim content_block_start tool_use sebagai
 		// satu peristiwa (membawa id dan nama, tanpa argumen), lalu setiap potongan
 		// argumen sebagai input_json_delta terpisah. Keduanya disusun ulang ke blok

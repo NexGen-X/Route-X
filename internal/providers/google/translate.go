@@ -44,6 +44,27 @@ type geminiPart struct {
 	FileData         *geminiFileData     `json:"fileData,omitempty"`
 	FunctionCall     *geminiFunctionCall `json:"functionCall,omitempty"`
 	FunctionResponse *geminiFunctionResp `json:"functionResponse,omitempty"`
+	// ExecutableCode dan CodeExecutionResult adalah part keluaran fitur
+	// eksekusi kode Gemini (B-211): kode yang ditulis model untuk
+	// dijalankan lingkungannya, dan hasil jalannya. Sebelumnya kedua field
+	// ini tidak ada di struct, jadi unmarshal membuangnya diam-diam —
+	// respons eksekusi kode tiba di klien sebagai teks kosong.
+	ExecutableCode      *geminiExecutableCode      `json:"executableCode,omitempty"`
+	CodeExecutionResult *geminiCodeExecutionResult `json:"codeExecutionResult,omitempty"`
+}
+
+// geminiExecutableCode adalah part kode yang ditulis model untuk dieksekusi
+// lingkungan Gemini (fitur code execution).
+type geminiExecutableCode struct {
+	Language string `json:"language,omitempty"`
+	Code     string `json:"code,omitempty"`
+}
+
+// geminiCodeExecutionResult adalah part hasil eksekusi kode oleh lingkungan
+// Gemini: status akhir (mis. OUTCOME_OK) dan keluaran programnya.
+type geminiCodeExecutionResult struct {
+	Outcome string `json:"outcome,omitempty"`
+	Output  string `json:"output,omitempty"`
 }
 
 type geminiBlob struct {
@@ -881,6 +902,42 @@ func mapFinishReason(reason string) string {
 	}
 }
 
+// partKeluaranNonTeks menerjemahkan part multimedia keluaran Gemini
+// (inlineData) menjadi ContentPart kanonik (B-211). ok=false berarti part
+// ini bukan part multimedia berisi yang bisa diteruskan.
+//
+// Pemetaannya menjaga isi persis: gambar/audio inline menjadi part
+// multimedia dengan data yang sama (gambar sebagai data URI — bentuk yang
+// dirender permukaan OpenAI dan Anthropic gateway). Part kode eksekusi
+// dan hasil eksekusi TIDAK lewat sini: keduanya teks apa adanya dan
+// ditangani sebagai segmen teks oleh pemanggil, karena di permukaan chat
+// keduanya memang dibaca sebagai teks dan mengarang pembungkus di
+// sekelilingnya akan mengubah isi.
+func partKeluaranNonTeks(part *geminiPart) (providers.ContentPart, bool) {
+	if part.InlineData == nil || part.InlineData.Data == "" {
+		return providers.ContentPart{}, false
+	}
+	mime := part.InlineData.MimeType
+	switch {
+	case strings.HasPrefix(mime, "image/"):
+		return providers.ContentPart{
+			Type:     providers.PartTypeImageURL,
+			ImageURL: &providers.ImageURL{URL: "data:" + mime + ";base64," + part.InlineData.Data},
+		}, true
+	case strings.HasPrefix(mime, "audio/"):
+		return providers.ContentPart{
+			Type:  providers.PartTypeAudio,
+			Audio: &providers.Audio{Data: part.InlineData.Data, Format: strings.TrimPrefix(mime, "audio/")},
+		}, true
+	}
+	// inlineData bermime lain (mis. video) tidak diteruskan: kontrak
+	// kanonik tidak punya slot generik untuknya — PartTypeDocument
+	// dikhususkan bagi PDF Anthropic oleh definisinya, dan meminjamnya
+	// akan merusak penyaringan kandidat dokumen di gateway. Batasan ini
+	// dinyatakan di sini secara eksplisit, bukan disembunyikan.
+	return providers.ContentPart{}, false
+}
+
 // toCanonicalResponse menerjemahkan respons Gemini ke bentuk kanonik.
 func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*providers.ChatResponse, error) {
 	if err := p.checkBlocked(u); err != nil {
@@ -910,6 +967,13 @@ func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*prov
 		cand := &u.Candidates[i]
 		var text, reasoning strings.Builder
 		var calls []providers.ToolCall
+		// parts menampung urutan keluaran persis seperti dikirim upstream,
+		// termasuk segmen teksnya, dan hanya DIPAKAI bila ada part non-teks
+		// (B-211): Message.Text() membaca dari Parts bila terisi, jadi
+		// mengisinya tanpa segmen teks akan menghilangkan teks dari
+		// konsumen yang membaca lewat Parts.
+		var parts []providers.ContentPart
+		adaNonTeks := false
 
 		for j := range cand.Content.Parts {
 			part := &cand.Content.Parts[j]
@@ -942,6 +1006,22 @@ func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*prov
 				reasoning.WriteString(part.Text)
 			case part.Text != "":
 				text.WriteString(part.Text)
+				parts = append(parts, providers.ContentPart{Type: providers.PartTypeText, Text: part.Text})
+			case part.ExecutableCode != nil && part.ExecutableCode.Code != "":
+				// Kode yang ditulis model untuk dieksekusi lingkungannya
+				// adalah teks jawaban (B-211): ia masuk Content sekaligus
+				// urutan Parts, apa adanya tanpa pembungkus karangan.
+				text.WriteString(part.ExecutableCode.Code)
+				parts = append(parts, providers.ContentPart{Type: providers.PartTypeText, Text: part.ExecutableCode.Code})
+			case part.CodeExecutionResult != nil && part.CodeExecutionResult.Output != "":
+				// Hasil eksekusi sama: keluaran program adalah teks (B-211).
+				text.WriteString(part.CodeExecutionResult.Output)
+				parts = append(parts, providers.ContentPart{Type: providers.PartTypeText, Text: part.CodeExecutionResult.Output})
+			default:
+				if cp, ok := partKeluaranNonTeks(part); ok {
+					parts = append(parts, cp)
+					adaNonTeks = true
+				}
 			}
 		}
 
@@ -951,14 +1031,18 @@ func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*prov
 		if len(calls) > 0 && (finish == providers.FinishStop || finish == "") {
 			finish = providers.FinishToolCalls
 		}
+		msg := providers.Message{
+			Role:             providers.RoleAssistant,
+			Content:          text.String(),
+			ToolCalls:        calls,
+			ReasoningContent: reasoning.String(),
+		}
+		if adaNonTeks {
+			msg.Parts = parts
+		}
 		resp.Choices = append(resp.Choices, providers.Choice{
-			Index: cand.Index,
-			Message: providers.Message{
-				Role:             providers.RoleAssistant,
-				Content:          text.String(),
-				ToolCalls:        calls,
-				ReasoningContent: reasoning.String(),
-			},
+			Index:        cand.Index,
+			Message:      msg,
 			FinishReason: finish,
 		})
 	}

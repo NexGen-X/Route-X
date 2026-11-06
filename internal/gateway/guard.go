@@ -385,16 +385,14 @@ func pemegangKuotaModel(ctx context.Context) *tandaKuotaModel {
 // sudah membawa pemegang tanda, tanda ditambahkan ke pemegang yang sama
 // dan context dikembalikan apa adanya — context turunan (jalur tier)
 // dengan begitu menandai pemegang yang sama dengan induknya.
-func TandaiKuotaModel(ctx context.Context, modelID string) context.Context {
-	return tanamTandaKuotaModel(ctx, modelID, time.Now())
-}
-
-// TandaiKuotaModel menanam tanda seperti fungsi bebasnya, tetapi
-// jangkar waktunya dibaca dari jam limiter penjaga (B-353) — jam
+//
+// Jangkar waktunya dibaca dari jam limiter penjaga (B-353) — jam
 // yang sama yang menggerakkan kenaikan penghitung di
 // PeriksaBatasModel — supaya refund dihitung dari jendela yang
 // benar walau jam limiter disuntik (test) atau berbeda dari jam
-// dinding. Jalur produksi menanam lewat method ini.
+// dinding. (Fungsi bebas pendahulunya dihapus pada amendemen PR
+// Fase 16 C: sesudah ketiga situs panggil beralih ke method ini ia
+// tak terjangkau — gerbang deadcode CI menangkapnya.)
 func (g *Guard) TandaiKuotaModel(ctx context.Context, modelID string) context.Context {
 	jangkar := time.Now()
 	if g != nil && g.limiter != nil {
@@ -403,7 +401,7 @@ func (g *Guard) TandaiKuotaModel(ctx context.Context, modelID string) context.Co
 	return tanamTandaKuotaModel(ctx, modelID, jangkar)
 }
 
-// tanamTandaKuotaModel adalah penanam bersama kedua TandaiKuotaModel.
+// tanamTandaKuotaModel adalah penanam di balik Guard.TandaiKuotaModel.
 func tanamTandaKuotaModel(ctx context.Context, modelID string, jangkar time.Time) context.Context {
 	if ctx == nil || modelID == "" {
 		return ctx

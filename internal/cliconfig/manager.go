@@ -372,7 +372,19 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	}
 
 	// Tulis file konfigurasi lokal spesifik jika ada direktorinya.
-	if err := m.applyToolSpecificConfig(ctx, homeDir, toolDef, p.Mode, p.Target, gwURL, p.APIKey); err != nil {
+	// B-215: penulis berkas menerima kunci EFEKTIF — kunci baru dari
+	// permintaan ini bila ada, jika tidak kunci tersimpan yang baru
+	// saja dipertahankan di StoredConfig di atas (didekripsi di
+	// memori, tidak pernah ditulis apa pun selain ke berkas tool
+	// itu sendiri). Versi lama meneruskan p.APIKey mentah, sehingga
+	// konfigurasi ulang tanpa kunci menghapus api_key dari berkas
+	// tool (paling fatal di Crush, yang tak punya jalur env) padahal
+	// DB tetap mengklaim kunci tersimpan.
+	kunciEfektif := p.APIKey
+	if kunciEfektif == "" {
+		kunciEfektif = m.kunciTersimpan(stored, p.ToolID)
+	}
+	if err := m.applyToolSpecificConfig(ctx, homeDir, toolDef, p.Mode, p.Target, gwURL, kunciEfektif); err != nil {
 		pulihkanKeyEnv()
 		return nil, fmt.Errorf("menulis konfigurasi lokal %s: %w", toolDef.Name, err)
 	}
@@ -507,6 +519,24 @@ func (m *Manager) semuaKunciTersimpan(ctx context.Context) map[string]kunciTersi
 		}
 	}
 	return hasil
+}
+
+// kunciTersimpan mengembalikan API key plaintext dari sebuah
+// StoredConfig — ciphertext didekripsi bila ada, jika tidak field
+// plaintext warisan dipakai. Kosong berarti tool itu memang tidak
+// punya kunci tersimpan (atau dekripsi gagal); pemanggil
+// memperlakukannya sebagai "tidak ada kunci", bukan error.
+func (m *Manager) kunciTersimpan(stored StoredConfig, toolID string) string {
+	if stored.APIKeyEncrypted != "" {
+		if m.cipher == nil {
+			return ""
+		}
+		if dec, err := m.cipher.Decrypt(stored.APIKeyEncrypted, security.CLIToolAAD(toolID)); err == nil {
+			return string(dec)
+		}
+		return ""
+	}
+	return stored.APIKey
 }
 
 // tulisUlangKeyEnv membangun ulang ~/.routex/key.env dari seluruh
@@ -1128,11 +1158,13 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		// ada di berkas dipertahankan (pola yang sama dengan
 		// opencode.json), dan sisa kunci root salah dari versi lama
 		// dibuang. Key ikut ditulis di `env` sebagai ANTHROPIC_API_KEY
-		// — nama yang sama dengan yang diekspor key.env untuk tool ini
-		// — hanya bila Configure membawa key, konsisten dengan
-		// opencode.json yang menaruh apiKey di berkas; berkas 0600
-		// karena bisa memuat key itu. Tanpa key baru, entri key lama
-		// dihapus supaya tidak ada kredensial hantu (pola V-LN-26).
+		// — nama yang sama dengan yang diekspor key.env untuk tool ini.
+		// apiKey di sini adalah kunci EFEKTIF (B-215): kunci baru bila
+		// Configure membawanya, jika tidak kunci tersimpan produk —
+		// field kosong pada permintaan berarti "tidak diubah", jadi
+		// nilai di berkas tidak pernah dihapus selama produk masih
+		// menyimpan kunci untuk tool ini. Berkas 0600 karena bisa
+		// memuat key itu.
 		claudeDir := filepath.Join(homeDir, ".claude")
 		_ = os.MkdirAll(claudeDir, 0755)
 		settingsPath := filepath.Join(claudeDir, "settings.json")
@@ -1167,11 +1199,26 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		}
 
 	case "aider":
-		// Tulis ~/.aider.conf.yml. Nama model WAJIB berprefiks provider
-		// LiteLLM `openai/` (B-098) — sama seperti AIDER_MODEL di env.
+		// Tulis ~/.aider.conf.yml dengan MERGE per-baris (B-216):
+		// hanya dua kunci skalar tingkat-atas yang dikelola Route-X
+		// (openai-api-base + model), baris lain milik pengguna —
+		// kunci provider lain (openai-api-key, anthropic-api-key),
+		// opsi model/git/editor, komentar — dipertahankan apa
+		// adanya. Versi lama menulis ulang berkas dari nol sehingga
+		// seluruh setelan Aider lain hilang permanen. Izin mengikuti
+		// berkas lama bila ada (berkas ini lazim memuat kunci).
+		// Nama model WAJIB berprefiks provider LiteLLM `openai/`
+		// (B-098) — sama seperti AIDER_MODEL di env.
 		aiderConfigPath := filepath.Join(homeDir, ".aider.conf.yml")
-		content := fmt.Sprintf("openai-api-base: %s\nmodel: %s\n", gwURL, modelAider(target))
-		if err := tulisAtomik(aiderConfigPath, []byte(content), 0644); err != nil {
+		var existingAider string
+		if data, err := os.ReadFile(aiderConfigPath); err == nil {
+			existingAider = string(data)
+		}
+		content := perbaruiYAMLTopLevel(existingAider, [][2]string{
+			{"openai-api-base", gwURL},
+			{"model", modelAider(target)},
+		})
+		if err := tulisAtomik(aiderConfigPath, []byte(content), permBerkasAtau(aiderConfigPath, 0644)); err != nil {
 			return fmt.Errorf("menulis %s: %w", aiderConfigPath, err)
 		}
 
@@ -1231,12 +1278,15 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		}
 		if opts, ok := routexProv["options"].(map[string]any); ok {
 			opts["baseURL"] = gwURL
+			// apiKey di sini adalah kunci EFEKTIF (B-215): kunci baru
+			// bila Configure membawanya, jika tidak kunci tersimpan
+			// produk diteruskan pemanggil. Field kosong berarti
+			// "tidak diubah", jadi konfigurasi ulang tanpa kunci
+			// TIDAK menghapus apiKey selama produk masih menyimpan
+			// kunci untuk tool ini.
 			if apiKey != "" {
 				opts["apiKey"] = apiKey
 			} else {
-				// Konfigurasi ulang tanpa kunci tidak boleh meninggalkan
-				// kunci LAMA yang pernah ditulis versi sebelumnya di berkas
-				// ini (kredensial hantu — audit3 V-LN-26).
 				delete(opts, "apiKey")
 			}
 		}
@@ -1379,8 +1429,10 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		// dengan base_url + api_key, models milik provider memuat
 		// model target, dan models.large/small tingkat atas menunjuk
 		// provider itu. Kunci hidup di berkas ini (tidak ada jalur env
-		// per-tool), jadi izin 0600; konfigurasi ulang tanpa kunci
-		// menghapus api_key lama (kredensial hantu).
+		// per-tool), jadi izin 0600. apiKey di sini adalah kunci
+		// EFEKTIF (B-215): konfigurasi ulang tanpa kunci baru
+		// meneruskan kunci tersimpan produk, BUKAN menghapus api_key
+		// — field kosong berarti "tidak diubah".
 		crushDir := filepath.Join(homeDir, ".config", "crush")
 		_ = os.MkdirAll(crushDir, 0755)
 		crushPath := filepath.Join(crushDir, "crush.json")
@@ -1677,8 +1729,10 @@ func gantiSeksiTOML(existing, seksi string, isiBaru []string) string {
 // mempertahankan seksi lain apa adanya. Bentuk skalar warisan
 // (`model: "..."`) diganti menjadi blok peta; blok ditambahkan di
 // akhir bila belum ada. apiKey non-kosong ditanam sebagai baris
-// api_key di blok (B-164); kosong berarti blok ditulis tanpa
-// kunci, sama seperti perilaku lama.
+// api_key di blok (B-164); apiKey yang diterima penulis adalah
+// kunci EFEKTIF (B-215) — kunci baru atau kunci tersimpan — jadi
+// blok hanya ditulis tanpa kunci bila produk memang tidak
+// menyimpan kunci apa pun untuk tool ini.
 func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	blok := []string{
 		"model:",

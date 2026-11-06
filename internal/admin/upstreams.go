@@ -2130,7 +2130,7 @@ func (h *Handlers) removeModelAlias(w http.ResponseWriter, r *http.Request) {
 	modelID := chi.URLParam(r, "id")
 	alias := chi.URLParam(r, "alias")
 
-	if err := h.modelRepo.RemoveAlias(ctx, alias); err != nil {
+	if err := h.modelRepo.RemoveAlias(ctx, modelID, alias); err != nil {
 		mapRepoError(w, r, err, "alias model")
 		return
 	}
@@ -2528,19 +2528,36 @@ func (h *Handlers) updateEgressPool(w http.ResponseWriter, r *http.Request) {
 	// ter-commit lebih dulu dan SetProxyURL menyusul sebagai query terpisah:
 	// kegagalan langkah kedua meninggalkan mutasi pertama permanen TANPA
 	// baris audit (audit hanya ditulis sesudah keduanya berhasil).
+	// B-306: permintaan yang HANYA membawa proxy_url (rotasi kredensial
+	// murni dari klien API langsung) tidak punya field untuk Update —
+	// memanggilnya membuat repo menolak dengan ErrNoChanges dan seluruh
+	// PUT gagal 500 sebelum rotasinya sempat berjalan. Update kini
+	// hanya dipanggil bila memang ada perubahan field; proxy_url
+	// menyusul lewat SetProxyURL seperti sebelumnya, tetap dalam
+	// transaksi dan audit yang sama (B-270).
+	adaPerubahanField := params.Name != nil || params.Kind != nil || params.Description != nil ||
+		params.Enabled != nil || params.Weight != nil || params.Region.Set
+
 	var ep *upstream.EgressPool
 	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txRepo := h.egressRepo.WithQuerier(q)
 		var err error
-		ep, err = txRepo.Update(ctx, id, params)
-		if err != nil {
-			return err
+		if adaPerubahanField {
+			ep, err = txRepo.Update(ctx, id, params)
+			if err != nil {
+				return err
+			}
 		}
 		if req.ProxyURL != "" {
 			ep, err = txRepo.SetProxyURL(ctx, id, security.Secret(req.ProxyURL))
 			if err != nil {
 				return err
 			}
+		}
+		if ep == nil {
+			// Tidak ada perubahan field dan tidak ada proxy_url: tidak
+			// ada yang dikerjakan — 400 no_changes lewat mapRepoError.
+			return upstream.ErrNoChanges
 		}
 		return h.writeAuditTx(ctx, q, r, "update", "egress_pool", ep.ID, map[string]any{"name": ep.Name})
 	})

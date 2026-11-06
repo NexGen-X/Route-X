@@ -452,11 +452,15 @@ func (r *ModelRepo) AddAlias(ctx context.Context, modelID, alias string, created
 	return &a, nil
 }
 
-// RemoveAlias menghapus satu alias.
-func (r *ModelRepo) RemoveAlias(ctx context.Context, alias string) error {
+// RemoveAlias menghapus satu alias DARI MODEL TERTENTU (B-304): klausa
+// model_id wajib ada — tanpa itu alias milik model lain bisa dihapus
+// lewat URL model mana pun dan auditnya tercatat atas model yang salah
+// (pola yang sama dengan B-276 di tetangganya). Alias yang tidak
+// dimiliki model ini menghasilkan ErrNotFound.
+func (r *ModelRepo) RemoveAlias(ctx context.Context, modelID, alias string) error {
 	const op = "menghapus alias model"
 
-	tag, err := r.q.Exec(ctx, `delete from model_aliases where alias = $1`, alias)
+	tag, err := r.q.Exec(ctx, `delete from model_aliases where alias = $1 and model_id = $2`, alias, modelID)
 	if err != nil {
 		return repo.Err(op, err)
 	}

@@ -569,6 +569,12 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 		// adalah 400, bukan 500: cabang default di bawah mengubahnya menjadi
 		// internal_error dan menyembunyikan kesalahan pemanggil (audit3 V-EM-31).
 		httpx.BadRequest(w, r, "invalid_parameter", fmt.Sprintf("parameter untuk %s tidak sah", resource))
+	case errors.Is(err, upstream.ErrNoChanges) || errors.Is(err, keys.ErrNoChanges):
+		// Pembaruan tanpa satu pun field yang diubah adalah kesalahan
+		// pemanggil (400 no_changes), bukan kegagalan server (B-306):
+		// sebelumnya ErrNoChanges dari repo upstream maupun keys jatuh
+		// ke cabang default dan menjadi 500 internal_error.
+		httpx.BadRequest(w, r, "no_changes", fmt.Sprintf("tidak ada perubahan yang diminta untuk %s", resource))
 	case errors.Is(err, repo.ErrConstraint):
 		cName := repo.ConstraintName(err)
 		observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelWarn,

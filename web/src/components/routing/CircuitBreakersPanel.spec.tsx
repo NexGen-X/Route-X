@@ -130,4 +130,33 @@ describe('CircuitBreakersPanel — tampilan diperkaya', () => {
     render(<CircuitBreakersPanel {...propsDasar} breakers={[]} rules={[]} />);
     expect(screen.getByText('Bawaan Server')).toBeInTheDocument();
   });
+
+  it('B-312: saat breaker masih dimuat, panel netral — bukan klaim normal', () => {
+    render(
+      <CircuitBreakersPanel
+        {...propsDasar}
+        breakers={[]}
+        rules={[]}
+        isBreakersLoading={true}
+      />,
+    );
+    expect(screen.getByText(/Memuat status sirkuit/)).toBeInTheDocument();
+    expect(screen.queryByText('Semua Beroperasi Normal')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 (Aman)')).not.toBeInTheDocument();
+  });
+
+  it('B-312: saat breaker gagal dimuat, panel menyatakan tidak tersedia', () => {
+    render(
+      <CircuitBreakersPanel
+        {...propsDasar}
+        breakers={[]}
+        rules={[]}
+        breakersError="status breaker tidak terjangkau"
+      />,
+    );
+    expect(screen.getByText(/Status sirkuit tidak tersedia/)).toBeInTheDocument();
+    expect(screen.queryByText('Semua Beroperasi Normal')).not.toBeInTheDocument();
+    expect(screen.queryByText('Seluruh Sirkuit Provider Normal (Closed)')).not.toBeInTheDocument();
+    expect(screen.queryByText('0 (Aman)')).not.toBeInTheDocument();
+  });
 });

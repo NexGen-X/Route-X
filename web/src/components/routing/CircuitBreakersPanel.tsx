@@ -81,6 +81,13 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
   handleResetBreaker,
 }) => {
   const totalAbnormalBreakers = breakers.filter((b) => b.state !== 'closed').length;
+  // B-312: klaim sehat hanya sah dari data yang benar-benar tiba.
+  // Array kosong saat muatan pertama/penyegaran berjalan atau saat
+  // fetch gagal berarti "belum diketahui", bukan "semua normal" —
+  // daftar kosong dari respons SUKSES tetap sah sebagai sehat.
+  const statusDiketahui = !isBreakersLoading && !breakersError;
+  const klaimSehat = statusDiketahui && totalAbnormalBreakers === 0;
+  const tampilNetral = totalAbnormalBreakers === 0 && !statusDiketahui;
 
   // Jam lokal untuk hitung mundur probe: berdetak tiap detik hanya selama
   // ada breaker yang menunggu probe, agar panel diam saat semua normal.
@@ -122,13 +129,19 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
               className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
                 totalAbnormalBreakers > 0
                   ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30 shadow-sm'
-                  : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-sm'
+                  : klaimSehat
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-sm'
+                    : 'bg-bg-surface-2 text-text-muted border border-border shadow-sm'
               }`}
             >
               {totalAbnormalBreakers > 0 ? (
                 <ZapOff className="w-5 h-5" aria-hidden="true" />
-              ) : (
+              ) : klaimSehat ? (
                 <ShieldCheck className="w-5 h-5" aria-hidden="true" />
+              ) : isBreakersLoading ? (
+                <RefreshCw className="w-5 h-5 animate-spin" aria-hidden="true" />
+              ) : (
+                <AlertTriangle className="w-5 h-5" aria-hidden="true" />
               )}
             </div>
             <div className="min-w-0">
@@ -141,10 +154,15 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
                     <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" aria-hidden="true" />
                     {totalAbnormalBreakers} Sirkuit Terganggu
                   </span>
-                ) : (
+                ) : klaimSehat ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
                     Semua Beroperasi Normal
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-bg-surface-2 text-text-muted border border-border">
+                    <span className="w-2 h-2 rounded-full bg-text-muted" aria-hidden="true" />
+                    {isBreakersLoading ? 'Memuat Status Sirkuit…' : 'Status Sirkuit Tidak Tersedia'}
                   </span>
                 )}
               </div>
@@ -171,8 +189,19 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
 
         {breakersError && <QueryError message={breakersError} onRetry={() => void loadBreakers()} />}
 
-        {/* Body: Healthy State vs Tripped State */}
-        {breakers.length === 0 || totalAbnormalBreakers === 0 ? (
+        {/* Body: Unknown / Healthy State vs Tripped State */}
+        {tampilNetral ? (
+          <div className="p-4 sm:p-5 rounded-xl bg-bg-surface-2/60 border border-border/40">
+            <h4 className="text-xs font-bold text-white">
+              {isBreakersLoading ? 'Memuat status sirkuit…' : 'Status sirkuit tidak tersedia'}
+            </h4>
+            <p className="text-xs text-text-secondary mt-0.5 leading-relaxed max-w-xl">
+              {isBreakersLoading
+                ? 'Status breaker sedang dimuat; belum ada keadaan yang bisa dinyatakan.'
+                : 'Status breaker gagal dimuat; keadaan sirkuit belum bisa dinyatakan normal maupun terganggu.'}
+            </p>
+          </div>
+        ) : breakers.length === 0 || totalAbnormalBreakers === 0 ? (
           <div className="p-4 sm:p-5 rounded-xl bg-bg-surface-2/60 border border-border/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
               <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 flex-shrink-0 mt-0.5">

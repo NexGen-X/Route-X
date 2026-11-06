@@ -37,6 +37,10 @@ export const Observability: React.FC = () => {
   // Peringatan muatan parsial (B-225): sebagian sumber gagal tetapi
   // halaman tetap tampil — kegagalannya harus terlihat, bukan diam.
   const [partialError, setPartialError] = useState<string | null>(null);
+  // B-321: kapan data yang sedang tampil terakhir benar-benar diterima.
+  // Muat ulang yang gagal total mempertahankan angka lama — bannernya
+  // wajib menyebut angka itu data terakhir, bukan pengukuran segar.
+  const [dataTerakhirPada, setDataTerakhirPada] = useState<number | null>(null);
 
   // Live test ping
   const [isTestingLive, setIsTestingLive] = useState(false);
@@ -119,6 +123,9 @@ export const Observability: React.FC = () => {
       if (bRes.status === 'fulfilled') setBreakdowns(bRes.value?.items || []);
       if (sumRes.status === 'fulfilled') setSummary(sumRes.value);
       if (cRes.status === 'fulfilled') setCacheStats(cRes.value);
+      if ([sRes, bRes, sumRes, cRes].some((res) => res.status === 'fulfilled')) {
+        setDataTerakhirPada(Date.now());
+      }
 
       // Kejujuran muatan parsial (B-225): KEEMPAT sumber dihitung —
       // versi lama hanya memeriksa tiga sumber pertama (kegagalan
@@ -281,6 +288,17 @@ export const Observability: React.FC = () => {
       )}
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
+
+      {loadError && dataTerakhirPada !== null && kpiTerukur && (
+        <p role="status" className="text-xs text-text-muted">
+          Menampilkan data terakhir yang diterima{' '}
+          {new Date(dataTerakhirPada).toLocaleString('id-ID', {
+            dateStyle: 'medium',
+            timeStyle: 'medium',
+          })}
+          . Angka di halaman ini adalah data terakhir, bukan pengukuran baru.
+        </p>
+      )}
 
       {partialError && (
         <div

@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Dashboard } from './Dashboard';
 import type {
   ObservabilitySummary,
@@ -440,5 +440,27 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
       expect(screen.getByText('Memuat data…')).toBeInTheDocument();
     });
     expect(screen.queryByText('0.0% err')).not.toBeInTheDocument();
+  });
+
+  it('B-322: polling 30 detik tidak mengembalikan hero ke "Memuat Status…"', async () => {
+    vi.useFakeTimers();
+    try {
+      mockSummaryFn
+        .mockImplementationOnce(async () => MOCK_SUMMARY)
+        .mockImplementation(() => new Promise(() => {}));
+      render(<Dashboard onNavigate={mockNavigate} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText(/^Beroperasi$/i)).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30000);
+      });
+      expect(screen.queryByText('Memuat Status…')).not.toBeInTheDocument();
+      expect(screen.getByText(/^Beroperasi$/i)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

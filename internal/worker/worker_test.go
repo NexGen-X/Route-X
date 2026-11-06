@@ -101,10 +101,17 @@ func testDSN(t *testing.T) string {
 
 func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
+	return testPoolPadaDSN(t, testDSN(t))
+}
+
+// testPoolPadaDSN adalah isi testPool dengan DSN dasar dari parameter:
+// schema uji acak di database yang ditunjuk DSN, migrasi dijalankan,
+// schema dihapus sesudahnya.
+func testPoolPadaDSN(t *testing.T, baseDSN string) *pgxpool.Pool {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("melewati test integrasi worker pada -short")
 	}
-	baseDSN := testDSN(t)
 	ctx := context.Background()
 
 	admin, err := pgxpool.New(ctx, baseDSN)
@@ -151,6 +158,69 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	}
 
 	return pool
+}
+
+// testPoolDatabaseSendiri seperti testPool, tetapi database-nya dibuat
+// khusus untuk test pemanggil dan dihapus sesudahnya. Kunci advisory
+// PostgreSQL berlaku PER-DATABASE, bukan per-schema — jadi test yang
+// pekerjaannya memegang atau menunggu kunci advisory global (migrasi,
+// partisi) tetap kalah rebutan dengan migrasi paket test lain yang
+// berjalan paralel pada SATU database bersama dalam suite penuh,
+// seacak apa pun nama schemanya (B-245: TestPartitionMaintainer gagal
+// sesekali bukan karena kode produk, melainkan rebutan kunci migrasi
+// lintas paket). Database khusus memutus rebutan itu sepenuhnya tanpa
+// mengubah perilaku produk yang diuji.
+func testPoolDatabaseSendiri(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("melewati test integrasi worker pada -short")
+	}
+	baseDSN := testDSN(t)
+	ctx := context.Background()
+
+	admin, err := pgxpool.New(ctx, baseDSN)
+	if err != nil {
+		t.Fatalf("membuka koneksi admin: %v", err)
+	}
+	defer admin.Close()
+
+	var buf [6]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		t.Fatalf("membuat nama database acak: %v", err)
+	}
+	dbName := "routex_test_khusus_" + hex.EncodeToString(buf[:])
+	ident := pgx.Identifier{dbName}.Sanitize()
+	if _, err := admin.Exec(ctx, "create database "+ident); err != nil {
+		t.Fatalf("membuat database %s: %v", dbName, err)
+	}
+	// Pembersih didaftarkan SEBELUM pool dibuat: cleanup berjalan LIFO,
+	// jadi pool dan schema di dalam database khusus ditutup lebih dulu,
+	// barulah databasenya dihapus.
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		adm, err := pgxpool.New(cleanupCtx, baseDSN)
+		if err != nil {
+			t.Errorf("membuka koneksi pembersih database %s: %v", dbName, err)
+			return
+		}
+		defer adm.Close()
+		if _, err := adm.Exec(cleanupCtx,
+			"select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()",
+			dbName); err != nil {
+			t.Errorf("memutus koneksi sisa database %s: %v", dbName, err)
+		}
+		if _, err := adm.Exec(cleanupCtx, "drop database if exists "+ident); err != nil {
+			t.Errorf("membersihkan database %s: %v", dbName, err)
+		}
+	})
+
+	u, err := url.Parse(baseDSN)
+	if err != nil {
+		t.Fatalf("DSN test tidak bisa diparse: %v", err)
+	}
+	u.Path = "/" + dbName
+	return testPoolPadaDSN(t, u.String())
 }
 
 // TestAdvisoryLockNamespaceMemastikanTidakBertabrakanDenganMigrasi memeriksa nilai kunci
@@ -617,9 +687,11 @@ func TestBudgetResetterKonflikCASDilewati(t *testing.T) {
 }
 
 // TestPartitionMaintainerMembuatPartisiDanMemeriksaDefault menguji pemeliharaan partisi
-// bulanan pada PostgreSQL nyata.
+// bulanan pada PostgreSQL nyata. Job ini memegang kunci partisi dan menunggu
+// kunci migrasi — keduanya advisory lock per-database — jadi test berjalan di
+// database khusus (B-245), bukan schema acak di database bersama suite.
 func TestPartitionMaintainerMembuatPartisiDanMemeriksaDefault(t *testing.T) {
-	pool := testPool(t)
+	pool := testPoolDatabaseSendiri(t)
 	ctx := context.Background()
 
 	job := NewPartitionMaintainerJob(pool, nil)

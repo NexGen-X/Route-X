@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -614,6 +615,14 @@ func TestAdminSystemEndpoints(t *testing.T) {
 }
 
 func TestAdminBackupEndpoints(t *testing.T) {
+	// Ekspor cadangan memanggil biner pg_dump dari PATH (lihat
+	// internal/admin/backup.go). Tanpa biner itu endpoint menjawab 500
+	// dan kegagalannya tampak seperti regresi kode, padahal prasyarat
+	// lingkungannya yang hilang (B-245) — lewati dengan alasan eksplisit.
+	// CI menyediakan pg_dump, jadi cakupan penuh tetap berjalan di sana.
+	if _, err := exec.LookPath("pg_dump"); err != nil {
+		t.Skip("pg_dump tidak ditemukan di PATH — test ekspor cadangan dilewati (prasyarat: perkakas klien PostgreSQL di PATH)")
+	}
 	env := setupTestEnv(t)
 	client := env.newClient(t)
 	client.login("superadmin@routex.internal", testPassword)

@@ -343,11 +343,16 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 	// "gpt-4o" tetap ditagih sebagai "gpt-4o" meski dilayani snapshot tertentu.
 	if keputusan.Rule.Combo() {
 		tempPr := &persiapan{req: req, model: model, decision: keputusan, principal: p}
-		if gabungan, ok := h.kandidatCombo(r.Context(), tempPr, rreq); ok {
+		if gabungan, namaModel, ok := h.kandidatCombo(r.Context(), tempPr, rreq); ok {
+			pl := PlanFromRule(keputusan.Rule, model.ModelID, gabungan)
+			// Kunci pemutus arus per kandidat memakai nama kanonik
+			// model yang benar-benar dicoba (B-181), bukan nama
+			// model yang diminta klien untuk semua anggota.
+			pl.ModelNames = namaModel
 			return &persiapan{
 				req: req, model: model, decision: keputusan,
 				principal: p, targets: targets,
-				plan: PlanFromRule(keputusan.Rule, model.ModelID, gabungan),
+				plan: pl,
 			}, true
 		}
 		// Resep combo tidak menghasilkan kandidat: jatuh ke daftar kandidat model yang
@@ -1031,7 +1036,10 @@ func (h *Handlers) kandidat(w http.ResponseWriter, r *http.Request, rreq router.
 // ok false berarti resep tidak menghasilkan satu pun kandidat yang bisa dipakai. Itu
 // bukan kegagalan yang menolak permintaan: pemanggil menjatuhkannya ke daftar kandidat
 // model yang diminta, yang mungkin masih bisa melayani.
-func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router.Request) ([]*upstream.RouteCandidate, bool) {
+//
+// namaModel memetakan models.id (UUID) tiap anggota resep ke nama
+// kanoniknya, untuk kunci pemutus arus per kandidat (B-181).
+func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router.Request) ([]*upstream.RouteCandidate, map[string]string, bool) {
 	p := pr.principal
 	var ownerUserID string
 	if p != nil {
@@ -1039,6 +1047,7 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 	}
 
 	pernah := make(map[string]bool)
+	namaModelPerID := make(map[string]string)
 	var gabungan []*upstream.RouteCandidate
 	for _, namaModel := range pr.decision.Rule.Pipeline.Models {
 		// Tiap model di resep adalah model kanonik yang harus diresolve dan diperiksa
@@ -1106,6 +1115,9 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 				}
 			}
 			pernah[c.ProviderModelID] = true
+			// Nama kanonik anggota ini untuk kunci pemutus arus per
+			// kandidat (B-181); kandidatnya membawa UUID di ModelID.
+			namaModelPerID[m.ID] = m.ModelID
 			gabungan = append(gabungan, c)
 		}
 	}
@@ -1115,7 +1127,7 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 	// sanggup melayani permintaan ini harus dibuang di sini, bukan diletakkan di belakang
 	// barisan failover: menunda kegagalan hanya membakar kuota.
 	gabungan = h.engine.OrderCandidates(rreq, pr.decision.Rule.ID, pr.decision.Rule.Pipeline.Strategy, gabungan)
-	return gabungan, len(gabungan) > 0
+	return gabungan, namaModelPerID, len(gabungan) > 0
 }
 
 // Pesan tunggal "tidak ada provider" adalah jawaban yang tidak bisa ditindaklanjuti

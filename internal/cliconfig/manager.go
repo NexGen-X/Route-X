@@ -97,6 +97,45 @@ type StoredConfig struct {
 }
 
 // Scan memeriksa keberadaan perkakas CLI di sistem dan memuat konfigurasi aktifnya.
+// lompatanSymlink adalah satu tautan dalam rantai symlink: jalur
+// tautannya sendiri dan teks target mentah yang tertulis di
+// dalamnya (persis seperti dikembalikan Readlink, bisa relatif).
+type lompatanSymlink struct {
+	jalur  string
+	target string
+}
+
+// selesaikanRantaiSymlink mengikuti rantai symlink dari jalur
+// secara leksikal — tautan demi tautan, target relatif diartikan
+// terhadap direktori tautannya — sampai komponen terakhir bukan
+// symlink, dan mengembalikan daftar lompatannya beserta jalur
+// target akhir. Dipakai untuk rantai yang TIDAK bisa diselesaikan
+// EvalSymlinks karena putus di suatu lompatan (B-368): penyelesaian
+// satu lompatan B-311 berhenti di tautan perantara, dan rename
+// mendarat di atasnya menghancurkannya. Batas 40 lompatan meniru
+// batas kernel; rantai yang melampauinya berhenti di titik itu.
+func selesaikanRantaiSymlink(jalur string) ([]lompatanSymlink, string) {
+	var rantai []lompatanSymlink
+	kini := jalur
+	for len(rantai) < 40 {
+		fi, err := os.Lstat(kini)
+		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+			break
+		}
+		mentah, err := os.Readlink(kini)
+		if err != nil {
+			break
+		}
+		rantai = append(rantai, lompatanSymlink{jalur: kini, target: mentah})
+		berikut := mentah
+		if !filepath.IsAbs(berikut) {
+			berikut = filepath.Join(filepath.Dir(kini), berikut)
+		}
+		kini = filepath.Clean(berikut)
+	}
+	return rantai, kini
+}
+
 // tulisAtomik menulis berkas secara atomik: tulis ke berkas sementara di
 // direktori yang sama, sesuaikan izin, lalu rename (audit F5). Penulisan
 // langsung (os.WriteFile) bisa meninggalkan berkas setengah jadi bila
@@ -115,24 +154,22 @@ func tulisAtomik(path string, data []byte, perm os.FileMode) error {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil && resolved != path {
 		path = resolved
 	} else if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
-		// B-311: symlink PUTUS tidak bisa diselesaikan EvalSymlinks,
-		// tetapi tautannya sendiri masih menyatakan target yang
-		// dimaksud pengguna. Selesaikan target itu secara leksikal
-		// (relatif terhadap direktori tautan), buat direktori
-		// induknya, lalu tulis ke sana — jangan menimpa tautan
-		// menjadi berkas reguler seperti perilaku lama.
-		target, rerr := os.Readlink(path)
-		if rerr != nil {
-			return rerr
+		// B-311+B-368: symlink yang tidak terselesaikan EvalSymlinks
+		// (putus di suatu lompatan) diselesaikan RANTAINYA secara
+		// leksikal sampai target akhir — penyelesaian satu lompatan
+		// lama berhenti di tautan perantara bila rantai punya dua
+		// lompatan atau lebih, dan rename mendarat di atas tautan
+		// perantara itu menghancurkannya menjadi berkas reguler.
+		// Direktori induk target akhir dibuat, lalu tulisan mendarat
+		// di sana; seluruh rantai tautan dipertahankan.
+		rantai, akhir := selesaikanRantaiSymlink(path)
+		if len(rantai) == 0 {
+			return fmt.Errorf("symlink %s tidak bisa diselesaikan", path)
 		}
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(path), target)
-		}
-		target = filepath.Clean(target)
-		if merr := os.MkdirAll(filepath.Dir(target), 0755); merr != nil {
+		if merr := os.MkdirAll(filepath.Dir(akhir), 0755); merr != nil {
 			return merr
 		}
-		path = target
+		path = akhir
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".routex-tulis-*")
 	if err != nil {
@@ -179,6 +216,17 @@ func muatKonfigJSON(path string, toleranJSONC bool) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("membaca %s: %w", path, err)
 	}
+	// KEPUTUSAN SADAR (B-380): BOM UTF-8 di awal berkas dibuang,
+	// disamakan dengan jalur TOML (B-310), YAML (B-344), dan .env
+	// (B-374). BOM adalah artefak penyunting, bukan isi — encoding/
+	// json menolaknya ("invalid character 'ï'"), sehingga berkas
+	// JSON yang sah dari penyunting Windows menggagalkan Configure
+	// keempat tool pemakai fungsi ini sementara berkas TOML/YAML
+	// yang sama-sama ber-BOM diterima. Perbedaan per format itu
+	// tidak punya alasan produk, jadi diseragamkan. Yang tetap
+	// ditolak adalah berkas yang memang tidak terurai sesudah BOM
+	// dibuang (perlindungan B-217 di bawah tidak berubah).
+	data = bytes.TrimPrefix(data, []byte("\ufeff"))
 	if toleranJSONC {
 		data = uraiJSONCToleran(data)
 	}
@@ -633,8 +681,7 @@ type jepretanBerkas struct {
 	takTersentuh bool
 	// Keadaan symlink (B-333), terisi bila jalur adalah tautan saat
 	// dijepret: teks target mentahnya, jalur target terselesaikan
-	// secara leksikal (satu lompatan, meniru penyelesaian tautan
-	// putus tulisAtomik B-311), dan potret targetnya sendiri.
+	// secara leksikal, dan potret targetnya sendiri.
 	tautan              bool
 	targetTautan        string
 	targetTerselesaikan string
@@ -642,6 +689,17 @@ type jepretanBerkas struct {
 	targetIsi           []byte
 	targetIzin          os.FileMode
 	targetTakTersentuh  bool
+	// rantai (B-368): SELURUH lompatan rantai symlink dari jalur ke
+	// target akhir, bukan hanya lompatan pertama — pemulihan wajib
+	// bisa membangun kembali setiap tautan perantara, bukan hanya
+	// yang di titik masuk.
+	rantai []lompatanSymlink
+	// indukTargetAda (B-381): apakah direktori induk target akhir
+	// sudah ada saat dijepret. Bila tidak dan targetnya ciptaan
+	// Configure, pemulihan menghapus direktori itu lagi (hanya
+	// berhasil bila kosong) — Configure tidak meninggalkan direktori
+	// kosong asing di pohon dotfiles pengguna.
+	indukTargetAda bool
 }
 
 func jepretBerkasConfigure(jalur string) jepretanBerkas {
@@ -656,17 +714,21 @@ func jepretBerkasConfigure(jalur string) jepretanBerkas {
 	}
 	if lfi.Mode()&os.ModeSymlink != 0 {
 		j := jepretanBerkas{jalur: jalur, ada: true, tautan: true}
-		mentah, err := os.Readlink(jalur)
-		if err != nil {
+		// B-368: jepret SELURUH rantai, bukan satu lompatan —
+		// penyelesaian satu lompatan lama membuat target
+		// "terselesaikan" berhenti di tautan perantara, sehingga
+		// potret target dan pemulihannya menilai berkas yang salah.
+		rantai, akhir := selesaikanRantaiSymlink(jalur)
+		if len(rantai) == 0 {
 			j.takTersentuh = true
 			return j
 		}
-		j.targetTautan = mentah
-		terselesaikan := mentah
-		if !filepath.IsAbs(terselesaikan) {
-			terselesaikan = filepath.Join(filepath.Dir(jalur), terselesaikan)
+		j.rantai = rantai
+		j.targetTautan = rantai[0].target
+		j.targetTerselesaikan = akhir
+		if _, err := os.Stat(filepath.Dir(akhir)); err == nil {
+			j.indukTargetAda = true
 		}
-		j.targetTerselesaikan = filepath.Clean(terselesaikan)
 		tfi, err := os.Stat(j.targetTerselesaikan)
 		if err != nil {
 			return j // tautan putus: target belum ada
@@ -715,18 +777,36 @@ func (j jepretanBerkas) pulihkan() {
 		return
 	}
 	if j.tautan {
-		mentah, err := os.Readlink(j.jalur)
-		if err != nil || mentah != j.targetTautan {
-			if fi, lerr := os.Lstat(j.jalur); lerr == nil && !fi.IsDir() {
-				_ = os.Remove(j.jalur)
+		// B-368: pulihkan SETIAP lompatan rantai yang penghuninya
+		// berubah dari jepretan (hilang, atau terganti berkas
+		// reguler) — versi satu-lompatan hanya menjaga tautan titik
+		// masuk dan membiarkan tautan perantara yang hancur tetap
+		// hancur. Penghuni direktori sungguhan tidak pernah
+		// disentuh.
+		for _, l := range j.rantai {
+			mentah, err := os.Readlink(l.jalur)
+			if err == nil && mentah == l.target {
+				continue
 			}
-			_ = os.Symlink(j.targetTautan, j.jalur)
+			if fi, lerr := os.Lstat(l.jalur); lerr == nil && fi.IsDir() {
+				continue
+			}
+			_ = os.Remove(l.jalur)
+			_ = os.Symlink(l.target, l.jalur)
 		}
 		if j.targetTakTersentuh {
 			return
 		}
 		if !j.targetAda {
 			_ = os.Remove(j.targetTerselesaikan)
+			// B-381: direktori induk yang lahir karena Configure
+			// (MkdirAll di tulisAtomik untuk target tautan putus)
+			// dihapus lagi bila memang belum ada saat dijepret —
+			// os.Remove hanya berhasil bila direktori itu kosong,
+			// jadi isi asing apa pun mempertahankannya.
+			if !j.indukTargetAda {
+				_ = os.Remove(filepath.Dir(j.targetTerselesaikan))
+			}
 			return
 		}
 		_ = tulisAtomik(j.targetTerselesaikan, j.targetIsi, j.targetIzin)
@@ -1394,6 +1474,25 @@ func isDigitByte(b byte) bool { return b >= '0' && b <= '9' }
 // (mis. extensions) yang tidak boleh dihancurkan Configure. Kunci yang
 // dikelola muncul dua kali atau lebih disisakan satu (yang pertama,
 // diperbarui); kunci yang belum ada ditambahkan di akhir.
+// normalkanKunciYAML membuang pasangan kutip luar yang seimbang
+// dari nama kunci YAML: parser YAML membaca "provider", 'provider',
+// dan provider sebagai kunci yang SAMA, jadi perbandingan nama
+// harus menormalkannya lebih dulu (B-372/B-373 — pasangan perbaikan
+// TOML B-343). Kutip tunggal yang lolos di dalamnya ditulis ” oleh
+// YAML dan dilipat kembali ke satu '. Nama tanpa kutip luar
+// dikembalikan apa adanya.
+func normalkanKunciYAML(nama string) string {
+	if len(nama) >= 2 {
+		if nama[0] == '"' && nama[len(nama)-1] == '"' {
+			return nama[1 : len(nama)-1]
+		}
+		if nama[0] == '\'' && nama[len(nama)-1] == '\'' {
+			return strings.ReplaceAll(nama[1:len(nama)-1], "''", "'")
+		}
+	}
+	return nama
+}
+
 func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 	// B-344: BOM di awal dokumen dibuang lebih dulu, sama seperti
 	// jalur TOML (B-310). TrimSpace tidak membuang BOM, jadi kunci
@@ -1413,7 +1512,15 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 		kunci := ""
 		if line != "" && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
 			if i := strings.Index(line, ":"); i > 0 {
-				kunci = strings.TrimSpace(line[:i])
+				// B-373: kunci yang dikutip ("GOOSE_PROVIDER": ...)
+				// dinormalkan sebelum dibandingkan — parser YAML
+				// membacanya sebagai kunci yang sama, tetapi
+				// perbandingan mentah melewatkannya sehingga baris
+				// lama tertinggal dan pasangan baru ditambahkan:
+				// kunci ganda yang bacaan efektifnya bergantung
+				// parser. Baris yang cocok ditulis ulang tanpa
+				// kutip (bentuk kanonik keluaran fungsi ini).
+				kunci = normalkanKunciYAML(strings.TrimSpace(line[:i]))
 			}
 		}
 		if kunci != "" && dikelola[kunci] {
@@ -2556,6 +2663,13 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 // Baris kosong, komentar, item daftar, kelanjutan nilai berindentasi
 // lebih dalam, dan baris tanpa pola kunci mengembalikan "" — semua
 // itu selalu dipertahankan apa adanya oleh penggabungan B-222.
+//
+// Nama yang dikembalikan DINORMALKAN dari kutip luarnya (B-372):
+// saringan terkelola di susunBlokModelHermes membandingkan nama ini
+// dengan "provider"/"default" — subkunci terkutip lolos saringan
+// dan tertinggal SESUDAH blok baru, dan pembaca YAML
+// last-key-wins (PyYAML Hermes) membaca nilai LAMA sementara
+// Configure melaporkan sukses (kelas sukses-bohong B-277).
 func kunciSubBarisYAML(baris string) string {
 	satuTingkat := (strings.HasPrefix(baris, "  ") && !strings.HasPrefix(baris, "   ")) ||
 		(strings.HasPrefix(baris, "\t") && !strings.HasPrefix(baris, "\t\t"))
@@ -2570,7 +2684,7 @@ func kunciSubBarisYAML(baris string) string {
 	if idx <= 0 {
 		return ""
 	}
-	return strings.TrimSpace(trim[:idx])
+	return normalkanKunciYAML(strings.TrimSpace(trim[:idx]))
 }
 
 // gabungBarisYAML menyatukan baris dan memastikan newline penutup.
@@ -2586,12 +2700,26 @@ func gabungBarisYAML(baris []string) string {
 // (baris NAMA=nilai), mengganti baris lama atau menambahkan di akhir;
 // variabel lain dipertahankan.
 func perbaruiBarisEnv(existing, nama, nilai string) string {
+	// B-374: BOM di awal berkas (penyunting Windows) dibuang lebih
+	// dulu, sejajar jalur TOML (B-310) dan YAML (B-344): BOM
+	// menempel pada nama variabel pertama sehingga awalan NAMA=
+	// tidak pernah cocok — baris lama tertinggal dan salinan baru
+	// ditambahkan, meninggalkan variabel ganda yang bacaan
+	// efektifnya bergantung parser dotenv.
+	existing = strings.TrimPrefix(existing, "\ufeff")
 	baris := strings.Split(existing, "\n")
 	tertulis := false
+	// B-379: saringan akhir dulu membuang SETIAP baris kosong dari
+	// berkas yang sudah memuat variabelnya — termasuk baris kosong
+	// pemisah antargrup yang sengaja ditulis pengguna. Yang wajib
+	// dibuang hanya baris yang dikosongkan fungsi ini sendiri
+	// sebagai duplikat; catat indeksnya.
+	dibuang := make(map[int]bool)
 	for i, l := range baris {
 		if strings.HasPrefix(l, nama+"=") {
 			if tertulis {
 				baris[i] = ""
+				dibuang[i] = true
 				continue
 			}
 			baris[i] = nama + "=" + nilai
@@ -2599,8 +2727,8 @@ func perbaruiBarisEnv(existing, nama, nilai string) string {
 		}
 	}
 	hasil := make([]string, 0, len(baris)+1)
-	for _, l := range baris {
-		if l == "" && tertulis {
+	for i, l := range baris {
+		if dibuang[i] {
 			continue
 		}
 		hasil = append(hasil, l)

@@ -420,6 +420,9 @@ export interface RequestLog {
   completion_tokens: number;
   total_tokens: number;
   cost_usd: string;
+  // B-190: true berarti cost_usd "0" adalah "belum berharga", bukan
+  // gratis — tampilkan UNPRICED, bukan $0.
+  unpriced?: boolean;
   error_type?: string;
   error_message?: string;
   client_ip: string;
@@ -464,6 +467,9 @@ export interface ObservabilitySummary {
   prompt_tokens: number;
   completion_tokens: number;
   total_cost_usd: string;
+  // B-190: jumlah request belum berharga dalam jendela; tidak termasuk
+  // di total_cost_usd dan wajib dinyatakan di samping total biaya.
+  unpriced_requests?: number;
   avg_latency_ms: number;
   p95_latency_ms: number;
   active_providers: number;

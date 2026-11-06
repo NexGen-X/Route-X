@@ -246,7 +246,13 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
           <div className="py-1">
             <span className="text-xs font-medium text-text-muted">Biaya USD</span>
             <div className="mt-1 font-mono font-bold text-accent-text">
-              {formatUSD(request.cost_usd, 6)}
+              {request.unpriced ? (
+                <span className="text-amber-400" title="Belum ada harga berlaku untuk pemetaan model ini">
+                  UNPRICED
+                </span>
+              ) : (
+                formatUSD(request.cost_usd, 6)
+              )}
             </div>
           </div>
         </div>

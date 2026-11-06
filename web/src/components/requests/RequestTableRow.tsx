@@ -78,7 +78,13 @@ export const RequestTableRow: React.FC<RequestTableRowProps> = ({
           {request.total_tokens != null ? `${request.total_tokens.toLocaleString()} tok` : '-'}
         </div>
         <div className="text-[11px] text-accent-text font-mono mt-0.5">
-          {formatUSD(request.cost_usd, 6)}
+          {request.unpriced ? (
+            <span className="text-amber-400" title="Belum ada harga berlaku untuk pemetaan model ini">
+              UNPRICED
+            </span>
+          ) : (
+            formatUSD(request.cost_usd, 6)
+          )}
         </div>
       </td>
 

@@ -325,6 +325,11 @@ export const Observability: React.FC = () => {
           </div>
           <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
             Estimasi: {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}
+            {(summary?.unpriced_requests ?? 0) > 0 && (
+              <span className="text-amber-400">
+                {' '}· {summary?.unpriced_requests} request belum berharga (tidak termasuk estimasi)
+              </span>
+            )}
           </div>
         </div>
 

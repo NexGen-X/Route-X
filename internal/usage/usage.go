@@ -468,7 +468,9 @@ func (r *Recorder) Record(ctx context.Context, ev Event) {
 // menggantung pemanggil tanpa batas.
 func (r *Recorder) catatDibuang(ctx context.Context, ev Event) {
 	ctxBiaya, batalBiaya := r.konteksLangkah()
-	biaya := r.biaya(ctxBiaya, ev)
+	// Penanda belum-berharga tidak relevan di sini: catatan yang dibuang
+	// tidak pernah menjadi baris requests, jadi tidak ada yang ditandai.
+	biaya, _ := r.biaya(ctxBiaya, ev)
 	batalBiaya()
 	if biaya <= 0 {
 		return
@@ -619,13 +621,13 @@ func (r *Recorder) tulis(ev Event) {
 	}
 
 	ctxBiaya, batalBiaya := r.konteksLangkah()
-	biaya := r.biaya(ctxBiaya, ev)
+	biaya, belumBerharga := r.biaya(ctxBiaya, ev)
 	batalBiaya()
 
 	insertGagal := false
 	if r.store != nil {
 		ctxTulis, batalTulis := r.konteksLangkah()
-		pk, dibuat, err := r.store.Insert(ctxTulis, ev.record(biaya))
+		pk, dibuat, err := r.store.Insert(ctxTulis, ev.record(biaya, belumBerharga))
 		switch {
 		case err != nil:
 			insertGagal = true
@@ -678,17 +680,23 @@ func (r *Recorder) tulis(ev Event) {
 // memakai token sama sekali, dan pemetaan yang harganya belum diisi. Yang kedua dilaporkan
 // ke log lewat laporTanpaHarga, karena biaya nol yang berarti "belum diisi" terlihat sama
 // dengan gratis di setiap laporan.
-func (r *Recorder) biaya(ctx context.Context, ev Event) upstream.USD {
+//
+// Nilai kedua adalah penanda BELUM BERHARGA (B-190): true hanya untuk
+// keadaan kedua itu — token terpakai tetapi harga tidak ditemukan — agar
+// baris requests-nya ditandai dan dasbor menampilkannya sebagai UNPRICED,
+// bukan $0. Keadaan nol yang sah (tanpa token, cache HIT, tanpa pemetaan)
+// mengembalikan false: biaya mereka memang nol, bukan belum ternilai.
+func (r *Recorder) biaya(ctx context.Context, ev Event) (upstream.USD, bool) {
 	// Cache HIT tidak memanggil upstream sama sekali, jadi biayanya nol
 	// secara desain (B-188) — BUKAN nol karena belum dihargai: keadaan ini
 	// diperiksa paling awal supaya HIT tidak pernah terhitung sebagai
 	// pemetaan tanpa harga, dan tidak bergantung pada absennya pemenang
 	// (jalur HIT memang memasang pemenang demi atribusi, audit3 V-GW-09).
 	if ev.CacheHit {
-		return 0
+		return 0, false
 	}
 	if r.prices == nil || ev.ProviderModelID == "" {
-		return 0
+		return 0, false
 	}
 	// TotalTokens TIDAK boleh jadi gerbang: adapter yang tidak menjumlahkan
 	// (atau streaming yang abort) mengisi rincian Input/Output sementara
@@ -696,7 +704,7 @@ func (r *Recorder) biaya(ctx context.Context, ev Event) upstream.USD {
 	// padahal tokennya tercatat di baris requests. Gerbangnya adalah jumlah
 	// rincian yang sama dengan yang ditagih Cost di bawah.
 	if ev.tokenUsage().Total() <= 0 {
-		return 0
+		return 0, false
 	}
 	// Harga yang dipakai adalah harga pada SAAT PERMINTAAN SELESAI (TerjadiPada),
 	// bukan harga berjalan saat catatan ini kebetulan diproses: antrean asinkron
@@ -711,13 +719,13 @@ func (r *Recorder) biaya(ctx context.Context, ev Event) upstream.USD {
 			r.metrics.UsageUnpriced.WithLabelValues(ev.ProviderName, ev.ModelName).Inc()
 		}
 		r.prices.laporTanpaHarga(ctx, ev.ProviderModelID, ev.ProviderName, ev.ModelName)
-		return 0
+		return 0, true
 	}
 	rincian, err := harga.Cost(ev.tokenUsage())
 	if err != nil {
 		r.logger.WarnContext(ctx, "biaya permintaan tidak bisa dihitung",
 			"request_id", ev.RequestID, "provider", ev.ProviderName, "model", ev.ModelName, "error", err)
-		return 0
+		return 0, false
 	}
 	if r.metrics != nil && rincian.Total > 0 {
 		// Metrik Prometheus bertipe float64, jadi angka di sini bisa menyimpang beberapa
@@ -726,7 +734,7 @@ func (r *Recorder) biaya(ctx context.Context, ev Event) upstream.USD {
 		r.metrics.CostTotal.WithLabelValues(ev.ProviderName, ev.ModelName).
 			Add(float64(rincian.Total) / 1e8)
 	}
-	return rincian.Total
+	return rincian.Total, false
 }
 
 // tambahPemakaian menaikkan pemakaian setiap anggaran yang berlaku.

@@ -166,7 +166,8 @@ insert into usage_hourly (
 	latency_sum_ms, latency_count, latency_max_ms,
 	latency_p50_ms, latency_p90_ms, latency_p95_ms, latency_p99_ms, latency_hist,
 	ttft_sum_ms, ttft_count, ttft_max_ms,
-	ttft_p50_ms, ttft_p90_ms, ttft_p95_ms, ttft_p99_ms, ttft_hist
+	ttft_p50_ms, ttft_p90_ms, ttft_p95_ms, ttft_p99_ms, ttft_hist,
+	unpriced_count
 )
 select
 	$1::timestamptz,
@@ -198,7 +199,8 @@ select
 	percentile_disc(0.90) within group (order by ttft_ms),
 	percentile_disc(0.95) within group (order by ttft_ms),
 	percentile_disc(0.99) within group (order by ttft_ms),
-	usage_histogram_of(ttft_ms)
+	usage_histogram_of(ttft_ms),
+	count(*) filter (where unpriced)
 from requests
 where created_at >= $1 and created_at < $2
 group by api_key_id, provider_id, model_id
@@ -233,7 +235,8 @@ on conflict (bucket, api_key_id, provider_id, model_id) do update set
 	ttft_p90_ms = excluded.ttft_p90_ms,
 	ttft_p95_ms = excluded.ttft_p95_ms,
 	ttft_p99_ms = excluded.ttft_p99_ms,
-	ttft_hist   = excluded.ttft_hist`
+	ttft_hist   = excluded.ttft_hist,
+	unpriced_count = excluded.unpriced_count`
 
 // rollupDailySQL menghitung satu hari dari usage_hourly.
 //
@@ -279,7 +282,8 @@ with gabungan as (
 		coalesce(sum(ttft_sum_ms), 0) as ttft_sum_ms,
 		coalesce(sum(ttft_count),  0) as ttft_count,
 		max(ttft_max_ms) as ttft_max_ms,
-		usage_histogram_sum(ttft_hist) as ttft_hist
+		usage_histogram_sum(ttft_hist) as ttft_hist,
+		coalesce(sum(unpriced_count), 0) as unpriced_count
 	from usage_hourly
 	where bucket >= $1 and bucket < $2
 	group by api_key_id, provider_id, model_id
@@ -292,7 +296,8 @@ insert into usage_daily (
 	latency_sum_ms, latency_count, latency_max_ms,
 	latency_p50_ms, latency_p90_ms, latency_p95_ms, latency_p99_ms, latency_hist,
 	ttft_sum_ms, ttft_count, ttft_max_ms,
-	ttft_p50_ms, ttft_p90_ms, ttft_p95_ms, ttft_p99_ms, ttft_hist
+	ttft_p50_ms, ttft_p90_ms, ttft_p95_ms, ttft_p99_ms, ttft_hist,
+	unpriced_count
 )
 select
 	$1::timestamptz,
@@ -311,7 +316,8 @@ select
 	usage_histogram_percentile(ttft_hist, 0.90)::int,
 	usage_histogram_percentile(ttft_hist, 0.95)::int,
 	usage_histogram_percentile(ttft_hist, 0.99)::int,
-	ttft_hist
+	ttft_hist,
+	unpriced_count
 from gabungan
 on conflict (bucket, api_key_id, provider_id, model_id) do update set
 	api_key_name   = excluded.api_key_name,
@@ -344,4 +350,5 @@ on conflict (bucket, api_key_id, provider_id, model_id) do update set
 	ttft_p90_ms = excluded.ttft_p90_ms,
 	ttft_p95_ms = excluded.ttft_p95_ms,
 	ttft_p99_ms = excluded.ttft_p99_ms,
-	ttft_hist   = excluded.ttft_hist`
+	ttft_hist   = excluded.ttft_hist,
+	unpriced_count = excluded.unpriced_count`

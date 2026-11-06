@@ -71,6 +71,11 @@ type Record struct {
 	// Bilangan bulat dipakai, bukan float64, agar penjumlahan biaya tetap eksak.
 	CostUSD int64
 
+	// Unpriced menandai biaya nol yang berarti "belum berharga" (B-190):
+	// token terpakai tetapi pemetaan modelnya tidak punya harga berlaku.
+	// Berbeda dari biaya nol yang sah (tanpa token, cache HIT).
+	Unpriced bool
+
 	LatencyMS         int
 	TTFTMS            *int
 	UpstreamLatencyMS *int
@@ -110,6 +115,8 @@ type Row struct {
 	OutputTokens int
 	TotalTokens  int
 	CostUSD      int64
+	// Unpriced: lihat Record.Unpriced (B-190).
+	Unpriced bool
 
 	LatencyMS int
 	TTFTMS    *int
@@ -214,14 +221,14 @@ func (r *Repo) Insert(ctx context.Context, rec Record) (id string, createdAt tim
 			input_tokens, output_tokens, cached_input_tokens, reasoning_tokens, total_tokens,
 			cost_usd, latency_ms, ttft_ms, upstream_latency_ms,
 			retry_count, failover_count, routing_strategy, routing_decision,
-			client_ip, user_agent
+			client_ip, user_agent, unpriced
 		) values (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
 			$18, $19, $20, $21, $22,
 			-- Biaya dikirim sebagai bilangan bulat satuan 10^-8 lalu diskalakan di SQL,
 			-- sehingga tidak ada tahap floating point di jalur mana pun.
 			($23::bigint / 100000000.0)::numeric(16,8),
-			$24, $25, $26, $27, $28, $29, $30, $31::inet, $32
+			$24, $25, $26, $27, $28, $29, $30, $31::inet, $32, $33
 		)
 		returning id::text, created_at`,
 		rec.RequestID, rec.APIKeyID, rec.APIKeyName, rec.UserID,
@@ -231,7 +238,7 @@ func (r *Repo) Insert(ctx context.Context, rec Record) (id string, createdAt tim
 		rec.InputTokens, rec.OutputTokens, rec.CachedInputTokens, rec.ReasoningTokens, rec.TotalTokens,
 		rec.CostUSD, rec.LatencyMS, rec.TTFTMS, rec.UpstreamLatencyMS,
 		rec.RetryCount, rec.FailoverCount, rec.RoutingStrategy, decision,
-		ip, rec.UserAgent,
+		ip, rec.UserAgent, rec.Unpriced,
 	).Scan(&id, &createdAt)
 	if err != nil {
 		return "", time.Time{}, repo.Err(op, err)

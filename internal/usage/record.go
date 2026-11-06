@@ -58,7 +58,7 @@ func (ev *Event) tokenUsage() upstream.TokenUsage {
 // NULL — bukan string kosong. Bedanya nyata di dashboard: provider NULL berarti permintaan
 // ditolak sebelum satu pun provider terpilih, sementara provider bernama "" adalah baris
 // yang tidak bisa dijelaskan.
-func (ev *Event) record(biaya upstream.USD) traffic.Record {
+func (ev *Event) record(biaya upstream.USD, belumBerharga bool) traffic.Record {
 	rec := traffic.Record{
 		RequestID: ev.RequestID,
 
@@ -90,6 +90,10 @@ func (ev *Event) record(biaya upstream.USD) traffic.Record {
 		TotalTokens:       max(ev.TotalTokens, 0),
 
 		CostUSD: max(biaya.Units(), 0),
+		// Penanda belum berharga (B-190) diteruskan apa adanya dari
+		// perhitungan biaya: TRUE berarti cost 0 di atas adalah "tidak
+		// ternilai", dan dasbor wajib menampilkannya sebagai UNPRICED.
+		Unpriced: belumBerharga,
 
 		LatencyMS:         milidetik(ev.Latency),
 		RetryCount:        max(ev.RetryCount, 0),

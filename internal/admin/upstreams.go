@@ -2180,6 +2180,27 @@ func (h *Handlers) detachProviderModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	mappingID := chi.URLParam(r, "mapping_id")
 
+	// B-276: pada rute bersarang /providers/{id}/models/{mapping_id},
+	// segmen provider WAJIB diverifikasi sebagai pemilik pemetaan.
+	// Sebelumnya segmen itu diabaikan total: pemetaan milik provider B
+	// bisa dihapus lewat URL provider A dan handler menjawab sukses —
+	// integritas referensial URL rusak walau haknya sama (mapping_id
+	// UUID global). Rute datar /models/mappings/{mapping_id} tidak
+	// menyebut provider, jadi pemeriksaan ini hanya berlaku bila
+	// segmen {id} ada. Ketidakcocokan dijawab 404 yang sama seperti
+	// pemetaan tidak ada (tidak membocorkan keberadaan pemetaan lain).
+	if providerID := chi.URLParam(r, "id"); providerID != "" {
+		pm, err := h.modelRepo.GetProviderModel(ctx, mappingID)
+		if err != nil {
+			mapRepoError(w, r, err, "pemetaan provider model")
+			return
+		}
+		if pm.ProviderID != providerID {
+			httpx.NotFound(w, r, "pemetaan tidak ditemukan pada provider ini")
+			return
+		}
+	}
+
 	if err := h.modelRepo.DetachProvider(ctx, mappingID); err != nil {
 		mapRepoError(w, r, err, "pemetaan provider model")
 		return

@@ -631,15 +631,62 @@ type jepretanBerkas struct {
 	ada          bool
 	izin         os.FileMode
 	takTersentuh bool
+	// Keadaan symlink (B-333), terisi bila jalur adalah tautan saat
+	// dijepret: teks target mentahnya, jalur target terselesaikan
+	// secara leksikal (satu lompatan, meniru penyelesaian tautan
+	// putus tulisAtomik B-311), dan potret targetnya sendiri.
+	tautan              bool
+	targetTautan        string
+	targetTerselesaikan string
+	targetAda           bool
+	targetIsi           []byte
+	targetIzin          os.FileMode
+	targetTakTersentuh  bool
 }
 
 func jepretBerkasConfigure(jalur string) jepretanBerkas {
-	fi, err := os.Stat(jalur)
-	if err != nil {
+	// B-333: jalur dinilai dengan Lstat lebih dulu. os.Stat mengikuti
+	// tautan, jadi symlink PUTUS terbaca "tidak ada" — padahal
+	// Configure menulis menembus tautan itu (B-311 menciptakan
+	// targetnya), dan rollback untuk "tidak ada" akan menghapus
+	// TAUTAN pengguna, bukan berkas ciptaan Configure.
+	lfi, lerr := os.Lstat(jalur)
+	if lerr != nil {
 		return jepretanBerkas{jalur: jalur}
 	}
-	j := jepretanBerkas{jalur: jalur, ada: true, izin: fi.Mode().Perm()}
-	if fi.IsDir() {
+	if lfi.Mode()&os.ModeSymlink != 0 {
+		j := jepretanBerkas{jalur: jalur, ada: true, tautan: true}
+		mentah, err := os.Readlink(jalur)
+		if err != nil {
+			j.takTersentuh = true
+			return j
+		}
+		j.targetTautan = mentah
+		terselesaikan := mentah
+		if !filepath.IsAbs(terselesaikan) {
+			terselesaikan = filepath.Join(filepath.Dir(jalur), terselesaikan)
+		}
+		j.targetTerselesaikan = filepath.Clean(terselesaikan)
+		tfi, err := os.Stat(j.targetTerselesaikan)
+		if err != nil {
+			return j // tautan putus: target belum ada
+		}
+		if tfi.IsDir() {
+			j.targetTakTersentuh = true
+			return j
+		}
+		isi, err := os.ReadFile(j.targetTerselesaikan)
+		if err != nil {
+			j.targetTakTersentuh = true
+			return j
+		}
+		j.targetAda = true
+		j.targetIsi = isi
+		j.targetIzin = tfi.Mode().Perm()
+		return j
+	}
+	j := jepretanBerkas{jalur: jalur, ada: true, izin: lfi.Mode().Perm()}
+	if lfi.IsDir() {
 		j.takTersentuh = true
 		return j
 	}
@@ -654,12 +701,35 @@ func jepretBerkasConfigure(jalur string) jepretanBerkas {
 
 // pulihkan mengembalikan berkas ke keadaan jepretan: semula tidak
 // ada → ciptaan Configure dihapus; semula ada → ditulis ulang atomik
-// dengan isi dan izin semula. Galat pemulihan diabaikan per berkas
-// (best effort): galat utama Configure sudah dikembalikan ke
-// pemanggil, dan satu berkas yang gagal pulih tidak boleh menghentikan
-// pemulihan berkas lain.
+// dengan isi dan izin semula. Untuk jalur yang semula SYMLINK
+// (B-333), yang dipulihkan adalah tautannya sendiri (dibuat ulang
+// bila hilang/terganti) plus keadaan targetnya: target yang semula
+// ada ditulis ulang isinya; target yang semula tidak ada — berkas
+// yang diciptakan Configure menembus tautan — dihapus di jalurnya
+// yang terselesaikan, BUKAN di jalur tautan. Galat pemulihan
+// diabaikan per berkas (best effort): galat utama Configure sudah
+// dikembalikan ke pemanggil, dan satu berkas yang gagal pulih tidak
+// boleh menghentikan pemulihan berkas lain.
 func (j jepretanBerkas) pulihkan() {
 	if j.takTersentuh {
+		return
+	}
+	if j.tautan {
+		mentah, err := os.Readlink(j.jalur)
+		if err != nil || mentah != j.targetTautan {
+			if fi, lerr := os.Lstat(j.jalur); lerr == nil && !fi.IsDir() {
+				_ = os.Remove(j.jalur)
+			}
+			_ = os.Symlink(j.targetTautan, j.jalur)
+		}
+		if j.targetTakTersentuh {
+			return
+		}
+		if !j.targetAda {
+			_ = os.Remove(j.targetTerselesaikan)
+			return
+		}
+		_ = tulisAtomik(j.targetTerselesaikan, j.targetIsi, j.targetIzin)
 		return
 	}
 	if !j.ada {
@@ -1325,6 +1395,12 @@ func isDigitByte(b byte) bool { return b >= '0' && b <= '9' }
 // dikelola muncul dua kali atau lebih disisakan satu (yang pertama,
 // diperbarui); kunci yang belum ada ditambahkan di akhir.
 func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
+	// B-344: BOM di awal dokumen dibuang lebih dulu, sama seperti
+	// jalur TOML (B-310). TrimSpace tidak membuang BOM, jadi kunci
+	// pertama ber-BOM tidak pernah cocok dengan nama polosnya —
+	// baris lamanya tertinggal dan pasangan baru ditambahkan di
+	// akhir: kunci ganda di config Goose/Aider pengguna.
+	existing = strings.TrimPrefix(existing, "\ufeff")
 	dikelola := make(map[string]bool, len(pairs))
 	nilai := make(map[string]string, len(pairs))
 	for _, p := range pairs {
@@ -2130,8 +2206,19 @@ func terapkanPasanganTOML(baris []string, pairs [][2]string) []string {
 	for _, l := range baris {
 		kunci := ""
 		if eq := strings.Index(l, "="); eq > 0 {
-			if _, ok := nilai[strings.TrimSpace(l[:eq])]; ok {
-				kunci = strings.TrimSpace(l[:eq])
+			// B-343: sisi-kiri dinormalkan sebelum dibandingkan —
+			// kunci terkutip (`"model" = …`, `'model' = …`) adalah
+			// bentuk sah TOML yang menamai kunci yang sama, tetapi
+			// perbandingan mentah tidak pernah mencocokkannya:
+			// baris lama tertinggal DAN pasangan kelolaan
+			// ditambahkan di akhir (kunci ganda, TOML tak sah).
+			// Normalisasinya memakai logika segmen yang sama
+			// seperti nama seksi (B-309); penggantinya di bawah
+			// ditulis dengan kunci polos kanonis ini.
+			if nama := normalisasiNamaSeksiTOML(strings.TrimSpace(l[:eq])); nama != "" {
+				if _, ok := nilai[nama]; ok {
+					kunci = nama
+				}
 			}
 		}
 		if kunci == "" {

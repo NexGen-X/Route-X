@@ -129,10 +129,16 @@ func normalisasiSubjekBan(kind, subject string) (string, error) {
 
 // CreateBan memblokir satu subjek.
 //
-// Blokir baru untuk subjek yang sudah diblokir TIDAK ditolak, dan itu disengaja: tabelnya
-// tidak punya keunikan pada (subject_kind, subject), sehingga riwayat blokir satu subjek
-// tetap utuh alih-alih ditimpa. Penegakannya memeriksa keberadaan blokir yang masih
-// berlaku, jadi baris berlapis tidak mengubah hasilnya.
+// Blokir baru untuk subjek yang MASIH diblokir aktif DITOLAK oleh
+// indeks unik parsial bans_active_subject_key (migrasi 0005,
+// `where lifted_at is null`): hanya boleh ada satu blokir aktif per
+// (subject_kind, subject), dan konfliknya terpetakan sebagai
+// "data sudah ada". Riwayat tidak hilang oleh penolakan itu — yang
+// ditolak hanya duplikat aktif; blokir yang sudah dicabut tidak lagi
+// menempati keunikan, jadi subjek yang sama bisa diblokir lagi
+// sesudah blokir lamanya dicabut. (Komentar lama di sini mengklaim
+// duplikat "tidak ditolak, disengaja" — keliru, diperbaiki B-357:
+// perilaku DB-lah yang selalu menang.)
 func (r *Repo) CreateBan(ctx context.Context, p CreateBanParams) (*Ban, error) {
 	const op = "memblokir subjek"
 

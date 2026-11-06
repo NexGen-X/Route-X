@@ -515,18 +515,28 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 		req.RateLimitTPM = req.TPMLimit
 	}
 
-	// ips dimulai dari slice KOSONG non-nil: body [] berarti "buka dari mana
-	// saja", dan repo membacanya dari kenon-nilan (nil = biarkan, kosong
-	// non-nil = buka). var ips []netip.Prefix di sini akan mengubah [] menjadi
-	// nil dan niat membuka diam-diam menjadi "tidak berubah".
-	ips := []netip.Prefix{}
+	// B-369: pembedaan "tidak disebut" vs "disebut kosong" hidup di
+	// kenon-nilan slice ini, persis kontrak repo (nil = biarkan, kosong
+	// non-nil = buka dari mana saja). Versi lama menginisialisasi ips
+	// sebagai slice KOSONG non-nil tanpa syarat, jadi SETIAP pembaruan
+	// yang tidak menyebut ip_allowlist — ganti nama saja, misalnya —
+	// ikut mengosongkan allowlist yang tersimpan: kunci terbuka dari
+	// IP mana pun secara senyap. Kini ips hanya non-nil bila body
+	// menyebut field-nya; uraikanAllowlistIP mengembalikan nil bila
+	// tak satu pun entri menghasilkan prefiks, jadi hasil urai untuk
+	// body [] (atau entri yang semuanya kosong) dibungkus kembali ke
+	// slice kosong non-nil di sini.
+	var ips []netip.Prefix
 	if req.IPAllowlist != nil {
 		diurai, err := uraikanAllowlistIP(req.IPAllowlist)
 		if err != nil {
 			httpx.BadRequest(w, r, "invalid_ip_allowlist", err.Error())
 			return
 		}
-		ips = append(ips, diurai...)
+		ips = diurai
+		if ips == nil {
+			ips = []netip.Prefix{}
+		}
 	}
 
 	// expires_at "": niat membuka (tanpa kedaluwarsa) BELUM didukung kontrak —

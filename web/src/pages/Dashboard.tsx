@@ -375,7 +375,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
       {/* 3. INFERENCE PERFORMANCE METRICS RIBBON (4 CARDS) */}
       <WidgetErrorBoundary title="Metrik Kinerja Inferensi" onRetry={() => void loadData(true)}>
-        <PerformanceMetricsRibbon summary={summary} />
+        <PerformanceMetricsRibbon summary={summary} isLoading={isLoading} loadError={loadError} />
       </WidgetErrorBoundary>
 
       {/* 4. TRAFFIC CHART & RECENT REQUESTS FEED */}

@@ -12,6 +12,7 @@ import (
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/provision"
 	"github.com/NexGen-X/Route-X/internal/security"
+	"github.com/NexGen-X/Route-X/internal/worker"
 )
 
 type provisionCloudflareReq struct {
@@ -36,6 +37,26 @@ type provisionResultDTO struct {
 	ProviderType string        `json:"provider_type"`
 	TargetURL    string        `json:"target_url"`
 	AlreadyExist bool          `json:"already_exist,omitempty"`
+}
+
+// hostDariMaskedHint mengekstrak host dari masked hint URL pool yang
+// tersimpan (mis. "http://****@proyek.deno.dev:3128" menjadi
+// "proyek.deno.dev"): skema dibuang, userinfo tersamar dibuang sampai
+// "@" terakhir, lalu sisa dipotong pada pemisah port/path pertama.
+// Dipakai mencocokkan pool yang sudah ada dengan proyek Deno yang akan
+// di-provisioning (B-203) tanpa pernah membuka URL aslinya.
+func hostDariMaskedHint(hint string) string {
+	s := hint
+	if i := strings.Index(s, "://"); i >= 0 {
+		s = s[i+3:]
+	}
+	if i := strings.LastIndex(s, "@"); i >= 0 {
+		s = s[i+1:]
+	}
+	if i := strings.IndexAny(s, "/:"); i >= 0 {
+		s = s[:i]
+	}
+	return s
 }
 
 func (provisionResultDTO) adalahDTO() {}
@@ -142,7 +163,54 @@ func (h *Handlers) provisionDenoRelay(w http.ResponseWriter, r *http.Request) {
 
 	projectName := strings.TrimSpace(req.ProjectName)
 	if projectName == "" {
-		projectName = fmt.Sprintf("routex-relay-%x", time.Now().UnixNano()%1000000)
+		// Deterministik per pemasangan (B-203): nama acak berbasis waktu
+		// membuat retry mencetak proyek yatim yang tidak pernah ketemu
+		// lagi, dan tidak ada jalan mendeteksi "proyek ini sudah
+		// di-provisioning" — pendeteksian di bawah bergantung padanya.
+		projectName = provision.NamaProyekRelayBawaan
+	}
+
+	// Satu provisioning Deno pada satu waktu: dua permintaan bersamaan
+	// bisa sama-sama lolos pemeriksaan "sudah ada" di bawah lalu
+	// balapan men-deploy dan membuat pool.
+	unlock, terkunci, err := worker.TryAdvisoryLock(ctx, h.pool, worker.LockProvisionDeno)
+	if err != nil {
+		h.gagalInternal(w, r, "gagal mengambil kunci provisioning deno", err)
+		return
+	}
+	if !terkunci {
+		httpx.WriteError(w, r, http.StatusConflict, httpx.ErrTypeAPI, "provision_in_progress",
+			"Provisioning Deno lain sedang berjalan; coba lagi sebentar")
+		return
+	}
+	defer unlock()
+
+	poolName := strings.TrimSpace(req.Name)
+	if poolName == "" {
+		poolName = fmt.Sprintf("🦕 Deno Relay (%s)", projectName)
+	}
+
+	// Tolak LEBIH DULU bila proyek ini sudah punya pool (B-203):
+	// ProvisionRelay selalu mencetak token relay baru dan men-deploy-nya,
+	// jadi provisioning ulang atas proyek yang sama diam-diam memutus
+	// pool lama (token tersimpannya tidak berlaku lagi), dan pool kedua
+	// bahkan tidak bisa dibuat karena nama unik — kegagalannya terjadi
+	// SESUDAH efek samping deploy. Pemeriksaan di sini berjalan sebelum
+	// panggilan Deno apa pun. Batas jujur: pool dengan domain kustom di
+	// luar *.deno.dev tidak tertangkap pemeriksaan host; pemeriksaan
+	// nama pool menutup jalur retry nama-bawaan yang umum.
+	pools, err := h.egressRepo.List(ctx, false)
+	if err != nil {
+		mapRepoError(w, r, err, "egress pool")
+		return
+	}
+	hostProyek := projectName + ".deno.dev"
+	for _, p := range pools {
+		if p.Name == poolName || hostDariMaskedHint(p.MaskedHint) == hostProyek {
+			httpx.WriteError(w, r, http.StatusConflict, httpx.ErrTypeAPI, "deno_project_already_provisioned",
+				fmt.Sprintf("proyek Deno %q sudah punya egress pool %q; hapus pool itu dulu bila ingin provisioning ulang — provisioning ulang merotasi token relay dan akan memutus pool yang ada", projectName, p.Name))
+			return
+		}
 	}
 
 	client := provision.NewDenoClient("", 30*time.Second)
@@ -154,11 +222,6 @@ func (h *Handlers) provisionDenoRelay(w http.ResponseWriter, r *http.Request) {
 		h.gagalHulu(w, r, "provisioning deno gagal", "deno_provision_failed",
 			"Gagal mendeploy script relay ke Deno; periksa kredensial dan koneksi lalu coba lagi", err)
 		return
-	}
-
-	poolName := strings.TrimSpace(req.Name)
-	if poolName == "" {
-		poolName = fmt.Sprintf("🦕 Deno Relay (%s)", res.ProjectName)
 	}
 
 	region := "deno-edge"

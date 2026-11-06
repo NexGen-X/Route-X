@@ -31,6 +31,7 @@ const (
 	LockHealth          int64 = lockWorkerPrefix | 0x05
 	LockWebhookRecovery int64 = lockWorkerPrefix | 0x06
 	LockOAuthRefresh    int64 = lockWorkerPrefix | 0x07
+	LockProvisionDeno   int64 = lockWorkerPrefix | 0x08
 )
 
 // Outcome string untuk label metrik routex_worker_runs_total.

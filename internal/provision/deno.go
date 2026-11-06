@@ -157,6 +157,20 @@ type hasilProject struct {
 	baru bool
 }
 
+// NamaProyekRelayBawaan adalah nama proyek Deno bawaan untuk relay
+// egress. Nama ini DETERMINISTIK (B-203): nama acak berbasis waktu
+// membuat setiap percobaan provisioning mencetak proyek yatim baru
+// yang tidak pernah dibersihkan, dan retry tidak pernah menabrak
+// proyek yang sama. Satu pemasangan gateway memakai satu proyek relay
+// bawaan; nama khusus tetap bisa dipilih operator lewat ProjectName.
+//
+// Konsekuensi yang harus dijaga pemanggil: ProvisionRelay selalu
+// mencetak token relay BARU dan men-deploy-nya, termasuk untuk proyek
+// yang sudah ada — token lama berhenti berlaku saat itu juga. Karena
+// itu handler admin menolak provisioning bila proyek sudah punya pool
+// (pool tersimpan masih menunjuk token lama dan akan putus diam-diam).
+const NamaProyekRelayBawaan = "routex-relay"
+
 // ProvisionRelay membuat project di Deno Deploy (jika belum ada) dan mendeploy script streaming proxy.
 func (c *DenoClient) ProvisionRelay(ctx context.Context, p DenoProvisionParams) (*DenoProvisionResult, error) {
 	token := strings.TrimSpace(p.AccessToken)
@@ -166,7 +180,7 @@ func (c *DenoClient) ProvisionRelay(ctx context.Context, p DenoProvisionParams) 
 
 	projectName := strings.TrimSpace(p.ProjectName)
 	if projectName == "" {
-		projectName = fmt.Sprintf("routex-relay-%x", time.Now().UnixNano()%1000000)
+		projectName = NamaProyekRelayBawaan
 	}
 
 	// Token autentikasi relay untuk deployment ini. Dibuat per provisioning

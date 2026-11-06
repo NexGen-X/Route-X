@@ -503,6 +503,17 @@ func (j *jejak) selesai(ctx context.Context) {
 		ev.ProviderName = j.menang.ProviderName
 		ev.ProviderModelID = j.menang.ProviderModelID
 		ev.UpstreamModel = j.menang.UpstreamModelName
+	} else if att := percobaanTerakhirYangDicoba(j.attempts); att != nil {
+		// Tidak ada pemenang karena semua percobaan gagal: atribusikan baris ke
+		// percobaan terakhir yang benar-benar menghubungi upstream (turunan
+		// B-161). Tanpa ini baris kegagalan — mis. 400 validasi skema — tercatat
+		// dengan provider/model KOSONG padahal percobaannya jelas milik provider
+		// mana, dan operator kehilangan jejak atribusi dari dashboard. Rincian
+		// per-percobaan tetap tersedia utuh pada ev.Attempts.
+		ev.ProviderID = att.ProviderID
+		ev.ProviderName = att.ProviderName
+		ev.ProviderModelID = att.ProviderModelID
+		ev.UpstreamModel = att.UpstreamModel
 	}
 
 	j.sink.Record(ctx, ev)
@@ -641,6 +652,21 @@ func percobaanPemakaian(att []Attempt) []usage.Attempt {
 		out = append(out, u)
 	}
 	return out
+}
+
+// percobaanTerakhirYangDicoba mengembalikan percobaan terakhir yang benar-benar
+// menghubungi upstream — bukan yang dilewati pemutus arus atau batas konkurensi
+// (SkipReason terisi, upstream tidak pernah dihubungi). Dipakai untuk atribusi baris
+// permintaan yang gagal total; nil bila tidak ada percobaan nyata sama sekali
+// (mis. resolusi model gagal sebelum routing), dan pada keadaan itu baris memang
+// tidak punya provider untuk diatribusikan.
+func percobaanTerakhirYangDicoba(att []Attempt) *Attempt {
+	for i := len(att) - 1; i >= 0; i-- {
+		if att[i].SkipReason == "" && att[i].ProviderID != "" {
+			return &att[i]
+		}
+	}
+	return nil
 }
 
 // hitungUlangDanAlih menghitung jumlah percobaan ulang dan perpindahan kandidat.

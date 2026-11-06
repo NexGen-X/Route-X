@@ -34,10 +34,14 @@ export const Observability: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  // Peringatan muatan parsial (B-225): sebagian sumber gagal tetapi
+  // halaman tetap tampil — kegagalannya harus terlihat, bukan diam.
+  const [partialError, setPartialError] = useState<string | null>(null);
 
   // Live test ping
   const [isTestingLive, setIsTestingLive] = useState(false);
   const [liveTestLatency, setLiveTestLatency] = useState<number | null>(null);
+  const [liveTestError, setLiveTestError] = useState<string | null>(null);
 
   const formatXAxis = (tickItem: string) => {
     try {
@@ -116,11 +120,24 @@ export const Observability: React.FC = () => {
       if (sumRes.status === 'fulfilled') setSummary(sumRes.value);
       if (cRes.status === 'fulfilled') setCacheStats(cRes.value);
 
-      const allFailed = sRes.status === 'rejected' && bRes.status === 'rejected' && sumRes.status === 'rejected';
-      if (allFailed) {
+      // Kejujuran muatan parsial (B-225): KEEMPAT sumber dihitung —
+      // versi lama hanya memeriksa tiga sumber pertama (kegagalan
+      // statistik cache tidak pernah terlihat) dan kegagalan sebagian
+      // pun lolos diam-diam seolah muatan sukses penuh.
+      const gagal: string[] = [];
+      if (sRes.status === 'rejected') gagal.push('deret waktu');
+      if (bRes.status === 'rejected') gagal.push('rincian');
+      if (sumRes.status === 'rejected') gagal.push('ringkasan');
+      if (cRes.status === 'rejected') {
+        gagal.push('statistik cache');
+        setCacheStats(null);
+      }
+      if (gagal.length === 4) {
         setLoadError('Seluruh layanan observabilitas gagal merespons. Periksa koneksi jaringan.');
+        setPartialError(null);
       } else {
         setLoadError(null);
+        setPartialError(gagal.length > 0 ? gagal.join(', ') : null);
       }
 
       try {
@@ -146,13 +163,18 @@ export const Observability: React.FC = () => {
 
   const handleTestLive = async () => {
     setIsTestingLive(true);
+    setLiveTestError(null);
     const start = performance.now();
     try {
       await api.system.diagnostics();
       const end = performance.now();
       setLiveTestLatency(Math.round(end - start));
-    } catch {
+    } catch (err: unknown) {
+      // Kegagalan uji harus TERLIHAT (B-225): versi lama menelan galat
+      // dan tombol sekadar kembali ke label "Test Live" tanpa jejak —
+      // operator tidak bisa membedakan "belum diuji" dari "uji gagal".
       setLiveTestLatency(null);
+      setLiveTestError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsTestingLive(false);
     }
@@ -242,7 +264,24 @@ export const Observability: React.FC = () => {
         }
       />
 
+      {liveTestError && (
+        <p role="alert" className="text-xs text-rose-400">
+          Uji live gagal: {liveTestError}
+        </p>
+      )}
+
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
+
+      {partialError && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 flex items-center gap-2"
+        >
+          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" aria-hidden="true" />
+          <span>Sebagian data gagal dimuat: {partialError}. Angka yang tampil mungkin tidak lengkap.</span>
+        </div>
+      )}
 
       {/* 4 KPI Analitik Utama — Fase 4: strip polos berpemisah garis, tanpa kartu/tile ikon */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5">
@@ -294,14 +333,31 @@ export const Observability: React.FC = () => {
             Status Response Cache Hit
           </span>
           <div className="mt-1.5 flex items-center gap-2">
-            <span className="text-2xl sm:text-[28px] leading-none font-semibold tabular-nums tracking-tight text-emerald-400">
-              {cacheHitRatio}%
-            </span>
+            {/* Statistik cache yang GAGAL dimuat tampil "tidak tersedia"
+                (B-225), bukan 0,0% hijau dengan 0 hits / 0 entri karangan.
+                Rasio terukur dari data nyata tetap ditampilkan apa
+                adanya; warna emerald hanya bila benar-benar ada
+                permintaan cache yang terukur. */}
+            {cacheStats === null ? (
+              <span className="text-2xl sm:text-[28px] leading-none font-semibold tabular-nums tracking-tight text-text-muted">
+                —
+              </span>
+            ) : (
+              <span
+                className={`text-2xl sm:text-[28px] leading-none font-semibold tabular-nums tracking-tight ${
+                  totalCacheReqs > 0 ? 'text-emerald-400' : 'text-text-primary'
+                }`}
+              >
+                {cacheHitRatio}%
+              </span>
+            )}
             {/* Lencana "< 2ms" lama adalah konstanta statis tanpa data latensi
                 cache apa pun di baliknya — dihapus (audit3 V-FJ-05). */}
           </div>
           <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
-            {cacheStats?.hits ?? 0} hits / {cacheStats?.total_entries ?? 0} entri
+            {cacheStats === null
+              ? 'statistik cache tidak tersedia'
+              : `${cacheStats.hits ?? 0} hits / ${cacheStats.total_entries ?? 0} entri`}
           </div>
         </div>
       </div>

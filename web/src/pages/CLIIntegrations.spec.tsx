@@ -230,3 +230,21 @@ describe('CLIIntegrations — Pengujian Unit Dekomposisi', () => {
     );
   });
 });
+
+describe('CLIIntegrations — kejujuran muatan parsial (B-225)', () => {
+  it('daftar model gagal dimuat → peringatan parsial menyebut sumbernya (bukan daftar kosong diam-diam)', async () => {
+    vi.mocked(api.models.listAll).mockRejectedValueOnce(new Error('daftar model tidak terjangkau'));
+    render(<CLIIntegrations />);
+
+    expect(await screen.findByText(/Sebagian data gagal dimuat: model/)).toBeInTheDocument();
+  });
+
+  it('semua daftar sukses → tidak ada peringatan parsial', async () => {
+    render(<CLIIntegrations />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Claude Code')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Sebagian data gagal dimuat/)).not.toBeInTheDocument();
+  });
+});

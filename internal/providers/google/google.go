@@ -746,7 +746,20 @@ func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 			return res
 		}
 		defer resp.Body.Close()
+		// Body kini DIVALIDASI, bukan dibuang (B-214): status 2xx saja
+		// pernah menyatakan "sehat" untuk base URL salah yang kebetulan
+		// menjawab 200 dengan isi apa pun.
+		sah := bodyKatalogSah(resp.Body, true)
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		if !sah {
+			return providers.HealthResult{
+				Healthy:      false,
+				Latency:      time.Since(start),
+				StatusCode:   resp.StatusCode,
+				ErrorKind:    providers.ErrKindServer,
+				ErrorMessage: "respons probe bukan katalog model yang sah",
+			}
+		}
 		return providers.HealthResult{Healthy: true, Latency: latency, StatusCode: resp.StatusCode}
 	}
 
@@ -765,7 +778,49 @@ func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 		return res
 	}
 	defer resp.Body.Close()
+	// Body kini DIVALIDASI, bukan dibuang (B-214) — lihat cabang
+	// Antigravity di atas.
+	sah := bodyKatalogSah(resp.Body, false)
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if !sah {
+		return providers.HealthResult{
+			Healthy:      false,
+			Latency:      time.Since(start),
+			StatusCode:   resp.StatusCode,
+			ErrorKind:    providers.ErrKindServer,
+			ErrorMessage: "respons probe bukan daftar model yang sah",
+		}
+	}
 
 	return providers.HealthResult{Healthy: true, Latency: latency, StatusCode: resp.StatusCode}
+}
+
+// maxHealthBodyBytes membatasi body probe yang diurai saat validasi
+// health check: katalog model yang sah jauh di bawah batas ini.
+const maxHealthBodyBytes = 8 << 20
+
+// bodyKatalogSah memeriksa body probe health check (B-214): JSON katalog
+// model yang field models-nya bertipe benar. Bentuknya berbeda per mode —
+// Gemini standar mengirim LARIK, fetchAvailableModels Antigravity
+// mengirim OBJEK yang dipetakan menurut id model. Katalog kosong tetap
+// sah dengan sengaja: upstream hidup dan kredensial diterima; provider
+// tanpa model dibedakan pemanggil lewat katalognya sendiri.
+func bodyKatalogSah(body io.Reader, antigravity bool) bool {
+	dec := json.NewDecoder(io.LimitReader(body, maxHealthBodyBytes))
+	if antigravity {
+		var bentuk struct {
+			Models map[string]json.RawMessage `json:"models"`
+		}
+		if err := dec.Decode(&bentuk); err != nil {
+			return false
+		}
+		return bentuk.Models != nil
+	}
+	var bentuk struct {
+		Models *[]json.RawMessage `json:"models"`
+	}
+	if err := dec.Decode(&bentuk); err != nil {
+		return false
+	}
+	return bentuk.Models != nil
 }

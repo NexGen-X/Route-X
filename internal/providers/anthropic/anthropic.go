@@ -370,7 +370,51 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 	if err := json.Unmarshal(raw, &upstream); err != nil {
 		return nil, providers.Newf(providers.ErrKindServer, p.name, "respons Anthropic tidak bisa diurai")
 	}
+	// Body berstatus sukses pun bisa memuat kegagalan (B-212): upstream
+	// atau proksi yang membungkus error sebagai {"type":"error",...}
+	// dengan status 200. Tanpa pemeriksaan ini body itu lolos sebagai
+	// jawaban kosong yang sukses — pemutus arus tidak mencatat apa pun,
+	// failover tidak berjalan, dan panggilan tercatat berhasil.
+	if upstream.Type == "error" {
+		return nil, p.errorFromErrorBody(&upstream, resp.StatusCode)
+	}
+	// Respons sukses tanpa satu pun blok konten juga bukan jawaban:
+	// tidak ada teks, tool, atau apa pun yang bisa diteruskan ke klien.
+	if len(upstream.Content) == 0 {
+		return nil, providers.Newf(providers.ErrKindServer, p.name,
+			"respons Anthropic tidak memuat satu pun blok konten")
+	}
 	return p.toCanonicalResponse(&upstream), nil
+}
+
+// errorFromErrorBody menerjemahkan body bertipe "error" — termasuk yang
+// tiba dengan status 200 — menjadi error terklasifikasi (B-212).
+// Klasifikasinya memakai pemetaan jenis upstream yang sama dengan jalur
+// streaming, dan pesannya melewati penyaringan kredensial yang sama
+// dengan jalur status gagal.
+func (p *Provider) errorFromErrorBody(u *messagesResponse, status int) *providers.Error {
+	if u.Error == nil {
+		return providers.Newf(providers.ErrKindServer, p.name,
+			"respons Anthropic bertipe error tanpa rincian error")
+	}
+	kind := kindForUpstreamType(u.Error.Type)
+	message := u.Error.Message
+	// Sama seperti errorFromResponse: saldo habis dilaporkan Anthropic
+	// sebagai invalid_request, dan membiarkannya begitu mematikan
+	// failover untuk kegagalan yang seharusnya memicunya.
+	if kind == providers.ErrKindInvalidRequest && strings.Contains(strings.ToLower(message), "credit balance") {
+		kind = providers.ErrKindQuota
+	}
+	if message == "" {
+		message = "Anthropic melaporkan kegagalan di dalam body respons"
+	}
+	return &providers.Error{
+		Kind:         kind,
+		Provider:     p.name,
+		StatusCode:   status,
+		Message:      p.safeMessage(message),
+		UpstreamCode: u.Error.Type,
+	}
 }
 
 // Embeddings selalu gagal: Anthropic tidak menyediakan API embeddings.
@@ -465,8 +509,43 @@ func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 		return res
 	}
 	defer resp.Body.Close()
-	// Body dibuang sampai batas kecil supaya koneksi bisa dipakai ulang.
+	// Body kini DIVALIDASI, bukan dibuang (B-214): status 2xx saja pernah
+	// menyatakan "sehat" untuk base URL salah yang kebetulan menjawab 200
+	// — halaman HTML proksi, atau JSON yang bukan daftar model. Sehat
+	// berarti body terurai sebagai daftar model dialek ini. Katalog
+	// kosong tetap sehat dengan sengaja: upstream hidup dan kredensial
+	// diterima; provider yang belum punya model dibedakan pemanggil
+	// lewat daftar modelnya sendiri, bukan oleh probe ini.
+	sah := bodyDaftarModelSah(resp.Body)
+	// Sisa body tetap dibuang sampai batas kecil supaya koneksi bisa
+	// dipakai ulang.
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	if !sah {
+		return providers.HealthResult{
+			Healthy:      false,
+			Latency:      time.Since(start),
+			StatusCode:   resp.StatusCode,
+			ErrorKind:    providers.ErrKindServer,
+			ErrorMessage: "respons probe bukan daftar model yang sah",
+		}
+	}
 
 	return providers.HealthResult{Healthy: true, Latency: time.Since(start), StatusCode: resp.StatusCode}
+}
+
+// maxHealthBodyBytes membatasi body probe yang diurai saat validasi
+// health check: daftar model yang sah jauh di bawah batas ini.
+const maxHealthBodyBytes = 8 << 20
+
+// bodyDaftarModelSah memeriksa body probe health check: JSON berbentuk
+// daftar model dialek Anthropic — objek yang field data-nya sebuah larik
+// (boleh kosong) (B-214).
+func bodyDaftarModelSah(body io.Reader) bool {
+	var bentuk struct {
+		Data *[]json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(body, maxHealthBodyBytes)).Decode(&bentuk); err != nil {
+		return false
+	}
+	return bentuk.Data != nil
 }

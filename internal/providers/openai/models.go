@@ -75,9 +75,27 @@ func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 	}
 	defer resp.Body.Close()
 
-	// Body tidak dipakai, tetapi tetap dibaca sebagian supaya koneksi bisa dipakai ulang
+	// Body kini DIVALIDASI, bukan dibuang (B-214): status 2xx saja pernah
+	// menyatakan "sehat" untuk base URL salah yang kebetulan menjawab 200
+	// — halaman HTML proksi, atau JSON yang bukan daftar model. Sehat
+	// berarti body terurai sebagai daftar model dialek ini. Katalog
+	// KOSONG tetap sehat dengan sengaja: daftar kosong bukan kegagalan
+	// (lihat Models) — upstream hidup dan kredensial diterima, provider
+	// hanya belum mengaktifkan model, dan itu keadaan yang dibedakan
+	// pemanggil lewat daftar modelnya sendiri.
+	sah := bodyDaftarModelSah(resp.Body)
+	// Sisa body tetap dibaca sebagian supaya koneksi bisa dipakai ulang
 	// probe berikutnya alih-alih membuka TLS baru setiap kali.
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxHealthDrainBytes))
+	if !sah {
+		return providers.HealthResult{
+			Healthy:      false,
+			Latency:      time.Since(start),
+			StatusCode:   resp.StatusCode,
+			ErrorKind:    providers.ErrKindServer,
+			ErrorMessage: "respons probe bukan daftar model yang sah",
+		}
+	}
 
 	// Status non-2xx tidak sampai ke sini: do sudah mengubahnya menjadi error. Termasuk
 	// 404 dari provider compatible yang tidak menyediakan /v1/models — provider seperti itu
@@ -88,4 +106,22 @@ func (p *Provider) HealthCheck(ctx context.Context) providers.HealthResult {
 		Latency:    time.Since(start),
 		StatusCode: resp.StatusCode,
 	}
+}
+
+// maxHealthBodyBytes membatasi body probe yang diurai saat validasi
+// health check: daftar model yang sah jauh di bawah batas ini, dan body
+// yang lebih besar hampir pasti bukan daftar model.
+const maxHealthBodyBytes = 8 << 20
+
+// bodyDaftarModelSah memeriksa body probe health check: JSON berbentuk
+// daftar model dialek OpenAI — objek yang field data-nya sebuah larik
+// (boleh kosong) (B-214).
+func bodyDaftarModelSah(body io.Reader) bool {
+	var bentuk struct {
+		Data *[]json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(io.LimitReader(body, maxHealthBodyBytes)).Decode(&bentuk); err != nil {
+		return false
+	}
+	return bentuk.Data != nil
 }

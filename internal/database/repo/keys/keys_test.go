@@ -273,6 +273,42 @@ func TestAuthenticateRejections(t *testing.T) {
 	}
 }
 
+// TestAuthenticateBanIPRangeHostBitsWarisanB269 mengunci lapis kedua
+// B-269: baris ban ip_range ber-bit-host yang SUDAH tersimpan di DB
+// (tertulis sebelum validasi B-269, atau ditanam langsung) tidak boleh
+// lagi meracuni Authenticate. Sebelum perbaikan, cast b.subject::cidr
+// melempar 22P02 untuk SETIAP key. Sesudahnya: key dari IP di luar
+// jaringan baris warisan itu terautentikasi normal, dan IP di dalam
+// jaringan termasked-nya tetap terblokir — barisnya menegakkan jaringan
+// yang dimaksud operator, bukan menjatuhkan gateway.
+func TestAuthenticateBanIPRangeHostBitsWarisanB269(t *testing.T) {
+	ctx, pool, r := testEnv(t)
+	owner := newUser(t, ctx, pool)
+	created := mustCreate(t, ctx, r, CreateParams{
+		Name: "kunci uji", OwnerUserID: owner, Live: true,
+	})
+	raw := created.Raw.Reveal()
+
+	// Baris warisan ditanam langsung lewat SQL, melewati validasi repo —
+	// persis keadaan instalasi yang sudah terlanjur menyimpan bentuk ini.
+	exec(t, ctx, pool, `insert into bans (subject_kind, subject, reason) values ('ip_range', '203.0.113.1/24', 'warisan pra-B-269')`)
+
+	// IP di luar jaringan warisan: autentikasi harus berhasil (pra-fix:
+	// error 22P02 dari cast, bukan Rejection).
+	got, err := r.Authenticate(ctx, raw, netip.MustParseAddr("198.51.100.9"))
+	if err != nil {
+		t.Fatalf("Authenticate IP luar jaringan dengan baris warisan aktif: %v", err)
+	}
+	if got.ID != created.Key.ID {
+		t.Errorf("ID = %q, mau %q", got.ID, created.Key.ID)
+	}
+
+	// IP di dalam jaringan termasked baris warisan (203.0.113.0/24):
+	// tetap terblokir dengan alasan banned.
+	_, err = r.Authenticate(ctx, raw, netip.MustParseAddr("203.0.113.9"))
+	assertRejection(t, err, ReasonBanned)
+}
+
 func TestAuthenticateUnknownKey(t *testing.T) {
 	ctx, _, r := testEnv(t)
 

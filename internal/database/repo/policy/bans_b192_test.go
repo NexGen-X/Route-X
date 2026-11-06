@@ -8,9 +8,11 @@ import (
 )
 
 // TestValidasiSubjekBanB192 mengunci validasi bentuk subjek per jenis
-// (B-192): baris ip/ip_range bersubjek tak sah tidak boleh pernah lahir,
-// karena cast subject::inet / subject::cidr di query Authenticate akan
-// melempar error dan menggagalkan autentikasi key lain yang sah.
+// (B-192, diperluas B-269): baris ip/ip_range bersubjek tak sah tidak
+// boleh pernah lahir, karena cast atas subject di query Authenticate
+// akan melempar error dan menggagalkan autentikasi key lain yang sah.
+// B-269 menambahkan bentuk ip_range ber-bit-host (`10.0.0.1/24`) —
+// ParsePrefix menerimanya tetapi cast ::cidr PostgreSQL menolaknya.
 func TestValidasiSubjekBanB192(t *testing.T) {
 	uuid := "8f1f0b6e-0000-4000-8000-000000000001"
 	sah := []struct{ kind, subject string }{
@@ -18,6 +20,8 @@ func TestValidasiSubjekBanB192(t *testing.T) {
 		{BanSubjectIP, "2001:db8::1"},
 		{BanSubjectIPRange, "203.0.113.0/24"},
 		{BanSubjectIPRange, "2001:db8::/32"},
+		{BanSubjectIPRange, "10.0.0.1/32"},     // prefiks satu host: p == p.Masked()
+		{BanSubjectIPRange, "2001:db8::1/128"}, // prefiks satu host v6
 		{BanSubjectAPIKey, uuid},
 		{BanSubjectUser, uuid},
 	}
@@ -35,6 +39,9 @@ func TestValidasiSubjekBanB192(t *testing.T) {
 		{BanSubjectIPRange, "203.0.113.7"}, // tanpa prefiks
 		{BanSubjectIPRange, "203.0.113.0/33"},
 		{BanSubjectIPRange, "bukan-cidr"},
+		{BanSubjectIPRange, "10.0.0.1/24"},    // bit host terisi (B-269): cast ::cidr menolaknya
+		{BanSubjectIPRange, "203.0.113.7/24"}, // bit host terisi
+		{BanSubjectIPRange, "2001:db8::1/32"}, // bit host terisi v6
 		{BanSubjectAPIKey, "bukan-uuid"},
 		{BanSubjectAPIKey, "203.0.113.7"},
 		{BanSubjectUser, "nama-pengguna"},
@@ -64,6 +71,7 @@ func TestCreateBanMenolakSubjekTakSahB192(t *testing.T) {
 	for _, c := range []CreateBanParams{
 		{SubjectKind: BanSubjectIP, Subject: "bukan-alamat-ip", Reason: "uji"},
 		{SubjectKind: BanSubjectIPRange, Subject: "10.0.0.0/33", Reason: "uji"},
+		{SubjectKind: BanSubjectIPRange, Subject: "10.0.0.1/24", Reason: "uji"}, // bit host (B-269)
 		{SubjectKind: BanSubjectAPIKey, Subject: "bukan-uuid", Reason: "uji"},
 		{SubjectKind: BanSubjectUser, Subject: "", Reason: "uji"},
 	} {

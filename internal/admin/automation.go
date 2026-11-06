@@ -227,15 +227,25 @@ func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Rotasi secret (B-199): field secret opsional pada update. Tidak
-	// disebut, atau disebut tetapi kosong, berarti secret TIDAK diubah —
-	// secret tidak pernah bisa dikosongkan, konsisten dengan kewajiban
-	// secret non-kosong saat buat (V-WH-04). Sebelumnya field ini tidak
-	// ada pada struct update dan decodeJSON menolaknya sebagai field
-	// tak dikenal, sehingga satu-satunya jalan merotasi secret bocor
-	// adalah hapus + buat ulang (ID berubah, riwayat delivery terlepas).
+	// disebut berarti secret TIDAK diubah — secret tidak pernah bisa
+	// dikosongkan, konsisten dengan kewajiban secret non-kosong saat
+	// buat (V-WH-04). Sebelumnya field ini tidak ada pada struct update
+	// dan decodeJSON menolaknya sebagai field tak dikenal, sehingga
+	// satu-satunya jalan merotasi secret bocor adalah hapus + buat
+	// ulang (ID berubah, riwayat delivery terlepas).
+	//
+	// B-273: secret yang DISEBUT tetapi kosong/spasi-saja kini DITOLAK
+	// 400 missing_secret, sama seperti createWebhook menolaknya.
+	// Perilaku lama menelannya sebagai "tidak diubah" dan menjawab 200:
+	// operator yang bermaksud merotasi (atau mengosongkan) secret tidak
+	// pernah tahu niatnya tidak terjadi.
 	secretBaru := ""
 	rotasiSecret := false
-	if req.Secret != nil && strings.TrimSpace(*req.Secret) != "" {
+	if req.Secret != nil {
+		if strings.TrimSpace(*req.Secret) == "" {
+			httpx.BadRequest(w, r, "missing_secret", "secret tidak boleh kosong; hilangkan field secret bila tidak ingin merotasinya")
+			return
+		}
 		secretBaru = *req.Secret
 		rotasiSecret = true
 	}

@@ -2180,6 +2180,27 @@ func (h *Handlers) detachProviderModel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	mappingID := chi.URLParam(r, "mapping_id")
 
+	// B-276: pada rute bersarang /providers/{id}/models/{mapping_id},
+	// segmen provider WAJIB diverifikasi sebagai pemilik pemetaan.
+	// Sebelumnya segmen itu diabaikan total: pemetaan milik provider B
+	// bisa dihapus lewat URL provider A dan handler menjawab sukses —
+	// integritas referensial URL rusak walau haknya sama (mapping_id
+	// UUID global). Rute datar /models/mappings/{mapping_id} tidak
+	// menyebut provider, jadi pemeriksaan ini hanya berlaku bila
+	// segmen {id} ada. Ketidakcocokan dijawab 404 yang sama seperti
+	// pemetaan tidak ada (tidak membocorkan keberadaan pemetaan lain).
+	if providerID := chi.URLParam(r, "id"); providerID != "" {
+		pm, err := h.modelRepo.GetProviderModel(ctx, mappingID)
+		if err != nil {
+			mapRepoError(w, r, err, "pemetaan provider model")
+			return
+		}
+		if pm.ProviderID != providerID {
+			httpx.NotFound(w, r, "pemetaan tidak ditemukan pada provider ini")
+			return
+		}
+	}
+
 	if err := h.modelRepo.DetachProvider(ctx, mappingID); err != nil {
 		mapRepoError(w, r, err, "pemetaan provider model")
 		return
@@ -2498,21 +2519,32 @@ func (h *Handlers) updateEgressPool(w http.ResponseWriter, r *http.Request) {
 		params.Region = upstream.Set(*req.Region)
 	}
 
-	ep, err := h.egressRepo.Update(ctx, id, params)
+	// B-270: mutasi dua langkah (field + URL proxy) dan auditnya berjalan
+	// dalam SATU transaksi — pola updateProvider. Sebelumnya Update
+	// ter-commit lebih dulu dan SetProxyURL menyusul sebagai query terpisah:
+	// kegagalan langkah kedua meninggalkan mutasi pertama permanen TANPA
+	// baris audit (audit hanya ditulis sesudah keduanya berhasil).
+	var ep *upstream.EgressPool
+	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+		txRepo := h.egressRepo.WithQuerier(q)
+		var err error
+		ep, err = txRepo.Update(ctx, id, params)
+		if err != nil {
+			return err
+		}
+		if req.ProxyURL != "" {
+			ep, err = txRepo.SetProxyURL(ctx, id, security.Secret(req.ProxyURL))
+			if err != nil {
+				return err
+			}
+		}
+		return h.writeAuditTx(ctx, q, r, "update", "egress_pool", ep.ID, map[string]any{"name": ep.Name})
+	})
 	if err != nil {
 		mapRepoError(w, r, err, "egress pool")
 		return
 	}
 
-	if req.ProxyURL != "" {
-		ep, err = h.egressRepo.SetProxyURL(ctx, id, security.Secret(req.ProxyURL))
-		if err != nil {
-			mapRepoError(w, r, err, "egress pool proxy_url")
-			return
-		}
-	}
-
-	h.writeAudit(ctx, r, "update", "egress_pool", ep.ID, map[string]any{"name": ep.Name})
 	_ = h.respond(w, r, http.StatusOK, toEgressPoolDTO(ep))
 }
 
@@ -2650,6 +2682,9 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	if err != nil {
 		_ = h.egressRepo.RecordHealth(ctx, id, "unhealthy", nil)
+		// B-272: hasil probe mengubah state pool (RecordHealth) — catat
+		// auditnya seperti testWebhookPing mencatat test_ping.
+		h.writeAudit(ctx, r, "test", "egress_pool", id, map[string]any{"status": "unhealthy"})
 		_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
 			Status:    "unhealthy",
 			Success:   false,
@@ -2668,6 +2703,7 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 			h.logger.ErrorContext(ctx, "gagal mencatat health egress (healthy)",
 				slog.String("id", id), slog.String("error", err.Error()))
 		}
+		h.writeAudit(ctx, r, "test", "egress_pool", id, map[string]any{"status": "healthy"})
 		_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
 			Status:    "healthy",
 			Success:   true,
@@ -2684,6 +2720,7 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 			h.logger.ErrorContext(ctx, "gagal mencatat health egress (unhealthy)",
 				slog.String("id", id), slog.String("error", err.Error()))
 		}
+		h.writeAudit(ctx, r, "test", "egress_pool", id, map[string]any{"status": "unhealthy"})
 		_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
 			Status:    "unhealthy",
 			Success:   false,
@@ -2724,6 +2761,7 @@ func (h *Handlers) testEgressPool(w http.ResponseWriter, r *http.Request) {
 		h.logger.ErrorContext(ctx, "gagal mencatat health egress (healthy)",
 			slog.String("id", id), slog.String("error", err.Error()))
 	}
+	h.writeAudit(ctx, r, "test", "egress_pool", id, map[string]any{"status": "healthy"})
 
 	_ = h.respond(w, r, http.StatusOK, EgressProbeResponseDTO{
 		Status:     "healthy",

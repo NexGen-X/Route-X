@@ -1161,6 +1161,16 @@ func (h *Handlers) forceResetPassword(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.ErrorContext(ctx, "reset password berhasil tetapi pencabutan sesi gagal",
 			"sesi_tercabut", revoked, "user_id", id, "error", err)
+		// B-271: perubahan password SUDAH ter-commit pada titik ini — fakta
+		// kredensial berubah itu wajib tetap teraudit walau pencabutan sesi
+		// gagal. Sebelumnya jalur ini menjawab 500 tanpa satu pun baris
+		// audit, sehingga perubahan kredensial yang benar-benar terjadi
+		// tidak terlihat di jejak audit. Metadata menandai hasil sebagian
+		// secara eksplisit.
+		h.writeAudit(ctx, r, "force_reset_password", "user", id, map[string]any{
+			"sesi_tercabut":         revoked,
+			"pencabutan_sesi_gagal": true,
+		})
 		httpx.WriteError(w, r, http.StatusInternalServerError, httpx.ErrTypeAPI,
 			"revoke_failed", "password sudah diganti tetapi pencabutan sesi gagal; cabut manual lewat revoke-sessions")
 		return

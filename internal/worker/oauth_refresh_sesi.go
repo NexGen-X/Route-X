@@ -27,9 +27,12 @@ type OAuthTokenRefresher interface {
 	RefreshAccessTokenWithProxy(ctx context.Context, refreshToken, clientID, clientSecret string, proxyURL security.Secret) (*oauth.TokenResult, error)
 }
 
+// OAuthRefreshDeps adalah dependensi bersama RefreshSesiOAuth. Repo
+// kredensial tidak lagi menjadi dependensi terpisah: penulisan access token
+// hasil refresh kini bagian dari OAuthRepo.SimpanHasilRefresh yang atomik
+// (B-208).
 type OAuthRefreshDeps struct {
 	OAuth  *upstream.OAuthRepo
-	Creds  *upstream.CredentialRepo
 	Egress *upstream.EgressRepo
 	Client OAuthTokenRefresher
 	Logger *slog.Logger
@@ -137,23 +140,34 @@ func RefreshSesiOAuth(ctx context.Context, d OAuthRefreshDeps, sess *upstream.Ac
 	}
 
 	expiresAt := time.Now().Add(time.Duration(res.ExpiresIn) * time.Second)
-	if err := d.Creds.UpdateSecret(ctx, sess.CredentialID, res.AccessToken, &expiresAt); err != nil {
-		err = fmt.Errorf("gagal menyimpan token baru: %w", err)
-		catat(err)
-		return err
-	}
 
 	// Refresh token hasil rotasi WAJIB disimpan: penyedia yang merotasinya
 	// membatalkan token lama, dan membuang nilai baru memutus sesi secara
 	// permanen pada refresh berikutnya (audit3 V-EO-18).
+	var refreshBaru *security.Secret
 	if !res.RefreshToken.IsZero() && res.RefreshToken.Reveal() != sess.RefreshToken.Reveal() {
-		if err := d.OAuth.UpdateRefreshToken(ctx, sess.ID, res.RefreshToken); err != nil {
-			err = fmt.Errorf("gagal menyimpan refresh token hasil rotasi: %w", err)
-			catat(err)
-			return err
-		}
+		refreshBaru = &res.RefreshToken
 	}
 
-	catat(nil)
+	// Access token baru, refresh token rotasi, dan status sukses disimpan
+	// ATOMIK lewat SimpanHasilRefresh (B-208): versi lama menulis
+	// kredensial lalu sesi sebagai dua penulisan terpisah tanpa transaksi,
+	// sehingga kegagalan di antaranya meninggalkan access token baru
+	// berdampingan dengan refresh token lama yang sudah dianggap mati
+	// penyedia — sesi putus permanen dan hanya pulih lewat login ulang.
+	// Pembersihan status kini bagian dari transaksi yang sama, jadi tidak
+	// ada lagi catat(nil) terpisah sesudahnya.
+	if err := d.OAuth.SimpanHasilRefresh(ctx, upstream.SimpanHasilRefreshParams{
+		SessionID:        sess.ID,
+		CredentialID:     sess.CredentialID,
+		AccessToken:      res.AccessToken,
+		ExpiresAt:        expiresAt,
+		RefreshTokenBaru: refreshBaru,
+	}); err != nil {
+		err = fmt.Errorf("gagal menyimpan hasil refresh: %w", err)
+		catat(err)
+		return err
+	}
+
 	return nil
 }

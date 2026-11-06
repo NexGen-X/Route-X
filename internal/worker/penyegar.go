@@ -36,7 +36,6 @@ type PenyegarOAuth struct {
 func NewPenyegarOAuth(
 	pool *pgxpool.Pool,
 	oauthRepo *upstream.OAuthRepo,
-	credRepo *upstream.CredentialRepo,
 	egressRepo *upstream.EgressRepo,
 	oauthClient *oauth.GoogleOAuthClient,
 	logger *slog.Logger,
@@ -52,7 +51,6 @@ func NewPenyegarOAuth(
 		oauthRepo: oauthRepo,
 		deps: OAuthRefreshDeps{
 			OAuth:  oauthRepo,
-			Creds:  credRepo,
 			Egress: egressRepo,
 			Client: oauthClient,
 			Logger: logger,

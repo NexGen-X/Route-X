@@ -132,7 +132,6 @@ func siapkanRefreshG8(t *testing.T, pakaiEgressNonaktif bool) *lingkunganRefresh
 func (l *lingkunganRefreshG8) deps(klien OAuthTokenRefresher) OAuthRefreshDeps {
 	return OAuthRefreshDeps{
 		OAuth:  l.oauthRepo,
-		Creds:  l.credRepo,
 		Egress: l.egress,
 		Client: klien,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),

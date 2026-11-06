@@ -317,7 +317,6 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 	// (audit3 V-EO-17 s.d. V-EO-21).
 	deps := worker.OAuthRefreshDeps{
 		OAuth:  h.oauthRepo,
-		Creds:  h.credentialRepo,
 		Egress: h.egressRepo,
 		Client: h.oauthClient,
 		Logger: h.logger,

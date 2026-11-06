@@ -137,9 +137,10 @@ type generateResponse struct {
 	ResponseID     string            `json:"responseId,omitempty"`
 	// Error muncul bila Gemini menyisipkan kegagalan ke tengah aliran.
 	Error *struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-		Status  string `json:"status"`
+		Code    int                     `json:"code"`
+		Message string                  `json:"message"`
+		Status  string                  `json:"status"`
+		Details []providers.ErrorDetail `json:"details,omitempty"`
 	} `json:"error,omitempty"`
 }
 
@@ -1072,6 +1073,9 @@ func (p *Provider) checkBlocked(u *generateResponse) error {
 			StatusCode:   u.Error.Code,
 			Message:      p.safeMessage(message),
 			UpstreamCode: code,
+			// B-266: error yang menumpang di body 200/SSE tidak punya header;
+			// satu-satunya petunjuk jeda adalah RetryInfo di details.
+			RetryAfter: providers.RetryAfterFromDetails(u.Error.Details),
 		}
 	}
 	return nil

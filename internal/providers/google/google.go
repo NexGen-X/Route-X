@@ -388,8 +388,15 @@ func (p *Provider) readAll(resp *http.Response) ([]byte, error) {
 
 // errorFromResponse menerjemahkan respons gagal menjadi error terklasifikasi.
 func (p *Provider) errorFromResponse(resp *http.Response) *providers.Error {
-	code, message := providers.ReadErrorBody(resp.Body)
+	code, message, jedaBody := providers.ReadErrorBodyWithRetry(resp.Body)
 	kind := providers.Classify(resp.StatusCode, code)
+	// B-266: petunjuk jeda Google bisa datang dari body (RetryInfo.retryDelay),
+	// bukan hanya header. Header yang sah didahulukan — ia keputusan terbaru
+	// lapisan transport; body menjadi cadangan saat header absen.
+	jeda := providers.ParseRetryAfter(resp.Header)
+	if jeda <= 0 {
+		jeda = jedaBody
+	}
 
 	// Gemini melaporkan API key yang tidak sah sebagai 400 INVALID_ARGUMENT, bukan 401.
 	// Dibiarkan begitu, kredensial salah akan tampak sebagai permintaan cacat: tidak
@@ -408,7 +415,7 @@ func (p *Provider) errorFromResponse(resp *http.Response) *providers.Error {
 		StatusCode:   resp.StatusCode,
 		Message:      p.safeMessage(message),
 		UpstreamCode: code,
-		RetryAfter:   providers.ParseRetryAfter(resp.Header),
+		RetryAfter:   jeda,
 	}
 }
 

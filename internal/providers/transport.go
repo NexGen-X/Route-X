@@ -157,11 +157,44 @@ func firstSegment(path string) string {
 // Yang dikembalikan hanya kode dan pesan singkat — body mentah TIDAK diteruskan ke
 // pemanggil. Pesan error upstream sering memuat kembali potongan permintaan, dan pada
 // gateway itu berarti isi permintaan satu pengguna muncul di log operator.
+// ErrorDetail adalah satu entri array "details" pada error Google (google.rpc.Status).
+// Hanya entri bertipe RetryInfo yang dibaca; entri lain diabaikan pemanggil.
+type ErrorDetail struct {
+	Type       string `json:"@type"`
+	RetryDelay string `json:"retryDelay"`
+}
+
+// RetryAfterFromDetails mengekstrak petunjuk jeda dari detail RetryInfo Google
+// (B-266). Google menaruh retryDelay di BODY error 429 sebagai durasi protobuf
+// ("7s", "0.5s"), bukan hanya di header Retry-After — jalur yang hanya membaca
+// header kehilangan petunjuk ini dan klien membayarnya sebagai ledakan retry.
+// Nol berarti tidak ada petunjuk yang sah.
+func RetryAfterFromDetails(details []ErrorDetail) time.Duration {
+	for _, d := range details {
+		if d.Type != "type.googleapis.com/google.rpc.RetryInfo" {
+			continue
+		}
+		if v, err := time.ParseDuration(strings.TrimSpace(d.RetryDelay)); err == nil && v > 0 {
+			return v
+		}
+		return 0
+	}
+	return 0
+}
+
 func ReadErrorBody(body io.Reader) (code, message string) {
+	code, message, _ = ReadErrorBodyWithRetry(body)
+	return code, message
+}
+
+// ReadErrorBodyWithRetry seperti ReadErrorBody, ditambah petunjuk jeda dari
+// detail RetryInfo di body (B-266). Pemanggil yang punya header Retry-After
+// memutuskan urutan di antara keduanya.
+func ReadErrorBodyWithRetry(body io.Reader) (code, message string, retryAfter time.Duration) {
 	limited := io.LimitReader(body, MaxErrorBodyBytes)
 	raw, err := io.ReadAll(limited)
 	if err != nil || len(raw) == 0 {
-		return "", ""
+		return "", "", 0
 	}
 
 	// Satu struct untuk semua dialek yang kami hadapi, bukan beberapa percobaan
@@ -174,10 +207,11 @@ func ReadErrorBody(body io.Reader) (code, message string) {
 			Code    json.RawMessage `json:"code"`
 			Type    string          `json:"type"`
 			Status  string          `json:"status"` // dipakai Google
+			Details []ErrorDetail   `json:"details"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(raw, &shape) != nil || shape.Error.Message == "" {
-		return "", ""
+		return "", "", 0
 	}
 	// Urutan pemilihan kode: "code" milik OpenAI paling spesifik, lalu "type", lalu
 	// "status" milik Google.
@@ -186,7 +220,8 @@ func ReadErrorBody(body io.Reader) (code, message string) {
 	// upstream bisa memantulkan URL berkredensial atau token dari permintaan,
 	// dan pesan ini mengalir ke log gateway serta requests.error_message.
 	return firstNonEmpty(unquote(shape.Error.Code), shape.Error.Type, shape.Error.Status),
-		truncate(observability.ScrubLogText(shape.Error.Message), 200)
+		truncate(observability.ScrubLogText(shape.Error.Message), 200),
+		RetryAfterFromDetails(shape.Error.Details)
 }
 
 func unquote(raw json.RawMessage) string {

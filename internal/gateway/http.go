@@ -2277,8 +2277,10 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		// upstream. Delta penalaran ikut dihitung — pada permukaan ini ia
 		// diteruskan ke klien dan ditagih upstream sebagai token keluaran,
 		// beda dengan permukaan Anthropic yang memang tidak mengalirkannya
-		// sama sekali (lihat catatan reasoning di anthropic.go).
-		byteKonten += int64(len(ev.Delta) + len(ev.ReasoningDelta))
+		// sama sekali (lihat catatan reasoning di anthropic.go). Potongan
+		// penolakan dan transkrip audio (B-213) adalah teks keluaran yang
+		// sama nyatanya, jadi ikut dihitung.
+		byteKonten += int64(len(ev.Delta) + len(ev.ReasoningDelta) + len(ev.RefusalDelta) + len(ev.AudioTranscriptDelta))
 		for _, tc := range ev.ToolCalls {
 			byteKonten += int64(len(tc.Function.Arguments))
 		}

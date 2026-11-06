@@ -507,21 +507,34 @@ func uraiFormatTeksResponses(raw json.RawMessage) (json.RawMessage, error) {
 
 // itemKeluaranResponses adalah satu item pada output[] objek response.
 type itemKeluaranResponses struct {
-	Type      string                  `json:"type"`
-	ID        string                  `json:"id,omitempty"`
-	Role      string                  `json:"role,omitempty"`
-	Status    string                  `json:"status,omitempty"`
-	Content   []partKeluaranResponses `json:"content,omitempty"`
-	Summary   []map[string]any        `json:"summary,omitempty"`
-	CallID    string                  `json:"call_id,omitempty"`
-	Name      string                  `json:"name,omitempty"`
-	Arguments string                  `json:"arguments,omitempty"`
+	Type string `json:"type"`
+	ID   string `json:"id,omitempty"`
+	Role string `json:"role,omitempty"`
+	// Status adalah status item: "completed" untuk item yang tuntas.
+	Status string `json:"status,omitempty"`
+	// Content bertipe []any karena part-nya tidak sejenis: output_text
+	// membawa text+annotations, refusal membawa field refusal (B-213) —
+	// memaksakan satu struct untuk keduanya mengarang field kosong pada
+	// salah satunya.
+	Content []any            `json:"content,omitempty"`
+	Summary []map[string]any `json:"summary,omitempty"`
+	CallID  string           `json:"call_id,omitempty"`
+	Name    string           `json:"name,omitempty"`
+	// Arguments adalah argumen function_call berbentuk string JSON.
+	Arguments string `json:"arguments,omitempty"`
 }
 
 type partKeluaranResponses struct {
 	Type        string   `json:"type"`
 	Text        string   `json:"text"`
 	Annotations []string `json:"annotations"`
+}
+
+// partRefusalResponses adalah part penolakan pada item message Responses:
+// bentuknya persis dialeknya, {"type":"refusal","refusal":"..."}.
+type partRefusalResponses struct {
+	Type    string `json:"type"`
+	Refusal string `json:"refusal"`
 }
 
 // objekResponses adalah bentuk jawaban /v1/responses non-streaming.
@@ -597,13 +610,31 @@ func kodekanResponsResponses(kanonik *providers.ChatResponse, modelDiminta strin
 			}
 			teks = sb.String()
 		}
+		var isiPesan []any
 		if teks != "" {
+			isiPesan = append(isiPesan, partKeluaranResponses{
+				Type: "output_text", Text: teks, Annotations: []string{},
+			})
+		}
+		if msg.Refusal != "" {
+			// Penolakan punya bentuk part-nya sendiri di dialek ini
+			// (B-213) — sejajar decoder permukaan ini yang memang sudah
+			// membaca part refusal pada riwayat masuk.
+			isiPesan = append(isiPesan, partRefusalResponses{
+				Type: "refusal", Refusal: msg.Refusal,
+			})
+		}
+		if msg.AudioTranscript != "" {
+			// Transkrip audio adalah teks keluaran model (B-213).
+			isiPesan = append(isiPesan, partKeluaranResponses{
+				Type: "output_text", Text: msg.AudioTranscript, Annotations: []string{},
+			})
+		}
+		if len(isiPesan) > 0 {
 			obj.Output = append(obj.Output, itemKeluaranResponses{
 				Type: "message", ID: idAcakResponses("msg_"),
 				Role: "assistant", Status: "completed",
-				Content: []partKeluaranResponses{
-					{Type: "output_text", Text: teks, Annotations: []string{}},
-				},
+				Content: isiPesan,
 			})
 		}
 		for _, tc := range msg.ToolCalls {

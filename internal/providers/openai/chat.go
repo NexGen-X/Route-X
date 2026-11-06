@@ -25,6 +25,20 @@ type wireMessage struct {
 	Name       string         `json:"name,omitempty"`
 	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
+	// Refusal meneruskan teks penolakan pada riwayat asisten (B-213):
+	// pesan yang dihasilkan gateway dari respons berpenolakan harus bisa
+	// dikirim balik apa adanya, bukan kehilangan penanda penolakannya.
+	Refusal string `json:"refusal,omitempty"`
+}
+
+// wireAudio adalah objek audio pada pesan/delta dialek OpenAI: id, data
+// base64 (pada delta: potongannya), masa berlaku, dan transkrip (pada
+// delta: potongan transkripnya).
+type wireAudio struct {
+	ID         string `json:"id"`
+	Data       string `json:"data"`
+	ExpiresAt  int64  `json:"expires_at"`
+	Transcript string `json:"transcript"`
 }
 
 // wireToolCall dipakai dua arah: menguraikan tool call dari respons dan potongannya dari
@@ -93,6 +107,11 @@ type chatResponse struct {
 			ReasoningContent string          `json:"reasoning_content"`
 			Reasoning        json.RawMessage `json:"reasoning"`
 			ToolCalls        []wireToolCall  `json:"tool_calls"`
+			// Refusal adalah teks penolakan model (B-213), terpisah dari
+			// content; Audio adalah keluaran audio bermodalitas audio,
+			// yang transkripnya diteruskan ke bentuk kanonik.
+			Refusal string     `json:"refusal"`
+			Audio   *wireAudio `json:"audio"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -135,6 +154,10 @@ type chatChunk struct {
 			ReasoningContent string          `json:"reasoning_content"`
 			Reasoning        json.RawMessage `json:"reasoning"`
 			ToolCalls        []wireToolCall  `json:"tool_calls"`
+			// Refusal dan Audio sejajar versi non-streamingnya (B-213):
+			// potongan teks penolakan dan potongan transkrip audio.
+			Refusal string     `json:"refusal"`
+			Audio   *wireAudio `json:"audio"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -206,13 +229,30 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 			ReasoningContent: firstNonEmpty(c.Message.ReasoningContent, jsonString(c.Message.Reasoning)),
 		}
 		decodeContent(&msg, c.Message.Content)
+		// Penolakan model dan transkrip audio (B-213): keduanya hidup di
+		// field terpisah dari content pada dialek OpenAI, jadi tanpa
+		// penyalinan ini keduanya berhenti di Raw dan hilang begitu
+		// respons diterjemahkan ke permukaan lain.
+		msg.Refusal = c.Message.Refusal
+		if c.Message.Audio != nil {
+			msg.AudioTranscript = c.Message.Audio.Transcript
+		}
 		for i, tc := range c.Message.ToolCalls {
 			msg.ToolCalls = append(msg.ToolCalls, tc.toCanonical(i))
+		}
+		finish := c.FinishReason
+		if msg.Refusal != "" && (finish == providers.FinishStop || finish == "") {
+			// OpenAI melaporkan penolakan dengan finish_reason "stop";
+			// bentuk kanoniknya content_filter, supaya permukaan lain
+			// merendernya sebagai penolakan (mis. stop_reason "refusal"
+			// Anthropic), bukan end_turn biasa. Permukaan OpenAI sendiri
+			// tidak berubah: kliennya menerima Raw apa adanya.
+			finish = providers.FinishContentFilter
 		}
 		out.Choices = append(out.Choices, providers.Choice{
 			Index:        c.Index,
 			Message:      msg,
-			FinishReason: c.FinishReason,
+			FinishReason: finish,
 		})
 	}
 	return out, nil
@@ -376,6 +416,7 @@ func messagesToWire(msgs []providers.Message) []wireMessage {
 			Role:       string(m.Role),
 			Name:       m.Name,
 			ToolCallID: m.ToolCallID,
+			Refusal:    m.Refusal,
 		}
 
 		switch {
@@ -490,6 +531,11 @@ type chatStream struct {
 	// (audit3 V-GW-13).
 	adaPenutup bool
 
+	// adaRefusal mencatat aliran ini memuat potongan penolakan (B-213):
+	// finish_reason penutupnya lalu dipetakan ke content_filter kanonik,
+	// sama seperti jalur non-streaming.
+	adaRefusal bool
+
 	closed    atomic.Bool
 	closeOnce sync.Once
 	closeErr  error
@@ -539,8 +585,18 @@ func (s *chatStream) Recv() (*providers.StreamEvent, error) {
 			}
 			return nil, s.end(s.chunkFailure())
 		}
+		if out.RefusalDelta != "" {
+			s.adaRefusal = true
+		}
 		if out.FinishReason != "" {
 			s.adaPenutup = true
+			// Penolakan yang mengalir dilaporkan upstream sebagai
+			// finish_reason "stop"; bentuk kanoniknya content_filter
+			// (B-213). Raw tidak disentuh: klien OpenAI menerima chunk
+			// apa adanya dengan finish_reason aslinya.
+			if s.adaRefusal && out.FinishReason == providers.FinishStop {
+				out.FinishReason = providers.FinishContentFilter
+			}
 		}
 		// Yang dihitung adalah byte yang benar-benar diserahkan ke pemanggil: begitu satu
 		// chunk keluar dari Recv, ia dianggap sudah sampai ke klien.
@@ -689,6 +745,13 @@ func parseChunk(data []byte) (*providers.StreamEvent, error) {
 		c := wire.Choices[0]
 		out.Delta = c.Delta.Content
 		out.ReasoningDelta = firstNonEmpty(c.Delta.ReasoningContent, jsonString(c.Delta.Reasoning))
+		// Potongan penolakan dan transkrip audio (B-213), sejajar jalur
+		// non-streaming: keduanya dibawa bentuk kanonik sebagai delta
+		// tersendiri, bukan dicampur ke Delta teks.
+		out.RefusalDelta = c.Delta.Refusal
+		if c.Delta.Audio != nil {
+			out.AudioTranscriptDelta = c.Delta.Audio.Transcript
+		}
 		out.FinishReason = c.FinishReason
 		for i, tc := range c.Delta.ToolCalls {
 			out.ToolCalls = append(out.ToolCalls, tc.toCanonical(i))

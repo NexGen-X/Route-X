@@ -137,6 +137,18 @@ type Message struct {
 	// tanda tangan ini wajib membuang jejak penalarannya juga, bukan
 	// mengirimkannya telanjang (audit3 V-GW-23).
 	ReasoningSignature string
+	// Refusal adalah teks PENOLAKAN model (B-213): pada dialek OpenAI ia
+	// hidup di field refusal, terpisah dari content, dan finish_reason-nya
+	// tetap "stop" — tanpa slot kanonik ini penolakan tidak bisa dibedakan
+	// dari jawaban biasa begitu ia meninggalkan permukaan OpenAI murni.
+	// Adapter penghasil mengisinya bersama pemetaan FinishReason ke
+	// FinishContentFilter; permukaan lain merendernya sebagai refusal.
+	Refusal string
+	// AudioTranscript adalah transkrip keluaran audio model (B-213). Data
+	// audio mentahnya sendiri tidak dibawa bentuk kanonik — ia tetap utuh
+	// di Raw permukaan OpenAI; transkrip adalah bagian yang bermakna
+	// lintas dialek, sebagai teks keluaran model.
+	AudioTranscript string
 }
 
 // IsMultimodal melaporkan apakah pesan ini memakai bentuk array bagian.
@@ -145,17 +157,30 @@ func (m *Message) IsMultimodal() bool { return len(m.Parts) > 0 }
 // Text mengembalikan seluruh teks pesan, menggabungkan bagian bila multimodal. Dipakai
 // content filter dan penghitung token perkiraan.
 func (m *Message) Text() string {
-	if !m.IsMultimodal() {
-		return m.Content
-	}
 	var b []byte
-	for _, p := range m.Parts {
-		if p.Type == PartTypeText && p.Text != "" {
-			if len(b) > 0 {
-				b = append(b, '\n')
+	if !m.IsMultimodal() {
+		b = append(b, m.Content...)
+	} else {
+		for _, p := range m.Parts {
+			if p.Type == PartTypeText && p.Text != "" {
+				if len(b) > 0 {
+					b = append(b, '\n')
+				}
+				b = append(b, p.Text...)
 			}
-			b = append(b, p.Text...)
 		}
+	}
+	// Penolakan dan transkrip audio (B-213) adalah teks keluaran pesan ini
+	// juga, walau hidup di field terpisah: filter konten dan penaksir
+	// token harus melihatnya, bukan hanya teks content.
+	for _, tambahan := range []string{m.Refusal, m.AudioTranscript} {
+		if tambahan == "" {
+			continue
+		}
+		if len(b) > 0 {
+			b = append(b, '\n')
+		}
+		b = append(b, tambahan...)
 	}
 	return string(b)
 }
@@ -352,6 +377,13 @@ type StreamEvent struct {
 	Delta string
 	// ReasoningDelta adalah potongan jejak penalaran.
 	ReasoningDelta string
+	// RefusalDelta adalah potongan teks penolakan model (B-213), sejajar
+	// Delta tetapi dari field refusal upstream: akumulasinya membentuk
+	// Message.Refusal pada pesan akhir.
+	RefusalDelta string
+	// AudioTranscriptDelta adalah potongan transkrip keluaran audio
+	// (B-213), sejajar RefusalDelta untuk field audio.transcript.
+	AudioTranscriptDelta string
 	// ToolCalls adalah potongan pemanggilan tool; Index menandai tool mana.
 	ToolCalls []ToolCall
 	// Parts adalah potongan keluaran NON-TEKS peristiwa ini dalam urutan

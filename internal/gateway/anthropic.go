@@ -1151,6 +1151,26 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 				Text: choice.Message.Content,
 			})
 		}
+		// Teks penolakan model (B-213): di permukaan ini penolakan tampil
+		// sebagai block teks berisi penjelasan penolakannya, dengan
+		// stop_reason "refusal" dari pemetaan FinishContentFilter di
+		// bawah — bentuk yang sama dengan penolakan asli Claude. Tanpa
+		// block ini klien menerima stop_reason refusal tanpa isi apa pun.
+		if choice.Message.Refusal != "" {
+			contentBlocks = append(contentBlocks, anthropicResponseContentBlock{
+				Type: "text",
+				Text: choice.Message.Refusal,
+			})
+		}
+		// Transkrip audio (B-213): permukaan ini tidak punya keluaran
+		// audio; transkrip adalah teks keluaran model dan dirender
+		// sebagai block teks agar isinya tidak hilang di terjemahan.
+		if choice.Message.AudioTranscript != "" {
+			contentBlocks = append(contentBlocks, anthropicResponseContentBlock{
+				Type: "text",
+				Text: choice.Message.AudioTranscript,
+			})
+		}
 		for _, tc := range choice.Message.ToolCalls {
 			inputRaw := json.RawMessage(tc.Function.Arguments)
 			if len(inputRaw) == 0 {
@@ -1538,8 +1558,16 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 		// gabungan dari upstream berdialek OpenAI), dan melompat akan membuang
 		// tool_calls-nya — klien lalu menerima stop_reason "tool_use" untuk
 		// tool yang tidak pernah muncul sebagai block (audit3 V-GW-18).
-		if ev.Delta != "" {
-			byteKonten += int64(len(ev.Delta))
+		//
+		// Teks peristiwa di sini adalah gabungan Delta dengan potongan
+		// penolakan dan transkrip audio (B-213): keduanya teks keluaran di
+		// permukaan ini — penolakan Claude memang tiba sebagai block teks
+		// dengan stop_reason refusal (dari pemetaan FinishContentFilter di
+		// atas), dan transkrip adalah satu-satunya bentuk teks keluaran
+		// audio.
+		deltaTeks := ev.Delta + ev.RefusalDelta + ev.AudioTranscriptDelta
+		if deltaTeks != "" {
+			byteKonten += int64(len(deltaTeks))
 			if tipeBlokSekarang != "text" {
 				tutupBlok()
 				indexBlokSekarang = blokBerikutnya
@@ -1563,7 +1591,7 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 				"index": indexBlokSekarang,
 				"delta": map[string]any{
 					"type": "text_delta",
-					"text": ev.Delta,
+					"text": deltaTeks,
 				},
 			})
 			if !kirimEvent("content_block_delta", deltaPayload) {

@@ -14,6 +14,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"time"
 )
 
@@ -325,6 +326,31 @@ type Usage struct {
 	OutputTokens               int
 	ReasoningTokens            int
 	TotalTokens                int
+}
+
+// TambahToken menjumlahkan dua hitungan token dengan PENJENUHAN
+// (B-352): hasil yang melewati batas int dijenuhkan ke batasnya,
+// bukan membungkus ke negatif. Adapter menjumlahkan field-field
+// usage yang datang dari JSON upstream — nilainya tidak dibatasi
+// apa pun di jalur dekode, jadi upstream yang rusak atau berniat
+// buruk bisa mengirim angka dekat MaxInt yang jumlah polosnya
+// membungkus negatif dan terbaca hilir sebagai "tidak ada token"
+// atau lolos dari gerbang. Gerbang biaya sudah memakai penjaga
+// yang sama maknanya (TotalTerjaga, B-303); adapter kini memakai
+// penjaga ini di titik jumlahnya sendiri, sebelum angka negatif
+// sempat lahir. Penjenuhan (bukan error) dipilih karena adapter
+// tidak punya jalur error untuk usage, dan hitungan yang dijenuhkan
+// tetap "sangat besar" bagi setiap gerbang hilir — TotalTerjaga
+// akan menolaknya sebagai luapan dengan WARN, bukan menerimanya
+// sebagai nol.
+func TambahToken(a, b int) int {
+	if b > 0 && a > math.MaxInt-b {
+		return math.MaxInt
+	}
+	if b < 0 && a < math.MinInt-b {
+		return math.MinInt
+	}
+	return a + b
 }
 
 // Choice adalah satu kandidat jawaban.

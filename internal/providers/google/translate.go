@@ -871,14 +871,14 @@ func toCanonicalUsage(u *usageMetadata) providers.Usage {
 	out := providers.Usage{
 		InputTokens:       u.PromptTokenCount,
 		CachedInputTokens: u.CachedContentTokenCount,
-		OutputTokens:      u.CandidatesTokenCount + u.ThoughtsTokenCount,
+		OutputTokens:      providers.TambahToken(u.CandidatesTokenCount, u.ThoughtsTokenCount), // B-352: jenuh, bukan membungkus
 		ReasoningTokens:   u.ThoughtsTokenCount,
 		// totalTokenCount dipakai bila ada: itu angka Gemini sendiri dan bisa memuat token
 		// yang tidak terwakili field lain (mis. pemakaian tool bawaan).
 		TotalTokens: u.TotalTokenCount,
 	}
 	if out.TotalTokens == 0 {
-		out.TotalTokens = out.InputTokens + out.OutputTokens
+		out.TotalTokens = providers.TambahToken(out.InputTokens, out.OutputTokens) // B-352
 	}
 	return out
 }

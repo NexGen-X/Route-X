@@ -103,6 +103,19 @@ type StoredConfig struct {
 // settings.json milik tool CLI, key.env berisi API key) dibaca proses
 // lain apa adanya.
 func tulisAtomik(path string, data []byte, perm os.FileMode) error {
+	// B-279: selesaikan symlink pada jalur tujuan lebih dulu, meniru
+	// jalur hook rc (pasangHook) yang sudah symlink-aware sejak
+	// V-LN-33. Rename apa adanya menimpa symlink dotfiles (GNU Stow/
+	// chezmoi) dengan berkas reguler: tautan putus senyap dan berkas
+	// target di repo dotfiles tidak pernah terbarui. Dengan menulis
+	// ke target hasil EvalSymlinks, tautan dipertahankan dan berkas
+	// sementara lahir di direktori target yang sama (rename tetap
+	// satu filesystem). Symlink putus (target belum ada) tidak bisa
+	// diselesaikan — EvalSymlinks mengembalikan error dan jalur asal
+	// dipakai apa adanya, sama seperti perilaku lama.
+	if resolved, err := filepath.EvalSymlinks(path); err == nil && resolved != path {
+		path = resolved
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".routex-tulis-*")
 	if err != nil {
 		return err

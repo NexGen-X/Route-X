@@ -70,6 +70,7 @@ func tolakResponses(pesan string) *kekeliruanResponses {
 
 // Responses melayani POST /v1/responses.
 func (h *Handlers) Responses(w http.ResponseWriter, r *http.Request) {
+	h.pasangMemoBatas(r)
 	j, w := h.mulaiJejak(w, r)
 	defer j.selesai(r.Context())
 

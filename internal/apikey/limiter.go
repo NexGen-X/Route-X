@@ -877,6 +877,19 @@ func (l *Limiter) RefundRequest(ctx context.Context, p *Principal, ip netip.Addr
 			scopes = append(scopes, ScopeLimits{Scope: ScopeIP, ID: ip.String(), Limits: l.ipLimits})
 		}
 	}
+	l.RefundScopes(ctx, scopes)
+}
+
+// RefundScopes membatalkan kenaikan penghitung request untuk cakupan yang
+// diberikan — pasangan AllowScopes bagi cakupan di luar resolver principal
+// (saat ini: cakupan model dari kebijakan gateway, B-254). Semantiknya sama
+// persis dengan ekor RefundRequest: jendela dihitung dari jam limiter saat
+// ini, skrip refund yang sama menurunkan penghitungnya, dan kegagalan Redis
+// hanya dicatat debug — refund tidak pernah menggagalkan respons.
+func (l *Limiter) RefundScopes(ctx context.Context, scopes []ScopeLimits) {
+	if l == nil || l.redis == nil || len(scopes) == 0 {
+		return
+	}
 
 	now := l.now()
 	var windows []window

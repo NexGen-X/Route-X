@@ -327,6 +327,15 @@ func Migrate(ctx context.Context, db *DB, logger *slog.Logger) (applied int, err
 // sengaja TIDAK ditaruh di parseMigrations — fungsi itu juga dipakai untuk
 // mengurai kumpulan parsial pada test pengurutan.
 func checkMigrationContinuity(migrations []migration) error {
+	// Jangkar awal (B-288): perbandingan berurutan saja lolos untuk
+	// rangkaian utuh yang dimulai dari versi 2 — migrasi 0001 yang
+	// hilang dari biner tidak tertangkap, padahal dari dialah skema
+	// inti berasal. Rangkaian tak kosong wajib diawali versi 1;
+	// rangkaian kosong tetap sah (tidak ada yang diterapkan).
+	if len(migrations) > 0 && migrations[0].version != 1 {
+		return fmt.Errorf("%w: rangkaian migrasi harus diawali versi 1, ditemukan %d (%s) — ada file migrasi awal yang hilang dari biner",
+			ErrInvalidMigration, migrations[0].version, migrations[0].filename)
+	}
 	for i := 1; i < len(migrations); i++ {
 		prev, cur := migrations[i-1], migrations[i]
 		if cur.version != prev.version+1 {

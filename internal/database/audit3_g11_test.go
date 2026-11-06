@@ -23,6 +23,13 @@ func TestCheckMigrationContinuityMenolakLompatan(t *testing.T) {
 	}
 
 	for nama, set := range map[string][]migration{
+		// B-288: rangkaian rapat pun ditolak bila tidak diawali
+		// versi 1 — perbandingan berurutan saja meloloskannya.
+		"rapat tetapi mulai dari versi 2": {
+			{version: 2, filename: "0002_b.sql"},
+			{version: 3, filename: "0003_c.sql"},
+			{version: 4, filename: "0004_d.sql"},
+		},
 		"lompatan di tengah": {
 			{version: 1, filename: "0001_a.sql"},
 			{version: 3, filename: "0003_c.sql"},

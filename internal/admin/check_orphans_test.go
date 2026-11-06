@@ -324,4 +324,37 @@ func TestCheckOrphans(t *testing.T) {
 		t.Errorf("ditemukan %d operasi backend yatim BARU tanpa pemanggil frontend dan tidak terdaftar sebagai alias sengaja: %v — panggil dari frontend, hapus rutenya, atau daftarkan di orphanTerdaftar dengan alasan",
 			len(yatimBaru), yatimBaru)
 	}
+
+	// B-348: gerbangnya kini DUA ARAH. Entri orphanTerdaftar yang
+	// basi — rutenya sudah tidak terdaftar di router, atau klien
+	// sudah memanggilnya sehingga bukan yatim lagi — ikut
+	// MENGGAGALKAN tes: tanpa arah ini, penghapusan rute yang
+	// disengaja-yatim lolos senyap (daftarnya tetap mengklaim ia
+	// ada) dan entri yang sudah tidak yatim terus menutupi
+	// perubahan permukaan yang nyata. Daftar yatim adalah klaim
+	// tentang keadaan sekarang; klaim basi sama buruknya dengan
+	// yatim baru.
+	//
+	// Cakupan mount tetap /api/admin: permukaan /api/auth TIDAK
+	// ikut dinilai di sini — auth.Handlers tidak bisa dibangun
+	// tanpa Service sesi penuh (store berbasis DB), sedangkan
+	// gerbang statis ini sengaja tanpa dependensi (admin
+	// NewHandlers(Config{}) bebas konstruksi). Kelima rute auth
+	// (login, setup-hint, me, logout, change-password) saat ini
+	// seluruhnya dipanggil klien; menilai mereka butuh harness
+	// terpisah dan dicatat sebagai batas gerbang yang disadari,
+	// bukan lubang yang disembunyikan.
+	var terdaftarBasi []string
+	for operasi := range orphanTerdaftar {
+		switch {
+		case !registeredRoutes[operasi]:
+			terdaftarBasi = append(terdaftarBasi, operasi+" (rute tidak lagi terdaftar di router)")
+		case clientEndpoints[operasi]:
+			terdaftarBasi = append(terdaftarBasi, operasi+" (kini dipanggil klien — bukan yatim lagi)")
+		}
+	}
+	if len(terdaftarBasi) > 0 {
+		t.Errorf("ditemukan %d entri orphanTerdaftar yang BASI: %v — cabut entrinya dari daftar (dengan catatannya) supaya daftar yatim selalu menggambarkan keadaan sekarang",
+			len(terdaftarBasi), terdaftarBasi)
+	}
 }

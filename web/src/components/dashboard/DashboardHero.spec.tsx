@@ -12,6 +12,7 @@ const propsDasar = {
   loadError: null,
   healthyProvidersCount: 0,
   totalProvidersCount: 0,
+  providersTerukur: false,
   overview: null,
   isRefreshing: false,
   onRefresh: vi.fn(),
@@ -32,6 +33,7 @@ describe('DashboardHero — kejujuran status selama muatan pertama (B-285)', () 
       <DashboardHero
         {...propsDasar}
         isLoading={false}
+        providersTerukur={true}
         healthyProvidersCount={2}
         totalProvidersCount={3}
         overview={{ in_flight_requests: 4 } as SystemOverview}
@@ -48,5 +50,50 @@ describe('DashboardHero — kejujuran status selama muatan pertama (B-285)', () 
 
     expect(screen.getByText('Gateway Tidak Tersedia')).toBeInTheDocument();
     expect(screen.queryByText('Beroperasi')).not.toBeInTheDocument();
+  });
+});
+
+// Spec B-346: muatan PARSIAL — Dashboard hanya menyetel loadError
+// untuk kegagalan ringkasan atau kegagalan total, jadi sumber
+// provider/overview yang gagal sendirian mencapai hero dengan
+// loadError null dan isLoading false. Hero versi lama mengklaim
+// "Beroperasi" + "0/0 upstream sehat" + in-flight 0 dari data yang
+// tidak pernah tiba. Kini klaim digerbangi keberadaan datanya:
+// hitungan upstream pada providersTerukur, status + in-flight pada
+// overview.
+describe('DashboardHero — kejujuran muatan parsial (B-346)', () => {
+  it('provider belum pernah tiba (overview ada) → hitungan "—", status tetap dari overview', () => {
+    render(
+      <DashboardHero
+        {...propsDasar}
+        isLoading={false}
+        providersTerukur={false}
+        healthyProvidersCount={0}
+        totalProvidersCount={0}
+        overview={{ in_flight_requests: 7 } as SystemOverview}
+      />,
+    );
+
+    expect(screen.getByText('Beroperasi')).toBeInTheDocument();
+    expect(screen.queryByText('0/0')).not.toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+  });
+
+  it('overview tidak tiba (bukan loadError, bukan loading) → "Status Tidak Diketahui", in-flight "—"', () => {
+    render(
+      <DashboardHero
+        {...propsDasar}
+        isLoading={false}
+        providersTerukur={true}
+        healthyProvidersCount={1}
+        totalProvidersCount={2}
+        overview={null}
+      />,
+    );
+
+    expect(screen.getByText('Status Tidak Diketahui')).toBeInTheDocument();
+    expect(screen.queryByText('Beroperasi')).not.toBeInTheDocument();
+    expect(screen.getByText('1/2')).toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
   });
 });

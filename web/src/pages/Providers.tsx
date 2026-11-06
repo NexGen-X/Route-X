@@ -60,14 +60,14 @@ export const Providers: React.FC = () => {
   const providers: Provider[] = provsData?.items ?? [];
   const providersTerpotong = !!provsData?.terpotong;
 
-  const { data: poolsData = [], isError: isPoolsError, error: poolsError } = useQuery({
+  const { data: poolsData, isError: isPoolsError, error: poolsError } = useQuery({
     queryKey: ['egressPools'],
     queryFn: async () => {
       const res = await api.egress.list();
       return res.items || [];
     },
   });
-  const egressPools: EgressPool[] = poolsData;
+  const egressPools: EgressPool[] = poolsData ?? [];
 
   // Ringkasan Pool Terpadu (Kredensial & Sesi OAuth untuk setiap Provider).
   // Kegagalan memuat salah satu sumber TIDAK lagi ditelan menjadi daftar
@@ -542,20 +542,25 @@ export const Providers: React.FC = () => {
 
       {/* ------------------------------------------------------------------- */}
       {/* 2. STATS SUMMARY BAR — Fase 4: strip ringkasan polos, bukan kartu */}
+      {/* B-345: angka strip hanya dari data yang benar-benar tiba.
+          Selama query berjalan — atau gagal — daftar di atas masih
+          hasil `?? []`, jadi menghitungnya menampilkan "0" karangan
+          persis pola yang ditutup B-284 di Observability. Cabang
+          belum-terukur menampilkan "—" sampai query-nya ber-data. */}
       <div className="flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-border/60 pb-4">
         <span className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-text-muted">Total Provider</span>
-          <span className="text-base font-bold text-white">{providers.length}</span>
+          <span className="text-base font-bold text-white">{provsData ? providers.length : '—'}</span>
         </span>
         <span className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-text-muted">Status Sehat</span>
           <span className="text-base font-bold text-emerald-400">
-            {healthyCount} / {providers.length}
+            {provsData ? `${healthyCount} / ${providers.length}` : '—'}
           </span>
         </span>
         <span className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-text-muted">Pool Egress</span>
-          <span className="text-base font-bold text-white">{egressPools.length}</span>
+          <span className="text-base font-bold text-white">{poolsData ? egressPools.length : '—'}</span>
         </span>
         <span className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-text-muted">Enkripsi Kunci</span>

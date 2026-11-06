@@ -220,6 +220,15 @@ type Event struct {
 
 	Stream bool
 
+	// CacheHit menandai permintaan yang terjawab dari response cache tanpa
+	// satu pun panggilan upstream. Biayanya dipaksa nol oleh Recorder.biaya
+	// (B-188): desain response cache menjanjikan HIT tetap memakan kuota
+	// token tetapi tidak menagih biaya, dan sejak audit3 V-GW-09 jalur HIT
+	// memasang kandidat pemenang demi atribusi provider — tanpa penanda
+	// eksplisit ini pencatat menagih harga penuh seolah upstream dipanggil.
+	// Tokennya tetap tercatat utuh untuk kuota dan baris requests.
+	CacheHit bool
+
 	// Usage memakai konvensi OpenAI: Input sudah memuat CachedInput, Output sudah memuat
 	// Reasoning. Lihat catatan paket.
 	InputTokens       int
@@ -670,6 +679,14 @@ func (r *Recorder) tulis(ev Event) {
 // ke log lewat laporTanpaHarga, karena biaya nol yang berarti "belum diisi" terlihat sama
 // dengan gratis di setiap laporan.
 func (r *Recorder) biaya(ctx context.Context, ev Event) upstream.USD {
+	// Cache HIT tidak memanggil upstream sama sekali, jadi biayanya nol
+	// secara desain (B-188) — BUKAN nol karena belum dihargai: keadaan ini
+	// diperiksa paling awal supaya HIT tidak pernah terhitung sebagai
+	// pemetaan tanpa harga, dan tidak bergantung pada absennya pemenang
+	// (jalur HIT memang memasang pemenang demi atribusi, audit3 V-GW-09).
+	if ev.CacheHit {
+		return 0
+	}
 	if r.prices == nil || ev.ProviderModelID == "" {
 		return 0
 	}

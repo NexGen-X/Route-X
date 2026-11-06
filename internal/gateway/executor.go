@@ -848,6 +848,47 @@ func probeDariContext(ctx context.Context) bool {
 	return v
 }
 
+// dikecualikanDariPencatatanBreaker melaporkan apakah kegagalan ini fakta
+// tentang PERMINTAAN — bukan kesehatan provider — sehingga tidak boleh
+// dihitung ke pemutus arus:
+//
+//   - ErrKindCanceled: pembatalan oleh klien. Kalau dicatat, satu klien
+//     yang menutup koneksi berkali-kali bisa memutus arus ke provider
+//     yang sebenarnya sehat.
+//   - Local: penolakan LOKAL gateway (batas laju/konkurensi yang
+//     diputuskan gateway sendiri sebelum upstream dihubungi) bukan bukti
+//     kesehatan provider (audit F4).
+//   - ErrKindInvalidRequest (turunan B-161): penolakan 400 validasi adalah
+//     kesalahan BENTUK permintaan klien — skema tool yang tidak dikenal
+//     validator upstream, misalnya — bukan bukti provider sakit. Pada
+//     kampanye CLI, rentetan 400 validasi dari satu tool membuka pemutus
+//     arus dan tool LAIN ikut menerima 503 tanpa pernah dicoba ke
+//     upstream.
+//   - ErrKindContentFilter (B-240): penolakan kebijakan konten upstream
+//     diputuskan oleh ISI permintaan klien; muatan yang sama akan ditolak
+//     berulang kali. Ia sengaja TIDAK dibuat failoverable — dua keputusan
+//     itu berbeda sumbu: failover menyangkut permintaan ini, pencatatan
+//     menyangkut reputasi provider — dan pengecualian di sini hanya
+//     menyangkut sumbu kedua.
+//   - ErrKindModelNotFound (B-168): model yang tidak dikenal provider ini
+//     adalah fakta tentang nama yang diminta klien; provider yang sama
+//     melayani model lain dengan sehat. Ia tetap failoverable: provider
+//     LAIN mungkin mengenal modelnya.
+//
+// Satu predikat untuk kedua jalur (B-255): cobaKandidat (non-streaming)
+// dan aliranPencatat (streaming) — sebelumnya jalur streaming tidak
+// mengenal pengecualian ini sama sekali.
+func dikecualikanDariPencatatanBreaker(err *providers.Error) bool {
+	if err == nil {
+		return false
+	}
+	return err.Kind == providers.ErrKindCanceled ||
+		err.Kind == providers.ErrKindInvalidRequest ||
+		err.Kind == providers.ErrKindContentFilter ||
+		err.Kind == providers.ErrKindModelNotFound ||
+		err.Local
+}
+
 // cobaKandidat mengulang satu kandidat sampai berhasil, kehabisan percobaan, atau menemui
 // kegagalan yang tidak boleh diulang.
 //
@@ -956,42 +997,11 @@ func cobaKandidat[T any](
 		a.Err = perr
 		att = append(att, a)
 
-		// Pembatalan oleh klien bukan kegagalan provider dan tidak boleh menghitung ke
-		// pemutus arus: kalau dicatat, satu klien yang menutup koneksi berkali-kali bisa
-		// memutus arus ke provider yang sebenarnya sehat.
-		//
-		// Hal yang sama berlaku untuk penolakan LOKAL gateway (Local): batas
-		// laju/konkurensi yang diputuskan gateway sendiri sebelum upstream
-		// dihubungi bukan bukti kesehatan provider (audit F4).
-		//
-		// Dan hal yang sama berlaku untuk ErrKindInvalidRequest (turunan B-161):
-		// penolakan 400 validasi adalah kesalahan BENTUK permintaan klien — skema
-		// tool yang tidak dikenal validator upstream, misalnya — bukan bukti
-		// provider sakit. Pada kampanye CLI, rentetan 400 validasi dari satu tool
-		// membuka pemutus arus dan tool LAIN ikut menerima 503 tanpa pernah dicoba
-		// ke upstream; provider yang sehat tidak boleh diputus oleh permintaan
-		// yang memang tidak sah bentuknya.
-		//
-		// ErrKindContentFilter ikut dikecualikan (B-240): penolakan kebijakan
-		// konten upstream juga 4xx yang diputuskan oleh ISI permintaan klien,
-		// bukan kesehatan provider — muatan yang sama akan ditolak berulang
-		// kali, dan mencatatnya hanya membuka pemutus arus untuk trafik lain
-		// yang sah. Ia sengaja TIDAK dibuat failoverable (dokumen jenisnya di
-		// providers/errors.go): muatan yang sama tidak dikirim ke banyak
-		// pihak. Dua keputusan itu berbeda sumbu — failover menyangkut
-		// permintaan ini, pencatatan menyangkut reputasi provider — dan
-		// pengecualian di sini hanya menyangkut sumbu kedua.
-		//
-		// ErrKindModelNotFound melengkapi daftar itu (B-168): model yang
-		// tidak dikenal provider ini adalah fakta tentang PERMINTAAN (nama
-		// yang diminta klien tidak ada di katalog provider itu), bukan
-		// tentang kesehatan provider — provider yang sama melayani model
-		// lain dengan sehat. Rentetan permintaan ke model hantu tidak boleh
-		// membuka pemutus arus bagi trafik model yang sah. Seperti
-		// ContentFilter, ia tetap failoverable: provider LAIN mungkin
-		// mengenal modelnya, jadi permintaan ini boleh berpindah — yang
-		// tidak boleh adalah kegagalannya menodai reputasi provider ini.
-		if a.Err.Kind != providers.ErrKindCanceled && a.Err.Kind != providers.ErrKindInvalidRequest && a.Err.Kind != providers.ErrKindContentFilter && a.Err.Kind != providers.ErrKindModelNotFound && !a.Err.Local {
+		// Kegagalan yang merupakan fakta tentang PERMINTAAN — bukan
+		// kesehatan provider — tidak dicatat ke pemutus arus; daftar
+		// jenisnya dan alasannya di dikecualikanDariPencatatanBreaker,
+		// dipakai bersama jalur streaming (B-255).
+		if !dikecualikanDariPencatatanBreaker(a.Err) {
 			e.catat(ctx, c, mk, false, plan.BreakerCfg, probe)
 		}
 
@@ -1420,7 +1430,10 @@ func (a *aliranPenjagaDiam) Close() error {
 // aliranPencatat adalah providers.Stream yang melaporkan hasil akhirnya
 // tepat satu kali. Aturan hasilnya:
 //   - Recv mengembalikan io.EOF: aliran selesai bersih — sukses.
-//   - Recv mengembalikan error lain: aliran mati di tengah — gagal.
+//   - Recv mengembalikan error lain: aliran mati di tengah — gagal,
+//     KECUALI jenis errornya dikecualikan dari pencatatan pemutus arus
+//     (dikecualikanDariPencatatanBreaker, B-255): tidak dicatat sama
+//     sekali, sama seperti gerbang yang sama di cobaKandidat.
 //   - Close sebelum Recv terminal: sukses bila aliran sudah sempat
 //     mengirim >=1 peristiwa tanpa error (konsumen menutup aliran yang
 //     sehat), gagal bila belum ada satu pun peristiwa (aliran dibuka
@@ -1451,10 +1464,28 @@ func (a *aliranPencatat) laporkan(sukses bool) {
 	a.catat(sukses)
 }
 
+// tandaiSelesai menutup pelaporan TANPA mencatat apa pun (B-255): akhir
+// aliran yang jenis errornya dikecualikan dari pencatatan pemutus arus.
+// Close yang datang sesudahnya tidak boleh menebak hasil lain.
+func (a *aliranPencatat) tandaiSelesai() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.sudah = true
+}
+
 func (a *aliranPencatat) Recv() (*providers.StreamEvent, error) {
 	ev, err := a.Stream.Recv()
 	if err != nil {
-		a.laporkan(errors.Is(err, io.EOF))
+		switch {
+		case errors.Is(err, io.EOF):
+			a.laporkan(true)
+		case dikecualikanDariPencatatanBreaker(providers.AsError(err)):
+			// Jenis yang dikecualikan gerbang cobaKandidat (B-255):
+			// fakta tentang permintaan, bukan kesehatan provider.
+			a.tandaiSelesai()
+		default:
+			a.laporkan(false)
+		}
 	} else {
 		a.mu.Lock()
 		a.terima++

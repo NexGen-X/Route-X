@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 
@@ -71,6 +72,14 @@ func (s *sumberKebijakan) MarkExceededAlerted(ctx context.Context, id string) (b
 func (s *sumberKebijakan) RecordEvalTimeout(context.Context, string) error { return nil }
 
 // limiterUji menyalakan Redis tiruan lalu menyambungkannya lewat jalur produksi.
+//
+// B-242: jam limiter DIPAKU pada waktu tetap yang jauh dari tepi
+// semua jendela (detik ke-30, menit ke-30, tengah bulan — nilai yang
+// sama dengan limiterEnv di paket apikey). Jendela tetap limiter
+// dihitung dari jam dinding, jadi tanpa paku ini setiap test dua
+// panggilan yang mengharapkan panggilan kedua jatuh di jendela yang
+// sama bersifat flaky: TestBatasLajuProviderSemuaPenuhJadi429 gagal
+// di CI ketika dua panggilannya mengapit batas menit (06:47:58).
 func limiterUji(t *testing.T) *apikey.Limiter {
 	t.Helper()
 	mr := miniredis.RunT(t)
@@ -82,7 +91,26 @@ func limiterUji(t *testing.T) *apikey.Limiter {
 		t.Fatalf("cache.Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = rdb.Close() })
-	return apikey.NewLimiter(rdb, nil, loggerSenyap())
+	jamTetap := time.Date(2026, 9, 2, 10, 30, 30, 0, time.UTC)
+	return apikey.NewLimiter(rdb, nil, loggerSenyap(), apikey.WithClock(func() time.Time { return jamTetap }))
+}
+
+// limiterUjiJam adalah limiterUji dengan jam yang DIKUASAI test
+// lewat penunjuk bersama, supaya test dapat menggeser waktu di
+// antara dua panggilan dan meniru penyeberangan batas jendela
+// secara deterministik (B-242).
+func limiterUjiJam(t *testing.T, jam *time.Time) *apikey.Limiter {
+	t.Helper()
+	mr := miniredis.RunT(t)
+	rdb, err := cache.Connect(context.Background(), &config.Config{
+		AppEnv:   config.EnvDevelopment,
+		RedisURL: security.Secret("redis://" + mr.Addr()),
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("cache.Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
+	return apikey.NewLimiter(rdb, nil, loggerSenyap(), apikey.WithClock(func() time.Time { return *jam }))
 }
 
 // guardUji merakit Guard lengkap di atas sumber tiruan dan Redis tiruan.
@@ -379,6 +407,40 @@ func TestBatasLajuProviderSemuaPenuhJadi429(t *testing.T) {
 	w := s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, nil)
 	if w.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d, mau 429 (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+// TestB242TepiMenitDeterministik memaku skenario persis yang dulu
+// membuat TestBatasLajuProviderSemuaPenuhJadi429 flaky (B-242):
+// permintaan pertama tiba 0,1 detik SEBELUM batas menit. Dengan jam
+// limiter yang dikuasai test lewat WithClock, hasilnya kini
+// deterministik di kedua sisi batas — di menit yang sama panggilan
+// kedua ditolak 429; sesudah jam digeser melewati batas, panggilan
+// berikutnya lolos karena jatuh di bucket menit baru (semantik
+// jendela tetap yang memang disengaja).
+func TestB242TepiMenitDeterministik(t *testing.T) {
+	src := &sumberKebijakan{limits: []*policy.RateLimit{{
+		Scope: policy.ScopeProvider, ScopeID: "prov-utama", RequestsPerMinute: pointerG(1), Enabled: true,
+	}}}
+	jam := time.Date(2026, 3, 10, 10, 59, 59, 900_000_000, time.UTC)
+	g := NewGuard(GuardDeps{
+		Filters: contentfilter.NewEngine(src, loggerSenyap()),
+		Budgets: billing.NewEnforcer(src, loggerSenyap()),
+		Rates:   ratelimit.NewEngine(src, loggerSenyap()),
+		Limiter: limiterUjiJam(t, &jam),
+		Logger:  loggerSenyap(),
+	})
+	s := susun(t, providerSukses(), func(_ *susunan, d *HandlersDeps) { d.Guard = g })
+
+	if w := s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, nil); w.Code != http.StatusOK {
+		t.Fatalf("permintaan pertama (10:59:59.9) status = %d, mau 200", w.Code)
+	}
+	if w := s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, nil); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("permintaan kedua (menit sama) status = %d, mau 429", w.Code)
+	}
+	jam = jam.Add(200 * time.Millisecond) // 11:00:00.1 — bucket menit baru
+	if w := s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, nil); w.Code != http.StatusOK {
+		t.Fatalf("permintaan ketiga (menit baru) status = %d, mau 200", w.Code)
 	}
 }
 

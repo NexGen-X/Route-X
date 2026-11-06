@@ -378,13 +378,19 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 	if upstream.Type == "error" {
 		return nil, p.errorFromErrorBody(&upstream, resp.StatusCode)
 	}
-	// Respons sukses tanpa satu pun blok konten juga bukan jawaban:
+	kanonik := p.toCanonicalResponse(&upstream)
+	// Respons sukses yang hasil terjemahannya kosong juga bukan jawaban:
 	// tidak ada teks, tool, atau apa pun yang bisa diteruskan ke klien.
-	if len(upstream.Content) == 0 {
+	// Kekosongan diukur pada HASIL TERJEMAHAN, bukan jumlah blok mentah
+	// (B-261): penerjemah melewati blok yang tidak dikenalnya secara
+	// diam-diam, jadi respons yang seluruh bloknya asing — atau hanya
+	// memuat redacted_thinking — tadinya LOLOS penjaga lama yang hanya
+	// menghitung blok, dan tercatat sebagai jawaban sukses yang kosong.
+	if len(kanonik.Choices) == 0 || pesanKanonikKosong(kanonik.Choices[0].Message) {
 		return nil, providers.Newf(providers.ErrKindServer, p.name,
-			"respons Anthropic tidak memuat satu pun blok konten")
+			"respons Anthropic tidak memuat konten yang bisa diterjemahkan")
 	}
-	return p.toCanonicalResponse(&upstream), nil
+	return kanonik, nil
 }
 
 // errorFromErrorBody menerjemahkan body bertipe "error" — termasuk yang

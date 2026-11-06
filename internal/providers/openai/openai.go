@@ -349,9 +349,28 @@ func (p *Provider) errorFromSuccessBody(raw []byte, status int, fallback string)
 	code = sanitizeCode(code)
 	kind := providers.Classify(status, code)
 	if kind == providers.ErrKindUnknown {
-		// Status 2xx tidak memberi petunjuk apa pun, dan kode upstream tidak dikenali.
-		// ErrKindServer adalah dugaan terbaik: aman diulang dan aman dialihkan.
-		kind = providers.ErrKindServer
+		// Status 2xx tidak memberi petunjuk dari status, dan kode upstream
+		// tidak dikenali tabel Classify. Sebelum jatuh ke dugaan Server,
+		// kode/type bergaya OpenAI yang tabel itu tidak muat dipetakan di
+		// sini (B-260): rate_limit_exceeded / rate_limit_error adalah
+		// sinyal jeda, dan invalid_api_key / authentication_error adalah
+		// kegagalan auth PERMANEN — menjatuhkan keduanya ke Server membuat
+		// yang pertama diabaikan sebagai jeda dan yang kedua diulang serta
+		// dialihkan seperti gangguan sesaat, menodai kandidat sehat.
+		// Pemetaan ini khusus jalur body-200; Classify global tidak
+		// diubah. Perhatikan code di sini adalah hasil firstNonEmpty
+		// ReadErrorBody (code, lalu type, lalu status), jadi pemeriksaan
+		// substring menjangkau bentuk code maupun type.
+		switch {
+		case code == "invalid_api_key" || strings.Contains(code, "authentication"):
+			kind = providers.ErrKindAuth
+		case strings.Contains(code, "rate_limit"):
+			kind = providers.ErrKindRateLimit
+		default:
+			// Kode yang sungguh tidak dikenali: ErrKindServer adalah
+			// dugaan terbaik — aman diulang dan aman dialihkan.
+			kind = providers.ErrKindServer
+		}
 	}
 	return &providers.Error{
 		Kind:         kind,

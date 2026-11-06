@@ -285,36 +285,6 @@ export interface Budget {
   updated_at: string;
 }
 
-export interface ContentFilter {
-  id: string;
-  name: string;
-  description?: string;
-  kind: string;
-  priority: number;
-  applies_to: string;
-  action: string;
-  pattern?: string;
-  pattern_type?: string;
-  case_sensitive: boolean;
-  max_eval_ms: number;
-  model_id?: string;
-  provider_id?: string;
-  max_request_bytes?: number;
-  enabled: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Ban {
-  id: string;
-  subject_kind: string;
-  subject: string;
-  reason: string;
-  expires_at?: string;
-  created_at: string;
-  created_by?: string;
-}
-
 export interface CircuitBreakerStatus {
   provider_id: string;
   model: string;
@@ -360,18 +330,6 @@ export interface UserDetail {
   user: User;
   roles: string[];
   permissions: string[];
-}
-
-export interface Session {
-  id: string;
-  user_id: string;
-  user_email: string;
-  user_name: string;
-  ip: string;
-  user_agent: string;
-  expires_at: string;
-  created_at: string;
-  last_seen_at: string;
 }
 
 export interface Webhook {
@@ -670,18 +628,6 @@ export interface BackupStatusResponse {
     file_size: string;
     created_at: string;
   };
-}
-
-export interface ProviderHealthCheck {
-  id: number;
-  provider_id: string;
-  status: string;
-  latency_ms?: number | null;
-  status_code?: number | null;
-  error_kind?: string | null;
-  error_message?: string | null;
-  checked_at: string;
-  created_at: string;
 }
 
 declare global {

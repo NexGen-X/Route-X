@@ -14,14 +14,11 @@ import type {
   RoutingRule,
   RateLimit,
   Budget,
-  ContentFilter,
-  Ban,
   CircuitBreakerStatus,
   APIKey,
   User,
   UserDetail,
   SetupHintResponse,
-  Session,
   Webhook,
   WebhookDelivery,
   RequestLog,
@@ -42,7 +39,6 @@ import type {
   DomainConfig,
   DomainUpdateRequest,
   BackupStatusResponse,
-  ProviderHealthCheck,
 } from '../types';
 
 export class ApiError extends Error {
@@ -393,7 +389,6 @@ export const api = {
       request<{ providers: { id: string; name: string; status: string; error?: string; checked_at?: string }[] }>(
         '/api/admin/observability/health'
       ),
-    liveMetrics: () => request<Record<string, unknown>>('/api/admin/observability/metrics/live'),
   },
 
   // Requests
@@ -405,7 +400,6 @@ export const api = {
       });
       return request<{ items: RequestLog[]; next_cursor?: string }>(`/api/admin/requests?${q.toString()}`);
     },
-    get: (id: string) => request<RequestLog>(`/api/admin/requests/${encodeURIComponent(id)}`),
     events: (id: string, createdAt?: string) => {
       const q = createdAt ? `?created_at=${encodeURIComponent(createdAt)}` : '';
       return request<{ events: RequestEvent[] }>(`/api/admin/requests/${encodeURIComponent(id)}/events${q}`);
@@ -433,7 +427,6 @@ export const api = {
     },
     listAll: () =>
       fetchAllPages<Provider>((cursor) => api.providers.list({ limit: 200, cursor })),
-    get: (id: string) => request<Provider>(`/api/admin/upstreams/providers/${encodeURIComponent(id)}`),
     create: (data: Partial<Provider>) =>
       request<Provider>('/api/admin/upstreams/providers', {
         method: 'POST',
@@ -455,10 +448,6 @@ export const api = {
       request<{ status: string; latency_ms: number; error?: string }>(
         `/api/admin/upstreams/providers/${encodeURIComponent(id)}/probe`,
         { method: 'POST' }
-      ),
-    healthChecks: (id: string) =>
-      request<{ items: ProviderHealthCheck[]; next_cursor?: string }>(
-        `/api/admin/upstreams/providers/${encodeURIComponent(id)}/health-checks`
       ),
     syncModels: (id: string) =>
       request<{ count: number; models: string[]; message: string }>(
@@ -563,39 +552,10 @@ export const api = {
     },
     listAll: () =>
       fetchAllPages<Model>((cursor) => api.models.list({ limit: 200, cursor })),
-    get: (id: string) =>
-      request<{ model: Model; aliases: ModelAlias[]; mappings: ProviderModel[] }>(
-        `/api/admin/upstreams/models/${encodeURIComponent(id)}`
-      ),
-    create: (data: Partial<Model>) =>
-      request<Model>('/api/admin/upstreams/models', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: Partial<Model>) =>
-      request<Model>(`/api/admin/upstreams/models/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-      }),
-    delete: (id: string) =>
-      request<void>(`/api/admin/upstreams/models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     addAlias: (id: string, alias: string) =>
       request<ModelAlias>(`/api/admin/upstreams/models/${encodeURIComponent(id)}/aliases`, {
         method: 'POST',
         body: JSON.stringify({ alias }),
-      }),
-    deleteAlias: (id: string, alias: string) =>
-      request<void>(`/api/admin/upstreams/models/${encodeURIComponent(id)}/aliases/${encodeURIComponent(alias)}`, {
-        method: 'DELETE',
-      }),
-    attachProvider: (id: string, data: Partial<ProviderModel>) =>
-      request<ProviderModel>(`/api/admin/upstreams/models/${encodeURIComponent(id)}/mappings`, {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    detachProvider: (_id: string, mappingId: string) =>
-      request<void>(`/api/admin/upstreams/models/mappings/${encodeURIComponent(mappingId)}`, {
-        method: 'DELETE',
       }),
     setPrice: (mappingId: string, data: { input_per_1m_usd: string; output_per_1m_usd: string; cached_input_per_1m_usd?: string }) =>
       request<Price>(`/api/admin/upstreams/models/mappings/${encodeURIComponent(mappingId)}/pricing`, {
@@ -609,6 +569,9 @@ export const api = {
     // Katalog acuan global (B-090): seluruh harga acuan bawaan yang dikenal
     // sistem, bukan katalog pasar. Dipakai untuk meninjau cakupan acuan;
     // drawer harga per pemetaan tetap memakai pricingReference di atas.
+    // DIPERTAHANKAN walau belum ada pemanggil UI (keputusan B-286):
+    // sisa sadar B-011 — endpoint acuan memang belum punya tampilan
+    // dan metode klien ini adalah jembatan yang disiapkan untuknya.
     pricingReferenceCatalog: () =>
       request<{ items: ReferencePrice[]; note: string }>('/api/admin/upstreams/models/pricing/reference-catalog'),
   },
@@ -709,18 +672,8 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    update: (id: string, data: Partial<RateLimit>) =>
-      request<RateLimit>(`/api/admin/gateway/rate-limits/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-      }),
     delete: (id: string) =>
       request<void>(`/api/admin/gateway/rate-limits/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    toggle: (id: string, enabled: boolean) =>
-      request<RateLimit>(`/api/admin/gateway/rate-limits/${encodeURIComponent(id)}/toggle`, {
-        method: 'POST',
-        body: JSON.stringify({ enabled }),
-      }),
   },
 
   budgets: {
@@ -728,11 +681,6 @@ export const api = {
     create: (data: Partial<Budget>) =>
       request<Budget>('/api/admin/gateway/budgets', {
         method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: Partial<Budget>) =>
-      request<Budget>(`/api/admin/gateway/budgets/${encodeURIComponent(id)}`, {
-        method: 'PUT',
         body: JSON.stringify(data),
       }),
     delete: (id: string) =>
@@ -746,42 +694,14 @@ export const api = {
       request<Budget>(`/api/admin/gateway/budgets/${encodeURIComponent(id)}/reset`, { method: 'POST' }),
   },
 
-  filters: {
-    list: (cursor?: string) => {
-      const q = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
-      return request<{ items: ContentFilter[]; next_cursor?: string }>(
-        `/api/admin/gateway/content-filters${q}`
-      );
-    },
-    create: (data: Partial<ContentFilter>) =>
-      request<ContentFilter>('/api/admin/gateway/content-filters', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: Partial<ContentFilter>) =>
-      request<ContentFilter>(`/api/admin/gateway/content-filters/${encodeURIComponent(id)}`, {
-        method: 'PUT',
-        body: JSON.stringify(data),
-      }),
-    delete: (id: string) =>
-      request<void>(`/api/admin/gateway/content-filters/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    toggle: (id: string, enabled: boolean) =>
-      request<ContentFilter>(`/api/admin/gateway/content-filters/${encodeURIComponent(id)}/toggle`, {
-        method: 'POST',
-        body: JSON.stringify({ enabled }),
-      }),
-  },
-
-  bans: {
-    list: () => request<{ items: Ban[] }>('/api/admin/gateway/bans'),
-    create: (data: { subject_kind: string; subject: string; reason: string; expires_at?: string }) =>
-      request<Ban>('/api/admin/gateway/bans', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    lift: (id: string) =>
-      request<Ban>(`/api/admin/gateway/bans/${encodeURIComponent(id)}/lift`, { method: 'POST' }),
-  },
+  // Grup filters.* DIHAPUS (B-286): tidak ada UI filter konten di
+  // web dan tidak ada pemanggil mana pun; endpoint backend
+  // /api/admin/gateway/content-filters tetap hidup untuk pemanggil
+  // API langsung. Tambahkan kembali wrapper di sini bila UI-nya
+  // dibangun.
+  // Grup bans.* DIHAPUS (B-286): alasan yang sama — tanpa UI dan
+  // tanpa pemanggil; endpoint backend /api/admin/gateway/bans
+  // tetap hidup.
 
   breakers: {
     list: () => request<{ items: CircuitBreakerStatus[] }>('/api/admin/gateway/circuit-breakers'),
@@ -805,15 +725,9 @@ export const api = {
     },
     listAll: () =>
       fetchAllPages<APIKey>((cursor) => api.apiKeys.list({ limit: 200, cursor })),
-    get: (id: string) => request<APIKey>(`/api/admin/access/api-keys/${encodeURIComponent(id)}`),
     create: (data: Partial<APIKey>) =>
       request<APIKey>('/api/admin/access/api-keys', {
         method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: Partial<APIKey>) =>
-      request<APIKey>(`/api/admin/access/api-keys/${encodeURIComponent(id)}`, {
-        method: 'PUT',
         body: JSON.stringify(data),
       }),
     rotate: (id: string) =>
@@ -880,30 +794,16 @@ export const api = {
       }),
   },
 
-  sessions: {
-    list: () => request<{ items: Session[] }>('/api/admin/access/sessions'),
-    revoke: (id: string) =>
-      request<void>(`/api/admin/access/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    // Saklar respons insiden: mencabut SELURUH sesi aktif semua pengguna,
-    // termasuk sesi pemanggil sendiri (request berikutnya wajib masuk ulang).
-    revokeAll: () =>
-      request<{ status: string; count: number }>('/api/admin/access/sessions/revoke-all', {
-        method: 'POST',
-      }),
-  },
+  // Grup sessions.* DIHAPUS (B-286): tanpa UI dan tanpa pemanggil
+  // (pencabutan sesi per-pengguna hidup lewat users.revokeSessions);
+  // endpoint backend /api/admin/access/sessions tetap hidup.
 
   // Automation
   webhooks: {
     list: () => request<{ items: Webhook[] }>('/api/admin/automation/webhooks'),
-    get: (id: string) => request<Webhook>(`/api/admin/automation/webhooks/${encodeURIComponent(id)}`),
     create: (data: { name: string; url: string; events: string[]; secret?: string; enabled?: boolean }) =>
       request<Webhook>('/api/admin/automation/webhooks', {
         method: 'POST',
-        body: JSON.stringify(data),
-      }),
-    update: (id: string, data: Partial<Webhook> & { secret?: string }) =>
-      request<Webhook>(`/api/admin/automation/webhooks/${encodeURIComponent(id)}`, {
-        method: 'PUT',
         body: JSON.stringify(data),
       }),
     delete: (id: string) =>

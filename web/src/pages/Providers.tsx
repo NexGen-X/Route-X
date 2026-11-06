@@ -73,7 +73,7 @@ export const Providers: React.FC = () => {
   // Kegagalan memuat salah satu sumber TIDAK lagi ditelan menjadi daftar
   // kosong (audit3 B-075): entri ditandai `gagalMuat` dan ProviderCard
   // menampilkan penanda gagal-muat, bukan "Belum ada kredensial".
-  const { data: poolsSummary = {} } = useQuery({
+  const { data: poolsSummary = {}, isLoading: ringkasanMemuat } = useQuery({
     queryKey: ['providersPoolSummary', providers.map((p) => p.id).join(',')],
     enabled: providers.length > 0,
     queryFn: async () => {
@@ -554,7 +554,12 @@ export const Providers: React.FC = () => {
         </span>
         <span className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-text-muted">Status Sehat</span>
-          <span className="text-base font-bold text-emerald-400">
+          {/* B-384: warna emerald hanya untuk nilai sehat yang
+              BENAR-BENAR terukur; placeholder "—" selama belum ada
+              data memakai warna senyap seperti angka strip lain. */}
+          <span
+            className={`text-base font-bold ${provsData ? 'text-emerald-400' : 'text-text-muted'}`}
+          >
             {provsData ? `${healthyCount} / ${providers.length}` : '—'}
           </span>
         </span>
@@ -589,7 +594,15 @@ export const Providers: React.FC = () => {
           {providers.map((p) => {
             const isCustom = isCustomProvider(p);
             const egress = egressPools.find((ep) => ep.id === p.egress_pool_id);
-            const pool = poolsSummary[p.id] || { credentials: [], oauthSessions: [] };
+            // B-377: entri ringkasan yang belum ada selama query-nya
+            // masih berjalan BUKAN ringkasan kosong — tandai memuat
+            // supaya kartu menampilkan keadaan memuat, bukan klaim
+            // "Belum ada kredensial" (pasangan gerbang B-075).
+            const pool = poolsSummary[p.id] || {
+              credentials: [],
+              oauthSessions: [],
+              ...(ringkasanMemuat ? { memuat: true } : {}),
+            };
 
             return (
               <ProviderCard

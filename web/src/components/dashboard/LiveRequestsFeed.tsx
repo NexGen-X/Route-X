@@ -7,11 +7,16 @@ import { formatTimeAgo } from './utils';
 export interface LiveRequestsFeedProps {
   recentRequests: RequestLog[];
   onNavigate: (path: string) => void;
+  // B-376: selama muatan pertama berjalan, daftar kosong belum
+  // berarti "belum ada permintaan" — tampilkan keadaan memuat,
+  // bukan klaim definitif.
+  memuat?: boolean;
 }
 
 export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
   recentRequests,
   onNavigate,
+  memuat = false,
 }) => {
   return (
     <div className="flex flex-col justify-between h-full py-1">
@@ -31,18 +36,25 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
 
         {/* Tabular List of recent requests */}
         {recentRequests.length === 0 ? (
-          <div className="py-10 text-center text-xs text-text-muted space-y-2">
-            <Activity className="w-4 h-4 mx-auto text-text-muted" aria-hidden="true" />
-            <p>Belum ada permintaan inferensi yang tercatat.</p>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => onNavigate('/cli-integrations')}
-              className="mt-2 text-xs"
-            >
-              Buka Panduan Integrasi
-            </Button>
-          </div>
+          memuat ? (
+            <div className="py-10 text-center text-xs text-text-muted space-y-2">
+              <Activity className="w-4 h-4 mx-auto text-text-muted" aria-hidden="true" />
+              <p>Memuat permintaan terbaru…</p>
+            </div>
+          ) : (
+            <div className="py-10 text-center text-xs text-text-muted space-y-2">
+              <Activity className="w-4 h-4 mx-auto text-text-muted" aria-hidden="true" />
+              <p>Belum ada permintaan inferensi yang tercatat.</p>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => onNavigate('/cli-integrations')}
+                className="mt-2 text-xs"
+              >
+                Buka Panduan Integrasi
+              </Button>
+            </div>
+          )
         ) : (
           <div className="divide-y divide-border/70 border-y border-border/60">
             {recentRequests.map((req) => {

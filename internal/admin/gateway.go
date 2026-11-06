@@ -208,6 +208,126 @@ func periksaIkatanProvider(ctx context.Context, repoRouting *upstream.RoutingRep
 	return nil
 }
 
+// galatValidasiAturan adalah penolakan validasi jalur tulis aturan routing
+// dengan kode galat yang stabil untuk klien. Dipakai keluarga pemeriksaan
+// B-179/B-180/B-183/B-184: konfigurasi yang lolos simpan tetapi tidak akan
+// pernah berlaku sebagaimana tampilannya harus ditolak di sini, bukan
+// ditemukan operator dari perilaku produksi.
+type galatValidasiAturan struct {
+	Kode  string
+	Pesan string
+}
+
+func (e *galatValidasiAturan) Error() string { return e.Pesan }
+
+// tulisGalatValidasiAturan menulis respons 400 bila err adalah penolakan
+// galatValidasiAturan dan mengembalikan true; false berarti err lain,
+// tangani seperti biasa.
+func tulisGalatValidasiAturan(w http.ResponseWriter, r *http.Request, err error) bool {
+	var g *galatValidasiAturan
+	if errors.As(err, &g) {
+		httpx.BadRequest(w, r, g.Kode, g.Error())
+		return true
+	}
+	return false
+}
+
+// periksaAnggotaPipeline memvalidasi anggota resep combo terhadap katalog
+// model (B-179, B-180). Resolusi memakai ModelRepo.Resolve yang sama dengan
+// jalur runtime kandidatCombo, supaya "dikenal" di sini berarti persis
+// "dikenal" saat resep dijalankan:
+//
+//   - Anggota yang tidak bisa diresolusi ditolak (B-179): runtime hanya
+//     melewatinya dengan log Warn, sehingga resep menyusut diam-diam dan
+//     gabungan kosong jatuh ke kandidat model jangkar — endpoint combo
+//     yang tampak sah tetapi tidak pernah menjalankan resepnya.
+//   - Sesudah resolusi harus tersisa minimal dua model BERBEDA (B-180):
+//     dua nama/alias/UUID yang menunjuk model kanonik yang sama
+//     menyusutkan resep menjadi satu model, dan Rule.Combo() menuntut
+//     lebih dari satu anggota — resep seperti itu tidak pernah masuk
+//     jalur combo sama sekali.
+func (h *Handlers) periksaAnggotaPipeline(ctx context.Context, pipeline []byte) error {
+	if len(pipeline) == 0 || h.modelRepo == nil {
+		return nil
+	}
+	dto, err := router.ParseComboPipelineDTO(pipeline)
+	if err != nil {
+		return err
+	}
+	terlihat := make(map[string]string, len(dto.Models))
+	for _, nama := range dto.Models {
+		m, err := h.modelRepo.Resolve(ctx, nama)
+		if err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return &galatValidasiAturan{
+					Kode:  "pipeline_model_tidak_dikenal",
+					Pesan: fmt.Sprintf("model %q dalam pipeline tidak dikenal: sinkronkan atau petakan dulu modelnya ke katalog, atau keluarkan dari resep — anggota yang tidak dikenal hanya dilewati saat runtime dan resep menyusut diam-diam", nama),
+				}
+			}
+			return err
+		}
+		if m == nil {
+			return &galatValidasiAturan{
+				Kode:  "pipeline_model_tidak_dikenal",
+				Pesan: fmt.Sprintf("model %q dalam pipeline tidak dikenal: sinkronkan atau petakan dulu modelnya ke katalog, atau keluarkan dari resep — anggota yang tidak dikenal hanya dilewati saat runtime dan resep menyusut diam-diam", nama),
+			}
+		}
+		if namaLain, ganda := terlihat[m.ID]; ganda {
+			return &galatValidasiAturan{
+				Kode:  "pipeline_model_berulang",
+				Pesan: fmt.Sprintf("model %q dan %q dalam pipeline menunjuk model yang sama (%s) sesudah resolusi: resep combo butuh model yang benar-benar berbeda", namaLain, nama, m.ModelID),
+			}
+		}
+		terlihat[m.ID] = nama
+	}
+	if len(terlihat) < 2 {
+		return &galatValidasiAturan{
+			Kode:  "pipeline_model_berulang",
+			Pesan: fmt.Sprintf("pipeline combo butuh minimal 2 model berbeda sesudah resolusi, dapat %d: resep satu model tidak pernah masuk jalur combo", len(terlihat)),
+		}
+	}
+	return nil
+}
+
+// tolakKapabilitasMustahil menolak kombinasi match_capabilities yang tidak
+// akan pernah cocok dengan permukaan mana pun (B-183). Permukaan chat
+// (chat/completions, messages, responses) meminta subset dari
+// {text, vision, tools, reasoning}; permukaan embeddings meminta tepat
+// {embeddings}. Aturan yang mensyaratkan embeddings BERSAMA kapabilitas
+// lain menuntut satu permintaan meminta keduanya sekaligus — tidak pernah
+// terjadi — sehingga aturan itu mati sejak disimpan.
+func tolakKapabilitasMustahil(caps []string) *galatValidasiAturan {
+	punya := make(map[string]bool, len(caps))
+	for _, c := range caps {
+		punya[c] = true
+	}
+	if punya["embeddings"] && len(punya) > 1 {
+		return &galatValidasiAturan{
+			Kode:  "kapabilitas_tidak_mungkin",
+			Pesan: "match_capabilities tidak boleh menggabungkan embeddings dengan kapabilitas lain: permukaan embeddings hanya meminta {embeddings} dan permukaan chat tidak pernah meminta embeddings, jadi aturan ini tidak akan pernah cocok",
+		}
+	}
+	return nil
+}
+
+// tolakIkatanProviderCombo menolak ikatan provider pada aturan ber-pipeline
+// (B-184). Semantik yang dipilih: ikatan provider (Rule.Providers) hanya
+// berlaku di jalur non-combo untuk model target; mesin SENGAJA tidak
+// menerapkannya pada resep combo (lihat komentar Engine.OrderCandidates —
+// pembatasan model target tidak bermakna untuk kandidat model lain dalam
+// resep). Menyimpan ikatan yang tidak akan pernah diterapkan menyesatkan
+// operator, jadi jalur tulis menolaknya; operator combo membatasi lewat
+// anggota resep, bukan ikatan provider.
+func tolakIkatanProviderCombo(pipeline []byte, providerIDs []string) *galatValidasiAturan {
+	if len(pipeline) > 0 && len(providerIDs) > 0 {
+		return &galatValidasiAturan{
+			Kode:  "provider_tidak_berlaku_untuk_combo",
+			Pesan: "aturan dengan pipeline combo tidak memakai ikatan provider: mesin mengabaikan ikatan provider pada resep combo, jadi ikatan tidak disimpan agar tidak menyesatkan — kosongkan daftar provider atau hapus pipeline",
+		}
+	}
+	return nil
+}
+
 // literalNullJSON adalah representasi JSON null mentah, dipakai membandingkan field
 // pipeline mentah supaya "null eksplisit" bisa dibedakan dari "tidak disebut".
 var literalNullJSON = []byte("null")
@@ -344,6 +464,28 @@ func (h *Handlers) createRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := tolakAliasTanpaModel(alias, matchModel); err != nil {
 		httpx.BadRequest(w, r, "alias_tanpa_model", err.Error())
+		return
+	}
+	// B-183: kombinasi kapabilitas yang mustahil cocok ditolak sebelum
+	// aturan lahir, bukan ditemukan operator dari aturan yang tak pernah
+	// terpicu.
+	if g := tolakKapabilitasMustahil(req.MatchCapabilities); g != nil {
+		httpx.BadRequest(w, r, g.Kode, g.Error())
+		return
+	}
+	// B-179/B-180: anggota resep divalidasi terhadap katalog sekarang,
+	// dengan resolver yang sama seperti runtime.
+	if err := h.periksaAnggotaPipeline(ctx, pipeline); err != nil {
+		if tulisGalatValidasiAturan(w, r, err) {
+			return
+		}
+		mapRepoError(w, r, err, "aturan routing")
+		return
+	}
+	// B-184: ikatan provider pada aturan ber-pipeline tidak pernah
+	// diterapkan mesin; menolaknya menjaga validasi simpan jujur.
+	if g := tolakIkatanProviderCombo(pipeline, req.ProviderIDs); g != nil {
+		httpx.BadRequest(w, r, g.Kode, g.Error())
 		return
 	}
 	if err := h.pastikanAliasBebas(ctx, alias, ""); err != nil {
@@ -491,6 +633,46 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	if err := tolakAliasTanpaModel(aliasAkhir, modelAkhir); err != nil {
 		httpx.BadRequest(w, r, "alias_tanpa_model", err.Error())
 		return
+	}
+	// B-183 di jalur ubah: MatchCapabilities selalu diganti utuh oleh
+	// permintaan, jadi nilai permintaan adalah keadaan akhir.
+	if g := tolakKapabilitasMustahil(req.MatchCapabilities); g != nil {
+		httpx.BadRequest(w, r, g.Kode, g.Error())
+		return
+	}
+	// B-179/B-180 di jalur ubah berjalan atas resep AKHIR gabungan, hanya
+	// bila permintaan ini memang mengubah resep: aturan warisan dengan
+	// anggota yang sudah tidak dikenal tetap boleh diubah field lainnya
+	// (sinyal runtime B-179 menandai degradasinya), tetapi resep baru
+	// tidak boleh disimpan dalam keadaan menyusut diam-diam.
+	if pipeDiatur {
+		if err := h.periksaAnggotaPipeline(ctx, pipeAkhir); err != nil {
+			if tulisGalatValidasiAturan(w, r, err) {
+				return
+			}
+			mapRepoError(w, r, err, "aturan routing")
+			return
+		}
+	}
+	// B-184 di jalur ubah: yang ditolak adalah permintaan yang MENCIPTAKAN
+	// keadaan ikatan-provider + pipeline — mengikat provider ke aturan
+	// ber-pipeline, atau memasang pipeline ke aturan yang terikat
+	// provider. Keadaan warisan yang sudah ada tidak dikunci dari
+	// perubahan field lain.
+	if req.ProviderIDs != nil {
+		if g := tolakIkatanProviderCombo(pipeAkhir, req.ProviderIDs); g != nil {
+			httpx.BadRequest(w, r, g.Kode, g.Error())
+			return
+		}
+	} else if pipeDiatur {
+		providerAda := make([]string, 0, len(existing.Providers))
+		for _, rp := range existing.Providers {
+			providerAda = append(providerAda, rp.ProviderID)
+		}
+		if g := tolakIkatanProviderCombo(pipeAkhir, providerAda); g != nil {
+			httpx.BadRequest(w, r, g.Kode, g.Error())
+			return
+		}
 	}
 
 	var p upstream.UpdateRoutingRuleParams
@@ -643,6 +825,14 @@ func (h *Handlers) setRuleProviders(w http.ResponseWriter, r *http.Request) {
 	aturan, err := h.routingRepo.Get(ctx, id)
 	if err != nil {
 		mapRepoError(w, r, err, "aturan routing")
+		return
+	}
+	// B-184: ikatan provider tidak berlaku pada aturan ber-pipeline —
+	// mesin mengabaikannya di jalur combo. Tolak di jalur pasang provider
+	// juga, supaya drawer "Edit Penyedia & Bobot" tidak menyimpan ikatan
+	// mati. (Melepaskan ikatan dengan daftar kosong tetap dibolehkan.)
+	if g := tolakIkatanProviderCombo(aturan.Pipeline, req.ProviderIDs); g != nil {
+		httpx.BadRequest(w, r, g.Kode, g.Error())
 		return
 	}
 	if aturan.MatchModelID != nil && len(req.ProviderIDs) > 0 {

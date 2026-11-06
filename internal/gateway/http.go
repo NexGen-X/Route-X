@@ -1049,6 +1049,9 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 	pernah := make(map[string]bool)
 	namaModelPerID := make(map[string]string)
 	var gabungan []*upstream.RouteCandidate
+	// dilewati mengumpulkan anggota resep yang tidak dapat dipakai pada
+	// permintaan ini (B-179), untuk sinyal degradasi di akhir fungsi.
+	var dilewati []string
 	for _, namaModel := range pr.decision.Rule.Pipeline.Models {
 		// Tiap model di resep adalah model kanonik yang harus diresolve dan diperiksa
 		// kewenangannya sendiri. Melewati pemeriksaan ini akan mengizinkan API key yang
@@ -1058,11 +1061,13 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 		if err != nil || m == nil {
 			h.logger.WarnContext(ctx, "model combo tidak bisa diselesaikan, model dilewati",
 				"model", namaModel, "error", err)
+			dilewati = append(dilewati, namaModel)
 			continue
 		}
 		if !m.Enabled {
 			h.logger.WarnContext(ctx, "model combo dimatikan, model dilewati",
 				"model", namaModel)
+			dilewati = append(dilewati, namaModel)
 			continue
 		}
 		if h.restrict != nil && p.ID() != "" {
@@ -1073,6 +1078,7 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 				// dibatasi mendapat model yang justru dilarang untuknya.
 				h.logger.ErrorContext(ctx, "pemeriksaan pembatasan model combo gagal",
 					"api_key", p.Masked(), "model", namaModel, "error", err)
+				dilewati = append(dilewati, namaModel)
 				continue
 			}
 			if !boleh {
@@ -1087,6 +1093,7 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 		if err != nil {
 			h.logger.WarnContext(ctx, "kandidat model combo tidak bisa diambil, model dilewati",
 				"model", namaModel, "error", err)
+			dilewati = append(dilewati, namaModel)
 			continue
 		}
 
@@ -1120,6 +1127,25 @@ func (h *Handlers) kandidatCombo(ctx context.Context, pr *persiapan, rreq router
 			namaModelPerID[m.ID] = m.ModelID
 			gabungan = append(gabungan, c)
 		}
+	}
+
+	// B-179: anggota yang dilewati menyusutkan resep dari yang operator
+	// simpan. Dulu setiap lewatan hanya tercatat Warn dan gabungan kosong
+	// jatuh senyap ke kandidat model jangkar; kini degradasinya dinyatakan
+	// sebagai Error yang menyebut anggotanya — keadaan yang harus
+	// diperbaiki operator (anggota dikenalkan lagi, dinyalakan, atau
+	// dikeluarkan dari resep), bukan bunyi latar. Lewatan karena
+	// pembatasan API key per permintaan SENGAJA tidak dihitung: itu
+	// kewenangan pemanggil, bukan degradasi resep.
+	if len(dilewati) > 0 {
+		h.logger.ErrorContext(ctx, "resep combo terdegradasi: anggota pipeline tidak dapat dipakai dan dilewati",
+			"aturan", pr.decision.Rule.ID,
+			"anggota_dilewati", dilewati,
+			"anggota_total", len(pr.decision.Rule.Pipeline.Models))
+	}
+	if len(gabungan) == 0 {
+		h.logger.ErrorContext(ctx, "resep combo tidak menghasilkan kandidat; permintaan jatuh ke kandidat model yang diminta",
+			"aturan", pr.decision.Rule.ID)
 	}
 
 	// Pengurutan dan penyaringan kemampuan (streaming, tools, jendela konteks) dilakukan

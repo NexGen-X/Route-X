@@ -47,11 +47,12 @@ var (
 // Kode error PostgreSQL yang diterjemahkan. Lihat
 // https://www.postgresql.org/docs/16/errcodes-appendix.html
 const (
-	pgUniqueViolation     = "23505"
-	pgForeignKeyViolation = "23503"
-	pgCheckViolation      = "23514"
-	pgNotNullViolation    = "23502"
-	pgExclusionViolation  = "23P01"
+	pgUniqueViolation           = "23505"
+	pgForeignKeyViolation       = "23503"
+	pgCheckViolation            = "23514"
+	pgNotNullViolation          = "23502"
+	pgExclusionViolation        = "23P01"
+	pgInvalidTextRepresentation = "22P02"
 )
 
 // Error adalah error terjemahan dari lapisan data.
@@ -112,7 +113,12 @@ func Err(op string, err error) error {
 		switch pgErr.Code {
 		case pgUniqueViolation, pgExclusionViolation:
 			e.Kind = ErrConflict
-		case pgForeignKeyViolation:
+		case pgForeignKeyViolation, pgInvalidTextRepresentation:
+			// 22P02 (representasi teks tidak sah, mis. slug bukan-UUID yang
+			// mengalir ke cast uuid[]) pada dasarnya adalah referensi yang
+			// tidak dapat dipecahkan — kesalahan klien, bukan kegagalan
+			// server (B-201). Tanpa pemetaan ini ia jatuh ke cabang default
+			// tanpa sentinel dan terbaca 500 di lapisan atas.
 			e.Kind = ErrInvalidReference
 		case pgCheckViolation, pgNotNullViolation:
 			e.Kind = ErrConstraint

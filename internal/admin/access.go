@@ -256,6 +256,68 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		scopes = []string{"inference"}
 	}
 
+	// Validasi bentuk disamakan dengan updateAPIKey (B-200): jalur buat
+	// sebelumnya menerima nama kosong (sesudah normalisasi alias), scope
+	// karangan, batas <= 0, expires_at lampau, dan pemilik yang tidak
+	// ada/nonaktif — semua baru meledak di constraint DB sebagai 500
+	// atau tertolak di jalur ubah. Di sini semuanya 400 yang menyebut
+	// field-nya, sebelum transaksi apa pun dibuka.
+	if strings.TrimSpace(req.Name) == "" {
+		httpx.BadRequest(w, r, "invalid_name", "name wajib diisi")
+		return
+	}
+	for _, sc := range scopes {
+		if !keys.ValidScope(sc) {
+			httpx.BadRequest(w, r, "invalid_scopes",
+				fmt.Sprintf("scope %q tidak dikenal; scope yang sah: %s", sc, strings.Join(keys.KnownScopes, ", ")))
+			return
+		}
+	}
+	for _, batas := range []struct {
+		nama  string
+		ada   bool
+		nilai int64
+	}{
+		{"rate_limit_rps", req.RateLimitRPS != nil, int64(nilaiAtau(req.RateLimitRPS, 0))},
+		{"rate_limit_rpm", req.RateLimitRPM != nil, int64(nilaiAtau(req.RateLimitRPM, 0))},
+		{"rate_limit_tpm", req.RateLimitTPM != nil, int64(nilaiAtau(req.RateLimitTPM, 0))},
+		{"daily_request_limit", req.DailyRequestLimit != nil, nilaiAtau(req.DailyRequestLimit, 0)},
+		{"monthly_request_limit", req.MonthlyRequestLimit != nil, nilaiAtau(req.MonthlyRequestLimit, 0)},
+		{"daily_token_limit", req.DailyTokenLimit != nil, nilaiAtau(req.DailyTokenLimit, 0)},
+		{"monthly_token_limit", req.MonthlyTokenLimit != nil, nilaiAtau(req.MonthlyTokenLimit, 0)},
+	} {
+		if batas.ada && batas.nilai <= 0 {
+			httpx.BadRequest(w, r, "invalid_limit", "batas "+batas.nama+" harus bilangan positif")
+			return
+		}
+	}
+	if exp != nil && exp.Before(time.Now()) {
+		httpx.BadRequest(w, r, "expires_in_past", "expires_at tidak boleh di masa lalu")
+		return
+	}
+	if req.OwnerUserID != "" {
+		pemilik, err := h.usersRepo.GetByID(ctx, ownerID)
+		if err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				httpx.BadRequest(w, r, "invalid_owner_user_id", "owner_user_id tidak ditemukan")
+				return
+			}
+			mapRepoError(w, r, err, "pengguna pemilik")
+			return
+		}
+		if pemilik.Status != identity.UserStatusActive {
+			httpx.BadRequest(w, r, "invalid_owner_user_id", "owner_user_id menunjuk pengguna nonaktif")
+			return
+		}
+	}
+	// Daftar putih model/provider dipecahkan di sini (B-201) supaya slug
+	// yang tidak dikenal menjadi 400 yang menyebut nilainya, bukan 500
+	// dari ledakan cast uuid[] di dalam transaksi repo.
+	if err := h.validasiDaftarPutihAPIKey(ctx, req.ModelIDs, req.ProviderIDs); err != nil {
+		tulisErrDaftarPutih(w, r, err)
+		return
+	}
+
 	// Bungkus pembuatan key beserta seluruh pembatasannya dalam SATU transaksi atomik.
 	// Jika pembatasan model/provider gagal, key tidak boleh tercipta bebas ke publik.
 	var created *keys.Created
@@ -301,6 +363,67 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		Masked: created.Key.Masked(),
 		RawKey: created.Raw.Reveal(),
 	})
+}
+
+// errDaftarPutih adalah penolakan validasi daftar putih API key yang
+// membawa kode respons dan nilai entri yang menyinggung, supaya handler
+// menjawab 400 yang menyebut nilainya (pola B-196/B-179).
+type errDaftarPutih struct {
+	kode  string
+	nilai string
+}
+
+func (e *errDaftarPutih) Error() string { return e.kode + ": " + e.nilai }
+
+// tulisErrDaftarPutih menerjemahkan error validasi daftar putih menjadi
+// respons handler: errDaftarPutih menjadi 400 berkode, sisanya error
+// repo biasa.
+func tulisErrDaftarPutih(w http.ResponseWriter, r *http.Request, err error) {
+	var edp *errDaftarPutih
+	if errors.As(err, &edp) {
+		bidang := "model_ids"
+		if edp.kode == "invalid_provider_ids" {
+			bidang = "provider_ids"
+		}
+		httpx.BadRequest(w, r, edp.kode,
+			fmt.Sprintf("%s memuat entri yang tidak dikenal: %s", bidang, edp.nilai))
+		return
+	}
+	mapRepoError(w, r, err, "api key")
+}
+
+// validasiDaftarPutihAPIKey memastikan setiap entri daftar putih
+// model/provider yang BUKAN UUID dapat dipecahkan menjadi baris katalog
+// nyata (slug model lewat GetByModelID, nama provider lewat GetByName —
+// persis semantik resolusi repo) sebelum daftar itu mencapai repo
+// (B-201). Entri berbentuk UUID diserahkan ke pemeriksaan repo, yang
+// menolak referensi yatim sebagai ErrInvalidReference.
+func (h *Handlers) validasiDaftarPutihAPIKey(ctx context.Context, modelIDs, providerIDs []string) error {
+	for _, mentah := range modelIDs {
+		id := strings.TrimSpace(mentah)
+		if id == "" || bentukUUID(id) {
+			continue
+		}
+		if _, err := h.modelRepo.GetByModelID(ctx, id); err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return &errDaftarPutih{kode: "invalid_model_ids", nilai: id}
+			}
+			return err
+		}
+	}
+	for _, mentah := range providerIDs {
+		nama := strings.TrimSpace(mentah)
+		if nama == "" || bentukUUID(nama) {
+			continue
+		}
+		if _, err := h.providerRepo.GetByName(ctx, nama); err != nil {
+			if errors.Is(err, repo.ErrNotFound) {
+				return &errDaftarPutih{kode: "invalid_provider_ids", nilai: nama}
+			}
+			return err
+		}
+	}
+	return nil
 }
 
 // nilaiAtau mengambil isi pointer atau nilai bawaan bila nil.
@@ -632,6 +755,13 @@ func (h *Handlers) setAllowedAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.ProviderIDs) == 0 && len(req.AllowedProviders) > 0 {
 		req.ProviderIDs = req.AllowedProviders
+	}
+
+	// B-201: slug/nama yang tidak dikenal ditolak 400 di sini (menyebut
+	// nilainya), bukan 500 dari cast uuid[] di repo.
+	if err := h.validasiDaftarPutihAPIKey(ctx, req.ModelIDs, req.ProviderIDs); err != nil {
+		tulisErrDaftarPutih(w, r, err)
+		return
 	}
 
 	if err := h.keyRepo.SetAllowed(ctx, id, req.ModelIDs, req.ProviderIDs); err != nil {

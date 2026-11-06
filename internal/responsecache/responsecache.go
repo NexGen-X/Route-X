@@ -211,6 +211,20 @@ func (e *Engine) ComputeScopedKey(req *providers.ChatRequest, scope Scope) strin
 		return ""
 	}
 
+	// B-257: nama model MENTAH dari klien (alias) tidak boleh ikut membentuk
+	// kunci bila ID kanonik tersedia — bahan kunci di bawah meng-hash request
+	// penuh, jadi tanpa normalisasi ini dua alias berbeda ke model yang sama
+	// menghasilkan kunci berbeda dan entri tidak pernah terbagi, persis
+	// menggagalkan maksud Scope.ModelID. Salinan dangkal cukup: hanya field
+	// Model yang diganti, pesan-pesannya dibagi apa adanya. Scope kosong
+	// mempertahankan perilaku lama persis (kompatibilitas ComputeKey).
+	permintaan := req
+	if scope.ModelID != "" {
+		salinan := *req
+		salinan.Model = scope.ModelID
+		permintaan = &salinan
+	}
+
 	// encoding/json mempertahankan urutan field struct dan mengurutkan kunci map.
 	// Meng-hash representasi request penuh juga menghindari delimiter ambigu serta
 	// pembulatan float yang sebelumnya dapat menyatukan request berbeda.
@@ -228,7 +242,7 @@ func (e *Engine) ComputeScopedKey(req *providers.ChatRequest, scope Scope) strin
 		KeyID           string                 `json:"key_id,omitempty"`
 		Permukaan       string                 `json:"permukaan,omitempty"`
 		SidikRute       string                 `json:"sidik_rute,omitempty"`
-	}{Request: req, MessageContents: contents,
+	}{Request: permintaan, MessageContents: contents,
 		ModelID: scope.ModelID,
 		// Identitas pemilik & kunci masuk sebagai HASH terpisah domain,
 		// bukan nilai mentah (Batch C1): isolasi per API key adalah syarat

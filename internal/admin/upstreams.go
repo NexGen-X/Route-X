@@ -1838,6 +1838,10 @@ func (h *Handlers) setCredentialEgressPool(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Pool egress mengubah jalur/akun hulu yang melayani kredensial ini —
+	// konteks jawaban berubah tanpa mengubah sidik rute (B-258).
+	h.kosongkanCacheRespons(ctx)
+
 	_ = h.respond(w, r, http.StatusOK, toCredentialMetaDTO(updated))
 }
 

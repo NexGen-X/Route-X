@@ -528,6 +528,25 @@ func WithFailClosed(aktif bool) LimiterOption {
 	return func(lim *Limiter) { lim.failClosed = aktif }
 }
 
+// WithClock mengganti sumber waktu limiter (bawaan time.Now).
+//
+// Seam pengujian yang disengaja (triage B-005): jendela tetap limiter
+// dihitung dari jam dinding, jadi test di paket LAIN yang bergantung
+// pada dua permintaan jatuh di jendela yang sama akan gagal acak
+// bila panggilan-panggilannya mengapit batas detik/menit/hari —
+// itulah B-242 (TestBatasLajuProviderSemuaPenuhJadi429 di paket
+// gateway gagal di CI pukul 06:47:58, dekat tepi menit). Test di
+// paket ini menyetel kolom now langsung (lihat limiterEnv.freeze);
+// opsi ini membuka seam yang sama lintas paket. Produksi tidak
+// memakai opsi ini.
+func WithClock(now func() time.Time) LimiterOption {
+	return func(lim *Limiter) {
+		if now != nil {
+			lim.now = now
+		}
+	}
+}
+
 // TokenScopes menyusun cakupan batas token dari kolom di baris api_keys saja.
 //
 // Dipakai ketika tabel rate_limits tidak dipakai sama sekali. Tidak ada padanan

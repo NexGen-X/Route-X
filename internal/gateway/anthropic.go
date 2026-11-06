@@ -470,6 +470,20 @@ func DecodeAnthropicMessagesRequest(body []byte) (*providers.ChatRequest, error)
 	return decodeAnthropicMessagesRequest(body, true)
 }
 
+// pesanDecodeAnthropic menerjemahkan kegagalan json.Unmarshal menjadi
+// pesan yang aman dikirim ke klien (turunan B-253): pesan stdlib
+// menyebut nama struct Go internal — "cannot unmarshal string into Go
+// struct field anthropicRequest.max_tokens" — dan tidak boleh
+// diteruskan. Kesalahan tipe menyebut field JSON-nya; kesalahan
+// sintaks cukup dinyatakan tidak sah, sejajar sanitasi codec OpenAI.
+func pesanDecodeAnthropic(err error) error {
+	var ute *json.UnmarshalTypeError
+	if errors.As(err, &ute) && ute.Field != "" {
+		return fmt.Errorf("field '%s' memiliki tipe yang tidak sesuai", ute.Field)
+	}
+	return errors.New("body JSON Anthropic tidak sah")
+}
+
 // decodeAnthropicMessagesRequest adalah pengurai bersama permukaan messages.
 //
 // wajibMaxTokens membedakan dua pemanggil: /v1/messages mewajibkan max_tokens
@@ -479,7 +493,7 @@ func DecodeAnthropicMessagesRequest(body []byte) (*providers.ChatRequest, error)
 func decodeAnthropicMessagesRequest(body []byte, wajibMaxTokens bool) (*providers.ChatRequest, error) {
 	var aReq anthropicRequest
 	if err := json.Unmarshal(body, &aReq); err != nil {
-		return nil, fmt.Errorf("body JSON Anthropic tidak sah: %w", err)
+		return nil, pesanDecodeAnthropic(err)
 	}
 	if strings.TrimSpace(aReq.Model) == "" {
 		return nil, errors.New("field 'model' wajib diisi")
@@ -491,6 +505,22 @@ func decodeAnthropicMessagesRequest(body []byte, wajibMaxTokens bool) (*provider
 		if *aReq.MaxTokens <= 0 {
 			return nil, errors.New("field 'max_tokens' harus lebih besar dari 0")
 		}
+	}
+
+	// Validasi rentang sampling (B-249), pasangan B-171 di codec
+	// OpenAI dan Responses: nilai mustahil ditolak lokal di sini,
+	// bukan diteruskan untuk ditolak upstream sebagai kegagalan
+	// provider. Rentangnya mengikuti kontrak dialek Anthropic
+	// sendiri — temperature 0..1, bukan 0..2 milik OpenAI — karena
+	// permukaan inilah yang menjanjikan kontrak itu ke kliennya.
+	if aReq.Temperature != nil && (*aReq.Temperature < 0 || *aReq.Temperature > 1) {
+		return nil, errors.New("field 'temperature' harus antara 0 dan 1")
+	}
+	if aReq.TopP != nil && (*aReq.TopP < 0 || *aReq.TopP > 1) {
+		return nil, errors.New("field 'top_p' harus antara 0 dan 1")
+	}
+	if aReq.TopK != nil && *aReq.TopK <= 0 {
+		return nil, errors.New("field 'top_k' harus lebih besar dari 0")
 	}
 
 	out := &providers.ChatRequest{

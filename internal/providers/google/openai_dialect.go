@@ -37,18 +37,63 @@ type oaChoice struct {
 
 type oaMessage struct {
 	Role string `json:"role"`
-	// Content sengaja bertipe penunjuk: OpenAI mengirim null (bukan string kosong) ketika
-	// jawaban hanya berisi pemanggilan tool, dan sebagian klien membedakan keduanya.
-	Content          *string      `json:"content"`
+	// Content bertipe any karena tiga bentuk sahnya berbeda tipe: nil
+	// (null — OpenAI mengirim null, bukan string kosong, ketika jawaban
+	// hanya berisi pemanggilan tool, dan sebagian klien membedakan
+	// keduanya), *string untuk jawaban teks biasa, dan []oaContentPart
+	// untuk jawaban yang memuat part non-teks (B-211).
+	Content          any          `json:"content"`
 	ReasoningContent string       `json:"reasoning_content,omitempty"`
 	ToolCalls        []oaToolCall `json:"tool_calls,omitempty"`
 }
 
 type oaDelta struct {
 	Role             string       `json:"role,omitempty"`
-	Content          *string      `json:"content,omitempty"`
+	Content          any          `json:"content,omitempty"`
 	ReasoningContent string       `json:"reasoning_content,omitempty"`
 	ToolCalls        []oaToolCall `json:"tool_calls,omitempty"`
+}
+
+// oaContentPart adalah satu elemen larik content dialek OpenAI: teks,
+// gambar (URL atau data URI), atau audio masukan/keluaran berkode base64.
+type oaContentPart struct {
+	Type       string        `json:"type"`
+	Text       string        `json:"text,omitempty"`
+	ImageURL   *oaImageURL   `json:"image_url,omitempty"`
+	InputAudio *oaInputAudio `json:"input_audio,omitempty"`
+}
+
+type oaImageURL struct {
+	URL string `json:"url"`
+}
+
+type oaInputAudio struct {
+	Data   string `json:"data"`
+	Format string `json:"format"`
+}
+
+// encodeBagianOpenAI menerjemahkan Parts kanonik ke larik content dialek
+// OpenAI (B-211). Part dokumen tidak punya bentuk larik yang diterima klien
+// OpenAI pada PESAN ASISTEN, jadi ia dilewati di permukaan ini — secara
+// eksplisit di sini, bukan diam-diam di adapter: part-nya tetap hidup di
+// bentuk kanonik untuk permukaan yang bisa membawanya.
+func encodeBagianOpenAI(parts []providers.ContentPart) []oaContentPart {
+	out := make([]oaContentPart, 0, len(parts))
+	for _, p := range parts {
+		switch p.Type {
+		case providers.PartTypeText:
+			out = append(out, oaContentPart{Type: "text", Text: p.Text})
+		case providers.PartTypeImageURL:
+			if p.ImageURL != nil {
+				out = append(out, oaContentPart{Type: "image_url", ImageURL: &oaImageURL{URL: p.ImageURL.URL}})
+			}
+		case providers.PartTypeAudio:
+			if p.Audio != nil {
+				out = append(out, oaContentPart{Type: "input_audio", InputAudio: &oaInputAudio{Data: p.Audio.Data, Format: p.Audio.Format}})
+			}
+		}
+	}
+	return out
 }
 
 type oaToolCall struct {
@@ -173,7 +218,11 @@ func encodeCompletion(resp *providers.ChatResponse) json.RawMessage {
 			ReasoningContent: c.Message.ReasoningContent,
 			ToolCalls:        encodeToolCalls(c.Message.ToolCalls, false),
 		}
-		if c.Message.Content != "" || len(c.Message.ToolCalls) == 0 {
+		if len(c.Message.Parts) > 0 {
+			// Jawaban berpart non-teks dirender sebagai larik content
+			// (B-211); bentuk string akan membuang gambar/audionya.
+			msg.Content = encodeBagianOpenAI(c.Message.Parts)
+		} else if c.Message.Content != "" || len(c.Message.ToolCalls) == 0 {
 			content := c.Message.Content
 			msg.Content = &content
 		}

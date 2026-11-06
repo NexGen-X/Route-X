@@ -253,6 +253,10 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 	cand := &chunk.Candidates[0]
 	var text, reasoning strings.Builder
 	var calls []providers.ToolCall
+	// parts/adaNonTeks sejajar dengan jalur non-streaming (B-211): urutan
+	// keluaran peristiwa ini dipertahankan utuh bila ada part non-teks.
+	var parts []providers.ContentPart
+	adaNonTeks := false
 
 	for i := range cand.Content.Parts {
 		part := &cand.Content.Parts[i]
@@ -286,6 +290,20 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 			reasoning.WriteString(part.Text)
 		case part.Text != "":
 			text.WriteString(part.Text)
+			parts = append(parts, providers.ContentPart{Type: providers.PartTypeText, Text: part.Text})
+		case part.ExecutableCode != nil && part.ExecutableCode.Code != "":
+			// Kode eksekusi adalah teks jawaban (B-211), sejajar jalur
+			// non-streaming.
+			text.WriteString(part.ExecutableCode.Code)
+			parts = append(parts, providers.ContentPart{Type: providers.PartTypeText, Text: part.ExecutableCode.Code})
+		case part.CodeExecutionResult != nil && part.CodeExecutionResult.Output != "":
+			text.WriteString(part.CodeExecutionResult.Output)
+			parts = append(parts, providers.ContentPart{Type: providers.PartTypeText, Text: part.CodeExecutionResult.Output})
+		default:
+			if cp, ok := partKeluaranNonTeks(part); ok {
+				parts = append(parts, cp)
+				adaNonTeks = true
+			}
 		}
 	}
 
@@ -308,12 +326,19 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 		s.usageSent = true
 	}
 
-	if text.Len() == 0 && reasoning.Len() == 0 && len(calls) == 0 && finish == "" && usage == nil {
+	if text.Len() == 0 && reasoning.Len() == 0 && len(calls) == 0 && !adaNonTeks && finish == "" && usage == nil {
 		return nil, nil
 	}
 
 	delta := &oaDelta{ReasoningContent: reasoning.String(), ToolCalls: encodeToolCalls(calls, true)}
-	if text.Len() > 0 {
+	if adaNonTeks {
+		// Peristiwa berpart non-teks dirender sebagai larik content dialek
+		// OpenAI (B-211): bentuk string polos tidak bisa membawa gambar di
+		// tengah teks, dan membuang part-nya di sini mengulangi kehilangan
+		// senyap yang diperbaiki temuan ini. Peristiwa teks murni tetap
+		// memakai bentuk string persis seperti sebelumnya.
+		delta.Content = encodeBagianOpenAI(parts)
+	} else if text.Len() > 0 {
 		content := text.String()
 		delta.Content = &content
 	}
@@ -327,6 +352,9 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 	out.Delta = text.String()
 	out.ReasoningDelta = reasoning.String()
 	out.ToolCalls = calls
+	if adaNonTeks {
+		out.Parts = parts
+	}
 	return out, nil
 }
 

@@ -3,6 +3,7 @@ package google
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -831,6 +832,159 @@ func TestSanitizeSchemaMenoleransiMasukanBuruk(t *testing.T) {
 	}
 	if got := string(sanitizeSchema(json.RawMessage(`[{"$schema":"x","type":"string"}]`))); strings.Contains(got, "$schema") {
 		t.Errorf("array skema tidak dibersihkan: %s", got)
+	}
+}
+
+// dekodeSkema menjalankan sanitizeSchema dan menguraikan hasilnya untuk penegasan test.
+func dekodeSkema(t *testing.T, raw string) any {
+	t.Helper()
+	hasil := sanitizeSchema(json.RawMessage(raw))
+	var doc any
+	if err := json.Unmarshal(hasil, &doc); err != nil {
+		t.Fatalf("hasil sanitizeSchema bukan JSON sah: %v (%s)", err, hasil)
+	}
+	return doc
+}
+
+// skemaMemuatKunci melaporkan apakah kata kunci muncul di kedalaman mana pun.
+func skemaMemuatKunci(node any, kunci string) bool {
+	switch v := node.(type) {
+	case map[string]any:
+		for k, val := range v {
+			if k == kunci || skemaMemuatKunci(val, kunci) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if skemaMemuatKunci(item, kunci) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// TestNormalizeSchemaSkemaNyataKlien adalah test pengunci B-161 berbasis bentuk skema
+// nyata keenam klien yang terbukti ditolak validator Google pada kampanye Tahap 3.
+func TestNormalizeSchemaSkemaNyataKlien(t *testing.T) {
+	t.Run("claude code: exclusiveMinimum angka menjadi minimum + boolean", func(t *testing.T) {
+		doc := dekodeSkema(t, `{"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"number","exclusiveMinimum":0}},"required":["path"]}`)
+		if skemaMemuatKunci(doc, "$ref") {
+			t.Error("keluaran masih memuat $ref")
+		}
+		props := doc.(map[string]any)["properties"].(map[string]any)
+		offset := props["offset"].(map[string]any)
+		if got := offset["exclusiveMinimum"]; got != true {
+			t.Errorf("exclusiveMinimum = %v, mau true (boolean)", got)
+		}
+		if got := offset["minimum"]; got != float64(0) {
+			t.Errorf("minimum = %v, mau 0", got)
+		}
+		if got := props["path"].(map[string]any)["type"]; got != "string" {
+			t.Errorf("type path = %v, mau string (tidak berubah)", got)
+		}
+	})
+
+	t.Run("opencode: exclusiveMaximum bersarang di items ikut diterjemahkan", func(t *testing.T) {
+		doc := dekodeSkema(t, `{"type":"object","properties":{"batas":{"type":"array","items":{"type":"integer","exclusiveMaximum":10}}}}`)
+		items := doc.(map[string]any)["properties"].(map[string]any)["batas"].(map[string]any)["items"].(map[string]any)
+		if got := items["exclusiveMaximum"]; got != true {
+			t.Errorf("exclusiveMaximum = %v, mau true", got)
+		}
+		if got := items["maximum"]; got != float64(10) {
+			t.Errorf("maximum = %v, mau 10", got)
+		}
+	})
+
+	t.Run("cline: exclusiveMinimum di dalam anyOf — anyOf dipertahankan, isinya dinormalkan", func(t *testing.T) {
+		doc := dekodeSkema(t, `{"anyOf":[{"type":"number","exclusiveMinimum":5},{"type":"string"}]}`)
+		anyOf, ok := doc.(map[string]any)["anyOf"].([]any)
+		if !ok || len(anyOf) != 2 {
+			t.Fatalf("anyOf = %v, mau dipertahankan 2 varian", doc)
+		}
+		pertama := anyOf[0].(map[string]any)
+		if got := pertama["exclusiveMinimum"]; got != true {
+			t.Errorf("exclusiveMinimum dalam anyOf = %v, mau true", got)
+		}
+		if got := pertama["minimum"]; got != float64(5) {
+			t.Errorf("minimum dalam anyOf = %v, mau 5", got)
+		}
+	})
+
+	t.Run("goose: $ref didereferensi dari $defs sebelum $defs dibuang", func(t *testing.T) {
+		doc := dekodeSkema(t, `{"$defs":{"opsi":{"type":"object","properties":{"nama":{"type":"string"}}}},"type":"object","properties":{"konfig":{"$ref":"#/$defs/opsi"}}}`)
+		if skemaMemuatKunci(doc, "$ref") || skemaMemuatKunci(doc, "$defs") {
+			t.Errorf("keluaran masih memuat $ref/$defs: %v", doc)
+		}
+		konfig := doc.(map[string]any)["properties"].(map[string]any)["konfig"].(map[string]any)
+		nama := konfig["properties"].(map[string]any)["nama"].(map[string]any)
+		if got := nama["type"]; got != "string" {
+			t.Errorf("isi hasil dereferensi salah: type nama = %v, mau string", got)
+		}
+	})
+
+	t.Run("qwen: type union [string,null] menjadi string + nullable", func(t *testing.T) {
+		doc := dekodeSkema(t, `{"type":"object","properties":{"mode":{"type":["string","null"]}}}`)
+		mode := doc.(map[string]any)["properties"].(map[string]any)["mode"].(map[string]any)
+		if got := mode["type"]; got != "string" {
+			t.Errorf("type = %v, mau string", got)
+		}
+		if got := mode["nullable"]; got != true {
+			t.Errorf("nullable = %v, mau true", got)
+		}
+	})
+
+	t.Run("grok build: union hanya null menjatuhkan type tetapi menandai nullable", func(t *testing.T) {
+		doc := dekodeSkema(t, `{"type":["null"],"description":"selalu kosong"}`)
+		peta := doc.(map[string]any)
+		if _, ada := peta["type"]; ada {
+			t.Errorf("type = %v, mau dijatuhkan untuk union hanya-null", peta["type"])
+		}
+		if got := peta["nullable"]; got != true {
+			t.Errorf("nullable = %v, mau true", got)
+		}
+		if got := peta["description"]; got != "selalu kosong" {
+			t.Errorf("description = %v, mau dipertahankan", got)
+		}
+	})
+
+	t.Run("kata kunci di luar subset dibuang, kata kunci sah utuh", func(t *testing.T) {
+		doc := dekodeSkema(t, `{"type":"object","additionalProperties":false,"unevaluatedProperties":false,"propertyNames":{"maxLength":3},"properties":{"a":{"type":"string","contains":{"type":"string"}}}}`)
+		for _, kunci := range []string{"additionalProperties", "unevaluatedProperties", "propertyNames", "contains"} {
+			if skemaMemuatKunci(doc, kunci) {
+				t.Errorf("keluaran masih memuat %q", kunci)
+			}
+		}
+		a := doc.(map[string]any)["properties"].(map[string]any)["a"].(map[string]any)
+		if got := a["type"]; got != "string" {
+			t.Errorf("type a = %v, mau string", got)
+		}
+	})
+}
+
+func TestNormalizeSchemaSiklusDanMenggantung(t *testing.T) {
+	// Siklus $ref timbal-balik: harus selesai, tidak hang/panic, tanpa $ref tersisa.
+	doc := dekodeSkema(t, `{"$defs":{"a":{"$ref":"#/$defs/b"},"b":{"$ref":"#/$defs/a"}},"$ref":"#/$defs/a"}`)
+	if skemaMemuatKunci(doc, "$ref") {
+		t.Errorf("siklus meninggalkan $ref: %v", doc)
+	}
+	// Referensi menggantung ke defs yang tidak ada: menjadi skema terbuka, bukan gagal.
+	doc = dekodeSkema(t, `{"type":"object","properties":{"x":{"$ref":"#/$defs/tidakada"}}}`)
+	x := doc.(map[string]any)["properties"].(map[string]any)["x"].(map[string]any)
+	if len(x) != 0 {
+		t.Errorf("ref menggantung = %v, mau {} (skema terbuka)", x)
+	}
+}
+
+func TestNormalizeSchemaSkemaSahTidakBerubah(t *testing.T) {
+	mentah := `{"type":"object","description":"skema biasa","properties":{"nama":{"type":"string","default":"x","enum":["a","b"]},"umur":{"type":"integer","minimum":0,"maximum":150}},"required":["nama"]}`
+	var mau any
+	if err := json.Unmarshal([]byte(mentah), &mau); err != nil {
+		t.Fatal(err)
+	}
+	if got := dekodeSkema(t, mentah); !reflect.DeepEqual(got, mau) {
+		t.Errorf("skema sah berubah:\ndapat %v\nmau   %v", got, mau)
 	}
 }
 

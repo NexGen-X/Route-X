@@ -582,8 +582,12 @@ func toolConfigFor(raw json.RawMessage) *toolConfig {
 // hampir selalu menyertakan "additionalProperties" serta "$schema" — dua field yang
 // membuat SELURUH permintaan gagal di Gemini. Keduanya tidak berpengaruh pada makna skema
 // di sana (Gemini menerapkan skema secara ketat), jadi dibuang alih-alih menggagalkan
-// permintaan. Kata kunci lain diteruskan apa adanya: skema yang memakai fitur di luar
-// subset OpenAPI Gemini memang harus ditolak upstream dengan sebabnya sendiri.
+// permintaan.
+//
+// Grup kedua adalah kata kunci validasi/kondisi lanjutan (B-161): validator subset
+// OpenAPI Gemini menolak NAMANYA ("Unknown name ..."), jadi mempertahankan mereka berarti
+// menggagalkan seluruh permintaan — dibuang dengan tukar-tambah yang sama seperti
+// additionalProperties: makna kondisionalnya hilang, skema intinya tetap berlaku.
 var unsupportedSchemaKeys = map[string]bool{
 	"$schema":              true,
 	"$defs":                true,
@@ -591,45 +595,188 @@ var unsupportedSchemaKeys = map[string]bool{
 	"additionalProperties": true,
 	"patternProperties":    true,
 	"strict":               true,
+	// Grup B-161: di luar subset OpenAPI 3.0 yang diterima Gemini.
+	"contains":              true,
+	"minContains":           true,
+	"maxContains":           true,
+	"if":                    true,
+	"then":                  true,
+	"else":                  true,
+	"propertyNames":         true,
+	"unevaluatedProperties": true,
 }
 
-// sanitizeSchema membuang kata kunci JSON Schema yang ditolak Gemini, secara rekursif.
+// sanitizeSchema menormalkan skema JSON Schema modern menjadi subset OpenAPI 3.0 yang
+// diterima Gemini, secara rekursif (B-161). Skema yang bukan JSON sah diteruskan apa
+// adanya supaya upstream yang melaporkan sebabnya.
 func sanitizeSchema(raw json.RawMessage) json.RawMessage {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
 	}
 	var doc any
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		// Bukan JSON sah: diteruskan apa adanya supaya upstream yang melaporkan sebabnya.
 		return raw
 	}
-	cleaned, err := json.Marshal(pruneSchema(doc))
+	cleaned, err := json.Marshal(normalizeSchema(doc))
 	if err != nil {
 		return raw
 	}
 	return cleaned
 }
 
-func pruneSchema(node any) any {
+// batasKedalamanRef membatasi rantai dereferensi $ref supaya skema yang merujuk dirinya
+// sendiri tidak mengembang tanpa akhir.
+const batasKedalamanRef = 8
+
+// normalizeSchema adalah penormalisasi rekursif B-161. Selain membuang kata kunci pada
+// unsupportedSchemaKeys, ia MENERJEMAHKAN tiga bentuk yang terbukti ditolak validator
+// Google dari skema nyata klien CLI:
+//
+//   - "type" berupa array union → tipe non-"null" pertama, plus "nullable": true bila
+//     union memuat "null" (field proto Gemini tidak mengizinkan daftar).
+//   - exclusiveMinimum/exclusiveMaximum bentuk angka (draft 2020-12) → bentuk boolean
+//     subset OpenAPI: nilainya menjadi minimum/maximum dan kata kuncinya penanda boolean.
+//   - "$ref" lokal → didereferensi terhadap dokumen yang sama SEBELUM $defs/definitions
+//     dibuang, supaya tidak ada referensi menggantung.
+//
+// anyOf/oneOf/allOf TIDAK dibuang: validator menerimanya, dan normalisasi masuk ke
+// dalamnya secara rekursif (error Cline berasal dari exclusiveMinimum di dalam anyOf,
+// bukan dari anyOf itu sendiri). Ini BUKAN allowlist — kata kunci sah (description,
+// default, enum, items, required, dst.) lolos utuh.
+func normalizeSchema(doc any) any {
+	root, _ := doc.(map[string]any)
+	return normalisasiNode(doc, root, nil, 0)
+}
+
+func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, kedalaman int) any {
 	switch v := node.(type) {
 	case map[string]any:
+		if ref, ok := v["$ref"].(string); ok && strings.HasPrefix(ref, "#/") {
+			return resolusiRef(v, ref, root, rantaiRef, kedalaman)
+		}
 		out := make(map[string]any, len(v))
 		for key, val := range v {
-			if unsupportedSchemaKeys[key] {
+			if unsupportedSchemaKeys[key] || key == "$ref" {
+				// "$ref" non-lokal tidak bisa didereferensi di sini; namanya tetap
+				// ditolak validator, jadi dibuang dan saudara kandungnya dipertahankan.
 				continue
 			}
-			out[key] = pruneSchema(val)
+			switch key {
+			case "type":
+				if gabungan, ok := val.([]any); ok {
+					tipe, nullable := tipeDariUnion(gabungan)
+					if tipe != "" {
+						out["type"] = tipe
+					}
+					if nullable {
+						out["nullable"] = true
+					}
+					continue
+				}
+				out[key] = val
+			case "exclusiveMinimum", "exclusiveMaximum":
+				if angka, ok := val.(float64); ok {
+					batas := "minimum"
+					if key == "exclusiveMaximum" {
+						batas = "maximum"
+					}
+					if _, sudah := v[batas]; !sudah {
+						out[batas] = angka
+					}
+					out[key] = true
+					continue
+				}
+				// Bentuk boolean warisan (subset OpenAPI) diteruskan apa adanya.
+				out[key] = val
+			default:
+				out[key] = normalisasiNode(val, root, rantaiRef, kedalaman)
+			}
 		}
 		return out
 	case []any:
 		out := make([]any, 0, len(v))
 		for _, item := range v {
-			out = append(out, pruneSchema(item))
+			out = append(out, normalisasiNode(item, root, rantaiRef, kedalaman))
 		}
 		return out
 	default:
 		return node
 	}
+}
+
+// resolusiRef mendereferensi satu $ref lokal terhadap dokumen akar. Siklus, rantai yang
+// terlalu dalam, dan referensi menggantung semuanya diganti skema terbuka {} yang sah —
+// tidak satu pun boleh menggagalkan atau menggantungkan permintaan.
+func resolusiRef(node map[string]any, ref string, root map[string]any, rantaiRef map[string]bool, kedalaman int) any {
+	if kedalaman >= batasKedalamanRef || rantaiRef[ref] {
+		return map[string]any{}
+	}
+	target, ok := cariPointerLokal(root, ref)
+	if !ok {
+		return map[string]any{}
+	}
+	rantaiBaru := make(map[string]bool, len(rantaiRef)+1)
+	for r := range rantaiRef {
+		rantaiBaru[r] = true
+	}
+	rantaiBaru[ref] = true
+	hasil := normalisasiNode(target, root, rantaiBaru, kedalaman+1)
+
+	// Saudara kandung $ref (diizinkan draft 2020-12) menimpa isi target.
+	saudara := make(map[string]any, len(node))
+	for key, val := range node {
+		if key != "$ref" {
+			saudara[key] = val
+		}
+	}
+	if len(saudara) == 0 {
+		return hasil
+	}
+	petaHasil, ok := hasil.(map[string]any)
+	if !ok {
+		return normalisasiNode(saudara, root, rantaiBaru, kedalaman+1)
+	}
+	for key, val := range normalisasiNode(saudara, root, rantaiBaru, kedalaman+1).(map[string]any) {
+		petaHasil[key] = val
+	}
+	return petaHasil
+}
+
+// cariPointerLokal menelusuri pointer JSON lokal ("#/a/b") pada dokumen akar,
+// termasuk pelepasan "~0"/"~1" menurut RFC 6901.
+func cariPointerLokal(root map[string]any, ref string) (any, bool) {
+	var kini any = root
+	for _, seg := range strings.Split(strings.TrimPrefix(ref, "#/"), "/") {
+		seg = strings.ReplaceAll(strings.ReplaceAll(seg, "~1", "/"), "~0", "~")
+		peta, ok := kini.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		kini, ok = peta[seg]
+		if !ok {
+			return nil, false
+		}
+	}
+	return kini, true
+}
+
+// tipeDariUnion memilih tipe tunggal dari union "type": tipe non-"null" pertama,
+// dan melaporkan apakah union memuat "null".
+func tipeDariUnion(gabungan []any) (tipe string, nullable bool) {
+	for _, item := range gabungan {
+		s, ok := item.(string)
+		if !ok {
+			continue
+		}
+		if s == "null" {
+			nullable = true
+			continue
+		}
+		if tipe == "" {
+			tipe = s
+		}
+	}
+	return tipe, nullable
 }
 
 // parseDataURI memisahkan mime type dan muatan base64 dari sebuah data URI.

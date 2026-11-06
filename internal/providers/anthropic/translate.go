@@ -150,6 +150,13 @@ type rincianCacheCreation struct {
 	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
 }
 
+// upstreamErrorBody adalah objek "error" pada body Anthropic — bentuk yang
+// sama dipakai peristiwa error streaming dan body bertipe "error".
+type upstreamErrorBody struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
 // messagesResponse adalah respons non-streaming /v1/messages.
 type messagesResponse struct {
 	ID           string        `json:"id"`
@@ -160,6 +167,11 @@ type messagesResponse struct {
 	StopReason   string        `json:"stop_reason"`
 	StopSequence string        `json:"stop_sequence"`
 	Usage        upstreamUsage `json:"usage"`
+	// Error terisi bila upstream membungkus kegagalan sebagai body
+	// bertipe "error" (B-212) — termasuk pada respons berstatus 200 dari
+	// sebagian upstream kompatibel/proksi. Tanpa field ini body seperti
+	// itu terurai menjadi respons kosong yang tampak sukses.
+	Error *upstreamErrorBody `json:"error,omitempty"`
 }
 
 // buildMessagesRequest menerjemahkan permintaan kanonik menjadi body Anthropic.

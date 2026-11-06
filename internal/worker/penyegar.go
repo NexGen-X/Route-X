@@ -33,6 +33,15 @@ type PenyegarOAuth struct {
 	logger    *slog.Logger
 }
 
+// SetSesudahNonaktif memasang callback penonaktifan sesi pada deps
+// refresh bersama (B-365) — jalur admin yang memakai PenyegarOAuth
+// memakainya untuk mencatat bahwa sebuah sesi dinonaktifkan selama
+// refresh, supaya siraman cache respons tidak terlewat pada cabang
+// kegagalan total.
+func (p *PenyegarOAuth) SetSesudahNonaktif(fn func(ctx context.Context)) {
+	p.deps.SesudahNonaktif = fn
+}
+
 // NewPenyegarOAuth membuat PenyegarOAuth dari dependensi yang sama dengan
 // worker refresh berkala.
 func NewPenyegarOAuth(

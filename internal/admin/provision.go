@@ -39,6 +39,15 @@ type provisionResultDTO struct {
 	AlreadyExist bool          `json:"already_exist,omitempty"`
 }
 
+// Jahitan test (B-364): konstruktor klien provisioning sebagai
+// variabel paket supaya test dapat mengarahkan panggilan pihak
+// ketiga ke server tiruan; produksi selalu memakai konstruktor
+// asli dari paket provision.
+var (
+	buatKlienCloudflare = provision.NewCloudflareClient
+	buatKlienDeno       = provision.NewDenoClient
+)
+
 // hostDariMaskedHint mengekstrak host dari masked hint URL pool yang
 // tersimpan (mis. "http://****@proyek.deno.dev:3128" menjadi
 // "proyek.deno.dev"): skema dibuang, userinfo tersamar dibuang sampai
@@ -85,7 +94,7 @@ func (h *Handlers) provisionCloudflareAIGateway(w http.ResponseWriter, r *http.R
 		gatewayID = "routex-ai-gateway"
 	}
 
-	client := provision.NewCloudflareClient("", 20*time.Second)
+	client := buatKlienCloudflare("", 20*time.Second)
 	res, err := client.ProvisionAIGateway(ctx, provision.CloudflareProvisionParams{
 		AccountID:   accountID,
 		APIToken:    apiToken,
@@ -138,6 +147,12 @@ func (h *Handlers) provisionCloudflareAIGateway(w http.ResponseWriter, r *http.R
 		"gateway_id":  res.GatewayID,
 		"gateway_url": res.GatewayURL,
 	})
+
+	// B-364: pool baru yang langsung aktif mengubah himpunan
+	// kandidat egress — siram cache respons seperti createEgressPool
+	// biasa (B-339 menutup permukaan non-provisioning-nya; dua jalur
+	// provisioning ini terlewat dari sapuan itu).
+	h.kosongkanCacheRespons(ctx)
 
 	_ = h.respond(w, r, http.StatusCreated, provisionResultDTO{
 		Pool:         toEgressPoolDTO(ep),
@@ -213,7 +228,7 @@ func (h *Handlers) provisionDenoRelay(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client := provision.NewDenoClient("", 30*time.Second)
+	client := buatKlienDeno("", 30*time.Second)
 	res, err := client.ProvisionRelay(ctx, provision.DenoProvisionParams{
 		AccessToken: accessToken,
 		ProjectName: projectName,
@@ -269,6 +284,10 @@ func (h *Handlers) provisionDenoRelay(w http.ResponseWriter, r *http.Request) {
 		"project_name": res.ProjectName,
 		"relay_url":    res.RelayURL,
 	})
+
+	// B-364: sama seperti jalur Cloudflare di atas — pool baru yang
+	// langsung aktif menyiram cache respons.
+	h.kosongkanCacheRespons(ctx)
 
 	_ = h.respond(w, r, http.StatusCreated, provisionResultDTO{
 		Pool:         toEgressPoolDTO(ep),

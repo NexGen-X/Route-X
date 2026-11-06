@@ -345,6 +345,15 @@ func (h *Handlers) writeAuditTxAktor(ctx context.Context, q repo.Querier, r *htt
 }
 
 func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, resourceType, resourceID string, metadata any) {
+	// Audit bersifat best-effort: kegagalannya dicatat, bukan menggagalkan
+	// aksi. Tanpa pool (handler yang dibangun telanjang, mis. unit test
+	// per-handler) tidak ada tempat menulisnya — dan memanggil repo audit
+	// dengan pool nil justru PANIK, menjatuhkan aksi yang sudah berhasil.
+	// Produksi selalu memasang pool; pengaman ini menjaga janji
+	// best-effort itu tetap benar di semua konstruksi handler.
+	if h.pool == nil {
+		return
+	}
 	if err := h.writeAuditTx(ctx, h.pool, r, action, resourceType, resourceID, metadata); err != nil {
 		h.logger.LogAttrs(ctx, slog.LevelError, "gagal menulis audit log",
 			slog.String("action", action),

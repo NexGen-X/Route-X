@@ -344,6 +344,14 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-202: refresh manual sesi OAuth sebelumnya tidak diaudit, padahal
+	// saudara-saudaranya di berkas ini (start/callback/patch/delete)
+	// semua menulis audit. Metadata hanya fakta refresh-nya — token
+	// tidak pernah masuk audit.
+	h.writeAudit(ctx, r, "refresh_oauth_session", "provider", providerID, map[string]any{
+		"refreshed_count": refreshedCount,
+		"session_id":      req.SessionID,
+	})
 	_ = h.respond(w, r, http.StatusOK, OAuthRefreshResponseDTO{
 		Status:         "refreshed",
 		RefreshedCount: refreshedCount,

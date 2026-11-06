@@ -381,6 +381,11 @@ func (h *Handlers) flushCache(w http.ResponseWriter, r *http.Request) {
 		httpx.InternalError(w, r)
 		return
 	}
+	// B-202: flush cache adalah aksi yang mengubah keadaan (membuang
+	// semua entri) dan sebelumnya tidak meninggalkan jejak audit apa
+	// pun, tidak seperti aksi sensitif lain di admin. Jalur engine tak
+	// terpasang di atas memang no-op dan tetap tanpa audit.
+	h.writeAudit(r.Context(), r, "flush", "response_cache", "", map[string]any{"deleted": n})
 	_ = h.respond(w, r, http.StatusOK, CacheFlushResponseDTO{
 		Deleted: n,
 		Message: fmt.Sprintf("Berhasil menghapus %d entri response cache", n),
@@ -441,6 +446,12 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 	// diperiksa pada setiap request, jadi penonaktifan menghentikan
 	// penyajian HIT pada request berikutnya tanpa restart.
 	h.responseCache.SetSettings(req.Enabled, ttl)
+	// B-202: perubahan saklar/TTL cache sebelumnya tidak diaudit —
+	// jejaknya hanya baris settings generik tanpa aktor yang jelas.
+	h.writeAudit(r.Context(), r, "update", "response_cache", "", map[string]any{
+		"enabled":     req.Enabled,
+		"ttl_seconds": req.TTLSeconds,
+	})
 	_ = h.respond(w, r, http.StatusOK, CacheSettingsResponseDTO{
 		Enabled:    req.Enabled,
 		TTLSeconds: req.TTLSeconds,

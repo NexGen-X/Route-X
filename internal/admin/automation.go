@@ -198,6 +198,7 @@ func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
 		Enabled    *bool    `json:"enabled"`
 		MaxRetries *int     `json:"max_retries"`
 		TimeoutMS  *int     `json:"timeout_ms"`
+		Secret     *string  `json:"secret"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
@@ -225,6 +226,20 @@ func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rotasi secret (B-199): field secret opsional pada update. Tidak
+	// disebut, atau disebut tetapi kosong, berarti secret TIDAK diubah —
+	// secret tidak pernah bisa dikosongkan, konsisten dengan kewajiban
+	// secret non-kosong saat buat (V-WH-04). Sebelumnya field ini tidak
+	// ada pada struct update dan decodeJSON menolaknya sebagai field
+	// tak dikenal, sehingga satu-satunya jalan merotasi secret bocor
+	// adalah hapus + buat ulang (ID berubah, riwayat delivery terlepas).
+	secretBaru := ""
+	rotasiSecret := false
+	if req.Secret != nil && strings.TrimSpace(*req.Secret) != "" {
+		secretBaru = *req.Secret
+		rotasiSecret = true
+	}
+
 	wh, err := h.webhooksRepo.Update(ctx, id, webhooks.UpdateWebhookParams{
 		Name:       req.Name,
 		URL:        req.URL,
@@ -232,6 +247,8 @@ func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
 		Enabled:    req.Enabled,
 		MaxRetries: req.MaxRetries,
 		TimeoutMS:  req.TimeoutMS,
+		RawSecret:  secretBaru,
+		Cipher:     h.cipher,
 		SSRFPolicy: h.ssrfPolicy(),
 	})
 	if err != nil {
@@ -239,7 +256,13 @@ func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeAudit(ctx, r, "update", "webhook", id, map[string]any{"name": wh.Name})
+	// Audit mencatat fakta rotasinya saja — nilai secret tidak pernah
+	// masuk audit (pola yang sama dengan create: hanya name/url).
+	detailAudit := map[string]any{"name": wh.Name}
+	if rotasiSecret {
+		detailAudit["secret_rotated"] = true
+	}
+	h.writeAudit(ctx, r, "update", "webhook", id, detailAudit)
 	_ = h.respond(w, r, http.StatusOK, toWebhookDTO(wh))
 }
 

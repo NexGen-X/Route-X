@@ -652,6 +652,12 @@ type UpdateWebhookParams struct {
 	Enabled    *bool
 	MaxRetries *int
 	TimeoutMS  *int
+	// RawSecret, bila non-kosong, merotasi secret webhook (B-199):
+	// dienkripsi dengan AAD terikat ID webhook persis seperti saat
+	// Create, dan masked_hint diperbarui mengikutinya. Kosong berarti
+	// secret TIDAK diubah — secret tidak pernah bisa dikosongkan.
+	RawSecret  string
+	Cipher     *security.Cipher
 	SSRFPolicy security.SSRFPolicy
 }
 
@@ -704,6 +710,21 @@ func (r *Repo) Update(ctx context.Context, id string, p UpdateWebhookParams) (*W
 		}
 		args = append(args, *p.TimeoutMS)
 		setClauses = append(setClauses, fmt.Sprintf("timeout_ms = $%d", len(args)))
+	}
+	if p.RawSecret != "" {
+		if p.Cipher == nil {
+			return nil, fmt.Errorf("%s: cipher enkripsi wajib ada untuk merotasi secret", op)
+		}
+		ciphertext, err := p.Cipher.Encrypt([]byte(p.RawSecret), security.WebhookAAD(id))
+		if err != nil {
+			return nil, fmt.Errorf("%s: mengenkripsi secret: %w", op, err)
+		}
+		args = append(args, ciphertext)
+		setClauses = append(setClauses, fmt.Sprintf("secret_ciphertext = $%d", len(args)))
+		args = append(args, p.Cipher.KeyID())
+		setClauses = append(setClauses, fmt.Sprintf("encryption_key_id = $%d", len(args)))
+		args = append(args, MaskSecret(p.RawSecret))
+		setClauses = append(setClauses, fmt.Sprintf("masked_hint = $%d", len(args)))
 	}
 
 	if len(setClauses) == 0 {

@@ -384,6 +384,11 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 				tModel, tCands, tTargets, rj := h.siapkanTierFallback(r.Context(), tier.Model, tier.ProviderIDs, tempPr, req.Stream)
 				if rj == nil && tModel != nil && len(tCands) > 0 {
 					if rreq.Tokens.InputTokens > 0 && semuaKandidatKekecilan(tCands, rreq.Tokens.InputTokens) {
+						// Tier disiapkan (batas modelnya sudah dinaikkan
+						// di siapkanTierFallback) tetapi dibuang di sini
+						// (B-294): kembalikan kenaikannya, kalau tidak
+						// slot model tier ini bocor walau tak pernah dicoba.
+						h.guard.KembalikanKuotaModel(r.Context(), tModel.ID)
 						continue // Tier ini juga kekecilan, coba tier berikutnya
 					}
 					h.logger.InfoContext(r.Context(), "melewati Tier 1 combo karena context window tidak mencukupi, langsung ke fallback tier",
@@ -1579,10 +1584,21 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 	if rj := h.guard.PeriksaBatasModel(ctx, tModel.ID); rj != nil {
 		return nil, nil, nil, rj
 	}
+	// B-294: kenaikan batas model tier kini DITANDAI pada pemegang
+	// bersama, dan setiap jalan keluar sesudah titik ini yang tidak
+	// berujung Execute mengembalikannya di tempat. Sebelumnya kenaikan
+	// ini anonim: penolakan gerbang sesudahnya, kandidat kosong, atau
+	// tier yang dilewati pemanggil membakar slot model tier secara
+	// permanen, dan refund B-254 tidak menjangkaunya karena tandanya
+	// (satu string di context induk) tidak pernah ditanam untuk tier.
+	ctx = TandaiKuotaModel(ctx, tModel.ID)
+	batalkanTier := func() { h.guard.KembalikanKuotaModel(ctx, tModel.ID) }
 	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
+		batalkanTier()
 		return nil, nil, nil, rj
 	}
 	if rj := h.guard.GerbangToken(ctx, p, targets); rj != nil {
+		batalkanTier()
 		return nil, nil, nil, rj
 	}
 	var ownerUserID string
@@ -1594,6 +1610,7 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 		OwnerUserID: ownerUserID,
 	})
 	if err != nil || len(cands) == 0 {
+		batalkanTier()
 		h.logger.WarnContext(ctx, "tidak ada kandidat untuk combo fallback model", "target_model", tierModelName, "error", err)
 		return nil, nil, nil, nil
 	}
@@ -1608,6 +1625,7 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 		}
 		cands = filtered
 		if len(cands) == 0 {
+			batalkanTier()
 			h.logger.WarnContext(ctx, "tidak ada kandidat lolos filter provider tier", "target_model", tierModelName, "allowed_providers", allowedProviderIDs)
 			return nil, nil, nil, nil
 		}
@@ -1615,6 +1633,7 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 
 	saring, ok := h.saringKandidatTier2(ctx, cands, p, stream)
 	if !ok || len(saring) == 0 {
+		batalkanTier()
 		h.logger.WarnContext(ctx, "tidak ada kandidat fallback yang lolos penyaringan provider", "target_model", tierModelName)
 		return nil, nil, nil, nil
 	}
@@ -1627,6 +1646,7 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 	if mengandungDokumenPDF(pr.req) {
 		saring = kandidatAnthropicSaja(saring)
 		if len(saring) == 0 {
+			batalkanTier()
 			h.logger.WarnContext(ctx, "tidak ada kandidat Anthropic untuk fallback berdokumen PDF, tier dilewati", "target_model", tierModelName)
 			return nil, nil, nil, nil
 		}
@@ -1760,10 +1780,17 @@ func (h *Handlers) cobaTierFallbackEmbeddings(ctx context.Context, tier ComboTie
 	if rj := h.guard.PeriksaBatasModel(ctx, tModel.ID); rj != nil {
 		return nil, nil, rj
 	}
+	// B-294: sama seperti siapkanTierFallback — kenaikan batas model
+	// tier ditandai pada pemegang bersama dan dikembalikan di tempat
+	// oleh setiap jalan keluar yang tidak berujung Execute.
+	ctx = TandaiKuotaModel(ctx, tModel.ID)
+	batalkanTier := func() { h.guard.KembalikanKuotaModel(ctx, tModel.ID) }
 	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
+		batalkanTier()
 		return nil, nil, rj
 	}
 	if rj := h.guard.GerbangToken(ctx, p, targets); rj != nil {
+		batalkanTier()
 		return nil, nil, rj
 	}
 	var ownerUserID string
@@ -1775,6 +1802,7 @@ func (h *Handlers) cobaTierFallbackEmbeddings(ctx context.Context, tier ComboTie
 		OwnerUserID: ownerUserID,
 	})
 	if err != nil || len(cands) == 0 {
+		batalkanTier()
 		h.logger.WarnContext(ctx, "tidak ada kandidat untuk combo fallback embeddings", "target_model", tier.Model, "error", err)
 		return nil, nil, nil
 	}
@@ -1787,12 +1815,14 @@ func (h *Handlers) cobaTierFallbackEmbeddings(ctx context.Context, tier ComboTie
 		}
 		cands = filtered
 		if len(cands) == 0 {
+			batalkanTier()
 			h.logger.WarnContext(ctx, "tidak ada kandidat embeddings lolos filter provider tier", "target_model", tier.Model, "allowed_providers", tier.ProviderIDs)
 			return nil, nil, nil
 		}
 	}
 	saring, ok := h.saringKandidatTier2(ctx, cands, p, false)
 	if !ok || len(saring) == 0 {
+		batalkanTier()
 		h.logger.WarnContext(ctx, "tidak ada kandidat fallback embeddings yang lolos penyaringan provider", "target_model", tier.Model)
 		return nil, nil, nil
 	}
@@ -2397,6 +2427,13 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		// permukaan Anthropic sudah mematuhinya sejak audit3 V-AB-15).
 		byteKonten int64
 		usage      providers.Usage
+		// adaStruktural menandai peristiwa yang membawa konten non-byte:
+		// tool call tanpa argumen dan bagian non-teks (gambar) tidak
+		// menambah byteKonten tetapi jelas bukan aliran kosong (B-301).
+		adaStruktural bool
+		// finishTerakhir adalah finish reason terakhir yang dilaporkan
+		// aliran; gerbang kekosongan B-301 mengecualikan content_filter.
+		finishTerakhir string
 	)
 	// Pencatatan token dijalankan lewat defer, bukan hanya di jalur selesai-normal: aliran
 	// bisa berakhir karena klien menutup koneksi atau upstream terputus di tengah, dan token
@@ -2425,6 +2462,24 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		ev, err := out.Value.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if byteKonten == 0 && !adaStruktural && finishTerakhir != providers.FinishContentFilter {
+					// B-301: aliran berakhir tanpa menghasilkan konten
+					// sama sekali. Menutupnya sebagai sukses bersih
+					// mengarang keberhasilan: klien menerima 200 berisi
+					// hanya [DONE], request tercatat sukses, webhook
+					// request.completed terkirim — padahal tidak ada
+					// jawaban. Ia kegagalan upstream, dilaporkan lewat
+					// jalur kegagalan dalam aliran yang sama dengan
+					// putus di tengah. Finish content_filter dikecualikan
+					// (kekosongannya sah, sejajar B-261/B-298), begitu
+					// pula konten struktural tanpa byte (tool call,
+					// bagian non-teks).
+					h.kegagalanDalamAliran(r, w, rc, &providers.Error{
+						Kind:    providers.ErrKindServer,
+						Message: "upstream menutup aliran tanpa menghasilkan konten",
+					}, terkirim, j)
+					return
+				}
 				h.tutupAliran(r, w, rc)
 				return
 			}
@@ -2436,6 +2491,12 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 			// Chunk penutup membawa jumlah token final. Ditimpa, bukan dijumlahkan: provider
 			// mengirim total, dan menjumlahkan beberapa laporan total akan menagih berkali-kali.
 			usage = *ev.Usage
+		}
+		if len(ev.Parts) > 0 || len(ev.ToolCalls) > 0 {
+			adaStruktural = true
+		}
+		if ev.FinishReason != "" {
+			finishTerakhir = ev.FinishReason
 		}
 		// Konten yang dihasilkan peristiwa ini dihitung untuk lantai
 		// taksiran, SEBELUM saringan Raw di bawah: peristiwa kanonik tanpa

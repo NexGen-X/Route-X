@@ -1763,6 +1763,34 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 		}
 	}
 
+	// B-301: aliran berakhir TANPA konten sama sekali — tidak ada byte
+	// konten dan tidak ada blok yang pernah dibuka. Menutupnya dengan
+	// message_delta end_turn mengarang keberhasilan (dan dulu disertai
+	// output_tokens karangan, lihat di bawah). Ia kegagalan upstream:
+	// jejak ditandai gagal dan klien menerima peristiwa error Anthropic,
+	// persis bentuk kegagalan di tengah aliran. stop_reason refusal
+	// (filter konten) dikecualikan — kekosongannya sah, sejajar
+	// pengecualian B-261/B-298. Pencatatan pemakaian tetap berjalan
+	// lewat defer finalisasiPemakaian.
+	if byteKonten == 0 && blokBerikutnya == 0 && stopReason != "refusal" {
+		perr := &providers.Error{
+			Kind:    providers.ErrKindServer,
+			Message: "upstream menutup aliran tanpa menghasilkan konten",
+		}
+		j.pasangKegagalanUpstream(perr)
+		_, _, _, pesanGalat := httpUntuk(perr)
+		errPayload, _ := json.Marshal(map[string]any{
+			"type": "error",
+			"error": map[string]any{
+				"type":    tipeErrorAnthropicUntukUpstream(perr),
+				"message": pesanGalat,
+			},
+		})
+		_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", errPayload)
+		_ = rc.Flush()
+		return
+	}
+
 	// 3. Tutup content block yang masih terbuka saat aliran berakhir.
 	tutupBlok()
 
@@ -1773,10 +1801,14 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 	// token cache (audit3 V-GW-26). Lantai di dalam finalisasi juga menaksir
 	// output dari byte KONTEN, bukan byte terbingkai (audit3 V-AB-15).
 	finalisasiPemakaian()
+	// B-301: TIDAK ada lagi klem output_tokens ke minimum 1 di sini.
+	// Klem lama mengarang satu token keluaran untuk aliran yang
+	// upstreamnya melaporkan 0 — angka karangan di permukaan yang
+	// mengaku jujur. Lantai di finalisasiPemakaian sudah menaksir
+	// output dari byte konten bila ada konten; aliran tanpa konten
+	// tidak mencapai titik ini sebagai sukses (gerbang B-301 di atas),
+	// jadi 0 yang tersisa adalah 0 yang jujur.
 	outputTokens := usage.OutputTokens
-	if outputTokens < 1 {
-		outputTokens = 1
-	}
 	usageKlien := usageAnthropicDariKanonik(usage)
 	var stopSeqNilai any
 	if stopSeq != "" {

@@ -466,6 +466,25 @@ func (u TokenUsage) Total() int64 {
 	return u.Input + u.CachedInput + u.CacheCreation + u.Output + u.Reasoning
 }
 
+// TotalTerjaga adalah Total dengan penjagaan luapan (B-303): kelima
+// komponen dijumlahkan lewat big.Int persis seperti jumlahUSD
+// (B-259), dan jumlah di luar rentang int64 ditolak sebagai
+// ErrInvalidAmount. Total() polos membungkus menjadi negatif pada
+// jumlah sebesar itu, dan pembaca yang menafsirkan "total <= 0"
+// sebagai "tidak ada token" — gerbang biaya di internal/usage —
+// menjadikannya biaya 0 secara senyap. Pemanggil yang keputusannya
+// bergantung pada tanda total WAJIB memakai varian ini.
+func (u TokenUsage) TotalTerjaga() (int64, error) {
+	total := new(big.Int)
+	for _, k := range []int64{u.Input, u.CachedInput, u.CacheCreation, u.Output, u.Reasoning} {
+		total.Add(total, big.NewInt(k))
+	}
+	if !total.IsInt64() {
+		return 0, fmt.Errorf("%w: jumlah token di luar rentang yang bisa disimpan", ErrInvalidAmount)
+	}
+	return total.Int64(), nil
+}
+
 // CostBreakdown adalah biaya satu request beserta rinciannya.
 //
 // Total adalah jumlah dari kelima rincian setelah masing-masing dibulatkan, sehingga

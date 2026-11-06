@@ -703,7 +703,17 @@ func (r *Recorder) biaya(ctx context.Context, ev Event) (upstream.USD, bool) {
 	// TotalTokens kosong — menggerbangi dari Total membuat biaya 0 permanen
 	// padahal tokennya tercatat di baris requests. Gerbangnya adalah jumlah
 	// rincian yang sama dengan yang ditagih Cost di bawah.
-	if ev.tokenUsage().Total() <= 0 {
+	// Jumlahnya memakai TotalTerjaga (B-303): penjumlahan polos bisa
+	// membungkus negatif melewati MaxInt64 dan terbaca sebagai "tidak
+	// ada token". Luapan kini JELAS — diperlakukan seperti kegagalan
+	// Cost di bawah: biaya 0 dengan WARN tercatat, bukan senyap.
+	totalToken, errTotal := ev.tokenUsage().TotalTerjaga()
+	if errTotal != nil {
+		r.logger.WarnContext(ctx, "biaya permintaan tidak bisa dihitung",
+			"request_id", ev.RequestID, "provider", ev.ProviderName, "model", ev.ModelName, "error", errTotal)
+		return 0, false
+	}
+	if totalToken <= 0 {
 		return 0, false
 	}
 	// Harga yang dipakai adalah harga pada SAAT PERMINTAAN SELESAI (TerjadiPada),

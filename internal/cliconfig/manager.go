@@ -1191,7 +1191,7 @@ func yamlKutip(v string) string {
 	if v == "" {
 		return `""`
 	}
-	if strings.ContainsAny(v, " \t#\"'\\") || strings.Contains(v, ": ") || strings.HasSuffix(v, ":") {
+	if strings.ContainsAny(v, " \t#\"'\\") || strings.Contains(v, ": ") || strings.HasSuffix(v, ":") || yamlPerluKutip(v) {
 		q, err := json.Marshal(v)
 		if err == nil {
 			return string(q)
@@ -1199,6 +1199,66 @@ func yamlKutip(v string) string {
 	}
 	return v
 }
+
+// yamlPerluKutip melaporkan apakah skalar polos v akan dibaca ulang
+// pengurai YAML sebagai BUKAN string atau sebagai struktur (B-282):
+// nilai seperti `123`/`true`/`null`/`on` berubah tipe (int/bool/
+// null), `*jangkar` menjadi alias (galat urai bila jangkarnya tak
+// terdefinisi), dan `[daftar]`/`{peta}` menjadi koleksi flow.
+// Versi lama menulis semuanya polos sehingga nilai konfigurasi
+// berubah makna diam-diam antar tulis-baca di goose/aider/hermes.
+func yamlPerluKutip(v string) bool {
+	// Indikator struktur/flow di awal skalar (alias, jangkar, tag,
+	// blok skalar, koleksi flow, dsb.) — selalu kutip. Perbandingan
+	// per-byte aman: seluruh indikator adalah ASCII, sedangkan byte
+	// pembuka UTF-8 multibyte selalu >= 0x80.
+	if strings.IndexByte("*&!|>%@`[]{},", v[0]) >= 0 {
+		return true
+	}
+	// Indikator yang bermakna bila berdiri sendiri atau diikuti
+	// spasi: item urutan, kunci pemetaan, kunci eksplisit.
+	if v == "-" || v == "?" || v == ":" ||
+		strings.HasPrefix(v, "- ") || strings.HasPrefix(v, "? ") || strings.HasPrefix(v, ": ") {
+		return true
+	}
+	// Kata skalar non-string pada skema inti YAML (bool/null/
+	// nilai istimewa), dalam varian huruf lazimnya.
+	switch strings.ToLower(v) {
+	case "true", "false", "yes", "no", "on", "off", "null", "~",
+		".inf", "-.inf", "+.inf", ".nan":
+		return true
+	}
+	return yamlAngkaAtauTanggal(v)
+}
+
+// yamlAngkaAtauTanggal melaporkan apakah v akan diurai YAML sebagai
+// angka (utuh/desimal/eksponen/heksadesimal/oktal) atau timestamp —
+// keduanya bukan string.
+func yamlAngkaAtauTanggal(v string) bool {
+	s := strings.TrimPrefix(strings.TrimPrefix(v, "+"), "-")
+	if s == "" {
+		return false
+	}
+	// Heksadesimal & oktal gaya inti YAML (0x…, 0o…).
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "0x") || strings.HasPrefix(lower, "0o") {
+		return true
+	}
+	// Timestamp ISO di awal nilai (mis. 2026-11-06 atau
+	// 2026-11-06T07:00:00Z): digit-digit tanggal + pemisah '-'.
+	if len(v) >= 10 && v[4] == '-' && v[7] == '-' &&
+		isDigitByte(v[0]) && isDigitByte(v[1]) && isDigitByte(v[2]) && isDigitByte(v[3]) &&
+		isDigitByte(v[5]) && isDigitByte(v[6]) && isDigitByte(v[8]) && isDigitByte(v[9]) {
+		return true
+	}
+	// Angka murni/desimal/eksponen. ParseFloat menolak nama model
+	// lazim ("gpt-4o", "3.5-turbo") sehingga nilai itu tetap polos.
+	_, err := strconv.ParseFloat(v, 64)
+	return err == nil
+}
+
+// isDigitByte melaporkan apakah b adalah digit ASCII.
+func isDigitByte(b byte) bool { return b >= '0' && b <= '9' }
 
 // perbaruiYAMLTopLevel memperbarui kunci skalar tingkat-atas (tanpa
 // indentasi) di dokumen YAML yang sudah ada, mempertahankan baris lain
@@ -1257,10 +1317,25 @@ func shellQuote(value string) (string, error) {
 	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'", nil
 }
 
+// kunciMapTerurut mengembalikan kunci map dalam urutan abjad yang
+// deterministik (B-281): iterasi map Go bersifat acak, sehingga
+// berkas yang disusun dari map yang sama bisa berbeda byte antar
+// dua lari identik — diff berisik dan uji idempotensi byte gagal
+// sesekali. Pola yang sama sudah dipakai susunKontenKeyEnv.
+func kunciMapTerurut(vars map[string]string) []string {
+	kunci := make([]string, 0, len(vars))
+	for k := range vars {
+		kunci = append(kunci, k)
+	}
+	sort.Strings(kunci)
+	return kunci
+}
+
 // buildSnippet menyusun teks export shell untuk terminal.
 func (m *Manager) buildSnippet(vars map[string]string) string {
 	var sb strings.Builder
-	for k, v := range vars {
+	for _, k := range kunciMapTerurut(vars) {
+		v := vars[k]
 		quoted, err := shellQuote(v)
 		if err != nil {
 			continue
@@ -1301,7 +1376,8 @@ func (m *Manager) syncGlobalEnvScript(homeDir string, tool ToolDef, vars map[str
 
 	var block strings.Builder
 	block.WriteString(markerStart + "\n")
-	for k, v := range vars {
+	for _, k := range kunciMapTerurut(vars) {
+		v := vars[k]
 		quoted, err := shellQuote(v)
 		if err != nil {
 			return err

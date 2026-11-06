@@ -441,6 +441,122 @@ func (r *OAuthRepo) UpdateRefreshStatus(ctx context.Context, sessionID string, e
 	return nil
 }
 
+// SimpanHasilExchangeParams adalah masukan penyimpanan hasil exchange
+// kode otorisasi OAuth (koneksi akun baru atau koneksi ulang).
+type SimpanHasilExchangeParams struct {
+	ProviderID string
+	// Label adalah label kredensial sesi ini ("oauth:<email akun>").
+	// Kredensial berlabel sama pada provider yang sama diperbarui
+	// rahasianya; selain itu kredensial baru dibuat.
+	Label        string
+	AccountEmail string
+	AccountName  string
+	Scopes       []string
+	// AccessToken dan RefreshToken adalah pasangan token hasil exchange.
+	AccessToken  security.Secret
+	RefreshToken security.Secret
+	// ExpiresAt adalah masa berlaku access token.
+	ExpiresAt time.Time
+	// EgressPoolID adalah pool egress yang diminta operator untuk
+	// kredensial ini; nil berarti tidak dipasang/diubah.
+	EgressPoolID *string
+	// SinkronisasiProvider, bila true, menyelaraskan kind & base_url
+	// provider ke endpoint resmi Google DALAM transaksi yang sama
+	// (pemanggil menentukan keperluannya dari keadaan provider saat ini).
+	SinkronisasiProvider bool
+	ProviderKind         string
+	ProviderBaseURL      string
+}
+
+// SimpanHasilExchange menyimpan hasil exchange OAuth secara atomik
+// (B-267, pola B-208): kredensial (dibuat atau diperbarui rahasianya,
+// termasuk pemasangan pool egress), sesi OAuth (upsert), dan
+// sinkronisasi kind/base_url provider berjalan dalam SATU transaksi
+// bila querier-nya pool.
+//
+// Versi lama di handler menulis ketiganya berurutan tanpa transaksi:
+// kegagalan di tengah meninggalkan kredensial baru yatim, sesi tanpa
+// provider yang tersinkron, atau rahasia yang sudah berganti tanpa sesi
+// — keadaan separuh yang terlihat "connected" sebagian.
+func (r *OAuthRepo) SimpanHasilExchange(ctx context.Context, p SimpanHasilExchangeParams) (string, *OAuthSessionMeta, error) {
+	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
+		var credID string
+		var meta *OAuthSessionMeta
+		err := repo.InTx(ctx, pool, func(q repo.Querier) error {
+			var err error
+			credID, meta, err = r.WithQuerier(q).SimpanHasilExchange(ctx, p)
+			return err
+		})
+		return credID, meta, err
+	}
+
+	creds := &CredentialRepo{q: r.q, cipher: r.cipher}
+
+	// Cari kredensial berlabel sama pada provider ini (semantik yang sama
+	// dengan pencarian handler versi lama).
+	var credID string
+	existing, err := creds.List(ctx, p.ProviderID)
+	if err != nil {
+		return "", nil, err
+	}
+	for _, c := range existing {
+		if c.Label == p.Label {
+			credID = c.ID
+			break
+		}
+	}
+
+	if credID != "" {
+		if err := creds.UpdateSecret(ctx, credID, p.AccessToken, &p.ExpiresAt); err != nil {
+			return "", nil, err
+		}
+		if p.EgressPoolID != nil {
+			// Pool yang diminta WAJIB terpasang atau seluruh exchange
+			// gagal (audit F5): menelannya berarti trafik OAuth keluar
+			// lewat jalur lain dari yang dikonfigurasi.
+			if err := creds.SetCredentialEgressPool(ctx, credID, p.EgressPoolID); err != nil {
+				return "", nil, err
+			}
+		}
+	} else {
+		credMeta, err := creds.Create(ctx, CreateCredentialParams{
+			ProviderID:   p.ProviderID,
+			Label:        p.Label,
+			Secret:       p.AccessToken,
+			ExpiresAt:    &p.ExpiresAt,
+			EgressPoolID: p.EgressPoolID,
+		})
+		if err != nil {
+			return "", nil, err
+		}
+		credID = credMeta.ID
+	}
+
+	meta, err := r.UpsertSession(ctx, UpsertOAuthSessionParams{
+		ProviderID:   p.ProviderID,
+		CredentialID: credID,
+		AccountEmail: p.AccountEmail,
+		AccountName:  &p.AccountName,
+		Scopes:       p.Scopes,
+		RefreshToken: p.RefreshToken,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+
+	if p.SinkronisasiProvider {
+		providers := &ProviderRepo{q: r.q}
+		if _, err := providers.Update(ctx, p.ProviderID, UpdateProviderParams{
+			Kind:    &p.ProviderKind,
+			BaseURL: &p.ProviderBaseURL,
+		}); err != nil {
+			return "", nil, err
+		}
+	}
+
+	return credID, meta, nil
+}
+
 // SimpanHasilRefreshParams adalah masukan penyimpanan hasil refresh OAuth
 // yang berhasil.
 type SimpanHasilRefreshParams struct {

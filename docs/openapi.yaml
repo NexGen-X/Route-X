@@ -10,7 +10,7 @@ info:
     Catatan cakupan: dokumen ini menguraikan SELURUH operasi yang terdaftar pada route tree
     aplikasi — permukaan /v1 (9 operasi, termasuk alias /v1/v1/messages dan count_tokens),
     /api/auth (5 operasi), kesehatan & telemetri (5 operasi), /api/internal (1 operasi), dan
-    /api/admin (138 operasi) — total 158 operasi. Skema permintaan/respons admin diturunkan
+    /api/admin (139 operasi) — total 159 operasi. Skema permintaan/respons admin diturunkan
     dari DTO handler aktual di internal/admin. Seluruh operasi /api/admin mensyaratkan sesi
     login konsol; mutasi (POST/PUT/DELETE) juga mensyaratkan header CSRF double-submit.
     Route-X memakai model admin tunggal: pengguna terautentikasi memegang izin penuh ("*");
@@ -138,11 +138,23 @@ paths:
                 type: string
                 description: Aliran SSE Anthropic content_block_delta dan message_delta
         '400':
-          $ref: '#/components/responses/400BadRequest'
+          $ref: '#/components/responses/400BadRequestAnthropic'
         '401':
-          $ref: '#/components/responses/401Unauthorized'
+          $ref: '#/components/responses/401UnauthorizedAnthropic'
+        '402':
+          $ref: '#/components/responses/402BudgetExceededAnthropic'
+        '403':
+          $ref: '#/components/responses/403ForbiddenAnthropic'
+        '404':
+          $ref: '#/components/responses/404NotFoundAnthropic'
+        '429':
+          $ref: '#/components/responses/429RateLimitedAnthropic'
         '502':
-          $ref: '#/components/responses/502BadGateway'
+          $ref: '#/components/responses/502BadGatewayAnthropic'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailableAnthropic'
+        '504':
+          $ref: '#/components/responses/504GatewayTimeoutAnthropic'
 
   /v1/responses:
     post:
@@ -348,11 +360,23 @@ paths:
                 type: string
                 description: Aliran SSE Anthropic content_block_delta dan message_delta
         '400':
-          $ref: '#/components/responses/400BadRequest'
+          $ref: '#/components/responses/400BadRequestAnthropic'
         '401':
-          $ref: '#/components/responses/401Unauthorized'
+          $ref: '#/components/responses/401UnauthorizedAnthropic'
+        '402':
+          $ref: '#/components/responses/402BudgetExceededAnthropic'
+        '403':
+          $ref: '#/components/responses/403ForbiddenAnthropic'
+        '404':
+          $ref: '#/components/responses/404NotFoundAnthropic'
+        '429':
+          $ref: '#/components/responses/429RateLimitedAnthropic'
         '502':
-          $ref: '#/components/responses/502BadGateway'
+          $ref: '#/components/responses/502BadGatewayAnthropic'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailableAnthropic'
+        '504':
+          $ref: '#/components/responses/504GatewayTimeoutAnthropic'
 
   /v1/messages/count_tokens:
     post:
@@ -384,11 +408,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/CountTokensResponse'
         '400':
-          $ref: '#/components/responses/400BadRequest'
+          $ref: '#/components/responses/400BadRequestAnthropic'
         '401':
-          $ref: '#/components/responses/401Unauthorized'
+          $ref: '#/components/responses/401UnauthorizedAnthropic'
+        '403':
+          $ref: '#/components/responses/403ForbiddenAnthropic'
         '404':
-          $ref: '#/components/responses/404NotFound'
+          $ref: '#/components/responses/404NotFoundAnthropic'
 
   /v1/v1/messages/count_tokens:
     post:
@@ -416,11 +442,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/CountTokensResponse'
         '400':
-          $ref: '#/components/responses/400BadRequest'
+          $ref: '#/components/responses/400BadRequestAnthropic'
         '401':
-          $ref: '#/components/responses/401Unauthorized'
+          $ref: '#/components/responses/401UnauthorizedAnthropic'
+        '403':
+          $ref: '#/components/responses/403ForbiddenAnthropic'
         '404':
-          $ref: '#/components/responses/404NotFound'
+          $ref: '#/components/responses/404NotFoundAnthropic'
 
   # ============================================================================
   # 2. Health & Observability Endpoints
@@ -496,7 +524,7 @@ paths:
                       properties:
                         status:
                           type: string
-                          enum: [ok, degraded, down]
+                          enum: [ok, down]
         '503':
           description: Dependensi kritis gagal — instance tidak siap melayani permintaan (status down)
           content:
@@ -515,7 +543,7 @@ paths:
                       properties:
                         status:
                           type: string
-                          enum: [ok, degraded, down]
+                          enum: [ok, down]
     head:
       tags:
         - Health & Telemetry
@@ -662,8 +690,13 @@ paths:
       summary: Pemeriksaan Domain & TLS untuk Caddy
       description: |
         Dipakai reverse proxy (Caddy on-demand TLS) untuk memutuskan apakah
-        sebuah nama host boleh diterbitkan sertifikatnya. Menjawab 200 untuk
-        domain yang terdaftar pada instalasi ini dan 400 untuk yang tidak.
+        sebuah nama host boleh diterbitkan sertifikatnya. Endpoint ini HANYA
+        melayani pemanggil loopback — permintaan dari alamat non-loopback
+        selalu ditolak 403, supaya endpoint tidak menjadi oracle enumerasi
+        domain publik. Penolakan juga tidak membedakan "domain tidak
+        dikenal" dari "domain dikenal tapi tidak cocok": keduanya 403 yang
+        sama. Panggilan dibatasi lajunya per peer (429 bila terlampaui);
+        400 hanya berarti parameter `domain` kosong.
       operationId: caddyTLSCheck
       security: []
       parameters:
@@ -674,12 +707,16 @@ paths:
             type: string
       responses:
         '200':
-          description: Domain terdaftar; sertifikat boleh diterbitkan
+          description: Domain terdaftar (atau localhost); sertifikat boleh diterbitkan — body teks `ok`
         '400':
-          description: Domain tidak terdaftar pada instalasi ini
+          description: Parameter query `domain` kosong atau tidak disertakan
+        '403':
+          description: Pemanggil bukan loopback, atau domain tidak terdaftar pada instalasi ini (kedua sebab tak terbedakan)
+        '429':
+          description: Batas laju pemeriksaan terlampaui untuk peer ini
 
   # ============================================================================
-  # 4. Administrative REST API (/api/admin/*) — seluruh 138 operasi terdaftar
+  # 4. Administrative REST API (/api/admin/*) — seluruh 139 operasi terdaftar
   # ============================================================================
   # --------------------------------------------------------------------------
   # Admin: Observability
@@ -2476,10 +2513,12 @@ paths:
   /api/admin/upstreams/models/pricing/reference-catalog:
     get:
       tags:
-        - Upstreams
+        - Admin Upstreams
       summary: Katalog harga acuan global
       description: 'Mengembalikan SELURUH harga acuan bawaan yang dikenal sistem (katalog seed) beserta pernyataan cakupannya. Bukan katalog harga pasar: model tanpa entri di sini tidak punya acuan yang bisa dipertanggungjawabkan.'
       operationId: listReferencePriceCatalog
+      security:
+        - SessionCookie: []
       responses:
         '200':
           description: Katalog harga acuan global
@@ -6093,6 +6132,35 @@ components:
               type: string
               example: 3b15169b-ad67-43f1-87f7-5cbcfa88c759
 
+    AnthropicErrorEnvelope:
+      type: object
+      description: Envelope error permukaan Anthropic (/v1/messages dan count_tokens) — bentuk asli Anthropic `{"type":"error","error":{...}}`, BUKAN envelope OpenAI di atas.
+      required:
+        - type
+        - error
+      properties:
+        type:
+          type: string
+          enum: [error]
+          example: error
+        error:
+          type: object
+          required:
+            - type
+            - message
+          properties:
+            type:
+              type: string
+              description: Tipe error kosakata Anthropic (invalid_request_error, authentication_error, billing_error, permission_error, not_found_error, rate_limit_error, overloaded_error, api_error)
+              example: authentication_error
+            message:
+              type: string
+              example: Kunci API tidak sah atau tidak ditemukan.
+            code:
+              type: string
+              description: Kode mesin milik gateway (bukan bagian spec Anthropic); hanya diisi untuk penolakan yang perlu dibedakan pemanggil secara programatik
+              example: model_not_found
+
     AddModelAliasRequest:
       type: object
       properties:
@@ -7639,6 +7707,9 @@ components:
           nullable: true
         client_id:
           type: string
+        code_assist_project:
+          type: string
+          nullable: true
         redirect_uri:
           type: string
         scopes:
@@ -9166,3 +9237,57 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    400BadRequestAnthropic:
+      description: Masukan payload tidak valid atau melanggar aturan format (envelope error gaya Anthropic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnthropicErrorEnvelope'
+    401UnauthorizedAnthropic:
+      description: Autentikasi gagal atau kredensial tidak disertakan (envelope error gaya Anthropic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnthropicErrorEnvelope'
+    402BudgetExceededAnthropic:
+      description: Anggaran biaya terlampaui (tipe billing_error) — penolakan anggaran memakai 402, BUKAN 429 (envelope error gaya Anthropic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnthropicErrorEnvelope'
+    403ForbiddenAnthropic:
+      description: Hak akses tidak mencukupi, termasuk kunci yang tidak diizinkan memakai model ini (tipe permission_error) (envelope error gaya Anthropic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnthropicErrorEnvelope'
+    404NotFoundAnthropic:
+      description: Model tidak dikenal atau dimatikan (tipe not_found_error) (envelope error gaya Anthropic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnthropicErrorEnvelope'
+    429RateLimitedAnthropic:
+      description: Batas kuota laju permintaan (RPM/TPM) terlampaui (tipe rate_limit_error) — anggaran biaya memakai 402, bukan status ini (envelope error gaya Anthropic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnthropicErrorEnvelope'
+    502BadGatewayAnthropic:
+      description: Seluruh upstream provider gagal atau sirkuit terbuka (tipe api_error) (envelope error gaya Anthropic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnthropicErrorEnvelope'
+    503ServiceUnavailableAnthropic:
+      description: Tidak ada provider yang bisa melayani model saat ini, atau upstream kelebihan beban (tipe api_error / overloaded_error) (envelope error gaya Anthropic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnthropicErrorEnvelope'
+    504GatewayTimeoutAnthropic:
+      description: Upstream tidak menjawab dalam batas waktu (tipe api_error) (envelope error gaya Anthropic)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AnthropicErrorEnvelope'

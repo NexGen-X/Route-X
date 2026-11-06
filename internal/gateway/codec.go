@@ -43,20 +43,21 @@ import (
 // error — dan salah tulis di salah satunya menghasilkan field yang diam-diam pindah ke
 // Extra lalu dikirim dua kali.
 const (
-	fModel             = "model"
-	fMessages          = "messages"
-	fMaxTokens         = "max_tokens"
-	fTemperature       = "temperature"
-	fTopP              = "top_p"
-	fStop              = "stop"
-	fStream            = "stream"
-	fTools             = "tools"
-	fToolChoice        = "tool_choice"
-	fParallelToolCalls = "parallel_tool_calls"
-	fResponseFormat    = "response_format"
-	fSeed              = "seed"
-	fReasoningEffort   = "reasoning_effort"
-	fUser              = "user"
+	fModel               = "model"
+	fMessages            = "messages"
+	fMaxTokens           = "max_tokens"
+	fMaxCompletionTokens = "max_completion_tokens"
+	fTemperature         = "temperature"
+	fTopP                = "top_p"
+	fStop                = "stop"
+	fStream              = "stream"
+	fTools               = "tools"
+	fToolChoice          = "tool_choice"
+	fParallelToolCalls   = "parallel_tool_calls"
+	fResponseFormat      = "response_format"
+	fSeed                = "seed"
+	fReasoningEffort     = "reasoning_effort"
+	fUser                = "user"
 
 	fInput          = "input"
 	fDimensions     = "dimensions"
@@ -186,6 +187,18 @@ func DecodeChatRequest(body []byte) (*providers.ChatRequest, error) {
 	//     model penalaran OpenAI menolak "max_tokens", jadi memetakannya berarti mengubah
 	//     permintaan yang sah menjadi 400 dari upstream. Nilainya tetap dibaca
 	//     EstimateTokens sebagai batas atas keluaran.
+	//
+	// Diteruskan bukan berarti tanpa pemeriksaan: field ini dikenal
+	// gateway (EstimateTokens membacanya), jadi rentangnya divalidasi
+	// di sini (B-250, sekelas B-171). Nilai -5 yang lolos akan menjadi
+	// 400 dari upstream yang tercatat sebagai kegagalan provider,
+	// padahal kesalahannya sudah terlihat sebelum kandidat dipilih.
+	if raw, ok := fields[fMaxCompletionTokens]; ok {
+		var n int
+		if err := json.Unmarshal(raw, &n); err != nil || n <= 0 {
+			return nil, fmt.Errorf("field %s harus bilangan bulat lebih besar dari 0", kutip(fMaxCompletionTokens))
+		}
+	}
 	if len(fields) > 0 {
 		out.Extra = fields
 	}
@@ -221,6 +234,12 @@ func DecodeEmbeddingsRequest(body []byte) (*providers.EmbeddingsRequest, error) 
 	if raw, ok := ambil(fields, fDimensions); ok {
 		if err := uraikanKe(raw, &out.Dimensions, fDimensions); err != nil {
 			return nil, err
+		}
+		// Rentang divalidasi lokal (B-250, sekelas B-171): dimensi
+		// negatif/mustahil yang diteruskan hanya akan menjadi 400
+		// upstream yang tercatat sebagai kegagalan provider.
+		if out.Dimensions != nil && *out.Dimensions <= 0 {
+			return nil, fmt.Errorf("field %s harus lebih besar dari 0", kutip(fDimensions))
 		}
 	}
 	if raw, ok := ambil(fields, fUser); ok {
@@ -778,7 +797,7 @@ func EstimateTokens(req *providers.ChatRequest) router.TokenEstimate {
 	default:
 		// Model penalaran OpenAI memakai nama lain untuk batas yang sama, dan codec
 		// meneruskannya lewat Extra alih-alih memetakannya (lihat DecodeChatRequest).
-		if n, ok := angkaExtra(req.Extra, "max_completion_tokens"); ok && n > 0 {
+		if n, ok := angkaExtra(req.Extra, fMaxCompletionTokens); ok && n > 0 {
 			keluar = n
 		}
 	}

@@ -37,16 +37,27 @@ import (
 // defaultTTL adalah umur salinan anggaran di memori.
 const defaultTTL = 5 * time.Second
 
-// defaultHoldTTL adalah umur satu tahanan reservasi anggaran (lihat Tahan).
+// HoldTTLBawaan adalah umur bawaan satu tahanan reservasi anggaran
+// (lihat Tahan).
 //
 // Tahanan adalah jembatan antara pemeriksaan pra-permintaan dan pencatatan
-// pasca-bayar: ia harus hidup lebih lama dari permintaan terlama yang sah
-// (termasuk aliran streaming yang berjalan menit), tetapi cukup pendek supaya
-// tahanan yang bocor — permintaan yang lolos gerbang lalu mati sebelum
-// tercatat — tidak menahan anggaran selamanya. Dua menit memenuhi keduanya;
-// pencatatan nyata biasanya mendarat dalam milidetik dan sesudah itu angka
-// spent di salinan yang berbicara, bukan tahanannya.
-const defaultHoldTTL = 2 * time.Minute
+// pasca-bayar: ia harus hidup lebih lama dari permintaan terlama yang sah,
+// tetapi cukup pendek supaya tahanan yang bocor — permintaan yang lolos
+// gerbang lalu mati sebelum tercatat — tidak menahan anggaran selamanya.
+//
+// Batas permintaan terlama yang sah saat ini adalah anggaran waktu TOTAL
+// rencana non-streaming di internal/gateway (batasTotalRencana, 5 menit);
+// streaming totalnya tidak dibatasi angka itu (yang dijaga tenggat diam
+// per jeda). Dua menit — nilai lama — GUGUR sebelum batas rencana itu
+// tercapai: tahanan permintaan lambat hilang di tengah jalan, spent-nya
+// belum mendarat, dan pemeriksaan berikutnya tidak melihatnya sama sekali,
+// sehingga pagu terlampaui oleh permintaan paralel (B-189). Sepuluh menit
+// adalah dua kali batas rencana: cukup longgar untuk permintaan terlama
+// yang sah plus margin, dan kebocoran tahanan tetap berumur terbatas.
+// Relasi "TTL tahanan > batas total rencana" dikunci oleh test di paket
+// gateway (TestBatasRencanaDiBawahTTLTahanB189): menaikkan batas rencana
+// melewati angka ini tanpa menaikkan TTL menghidupkan lagi B-189.
+const HoldTTLBawaan = 10 * time.Minute
 
 // Source memasok anggaran aktif dan menandai peringatan. Dipenuhi *policy.Repo.
 type Source interface {
@@ -162,7 +173,7 @@ func NewEnforcer(source Source, logger *slog.Logger, opts ...Option) *Enforcer {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	e := &Enforcer{source: source, logger: logger, ttl: defaultTTL, ttlTahan: defaultHoldTTL, now: time.Now}
+	e := &Enforcer{source: source, logger: logger, ttl: defaultTTL, ttlTahan: HoldTTLBawaan, now: time.Now}
 	for _, o := range opts {
 		if o != nil {
 			o(e)

@@ -225,6 +225,13 @@ type jejak struct {
 	// cache_hit karena tidak ada percobaan upstream yang bisa dicatat.
 	cacheHit bool
 
+	// finishAsing menyimpan finish reason upstream yang berada di luar
+	// kosakata kanonik dan terpaksa dilipat permukaan Anthropic menjadi
+	// end_turn (B-248): selesai() mencatatnya sebagai peristiwa timeline
+	// finish_reason_unknown supaya sebab berhenti yang sebenarnya tidak
+	// hilang hanya karena kosakata klien tertutup.
+	finishAsing string
+
 	pemakaian providers.Usage
 	ttft      time.Duration
 	hulu      time.Duration
@@ -632,6 +639,16 @@ func (j *jejak) tandaiCacheHit() {
 	}
 }
 
+// pasangFinishAsing mencatat finish reason di luar kosakata kanonik
+// yang dilipat menjadi end_turn di permukaan Anthropic (B-248). Nilai
+// kosong — upstream tidak menyebut sebab — bukan keasingan dan tidak
+// dicatat.
+func (j *jejak) pasangFinishAsing(fr string) {
+	if j != nil && fr != "" {
+		j.finishAsing = fr
+	}
+}
+
 // catatan menyusun peristiwa timeline yang bukan percobaan upstream.
 func (j *jejak) catatan(kode, pesan string) []usage.Note {
 	var notes []usage.Note
@@ -639,6 +656,12 @@ func (j *jejak) catatan(kode, pesan string) []usage.Note {
 		notes = append(notes, usage.Note{
 			Kind:    traffic.EventCacheHit,
 			Message: "respons dilayani dari response cache (cache HIT); tidak ada panggilan upstream untuk request ini",
+		})
+	}
+	if j.finishAsing != "" {
+		notes = append(notes, usage.Note{
+			Kind:    traffic.EventFinishReasonUnknown,
+			Message: "upstream berhenti dengan finish reason di luar kosakata kanonik: " + j.finishAsing + "; permukaan Anthropic melaporkannya sebagai end_turn",
 		})
 	}
 	if kind, ok := peristiwaKebijakan[kode]; ok {

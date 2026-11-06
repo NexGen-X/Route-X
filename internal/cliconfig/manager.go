@@ -1428,10 +1428,16 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		// dokumentasi resmi Hermes (Configuring Models): provider
 		// "custom", default = model target, base_url = gwURL,
 		// api_mode chat_completions. Seksi lain di config.yaml
-		// dipertahankan; hanya blok model yang diganti. Kunci —
-		// yang dibaca provider kustom Hermes dari OPENAI_API_KEY —
-		// digabung ke ~/.hermes/.env (0600) bila Configure membawa
-		// kunci; tanpa kunci baru berkas .env tidak disentuh.
+		// dipertahankan; hanya blok model yang diganti. Kunci
+		// ditanam sebagai api_key di blok model itu sendiri
+		// (B-164): jalur chat Hermes untuk provider kustom membaca
+		// api_key dari config, BUKAN dari OPENAI_API_KEY di .env —
+		// penanaman .env saja terbukti membuat chat Hermes gagal
+		// autentikasi. Karena config.yaml kini memuat kunci, berkas
+		// selalu ditulis 0600 (bukan izin lama/0644). Kunci juga
+		// tetap digabung ke ~/.hermes/.env (0600) bila Configure
+		// membawa kunci; tanpa kunci baru berkas .env tidak
+		// disentuh.
 		hermesDir := filepath.Join(homeDir, ".hermes")
 		_ = os.MkdirAll(hermesDir, 0755)
 		hermesPath := filepath.Join(hermesDir, "config.yaml")
@@ -1439,8 +1445,8 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if data, err := os.ReadFile(hermesPath); err == nil {
 			existingHermes = string(data)
 		}
-		kontenHermes := susunBlokModelHermes(existingHermes, target, gwURL)
-		if err := tulisAtomik(hermesPath, []byte(kontenHermes), permBerkasAtau(hermesPath, 0644)); err != nil {
+		kontenHermes := susunBlokModelHermes(existingHermes, target, gwURL, apiKey)
+		if err := tulisAtomik(hermesPath, []byte(kontenHermes), 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", hermesPath, err)
 		}
 		if apiKey != "" {
@@ -1653,14 +1659,19 @@ func gantiSeksiTOML(existing, seksi string, isiBaru []string) string {
 // config.yaml Hermes dengan blok provider kustom Route-X,
 // mempertahankan seksi lain apa adanya. Bentuk skalar warisan
 // (`model: "..."`) diganti menjadi blok peta; blok ditambahkan di
-// akhir bila belum ada.
-func susunBlokModelHermes(existing, target, gwURL string) string {
+// akhir bila belum ada. apiKey non-kosong ditanam sebagai baris
+// api_key di blok (B-164); kosong berarti blok ditulis tanpa
+// kunci, sama seperti perilaku lama.
+func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	blok := []string{
 		"model:",
 		"  provider: custom",
 		"  default: " + yamlKutip(target),
 		"  base_url: " + yamlKutip(gwURL),
 		"  api_mode: chat_completions",
+	}
+	if apiKey != "" {
+		blok = append(blok, "  api_key: "+yamlKutip(apiKey))
 	}
 	baris := strings.Split(existing, "\n")
 	for i, l := range baris {

@@ -117,15 +117,19 @@ func TestFase7B199RotasiSecretWebhookLewatUpdate(t *testing.T) {
 		t.Error("update tanpa secret mengubah ciphertext")
 	}
 
-	// Secret kosong eksplisit: juga tidak mengubah (tidak bisa dikosongkan).
+	// Secret kosong eksplisit: sejak B-273 DITOLAK 400 missing_secret —
+	// field yang disebut tetapi kosong bukan lagi "tidak diubah" yang
+	// senyap (lihat TestFase11B273SecretWebhookSpasiDitolak). Yang
+	// dipertahankan dari B-199 di sini: penolakan itu tidak mengubah
+	// secret tersimpan sedikit pun.
 	res, body = c.do(http.MethodPut, "/api/admin/automation/webhooks/"+wh.ID,
 		map[string]any{"secret": ""}, true)
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("PUT secret kosong: status %d (body %s)", res.StatusCode, body)
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("PUT secret kosong: status %d, mau 400 sejak B-273 (body %s)", res.StatusCode, body)
 	}
 	ctKini2, _, plainKini := bacaSecret()
 	if ctKini2 != ctBaru || plainKini != "GANTI_rahasia_baru_9f3k" {
-		t.Error("secret kosong eksplisit mengubah secret tersimpan")
+		t.Error("penolakan secret kosong mengubah secret tersimpan")
 	}
 }
 

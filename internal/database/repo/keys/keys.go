@@ -340,15 +340,20 @@ func (r *Repo) Authenticate(ctx context.Context, raw string, clientIP netip.Addr
 						-- dijamin PostgreSQL, jadi cast hanya berjalan untuk
 						-- baris berjenis cocok — konjungsi AND polos tidak
 						-- memberi jaminan itu. Cabang ip_range membandingkan
-						-- lewat ::inet, BUKAN ::cidr: inet menerima bit host
+						-- lewat inet, BUKAN cidr: inet menerima bit host
 						-- dan <<= membandingkan jaringan termasked-nya, jadi
 						-- baris warisan ber-host-bits yang tersimpan sebelum
 						-- validasi B-269 menegakkan jaringan yang dimaksud
 						-- alih-alih melempar 22P02 dan meracuni autentikasi
-						-- SEMUA key.
+						-- SEMUA key. Cast-nya lewat routex_inet_aman
+						-- (migrasi 0026, B-305): subjek warisan yang BUKAN
+						-- alamat sama sekali menghasilkan NULL — tidak
+						-- pernah cocok, tidak pernah melempar — karena
+						-- cast ::inet polos atas teks sampah tetap 22P02
+						-- walau CASE sudah membatasi jenisnya.
 						or ($2::inet is not null and case
-							when b.subject_kind = 'ip'       then b.subject::inet = $2::inet
-							when b.subject_kind = 'ip_range' then $2::inet <<= b.subject::inet
+							when b.subject_kind = 'ip'       then routex_inet_aman(b.subject) = $2::inet
+							when b.subject_kind = 'ip_range' then $2::inet <<= routex_inet_aman(b.subject)
 							else false
 						end)
 					  )

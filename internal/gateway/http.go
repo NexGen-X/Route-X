@@ -232,12 +232,20 @@ func (h *Handlers) Routes() http.Handler {
 		// /v1/messages melayani Anthropic Messages API (Claude Code, dsb.)
 		r.Post("/messages", h.AnthropicMessages)
 		r.Post("/v1/messages", h.AnthropicMessages)
-		// count_tokens adalah pendamping wajib permukaan messages pada kontrak
-		// Anthropic; klien resmi memanggilnya sebelum mengirim percakapan besar.
-		r.Post("/messages/count_tokens", h.AnthropicCountTokens)
-		r.Post("/v1/messages/count_tokens", h.AnthropicCountTokens)
 		r.Post("/embeddings", h.Embeddings)
 	})
+	// count_tokens adalah pendamping wajib permukaan messages pada kontrak
+	// Anthropic; klien resmi memanggilnya sebelum mengirim percakapan besar.
+	// Ia didaftarkan di LUAR grup pembatas laju (B-170), dengan alasan yang
+	// sama seperti katalog model di bawah: ia bacaan lokal yang tidak
+	// menyentuh upstream. Di dalam grup, setiap panggilan membakar kuota
+	// laju key dan tidak pernah dikembalikan — handler inferensi memasang
+	// jagaKuotaPraUpstream untuk mengembalikannya, endpoint ini tidak —
+	// sehingga klien yang rajin menaksir konteks (perilaku normal Claude
+	// Code sebelum konteks besar) menghabiskan RPM-nya sendiri sampai
+	// chat-nya ikut kena 429 untuk endpoint yang tidak memanggil model.
+	r.Post("/messages/count_tokens", h.AnthropicCountTokens)
+	r.Post("/v1/messages/count_tokens", h.AnthropicCountTokens)
 	r.Get("/models", h.Models)
 	r.Get("/models/{model}", h.ModelDetail)
 	return r

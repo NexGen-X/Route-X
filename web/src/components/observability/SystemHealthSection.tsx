@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
-import type { BackgroundJob, ResponseCacheStats } from '../../types';
+import type { BackgroundJob } from '../../types';
 import { Card } from '../common/Card';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
@@ -38,7 +38,6 @@ interface GatewayCheckItem {
 export const SystemHealthSection: React.FC = () => {
   const { toast } = useToast();
   const [jobs, setJobs] = useState<BackgroundJob[]>([]);
-  const [cache, setCache] = useState<ResponseCacheStats | null>(null);
   const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -77,12 +76,9 @@ export const SystemHealthSection: React.FC = () => {
         setLoadError(null);
       }
 
-      try {
-        const resCache = await api.system.cacheStats();
-        setCache(resCache);
-      } catch {
-        setCache(null);
-      }
+      // Statistik cache TIDAK lagi dimuat di sini: satu-satunya
+      // konsumennya dulu adalah Uji Live, dan sejak B-226 uji itu
+      // mengambil datanya sendiri secara segar.
     } catch (err: unknown) {
       setLoadError(getErrorMessage(err));
     } finally {
@@ -98,14 +94,27 @@ export const SystemHealthSection: React.FC = () => {
     setIsTestingLive(true);
     const start = performance.now();
     try {
-      const [diagRes, healthRes] = await Promise.all([
+      // Semua masukan checklist diambil SEGAR di dalam uji ini (B-226):
+      // versi lama hanya mengambil diagnostics+health lalu menilai
+      // cache/jobs dari state hasil muatan terakhir — checklist bisa
+      // menunjukkan workers/cache basi dan toast menyimpulkan sehat
+      // dari data yang tidak pernah diperiksa ulang.
+      const [diagRes, healthRes, cacheSegar, jobsSegar] = await Promise.all([
         api.system.diagnostics(),
         api.observability.health().catch(() => null),
+        api.system.cacheStats().catch(() => null),
+        api.system.jobs().catch(() => null),
       ]);
       const end = performance.now();
       const duration = Math.round(end - start);
       setLiveTestDurationMs(duration);
       setLastLiveTestAt(new Date().toLocaleTimeString());
+      // Segarkan state tampilan worker dengan data yang sama agar
+      // kartu worker konsisten dengan hasil uji.
+      if (jobsSegar) {
+        setJobs(jobsSegar.items || []);
+      }
+      const daftarJobs = jobsSegar ? jobsSegar.items || [] : null;
 
       // Perbarui checklist berdasarkan hasil riil (audit F7):
       // - DB dianggap sehat hanya bila blok db_pool benar-benar ada dan
@@ -116,15 +125,15 @@ export const SystemHealthSection: React.FC = () => {
       // - Latensi per-komponen TIDAK lagi dikarang dari pecahan durasi;
       //   satu-satunya angka nyata adalah round-trip uji pada core.
       const isDbOk = !!diagRes.db_pool && (diagRes.db_pool.max_conns ?? 0) > 0;
-      const cacheTersedia = cache !== null;
-      const isCacheOk = cache?.enabled ?? false;
+      const cacheTersedia = cacheSegar !== null;
+      const isCacheOk = cacheSegar?.enabled ?? false;
       const healthTersedia = healthRes !== null && Array.isArray(healthRes?.providers);
       const hasUnhealthyProviders = healthTersedia
         ? healthRes.providers.some((p) => p.status === 'unhealthy')
         : false;
-      const jobGagal = jobs.filter((j) => j.last_status === 'failed').length;
+      const jobGagal = daftarJobs ? daftarJobs.filter((j) => j.last_status === 'failed').length : 0;
 
-      setGatewayChecks([
+      const checksBaru: GatewayCheckItem[] = [
         {
           id: 'core-engine',
           name: 'Gateway Core & HTTP Proxy',
@@ -143,7 +152,7 @@ export const SystemHealthSection: React.FC = () => {
           details: !cacheTersedia
             ? 'Statistik cache tidak tersedia'
             : isCacheOk
-            ? `${cache?.total_entries ?? 0} entri aktif`
+            ? `${cacheSegar?.total_entries ?? 0} entri aktif`
             : 'Caching dinonaktifkan',
         },
         {
@@ -170,20 +179,34 @@ export const SystemHealthSection: React.FC = () => {
           id: 'supervisor-workers',
           name: 'Background Task Supervisor',
           category: 'Workers',
-          status: jobs.length === 0 ? 'unknown' : jobGagal > 0 ? 'degraded' : 'healthy',
+          status: !daftarJobs || daftarJobs.length === 0 ? 'unknown' : jobGagal > 0 ? 'degraded' : 'healthy',
           details:
-            jobs.length === 0
+            !daftarJobs || daftarJobs.length === 0
               ? 'Data worker tidak tersedia'
               : jobGagal > 0
-              ? `${jobGagal} dari ${jobs.length} worker terakhir gagal`
-              : `${jobs.length} worker pengawas aktif`,
+              ? `${jobGagal} dari ${daftarJobs.length} worker terakhir gagal`
+              : `${daftarJobs.length} worker pengawas aktif`,
         },
-      ]);
+      ];
+      setGatewayChecks(checksBaru);
 
-      if (!isDbOk) {
-        toast.error('Uji diagnostik: Database PostgreSQL mengalami gangguan atau offline!', 'Diagnosa Kritis');
-      } else if (hasUnhealthyProviders) {
-        toast.warn(`Uji diagnostik selesai (${duration} ms): Terdapat upstream provider yang mengalami degradasi.`, 'Sistem Terdegradasi');
+      // Toast diturunkan dari checklist FINAL yang sama dengan yang
+      // dirender (B-226): versi lama hanya mensyaratkan DB ok + tidak
+      // ada provider unhealthy, sehingga cache/breaker "unknown" dan
+      // worker gagal tetap berujung toast "Semua sistem nominal" yang
+      // bertabrakan dengan checklist di layar yang sama.
+      const yangOffline = checksBaru.filter((c) => c.status === 'offline');
+      const yangBermasalah = checksBaru.filter((c) => c.status === 'degraded' || c.status === 'unknown');
+      if (yangOffline.length > 0) {
+        toast.error(
+          `Uji diagnostik: ${yangOffline.map((c) => c.name).join(', ')} offline!`,
+          'Diagnosa Kritis',
+        );
+      } else if (yangBermasalah.length > 0) {
+        toast.warn(
+          `Uji diagnostik selesai (${duration} ms): ${yangBermasalah.map((c) => c.name).join(', ')} terdegradasi atau tidak diketahui statusnya.`,
+          'Sistem Terdegradasi',
+        );
       } else {
         toast.success(`Uji kesehatan live berhasil (${duration} ms). Semua sistem nominal.`, 'Diagnosa Live OK');
       }

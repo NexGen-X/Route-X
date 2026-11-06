@@ -690,41 +690,70 @@ func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 
 	// pageSize=1000 adalah batas maksimum Gemini; bawaannya 50, dan daftar yang terpotong
 	// akan tampak seperti model yang hilang bagi operator.
-	resp, err := p.do(ctx, p.client, http.MethodGet, p.endpoint("/"+APIVersion+"/models")+"?pageSize=1000", nil, "application/json")
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	raw, err := p.readAll(resp)
-	if err != nil {
-		return nil, err
-	}
-	var payload struct {
-		Models []struct {
-			Name string `json:"name"`
-		} `json:"models"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, providers.Newf(providers.ErrKindServer, p.name, "daftar model Gemini tidak bisa diurai")
-	}
-
-	out := make([]providers.ModelInfo, 0, len(payload.Models))
-	for _, m := range payload.Models {
-		if m.Name == "" {
-			continue
+	//
+	// Daftar diikuti sampai habis lewat nextPageToken (B-264): sebelumnya
+	// token itu diabaikan dan hanya halaman pertama yang dibaca. ID
+	// dideduplikasi lintas halaman; kemunculan pertama menang. Paginasi
+	// dibatasi maksHalamanModels — token yang tidak pernah habis dari
+	// upstream yang rusak tidak boleh memutar sinkronisasi selamanya.
+	var out []providers.ModelInfo
+	dilihat := make(map[string]bool)
+	pageToken := ""
+	for halaman := 0; ; halaman++ {
+		if halaman >= maksHalamanModels {
+			return nil, providers.Newf(providers.ErrKindServer, p.name,
+				"daftar model Gemini tidak habis sesudah %d halaman", maksHalamanModels)
 		}
-		// Awalan "models/" dilepas supaya id yang dilihat klien sama dengan yang boleh
-		// dikirimnya kembali; modelResourcePath memasangnya lagi saat menyusun URL.
-		out = append(out, providers.ModelInfo{
-			ID:      strings.TrimPrefix(m.Name, "models/"),
-			OwnedBy: providers.KindGoogle,
-			// Gemini tidak melaporkan waktu pembuatan model.
-			Created: 0,
-		})
+		u := p.endpoint("/"+APIVersion+"/models") + "?pageSize=1000"
+		if pageToken != "" {
+			u += "&pageToken=" + url.QueryEscape(pageToken)
+		}
+		resp, err := p.do(ctx, p.client, http.MethodGet, u, nil, "application/json")
+		if err != nil {
+			return nil, err
+		}
+		raw, err := p.readAll(resp)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		var payload struct {
+			Models []struct {
+				Name string `json:"name"`
+			} `json:"models"`
+			NextPageToken string `json:"nextPageToken"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return nil, providers.Newf(providers.ErrKindServer, p.name, "daftar model Gemini tidak bisa diurai")
+		}
+		for _, m := range payload.Models {
+			if m.Name == "" {
+				continue
+			}
+			// Awalan "models/" dilepas supaya id yang dilihat klien sama dengan yang boleh
+			// dikirimnya kembali; modelResourcePath memasangnya lagi saat menyusun URL.
+			id := strings.TrimPrefix(m.Name, "models/")
+			if dilihat[id] {
+				continue
+			}
+			dilihat[id] = true
+			out = append(out, providers.ModelInfo{
+				ID:      id,
+				OwnedBy: providers.KindGoogle,
+				// Gemini tidak melaporkan waktu pembuatan model.
+				Created: 0,
+			})
+		}
+		if payload.NextPageToken == "" {
+			return out, nil
+		}
+		pageToken = payload.NextPageToken
 	}
-	return out, nil
 }
+
+// maksHalamanModels membatasi paginasi daftar model (B-264); angka yang
+// sama dipakai adapter Anthropic dan discovery admin.
+const maksHalamanModels = 100
 
 // HealthCheck memeriksa provider.
 // Untuk Antigravity memanggil POST /v1internal:fetchAvailableModels.

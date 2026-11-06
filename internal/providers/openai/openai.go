@@ -342,9 +342,13 @@ func (p *Provider) errorFromResponse(resp *http.Response) *providers.Error {
 // sukses tanpa token.
 func (p *Provider) errorFromSuccessBody(raw []byte, status int, fallback string) *providers.Error {
 	code, msg := providers.ReadErrorBody(bytes.NewReader(raw))
-	if msg == "" {
+	if msg == "" && code == "" {
 		return providers.Newf(providers.ErrKindServer, p.name, "%s", fallback)
 	}
+	// B-297: body error tanpa message tetapi DENGAN kode/type tetap
+	// diklasifikasikan lewat jalur di bawah (Classify + pemetaan
+	// longgar B-260) dan kodenya tercatat sebagai UpstreamCode; pesan
+	// akhirnya menyebut kode itu lewat withCode.
 
 	code = sanitizeCode(code)
 	kind := providers.Classify(status, code)

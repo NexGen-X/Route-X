@@ -129,6 +129,15 @@ func jenisGalatAliran(tipe, kode string) providers.ErrorKind {
 		return providers.ErrKindOverloaded
 	case strings.Contains(tipe, "rate_limit") || strings.Contains(kode, "rate_limit"):
 		return providers.ErrKindRateLimit
+	// B-296: kode auth diperiksa SEBELUM cabang "invalid" pada type di
+	// bawah. Pasangan lazim di tengah aliran adalah
+	// type:"invalid_request_error" + code:"invalid_api_key" — urutan
+	// lama menjatuhkannya ke invalid_request (penjaga auth B-210 tidak
+	// terpicu, tidak failoverable), padahal padanan non-streamingnya
+	// auth lewat pemetaan B-260. Samakan: kode/type invalid_api_key
+	// dan kode authentication adalah auth.
+	case kode == "invalid_api_key" || tipe == "invalid_api_key" || strings.Contains(kode, "authentication"):
+		return providers.ErrKindAuth
 	case strings.Contains(tipe, "authentication") || strings.Contains(tipe, "auth"):
 		return providers.ErrKindAuth
 	case strings.Contains(tipe, "permission"):
@@ -255,7 +264,36 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 			FinishReason: finish,
 		})
 	}
+
+	// B-298: penjaga kekosongan kanonik, sejajar B-261 di adapter
+	// Anthropic. Choice yang hadir tetapi pesannya kosong total
+	// (content:"" tanpa tool call/penalaran/penolakan) sebelumnya lolos
+	// sebagai sukses kosong karena gerbang di atas hanya memeriksa
+	// JUMLAH choice. Finish content_filter dikecualikan — kekosongan
+	// di sana sah. Errornya lewat errorFromSuccessBody supaya body
+	// error tertanam (bila ada) tetap terklasifikasi.
+	semuaKosong := true
+	for _, c := range out.Choices {
+		if c.FinishReason == providers.FinishContentFilter || !pesanKanonikKosong(c.Message) {
+			semuaKosong = false
+			break
+		}
+	}
+	if semuaKosong {
+		return nil, p.errorFromSuccessBody(raw, resp.StatusCode,
+			"respons upstream tidak memuat konten yang bisa diterjemahkan")
+	}
 	return out, nil
+}
+
+// pesanKanonikKosong melaporkan apakah pesan kanonik tidak memuat apa
+// pun yang bisa diteruskan ke klien (B-298) — kriteria yang sama
+// dengan penjaga B-261 di adapter Anthropic: tanpa teks, tanpa bagian,
+// tanpa tool call, tanpa penalaran, tanpa penolakan, tanpa transkrip
+// audio. Signature penalaran tidak ada pada dialek ini.
+func pesanKanonikKosong(m providers.Message) bool {
+	return m.Content == "" && len(m.Parts) == 0 && len(m.ToolCalls) == 0 &&
+		m.ReasoningContent == "" && m.Refusal == "" && m.AudioTranscript == ""
 }
 
 // decodeContent mengisi Content atau Parts dari nilai "content" mentah.

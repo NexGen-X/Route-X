@@ -52,6 +52,10 @@ type streamDelta struct {
 	Thinking     string `json:"thinking"`
 	StopReason   string `json:"stop_reason"`
 	StopSequence string `json:"stop_sequence"`
+	// Signature membawa signature_delta block thinking (B-295);
+	// SignatureToleran supaya nilai numerik dari proksi tidak
+	// menggagalkan unmarshal aliran (B-263).
+	Signature providers.SignatureToleran `json:"signature"`
 }
 
 // ChatCompletionStream membuka aliran SSE ke /v1/messages.
@@ -342,8 +346,20 @@ func (s *stream) blockDelta(env *streamEnvelope) *providers.StreamEvent {
 		out.ToolCalls = []providers.ToolCall{call}
 		return out
 
+	case "signature_delta":
+		// Signature block thinking kini punya wujud kanonik
+		// (StreamEvent.ReasoningSignature, B-295): tanpa ini ia
+		// terbuang struktural dan giliran lanjutan lewat streaming
+		// kehilangan tanda tangan penalarannya. Raw dikosongkan —
+		// dialek OpenAI tidak punya padanan chunk untuknya, dan
+		// gateway memang melewati peristiwa ber-Raw kosong.
+		if env.Delta.Signature == "" {
+			return nil
+		}
+		return &providers.StreamEvent{ReasoningSignature: string(env.Delta.Signature)}
+
 	default:
-		// signature_delta dan jenis baru lainnya tidak punya wujud di sisi klien.
+		// Jenis delta baru lainnya tidak punya wujud di sisi klien.
 		return nil
 	}
 }

@@ -87,3 +87,19 @@ describe('Observability — kejujuran muatan parsial (B-225)', () => {
     expect(await screen.findByText(/Uji live gagal: diagnostik tidak terjangkau/)).toBeInTheDocument();
   });
 });
+
+describe('Observability — strip KPI saat semua sumber gagal (B-284)', () => {
+  it('banner kegagalan total tampil TANPA "0.00%" dan badge "Nominal" karangan', async () => {
+    seriesMock.mockRejectedValue(new Error('deret tidak terjangkau'));
+    breakdownMock.mockRejectedValue(new Error('rincian tidak terjangkau'));
+    summaryMock.mockRejectedValue(new Error('ringkasan tidak terjangkau'));
+    cacheMock.mockRejectedValue(new Error('cache tidak terjangkau'));
+    renderPage();
+
+    expect(await screen.findByText(/Seluruh layanan observabilitas gagal/)).toBeInTheDocument();
+    expect(screen.queryByText('Nominal')).not.toBeInTheDocument();
+    expect(screen.queryByText('0.00%')).not.toBeInTheDocument();
+    // Ketiga sel KPI utama menyatakan belum terukur, bukan nol.
+    expect(screen.getAllByText('belum ada data terukur')).toHaveLength(3);
+  });
+});

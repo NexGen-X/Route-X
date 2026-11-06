@@ -185,6 +185,16 @@ export const Observability: React.FC = () => {
   const totalTokensFromSeries = series.reduce((acc, p) => acc + (p.tokens || 0), 0);
   const errorRate = summary?.error_rate ?? (totalRequestsFromSeries > 0 ? (series.reduce((acc, p) => acc + (p.errors || 0), 0) / totalRequestsFromSeries) * 100 : 0);
 
+  // B-284: strip KPI hanya boleh menampilkan angka yang benar-benar
+  // terukur. Saat SEMUA sumber gagal — atau muatan pertama belum
+  // menghasilkan apa pun — summary masih null dan series kosong;
+  // versi lama menurunkan angka-angka di strip dari keduanya
+  // sehingga tampil "0.00%" berbadge hijau "Nominal" tepat di bawah
+  // banner "Seluruh layanan observabilitas gagal". Cabang tak
+  // terukur menampilkan "—" seperti sel cache B-225 di strip yang
+  // sama.
+  const kpiTerukur = summary !== null || series.length > 0;
+
   // Perhitungan Throughput rata-rata (req/s). Penyebutnya rentang jendela
   // nominal — kini jujur karena backend menghormati parameter window
   // (audit3 V-FJ-01); sebelumnya backend selalu menjawab 24 jam.
@@ -289,48 +299,87 @@ export const Observability: React.FC = () => {
           <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted block">
             Throughput &amp; Permintaan ({windowTime})
           </span>
-          <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-primary tabular-nums tracking-tight">
-            {(summary?.total_requests ?? totalRequestsFromSeries).toLocaleString()}
-          </div>
-          <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
-            Rata-rata: {avgThroughputRps.toFixed(2)} req/dtk
-          </div>
+          {kpiTerukur ? (
+            <>
+              <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-primary tabular-nums tracking-tight">
+                {(summary?.total_requests ?? totalRequestsFromSeries).toLocaleString()}
+              </div>
+              <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+                Rata-rata: {avgThroughputRps.toFixed(2)} req/dtk
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-muted tabular-nums tracking-tight">
+                —
+              </div>
+              <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+                belum ada data terukur
+              </div>
+            </>
+          )}
         </div>
 
         <div className="lg:border-l lg:border-border/60 lg:pl-6 lg:first:border-l-0 lg:first:pl-0">
           <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted block">
             Tingkat Kesalahan (Error Rate)
           </span>
-          <div className="mt-1.5 flex items-center gap-2">
-            <span className={`text-2xl sm:text-[28px] leading-none font-semibold tabular-nums tracking-tight ${errorRate > 5 ? 'text-rose-400' : 'text-emerald-400'}`}>
-              {errorRate.toFixed(2)}%
-            </span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
-              errorRate > 5 ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-            }`}>
-              {errorRate > 5 ? 'Degraded' : 'Nominal'}
-            </span>
-          </div>
-          <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
-            {summary?.error_requests ?? series.reduce((acc, p) => acc + (p.errors || 0), 0)} gagal
-          </div>
+          {kpiTerukur ? (
+            <>
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className={`text-2xl sm:text-[28px] leading-none font-semibold tabular-nums tracking-tight ${errorRate > 5 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  {errorRate.toFixed(2)}%
+                </span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                  errorRate > 5 ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                }`}>
+                  {errorRate > 5 ? 'Degraded' : 'Nominal'}
+                </span>
+              </div>
+              <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+                {summary?.error_requests ?? series.reduce((acc, p) => acc + (p.errors || 0), 0)} gagal
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-muted tabular-nums tracking-tight">
+                —
+              </div>
+              <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+                belum ada data terukur
+              </div>
+            </>
+          )}
         </div>
 
         <div className="lg:border-l lg:border-border/60 lg:pl-6 lg:first:border-l-0 lg:first:pl-0">
           <span className="text-[11px] font-medium uppercase tracking-wider text-text-muted block">
             Konsumsi Token &amp; Biaya
           </span>
-          <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-primary tabular-nums tracking-tight">
-            {(summary?.total_tokens ?? totalTokensFromSeries).toLocaleString()} tok
-          </div>
-          <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
-            Estimasi: {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}
-            {(summary?.unpriced_requests ?? 0) > 0 && (
-              <span className="text-amber-400">
-                {' '}· {summary?.unpriced_requests} request belum berharga (tidak termasuk estimasi)
-              </span>
-            )}
-          </div>
+          {kpiTerukur ? (
+            <>
+              <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-primary tabular-nums tracking-tight">
+                {(summary?.total_tokens ?? totalTokensFromSeries).toLocaleString()} tok
+              </div>
+              <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+                Estimasi: {formatUSD(summary?.total_cost_usd || totalCostFromSeries)}
+                {(summary?.unpriced_requests ?? 0) > 0 && (
+                  <span className="text-amber-400">
+                    {' '}· {summary?.unpriced_requests} request belum berharga (tidak termasuk estimasi)
+                  </span>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-muted tabular-nums tracking-tight">
+                —
+              </div>
+              <div className="mt-2 text-[11px] text-text-muted font-mono tabular-nums">
+                belum ada data terukur
+              </div>
+            </>
+          )}
         </div>
 
         <div className="lg:border-l lg:border-border/60 lg:pl-6 lg:first:border-l-0 lg:first:pl-0">

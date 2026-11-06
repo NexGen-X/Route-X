@@ -96,7 +96,15 @@ export const RequestCardMobile: React.FC<RequestCardMobileProps> = ({
       {/* Baris 3: Biaya, TTFT, & Klien — kolom yang dulu hanya ada di tabel
           desktop (V-FF-35), padahal kartu ini satu-satunya tampilan mobile. */}
       <div className="flex items-center justify-between text-[11px] font-mono text-text-secondary gap-2">
-        <span className="text-accent-text font-semibold">{formatUSD(request.cost_usd, 6)}</span>
+        <span className="text-accent-text font-semibold">
+          {request.unpriced ? (
+            <span className="text-amber-400" title="Belum ada harga berlaku untuk pemetaan model ini">
+              UNPRICED
+            </span>
+          ) : (
+            formatUSD(request.cost_usd, 6)
+          )}
+        </span>
         <span className="text-text-muted">
           {request.ttft_ms ? `TTFT ${request.ttft_ms} ms` : 'TTFT -'}
         </span>

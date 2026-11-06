@@ -56,7 +56,11 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
       <div className={selKelas}>
         <span className={labelKelas}>Estimasi Biaya</span>
         <div className={nilaiKelas}>{formatUSD(summary?.total_cost_usd, 8)}</div>
-        <div className={subKelas}>Kumulatif jendela</div>
+        <div className={subKelas}>
+          {(summary?.unpriced_requests ?? 0) > 0
+            ? `${summary?.unpriced_requests} request belum berharga`
+            : 'Kumulatif jendela'}
+        </div>
       </div>
 
       {/* Metrik 4: P95 Latency */}

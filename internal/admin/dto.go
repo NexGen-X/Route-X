@@ -112,28 +112,31 @@ type DistributionDTO struct {
 
 // TrafficStatsDTO adalah ringkasan performa dan volume lalu lintas untuk dashboard overview.
 type TrafficStatsDTO struct {
-	TotalRequests     int64           `json:"total_requests"`
-	SuccessRequests   int64           `json:"success_requests"`
-	ErrorRequests     int64           `json:"error_requests"`
-	Timeouts          int64           `json:"timeouts"`
-	Retries           int64           `json:"retries"`
-	Failovers         int64           `json:"failovers"`
-	TotalTokens       int64           `json:"total_tokens"`
-	PromptTokens      int64           `json:"prompt_tokens"`
-	CompletionTokens  int64           `json:"completion_tokens"`
-	CachedInputTokens int64           `json:"cached_input_tokens"`
-	ReasoningTokens   int64           `json:"reasoning_tokens"`
-	TotalCostUSD      string          `json:"total_cost_usd"`
-	CostUSD           string          `json:"cost_usd"`
-	AvgLatencyMS      float64         `json:"avg_latency_ms"`
-	P95LatencyMS      *float64        `json:"p95_latency_ms"`
-	ErrorRate         float64         `json:"error_rate"`
-	Availability      float64         `json:"availability"`
-	From              time.Time       `json:"from"`
-	To                time.Time       `json:"to"`
-	Source            string          `json:"source"`
-	Latency           DistributionDTO `json:"latency"`
-	TTFT              DistributionDTO `json:"ttft"`
+	TotalRequests     int64  `json:"total_requests"`
+	SuccessRequests   int64  `json:"success_requests"`
+	ErrorRequests     int64  `json:"error_requests"`
+	Timeouts          int64  `json:"timeouts"`
+	Retries           int64  `json:"retries"`
+	Failovers         int64  `json:"failovers"`
+	TotalTokens       int64  `json:"total_tokens"`
+	PromptTokens      int64  `json:"prompt_tokens"`
+	CompletionTokens  int64  `json:"completion_tokens"`
+	CachedInputTokens int64  `json:"cached_input_tokens"`
+	ReasoningTokens   int64  `json:"reasoning_tokens"`
+	TotalCostUSD      string `json:"total_cost_usd"`
+	CostUSD           string `json:"cost_usd"`
+	// UnpricedRequests: jumlah request dalam jendela yang belum
+	// berharga (B-190) dan TIDAK termasuk dalam total_cost_usd.
+	UnpricedRequests int64           `json:"unpriced_requests"`
+	AvgLatencyMS     float64         `json:"avg_latency_ms"`
+	P95LatencyMS     *float64        `json:"p95_latency_ms"`
+	ErrorRate        float64         `json:"error_rate"`
+	Availability     float64         `json:"availability"`
+	From             time.Time       `json:"from"`
+	To               time.Time       `json:"to"`
+	Source           string          `json:"source"`
+	Latency          DistributionDTO `json:"latency"`
+	TTFT             DistributionDTO `json:"ttft"`
 }
 
 func (TrafficStatsDTO) adalahDTO() {}
@@ -255,6 +258,9 @@ type TrafficRowDTO struct {
 	TTFTMS           *int      `json:"ttft_ms"`
 	RetryCount       int       `json:"retry_count"`
 	FailoverCount    int       `json:"failover_count"`
+	// Unpriced: cost_usd "0" pada baris ini berarti belum berharga
+	// (B-190), bukan gratis — UI menampilkannya sebagai UNPRICED.
+	Unpriced bool `json:"unpriced"`
 }
 
 func (TrafficRowDTO) adalahDTO() {}
@@ -1009,6 +1015,7 @@ func toTrafficStatsDTO(s *traffic.Stats) TrafficStatsDTO {
 		ReasoningTokens:   s.ReasoningTokens,
 		TotalCostUSD:      s.CostUSD.Decimal(),
 		CostUSD:           s.CostUSD.Decimal(),
+		UnpricedRequests:  s.UnpricedRequests,
 		AvgLatencyMS:      s.Latency.AvgMS(),
 		P95LatencyMS:      s.Latency.P95,
 		ErrorRate:         errRate * 100.0,
@@ -1084,6 +1091,7 @@ func toTrafficRowDTO(r traffic.Row) TrafficRowDTO {
 		TTFTMS:           r.TTFTMS,
 		RetryCount:       r.RetryCount,
 		FailoverCount:    r.FailoverCount,
+		Unpriced:         r.Unpriced,
 	}
 }
 

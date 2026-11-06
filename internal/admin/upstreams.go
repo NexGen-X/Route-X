@@ -20,9 +20,11 @@ import (
 
 	"github.com/NexGen-X/Route-X/internal/auth"
 	"github.com/NexGen-X/Route-X/internal/database/repo"
+	"github.com/NexGen-X/Route-X/internal/database/repo/traffic"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/database/seed"
 	"github.com/NexGen-X/Route-X/internal/httpx"
+	"github.com/NexGen-X/Route-X/internal/observability"
 	"github.com/NexGen-X/Route-X/internal/providers"
 	"github.com/NexGen-X/Route-X/internal/security"
 	"github.com/NexGen-X/Route-X/internal/webhooks"
@@ -1450,9 +1452,16 @@ func (h *Handlers) testProviderModel(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	_, chatErr := adapter.ChatCompletion(testCtx, chatReq)
+	resp, chatErr := adapter.ChatCompletion(testCtx, chatReq)
 	duration := time.Since(start)
 	latMS := int(duration.Milliseconds())
+
+	// Jejak akuntansi diagnostik (B-191): panggilan ini MEMAKAI token
+	// upstream sungguhan, jadi ia wajib tampak sebagai baris requests —
+	// sebelumnya respons dibuang dan pemakaiannya tidak tercatat di mana
+	// pun. Penulisannya best-effort: kegagalannya tidak boleh mengubah
+	// hasil uji yang dilaporkan ke admin.
+	h.catatJejakUjiModel(ctx, r, p, modelName, resp, chatErr, latMS)
 
 	if chatErr != nil {
 		_ = h.respond(w, r, http.StatusOK, TestModelResponseDTO{
@@ -1468,6 +1477,78 @@ func (h *Handlers) testProviderModel(w http.ResponseWriter, r *http.Request) {
 		LatencyMS: latMS,
 		Message:   fmt.Sprintf("Model %s berhasil merespons (%d ms)", modelName, latMS),
 	})
+}
+
+// catatJejakUjiModel menulis SATU baris requests diagnostik untuk satu
+// panggilan uji model (B-191).
+//
+// Ini pengecualian akuntansi yang SADAR dan kini TERLIHAT: uji model
+// melewati jalur gateway (tanpa gerbang anggaran, tanpa pencatatan
+// pemakaian anggaran), tetapi ia mengonsumsi token upstream sungguhan —
+// meninggalkannya tanpa baris berarti ada pemakaian yang tidak tampak di
+// halaman Requests maupun total mana pun. Barisnya ditandai lewat kolom
+// endpoint yang memuat pola rute admin uji-model itu sendiri, dan
+// Unpriced mengikuti semantik B-190: token terpakai di sini tidak pernah
+// dihargai, jadi total > 0 berarti belum berharga — bukan gratis.
+// Kegagalan menulis hanya dicatat sebagai WARN; hasil uji untuk admin
+// tidak pernah diubah oleh kegagalan diagnostik.
+func (h *Handlers) catatJejakUjiModel(ctx context.Context, r *http.Request, p *upstream.Provider, modelName string, resp *providers.ChatResponse, chatErr error, latMS int) {
+	if h.trafficRepo == nil {
+		return
+	}
+	endpoint := ""
+	if rc := chi.RouteContext(r.Context()); rc != nil {
+		endpoint = rc.RoutePattern()
+	}
+	rec := traffic.Record{
+		RequestID:      observability.RequestIDFrom(ctx),
+		Method:         http.MethodPost,
+		Endpoint:       endpoint,
+		RequestedModel: modelName,
+		ProviderID:     &p.ID,
+		ProviderName:   &p.Name,
+		UpstreamModel:  &modelName,
+		StatusCode:     http.StatusOK,
+		LatencyMS:      latMS,
+	}
+	if principal, ok := auth.PrincipalFrom(ctx); ok && principal != nil {
+		uid := principal.User.ID
+		rec.UserID = &uid
+	}
+	if resp != nil {
+		rec.InputTokens = max(resp.Usage.InputTokens, 0)
+		rec.OutputTokens = max(resp.Usage.OutputTokens, 0)
+		rec.CachedInputTokens = max(resp.Usage.CachedInputTokens, 0)
+		rec.ReasoningTokens = max(resp.Usage.ReasoningTokens, 0)
+		rec.TotalTokens = max(resp.Usage.TotalTokens, 0)
+		if rec.TotalTokens == 0 {
+			rec.TotalTokens = rec.InputTokens + rec.OutputTokens
+		}
+		rec.Unpriced = rec.TotalTokens > 0
+	}
+	if chatErr != nil {
+		rec.StatusCode = http.StatusBadGateway
+		var perr *providers.Error
+		if errors.As(chatErr, &perr) {
+			if perr.StatusCode > 0 {
+				rec.StatusCode = perr.StatusCode
+			}
+			if perr.Kind != "" {
+				et := string(perr.Kind)
+				rec.ErrorType = &et
+			}
+			if perr.UpstreamCode != "" {
+				ec := perr.UpstreamCode
+				rec.ErrorCode = &ec
+			}
+		}
+		em := chatErr.Error()
+		rec.ErrorMessage = &em
+	}
+	if _, _, err := h.trafficRepo.Insert(ctx, rec); err != nil {
+		h.logger.WarnContext(ctx, "jejak diagnostik uji model gagal ditulis",
+			"provider", p.Name, "model", modelName, "error", err)
+	}
 }
 
 // -----------------------------------------------------------------------------

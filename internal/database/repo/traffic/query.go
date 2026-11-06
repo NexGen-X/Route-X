@@ -123,7 +123,7 @@ const rowColumns = `
 	status_code, coalesce(error_type, ''), coalesce(error_code, ''), stream,
 	input_tokens, output_tokens, total_tokens,
 	(cost_usd * 100000000)::bigint,
-	latency_ms, ttft_ms, retry_count, failover_count`
+	latency_ms, ttft_ms, retry_count, failover_count, unpriced`
 
 func scanRow(s interface{ Scan(...any) error }) (Row, error) {
 	var r Row
@@ -134,7 +134,7 @@ func scanRow(s interface{ Scan(...any) error }) (Row, error) {
 		&r.ModelName, &r.ProviderName, &r.UpstreamModel,
 		&r.StatusCode, &r.ErrorType, &r.ErrorCode, &r.Stream,
 		&r.InputTokens, &r.OutputTokens, &r.TotalTokens, &r.CostUSD,
-		&r.LatencyMS, &r.TTFTMS, &r.RetryCount, &r.FailoverCount,
+		&r.LatencyMS, &r.TTFTMS, &r.RetryCount, &r.FailoverCount, &r.Unpriced,
 	)
 	return r, err
 }
@@ -323,7 +323,7 @@ func (r *Repo) Get(ctx context.Context, id string, createdAt time.Time) (Detail,
 		&d.ModelName, &d.ProviderName, &d.UpstreamModel,
 		&d.StatusCode, &d.ErrorType, &d.ErrorCode, &d.Stream,
 		&d.InputTokens, &d.OutputTokens, &d.TotalTokens, &d.CostUSD,
-		&d.LatencyMS, &d.TTFTMS, &d.RetryCount, &d.FailoverCount,
+		&d.LatencyMS, &d.TTFTMS, &d.RetryCount, &d.FailoverCount, &d.Unpriced,
 		&d.UserID, &d.ModelID, &d.ProviderID,
 		&d.ErrorMessage, &d.CachedInputTokens, &d.ReasoningTokens, &d.UpstreamLatencyMS,
 		&d.RoutingStrategy, &d.RoutingDecision,

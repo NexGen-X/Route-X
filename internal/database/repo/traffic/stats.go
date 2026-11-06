@@ -150,6 +150,11 @@ type Totals struct {
 
 	CostUSD upstream.USD
 
+	// UnpricedRequests adalah jumlah request dalam jendela yang belum
+	// berharga (B-190): token terpakai tanpa harga berlaku, sehingga
+	// CostUSD di atas TIDAK mencakup mereka dan UI wajib menyatakannya.
+	UnpricedRequests int64
+
 	Latency Distribution
 	TTFT    Distribution
 }
@@ -237,7 +242,8 @@ const agregatMentah = `
 	(percentile_disc(0.50) within group (order by ttft_ms))::float8,
 	(percentile_disc(0.90) within group (order by ttft_ms))::float8,
 	(percentile_disc(0.95) within group (order by ttft_ms))::float8,
-	(percentile_disc(0.99) within group (order by ttft_ms))::float8`
+	(percentile_disc(0.99) within group (order by ttft_ms))::float8,
+	count(*) filter (where unpriced)`
 
 // agregatRollup adalah ekspresi agregat atas usage_hourly maupun usage_daily.
 //
@@ -273,13 +279,14 @@ const agregatRollup = `
 	usage_histogram_percentile(usage_histogram_sum(ttft_hist), 0.50)::float8,
 	usage_histogram_percentile(usage_histogram_sum(ttft_hist), 0.90)::float8,
 	usage_histogram_percentile(usage_histogram_sum(ttft_hist), 0.95)::float8,
-	usage_histogram_percentile(usage_histogram_sum(ttft_hist), 0.99)::float8`
+	usage_histogram_percentile(usage_histogram_sum(ttft_hist), 0.99)::float8,
+	coalesce(sum(unpriced_count), 0)`
 
 // scanTotals membaca satu baris hasil agregat, mengikuti urutan agregatMentah dan
 // agregatRollup — keduanya WAJIB tetap sama bentuknya.
 //
 // dest tambahan di depan dipakai pemanggil yang ikut memilih kolom bucket atau dimensi,
-// sehingga hanya ada satu tempat yang tahu urutan 26 kolom agregat itu.
+// sehingga hanya ada satu tempat yang tahu urutan 27 kolom agregat itu.
 func scanTotals(s interface{ Scan(...any) error }, depan ...any) (Totals, error) {
 	var t Totals
 	var biaya int64
@@ -291,6 +298,7 @@ func scanTotals(s interface{ Scan(...any) error }, depan ...any) (Totals, error)
 		&t.Latency.P50, &t.Latency.P90, &t.Latency.P95, &t.Latency.P99,
 		&t.TTFT.Count, &t.TTFT.SumMS, &t.TTFT.MaxMS,
 		&t.TTFT.P50, &t.TTFT.P90, &t.TTFT.P95, &t.TTFT.P99,
+		&t.UnpricedRequests,
 	)
 	if err := s.Scan(dest...); err != nil {
 		return Totals{}, err

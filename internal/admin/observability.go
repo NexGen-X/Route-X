@@ -203,6 +203,7 @@ func selisihTotals(total, terpakai traffic.Totals) traffic.Totals {
 		ReasoningTokens:   total.ReasoningTokens - terpakai.ReasoningTokens,
 		TotalTokens:       total.TotalTokens - terpakai.TotalTokens,
 		CostUSD:           upstream.USD(total.CostUSD.Units() - terpakai.CostUSD.Units()),
+		UnpricedRequests:  total.UnpricedRequests - terpakai.UnpricedRequests,
 	}
 	sisa.Latency.Count = total.Latency.Count - terpakai.Latency.Count
 	sisa.Latency.SumMS = total.Latency.SumMS - terpakai.Latency.SumMS
@@ -302,6 +303,7 @@ func susunIrisanBreakdown(slices []traffic.Slice, total traffic.Totals) []Traffi
 		terpakai.ReasoningTokens += s.ReasoningTokens
 		terpakai.TotalTokens += s.TotalTokens
 		terpakai.CostUSD = upstream.USD(terpakai.CostUSD.Units() + s.CostUSD.Units())
+		terpakai.UnpricedRequests += s.UnpricedRequests
 		terpakai.Latency.Count += s.Latency.Count
 		terpakai.Latency.SumMS += s.Latency.SumMS
 		terpakai.TTFT.Count += s.TTFT.Count

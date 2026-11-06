@@ -335,8 +335,22 @@ func (r *Repo) Authenticate(ctx context.Context, raw string, clientIP netip.Addr
 					  and (
 						(b.subject_kind = 'api_key' and b.subject = api_keys.id::text)
 						or (b.subject_kind = 'user'  and b.subject = api_keys.owner_user_id::text)
-						or ($2::inet is not null and b.subject_kind = 'ip'       and b.subject::inet  = $2::inet)
-						or ($2::inet is not null and b.subject_kind = 'ip_range' and $2::inet <<= b.subject::cidr)
+						-- Perbandingan IP dibungkus CASE (B-269): CASE adalah
+						-- satu-satunya konstruksi yang urutan evaluasinya
+						-- dijamin PostgreSQL, jadi cast hanya berjalan untuk
+						-- baris berjenis cocok — konjungsi AND polos tidak
+						-- memberi jaminan itu. Cabang ip_range membandingkan
+						-- lewat ::inet, BUKAN ::cidr: inet menerima bit host
+						-- dan <<= membandingkan jaringan termasked-nya, jadi
+						-- baris warisan ber-host-bits yang tersimpan sebelum
+						-- validasi B-269 menegakkan jaringan yang dimaksud
+						-- alih-alih melempar 22P02 dan meracuni autentikasi
+						-- SEMUA key.
+						or ($2::inet is not null and case
+							when b.subject_kind = 'ip'       then b.subject::inet = $2::inet
+							when b.subject_kind = 'ip_range' then $2::inet <<= b.subject::inet
+							else false
+						end)
 					  )
 				) then 'banned'
 				else null

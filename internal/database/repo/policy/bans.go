@@ -56,18 +56,23 @@ type CreateBanParams struct {
 // validasiSubjekBan memeriksa bentuk subjek sesuai jenisnya (B-192).
 //
 // Pemeriksaan ini adalah penjaga satu-satunya antara permukaan admin dan
-// query autentikasi API key: penegakan blokir mengevaluasi
-// `b.subject::inet` / `b.subject::cidr` di dalam subquery bans pada
-// Authenticate, jadi satu baris ip/ip_range bersubjek teks tak sah membuat
-// cast-nya melempar error dan SELURUH autentikasi gagal (jalur /v1
-// menjawab 500 untuk key lain yang sah). Constraint DB hanya memeriksa
-// jenis dikenal & subjek non-kosong — bentuknya tidak. Karena itu bentuk
-// divalidasi di sini, di titik tulis bersama semua pemanggil:
+// query autentikasi API key: penegakan blokir mengevaluasi cast atas
+// `b.subject` di dalam subquery bans pada Authenticate, jadi satu baris
+// ip/ip_range bersubjek teks tak sah membuat cast-nya melempar error dan
+// SELURUH autentikasi gagal (jalur /v1 menjawab 500 untuk key lain yang
+// sah). Constraint DB hanya memeriksa jenis dikenal & subjek non-kosong —
+// bentuknya tidak. Karena itu bentuk divalidasi di sini, di titik tulis
+// bersama semua pemanggil:
 //
 //   - ip: alamat IP tunggal yang bisa diurai (netip.ParseAddr; notasi
 //     CIDR dan zona ditolak — keduanya tak pernah setara dengan inet
 //     polos yang dibandingkan Authenticate);
-//   - ip_range: prefiks CIDR yang bisa diurai (netip.ParsePrefix);
+//   - ip_range: prefiks CIDR yang bisa diurai (netip.ParsePrefix) DAN
+//     sudah berbentuk jaringan (tanpa bit host, B-269): `10.0.0.1/24`
+//     ditolak karena cast `::cidr` PostgreSQL menolaknya dengan 22P02 —
+//     bentuk yang sama yang dulu meracuni Authenticate. Operator yang
+//     bermaksud memblokir satu host memakai jenis ip; yang bermaksud
+//     jaringan menulis alamat jaringannya (`10.0.0.0/24`);
 //   - api_key / user: UUID entitas yang diblokir.
 func validasiSubjekBan(kind, subject string) error {
 	if strings.TrimSpace(subject) == "" {
@@ -80,8 +85,12 @@ func validasiSubjekBan(kind, subject string) error {
 			return fmt.Errorf("subjek blokir ip %q bukan alamat IP yang sah: %w", subject, repo.ErrInvalidReference)
 		}
 	case BanSubjectIPRange:
-		if _, err := netip.ParsePrefix(subject); err != nil {
+		p, err := netip.ParsePrefix(subject)
+		if err != nil {
 			return fmt.Errorf("subjek blokir ip_range %q bukan prefiks CIDR yang sah: %w", subject, repo.ErrInvalidReference)
+		}
+		if p != p.Masked() {
+			return fmt.Errorf("subjek blokir ip_range %q mengandung bit host (bentuk jaringannya %s): %w", subject, p.Masked(), repo.ErrInvalidReference)
 		}
 	case BanSubjectAPIKey, BanSubjectUser:
 		if !idOK(subject) {

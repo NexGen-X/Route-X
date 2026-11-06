@@ -148,6 +148,24 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 	// berhasil — sesi tetap "connected" dan resolusi akan dicoba lagi
 	// secara malas pada pemakaian berikutnya (sync/factory); kegagalannya
 	// tercatat, bukan ditelan.
+	//
+	// B-319 (keputusan terdokumentasi, dinilai Fase 15): penulisan
+	// project ini — dan audit connect_oauth di bawah — SENGAJA berada
+	// di luar transaksi SimpanHasilExchange, bukan kelalaian. Dasarnya:
+	// (1) invarian atomik B-267 adalah kredensial + sesi + sinkronisasi
+	// provider, dan ketiganya sudah satu transaksi; project adalah
+	// metadata turunan loadCodeAssist yang keadaan kosongnya SAH dan
+	// sudah ditangani semua pemakai (sesi pra-B-157 dan akun generik
+	// memang hidup tanpa project; backfill malas di jalur sync/factory
+	// menutupnya) — kegagalan parsialnya tidak menghasilkan keadaan
+	// korup atau yatim, hanya katalog generik sementara. (2) Audit di
+	// produk ini best-effort menurut kontrak writeAudit (gagal dicatat,
+	// tidak pernah menggagalkan aksi) di SEMUA permukaan admin;
+	// memaksanya masuk transaksi khusus exchange akan membalik
+	// semantik itu sepihak dan bisa menggagalkan koneksi yang sah
+	// karena kegagalan pencatatan. Menyatukan keduanya tidak menutup
+	// kelas kegagalan apa pun yang tidak sudah tertutup jalur malas
+	// dan kontrak audit tersebut.
 	if project, perr := h.oauthClient.LoadCodeAssistProject(ctx, tokenRes.AccessToken.Reveal(), proxyURL); perr != nil {
 		h.logger.WarnContext(ctx, "resolusi project code assist setelah exchange oauth gagal; dicoba lagi pada pemakaian berikutnya",
 			"provider_id", providerID, "session_id", sessionMeta.ID, "error", perr)

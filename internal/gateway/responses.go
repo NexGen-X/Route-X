@@ -96,6 +96,12 @@ func (h *Handlers) Responses(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Persiapan berhasil: eksekusi upstream pasti dicoba, jadi kuota yang
+	// terbakar memang sah. Tanpa baris ini penjaga mengembalikannya lewat
+	// tutup() dan penghitung RPM/RPD permukaan ini tidak pernah
+	// terakumulasi (B-166) — permukaan lain memanggil lolos() di titik
+	// yang sama persis sesudah persiapannya berhasil.
+	jaga.lolos()
 	h.responsesSekali(w, r, pr, j)
 }
 

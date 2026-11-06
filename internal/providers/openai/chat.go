@@ -48,10 +48,17 @@ type wireAudio struct {
 // itu satu-satunya cara menyusun ulang potongan argumen ke tool call yang benar, sedangkan
 // pada permintaan keluar field itu tidak boleh ikut sama sekali.
 type wireToolCall struct {
-	Index    *int   `json:"index,omitempty"`
-	ID       string `json:"id,omitempty"`
-	Type     string `json:"type,omitempty"`
-	Function struct {
+	Index *int   `json:"index,omitempty"`
+	ID    string `json:"id,omitempty"`
+	Type  string `json:"type,omitempty"`
+	// ThoughtSignature (B-371): codec gateway sendiri membawa
+	// field ini bolak-balik pada riwayat (pengecualian bernama
+	// B-162) dan adapter Google menyalinnya, tetapi adapter ini —
+	// yang benar-benar bisa mencapai upstream bergaya Gemini —
+	// membuangnya di kedua arah, padahal Gemini menolak riwayat
+	// function call tanpa signature pada giliran lanjutan.
+	ThoughtSignature string `json:"thought_signature,omitempty"`
+	Function         struct {
 		Name string `json:"name,omitempty"`
 		// arguments selalu ditulis, termasuk saat kosong: nilainya string JSON dan
 		// sebagian implementasi menolak tool call tanpa field ini.
@@ -67,9 +74,10 @@ func (w wireToolCall) toCanonical(fallbackIndex int) providers.ToolCall {
 		idx = *w.Index
 	}
 	return providers.ToolCall{
-		Index: idx,
-		ID:    w.ID,
-		Type:  w.Type,
+		Index:            idx,
+		ID:               w.ID,
+		Type:             w.Type,
+		ThoughtSignature: w.ThoughtSignature,
 		Function: providers.FunctionCall{
 			Name:      w.Function.Name,
 			Arguments: w.Function.Arguments,
@@ -79,7 +87,7 @@ func (w wireToolCall) toCanonical(fallbackIndex int) providers.ToolCall {
 
 // toolCallToWire menyusun tool call untuk dikirim kembali ke upstream.
 func toolCallToWire(tc providers.ToolCall) wireToolCall {
-	out := wireToolCall{ID: tc.ID, Type: tc.Type}
+	out := wireToolCall{ID: tc.ID, Type: tc.Type, ThoughtSignature: tc.ThoughtSignature}
 	if out.Type == "" {
 		// Satu-satunya jenis yang ada di dialek OpenAI. Mengirim type kosong hanya
 		// menghasilkan 400 yang membingungkan pengguna.

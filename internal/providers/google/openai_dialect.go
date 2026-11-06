@@ -45,6 +45,12 @@ type oaMessage struct {
 	Content          any          `json:"content"`
 	ReasoningContent string       `json:"reasoning_content,omitempty"`
 	ToolCalls        []oaToolCall `json:"tool_calls,omitempty"`
+	// ThoughtSignature (B-360): dialek streaming (oaDelta) sudah
+	// membawanya sejak B-324, dan kanonis mengisinya dari part
+	// thought bertanda tangan — tanpa field ini jalur NON-streaming
+	// membuangnya, jadi giliran lanjutan multi-turn kehilangan
+	// signature yang justru disediakan jalur streaming.
+	ThoughtSignature string `json:"thought_signature,omitempty"`
 }
 
 type oaDelta struct {
@@ -221,6 +227,7 @@ func encodeCompletion(resp *providers.ChatResponse) json.RawMessage {
 			Role:             string(c.Message.Role),
 			ReasoningContent: c.Message.ReasoningContent,
 			ToolCalls:        encodeToolCalls(c.Message.ToolCalls, false),
+			ThoughtSignature: c.Message.ReasoningSignature,
 		}
 		if len(c.Message.Parts) > 0 {
 			// Jawaban berpart non-teks dirender sebagai larik content

@@ -311,11 +311,16 @@ func (s *stream) blockStart(env *streamEnvelope) *providers.StreamEvent {
 		// seperti jalur non-streaming di toCanonicalResponse:
 		// sumber url diteruskan apa adanya, sumber base64 menjadi
 		// data URI; sumber yang tak bisa dipakai tidak mengarang
-		// part. Dialek OpenAI adapter ini tidak punya encoder
-		// larik content untuk Raw chunk, jadi gambar berjalan
-		// lewat bentuk kanoniknya — permukaan yang menyintesis
-		// dari kanonik (Messages) yang merendernya, dan gerbang
-		// konten gateway menghitung Parts sebagai isi.
+		// part.
+		//
+		// B-361: Raw chunk-nya kini ikut membawa gambarnya sebagai
+		// larik content image_url pada delta (oaDelta.Content
+		// bertipe any + oaContentPart, meniru dialek Google) —
+		// sebelumnya Raw "diam" (delta kosong) sehingga permukaan
+		// Chat yang meneruskan Raw apa adanya (kontrak B-013)
+		// kehilangan gambarnya walau bentuk kanoniknya utuh;
+		// permukaan yang menyintesis dari kanonik (Messages)
+		// merender dari Parts seperti sebelumnya.
 		if env.ContentBlock.Source == nil {
 			return nil
 		}
@@ -329,7 +334,10 @@ func (s *stream) blockStart(env *streamEnvelope) *providers.StreamEvent {
 		default:
 			return nil
 		}
-		out := s.event(&oaDelta{}, "", nil)
+		out := s.event(&oaDelta{Content: []oaContentPart{{
+			Type:     "image_url",
+			ImageURL: &oaImageURL{URL: url},
+		}}}, "", nil)
 		out.Parts = []providers.ContentPart{{
 			Type:     providers.PartTypeImageURL,
 			ImageURL: &providers.ImageURL{URL: url},

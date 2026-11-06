@@ -847,7 +847,15 @@ func cobaKandidat[T any](
 		// Hal yang sama berlaku untuk penolakan LOKAL gateway (Local): batas
 		// laju/konkurensi yang diputuskan gateway sendiri sebelum upstream
 		// dihubungi bukan bukti kesehatan provider (audit F4).
-		if a.Err.Kind != providers.ErrKindCanceled && !a.Err.Local {
+		//
+		// Dan hal yang sama berlaku untuk ErrKindInvalidRequest (turunan B-161):
+		// penolakan 400 validasi adalah kesalahan BENTUK permintaan klien — skema
+		// tool yang tidak dikenal validator upstream, misalnya — bukan bukti
+		// provider sakit. Pada kampanye CLI, rentetan 400 validasi dari satu tool
+		// membuka pemutus arus dan tool LAIN ikut menerima 503 tanpa pernah dicoba
+		// ke upstream; provider yang sehat tidak boleh diputus oleh permintaan
+		// yang memang tidak sah bentuknya.
+		if a.Err.Kind != providers.ErrKindCanceled && a.Err.Kind != providers.ErrKindInvalidRequest && !a.Err.Local {
 			e.catat(ctx, c, plan.Model, false, plan.BreakerCfg, probe)
 		}
 

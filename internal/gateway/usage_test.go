@@ -140,6 +140,40 @@ func TestJejakMencatatModelTakDikenal(t *testing.T) {
 	}
 }
 
+// Baris permintaan yang gagal di upstream harus tetap teratribusi ke provider yang
+// dicoba (turunan B-161): sebelum fix ini, ProviderName/UpstreamModel hanya diisi dari
+// kandidat PEMENANG, jadi baris 400 validasi tercatat dengan kolom provider KOSONG
+// padahal percobaannya jelas. Resolusi model yang gagal (tanpa percobaan) tetap kosong —
+// lihat TestJejakMencatatModelTakDikenal.
+func TestJejakMencatatAtribusiSaatSemuaPercobaanGagal(t *testing.T) {
+	gagal := &providerTiruan{
+		nama: "utama", kind: providers.KindOpenAI,
+		chat: func(_ context.Context, _ *providers.ChatRequest) (*providers.ChatResponse, error) {
+			return nil, &providers.Error{
+				Kind: providers.ErrKindInvalidRequest, Provider: "utama",
+				StatusCode: 400, Message: "validator upstream menolak skema tool",
+			}
+		},
+	}
+	s, sink := susunDenganPencatat(t, gagal, nil)
+
+	w := s.panggil(t, http.MethodPost, "/chat/completions", bodyChatMinimal, nil)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, mau 400: %s", w.Code, w.Body.String())
+	}
+
+	ev := sink.satu(t)
+	if ev.ProviderName != "utama" || ev.ProviderID != "prov-utama" {
+		t.Errorf("atribusi provider = %q/%q, mau utama/prov-utama", ev.ProviderName, ev.ProviderID)
+	}
+	if ev.UpstreamModel != "gpt-4o-mini-2024" || ev.ProviderModelID != "pm-utama" {
+		t.Errorf("atribusi model = %q/%q, mau gpt-4o-mini-2024/pm-utama", ev.UpstreamModel, ev.ProviderModelID)
+	}
+	if len(ev.Attempts) != 1 {
+		t.Errorf("percobaan tercatat = %d, mau 1", len(ev.Attempts))
+	}
+}
+
 func TestJejakMencatatPenolakanPenyaringKonten(t *testing.T) {
 	src := &sumberKebijakan{filters: []*policy.ContentFilter{
 		filterBaris("f1", "tanpa kata rahasia", policy.FilterBlockedPattern, func(f *policy.ContentFilter) {

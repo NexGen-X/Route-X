@@ -393,6 +393,50 @@ func TestExecutePembatalanSaatPercobaanBerjalan(t *testing.T) {
 	}
 }
 
+// Penolakan 400 validasi (ErrKindInvalidRequest) TIDAK dicatat ke pemutus arus
+// (turunan B-161): itu kesalahan bentuk permintaan klien, bukan kesehatan provider.
+// Pada kampanye CLI, rentetan 400 validasi skema dari satu tool membuka pemutus arus
+// dan tool lain ikut kena 503 tanpa dicoba. Sebagai kontrol, kegagalan server tetap
+// dicatat — penjaga yang sama harus membedakan keduanya.
+func TestExecuteValidasiTidakDicatatKePemutusArus(t *testing.T) {
+	g := penjaga()
+	e, _ := executorUji(g)
+
+	var dipanggil int
+	out := Execute(context.Background(), e, rencana("m", 3, 0, kandidat("a"), kandidat("b")),
+		func(_ context.Context, c *upstream.RouteCandidate) (string, error) {
+			dipanggil++
+			return "", &providers.Error{
+				Kind: providers.ErrKindInvalidRequest, Provider: c.ProviderName,
+				StatusCode: 400, Message: "validator upstream menolak skema tool",
+			}
+		})
+
+	if dipanggil != 1 {
+		t.Errorf("op dipanggil %d kali, mau 1 (invalid_request tidak diulang/dialihkan)", dipanggil)
+	}
+	if out.Err == nil || out.Err.Kind != providers.ErrKindInvalidRequest {
+		t.Fatalf("Err = %v, mau invalid_request", out.Err)
+	}
+	if got := g.catatan(); len(got) != 0 {
+		t.Errorf("catatan pemutus arus = %v, mau kosong untuk kegagalan validasi", got)
+	}
+
+	// Kontrol: kegagalan server pada penjaga yang sama TETAP dicatat sebagai kegagalan.
+	g2 := penjaga()
+	e2, _ := executorUji(g2)
+	_ = Execute(context.Background(), e2, rencana("m", 1, 0, kandidat("a")),
+		func(_ context.Context, c *upstream.RouteCandidate) (string, error) {
+			return "", &providers.Error{
+				Kind: providers.ErrKindServer, Provider: c.ProviderName,
+				StatusCode: 500, Message: "upstream meledak",
+			}
+		})
+	if got := g2.catatan(); len(got) == 0 {
+		t.Error("kegagalan server tidak dicatat ke pemutus arus, mau tercatat")
+	}
+}
+
 // Tenggat PERCOBAAN yang habis harus terklasifikasi sebagai timeout, bukan canceled.
 // Keduanya sampai ke pemanggil sebagai context yang selesai, dan akibatnya berlawanan:
 // timeout aman dialihkan, pembatalan klien tidak. Tanpa koreksi ini, failover tidak pernah

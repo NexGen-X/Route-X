@@ -174,11 +174,38 @@ type Plan struct {
 	// catatan semantik di breaker.go.
 	BreakerCfg BreakerConfig
 
+	// ModelNames memetakan identitas kanonik kandidat (RouteCandidate.
+	// ModelID = models.id UUID) ke NAMA model kanoniknya, untuk plan
+	// yang mencampur beberapa model (combo pipeline). Kunci pemutus
+	// arus memakai nama — konsisten dengan plan satu model yang
+	// kuncinya Model — jadi executor menyelesaikan kunci per kandidat
+	// lewat peta ini (B-181). Kosong/nil pada plan satu model dan
+	// kandidat sintetis: kunci jatuh ke Model (perilaku lama).
+	ModelNames map[string]string
+
 	// streaming menandai rencana ExecuteStream: hasil percobaan yang
 	// BERHASIL membuka aliran tidak dicatat ke pemutus arus di sini,
 	// melainkan oleh pembungkus aliran saat aliran benar-benar selesai
 	// (audit F4 — aliran yang mati di tengah bukan keberhasilan).
 	streaming bool
+}
+
+// modelKandidat menyelesaikan kunci model pemutus arus untuk SATU
+// kandidat (B-181). Plan combo mencampur kandidat dari beberapa
+// model kanonik, dan memakai Model plan (model jangkar yang diminta
+// klien) untuk semuanya membuat kegagalan anggota model B tercatat
+// ke breaker model A — mencemari lalu lintas langsung model A dan
+// membiarkan model B tanpa riwayat perlindungannya sendiri. Bila
+// identitas kandidat dikenal dan plan membawa nama kanoniknya, nama
+// itu yang dipakai; selain itu Model plan (perilaku lama, dan satusatunya
+// pilihan untuk plan satu model).
+func modelKandidat(plan Plan, c *upstream.RouteCandidate) string {
+	if c.ModelID != "" {
+		if nama, ok := plan.ModelNames[c.ModelID]; ok && nama != "" {
+			return nama
+		}
+	}
+	return plan.Model
 }
 
 // PlanFromRule menyusun Plan dari aturan routing dan kandidat yang sudah terurut.
@@ -847,11 +874,14 @@ func cobaKandidat[T any](
 			return kosong, att, false
 		}
 
-		izin, state, gerr := e.izinkan(ctx, c, plan.Model, plan.BreakerCfg)
+		// Kunci pemutus arus per kandidat (B-181): plan combo memakai
+		// model kanonik kandidat ini, bukan model jangkar plan.
+		mk := modelKandidat(plan, c)
+		izin, state, gerr := e.izinkan(ctx, c, mk, plan.BreakerCfg)
 		if gerr != nil {
 			// Penjaga yang error tidak memblokir: lihat catatan di CircuitGuard.
 			e.logger.WarnContext(ctx, "pemutus arus tidak bisa dibaca, permintaan diloloskan",
-				"provider", c.ProviderName, "model", plan.Model, "error", gerr)
+				"provider", c.ProviderName, "model", mk, "error", gerr)
 		}
 		if !izin {
 			lepas()
@@ -884,7 +914,7 @@ func cobaKandidat[T any](
 			// pencatatan ditunda ke pembungkus aliran di ExecuteStream yang
 			// tahu bagaimana aliran itu berakhir (audit F4).
 			if !plan.streaming {
-				e.catat(ctx, c, plan.Model, true, plan.BreakerCfg, probe)
+				e.catat(ctx, c, mk, true, plan.BreakerCfg, probe)
 				lepas()
 			} else if aliran, ok := any(nilai).(providers.Stream); ok {
 				// Slot dipegang selama aliran HIDUP, bukan sampai ia dibuka
@@ -916,8 +946,18 @@ func cobaKandidat[T any](
 		// membuka pemutus arus dan tool LAIN ikut menerima 503 tanpa pernah dicoba
 		// ke upstream; provider yang sehat tidak boleh diputus oleh permintaan
 		// yang memang tidak sah bentuknya.
-		if a.Err.Kind != providers.ErrKindCanceled && a.Err.Kind != providers.ErrKindInvalidRequest && !a.Err.Local {
-			e.catat(ctx, c, plan.Model, false, plan.BreakerCfg, probe)
+		//
+		// ErrKindContentFilter ikut dikecualikan (B-240): penolakan kebijakan
+		// konten upstream juga 4xx yang diputuskan oleh ISI permintaan klien,
+		// bukan kesehatan provider — muatan yang sama akan ditolak berulang
+		// kali, dan mencatatnya hanya membuka pemutus arus untuk trafik lain
+		// yang sah. Ia sengaja TIDAK dibuat failoverable (dokumen jenisnya di
+		// providers/errors.go): muatan yang sama tidak dikirim ke banyak
+		// pihak. Dua keputusan itu berbeda sumbu — failover menyangkut
+		// permintaan ini, pencatatan menyangkut reputasi provider — dan
+		// pengecualian di sini hanya menyangkut sumbu kedua.
+		if a.Err.Kind != providers.ErrKindCanceled && a.Err.Kind != providers.ErrKindInvalidRequest && a.Err.Kind != providers.ErrKindContentFilter && !a.Err.Local {
+			e.catat(ctx, c, mk, false, plan.BreakerCfg, probe)
 		}
 
 		if !a.Err.Retryable() || n == maksPercobaan {
@@ -1237,7 +1277,7 @@ func bungkusPencatatAliran(
 			Stream: &aliranPeristiwaPertama{Stream: dijaga, ev: ev},
 			ctx:    ctx,
 			catat: func(sukses bool) {
-				e.catat(ctx, c, plan.Model, sukses, plan.BreakerCfg, probe)
+				e.catat(ctx, c, modelKandidat(plan, c), sukses, plan.BreakerCfg, probe)
 			},
 		}, nil
 	}

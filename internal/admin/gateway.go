@@ -1632,10 +1632,16 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 	// sudah memetakan "" menjadi NULL, handler wajib meneruskannya apa adanya.
 	// Field pembungkus yang lebih dangkal menaungi field DTO untuk dua kunci
 	// JSON itu; sisa field tetap dari createFilterReq.
+	//
+	// case_sensitive ikut dibaca sebagai penunjuk dengan alasan yang sama
+	// (B-370): pada bool polos, "tidak dikirim" terurai menjadi false dan
+	// handler lama memasangnya tanpa syarat, jadi pembaruan nama-saja
+	// menimpa kepekaan huruf filter secara senyap.
 	var req struct {
 		createFilterReq
-		ModelID    *string `json:"model_id"`
-		ProviderID *string `json:"provider_id"`
+		ModelID       *string `json:"model_id"`
+		ProviderID    *string `json:"provider_id"`
+		CaseSensitive *bool   `json:"case_sensitive"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
@@ -1667,7 +1673,9 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 	if req.PatternType != "" {
 		p.PatternType = &req.PatternType
 	}
-	p.CaseSensitive = &req.CaseSensitive
+	if req.CaseSensitive != nil {
+		p.CaseSensitive = req.CaseSensitive
+	}
 	if req.MaxEvalMS > 0 {
 		p.MaxEvalMS = &req.MaxEvalMS
 	}

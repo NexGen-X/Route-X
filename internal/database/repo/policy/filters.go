@@ -386,7 +386,16 @@ func (r *Repo) UpdateFilter(ctx context.Context, id string, p UpdateFilterParams
 	// harus tetap bisa dikompilasi — mengubah tipe menjadi regex atas
 	// pola lama yang bukan regex sama rusaknya dengan menulis pola baru
 	// yang rusak.
-	if p.Kind != nil || p.Pattern != nil || p.PatternType != nil || p.CaseSensitive != nil {
+	//
+	// B-367: MENYALAKAN filter lewat params ini (Enabled=true) ikut
+	// memicu validasi yang sama atas pola efektif tersimpan, sejajar
+	// SetFilterEnabled (B-326). Tanpa itu, baris warisan berpola rusak
+	// bisa dinyalakan lewat repo dengan params Enabled saja — jalur
+	// HTTP hanya tertutup secara insidental karena handler selalu
+	// memasang CaseSensitive (akar B-370), bukan karena titik cekik
+	// repo ini rapat.
+	menyalakan := p.Enabled != nil && *p.Enabled
+	if menyalakan || p.Kind != nil || p.Pattern != nil || p.PatternType != nil || p.CaseSensitive != nil {
 		kini, err := r.GetFilter(ctx, id)
 		if err != nil {
 			return nil, err
@@ -484,7 +493,13 @@ func (r *Repo) UpdateFilter(ctx context.Context, id string, p UpdateFilterParams
 	}
 
 	if len(setClauses) == 0 {
-		return r.GetFilter(ctx, id)
+		// B-366: params kosong ditolak ErrNoChanges, seragam dengan
+		// UpdateBudget/UpdateRateLimit di paket yang sama dan
+		// webhooks.Update (B-354). Versi lama mengembalikan baris
+		// lama dengan err=nil — klien tak bisa membedakan
+		// "permintaan kosong" dari "berhasil diubah", dan permukaan
+		// HTTP-nya menjawab 200 untuk PUT {}.
+		return nil, fmt.Errorf("%s: %w", op, ErrNoChanges)
 	}
 
 	setClauses = append(setClauses, "updated_at = now()")

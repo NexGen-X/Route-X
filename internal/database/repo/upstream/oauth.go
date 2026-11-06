@@ -270,6 +270,14 @@ func (r *OAuthRepo) ListSessionsByProviderID(ctx context.Context, providerID str
 }
 
 // ListExpiringOAuthSessions mencari seluruh sesi aktif yang token access-nya mendekati masa kedaluwarsa.
+//
+// Sesi milik provider yang DINONAKTIFKAN sengaja tidak disertakan (B-209):
+// versi lama hanya menyaring status sesi dan kredensial, sehingga worker
+// terus me-refresh — dan merotasi refresh token — untuk provider yang sudah
+// dimatikan operator, selamanya, tanpa ada yang menyadarinya. Kredensialnya
+// memang tidak dipilih router selama provider nonaktif, tetapi refresh yang
+// terus berjalan membakar panggilan auth penyedia tanpa guna dan
+// menyembunyikan keadaan provider yang sebenarnya.
 func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold time.Duration) ([]*ActiveOAuthSession, error) {
 	const op = "mencari sesi oauth kedaluwarsa"
 
@@ -279,8 +287,10 @@ func (r *OAuthRepo) ListExpiringOAuthSessions(ctx context.Context, threshold tim
 		       c.egress_pool_id::text, coalesce(s.code_assist_project, '')
 		from provider_oauth_sessions s
 		join provider_credentials c on c.id = s.credential_id
+		join providers p on p.id = s.provider_id
 		where s.enabled
 		  and c.enabled
+		  and p.enabled
 		  and c.expires_at is not null
 		  and c.expires_at <= now() + ($1 * interval '1 second')`
 
@@ -429,6 +439,49 @@ func (r *OAuthRepo) UpdateRefreshStatus(ctx context.Context, sessionID string, e
 		return repo.Err(op, err)
 	}
 	return nil
+}
+
+// SimpanHasilRefreshParams adalah masukan penyimpanan hasil refresh OAuth
+// yang berhasil.
+type SimpanHasilRefreshParams struct {
+	SessionID    string
+	CredentialID string
+	// AccessToken adalah access token baru dari penyedia.
+	AccessToken security.Secret
+	// ExpiresAt adalah masa berlaku access token baru.
+	ExpiresAt time.Time
+	// RefreshTokenBaru adalah refresh token hasil rotasi dari penyedia;
+	// nil berarti penyedia tidak merotasi — nilai tersimpan tidak disentuh.
+	RefreshTokenBaru *security.Secret
+}
+
+// SimpanHasilRefresh menyimpan hasil refresh yang BERHASIL secara atomik
+// (B-208): access token baru di provider_credentials, refresh token hasil
+// rotasi (bila ada) di provider_oauth_sessions, dan pembersihan status
+// refresh — dalam SATU transaksi bila querier-nya pool.
+//
+// Versi lama (di worker) menulis kredensial dan sesi sebagai dua penulisan
+// terpisah tanpa transaksi: crash atau kegagalan di antaranya membuat
+// access token sudah berganti tetapi refresh token rotasi hilang permanen —
+// penyedia yang merotasi menganggap token lama mati begitu token baru
+// diterbitkan — sehingga sesi putus untuk selamanya dan hanya bisa pulih
+// lewat login ulang manual.
+func (r *OAuthRepo) SimpanHasilRefresh(ctx context.Context, p SimpanHasilRefreshParams) error {
+	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
+		return repo.InTx(ctx, pool, func(q repo.Querier) error {
+			return r.WithQuerier(q).SimpanHasilRefresh(ctx, p)
+		})
+	}
+	creds := &CredentialRepo{q: r.q, cipher: r.cipher}
+	if err := creds.UpdateSecret(ctx, p.CredentialID, p.AccessToken, &p.ExpiresAt); err != nil {
+		return err
+	}
+	if p.RefreshTokenBaru != nil {
+		if err := r.UpdateRefreshToken(ctx, p.SessionID, *p.RefreshTokenBaru); err != nil {
+			return err
+		}
+	}
+	return r.UpdateRefreshStatus(ctx, p.SessionID, nil)
 }
 
 // SetEnabled menyalakan atau mematikan sesi OAuth dan kredensial terkait secara bersamaan.

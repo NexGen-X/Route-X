@@ -537,7 +537,7 @@ func buildGatewaySurface(
 		return nil, nil, nil, err
 	}
 	googleOAuthClient := oauth.NewGoogleOAuthClient(nil)
-	penyegarOAuth := worker.NewPenyegarOAuth(db.Pool, oauthRepo, creds, egress, googleOAuthClient, logger)
+	penyegarOAuth := worker.NewPenyegarOAuth(db.Pool, oauthRepo, egress, googleOAuthClient, logger)
 
 	// Pabrik adapter provider dipakai bersama antara permintaan inferensi dan health checker
 	// worker, menegakkan kebijakan SSRF dan cache instance yang konsisten (Aturan 14).
@@ -632,7 +632,7 @@ func buildGatewaySurface(
 
 	// 7. OAuth token refresher: memantau dan me-refresh token Google Antigravity & OAuth upstream
 	// (oauthRepo & googleOAuthClient dibuat di atas, sebelum pabrik).
-	oauthJob := worker.NewOAuthRefreshWorker(db.Pool, oauthRepo, creds, egress, googleOAuthClient, logger)
+	oauthJob := worker.NewOAuthRefreshWorker(db.Pool, oauthRepo, egress, googleOAuthClient, logger)
 	workerSup.Register(oauthJob, 10*time.Minute, 1*time.Minute)
 
 	// 8. Pembersih sesi kedaluwarsa: Sessions.DeleteExpired sebelumnya

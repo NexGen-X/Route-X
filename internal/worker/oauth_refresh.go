@@ -17,7 +17,6 @@ import (
 type OAuthRefreshWorker struct {
 	pool        *pgxpool.Pool
 	oauthRepo   *upstream.OAuthRepo
-	credRepo    *upstream.CredentialRepo
 	egressRepo  *upstream.EgressRepo
 	oauthClient *oauth.GoogleOAuthClient
 	logger      *slog.Logger
@@ -28,7 +27,6 @@ type OAuthRefreshWorker struct {
 func NewOAuthRefreshWorker(
 	pool *pgxpool.Pool,
 	oauthRepo *upstream.OAuthRepo,
-	credRepo *upstream.CredentialRepo,
 	egressRepo *upstream.EgressRepo,
 	oauthClient *oauth.GoogleOAuthClient,
 	logger *slog.Logger,
@@ -42,7 +40,6 @@ func NewOAuthRefreshWorker(
 	return &OAuthRefreshWorker{
 		pool:        pool,
 		oauthRepo:   oauthRepo,
-		credRepo:    credRepo,
 		egressRepo:  egressRepo,
 		oauthClient: oauthClient,
 		logger:      logger,
@@ -60,7 +57,6 @@ func NewOAuthRefreshWorker(
 func (w *OAuthRefreshWorker) deps() OAuthRefreshDeps {
 	return OAuthRefreshDeps{
 		OAuth:  w.oauthRepo,
-		Creds:  w.credRepo,
 		Egress: w.egressRepo,
 		Client: w.oauthClient,
 		Logger: w.logger,

@@ -470,7 +470,17 @@ func teksSystemAnthropic(raw json.RawMessage) (string, error) {
 	}
 	var parts []string
 	for _, b := range blocks {
-		if b.Type == "text" && b.Text != "" {
+		// B-359: block non-teks yang well-typed (mis. image) DITOLAK,
+		// bukan dibuang senyap. Kontrak Anthropic hanya mengizinkan
+		// block teks pada system; versi lama hanya mengumpulkan
+		// type=="text" dan membiarkan jenis lain lenyap — klien
+		// menerima jawaban atas permintaan yang berbeda dari yang
+		// ia kirim. Ini pasangan arah well-typed dari B-337 (yang
+		// menutup bentuk salah-tipe JSON-nya).
+		if b.Type != "text" {
+			return "", fmt.Errorf("field 'system' hanya boleh berisi block teks; ditemukan block bertipe %q", b.Type)
+		}
+		if b.Text != "" {
 			parts = append(parts, b.Text)
 		}
 	}
@@ -616,6 +626,15 @@ func decodeAnthropicMessagesRequest(body []byte, wajibMaxTokens bool) (*provider
 				return nil, err
 			}
 			for _, sm := range msgs {
+				// B-359: part non-teks pada pesan berperan system
+				// ditolak, bukan lenyap di sm.Text() yang hanya
+				// menyambung part teks — pasangan jalur field
+				// system di teksSystemAnthropic.
+				for _, part := range sm.Parts {
+					if part.Type != providers.PartTypeText {
+						return nil, fmt.Errorf("pesan system hanya boleh berisi teks; ditemukan bagian bertipe %q", part.Type)
+					}
+				}
 				if t := sm.Text(); t != "" {
 					sistem = append(sistem, t)
 				}

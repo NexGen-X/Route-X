@@ -809,6 +809,16 @@ func (l *Limiter) AllowScopes(ctx context.Context, scopes []ScopeLimits) Decisio
 	return l.allowScopesAt(ctx, scopes, l.now())
 }
 
+// AllowScopesAt adalah AllowScopes dengan waktu penilaian yang
+// ditentukan pemanggil (B-363): pemanggil yang harus mengikat
+// keputusan ini ke catatan waktunya sendiri — jangkar refund
+// cakupan model di gateway — meneruskan SATU bacaan jam yang sama,
+// supaya kenaikan penghitung dan jangkarnya tidak pernah dibaca
+// dari dua bacaan yang bisa mengangkangi batas jendela.
+func (l *Limiter) AllowScopesAt(ctx context.Context, scopes []ScopeLimits, now time.Time) Decision {
+	return l.allowScopesAt(ctx, scopes, now)
+}
+
 // allowScopesAt adalah AllowScopes dengan waktu yang sudah ditentukan pemanggil, supaya
 // Allow dan AllowScopes memakai satu jalur yang sama tanpa memanggil l.now() dua kali —
 // dua pembacaan waktu dalam satu keputusan bisa jatuh di dua jendela yang berbeda.
@@ -878,6 +888,22 @@ func tokenWindowsFor(scopes []ScopeTokenLimits, now time.Time) []window {
 // Kegagalannya ditelan (dicatat Debug): pengembalian yang gagal tidak boleh
 // menggagalkan respons penolakan yang sedang ditulis, dan Redis yang mati
 // memang berarti tidak ada penghitung yang perlu dibatalkan.
+//
+// Kontrak idempotensi (B-378): fungsi ini TIDAK idempoten di level
+// limiter — memanggilnya dua kali untuk permintaan yang sama
+// menurunkan penghitung dua kali, dan skrip refund hanya menjepit
+// di nol per kunci, jadi kelebihan panggilan memakan hitungan
+// permintaan LAIN pada jendela dan cakupan yang sama. Pemanggil
+// WAJIB menjamin paling banyak satu panggilan per kenaikan Limit().
+// Di produksi jaminan itu terpenuhi oleh satu-satunya pemanggil,
+// Guard.KembalikanKuota: ia hanya dicapai lewat jagaKuota.tutup()
+// di gateway, yang berflag aktif — tutup pertama menonaktifkan
+// flag, tutup berikutnya tidak melakukan apa pun — dan refund
+// cakupan model di jalur yang sama dijaga hitungan klaim
+// tandaKuotaModel (satu kenaikan hanya bisa diklaim sekali).
+// Pemanggil baru di luar penjaga itu harus menyediakan jaminan
+// sekali-panggilnya sendiri; jangan "memperbaiki" ini dengan
+// melacak ID permintaan di limiter tanpa kebutuhan nyata.
 func (l *Limiter) RefundRequest(ctx context.Context, p *Principal, ip netip.Addr) {
 	if l == nil || l.redis == nil || p == nil {
 		return

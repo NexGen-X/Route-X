@@ -1317,8 +1317,26 @@ func bungkusPencatatAliran(
 ) func(ctx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
 	return func(octx context.Context, c *upstream.RouteCandidate) (providers.Stream, error) {
 		str, err := open(octx, c)
-		if err != nil || str == nil {
+		if err != nil {
 			return str, err
+		}
+		if hasilNil(str) {
+			// B-358: adapter yang mengembalikan (nil, nil) pada jalur
+			// streaming — termasuk typed-nil yang lolos perbandingan
+			// == nil — melanggar kontrak Provider. Versi lama
+			// meneruskannya ke intipan Recv di bawah dan panic;
+			// gerbang hasilNil cobaKandidat tidak pernah sempat
+			// menilai karena yang diteruskan ke sana selalu
+			// pembungkus non-nil. Kini pelanggaran itu menjadi
+			// kegagalan MEMBUKA berkind server dengan pesan yang
+			// sama seperti jalur non-streaming (B-335), sehingga
+			// failover, percobaan ulang, dan pencatatan breaker
+			// berlaku sama.
+			return nil, &providers.Error{
+				Kind:     providers.ErrKindServer,
+				Provider: c.ProviderName,
+				Message:  "adapter mengembalikan respons kosong (nil) tanpa error",
+			}
 		}
 
 		// Penjaga diam dipasang paling dalam, di bawah pencatat: error tenggat
@@ -1569,7 +1587,11 @@ func denganTenggatPembukaan(
 		// tenggat pembukaan habis, sama seperti pembukaan yang memang terlambat.
 		berhenti := pengawas.Stop()
 
-		if err == nil && str != nil && !berhenti {
+		// B-358: syarat aliran di sini juga sadar typed-nil
+		// (hasilNil, bukan str != nil): aliran typed-nil yang
+		// "dibuang" dengan Close() pada pointer nil bisa panic di
+		// method penerimanya.
+		if err == nil && !hasilNil(str) && !berhenti {
 			_ = str.Close()
 			batalkan(nil)
 			return nil, providers.Newf(providers.ErrKindTimeout, c.ProviderName,

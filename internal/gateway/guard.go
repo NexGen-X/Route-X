@@ -377,31 +377,23 @@ func pemegangKuotaModel(ctx context.Context) *tandaKuotaModel {
 	return t
 }
 
-// TandaiKuotaModel menanam tanda pada context bahwa PeriksaBatasModel sudah
-// menaikkan penghitung cakupan model untuk modelID dalam permintaan ini.
-// kebijakan menanamnya lewat mutasi *http.Request yang sama dengan yang
-// dipegang penjaga kuota, supaya KembalikanKuota dapat membatalkan kenaikan
-// itu ketika permintaan akhirnya ditolak sebelum dilayani. Bila context
-// sudah membawa pemegang tanda, tanda ditambahkan ke pemegang yang sama
-// dan context dikembalikan apa adanya — context turunan (jalur tier)
-// dengan begitu menandai pemegang yang sama dengan induknya.
+// tanamTandaKuotaModel menanam tanda bahwa penghitung cakupan
+// model untuk modelID sudah dinaikkan dalam permintaan ini, dengan
+// jangkar waktu kenaikan yang diberikan pemanggil. Bila context
+// sudah membawa pemegang tanda, tanda ditambahkan ke pemegang yang
+// sama dan context dikembalikan apa adanya — context turunan
+// (jalur tier) dengan begitu menandai pemegang yang sama dengan
+// induknya, supaya KembalikanKuota dapat membatalkan kenaikan itu
+// ketika permintaan akhirnya ditolak sebelum dilayani.
 //
-// Jangkar waktunya dibaca dari jam limiter penjaga (B-353) — jam
-// yang sama yang menggerakkan kenaikan penghitung di
-// PeriksaBatasModel — supaya refund dihitung dari jendela yang
-// benar walau jam limiter disuntik (test) atau berbeda dari jam
-// dinding. (Fungsi bebas pendahulunya dihapus pada amendemen PR
-// Fase 16 C: sesudah ketiga situs panggil beralih ke method ini ia
-// tak terjangkau — gerbang deadcode CI menangkapnya.)
-func (g *Guard) TandaiKuotaModel(ctx context.Context, modelID string) context.Context {
-	jangkar := time.Now()
-	if g != nil && g.limiter != nil {
-		jangkar = g.limiter.Now()
-	}
-	return tanamTandaKuotaModel(ctx, modelID, jangkar)
-}
-
-// tanamTandaKuotaModel adalah penanam di balik Guard.TandaiKuotaModel.
+// Satu-satunya pemanggilnya adalah PeriksaBatasModel, yang
+// meneruskan bacaan jam yang sama dengan yang ia pakai menilai
+// batas (B-363). Method publik pendahulunya (Guard.TandaiKuotaModel,
+// yang membaca jamnya sendiri) dihapus di PR yang sama: sesudah
+// ketiga situs panggil beralih ke context kembalian
+// PeriksaBatasModel ia tak terjangkau — gerbang deadcode CI
+// menangkapnya, nasib yang sama dengan fungsi bebas pendahulunya
+// pada amendemen PR Fase 16 C.
 func tanamTandaKuotaModel(ctx context.Context, modelID string, jangkar time.Time) context.Context {
 	if ctx == nil || modelID == "" {
 		return ctx
@@ -537,17 +529,25 @@ func (g *Guard) ProviderAnggaranHabis(ctx context.Context, providerID string) bo
 //
 // Cakupan model tidak bisa ikut ke middleware itu karena modelnya baru diketahui setelah body
 // diurai dan aliasnya diselesaikan.
-func (g *Guard) PeriksaBatasModel(ctx context.Context, modelID string) *Rejection {
+//
+// Context yang dikembalikan MEMBAWA tanda kuota model bila kenaikan
+// benar-benar terjadi (B-363): penilaian dan jangkar refund-nya
+// memakai SATU bacaan jam limiter yang sama — diteruskan ke
+// AllowScopesAt dan ditanam apa adanya — bukan dua bacaan terpisah
+// yang bisa jatuh di dua sisi batas jendela. Pemanggil WAJIB memakai
+// context kembalian ini.
+func (g *Guard) PeriksaBatasModel(ctx context.Context, modelID string) (context.Context, *Rejection) {
 	if g == nil || g.rates == nil || g.limiter == nil || modelID == "" {
-		return nil
+		return ctx, nil
 	}
 	scopes := g.rates.Requests(ctx, []policy.Target{{Scope: policy.ScopeModel, ID: modelID}}, apikey.Limits{})
 	if len(scopes) == 0 {
-		return nil
+		return ctx, nil
 	}
-	d := g.limiter.AllowScopes(ctx, scopes)
+	sekarang := g.limiter.Now()
+	d := g.limiter.AllowScopesAt(ctx, scopes, sekarang)
 	if d.Allowed {
-		return nil
+		return tanamTandaKuotaModel(ctx, modelID, sekarang), nil
 	}
 	g.logger.InfoContext(ctx, "permintaan ditolak batas laju cakupan model",
 		"model", modelID, "batas", d.Limit, "nilai", d.LimitValue)
@@ -558,7 +558,7 @@ func (g *Guard) PeriksaBatasModel(ctx context.Context, modelID string) *Rejectio
 		"retry_after_second": int64(d.RetryAfter / time.Second),
 		"model_id":           modelID,
 	})
-	return rejectionBatas(d, "model "+kutipKebijakan(modelID)+" sedang melewati batas lajunya")
+	return ctx, rejectionBatas(d, "model "+kutipKebijakan(modelID)+" sedang melewati batas lajunya")
 }
 
 // --- Memo keputusan batas per permintaan -------------------------------------

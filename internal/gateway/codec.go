@@ -194,7 +194,12 @@ func DecodeChatRequest(body []byte) (*providers.ChatRequest, error) {
 	// di sini (B-250, sekelas B-171). Nilai -5 yang lolos akan menjadi
 	// 400 dari upstream yang tercatat sebagai kegagalan provider,
 	// padahal kesalahannya sudah terlihat sebelum kandidat dipilih.
-	if raw, ok := fields[fMaxCompletionTokens]; ok {
+	// B-329: kedua validasi susulan ini tunduk pada perlakuan null yang
+	// sama seperti ambil() di seluruh codec — null berarti "tidak
+	// ada", bukan nilai tak sah. Sebelumnya "max_completion_tokens":
+	// null dan "n":null ditolak 400 sementara field kanonik lain
+	// menerimanya sebagai ketiadaan.
+	if raw, ok := fields[fMaxCompletionTokens]; ok && !adalahNull(raw) {
 		var n int
 		if err := json.Unmarshal(raw, &n); err != nil || n <= 0 {
 			return nil, fmt.Errorf("field %s harus bilangan bulat lebih besar dari 0", kutip(fMaxCompletionTokens))
@@ -206,10 +211,19 @@ func DecodeChatRequest(body []byte) (*providers.ChatRequest, error) {
 	// diteruskan apa adanya ke upstream dan penolakannya tercatat
 	// sebagai kegagalan provider, padahal kesalahannya milik klien dan
 	// sudah terlihat di sini.
-	if raw, ok := fields[fN]; ok {
+	//
+	// B-329 (lanjutan): "n" kini juga DIBATASI di pintu pada
+	// maksSalinanOutput — batas yang sama yang EstimateTokens pakai
+	// untuk mengklem pengalinya. Nilai di atasnya tak punya tafsir sah
+	// di gateway ini; meloloskannya hanya memindahkan penolakan ke
+	// upstream sebagai kegagalan provider.
+	if raw, ok := fields[fN]; ok && !adalahNull(raw) {
 		var n int
 		if err := json.Unmarshal(raw, &n); err != nil || n <= 0 {
 			return nil, fmt.Errorf("field %s harus bilangan bulat lebih besar dari 0", kutip(fN))
+		}
+		if n > maksSalinanOutput {
+			return nil, fmt.Errorf("field %s melebihi batas maksimum %d", kutip(fN), maksSalinanOutput)
 		}
 	}
 	if len(fields) > 0 {

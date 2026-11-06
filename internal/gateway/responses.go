@@ -553,6 +553,14 @@ type partRefusalResponses struct {
 	Refusal string `json:"refusal"`
 }
 
+// partGambarResponses adalah part gambar pada item message Responses:
+// {"type":"output_image","image_url":"..."} — simetris dengan
+// input_image yang dibaca dekoder permukaan ini (B-332).
+type partGambarResponses struct {
+	Type     string `json:"type"`
+	ImageURL string `json:"image_url"`
+}
+
 // objekResponses adalah bentuk jawaban /v1/responses non-streaming.
 type objekResponses struct {
 	ID                string                  `json:"id"`
@@ -644,6 +652,21 @@ func kodekanResponsResponses(kanonik *providers.ChatResponse, modelDiminta strin
 			// Transkrip audio adalah teks keluaran model (B-213).
 			isiPesan = append(isiPesan, partKeluaranResponses{
 				Type: "output_text", Text: msg.AudioTranscript, Annotations: []string{},
+			})
+		}
+		// B-332: part gambar pada pesan kanonik kini ikut diterbitkan
+		// sebagai output_image. Encoder ini dulu hanya membaca
+		// PartTypeText (untuk teks cadangan) — respons model
+		// penghasil gambar tiba di klien Responses sebagai jawaban
+		// teks saja, atau pesan kosong bila isinya murni gambar.
+		// URL/data-URI diteruskan apa adanya, sejajar perlakuan
+		// permukaan lain terhadap part yang sama.
+		for _, p := range msg.Parts {
+			if p.Type != providers.PartTypeImageURL || p.ImageURL == nil {
+				continue
+			}
+			isiPesan = append(isiPesan, partGambarResponses{
+				Type: "output_image", ImageURL: p.ImageURL.URL,
 			})
 		}
 		if len(isiPesan) > 0 {

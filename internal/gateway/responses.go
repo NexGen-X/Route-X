@@ -163,6 +163,20 @@ func uraiPermintaanResponses(body []byte) (*providers.ChatRequest, error) {
 		return nil, tolakResponses("field input wajib diisi (string atau daftar item)")
 	}
 
+	// Validasi rentang (B-171), pasangan blok yang sama di
+	// DecodeChatRequest: nilai di luar rentang kontrak ditolak lokal,
+	// bukan diteruskan untuk ditolak upstream sebagai kegagalan
+	// provider.
+	if b.MaxOutputTokens != nil && *b.MaxOutputTokens <= 0 {
+		return nil, tolakResponses("field max_output_tokens harus lebih besar dari 0")
+	}
+	if b.Temperature != nil && (*b.Temperature < 0 || *b.Temperature > 2) {
+		return nil, tolakResponses("field temperature harus antara 0 dan 2")
+	}
+	if b.TopP != nil && (*b.TopP < 0 || *b.TopP > 1) {
+		return nil, tolakResponses("field top_p harus antara 0 dan 1")
+	}
+
 	req := &providers.ChatRequest{
 		Model:             b.Model,
 		Temperature:       b.Temperature,
@@ -599,9 +613,19 @@ func kodekanResponsResponses(kanonik *providers.ChatResponse, modelDiminta strin
 				Arguments: tc.Function.Arguments, Status: "completed",
 			})
 		}
-		if pilihan.FinishReason == "length" {
+		switch pilihan.FinishReason {
+		case providers.FinishLength:
 			obj.Status = "incomplete"
 			obj.IncompleteDetails = map[string]any{"reason": "max_output_tokens"}
+		case providers.FinishContentFilter:
+			// Jawaban yang dihentikan filter konten BUKAN jawaban
+			// tuntas (B-173): melaporkannya "completed" — apalagi
+			// dengan keluaran kosong — adalah janji palsu ke klien.
+			// Permukaan Anthropic memetakan keadaan yang sama ke
+			// stop_reason "refusal"; di kosakata Responses bentuk
+			// jujurnya incomplete dengan alasan content_filter.
+			obj.Status = "incomplete"
+			obj.IncompleteDetails = map[string]any{"reason": "content_filter"}
 		}
 	}
 	if kanonik.Usage.TotalTokens > 0 || kanonik.Usage.InputTokens > 0 || kanonik.Usage.OutputTokens > 0 {

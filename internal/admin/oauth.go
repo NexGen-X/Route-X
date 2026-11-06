@@ -185,6 +185,11 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 		"session_id":    sessionMeta.ID,
 	})
 
+	// B-339: sesi OAuth baru mengubah akun hulu yang melayani —
+	// konteks jawaban berubah tanpa mengubah sidik rute, jadi cache
+	// respons dikosongkan seperti mutasi kredensial lain (B-258).
+	h.kosongkanCacheRespons(ctx)
+
 	_ = h.respond(w, r, http.StatusOK, OAuthExchangeResponseDTO{
 		Status:       "connected",
 		AccountEmail: email,
@@ -330,6 +335,10 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 		"refreshed_count": refreshedCount,
 		"session_id":      req.SessionID,
 	})
+	// B-339: token sesi diperbarui — akun hulu yang melayani bisa
+	// berubah konteksnya; kosongkan cache respons (lihat exchange).
+	h.kosongkanCacheRespons(ctx)
+
 	_ = h.respond(w, r, http.StatusOK, OAuthRefreshResponseDTO{
 		Status:         "refreshed",
 		RefreshedCount: refreshedCount,
@@ -389,6 +398,10 @@ func (h *Handlers) toggleOAuthSession(w http.ResponseWriter, r *http.Request) {
 		"enabled":    enabled,
 	})
 
+	// B-339: menyalakan/mematikan sesi mengubah himpunan akun yang
+	// bisa melayani; kosongkan cache respons (lihat exchange).
+	h.kosongkanCacheRespons(ctx)
+
 	_ = h.respond(w, r, http.StatusOK, OAuthToggleResponseDTO{
 		Status:    "updated",
 		SessionID: sessionID,
@@ -419,6 +432,10 @@ func (h *Handlers) deleteOAuthSession(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "delete_oauth_session", "provider", providerID, map[string]any{
 		"session_id": sessionID,
 	})
+
+	// B-339: sesi terhapus tidak lagi melayani; kosongkan cache
+	// respons (lihat exchange).
+	h.kosongkanCacheRespons(ctx)
 
 	w.WriteHeader(http.StatusNoContent)
 }

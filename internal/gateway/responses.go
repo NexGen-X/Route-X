@@ -742,10 +742,14 @@ func (h *Handlers) responsesSekali(w http.ResponseWriter, r *http.Request, pr *p
 		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.Raw) > 0 && entry.Teks != "" {
 			pemakaian := pemakaianCacheHIT(pr.req, entry)
 			j.pasangPemakaian(pemakaian)
-			if menang := kandidatCacheHIT(pr, entry); menang != nil {
+			menang := kandidatCacheHIT(pr, entry)
+			if menang != nil {
 				j.pasangPercobaan(nil, menang)
 			}
 			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(pemakaian.TotalTokens))
+			// B-327: kolom TPM provider dicatat juga pada HIT —
+			// lihat catatan di jalur HIT chat (http.go).
+			h.guard.CatatTokenKolomProvider(r.Context(), menang, int64(pemakaian.TotalTokens))
 			if rj := h.guard.SaringJawaban(r.Context(), entry.Teks,
 				pr.model.ID, entry.ProviderID); rj != nil {
 				rj.Tulis(w, r)

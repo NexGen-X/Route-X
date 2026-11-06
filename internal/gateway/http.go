@@ -1706,6 +1706,12 @@ func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier,
 // identitas yang menentukan jawaban (provider, pemetaan model, nama model
 // hulu, jenis, base URL, prioritas, bobot).
 //
+// Untuk aturan combo ada dua pembeda tambahan (B-182): definisi
+// pipeline-nya sendiri (strategi, attempts, daftar model berurutan) dan
+// himpunan kandidat yang BENAR-BENAR melayani di plan — untuk combo,
+// decision.Candidates hanyalah kandidat jangkar model yang diminta,
+// sedangkan jawaban disusun dari gabungan lintas model di plan.
+//
 // Inilah jawaban atas keberatan historis V-GW-02/03 yang dulu menahan
 // aktivasi cache (cache_policy_unsafe): jawaban fallback combo tersimpan
 // di bawah kunci model yang diminta dan tetap tersaji sesudah routing
@@ -1726,12 +1732,42 @@ func sidikRuteCache(pr *persiapan) string {
 		b.WriteString(string(pr.decision.Rule.Strategy))
 	}
 	b.WriteByte('#')
+	tulisKandidat := func(c *upstream.RouteCandidate) {
+		fmt.Fprintf(&b, "%s/%s/%s/%s/%s/%d/%d;", c.ProviderID, c.ProviderModelID,
+			c.UpstreamModelName, c.Kind, c.BaseURL, c.Priority, c.Weight)
+	}
 	for _, c := range pr.decision.Candidates {
 		if c == nil {
 			continue
 		}
-		fmt.Fprintf(&b, "%s/%s/%s/%s/%s/%d/%d;", c.ProviderID, c.ProviderModelID,
-			c.UpstreamModelName, c.Kind, c.BaseURL, c.Priority, c.Weight)
+		tulisKandidat(c)
+	}
+	if pr.decision.Rule != nil && pr.decision.Rule.Pipeline != nil {
+		// Definisi pipeline adalah identitas jawaban combo (B-182):
+		// mengganti model combo, membalik urutannya, atau mengubah
+		// attempts/strategi pipeline harus menghasilkan kunci baru.
+		// ID + Strategy aturan di atas tidak menangkap satu pun itu.
+		p := pr.decision.Rule.Pipeline
+		b.WriteString("#pipeline|")
+		b.WriteString(string(p.Strategy))
+		fmt.Fprintf(&b, "|%d|", p.Attempts)
+		for _, m := range p.Models {
+			b.WriteString(m)
+			b.WriteByte(',')
+		}
+	}
+	if pr.decision.Rule.Combo() {
+		// Himpunan layan nyata combo adalah gabungan di plan, bukan
+		// kandidat jangkar di decision (B-182). Penanda terpisah
+		// menjaga himpunan ini tidak tertukar dengan daftar jangkar
+		// yang bentuk serialnya sama.
+		b.WriteString("#layan|")
+		for _, c := range pr.plan.Candidates {
+			if c == nil {
+				continue
+			}
+			tulisKandidat(c)
+		}
 	}
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])

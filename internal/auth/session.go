@@ -668,21 +668,72 @@ func (s *Service) authenticateRequest(ctx context.Context, r *http.Request) (*Pr
 // repo), sesi diam tetap mati pada jadwalnya. Kegagalannya diabaikan dengan
 // sengaja: jejak bukan alasan menolak request yang kredensialnya sudah
 // terbukti sah.
-func (s *Service) touchIfStale(ctx context.Context, p *Principal) {
+//
+// Nilai kembali true berarti penggeseran BENAR-BENAR terjadi di database —
+// pemanggil memakainya untuk menerbitkan ulang cookie sesi (B-198), dan
+// penerbitan ulang tidak boleh menebak-nebak keadaan database.
+func (s *Service) touchIfStale(ctx context.Context, p *Principal) bool {
 	if p == nil || s.touchInterval <= 0 {
-		return
+		return false
 	}
 	if time.Since(p.Session.LastSeenAt) < s.touchInterval {
-		return
+		return false
 	}
 	if err := s.sessions.Touch(ctx, p.SessionID, s.sessionTTL); err != nil {
 		if errors.Is(err, repo.ErrNotFound) {
 			// Sesi dicabut oleh permintaan lain di sela-selanya. Bukan kesalahan.
-			return
+			return false
 		}
 		s.log(ctx).LogAttrs(ctx, slog.LevelWarn, "gagal menyegarkan jejak sesi",
 			slog.String("session_id", p.SessionID), slog.String("error", err.Error()))
+		return false
 	}
+	return true
+}
+
+// segarkanCookieSesi menerbitkan ulang cookie sesi sesudah touch menggeser
+// kedaluwarsa sesi di database (B-198).
+//
+// Cookie awal membawa Max-Age sebesar TTL awal; tanpa penerbitan ulang,
+// browser membuangnya tepat pada jam itu walau baris sesi sudah digeser —
+// pengguna dashboard terusir di tengah kerja sementara sesi di server masih
+// hidup. Penerbitan ulang hanya untuk jalur cookie: kredensial header
+// (ViaHeader) tidak punya cookie untuk disegarkan, dan memasang cookie dari
+// token header akan mengaburkan sumber kredensial yang menjadi dasar
+// penegakan CSRF.
+func (s *Service) segarkanCookieSesi(w http.ResponseWriter, r *http.Request, p *Principal) {
+	if p == nil || p.ViaHeader {
+		return
+	}
+	token := s.cookies.SessionTokenFromCookie(r)
+	if token.IsZero() {
+		return
+	}
+	sisa := sisaUmurSesi(p, s.sessionTTL)
+	if sisa <= 0 {
+		return
+	}
+	s.cookies.SetSessionDenganSisa(w, token, sisa)
+}
+
+// sisaUmurSesi menghitung sisa umur sesi SESUDAH penggeseran Touch, meniru
+// persis rumus lapisan repo: kedaluwarsa baru adalah yang paling awal antara
+// plafon mutlak (created_at + identity.MaxSessionLifetime) dan yang paling
+// besar antara kedaluwarsa lama dan now + TTL. Dengan begitu Max-Age cookie
+// tidak pernah melampaui umur sesi yang sebenarnya di database.
+func sisaUmurSesi(p *Principal, ttl time.Duration) time.Duration {
+	now := time.Now()
+	if p.Session.CreatedAt.IsZero() {
+		return ttl
+	}
+	baru := p.Session.ExpiresAt
+	if geser := now.Add(ttl); geser.After(baru) {
+		baru = geser
+	}
+	if plafon := p.Session.CreatedAt.Add(identity.MaxSessionLifetime); baru.After(plafon) {
+		baru = plafon
+	}
+	return baru.Sub(now)
 }
 
 // --- Logout ------------------------------------------------------------------

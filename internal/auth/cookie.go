@@ -114,7 +114,24 @@ func (c *Cookies) TTL() time.Duration { return c.ttl }
 // sisa celahnya — permintaan GET lintas situs — ditutup dengan tidak pernah mengubah state
 // pada GET, ditambah pemeriksaan CSRF di csrf.go.
 func (c *Cookies) SetSession(w http.ResponseWriter, token security.Secret) {
-	http.SetCookie(w, c.cookie(c.SessionName(), token.Reveal(), true, int(c.ttl.Seconds())))
+	c.SetSessionDenganSisa(w, token, c.ttl)
+}
+
+// SetSessionDenganSisa memasang cookie sesi dengan Max-Age sebesar sisa umur
+// yang diberikan pemanggil, bukan TTL awal.
+//
+// Dipakai saat touch menggeser kedaluwarsa sesi di database (B-198): tanpa
+// penerbitan ulang, browser membuang cookie tepat pada TTL awal walau baris
+// sesinya sudah diperpanjang, dan janji "TTL geser" hanya berlaku untuk
+// jalur header-token. Sisa umur dihitung pemanggil dari keadaan sesi
+// sesudah penggeseran — termasuk plafon mutlaknya — supaya cookie tidak
+// pernah hidup lebih lama dari sesi yang diwakilinya.
+func (c *Cookies) SetSessionDenganSisa(w http.ResponseWriter, token security.Secret, sisa time.Duration) {
+	maxAge := int(sisa.Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	http.SetCookie(w, c.cookie(c.SessionName(), token.Reveal(), true, maxAge))
 }
 
 // ClearSession menghapus cookie sesi.

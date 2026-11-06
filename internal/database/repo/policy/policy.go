@@ -19,12 +19,22 @@
 package policy
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 )
+
+// ErrNoChanges dikembalikan operasi pembaruan yang tidak diberi satu
+// pun field untuk diubah (B-354(ii)): kontrak yang sama seperti
+// repo upstream dan keys, dipetakan handler admin ke 400
+// no_changes. UpdateBudget dan UpdateRateLimit sebelumnya menjawab
+// params kosong dengan baris yang sudah ada (200 idempoten), jadi
+// klien tidak bisa membedakan "permintaanmu kosong" dari "berhasil
+// diubah".
+var ErrNoChanges = errors.New("tidak ada perubahan yang diminta")
 
 // Cakupan kebijakan. Nilainya WAJIB sama dengan constraint rate_limits_scope_valid dan
 // budgets_scope_valid di migrasi 0005.

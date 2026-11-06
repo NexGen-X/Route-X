@@ -560,17 +560,13 @@ func TestMalformedIDRejectedWithoutDatabase(t *testing.T) {
 		"models.Get":                 func() error { _, err := models.Get(ctx, malformed); return err },
 		"models.Update":              func() error { _, err := models.Update(ctx, malformed, UpdateModelParams{}); return err },
 		"models.Delete":              func() error { return models.Delete(ctx, malformed) },
-		"models.UpdateProviderModel": func() error {
-			_, err := models.UpdateProviderModel(ctx, malformed, UpdateProviderModelParams{})
-			return err
-		},
-		"models.DetachProvider":   func() error { return models.DetachProvider(ctx, malformed) },
-		"models.GetProviderModel": func() error { _, err := models.GetProviderModel(ctx, malformed); return err },
-		"credentials.Get":         func() error { _, err := credentials.Get(ctx, malformed); return err },
-		"credentials.Reveal":      func() error { _, err := credentials.Reveal(ctx, malformed); return err },
-		"credentials.SetEnabled":  func() error { _, err := credentials.SetEnabled(ctx, malformed, true); return err },
-		"credentials.Delete":      func() error { return credentials.Delete(ctx, malformed) },
-		"credentials.MarkUsed":    func() error { return credentials.MarkUsed(ctx, malformed) },
+		"models.DetachProvider":      func() error { return models.DetachProvider(ctx, malformed) },
+		"models.GetProviderModel":    func() error { _, err := models.GetProviderModel(ctx, malformed); return err },
+		"credentials.Get":            func() error { _, err := credentials.Get(ctx, malformed); return err },
+		"credentials.Reveal":         func() error { _, err := credentials.Reveal(ctx, malformed); return err },
+		"credentials.SetEnabled":     func() error { _, err := credentials.SetEnabled(ctx, malformed, true); return err },
+		"credentials.Delete":         func() error { return credentials.Delete(ctx, malformed) },
+		"credentials.MarkUsed":       func() error { return credentials.MarkUsed(ctx, malformed) },
 		"credentials.MarkAuthFailure": func() error {
 			_, err := credentials.MarkAuthFailure(ctx, malformed)
 			return err

@@ -191,6 +191,59 @@ type createAPIKeyReq struct {
 	AllowedProviders    []string `json:"allowed_providers"`
 }
 
+// uraikanAllowlistIP mengurai entri ip_allowlist mentah menjadi
+// prefiks kanonis yang disimpan. SATU pengurai untuk jalur buat dan
+// ubah (B-355(ii)): kedua blok pengurai dulu salinan persis satu
+// sama lain, sehingga perbaikan perilaku harus dilakukan dua kali
+// dan bisa menyimpang — B-342 membuktikannya, normalisasi 4-in-6
+// tidak boleh hanya hidup di satu jalur.
+//
+// Perilaku per entri:
+//   - entri kosong (sesudah trim) dilewati;
+//   - prefiks CIDR: bentuk 4-in-6 (::ffff:a.b.c.d/n) dinormalkan ke
+//     IPv4 polos lebih dulu (B-342: penegakan membandingkan alamat
+//     klien yang sudah di-Unmap, jadi bentuk 4-in-6 tersimpan tidak
+//     akan pernah cocok); prefiks 4-in-6 berbit < 96 mencakup ruang
+//     di luar peta IPv4-dalam-IPv6 dan ditolak; awalan berbit host
+//     ditolak dengan menyebut entrinya (B-307);
+//   - alamat tunggal: di-Unmap lalu menjadi prefiks host-nya.
+//
+// Semantik nil dipertahankan pemanggil: fungsi ini mengembalikan
+// nil bila tak satu pun entri menghasilkan prefiks; jalur ubah
+// membungkusnya ke slice kosong non-nil sendiri (buka-dari-mana-
+// saja), jalur buat membiarkan nil (biarkan).
+func uraikanAllowlistIP(entri []string) ([]netip.Prefix, error) {
+	var ips []netip.Prefix
+	for _, s := range entri {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(s); err == nil {
+			if p.Addr().Is4In6() {
+				if p.Bits() < 96 {
+					return nil, fmt.Errorf("entri ip_allowlist %q mencakup ruang di luar peta IPv4-dalam-IPv6 dan tidak punya bentuk IPv4 yang setara", s)
+				}
+				p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
+			}
+			// B-307: awalan berbit host (mis. 10.0.0.1/24) ditolak
+			// di sini dengan menyebut entrinya — sebelumnya ia
+			// lolos validasi handler lalu ditolak kolom cidr[] DB
+			// sebagai 400 invalid_reference generik.
+			if p != p.Masked() {
+				return nil, fmt.Errorf("entri ip_allowlist %q memiliki bit host; gunakan bentuk jaringannya %q", s, p.Masked().String())
+			}
+			ips = append(ips, p)
+		} else if addr, err := netip.ParseAddr(s); err == nil {
+			addr = addr.Unmap()
+			ips = append(ips, netip.PrefixFrom(addr, addr.BitLen()))
+		} else {
+			return nil, fmt.Errorf("entri ip_allowlist tidak sah: %q", s)
+		}
+	}
+	return ips, nil
+}
+
 func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req createAPIKeyReq
@@ -227,27 +280,13 @@ func (h *Handlers) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var ips []netip.Prefix
-	for _, s := range req.IPAllowlist {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		if p, err := netip.ParsePrefix(s); err == nil {
-			// B-307: awalan berbit host (mis. 10.0.0.1/24) ditolak di
-			// sini dengan menyebut entrinya — sebelumnya ia lolos
-			// validasi handler lalu ditolak kolom cidr[] DB sebagai
-			// 400 invalid_reference generik yang tidak menyebut field.
-			if p != p.Masked() {
-				httpx.BadRequest(w, r, "invalid_ip_allowlist", fmt.Sprintf("entri ip_allowlist %q memiliki bit host; gunakan bentuk jaringannya %q", s, p.Masked().String()))
-				return
-			}
-			ips = append(ips, p)
-		} else if addr, err := netip.ParseAddr(s); err == nil {
-			ips = append(ips, netip.PrefixFrom(addr, addr.BitLen()))
-		} else {
-			httpx.BadRequest(w, r, "invalid_ip_allowlist", fmt.Sprintf("entri ip_allowlist tidak sah: %q", s))
+	if len(req.IPAllowlist) > 0 {
+		diurai, err := uraikanAllowlistIP(req.IPAllowlist)
+		if err != nil {
+			httpx.BadRequest(w, r, "invalid_ip_allowlist", err.Error())
 			return
 		}
+		ips = diurai
 	}
 
 	var actorID *string
@@ -482,27 +521,12 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 	// nil dan niat membuka diam-diam menjadi "tidak berubah".
 	ips := []netip.Prefix{}
 	if req.IPAllowlist != nil {
-		for _, s := range req.IPAllowlist {
-			s = strings.TrimSpace(s)
-			if s == "" {
-				continue
-			}
-			if p, err := netip.ParsePrefix(s); err == nil {
-				// B-307: sama seperti jalur buat — awalan berbit host
-				// ditolak dengan menyebut entrinya, bukan 400 generik
-				// dari penolakan kolom cidr[] DB.
-				if p != p.Masked() {
-					httpx.BadRequest(w, r, "invalid_ip_allowlist", fmt.Sprintf("entri ip_allowlist %q memiliki bit host; gunakan bentuk jaringannya %q", s, p.Masked().String()))
-					return
-				}
-				ips = append(ips, p)
-			} else if addr, err := netip.ParseAddr(s); err == nil {
-				ips = append(ips, netip.PrefixFrom(addr, addr.BitLen()))
-			} else {
-				httpx.BadRequest(w, r, "invalid_ip_allowlist", fmt.Sprintf("entri ip_allowlist tidak sah: %q", s))
-				return
-			}
+		diurai, err := uraikanAllowlistIP(req.IPAllowlist)
+		if err != nil {
+			httpx.BadRequest(w, r, "invalid_ip_allowlist", err.Error())
+			return
 		}
+		ips = append(ips, diurai...)
 	}
 
 	// expires_at "": niat membuka (tanpa kedaluwarsa) BELUM didukung kontrak —

@@ -459,6 +459,13 @@ func (r *ModelRepo) AddAlias(ctx context.Context, modelID, alias string, created
 // dimiliki model ini menghasilkan ErrNotFound.
 func (r *ModelRepo) RemoveAlias(ctx context.Context, modelID, alias string) error {
 	const op = "menghapus alias model"
+	// B-355(i): penjaga yang sama seperti AddAlias/ListAliases —
+	// sebelumnya metode ini satu-satunya operasi alias yang
+	// membiarkan ID cacat jatuh ke query dan hanya tertolong
+	// klasifikasi 22P02 di repo.Err (pesan sintaks DB bocor).
+	if !idOK(modelID) {
+		return fmt.Errorf("%s: %w: model_id bukan UUID", op, repo.ErrInvalidReference)
+	}
 
 	tag, err := r.q.Exec(ctx, `delete from model_aliases where alias = $1 and model_id = $2`, alias, modelID)
 	if err != nil {
@@ -598,52 +605,12 @@ func (r *ModelRepo) AttachProvider(ctx context.Context, p AttachProviderParams) 
 	return pm, nil
 }
 
-// UpdateProviderModelParams adalah pembaruan sebagian sebuah pemetaan.
-type UpdateProviderModelParams struct {
-	UpstreamModelName *string
-	Enabled           *bool
-	Priority          Opt[int]
-	Weight            Opt[int]
-	MaxContextWindow  Opt[int]
-	SupportsStreaming *bool
-	SupportsTools     *bool
-}
-
-// UpdateProviderModel mengubah field yang diminta saja pada satu pemetaan.
-func (r *ModelRepo) UpdateProviderModel(ctx context.Context, id string, p UpdateProviderModelParams) (*ProviderModel, error) {
-	const op = "memperbarui pemetaan model-provider"
-	if !idOK(id) {
-		return nil, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
-	}
-
-	set := newUpdateSet(id)
-	if p.UpstreamModelName != nil {
-		set.add("upstream_model_name", *p.UpstreamModelName)
-	}
-	if p.Enabled != nil {
-		set.add("enabled", *p.Enabled)
-	}
-	addOpt(set, "priority", p.Priority)
-	addOpt(set, "weight", p.Weight)
-	addOpt(set, "max_context_window", p.MaxContextWindow)
-	if p.SupportsStreaming != nil {
-		set.add("supports_streaming", *p.SupportsStreaming)
-	}
-	if p.SupportsTools != nil {
-		set.add("supports_tools", *p.SupportsTools)
-	}
-
-	if set.empty() {
-		return nil, fmt.Errorf("%s: %w", op, ErrNoChanges)
-	}
-
-	pm, err := scanProviderModel(r.q.QueryRow(ctx,
-		`update provider_models set `+set.clause()+` where id = $1 returning `+providerModelColumns, set.args...))
-	if err != nil {
-		return nil, repo.Err(op, err)
-	}
-	return pm, nil
-}
+// B-354(i): UpdateProviderModel (+ params-nya) dihapus — metode itu
+// tidak lagi punya pemanggil produksi mana pun sejak permukaan
+// pemetaan pindah ke AttachProvider/DetachProvider lewat handler
+// penyedia; ia hanya hidup untuk test-nya sendiri. Menghapusnya
+// menutup satu permukaan tulis yatim yang kontraknya (ErrNoChanges
+// repo ini) tidak terhubung ke permukaan admin mana pun.
 
 // DetachProvider menghapus satu pemetaan model-provider beserta riwayat harganya
 // (on delete cascade). Riwayat harga ikut hilang karena harga selalu milik pasangan

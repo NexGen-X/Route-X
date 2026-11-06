@@ -48,9 +48,13 @@ type oaMessage struct {
 }
 
 type oaDelta struct {
-	Role             string       `json:"role,omitempty"`
-	Content          any          `json:"content,omitempty"`
-	ReasoningContent string       `json:"reasoning_content,omitempty"`
+	Role             string `json:"role,omitempty"`
+	Content          any    `json:"content,omitempty"`
+	ReasoningContent string `json:"reasoning_content,omitempty"`
+	// ThoughtSignature membawa tanda tangan part thought (B-324):
+	// tanpa field ini signature yang selamat sampai kontrak kanonik
+	// (B-295) berhenti di adapter dan tak pernah menjadi byte klien.
+	ThoughtSignature string       `json:"thought_signature,omitempty"`
 	ToolCalls        []oaToolCall `json:"tool_calls,omitempty"`
 }
 

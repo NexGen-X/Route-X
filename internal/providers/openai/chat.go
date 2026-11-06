@@ -735,6 +735,24 @@ func (s *chatStream) Close() error {
 	return s.closeErr
 }
 
+// kodeErrorAliran mengekstrak kode dari field code objek error SSE
+// (B-325): lazimnya string, tetapi sebagian upstream mengirim angka.
+// null dan bentuk lain yang tak terbaca dianggap tidak ada kode.
+func kodeErrorAliran(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var n float64
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return strings.TrimSpace(string(raw))
+	}
+	return ""
+}
+
 // parseChunk menerjemahkan satu muatan data SSE menjadi StreamEvent.
 func parseChunk(data []byte) (*providers.StreamEvent, error) {
 	var wire chatChunk
@@ -747,12 +765,17 @@ func parseChunk(data []byte) (*providers.StreamEvent, error) {
 	// Pesan mentah upstream TIDAK diteruskan (kontrak providers.Error: Message
 	// harus aman untuk log dan klien) — yang dibawa hanya klasifikasinya dan
 	// kode upstream yang sudah disanitasi.
-	if wire.Error != nil && wire.Error.Message != "" {
-		var kode string
-		if len(wire.Error.Code) > 0 {
-			_ = json.Unmarshal(wire.Error.Code, &kode)
-		}
-		kode = sanitizeCode(kode)
+	//
+	// B-325: kehadiran error TIDAK lagi disyaratkan pada message. Objek
+	// error code-only / type-only (persis bentuk yang B-297 buktikan
+	// untuk body-200) sebelumnya jatuh menembus gerbang ini menjadi
+	// chunk biasa ber-Raw error — tak terklasifikasi, tak memicu
+	// penjaga auth B-210, dan diteruskan mentah ke klien. Kini code
+	// atau type saja sudah cukup; objek yang sungguh kosong (tanpa
+	// ketiganya) tetap chunk, karena tidak ada yang bisa diklasifikasi.
+	if wire.Error != nil && (wire.Error.Message != "" || wire.Error.Type != "" ||
+		kodeErrorAliran(wire.Error.Code) != "") {
+		kode := sanitizeCode(kodeErrorAliran(wire.Error.Code))
 		return nil, &providers.Error{
 			Kind:         jenisGalatAliran(wire.Error.Type, kode),
 			Message:      withCode("upstream melaporkan galat di tengah aliran", kode),

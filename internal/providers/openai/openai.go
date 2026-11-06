@@ -355,26 +355,29 @@ func (p *Provider) errorFromSuccessBody(raw []byte, status int, fallback string)
 	if kind == providers.ErrKindUnknown {
 		// Status 2xx tidak memberi petunjuk dari status, dan kode upstream
 		// tidak dikenali tabel Classify. Sebelum jatuh ke dugaan Server,
-		// kode/type bergaya OpenAI yang tabel itu tidak muat dipetakan di
-		// sini (B-260): rate_limit_exceeded / rate_limit_error adalah
-		// sinyal jeda, dan invalid_api_key / authentication_error adalah
-		// kegagalan auth PERMANEN — menjatuhkan keduanya ke Server membuat
-		// yang pertama diabaikan sebagai jeda dan yang kedua diulang serta
-		// dialihkan seperti gangguan sesaat, menodai kandidat sehat.
-		// Pemetaan ini khusus jalur body-200; Classify global tidak
-		// diubah. Perhatikan code di sini adalah hasil firstNonEmpty
-		// ReadErrorBody (code, lalu type, lalu status), jadi pemeriksaan
-		// substring menjangkau bentuk code maupun type.
-		switch {
-		case code == "invalid_api_key" || strings.Contains(code, "authentication"):
-			kind = providers.ErrKindAuth
-		case strings.Contains(code, "rate_limit"):
-			kind = providers.ErrKindRateLimit
-		default:
-			// Kode yang sungguh tidak dikenali: ErrKindServer adalah
-			// dugaan terbaik — aman diulang dan aman dialihkan.
-			kind = providers.ErrKindServer
-		}
+		// kode/type bergaya OpenAI yang tabel itu tidak muat dipetakan
+		// (B-260): rate_limit_exceeded / rate_limit_error adalah sinyal
+		// jeda, dan invalid_api_key / authentication_error adalah
+		// kegagalan auth PERMANEN — menjatuhkan keduanya ke Server
+		// membuat yang pertama diabaikan sebagai jeda dan yang kedua
+		// diulang serta dialihkan seperti gangguan sesaat, menodai
+		// kandidat sehat. Pemetaan ini khusus jalur body-200; Classify
+		// global tidak diubah.
+		//
+		// B-340: pemetaan itu kini memakai jenisGalatAliran — fungsi
+		// yang sama dengan jalur streaming (B-296) — bukan sakelar
+		// lokal yang lebih sempit. Sakelar lama hanya mengenal auth dan
+		// rate_limit, sehingga type overloaded_error / permission_error
+		// / not_found_error tertanam di body-200 jatuh ke Server
+		// (retryable) padahal padanan alirannya overloaded / permission
+		// / model_not_found. Perhatikan code di sini adalah hasil
+		// firstNonEmpty ReadErrorBody (code, lalu type, lalu status) —
+		// satu-satunya pengenal yang tersedia di jalur ini — jadi ia
+		// diteruskan ke kedua parameter (tipe, kode); cabang-cabang
+		// jenisGalatAliran bekerja atas substring/kesetaraan yang sama
+		// untuk keduanya, dan nilai tak dikenal tetap berakhir di
+		// ErrKindServer seperti sebelumnya.
+		kind = jenisGalatAliran(code, code)
 	}
 	return &providers.Error{
 		Kind:         kind,

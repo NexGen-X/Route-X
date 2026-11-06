@@ -148,6 +148,29 @@ func TestDecodeChatRequestToolCallDanPeranTool(t *testing.T) {
 	}
 }
 
+// thought_signature pada tool_calls riwayat klien harus sampai ke bentuk kanonik
+// (B-162): field inilah yang memungkinkan adapter Google memasangnya kembali ke
+// part functionCall — kehilangannya di sini memutus sesi tool model thinking.
+func TestDecodeChatRequestThoughtSignatureToolCall(t *testing.T) {
+	req, err := DecodeChatRequest([]byte(`{
+		"model": "m",
+		"messages": [
+			{"role": "user", "content": "cuaca di mana?"},
+			{"role": "assistant", "content": null, "tool_calls": [
+				{"id": "call_0_cuaca", "type": "function", "thought_signature": "sig-uji-162", "function": {"name": "cuaca", "arguments": "{\"kota\":\"Jakarta\"}"}}
+			]},
+			{"role": "tool", "tool_call_id": "call_0_cuaca", "content": "31 derajat"}
+		]
+	}`))
+	if err != nil {
+		t.Fatalf("DecodeChatRequest: %v", err)
+	}
+	tc := req.Messages[1].ToolCalls[0]
+	if tc.ThoughtSignature != "sig-uji-162" {
+		t.Errorf("ThoughtSignature = %q, mau %q", tc.ThoughtSignature, "sig-uji-162")
+	}
+}
+
 func TestDecodeChatRequestArgumentsBerupaObjekDitolakDenganJalurnya(t *testing.T) {
 	_, err := DecodeChatRequest([]byte(`{
 		"model": "m",

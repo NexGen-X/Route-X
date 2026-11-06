@@ -30,9 +30,10 @@ type wireContent struct {
 }
 
 type wirePart struct {
-	Text       string `json:"text"`
-	Thought    bool   `json:"thought"`
-	InlineData *struct {
+	Text             string `json:"text"`
+	Thought          bool   `json:"thought"`
+	ThoughtSignature string `json:"thoughtSignature"`
+	InlineData       *struct {
 		MimeType string `json:"mimeType"`
 		Data     string `json:"data"`
 	} `json:"inlineData"`
@@ -41,6 +42,7 @@ type wirePart struct {
 		FileURI  string `json:"fileUri"`
 	} `json:"fileData"`
 	FunctionCall *struct {
+		ID   string          `json:"id"`
 		Name string          `json:"name"`
 		Args json.RawMessage `json:"args"`
 	} `json:"functionCall"`
@@ -582,6 +584,79 @@ func TestAlurToolBolakBalikPenuh(t *testing.T) {
 	}
 	if string(results.Parts[1].FunctionResponse.Response) != `{"output":"26 derajat"}` {
 		t.Errorf("response[1] = %s, mau dibungkus objek", results.Parts[1].FunctionResponse.Response)
+	}
+}
+
+// TestThoughtSignatureBertahanDuaGiliran adalah test pengunci B-162: tanda tangan
+// berpikir yang dikeluarkan upstream bersama functionCall harus (1) terbaca ke bentuk
+// kanonik, (2) tampil pada Raw dialek OpenAI sebagai thought_signature supaya klien
+// bisa mengembalikannya, dan (3) terpasang kembali pada part functionCall riwayat
+// giliran berikutnya — persis rantai yang putus pada sesi Copilot di kampanye Tahap 3
+// (400 "Function call is missing a thought_signature").
+func TestThoughtSignatureBertahanDuaGiliran(t *testing.T) {
+	toolResponse := `{
+	  "candidates": [{
+	    "content": {"role": "model", "parts": [
+	      {"functionCall": {"name": "baca_berkas", "args": {"path": "hasil.txt"}}, "thoughtSignature": "sig-uji-162"}
+	    ]},
+	    "finishReason": "STOP",
+	    "index": 0
+	  }],
+	  "usageMetadata": {"promptTokenCount": 40, "candidatesTokenCount": 12, "totalTokenCount": 52}
+	}`
+	finalResponse := `{
+	  "candidates": [{
+	    "content": {"role": "model", "parts": [{"text": "isi berkas terbaca"}]},
+	    "finishReason": "STOP"
+	  }],
+	  "usageMetadata": {"promptTokenCount": 60, "candidatesTokenCount": 20, "totalTokenCount": 80}
+	}`
+	p, log := newScriptedServer(t, toolResponse, finalResponse)
+	tools := []providers.Tool{{Type: "function", Function: providers.FunctionDef{
+		Name:       "baca_berkas",
+		Parameters: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
+	}}}
+
+	first, err := p.ChatCompletion(context.Background(), &providers.ChatRequest{
+		Model:    "gemini-2.5-flash",
+		Messages: []providers.Message{{Role: providers.RoleUser, Content: "baca hasil.txt"}},
+		Tools:    tools,
+	})
+	if err != nil {
+		t.Fatalf("putaran 1 error: %v", err)
+	}
+	calls := first.Choices[0].Message.ToolCalls
+	if len(calls) != 1 {
+		t.Fatalf("jumlah tool call = %d, mau 1", len(calls))
+	}
+	if calls[0].ThoughtSignature != "sig-uji-162" {
+		t.Errorf("ToolCall.ThoughtSignature = %q, mau %q (hilang saat unmarshal respons)", calls[0].ThoughtSignature, "sig-uji-162")
+	}
+	if !strings.Contains(string(first.Raw), `"thought_signature":"sig-uji-162"`) {
+		t.Errorf("Raw dialek OpenAI tidak memuat thought_signature: %s", first.Raw)
+	}
+
+	// Putaran dua: klien mengembalikan tool call itu apa adanya (termasuk tanda
+	// tangannya) bersama hasil tool — bentuk riwayat yang dikirim Copilot.
+	_, err = p.ChatCompletion(context.Background(), &providers.ChatRequest{
+		Model: "gemini-2.5-flash",
+		Messages: []providers.Message{
+			{Role: providers.RoleUser, Content: "baca hasil.txt"},
+			{Role: providers.RoleAssistant, ToolCalls: calls},
+			{Role: providers.RoleTool, ToolCallID: calls[0].ID, Content: `{"isi":"UJI-TAHAP3-OK"}`},
+		},
+		Tools: tools,
+	})
+	if err != nil {
+		t.Fatalf("putaran 2 error: %v", err)
+	}
+	body := decodeRequest(t, log.raw(t, 1))
+	model := body.Contents[1]
+	if len(model.Parts) != 1 || model.Parts[0].FunctionCall == nil {
+		t.Fatalf("contents model = %+v, mau satu functionCall", model.Parts)
+	}
+	if model.Parts[0].ThoughtSignature != "sig-uji-162" {
+		t.Errorf("thoughtSignature pada part riwayat = %q, mau %q (hilang saat menyusun riwayat)", model.Parts[0].ThoughtSignature, "sig-uji-162")
 	}
 }
 

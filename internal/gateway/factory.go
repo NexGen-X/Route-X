@@ -603,6 +603,78 @@ func (a *arusPenjagaAuth) Recv() (*providers.StreamEvent, error) {
 	return ev, err
 }
 
+// --- Redaksi tingkat struct untuk pembungkus penjaga auth -------------------
+//
+// Kedua tipe di atas memegang *upstream.ActiveCredential — yang memuat
+// security.Secret — di field tak diekspor. security.Secret meredaksi
+// dirinya sendiri, tetapi fmt TIDAK boleh memanggil metode pada nilai
+// yang diperoleh dari field tak diekspor (reflect menandainya read-only),
+// jadi tanpa metode tingkat struct, "%v" pada pembungkus ini mencetak
+// isi mentah Secret-nya: satu baris log yang mencetak provider bisa
+// membocorkan access token OAuth tanpa ada kode yang tampak mencetaknya.
+// Kewajiban ini ditegakkan TestRedaksiFieldTakDiekspor di
+// internal/security. Yang aman dicetak hanya identitas non-rahasia:
+// nama/jenis provider dan ID kredensial — pengenal yang memang tercatat
+// terbuka di log gateway. Base URL sengaja tidak dicetak (sebagian
+// provider menempelkan kunci di query string).
+//
+// Receiver-nya NILAI pada kedua tipe, supaya "%v" pada nilai maupun
+// pointer sama-sama lewat sini; tak satu pun tipe memuat lock by value,
+// jadi receiver nilai lolos vet copylocks.
+
+func (p providerPenjagaAuth) String() string {
+	credID := ""
+	if p.cred != nil {
+		credID = p.cred.ID
+	}
+	return fmt.Sprintf("gateway.providerPenjagaAuth{provider:%q kind:%q credential_id:%q}",
+		p.target.Name, p.target.Kind, credID)
+}
+
+// GoString menutup jalur "%#v".
+func (p providerPenjagaAuth) GoString() string { return p.String() }
+
+// LogValue menutup jalur slog.
+func (p providerPenjagaAuth) LogValue() slog.Value {
+	credID := ""
+	if p.cred != nil {
+		credID = p.cred.ID
+	}
+	return slog.GroupValue(
+		slog.String("provider", p.target.Name),
+		slog.String("kind", p.target.Kind),
+		slog.String("credential_id", credID),
+	)
+}
+
+func (a arusPenjagaAuth) String() string {
+	if a.penjaga == nil {
+		return "gateway.arusPenjagaAuth{penjaga:nil}"
+	}
+	return fmt.Sprintf("gateway.arusPenjagaAuth{penjaga:%s}", a.penjaga.String())
+}
+
+// GoString menutup jalur "%#v".
+func (a arusPenjagaAuth) GoString() string { return a.String() }
+
+// LogValue menutup jalur slog; identitasnya adalah identitas penjaganya.
+func (a arusPenjagaAuth) LogValue() slog.Value {
+	if a.penjaga == nil {
+		return slog.GroupValue(slog.String("penjaga", "nil"))
+	}
+	return a.penjaga.LogValue()
+}
+
+// Verifikasi bahwa jalur keluaran umum benar-benar tertutup.
+var (
+	_ fmt.Stringer   = providerPenjagaAuth{}
+	_ fmt.GoStringer = providerPenjagaAuth{}
+	_ slog.LogValuer = providerPenjagaAuth{}
+	_ fmt.Stringer   = arusPenjagaAuth{}
+	_ fmt.GoStringer = arusPenjagaAuth{}
+	_ slog.LogValuer = arusPenjagaAuth{}
+)
+
 // Provider mengembalikan adapter siap pakai untuk kandidat ini.
 //
 // Error dari sini sampai ke pemanggil sebagai "kandidat ini tidak bisa dipakai" dan boleh

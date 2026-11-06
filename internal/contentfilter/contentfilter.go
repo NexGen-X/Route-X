@@ -60,11 +60,20 @@ type Source interface {
 // Field yang kosong berarti "belum diketahui" dan aturan yang bergantung padanya dilewati.
 // Itu yang membuat pemeriksaan bisa dijalankan bertahap: ukuran dan pola begitu body terbaca,
 // pembatasan model setelah alias diselesaikan, pembatasan provider setelah kandidat dipilih.
+//
+// Satu pengecualian sadar dari aturan "kosong berarti dilewati": pemanggil yang tahu
+// muatannya TIDAK BISA menjadi teks menandai TakTerperiksa, dan untuk muatan itu aturan
+// pola pemblokir tidak dilewati — ia menolak (lihat Check). Kosong karena belum diketahui
+// dan kosong karena tidak terperiksa adalah dua keadaan yang berbeda.
 type Subject struct {
 	// Text adalah teks yang dicocokkan dengan pola.
 	Text string
 	// Bytes adalah ukuran body mentah, untuk aturan request_size. Nol melewatkannya.
 	Bytes int64
+	// TakTerperiksa menandai sebagian muatan tidak bisa diperiksa sebagai teks —
+	// misalnya masukan embeddings berbentuk token, yang hanya bermakna bagi
+	// tokenizer model tujuan dan tidak bisa didetokenisasi gateway (B-252).
+	TakTerperiksa bool
 	// ModelID adalah models.id kanonik, untuk aturan model_restriction.
 	ModelID string
 	// ProviderID adalah providers.id, untuk aturan provider_restriction.
@@ -212,20 +221,55 @@ func (e *Engine) Check(ctx context.Context, s Subject) Verdict {
 		v.Blocked, v.Filter, v.Reason = true, a.row, alasan(a.row)
 		return v
 	}
+
+	// Muatan yang tidak bisa diperiksa sebagai teks (B-252): aturan pola
+	// di atas lolos bukan karena muatannya bersih, melainkan karena
+	// Text kosong membuatnya "belum diketahui". Bila pemanggil menandai
+	// muatannya memang tidak terperiksa dan ada aturan pola beraksi
+	// blokir yang berlaku untuk arah ini, muatan DITOLAK — janji
+	// penyaringan tidak boleh berlubang hanya karena bentuk masukan
+	// berubah. Tanpa aturan semacam itu, perilaku tidak berubah.
+	if s.TakTerperiksa {
+		for _, a := range daftar {
+			if a.row.Action == policy.ActionWarn {
+				continue
+			}
+			if a.row.Kind != policy.FilterBlockedPattern && a.row.Kind != policy.FilterAllowedPattern {
+				continue
+			}
+			if !berlakuArah(a.row, s) {
+				continue
+			}
+			// Konsisten dengan arah kesalahan terpicu(): daftar hitam
+			// yang rusak meloloskan (satu pola salah tulis tidak boleh
+			// mematikan lalu lintas), daftar putih yang rusak
+			// memblokir (tidak ada bukti muatan termasuk yang diizinkan).
+			if a.rusak && a.row.Kind == policy.FilterBlockedPattern {
+				continue
+			}
+			v.Blocked, v.Filter, v.Reason = true, a.row, alasanTakTerperiksa(a.row)
+			return v
+		}
+	}
 	return v
+}
+
+// berlakuArah melaporkan apakah aturan ini berlaku untuk arah Subject
+// ini (permintaan vs jawaban), tanpa melihat jenis aturannya.
+func berlakuArah(f *policy.ContentFilter, s Subject) bool {
+	switch f.AppliesTo {
+	case policy.AppliesToRequest:
+		return !s.Response
+	case policy.AppliesToResponse:
+		return s.Response
+	}
+	return true
 }
 
 // berlaku melaporkan apakah aturan ini punya bahan yang dibutuhkannya pada Subject ini.
 func berlaku(f *policy.ContentFilter, s Subject) bool {
-	switch f.AppliesTo {
-	case policy.AppliesToRequest:
-		if s.Response {
-			return false
-		}
-	case policy.AppliesToResponse:
-		if !s.Response {
-			return false
-		}
+	if !berlakuArah(f, s) {
+		return false
 	}
 
 	switch f.Kind {
@@ -382,6 +426,15 @@ func alasan(f *policy.ContentFilter) string {
 		return "provider untuk model ini dibatasi kebijakan " + kutip(f.Name)
 	}
 	return "permintaan tertahan kebijakan konten " + kutip(f.Name)
+}
+
+// alasanTakTerperiksa adalah alasan penolakan untuk muatan yang tidak bisa
+// diperiksa (B-252). Bunyinya sengaja membedakan keadaan ini dari
+// tertangkap pola: muatan ditolak karena TIDAK BISA diperiksa terhadap
+// kebijakan, bukan karena terbukti melanggarnya — mengarang bunyi
+// pelanggaran akan mengarang fakta pelanggaran.
+func alasanTakTerperiksa(f *policy.ContentFilter) string {
+	return "isi permintaan tidak dapat diperiksa terhadap kebijakan konten " + kutip(f.Name) + " karena sebagian muatan tidak berbentuk teks"
 }
 
 // kutip membungkus nama kebijakan dengan tanda kutip, dengan panjang dibatasi.

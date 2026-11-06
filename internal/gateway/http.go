@@ -2218,12 +2218,25 @@ func (h *Handlers) chatMengalir(w http.ResponseWriter, r *http.Request, pr *pers
 		terkirim += n
 		if err != nil {
 			// Klien berhenti membaca. Tidak ada yang bisa dilaporkan kepadanya, dan
-			// upstream ditutup oleh defer di atas.
+			// upstream ditutup oleh defer di atas. Tetapi aliran ini TIDAK
+			// selesai di mata klien, jadi ia tidak boleh tercatat sebagai
+			// sukses penuh (B-172): tandai canceled — status yang terkirim
+			// tetap 200, error_type-lah yang memisahkannya dari sukses di
+			// dashboard, rollup, dan metrik keberhasilan.
+			j.pasangKegagalanUpstream(&providers.Error{
+				Kind:    providers.ErrKindCanceled,
+				Message: "penulisan aliran ke klien gagal di tengah jalan",
+			})
 			h.logger.DebugContext(r.Context(), "penulisan peristiwa SSE gagal, klien menutup koneksi",
 				"terkirim_byte", terkirim, "error", err)
 			return
 		}
 		if err := rc.Flush(); err != nil {
+			// Flush gagal = putus yang sama seperti gagal tulis (B-172).
+			j.pasangKegagalanUpstream(&providers.Error{
+				Kind:    providers.ErrKindCanceled,
+				Message: "flush aliran ke klien gagal di tengah jalan",
+			})
 			h.logger.DebugContext(r.Context(), "flush SSE gagal", "error", err)
 			return
 		}

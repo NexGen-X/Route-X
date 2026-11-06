@@ -1375,6 +1375,17 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 		return 0, false
 	}
 
+	// tandaiGagalTulis menandai jejak canceled saat penulisan ke klien
+	// putus di tengah aliran (B-172): aliran yang tidak pernah diterima
+	// utuh klien tidak boleh tercatat sebagai sukses penuh — status
+	// tetap 200, error_type canceled yang memisahkannya.
+	tandaiGagalTulis := func() {
+		j.pasangKegagalanUpstream(&providers.Error{
+			Kind:    providers.ErrKindCanceled,
+			Message: "penulisan aliran ke klien gagal di tengah jalan",
+		})
+	}
+
 	// kirimEvent menulis satu peristiwa SSE beserta framingnya lalu memflush klien.
 	// Menulis SSE tanpa flush segera menumpuk chunk di buffer proxy dan mematikan
 	// tujuan streaming itu sendiri. Kegagalan tulisan dianggap aliran sudah putus:
@@ -1382,10 +1393,15 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 	kirimEvent := func(nama string, muat []byte) bool {
 		n, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", nama, muat)
 		if err != nil {
+			tandaiGagalTulis()
 			return false
 		}
 		terkirim += int64(n)
-		return rc.Flush() == nil
+		if err := rc.Flush(); err != nil {
+			tandaiGagalTulis()
+			return false
+		}
+		return true
 	}
 
 	// tutupBlok menutup content_block yang masih terbuka. Hanya ada satu blok
@@ -1443,6 +1459,10 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 		},
 	})
 	if _, err := fmt.Fprintf(w, "event: message_start\ndata: %s\n\n", startPayload); err != nil {
+		// Putus sebelum aliran sempat mulai pun putus (B-172): tanpa
+		// tanda ini request tercatat sukses penuh walau klien tidak
+		// menerima satu byte pun.
+		tandaiGagalTulis()
 		return
 	}
 	_ = rc.Flush()

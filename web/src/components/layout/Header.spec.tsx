@@ -7,8 +7,21 @@ vi.mock('../../context/AuthContext', () => ({
   useAuth: () => mockUseAuth(),
 }));
 
+// Status gateway kini diturunkan dari endpoint overview nyata (B-224);
+// mock-nya dikendalikan per test.
+const overviewMock = vi.fn();
+vi.mock('../../api/client', () => ({
+  api: {
+    system: {
+      overview: () => overviewMock(),
+    },
+  },
+}));
+
 describe('Header Component — Glassmorphic SOTA 2026', () => {
   beforeEach(() => {
+    overviewMock.mockReset();
+    overviewMock.mockResolvedValue({ pid: 1 });
     mockUseAuth.mockReturnValue({
       principal: {
         user: { id: 'usr-1', email: 'admin@routex.local', display_name: 'SuperAdmin' },
@@ -17,7 +30,7 @@ describe('Header Component — Glassmorphic SOTA 2026', () => {
     });
   });
 
-  it('merender title, subtitle breadcrumb, dan telemetry radar online', () => {
+  it('merender title, subtitle breadcrumb, dan telemetry radar online', async () => {
     const handleOpenMobile = vi.fn();
     render(
       <Header
@@ -30,7 +43,16 @@ describe('Header Component — Glassmorphic SOTA 2026', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Aturan Perutean' })).toBeInTheDocument();
     expect(screen.getByText('Gateway Pipeline')).toBeInTheDocument();
     expect(screen.getByRole('status', { name: /status telemetri gateway/i })).toBeInTheDocument();
-    expect(screen.getByText('Gateway Online')).toBeInTheDocument();
+    // "Gateway Online" hanya muncul SESUDAH overview benar-benar
+    // menjawab (B-224) — bukan teks statis sejak render pertama.
+    expect(await screen.findByText('Gateway Online')).toBeInTheDocument();
+  });
+
+  it('overview gagal → status "Gateway Tidak Tersedia", bukan online karangan (B-224)', async () => {
+    overviewMock.mockRejectedValue(new Error('api tidak terjangkau'));
+    render(<Header title="Dashboard" onOpenMobileMenu={vi.fn()} />);
+    expect(await screen.findByText('Gateway Tidak Tersedia')).toBeInTheDocument();
+    expect(screen.queryByText('Gateway Online')).not.toBeInTheDocument();
   });
 
   it('membuka mobile menu saat hamburger ditekan', () => {

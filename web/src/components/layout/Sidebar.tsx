@@ -22,6 +22,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Tooltip } from '../common/Tooltip';
 import { RouteXLogo } from '../common/RouteXLogo';
 import { muatJumlahToolCli } from '../../lib/cliCount';
+import { useGatewayStatus } from '../../lib/useGatewayStatus';
 
 export interface SidebarProps {
   currentPath: string;
@@ -67,6 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, []);
   const { user, principal, logout } = useAuth();
+  const statusGateway = useGatewayStatus();
 
   const navGroups: NavGroup[] = [
     {
@@ -242,10 +244,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               {/* Status indicator & Logout */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <div className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 mr-1" title="Gateway Live">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
-                  <span className="hidden xl:inline">Live</span>
-                  <span className="sr-only">Gateway Live</span>
+                {/* Indikator status diturunkan dari endpoint overview
+                    nyata (B-224) — bukan label "Live" hardcoded. */}
+                <div
+                  className={`flex items-center gap-1 text-[10px] font-mono mr-1 ${
+                    statusGateway === 'online'
+                      ? 'text-emerald-400'
+                      : statusGateway === 'offline'
+                        ? 'text-rose-400'
+                        : 'text-text-muted'
+                  }`}
+                  title={
+                    statusGateway === 'online'
+                      ? 'Gateway Live'
+                      : statusGateway === 'offline'
+                        ? 'Gateway Tidak Tersedia'
+                        : 'Status Gateway Belum Diketahui'
+                  }
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                      statusGateway === 'online'
+                        ? 'bg-emerald-500'
+                        : statusGateway === 'offline'
+                          ? 'bg-rose-500'
+                          : 'bg-zinc-500'
+                    }`}
+                    aria-hidden="true"
+                  />
+                  <span className="hidden xl:inline">
+                    {statusGateway === 'online' ? 'Live' : statusGateway === 'offline' ? 'Terputus' : '…'}
+                  </span>
+                  <span className="sr-only">
+                    {statusGateway === 'online'
+                      ? 'Gateway Live'
+                      : statusGateway === 'offline'
+                        ? 'Gateway Tidak Tersedia'
+                        : 'Status Gateway Belum Diketahui'}
+                  </span>
                 </div>
                 <Tooltip content="Keluar (Logout)" position="top">
                   <button

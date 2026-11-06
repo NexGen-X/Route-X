@@ -44,6 +44,13 @@ const payloadStore = {
   update: null as Record<string, unknown> | null,
 };
 
+// confirmStore mengatur jawaban confirmModal tiruan per test (B-229):
+// bawaan true (perilaku lama factory), test penolakan menyetelnya false.
+const confirmStore = {
+  hasil: true,
+  panggilan: null as Record<string, unknown> | null,
+};
+
 vi.mock('../api/client', () => ({
   api: {
     routing: {
@@ -81,7 +88,10 @@ vi.mock('../context/ToastContext', () => ({
   useToast: () => ({
     toast: { success: vi.fn(), error: vi.fn(), warn: vi.fn(), info: vi.fn() },
     showToast: vi.fn(),
-    confirmModal: vi.fn(async () => true),
+    confirmModal: vi.fn(async (opsi: Record<string, unknown>) => {
+      confirmStore.panggilan = opsi;
+      return confirmStore.hasil;
+    }),
   }),
 }));
 
@@ -392,5 +402,46 @@ describe('RoutingRules — form combo (edit, perbaikan K2)', () => {
 
     expect(payload.pipeline).toBeNull();
     expect(payload.virtual_alias).toBe('');
+  });
+});
+
+describe('RoutingRules — reset breaker wajib konfirmasi (B-229)', () => {
+  const BREAKER_OPEN = {
+    provider_id: 'prov-a',
+    model: 'gpt-5',
+    state: 'open' as const,
+    failure_count: 7,
+  };
+
+  const renderDenganBreakerOpen = async () => {
+    vi.mocked(api.breakers.list).mockResolvedValue({ items: [BREAKER_OPEN] });
+    vi.mocked(api.breakers.reset).mockClear();
+    confirmStore.hasil = true;
+    confirmStore.panggilan = null;
+    render(<RoutingRules />);
+    return screen.findByRole('button', { name: /Pulihkan sirkuit untuk provider/i });
+  };
+
+  it('konfirmasi ditolak → api.breakers.reset TIDAK dipanggil', async () => {
+    const tombol = await renderDenganBreakerOpen();
+    confirmStore.hasil = false;
+
+    fireEvent.click(tombol);
+
+    await waitFor(() => expect(confirmStore.panggilan).not.toBeNull());
+    expect(confirmStore.panggilan).toMatchObject({ danger: true });
+    expect(vi.mocked(api.breakers.reset)).not.toHaveBeenCalled();
+  });
+
+  it('konfirmasi diterima → reset dipanggil dengan provider + model breaker', async () => {
+    const tombol = await renderDenganBreakerOpen();
+    confirmStore.hasil = true;
+
+    fireEvent.click(tombol);
+
+    await waitFor(() =>
+      expect(vi.mocked(api.breakers.reset)).toHaveBeenCalledWith('prov-a', 'gpt-5'),
+    );
+    expect(confirmStore.panggilan).toMatchObject({ danger: true });
   });
 });

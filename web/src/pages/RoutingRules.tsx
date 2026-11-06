@@ -99,6 +99,20 @@ export const RoutingRules: React.FC = () => {
   }, []);
 
   const handleResetBreaker = async (providerId: string, model: string) => {
+    // B-229: reset breaker berdampak operasional nyata — breaker yang
+    // sedang open dipaksa closed dan trafik langsung mengalir lagi ke
+    // provider yang baru saja berulang kali gagal. Versi lama
+    // menjalankannya dari satu klik tanpa konfirmasi, tidak seperti
+    // aksi berdampak lain di produk (hapus aturan di halaman ini,
+    // reset anggaran di Budgets) yang memakai confirmModal danger.
+    const confirmed = await confirmModal({
+      title: 'Reset Circuit Breaker',
+      message: `Reset circuit breaker${model ? ` untuk model ${model}` : ''} pada provider ini? Breaker yang sedang terbuka akan langsung ditutup dan trafik diteruskan kembali ke provider tersebut.`,
+      danger: true,
+      confirmText: 'Ya, Reset Breaker',
+    });
+    if (!confirmed) return;
+
     try {
       await api.breakers.reset(providerId, model);
       toast.success('Circuit breaker berhasil direset');

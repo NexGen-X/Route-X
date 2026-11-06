@@ -111,10 +111,16 @@ func (h *Handlers) configureCLI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gwURL := req.GatewayURL
-	if gwURL == "" {
-		gwURL = h.resolveGatewayURL(r)
-	}
+	// B-275: gateway_url dari body SENGAJA diabaikan — URL selalu dari
+	// hierarki tepercaya resolveGatewayURL (setting DB operator →
+	// PUBLIC_URL → turunan request bergerbang proxy). Versi lama
+	// membiarkan nilai body menang senyap atas ketiganya lalu
+	// menyimpannya persisten ke konfigurasi CLI bersama API key tanpa
+	// jejak audit: body adalah sumber yang lebih tidak tepercaya
+	// daripada turunan request yang sudah digerbang proxy itu sendiri.
+	// Field DTO dipertahankan demi kompatibilitas pemanggil lama,
+	// tetapi tidak pernah dipakai.
+	gwURL := h.resolveGatewayURL(r)
 
 	params := cliconfig.ConfigureParams{
 		ToolID:     req.ToolID,

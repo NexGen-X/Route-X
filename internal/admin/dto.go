@@ -1791,10 +1791,14 @@ func (CLIDetectedResponseDTO) adalahDTO() {}
 
 // CLIConfigureRequestDTO adalah payload pembaruan konfigurasi perkakas CLI.
 type CLIConfigureRequestDTO struct {
-	ToolID     string `json:"tool_id"`
-	Mode       string `json:"mode"`
-	Target     string `json:"target"`
-	APIKey     string `json:"api_key,omitempty"`
+	ToolID string `json:"tool_id"`
+	Mode   string `json:"mode"`
+	Target string `json:"target"`
+	APIKey string `json:"api_key,omitempty"`
+	// GatewayURL dipertahankan demi kompatibilitas pemanggil lama,
+	// tetapi DIABAIKAN server (B-275): URL gateway selalu diturunkan
+	// dari hierarki tepercaya resolveGatewayURL, tidak pernah dari
+	// body — nilai body tidak boleh mengalahkan konfigurasi operator.
 	GatewayURL string `json:"gateway_url,omitempty"`
 }
 

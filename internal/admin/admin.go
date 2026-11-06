@@ -590,6 +590,22 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 			msg = "batas nominal anggaran harus lebih besar dari 0 USD"
 		case "budgets_threshold_range":
 			msg = "ambang batas peringatan anggaran harus berada di antara 1% dan 100%"
+		// Constraint kebijakan yang dulu jatuh ke pesan generik (B-196):
+		// masing-masing kini menyebut field dan nilai sahnya.
+		case "rate_limits_scope_valid":
+			msg = "scope tidak dikenal: gunakan global, api_key, user, provider, model, atau ip"
+		case "rate_limits_scope_id_presence":
+			msg = "untuk cakupan global, target ID harus kosong; untuk cakupan selain global, target ID wajib diisi"
+		case "rate_limits_at_least_one":
+			msg = "minimal satu batas wajib diisi: requests_per_second, requests_per_minute, tokens_per_minute, atau salah satu batas harian/bulanan"
+		case "budgets_name_not_empty":
+			msg = "name anggaran wajib diisi (tidak boleh kosong atau hanya spasi)"
+		case "budgets_scope_valid":
+			msg = "scope tidak dikenal: gunakan global, api_key, user, provider, atau model"
+		case "budgets_period_valid":
+			msg = "period tidak dikenal: gunakan daily, weekly, monthly, atau total"
+		case "budgets_action_valid":
+			msg = "action_on_exceed tidak dikenal: gunakan block atau warn"
 		case "egress_pool_kind_valid":
 			msg = "jenis proxy egress harus salah satu dari: http, https, atau socks5"
 		case "egress_pool_name_not_empty":

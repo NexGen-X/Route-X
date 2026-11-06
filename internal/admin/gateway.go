@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -929,18 +930,14 @@ func (h *Handlers) createRateLimit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cakupan model: simpan UUID model kanonik, bukan nama/alias — lihat
-	// normalisasiScopeModel (audit3 V-AB-03).
-	scopeIDModel, errNormalisasi := h.normalisasiScopeModel(ctx, req.Scope, req.ScopeID)
-	if errNormalisasi != nil {
-		if errors.Is(errNormalisasi, repo.ErrNotFound) {
-			httpx.BadRequest(w, r, "invalid_scope_id", "scope_id tidak menunjuk model yang dikenal: "+req.ScopeID)
-			return
-		}
-		mapRepoError(w, r, errNormalisasi, "model")
+	// Semua cakupan diselesaikan di batas tulis — lihat
+	// validasiScopeKebijakan (B-196; cakupan model lewat
+	// normalisasiScopeModel, audit3 V-AB-03).
+	scopeID, ok := h.selesaikanScopeID(w, r, req.Scope, req.ScopeID)
+	if !ok {
 		return
 	}
-	req.ScopeID = scopeIDModel
+	req.ScopeID = scopeID
 
 	var actorID string
 	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
@@ -1103,6 +1100,132 @@ func (h *Handlers) normalisasiScopeModel(ctx context.Context, scope, scopeID str
 	return m.ID, nil
 }
 
+// errScopeTakSah menandai scope_id yang bentuknya sendiri tidak sah untuk
+// cakupannya (UUID acak untuk api_key, teks bukan alamat untuk ip) —
+// berbeda dari repo.ErrNotFound yang berarti bentuknya sah tetapi
+// entitasnya tidak ada.
+var errScopeTakSah = errors.New("scope_id tidak sah untuk cakupannya")
+
+// validasiScopeKebijakan menyelesaikan scope_id untuk SEMUA cakupan
+// kebijakan (B-196), simetris dengan cara penegak mencocokkannya di
+// jalur request.
+//
+// Sebelumnya hanya cakupan model yang dinormalisasi; api_key/user/
+// provider/ip lolos mentah dari body. Akibatnya aturan yang scope_id-nya
+// bukan UUID entitas sungguhan (atau IP tak kanonik) lahir mati — penegak
+// mencocokkan persis terhadap UUID/IP kanonik sehingga tidak pernah
+// bertemu — dan pelanggarannya baru muncul sebagai 400 generik dari
+// constraint database, atau tidak muncul sama sekali. Kini setiap
+// cakupan diselesaikan di batas tulis yang sama:
+//
+//   - global: scope_id dipaksa kosong (constraint presence).
+//   - model: resolusi nama/alias → UUID lewat normalisasiScopeModel.
+//   - api_key/user/provider: entitasnya wajib ada (ErrNotFound → 400).
+//     Bentuk UUID diperiksa lebih dulu untuk api_key karena repo
+//     kuncinya meneruskan string apa pun ke pgx.
+//   - ip: diuraikan dan disimpan dalam bentuk kanonik netip, persis
+//     bentuk yang dibandingkan penegak.
+//   - cakupan tak dikenal: diteruskan apa adanya — constraint
+//     *_scope_valid menolaknya dan mapRepoError menyebut field-nya.
+func (h *Handlers) validasiScopeKebijakan(ctx context.Context, scope, scopeID string) (string, error) {
+	switch scope {
+	case policy.ScopeGlobal:
+		return "", nil
+	case policy.ScopeModel:
+		return h.normalisasiScopeModel(ctx, scope, scopeID)
+	case policy.ScopeAPIKey:
+		if !bentukUUID(scopeID) {
+			return "", errScopeTakSah
+		}
+		if h.keyRepo != nil {
+			if _, err := h.keyRepo.GetByID(ctx, scopeID); err != nil {
+				return "", err
+			}
+		}
+		return scopeID, nil
+	case policy.ScopeUser:
+		if h.usersRepo != nil {
+			if _, err := h.usersRepo.GetByID(ctx, scopeID); err != nil {
+				return "", err
+			}
+		}
+		return scopeID, nil
+	case policy.ScopeProvider:
+		if h.providerRepo != nil {
+			if _, err := h.providerRepo.Get(ctx, scopeID); err != nil {
+				return "", err
+			}
+		}
+		return scopeID, nil
+	case policy.ScopeIP:
+		addr, err := netip.ParseAddr(scopeID)
+		if err != nil {
+			return "", errScopeTakSah
+		}
+		return addr.String(), nil
+	default:
+		return scopeID, nil
+	}
+}
+
+// selesaikanScopeID menjalankan validasiScopeKebijakan dan menulis
+// respons 400 yang menyebut field-nya bila gagal; ok=false berarti
+// respons sudah ditulis dan pemanggil wajib berhenti.
+func (h *Handlers) selesaikanScopeID(w http.ResponseWriter, r *http.Request, scope, scopeID string) (string, bool) {
+	hasil, err := h.validasiScopeKebijakan(r.Context(), scope, scopeID)
+	if err == nil {
+		return hasil, true
+	}
+	switch {
+	case errors.Is(err, repo.ErrNotFound):
+		httpx.BadRequest(w, r, "invalid_scope_id",
+			"scope_id tidak menunjuk "+subjekScope(scope)+" yang dikenal: "+scopeID)
+	case errors.Is(err, errScopeTakSah):
+		httpx.BadRequest(w, r, "invalid_scope_id",
+			"scope_id tidak sah untuk cakupan "+scope+": "+scopeID)
+	default:
+		mapRepoError(w, r, err, "kebijakan")
+	}
+	return "", false
+}
+
+// subjekScope adalah nama manusiawi entitas yang ditunjuk scope_id,
+// untuk pesan penolakan di atas.
+func subjekScope(scope string) string {
+	switch scope {
+	case policy.ScopeModel:
+		return "model"
+	case policy.ScopeAPIKey:
+		return "kunci API"
+	case policy.ScopeUser:
+		return "pengguna"
+	case policy.ScopeProvider:
+		return "provider"
+	default:
+		return "entitas"
+	}
+}
+
+// bentukUUID memeriksa bentuk tekstual UUID (8-4-4-4-12 heksadesimal).
+// Pemeriksaan bentuk, bukan keberadaan: dipakai sebelum menyerahkan
+// string ke repo yang tidak menjaganya sendiri, agar UUID acak
+// membalas 400 yang jelas alih-alih 500 dari pgx.
+func bentukUUID(s string) bool {
+	if len(s) != 36 || s[8] != '-' || s[13] != '-' || s[18] != '-' || s[23] != '-' {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			continue
+		}
+		c := s[i]
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F') {
+			return false
+		}
+	}
+	return true
+}
+
 type createBudgetReq struct {
 	Name              string `json:"name"`
 	Scope             string `json:"scope"`
@@ -1134,23 +1257,15 @@ func (h *Handlers) createBudget(w http.ResponseWriter, r *http.Request) {
 		req.AlertThresholdPct = req.AlertThreshold
 	}
 
-	// Normalisasi cakupan global: scope_id wajib null/kosong di database
-	if req.Scope == "global" {
-		req.ScopeID = ""
-	}
-
-	// Cakupan model: simpan UUID model kanonik, bukan nama/alias yang dikirim
-	// pemanggil — lihat normalisasiScopeModel.
-	scopeIDModel, errNormalisasi := h.normalisasiScopeModel(ctx, req.Scope, req.ScopeID)
-	if errNormalisasi != nil {
-		if errors.Is(errNormalisasi, repo.ErrNotFound) {
-			httpx.BadRequest(w, r, "invalid_scope_id", "scope_id tidak menunjuk model yang dikenal: "+req.ScopeID)
-			return
-		}
-		mapRepoError(w, r, errNormalisasi, "model")
+	// Semua cakupan diselesaikan di batas tulis — lihat
+	// validasiScopeKebijakan (B-196). Cakupan global termasuk di
+	// dalamnya: scope_id-nya dipaksa kosong sesuai constraint
+	// presence database, seperti yang dulu dilakukan manual di sini.
+	scopeID, ok := h.selesaikanScopeID(w, r, req.Scope, req.ScopeID)
+	if !ok {
 		return
 	}
-	req.ScopeID = scopeIDModel
+	req.ScopeID = scopeID
 
 	limitUSD, err := upstream.ParseUSD(req.LimitUSD)
 	if err != nil {

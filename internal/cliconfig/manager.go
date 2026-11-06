@@ -122,6 +122,23 @@ func tulisAtomik(path string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmpName, path)
 }
 
+// cariConfigPath mengembalikan path absolut berkas konfigurasi
+// pertama milik tool yang ada di disk, atau string kosong bila
+// tidak ada. Dipakai bersama oleh Scan dan Configure (B-160):
+// Configure dulu tidak pernah mengisi ConfigPath, sehingga respons
+// Configure selalu melaporkan config_file kosong walau berkasnya
+// baru saja ditulis — sementara Scan untuk keadaan yang sama
+// melaporkannya dengan benar.
+func cariConfigPath(tool ToolDef, homeDir string) string {
+	for _, relConfig := range tool.ConfigPaths {
+		fullPath := filepath.Join(homeDir, relConfig)
+		if _, err := os.Stat(fullPath); err == nil {
+			return fullPath
+		}
+	}
+	return ""
+}
+
 func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolStatus, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -201,13 +218,7 @@ func (m *Manager) Scan(ctx context.Context, defaultGatewayURL string) ([]ToolSta
 		}
 
 		// 2. Deteksi lokasi config file jika ada di sistem
-		for _, relConfig := range tool.ConfigPaths {
-			fullPath := filepath.Join(homeDir, relConfig)
-			if _, err := os.Stat(fullPath); err == nil {
-				status.ConfigPath = fullPath
-				break
-			}
-		}
+		status.ConfigPath = cariConfigPath(tool, homeDir)
 
 		// 3. Baca preferensi non-rahasia yang tersimpan di database.
 		settingKey := fmt.Sprintf("cli:config:%s", tool.ID)
@@ -383,13 +394,19 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 
 	execPath := m.findBinary(toolDef.BinaryNames, homeDir)
 	status := &ToolStatus{
-		ID:             toolDef.ID,
-		Name:           toolDef.Name,
-		Description:    toolDef.Description,
-		Category:       toolDef.Category,
-		Installed:      execPath != "",
-		Path:           execPath,
-		Version:        m.detectVersionUntukTool(ctx, toolDef, execPath),
+		ID:          toolDef.ID,
+		Name:        toolDef.Name,
+		Description: toolDef.Description,
+		Category:    toolDef.Category,
+		Installed:   execPath != "",
+		Path:        execPath,
+		Version:     m.detectVersionUntukTool(ctx, toolDef, execPath),
+		// B-160: berkas konfigurasi baru saja ditulis oleh
+		// applyToolSpecificConfig di atas, jadi laporkan lokasinya
+		// dengan helper yang sama seperti Scan — respons Configure
+		// tidak lagi ber-config_file kosong untuk tool berbasis
+		// berkas.
+		ConfigPath:     cariConfigPath(toolDef, homeDir),
 		SupportedModes: []string{ModeModelOnly, ModeRouting, ModeCombo},
 		ActiveMode:     p.Mode,
 		ActiveTarget:   p.Target,

@@ -531,3 +531,45 @@ func TestConfigureHermesAPIKeyDiBlokModelDanIzin0600(t *testing.T) {
 		t.Errorf("izin .env hermes harus 600, dapat %v / %v", fi, err)
 	}
 }
+
+// TestConfigureMengisiConfigPath mengunci B-160: respons Configure
+// wajib membawa ConfigPath berkas yang baru saja ditulis — dulu
+// selalu kosong walau berkasnya ada, sementara Scan untuk keadaan
+// yang sama melaporkannya. Nilai dari Configure dan dari Scan
+// sesudahnya harus sama persis.
+func TestConfigureMengisiConfigPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	ctx := context.Background()
+	mgr := NewManager(newMockSettingsStore(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res, err := mgr.Configure(ctx, ConfigureParams{
+		ToolID: "claude", Mode: ModeModelOnly, Target: "intern-s2",
+		APIKey: "kunci-uji-b160",
+	}, "http://localhost:8080/v1")
+	if err != nil {
+		t.Fatalf("Configure claude: %v", err)
+	}
+	mau := filepath.Join(home, ".claude", "settings.json")
+	if _, err := os.Stat(mau); err != nil {
+		t.Fatalf("settings.json claude tidak ditulis: %v", err)
+	}
+	if res.ConfigPath != mau {
+		t.Errorf("ConfigPath Configure = %q, mau %q (berkas yang baru ditulis)", res.ConfigPath, mau)
+	}
+
+	// Scan sesudahnya melaporkan nilai yang sama untuk tool ini.
+	statuss, err := mgr.Scan(ctx, "http://localhost:8080/v1")
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	for _, st := range statuss {
+		if st.ID == "claude" {
+			if st.ConfigPath != res.ConfigPath {
+				t.Errorf("ConfigPath Scan = %q, tidak sama dengan Configure %q", st.ConfigPath, res.ConfigPath)
+			}
+			return
+		}
+	}
+	t.Fatal("claude tidak ditemukan di hasil Scan")
+}

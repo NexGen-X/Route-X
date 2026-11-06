@@ -18,6 +18,10 @@ export interface TrafficChartProps {
   setMetricType: (m: 'requests' | 'latency' | 'tokens') => void;
   timeWindow: '1h' | '6h' | '24h' | '7d';
   setTimeWindow: (w: '1h' | '6h' | '24h' | '7d') => void;
+  // B-376: selama muatan pertama berjalan, seri kosong belum
+  // berarti "belum ada sampel" — tampilkan keadaan memuat, bukan
+  // klaim definitif.
+  memuat?: boolean;
 }
 
 interface MemoizedChartInnerProps {
@@ -117,6 +121,7 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
   setMetricType,
   timeWindow,
   setTimeWindow,
+  memuat = false,
 }) => {
   return (
     <div className="lg:col-span-2 bg-bg-surface-1/40 border border-border/60 rounded-xl p-4 sm:p-5 flex flex-col justify-between">
@@ -177,7 +182,11 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
         {series.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-xs text-text-muted space-y-2">
             <Activity className="w-5 h-5 text-text-muted" aria-hidden="true" />
-            <span>Belum ada sampel metrik untuk rentang waktu {timeWindow}</span>
+            <span>
+              {memuat
+                ? 'Memuat sampel metrik…'
+                : `Belum ada sampel metrik untuk rentang waktu ${timeWindow}`}
+            </span>
           </div>
         ) : (
           <MemoizedChartInner series={series} metricType={metricType} timeWindow={timeWindow} />

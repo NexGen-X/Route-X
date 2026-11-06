@@ -400,20 +400,26 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 setMetricType={setMetricType}
                 timeWindow={timeWindow}
                 setTimeWindow={setTimeWindow}
+                memuat={isLoading}
               />
             </React.Suspense>
           </WidgetErrorBoundary>
         </div>
         <div>
           <WidgetErrorBoundary title="Feed Permintaan Terbaru" onRetry={() => void refreshOverview()}>
-            <LiveRequestsFeed recentRequests={recentRequests} onNavigate={onNavigate} />
+            <LiveRequestsFeed recentRequests={recentRequests} onNavigate={onNavigate} memuat={isLoading} />
           </WidgetErrorBoundary>
         </div>
       </div>
 
       {/* 5. UPSTREAM PROVIDER HEALTH & STATUS MATRIX */}
       <WidgetErrorBoundary title="Status Matriks Provider" onRetry={() => void loadData(true)}>
-        <ProviderHealthMatrix providers={providers} onNavigate={onNavigate} />
+        <ProviderHealthMatrix
+          providers={providers}
+          onNavigate={onNavigate}
+          providersTerukur={providersPernahDimuat}
+          memuat={isLoading}
+        />
       </WidgetErrorBoundary>
 
       {/* 6. SYSTEM TELEMETRY — collapsible, tersembunyi secara default */}

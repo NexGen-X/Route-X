@@ -8,6 +8,14 @@ import type { Provider } from '../../types';
 export interface ProviderHealthMatrixProps {
   providers: Provider[];
   onNavigate: (path: string) => void;
+  // B-375: gerbang kejujuran yang sama dengan DashboardHero
+  // (B-346). providersTerukur menandai daftar provider PERNAH tiba
+  // dari sumbernya; selama belum terukur, keadaan kosong TIDAK
+  // boleh diklaim definitif ("belum ada provider") karena ia juga
+  // adalah keadaan muatan pertama yang gagal total. memuat
+  // membedakan "sedang dimuat" dari "gagal dimuat".
+  providersTerukur?: boolean;
+  memuat?: boolean;
 }
 
 const getProtocolBadge = (kind: string): string => {
@@ -43,6 +51,8 @@ const getProtocolBadge = (kind: string): string => {
 export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
   providers,
   onNavigate,
+  providersTerukur = false,
+  memuat = false,
 }) => {
   return (
     <div>
@@ -62,17 +72,25 @@ export const ProviderHealthMatrix: React.FC<ProviderHealthMatrixProps> = ({
       </div>
 
       {providers.length === 0 ? (
-        <div className="py-8 text-center text-xs text-text-muted space-y-2 border-y border-border/60">
-          <p>Belum ada provider upstream yang terdaftar.</p>
-          <button
-            type="button"
-            onClick={() => onNavigate('/upstreams/providers')}
-            className="text-text-secondary hover:text-white hover:underline font-medium cursor-pointer inline-flex items-center gap-1"
-          >
-            <span>Tambahkan provider sekarang</span>
-            <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
-          </button>
-        </div>
+        providersTerukur ? (
+          <div className="py-8 text-center text-xs text-text-muted space-y-2 border-y border-border/60">
+            <p>Belum ada provider upstream yang terdaftar.</p>
+            <button
+              type="button"
+              onClick={() => onNavigate('/upstreams/providers')}
+              className="text-text-secondary hover:text-white hover:underline font-medium cursor-pointer inline-flex items-center gap-1"
+            >
+              <span>Tambahkan provider sekarang</span>
+              <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          // B-375: belum terukur — teks netral tanpa klaim definitif
+          // dan tanpa CTA, sejajar gerbang hero (B-346).
+          <div className="py-8 text-center text-xs text-text-muted border-y border-border/60">
+            <p>{memuat ? 'Memuat status provider…' : 'Status provider tidak diketahui.'}</p>
+          </div>
+        )
       ) : (
         <div className="divide-y divide-border/60 border-y border-border/60">
           {providers.map((p) => {

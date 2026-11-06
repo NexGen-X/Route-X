@@ -25,6 +25,10 @@ export interface ProviderCardProps {
     // kredensial/sesi OAuth provider ini gagal dibaca — kartu wajib
     // menampilkannya sebagai kegagalan, bukan keadaan kosong.
     gagalMuat?: boolean;
+    // Penanda ringkasan masih dimuat (B-377): entri belum ada
+    // selama query halaman induk berjalan — kartu menampilkan
+    // keadaan memuat, bukan klaim "Belum ada kredensial".
+    memuat?: boolean;
   };
   isCustom: boolean;
   onOpenDrawer: (provider: Provider, tab?: 'models' | 'credentials' | 'settings') => void;
@@ -181,7 +185,14 @@ export const ProviderCard: React.FC<ProviderCardProps> = ({
           {egressPool ? egressPool.name : 'Direct Outbound'}
         </span>
 
-        {pool.gagalMuat ? (
+        {pool.memuat ? (
+          // B-377: ringkasan belum tiba — keadaan memuat yang
+          // netral, sebelum cabang gagal-muat maupun kosong.
+          <span className="inline-flex items-center gap-2 text-text-muted" role="status">
+            <Users className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+            <span className="font-medium">Memuat ringkasan kredensial…</span>
+          </span>
+        ) : pool.gagalMuat ? (
           // Ringkasan gagal dibaca: tampilkan kegagalannya secara jujur.
           // Mengklaim "Belum ada kredensial" di sini menyesatkan operator
           // (audit3 B-075) — kredensial bisa saja ada, hanya tak terbaca.

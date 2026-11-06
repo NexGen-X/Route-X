@@ -57,4 +57,17 @@ describe('LiveRequestsFeed (audit3 B-006 nested-interactive)', () => {
     fireEvent.click(screen.getByRole('button', { name: /Inspeksi request gpt-5/ }));
     expect(onNavigate).toHaveBeenCalledWith('/requests');
   });
+
+  // B-376: daftar kosong selama muatan pertama belum berarti
+  // "belum ada permintaan" — tampilkan keadaan memuat.
+  it('memuat dengan daftar kosong: teks memuat, bukan klaim definitif', () => {
+    render(<LiveRequestsFeed recentRequests={[]} onNavigate={vi.fn()} memuat />);
+    expect(screen.getByText('Memuat permintaan terbaru…')).toBeInTheDocument();
+    expect(screen.queryByText('Belum ada permintaan inferensi yang tercatat.')).toBeNull();
+  });
+
+  it('tidak memuat dengan daftar kosong: klaim definitif tetap tampil', () => {
+    render(<LiveRequestsFeed recentRequests={[]} onNavigate={vi.fn()} />);
+    expect(screen.getByText('Belum ada permintaan inferensi yang tercatat.')).toBeInTheDocument();
+  });
 });

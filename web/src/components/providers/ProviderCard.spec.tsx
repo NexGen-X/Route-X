@@ -115,4 +115,21 @@ describe('ProviderCard — saklar enable/disable provider (B-086)', () => {
     );
     expect(screen.getByRole('switch')).toBeDisabled();
   });
+
+  // B-377: entri ringkasan yang belum tiba (query halaman induk
+  // masih berjalan) menampilkan keadaan memuat — bukan klaim
+  // "Belum ada kredensial" dan bukan penanda gagal-muat.
+  it('memuat menampilkan keadaan memuat ringkasan, BUKAN klaim kosong/gagal', () => {
+    render(
+      <ProviderCard
+        provider={buatProvider({})}
+        poolSummary={{ credentials: [], oauthSessions: [], memuat: true }}
+        isCustom={false}
+        {...handlers}
+      />
+    );
+    expect(screen.getByText('Memuat ringkasan kredensial…')).toBeInTheDocument();
+    expect(screen.queryByText('Belum ada kredensial')).toBeNull();
+    expect(screen.queryByText('Ringkasan kredensial gagal dimuat')).toBeNull();
+  });
 });

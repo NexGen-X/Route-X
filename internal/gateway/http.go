@@ -1827,6 +1827,45 @@ func terapkanLantaiPemakaian(req *providers.ChatRequest, u providers.Usage, byte
 	return u
 }
 
+// lantaiPemakaianEmbeddings menaksir pemakaian embeddings bila upstream
+// tidak melaporkannya sama sekali (B-174).
+//
+// Adapter tertentu memang tidak mengembalikan usage untuk embeddings —
+// Gemini tidak melaporkan token pada endpoint embeddings-nya — dan
+// tanpa lantai, seluruh lalu lintas itu tercatat 0 token: gratis dari
+// kuota token, anggaran, dan laporan biaya, dan senyap total karena
+// pencatat pun keluar lebih dulu pada total nol sehingga metrik
+// unpriced tidak naik. Berbeda dari lantai chat, embeddings hanya
+// punya sisi masukan: yang ditaksir adalah gabungan teks masukan
+// dengan bytePerToken yang sama, atau jumlah persis token array bila
+// klien mengirim masukan berbentuk token. Angka yang dilaporkan
+// upstream tidak pernah ditimpa; lantai hanya mengisi kekosongan.
+func lantaiPemakaianEmbeddings(req *providers.EmbeddingsRequest, u providers.Usage) providers.Usage {
+	if u.TotalTokens > 0 {
+		return u
+	}
+	if u.InputTokens > 0 {
+		u.TotalTokens = u.InputTokens
+		return u
+	}
+	n := 0
+	for _, token := range req.TokenInput {
+		n += len(token)
+	}
+	if n == 0 {
+		byteMasukan := 0
+		for _, s := range req.Input {
+			byteMasukan += len(s)
+		}
+		n = bagiKeAtas(byteMasukan, bytePerToken)
+	}
+	if n > 0 {
+		u.InputTokens = n
+		u.TotalTokens = n
+	}
+	return u
+}
+
 // chatSekali melayani completion non-streaming.
 func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
 	var cacheKey string
@@ -2492,9 +2531,12 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 		tulisKegagalan(w, r, out.Err)
 		return
 	}
-	j.pasangPemakaian(out.Value.Usage)
-	h.guard.CatatToken(r.Context(), p, targets, int64(out.Value.Usage.TotalTokens))
-	h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(out.Value.Usage.TotalTokens))
+	// Lantai pemakaian embeddings (B-174): usage kosong dari upstream
+	// ditaksir dari masukan, bukan dicatat nol.
+	pemakaian := lantaiPemakaianEmbeddings(req, out.Value.Usage)
+	j.pasangPemakaian(pemakaian)
+	h.guard.CatatToken(r.Context(), p, targets, int64(pemakaian.TotalTokens))
+	h.guard.CatatTokenKolomProvider(r.Context(), out.Candidate, int64(pemakaian.TotalTokens))
 	if len(out.Value.Raw) == 0 {
 		h.logger.ErrorContext(r.Context(), "adapter embedding mengembalikan respons tanpa body mentah",
 			"provider", namaProvider(out.Candidate))
@@ -2530,6 +2572,12 @@ type modelList struct {
 
 // maxModelsPerPage membatasi satu halaman daftar model.
 const maxModelsPerPage = 500
+
+// maksHalamanKatalog membatasi putaran pengambilan katalog utuh di
+// handler Models: 200 halaman x 500 model = 100.000 model, jauh di
+// atas katalog yang masuk akal untuk gateway ini, tetapi cukup untuk
+// menghentikan kursor repo yang rusak dan berputar tanpa akhir.
+const maksHalamanKatalog = 200
 
 // daftarAlias adalah kemampuan opsional ModelLister untuk menyebut alias tiap
 // model. Dipenuhi *upstream.ModelRepo. Tanpa ini daftar hanya memuat nama
@@ -2571,14 +2619,37 @@ func (h *Handlers) Models(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Seluruh katalog diambil dengan mengikuti kursor repo (B-175).
+	// Satu panggilan List berhenti pada maxModelsPerPage dan kursor
+	// lanjutannya dulu dibuang, sehingga katalog di atas 500 model
+	// terpotong diam-diam — dan has_more pada envelope, yang dihitung
+	// dari irisan yang sudah terambil, berbohong. Handler ini memang
+	// membutuhkan katalog utuh: penyaringan keterlihatan, penggabungan
+	// alias, dan pengurutan terjadi di ingatan, dan paginasi
+	// limit/after_id klien diterapkan pada hasil gabungannya.
 	aktif := true
-	models, _, err := h.lister.List(r.Context(),
-		upstream.ModelFilter{Enabled: &aktif},
-		repo.Page{Limit: maxModelsPerPage})
-	if err != nil {
-		h.logger.ErrorContext(r.Context(), "pengambilan daftar model gagal", "error", err)
-		httpx.InternalError(w, r)
-		return
+	var models []*upstream.Model
+	kursor := ""
+	for halaman := 0; ; halaman++ {
+		bagian, berikut, err := h.lister.List(r.Context(),
+			upstream.ModelFilter{Enabled: &aktif},
+			repo.Page{Limit: maxModelsPerPage, Cursor: kursor})
+		if err != nil {
+			h.logger.ErrorContext(r.Context(), "pengambilan daftar model gagal", "error", err)
+			httpx.InternalError(w, r)
+			return
+		}
+		models = append(models, bagian...)
+		if berikut == "" {
+			break
+		}
+		if halaman >= maksHalamanKatalog {
+			h.logger.ErrorContext(r.Context(), "katalog model melewati batas halaman pengambilan",
+				"batas_halaman", maksHalamanKatalog, "per_halaman", maxModelsPerPage)
+			httpx.InternalError(w, r)
+			return
+		}
+		kursor = berikut
 	}
 
 	p, _ := apikey.PrincipalFrom(r.Context())

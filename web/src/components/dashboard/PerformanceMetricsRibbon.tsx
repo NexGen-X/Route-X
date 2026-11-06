@@ -4,13 +4,31 @@ import { formatUSD } from '../../utils/money';
 
 export interface PerformanceMetricsRibbonProps {
   summary: ObservabilitySummary | null;
+  isLoading?: boolean;
+  loadError?: string | null;
 }
 
 // Fase 4 (Calm Console): empat kartu metrik menjadi strip KPI polos —
 // tanpa kotak, tile ikon berwarna, dan footer dekoratif. Label, nilai,
 // dan sub-info dipertahankan persis agar jangkar uji tidak berubah;
 // hierarki kini dibawa tipografi dan garis pemisah tipis.
-export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> = ({ summary }) => {
+//
+// B-228: selama ringkasan BELUM ada (sedang dimuat atau gagal dimuat),
+// strip menampilkan "—" plus keterangan keadaan, BUKAN angka nol yang
+// tampak sehat ("0 permintaan · 0.0% err" berwarna hijau) yang versi
+// lama hasilkan dari `summary?.x ?? 0` untuk summary null. Angka hanya
+// pernah dirender dari ringkasan nyata.
+export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> = ({
+  summary,
+  isLoading = false,
+  loadError = null,
+}) => {
+  const belumAda = summary == null;
+  const keteranganKeadaan = loadError
+    ? 'Gagal dimuat — periksa koneksi lalu muat ulang.'
+    : isLoading
+      ? 'Memuat data…'
+      : 'Belum ada data.';
   const errorRate = summary?.error_rate ?? 0;
   const isHealthyError = errorRate <= 5;
   const totalTokens = summary?.total_tokens ?? 0;
@@ -26,6 +44,33 @@ export const PerformanceMetricsRibbon: React.FC<PerformanceMetricsRibbonProps> =
   const nilaiKelas =
     'mt-1.5 text-2xl sm:text-[28px] leading-none font-semibold text-text-primary tabular-nums tracking-tight';
   const subKelas = 'mt-2 text-[11px] text-text-muted font-mono tabular-nums truncate';
+
+  if (belumAda) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5">
+        <div className={selKelas}>
+          <span className={labelKelas}>Total Permintaan</span>
+          <div className={nilaiKelas}>—</div>
+          <div className={subKelas}>{keteranganKeadaan}</div>
+        </div>
+        <div className={selKelas}>
+          <span className={labelKelas}>Total Token</span>
+          <div className={nilaiKelas}>—</div>
+          <div className={subKelas}>—</div>
+        </div>
+        <div className={selKelas}>
+          <span className={labelKelas}>Estimasi Biaya</span>
+          <div className={nilaiKelas}>—</div>
+          <div className={subKelas}>—</div>
+        </div>
+        <div className={selKelas}>
+          <span className={labelKelas}>Latensi P95</span>
+          <div className={nilaiKelas}>—</div>
+          <div className={subKelas}>—</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5">

@@ -414,4 +414,31 @@ describe('Dashboard Page — Modularity & Integration Spec', () => {
       expect(screen.getByText(/Gateway Tidak Tersedia/i)).toBeInTheDocument();
     });
   });
+
+  it('strip KPI saat ringkasan gagal dimuat: tanda hubung + keterangan gagal, BUKAN nol sehat (B-228)', async () => {
+    mockSummaryFn.mockRejectedValue(new Error('Network timeout gateway'));
+
+    render(<Dashboard onNavigate={mockNavigate} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Gateway Tidak Tersedia/i)).toBeInTheDocument();
+    });
+
+    // Versi lama merender "0 permintaan · 0.0% err" hijau dari summary
+    // null — angka karangan yang tampak seperti keadaan sehat.
+    expect(screen.queryByText('0.0% err')).not.toBeInTheDocument();
+    expect(screen.getByText(/Gagal dimuat — periksa koneksi lalu muat ulang\./)).toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('strip KPI saat ringkasan masih dimuat: tanda hubung + keterangan memuat (B-228)', async () => {
+    mockSummaryFn.mockImplementation(() => new Promise(() => {}));
+
+    render(<Dashboard onNavigate={mockNavigate} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Memuat data…')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('0.0% err')).not.toBeInTheDocument();
+  });
 });

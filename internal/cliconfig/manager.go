@@ -1582,11 +1582,15 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			{"model_provider", "routex"},
 			{"model", target},
 		})
-		kontenCodex = gantiSeksiTOML(kontenCodex, "model_providers.routex", []string{
-			"name = " + tomlKutip("Route-X"),
-			"base_url = " + tomlKutip(gwURL),
-			"env_key = " + tomlKutip("OPENAI_API_KEY"),
-			"wire_api = " + tomlKutip("responses"),
+		// B-222: gabung PER-KUNCI, bukan ganti seluruh seksi — kunci
+		// lain yang pengguna taruh di [model_providers.routex]
+		// (mis. request_max_retries) adalah konfigurasi sah Codex
+		// dan tidak boleh terhapus setiap Configure.
+		kontenCodex = perbaruiKunciSeksiTOML(kontenCodex, "model_providers.routex", [][2]string{
+			{"name", "Route-X"},
+			{"base_url", gwURL},
+			{"env_key", "OPENAI_API_KEY"},
+			{"wire_api", "responses"},
 		})
 		if err := tulisAtomik(codexPath, []byte(kontenCodex), permBerkasAtau(codexPath, 0644)); err != nil {
 			return fmt.Errorf("menulis %s: %w", codexPath, err)
@@ -1605,11 +1609,13 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			existingGrok = string(data)
 		}
 		kontenGrok := perbaruiKunciSeksiTOML(existingGrok, "models", [][2]string{{"default", "routex"}})
-		kontenGrok = gantiSeksiTOML(kontenGrok, "model.routex", []string{
-			"model = " + tomlKutip(target),
-			"name = " + tomlKutip("Route-X"),
-			"base_url = " + tomlKutip(gwURL),
-			"env_key = " + tomlKutip("XAI_API_KEY"),
+		// B-222: gabung PER-KUNCI seperti codex di atas — kunci lain
+		// pengguna di [model.routex] dipertahankan.
+		kontenGrok = perbaruiKunciSeksiTOML(kontenGrok, "model.routex", [][2]string{
+			{"model", target},
+			{"name", "Route-X"},
+			{"base_url", gwURL},
+			{"env_key", "XAI_API_KEY"},
 		})
 		if err := tulisAtomik(grokPath, []byte(kontenGrok), permBerkasAtau(grokPath, 0644)); err != nil {
 			return fmt.Errorf("menulis %s: %w", grokPath, err)
@@ -1939,48 +1945,22 @@ func perbaruiKunciSeksiTOML(existing, seksi string, pairs [][2]string) string {
 	return keluaran
 }
 
-// gantiSeksiTOML mengganti SELURUH isi seksi [nama] dengan baris baru
-// (seksi dikelola penuh oleh Route-X), atau menambahkan seksi di
-// akhir dokumen bila belum ada. Seksi lain tidak disentuh.
-func gantiSeksiTOML(existing, seksi string, isiBaru []string) string {
-	baris := strings.Split(existing, "\n")
-	awal, akhir, ok := rentangSeksiTOML(baris, seksi)
-	if !ok {
-		keluaran := existing
-		if keluaran != "" && !strings.HasSuffix(keluaran, "\n") {
-			keluaran += "\n"
-		}
-		var b strings.Builder
-		b.WriteString(keluaran)
-		if keluaran != "" {
-			b.WriteString("\n")
-		}
-		b.WriteString("[" + seksi + "]\n")
-		for _, l := range isiBaru {
-			b.WriteString(l + "\n")
-		}
-		return b.String()
-	}
-	hasil := make([]string, 0, len(baris)+len(isiBaru))
-	hasil = append(hasil, baris[:awal]...)
-	hasil = append(hasil, isiBaru...)
-	hasil = append(hasil, baris[akhir:]...)
-	keluaran := strings.Join(hasil, "\n")
-	if !strings.HasSuffix(keluaran, "\n") {
-		keluaran += "\n"
-	}
-	return keluaran
-}
-
-// susunBlokModelHermes mengganti blok `model:` tingkat-atas di
-// config.yaml Hermes dengan blok provider kustom Route-X,
-// mempertahankan seksi lain apa adanya. Bentuk skalar warisan
-// (`model: "..."`) diganti menjadi blok peta; blok ditambahkan di
-// akhir bila belum ada. apiKey non-kosong ditanam sebagai baris
-// api_key di blok (B-164); apiKey yang diterima penulis adalah
-// kunci EFEKTIF (B-215) — kunci baru atau kunci tersimpan — jadi
-// blok hanya ditulis tanpa kunci bila produk memang tidak
-// menyimpan kunci apa pun untuk tool ini.
+// susunBlokModelHermes memperbarui blok `model:` tingkat-atas di
+// config.yaml Hermes ke setelan provider kustom Route-X dengan
+// PENGGABUNGAN PER-KUNCI (B-222): sub-kunci terkelola
+// (provider/default/base_url/api_mode, dan api_key bila kunci
+// efektif ada) ditulis ulang dari nilai Route-X, sedangkan sub-kunci
+// LAIN milik pengguna di bawah `model:` dipertahankan apa adanya —
+// versi lama membuang seluruh baris menjorok di blok itu setiap
+// Configure. Seksi lain di luar blok tidak disentuh. Bentuk skalar
+// warisan (`model: "..."`) diganti menjadi blok peta; blok
+// ditambahkan di akhir bila belum ada. apiKey non-kosong ditanam
+// sebagai baris api_key di blok (B-164); apiKey yang diterima
+// penulis adalah kunci EFEKTIF (B-215) — kunci baru atau kunci
+// tersimpan — jadi blok hanya ditulis tanpa kunci bila produk
+// memang tidak menyimpan kunci apa pun untuk tool ini; apiKey
+// kosong berarti "tidak diubah", sehingga baris api_key lama di
+// blok PERTAHANKAN, tidak dihapus.
 func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	blok := []string{
 		"model:",
@@ -1991,6 +1971,13 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	}
 	if apiKey != "" {
 		blok = append(blok, "  api_key: "+yamlKutip(apiKey))
+	}
+	// Sub-kunci yang ditulis ulang blok di atas; kemunculan lamanya
+	// disaring. api_key hanya terkelola bila kunci efektif ada —
+	// bila kosong, baris lama dipertahankan (lihat kop fungsi).
+	terkelola := map[string]bool{
+		"provider": true, "default": true, "base_url": true,
+		"api_mode": true, "api_key": apiKey != "",
 	}
 	baris := strings.Split(existing, "\n")
 	for i, l := range baris {
@@ -2012,9 +1999,27 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 		for j < len(baris) && (baris[j] == "" || strings.HasPrefix(baris[j], " ") || strings.HasPrefix(baris[j], "\t")) {
 			j++
 		}
+		// B-222: saring sub-baris blok lama — yang terkelola dibuang
+		// (ditulis ulang dari blok baru), yang lain dipertahankan
+		// apa adanya sesudah baris terkelola. Baris kosong di EKOR
+		// segmen adalah pemisah ke seksi berikutnya, bukan isi blok:
+		// ia diregenerasi satu kali di bawah, jadi dipangkas di sini
+		// agar penggabungan idempoten (pemindaian blok menelan baris
+		// kosong itu sebagai bagian segmen pada terapan berikutnya).
+		var dipertahankan []string
+		for _, sub := range baris[i+1 : j] {
+			if kunci := kunciSubBarisYAML(sub); kunci != "" && terkelola[kunci] {
+				continue
+			}
+			dipertahankan = append(dipertahankan, sub)
+		}
+		for len(dipertahankan) > 0 && dipertahankan[len(dipertahankan)-1] == "" {
+			dipertahankan = dipertahankan[:len(dipertahankan)-1]
+		}
 		hasil := make([]string, 0, len(baris)+len(blok))
 		hasil = append(hasil, baris[:i]...)
 		hasil = append(hasil, blok...)
+		hasil = append(hasil, dipertahankan...)
 		if j < len(baris) {
 			hasil = append(hasil, "")
 		}
@@ -2029,6 +2034,28 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 		keluaran += "\n"
 	}
 	return keluaran + strings.Join(blok, "\n") + "\n"
+}
+
+// kunciSubBarisYAML mengekstrak nama kunci dari baris sub-entri blok
+// YAML berindentasi tepat satu tingkat ("  nama: nilai" → "nama").
+// Baris kosong, komentar, item daftar, kelanjutan nilai berindentasi
+// lebih dalam, dan baris tanpa pola kunci mengembalikan "" — semua
+// itu selalu dipertahankan apa adanya oleh penggabungan B-222.
+func kunciSubBarisYAML(baris string) string {
+	satuTingkat := (strings.HasPrefix(baris, "  ") && !strings.HasPrefix(baris, "   ")) ||
+		(strings.HasPrefix(baris, "\t") && !strings.HasPrefix(baris, "\t\t"))
+	if !satuTingkat {
+		return ""
+	}
+	trim := strings.TrimSpace(baris)
+	if trim == "" || strings.HasPrefix(trim, "#") || strings.HasPrefix(trim, "-") {
+		return ""
+	}
+	idx := strings.Index(trim, ":")
+	if idx <= 0 {
+		return ""
+	}
+	return strings.TrimSpace(trim[:idx])
 }
 
 // gabungBarisYAML menyatukan baris dan memastikan newline penutup.

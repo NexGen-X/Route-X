@@ -622,6 +622,11 @@ type openAIModelDiscoveryItem struct {
 
 type openAIModelDiscoveryResponse struct {
 	Data []openAIModelDiscoveryItem `json:"data"`
+	// Paginasi kursor gaya Anthropic (B-206): has_more/last_id hanya
+	// dikirim dialek yang memang berkursor; vendor OpenAI-compatible
+	// polos membiarkannya kosong dan gateway tidak mengarangnya.
+	HasMore bool   `json:"has_more"`
+	LastID  string `json:"last_id"`
 }
 
 type ollamaModelDiscoveryItem struct {
@@ -665,6 +670,9 @@ func kapabilitasGoogle(methods []string) []string {
 
 type googleModelDiscoveryResponse struct {
 	Models []googleModelItem `json:"models"`
+	// NextPageToken adalah kursor paginasi Gemini (B-206); kosong
+	// berarti halaman terakhir.
+	NextPageToken string `json:"nextPageToken"`
 }
 
 // syncProviderModels menarik katalog model langsung dari discovery endpoint upstream
@@ -758,12 +766,13 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 
 	// 6. Susun discovery URL berdasarkan dialek provider
 	var discoveryURL string
-	var reqBody io.Reader
+	var isiBody string
 	method := http.MethodGet
 	lowerKind := strings.ToLower(p.Kind)
 	lowerName := strings.ToLower(p.Name)
 	trimmedBase := strings.TrimRight(p.BaseURL, "/")
 	isAntigravity := strings.Contains(trimmedBase, "cloudcode-pa.googleapis.com") || strings.Contains(lowerName, "antigravity")
+	isGoogle := lowerKind == "google" || strings.Contains(trimmedBase, "generativelanguage.googleapis.com")
 
 	if isAntigravity {
 		method = http.MethodPost
@@ -777,14 +786,20 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		// Project diselesaikan dari sesi OAuth kredensial aktif (tersimpan
 		// atau backfill sekali lewat loadCodeAssist); kegagalan resolusi
 		// membiarkan body kosong seperti perilaku lama.
-		reqBody = strings.NewReader("{}")
+		isiBody = "{}"
 		if project := h.projectCodeAssistSync(ctx, p, activeCred, apiKey); project != "" {
 			if b, merr := json.Marshal(map[string]string{"project": project}); merr == nil {
-				reqBody = strings.NewReader(string(b))
+				isiBody = string(b)
 			}
 		}
-	} else if lowerKind == "google" || strings.Contains(trimmedBase, "generativelanguage.googleapis.com") {
-		discoveryURL = "https://generativelanguage.googleapis.com/v1beta/models"
+	} else if isGoogle {
+		// URL discovery Google diturunkan dari base URL provider
+		// (B-206): versi lama mengeraskan host
+		// generativelanguage.googleapis.com sehingga provider Google
+		// ber-base-URL kustom malah mengirim kuncinya ke host resmi.
+		// Bentuk jalurnya sama dengan adapter google ("/v1beta/models"
+		// di atas base URL terkonfigurasi).
+		discoveryURL = trimmedBase + "/v1beta/models"
 	} else if lowerKind == "ollama" || strings.Contains(lowerName, "ollama") {
 		discoveryURL = trimmedBase + "/api/tags"
 	} else if strings.HasSuffix(trimmedBase, "/v1") {
@@ -793,34 +808,39 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 		discoveryURL = trimmedBase + "/v1/models"
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, discoveryURL, reqBody)
-	if err != nil {
-		// err adalah *url.Error yang memuat URL tersimpan apa adanya; yang
-		// diterima klien hanya pernyataan bahwa URL-nya tidak sah.
-		h.logger.WarnContext(ctx, "URL discovery provider tidak sah", "provider_id", p.ID, "error", err)
-		httpx.BadRequest(w, r, "invalid_url", "base_url provider tidak membentuk URL discovery yang sah")
-		return
-	}
-	req.Header.Set("Accept", "application/json")
-	if isAntigravity {
-		// User-Agent hub adalah penentu katalog fetchAvailableModels
-		// (B-157 tahap 4): nilai lain menerima himpunan generik.
-		req.Header.Set("User-Agent", providers.AntigravityHubUserAgent)
-		req.Header.Set("Content-Type", "application/json")
-	} else {
-		req.Header.Set("User-Agent", "Route-X-Discovery/1.0")
-	}
-	if apiKey != "" {
-		if isAntigravity || strings.HasPrefix(apiKey, "ya29.") || strings.HasPrefix(apiKey, "Bearer ") {
-			req.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(apiKey, "Bearer "))
-		} else if lowerKind == "anthropic" {
-			req.Header.Set("x-api-key", apiKey)
-			req.Header.Set("anthropic-version", "2023-06-01")
-		} else if lowerKind == "google" || strings.Contains(trimmedBase, "googleapis.com") {
-			req.Header.Set("x-goog-api-key", apiKey)
-		} else {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
+	// buatReq menyusun permintaan discovery untuk satu URL halaman;
+	// header dan autentikasi identik di setiap halaman.
+	buatReq := func(urlHalaman string) (*http.Request, error) {
+		var body io.Reader
+		if isiBody != "" {
+			body = strings.NewReader(isiBody)
 		}
+		rq, err := http.NewRequestWithContext(ctx, method, urlHalaman, body)
+		if err != nil {
+			return nil, err
+		}
+		rq.Header.Set("Accept", "application/json")
+		if isAntigravity {
+			// User-Agent hub adalah penentu katalog fetchAvailableModels
+			// (B-157 tahap 4): nilai lain menerima himpunan generik.
+			rq.Header.Set("User-Agent", providers.AntigravityHubUserAgent)
+			rq.Header.Set("Content-Type", "application/json")
+		} else {
+			rq.Header.Set("User-Agent", "Route-X-Discovery/1.0")
+		}
+		if apiKey != "" {
+			if isAntigravity || strings.HasPrefix(apiKey, "ya29.") || strings.HasPrefix(apiKey, "Bearer ") {
+				rq.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(apiKey, "Bearer "))
+			} else if lowerKind == "anthropic" {
+				rq.Header.Set("x-api-key", apiKey)
+				rq.Header.Set("anthropic-version", "2023-06-01")
+			} else if lowerKind == "google" || strings.Contains(trimmedBase, "googleapis.com") {
+				rq.Header.Set("x-goog-api-key", apiKey)
+			} else {
+				rq.Header.Set("Authorization", "Bearer "+apiKey)
+			}
+		}
+		return rq, nil
 	}
 
 	// ditemukan HANYA boleh memuat model beserta bukti upstreamnya
@@ -830,119 +850,200 @@ func (h *Handlers) syncProviderModels(w http.ResponseWriter, r *http.Request) {
 	// 401/5xx/tak terjangkau tampak seperti discovery berhasil dan
 	// memasang model karangan sebagai model aktif provider (B-204).
 	var ditemukan []modelDiscovery
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		h.logger.WarnContext(ctx, "panggilan discovery model gagal", "error", webhooks.SanitizeErrorMessage(err.Error()))
-		httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_unreachable", "Gagal menghubungi endpoint discovery provider")
-		return
-	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
-		h.logger.WarnContext(ctx, "upstream mengembalikan status non-2xx saat discovery model", "status", resp.StatusCode)
-		httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d", resp.StatusCode))
-		return
-	}
-
-	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 5<<20)) // 5MB limit
-	if readErr != nil {
-		h.logger.ErrorContext(ctx, "gagal membaca respons discovery", "error", readErr)
-		httpx.InternalError(w, r)
-		return
-	}
-
-	// 7. Ekstraksi model IDs
-	var oaiResp openAIModelDiscoveryResponse
-	var ollamaResp ollamaModelDiscoveryResponse
-	var googleResp googleModelDiscoveryResponse
-	var antigravityResp struct {
-		Models          map[string]json.RawMessage `json:"models"`
-		AgentModelSorts []struct {
-			Groups []struct {
-				ModelIDs []string `json:"modelIds"`
-			} `json:"groups"`
-		} `json:"agentModelSorts"`
-		CommandModelIds []string            `json:"commandModelIds"`
-		TieredModelIds  map[string][]string `json:"tieredModelIds"`
-	}
-
-	if isAntigravity && json.Unmarshal(bodyBytes, &antigravityResp) == nil && (len(antigravityResp.Models) > 0 || len(antigravityResp.AgentModelSorts) > 0) {
-		// Bentuk respons Antigravity yang teramati tidak menyediakan
-		// metadata lifecycle/kapabilitas per model yang bisa
-		// dipertanggungjawabkan — yang diambil ID-nya (B-089),
-		// ditambah displayName sebagai bukti nama tampilan sejak
-		// B-157. Nilai per model diurai longgar (RawMessage):
-		// satu nilai berbentuk tak dikenal tidak boleh menggagalkan
-		// pengambilan ID seluruh katalog.
-		for id, mentah := range antigravityResp.Models {
-			d := modelDiscovery{ID: id}
-			var info struct {
-				DisplayName string `json:"displayName"`
+	// Paginasi discovery (B-206): tanpa parameter ukuran halaman,
+	// katalog Anthropic berhenti di ±20 model bawaan dan Google di
+	// ±50 — terpotong senyap di tengah pesan sukses. Ukuran maksimum
+	// dialek diminta sejak halaman pertama (persis adapter:
+	// limit=1000 / pageSize=1000) dan kursor/token diikuti sampai
+	// upstream menyatakan habis. Batas jumlah halaman menjaga sync
+	// dari upstream yang tokennya tidak pernah habis; melewatinya
+	// adalah kegagalan eksplisit, bukan pemotongan senyap berikutnya.
+	const maksHalamanDiscovery = 100
+	kursor := ""
+	for halaman := 1; ; halaman++ {
+		urlHalaman := discoveryURL
+		q := url.Values{}
+		switch {
+		case isGoogle:
+			q.Set("pageSize", "1000")
+			if kursor != "" {
+				q.Set("pageToken", kursor)
 			}
-			if json.Unmarshal(mentah, &info) == nil {
-				d.DisplayName = strings.TrimSpace(info.DisplayName)
+		case lowerKind == "anthropic":
+			q.Set("limit", "1000")
+			if kursor != "" {
+				q.Set("after_id", kursor)
 			}
-			ditemukan = append(ditemukan, d)
+		case kursor != "":
+			q.Set("after_id", kursor)
 		}
-		for _, sort := range antigravityResp.AgentModelSorts {
-			for _, g := range sort.Groups {
-				for _, id := range g.ModelIDs {
-					ditemukan = append(ditemukan, modelDiscovery{ID: id})
+		if len(q) > 0 {
+			urlHalaman += "?" + q.Encode()
+		}
+
+		req, err := buatReq(urlHalaman)
+		if err != nil {
+			// err adalah *url.Error yang memuat URL tersimpan apa adanya;
+			// yang diterima klien hanya pernyataan bahwa URL-nya tidak sah.
+			h.logger.WarnContext(ctx, "URL discovery provider tidak sah", "provider_id", p.ID, "error", err)
+			httpx.BadRequest(w, r, "invalid_url", "base_url provider tidak membentuk URL discovery yang sah")
+			return
+		}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			h.logger.WarnContext(ctx, "panggilan discovery model gagal", "error", webhooks.SanitizeErrorMessage(err.Error()))
+			httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_unreachable", "Gagal menghubungi endpoint discovery provider")
+			return
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
+			resp.Body.Close()
+			h.logger.WarnContext(ctx, "upstream mengembalikan status non-2xx saat discovery model", "status", resp.StatusCode)
+			httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_error", fmt.Sprintf("Upstream mengembalikan status %d", resp.StatusCode))
+			return
+		}
+		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 5<<20)) // 5MB limit
+		resp.Body.Close()
+		if readErr != nil {
+			h.logger.ErrorContext(ctx, "gagal membaca respons discovery", "error", readErr)
+			httpx.InternalError(w, r)
+			return
+		}
+
+		// 7. Ekstraksi model IDs
+		var oaiResp openAIModelDiscoveryResponse
+		var ollamaResp ollamaModelDiscoveryResponse
+		var googleResp googleModelDiscoveryResponse
+
+		// Provider yang memang berdialek Google diurai dengan struct
+		// Google-nya sendiri SEBELUM rantai tebak-bentuk di bawah:
+		// bentuk {"models":[{"name":...}]} juga cocok dengan bentuk
+		// Ollama, dan urutan lama menyerap respons Gemini sebagai
+		// Ollama — awalan "models/" tidak dilepas dan nextPageToken
+		// tidak pernah terbaca (paginasi Google mati sebelum mulai).
+		googleTerurai := false
+		if isGoogle && !isAntigravity && json.Unmarshal(bodyBytes, &googleResp) == nil && len(googleResp.Models) > 0 {
+			googleTerurai = true
+			for _, item := range googleResp.Models {
+				name := strings.TrimSpace(item.Name)
+				name = strings.TrimPrefix(name, "models/")
+				if name != "" {
+					ditemukan = append(ditemukan, modelDiscovery{
+						ID:           name,
+						Capabilities: kapabilitasGoogle(item.SupportedGenerationMethods),
+					})
 				}
 			}
 		}
-		for _, id := range antigravityResp.CommandModelIds {
-			ditemukan = append(ditemukan, modelDiscovery{ID: id})
+
+		var antigravityResp struct {
+			Models          map[string]json.RawMessage `json:"models"`
+			AgentModelSorts []struct {
+				Groups []struct {
+					ModelIDs []string `json:"modelIds"`
+				} `json:"groups"`
+			} `json:"agentModelSorts"`
+			CommandModelIds []string            `json:"commandModelIds"`
+			TieredModelIds  map[string][]string `json:"tieredModelIds"`
 		}
-		for _, list := range antigravityResp.TieredModelIds {
-			for _, id := range list {
-				ditemukan = append(ditemukan, modelDiscovery{ID: id})
-			}
-		}
-	} else if err := json.Unmarshal(bodyBytes, &oaiResp); err == nil && len(oaiResp.Data) > 0 {
-		for _, item := range oaiResp.Data {
-			if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
-				d := modelDiscovery{ID: trimmed}
-				// Metadata lifecycle hanya ada bila vendor memang
-				// mengirimnya (Intern-AI: status/shutdown_date/
-				// replacement_model). Vendor OpenAI-compatible lain
-				// yang tidak mengirim field ini membiarkan Lifecycle
-				// nil — tidak dikarang (B-089).
-				lc := &modelLifecycle{
-					Status:           strings.TrimSpace(item.Status),
-					ShutdownDate:     strings.TrimSpace(item.ShutdownDate),
-					ReplacementModel: strings.TrimSpace(item.ReplacementModel),
+
+		if isAntigravity && json.Unmarshal(bodyBytes, &antigravityResp) == nil && (len(antigravityResp.Models) > 0 || len(antigravityResp.AgentModelSorts) > 0) {
+			// Bentuk respons Antigravity yang teramati tidak menyediakan
+			// metadata lifecycle/kapabilitas per model yang bisa
+			// dipertanggungjawabkan — yang diambil ID-nya (B-089),
+			// ditambah displayName sebagai bukti nama tampilan sejak
+			// B-157. Nilai per model diurai longgar (RawMessage):
+			// satu nilai berbentuk tak dikenal tidak boleh menggagalkan
+			// pengambilan ID seluruh katalog.
+			for id, mentah := range antigravityResp.Models {
+				d := modelDiscovery{ID: id}
+				var info struct {
+					DisplayName string `json:"displayName"`
 				}
-				if lc.ada() {
-					d.Lifecycle = lc
+				if json.Unmarshal(mentah, &info) == nil {
+					d.DisplayName = strings.TrimSpace(info.DisplayName)
 				}
 				ditemukan = append(ditemukan, d)
 			}
-		}
-	} else if err := json.Unmarshal(bodyBytes, &ollamaResp); err == nil && len(ollamaResp.Models) > 0 {
-		// /api/tags Ollama tidak menyediakan lifecycle maupun
-		// kapabilitas yang bisa dipertanggungjawabkan — ID saja.
-		for _, item := range ollamaResp.Models {
-			name := strings.TrimSpace(item.Name)
-			if name == "" {
-				name = strings.TrimSpace(item.Model)
+			for _, sort := range antigravityResp.AgentModelSorts {
+				for _, g := range sort.Groups {
+					for _, id := range g.ModelIDs {
+						ditemukan = append(ditemukan, modelDiscovery{ID: id})
+					}
+				}
 			}
-			if name != "" {
-				ditemukan = append(ditemukan, modelDiscovery{ID: name})
+			for _, id := range antigravityResp.CommandModelIds {
+				ditemukan = append(ditemukan, modelDiscovery{ID: id})
+			}
+			for _, list := range antigravityResp.TieredModelIds {
+				for _, id := range list {
+					ditemukan = append(ditemukan, modelDiscovery{ID: id})
+				}
+			}
+		} else if !googleTerurai && json.Unmarshal(bodyBytes, &oaiResp) == nil && len(oaiResp.Data) > 0 {
+			for _, item := range oaiResp.Data {
+				if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
+					d := modelDiscovery{ID: trimmed}
+					// Metadata lifecycle hanya ada bila vendor memang
+					// mengirimnya (Intern-AI: status/shutdown_date/
+					// replacement_model). Vendor OpenAI-compatible lain
+					// yang tidak mengirim field ini membiarkan Lifecycle
+					// nil — tidak dikarang (B-089).
+					lc := &modelLifecycle{
+						Status:           strings.TrimSpace(item.Status),
+						ShutdownDate:     strings.TrimSpace(item.ShutdownDate),
+						ReplacementModel: strings.TrimSpace(item.ReplacementModel),
+					}
+					if lc.ada() {
+						d.Lifecycle = lc
+					}
+					ditemukan = append(ditemukan, d)
+				}
+			}
+		} else if !googleTerurai && json.Unmarshal(bodyBytes, &ollamaResp) == nil && len(ollamaResp.Models) > 0 {
+			// /api/tags Ollama tidak menyediakan lifecycle maupun
+			// kapabilitas yang bisa dipertanggungjawabkan — ID saja.
+			for _, item := range ollamaResp.Models {
+				name := strings.TrimSpace(item.Name)
+				if name == "" {
+					name = strings.TrimSpace(item.Model)
+				}
+				if name != "" {
+					ditemukan = append(ditemukan, modelDiscovery{ID: name})
+				}
+			}
+		} else if !googleTerurai && json.Unmarshal(bodyBytes, &googleResp) == nil && len(googleResp.Models) > 0 {
+			for _, item := range googleResp.Models {
+				name := strings.TrimSpace(item.Name)
+				name = strings.TrimPrefix(name, "models/")
+				if name != "" {
+					ditemukan = append(ditemukan, modelDiscovery{
+						ID:           name,
+						Capabilities: kapabilitasGoogle(item.SupportedGenerationMethods),
+					})
+				}
 			}
 		}
-	} else if err := json.Unmarshal(bodyBytes, &googleResp); err == nil && len(googleResp.Models) > 0 {
-		for _, item := range googleResp.Models {
-			name := strings.TrimSpace(item.Name)
-			name = strings.TrimPrefix(name, "models/")
-			if name != "" {
-				ditemukan = append(ditemukan, modelDiscovery{
-					ID:           name,
-					Capabilities: kapabilitasGoogle(item.SupportedGenerationMethods),
-				})
-			}
+
+		// Kursor halaman berikutnya dari respons yang baru diurai;
+		// hanya dialek berkursor yang mengisinya.
+		kursorBerikut := ""
+		if oaiResp.HasMore && oaiResp.LastID != "" {
+			kursorBerikut = oaiResp.LastID
 		}
+		if googleResp.NextPageToken != "" {
+			kursorBerikut = googleResp.NextPageToken
+		}
+		if kursorBerikut == "" {
+			break
+		}
+		if halaman >= maksHalamanDiscovery {
+			h.logger.WarnContext(ctx, "paginasi discovery upstream tidak berhenti", "provider_id", p.ID, "halaman", halaman)
+			httpx.WriteError(w, r, http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_error", "Paginasi discovery upstream tidak berhenti; sinkronisasi dibatalkan agar katalog tidak terpasang sebagian")
+			return
+		}
+		kursor = kursorBerikut
 	}
 
 	if len(ditemukan) == 0 {

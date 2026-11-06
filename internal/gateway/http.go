@@ -1659,6 +1659,121 @@ func (h *Handlers) cobaTierFallbackSekali(ctx context.Context, tier ComboTier, p
 	return out, nil
 }
 
+// cobaTierFallbackEmbeddings mencoba eksekusi satu tier fallback combo
+// untuk permukaan embeddings (B-251) — pasangan cobaTierFallbackSekali
+// yang bertipe ChatResponse. Pemeriksaan gerbangnya mencerminkan
+// siapkanTierFallback (resolusi model, pembatasan kunci, penyaring,
+// batas, anggaran, gerbang token, kandidat, filter provider per tier,
+// penyaringan provider), ditambah satu syarat khas permukaan ini:
+// model tier WAJIB melayani embeddings — model chat tidak bisa
+// menggantikan model embeddings hanya karena namanya tercantum di tag
+// combo. Tanda tangan hasil mengikuti pola yang sama: outcome tier
+// (nil bila tier tidak dicoba), target tier bila sukses, atau
+// Rejection gerbang.
+func (h *Handlers) cobaTierFallbackEmbeddings(ctx context.Context, tier ComboTier, p *apikey.Principal, modelKini *upstream.Model, rule *router.Rule, req *providers.EmbeddingsRequest, j *jejak) (*Outcome[*providers.EmbeddingsResponse], []policy.Target, *Rejection) {
+	tModel, err := h.models.Resolve(ctx, tier.Model)
+	if err != nil {
+		h.logger.WarnContext(ctx, "resolusi combo fallback embeddings gagal", "target_model", tier.Model, "error", err)
+		return nil, nil, nil
+	}
+	if !tModel.Enabled {
+		h.logger.WarnContext(ctx, "combo fallback embeddings dimatikan, fallback dilewati", "target_model", tier.Model)
+		return nil, nil, nil
+	}
+	if modelKini != nil && tModel.ID == modelKini.ID {
+		h.logger.WarnContext(ctx, "combo fallback embeddings sama dengan model saat ini, fallback dilewati", "target_model", tier.Model)
+		return nil, nil, nil
+	}
+	if !slices.Contains(tModel.Capabilities, upstream.CapEmbeddings) {
+		h.logger.WarnContext(ctx, "combo fallback embeddings tidak melayani embeddings, fallback dilewati", "target_model", tier.Model)
+		return nil, nil, nil
+	}
+	if h.restrict != nil && p.ID() != "" {
+		boleh, err := h.restrict.AllowsModel(ctx, p.ID(), tModel.ID)
+		if err != nil {
+			h.logger.ErrorContext(ctx, "pemeriksaan pembatasan model fallback embeddings gagal", "api_key", p.Masked(), "model", tModel.ModelID, "error", err)
+			return nil, nil, nil
+		}
+		if !boleh {
+			return nil, nil, &Rejection{
+				Status: http.StatusForbidden, Type: httpx.ErrTypePermission, Code: "model_not_allowed",
+				Message: "API key ini tidak diizinkan memakai model " + kutip(tModel.ModelID),
+			}
+		}
+	}
+	clientIP, _ := httpx.ClientIPFrom(ctx)
+	targets := TargetsFor(p, tModel.ID, clientIP)
+	if rj := h.guard.SaringPermintaan(ctx, contentfilter.Subject{ModelID: tModel.ID}); rj != nil {
+		return nil, nil, rj
+	}
+	if rj := h.guard.PeriksaBatasModel(ctx, tModel.ID); rj != nil {
+		return nil, nil, rj
+	}
+	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
+		return nil, nil, rj
+	}
+	if rj := h.guard.GerbangToken(ctx, p, targets); rj != nil {
+		return nil, nil, rj
+	}
+	var ownerUserID string
+	if p != nil {
+		ownerUserID = p.OwnerUserID()
+	}
+	cands, err := h.candidates.RouteCandidates(ctx, upstream.RouteQuery{
+		ModelID:     tModel.ID,
+		OwnerUserID: ownerUserID,
+	})
+	if err != nil || len(cands) == 0 {
+		h.logger.WarnContext(ctx, "tidak ada kandidat untuk combo fallback embeddings", "target_model", tier.Model, "error", err)
+		return nil, nil, nil
+	}
+	if len(tier.ProviderIDs) > 0 {
+		filtered := make([]*upstream.RouteCandidate, 0, len(cands))
+		for _, c := range cands {
+			if slices.Contains(tier.ProviderIDs, c.ProviderID) {
+				filtered = append(filtered, c)
+			}
+		}
+		cands = filtered
+		if len(cands) == 0 {
+			h.logger.WarnContext(ctx, "tidak ada kandidat embeddings lolos filter provider tier", "target_model", tier.Model, "allowed_providers", tier.ProviderIDs)
+			return nil, nil, nil
+		}
+	}
+	saring, ok := h.saringKandidatTier2(ctx, cands, p, false)
+	if !ok || len(saring) == 0 {
+		h.logger.WarnContext(ctx, "tidak ada kandidat fallback embeddings yang lolos penyaringan provider", "target_model", tier.Model)
+		return nil, nil, nil
+	}
+
+	tPlan := PlanFromRule(rule, tModel.ModelID, saring)
+	h.logger.InfoContext(ctx, "menjalankan fallback combo embeddings tier", "tier", tier.Tier, "tier_model", tModel.ModelID)
+	out := Execute(h.guard.DenganMemoBatas(ctx), h.exec, tPlan,
+		func(ctx context.Context, c *upstream.RouteCandidate) (*providers.EmbeddingsResponse, error) {
+			if perr := h.guard.PeriksaBatasProvider(ctx, c.ProviderID, c.ProviderName); perr != nil {
+				return nil, perr
+			}
+			if perr := h.guard.PeriksaKolomProvider(ctx, c); perr != nil {
+				return nil, perr
+			}
+			prov, err := h.adapter(ctx, c)
+			if err != nil {
+				return nil, err
+			}
+			salinan := *req
+			salinan.Model = c.UpstreamModelName
+			return prov.Embeddings(ctx, &salinan)
+		})
+
+	j.tambahPercobaan(out.Attempts, out.Candidate)
+	if out.Err == nil {
+		j.pasangModel(tModel)
+		j.pasangKebijakan(p, targets)
+		return out, targets, nil
+	}
+	return out, nil, nil
+}
+
 // cobaTierFallbackMengalir mencoba eksekusi satu tier fallback streaming.
 func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier, pr *persiapan, j *jejak) (*Outcome[providers.Stream], *Rejection) {
 	tModel, cands, targets, rj := h.siapkanTierFallback(ctx, tier.Model, tier.ProviderIDs, pr, true)
@@ -2481,9 +2596,13 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 
 	// Penyaring konten atas masukan embedding. Sama seperti jalur chat, dijalankan sebelum
 	// resolusi model supaya permintaan yang jelas ditolak tidak menyentuh database.
+	// Masukan berbentuk token tidak menghasilkan teks apa pun di sini — ia ditandai
+	// TakTerperiksa supaya aturan pola pemblokir menolaknya fail-closed di mesin
+	// penyaring (B-252), bukan lolos hanya karena Text-nya kosong.
 	if rj := h.guard.SaringPermintaan(r.Context(), contentfilter.Subject{
-		Text:  strings.Join(req.Input, "\n"),
-		Bytes: int64(len(body)),
+		Text:          strings.Join(req.Input, "\n"),
+		Bytes:         int64(len(body)),
+		TakTerperiksa: len(req.TokenInput) > 0,
 	}); rj != nil {
 		rj.Tulis(w, r)
 		return
@@ -2564,6 +2683,35 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 		})
 
 	j.pasangPercobaan(out.Attempts, out.Candidate)
+
+	// Cascade combo fallback jalur lama (B-251): permukaan lain sudah
+	// lama memberlakukan lapis ini — aturan combo warisan yang cocok
+	// untuk model embeddings berhak atas model kedua yang sama ketika
+	// eksekusi utama gagal. Sebelumnya handler ini satu-satunya yang
+	// langsung menyerah; tidak ada bukti ketiadaan itu keputusan sadar
+	// (aturan combo generik per model, dan B-183 mengesahkan kombinasi
+	// pipeline murni-embeddings), jadi perlakuannya diselaraskan.
+	if out.Err != nil && !keputusan.Rule.Combo() {
+		if pipeline := ekstrakComboPipeline(keputusan.Rule); len(pipeline) > 0 {
+			for _, tier := range pipeline {
+				tOut, tTargets, rj := h.cobaTierFallbackEmbeddings(r.Context(), tier, p, model, keputusan.Rule, req, j)
+				switch {
+				case rj != nil:
+					rj.Tulis(w, r)
+					return
+				case tOut != nil:
+					out = tOut
+					if tOut.Err == nil && tTargets != nil {
+						targets = tTargets
+					}
+				}
+				if out.Err == nil {
+					break
+				}
+			}
+		}
+	}
+
 	if out.Err != nil {
 		j.pasangKegagalanUpstream(out.Err)
 		tulisKegagalan(w, r, out.Err)

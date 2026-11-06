@@ -202,6 +202,14 @@ export const Observability: React.FC = () => {
   // sama.
   const kpiTerukur = summary !== null || series.length > 0;
 
+  // B-347: gerbang label "data terakhir" TIDAK sama dengan gerbang
+  // strip KPI di atas. Angka basi bisa hidup di rincian atau cache
+  // walau ringkasan+seri kosong/gagal — muat awal parsial yang hanya
+  // rincian+cache-nya berhasil, disusul muat ulang gagal total,
+  // meninggalkan rincian basi TANPA label karena kpiTerukur false.
+  // Labelnya menempel pada ADA data tampil apa pun.
+  const dataTampilAda = kpiTerukur || breakdowns.length > 0 || cacheStats !== null;
+
   // Perhitungan Throughput rata-rata (req/s). Penyebutnya rentang jendela
   // nominal — kini jujur karena backend menghormati parameter window
   // (audit3 V-FJ-01); sebelumnya backend selalu menjawab 24 jam.
@@ -289,7 +297,7 @@ export const Observability: React.FC = () => {
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 
-      {loadError && dataTerakhirPada !== null && kpiTerukur && (
+      {loadError && dataTerakhirPada !== null && dataTampilAda && (
         <p role="status" className="text-xs text-text-muted">
           Menampilkan data terakhir yang diterima{' '}
           {new Date(dataTerakhirPada).toLocaleString('id-ID', {

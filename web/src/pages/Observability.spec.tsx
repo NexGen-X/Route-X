@@ -108,6 +108,31 @@ describe('Observability — label data terakhir saat muat ulang gagal total (B-3
   });
 });
 
+describe('Observability — label basi menempel pada data tampil apa pun (B-347)', () => {
+  it('muat parsial (hanya rincian+cache) lalu gagal total → rincian basi ikut dilabeli', async () => {
+    // Muat pertama: ringkasan + deret GAGAL, rincian + cache berhasil.
+    // kpiTerukur (ringkasan/deret) false — versi lama menjadikan itu
+    // alasan label basi tidak pernah tampil untuk rincian yang basi.
+    summaryMock.mockReset().mockRejectedValue(new Error('ringkasan tidak terjangkau'));
+    seriesMock.mockReset().mockResolvedValue({ points: [] });
+    breakdownMock.mockReset().mockResolvedValue({
+      items: [{ id: 'prov-9', name: 'penyedia-basi', requests: 5, tokens: 50, cost_usd: '0.01', percentage: 100 }],
+    });
+    renderPage();
+    expect(await screen.findByText('penyedia-basi')).toBeInTheDocument();
+
+    // Muat ulang: SEMUA sumber gagal — rincian lama dipertahankan.
+    seriesMock.mockReset().mockRejectedValue(new Error('deret tidak terjangkau'));
+    breakdownMock.mockReset().mockRejectedValue(new Error('rincian tidak terjangkau'));
+    cacheMock.mockReset().mockRejectedValue(new Error('cache tidak terjangkau'));
+    fireEvent.click(screen.getByRole('button', { name: /segarkan data observabilitas/i }));
+
+    expect(await screen.findByText(/Seluruh layanan observabilitas gagal/)).toBeInTheDocument();
+    expect(await screen.findByText(/data terakhir/i)).toBeInTheDocument();
+    expect(screen.getByText('penyedia-basi')).toBeInTheDocument();
+  });
+});
+
 describe('Observability — strip KPI saat semua sumber gagal (B-284)', () => {
   it('banner kegagalan total tampil TANPA "0.00%" dan badge "Nominal" karangan', async () => {
     seriesMock.mockRejectedValue(new Error('deret tidak terjangkau'));

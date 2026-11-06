@@ -8,6 +8,12 @@ export interface DashboardHeroProps {
   loadError: string | null;
   healthyProvidersCount: number;
   totalProvidersCount: number;
+  // B-346: apakah daftar provider PERNAH benar-benar tiba. Tanpa
+  // ini hero tidak bisa membedakan "0/0 karena belum/gagal dimuat"
+  // dari "0/0 terukur" — Dashboard hanya menyetel loadError untuk
+  // kegagalan ringkasan atau kegagalan total, jadi kegagalan parsial
+  // sumber provider lolos sebagai hitungan sehat karangan.
+  providersTerukur: boolean;
   overview: SystemOverview | null;
   isLoading: boolean;
   isRefreshing: boolean;
@@ -22,6 +28,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   loadError,
   healthyProvidersCount,
   totalProvidersCount,
+  providersTerukur,
   overview,
   isLoading,
   isRefreshing,
@@ -29,6 +36,19 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   onNavigate,
   onShowGuide,
 }) => {
+  // B-346: klaim "Beroperasi" digerbangi keberadaan overview —
+  // sumber status gateway itu sendiri. Muatan parsial yang
+  // menggagalkan overview (tetapi bukan ringkasan) dulu tetap
+  // mengklaim Beroperasi emerald karena loadError null dan
+  // isLoading false, padahal status gateway tidak pernah tiba.
+  const statusTidakDiketahui = !loadError && !isLoading && overview === null;
+  const labelStatus = loadError
+    ? 'Gateway Tidak Tersedia'
+    : isLoading
+      ? 'Memuat Status…'
+      : statusTidakDiketahui
+        ? 'Status Tidak Diketahui'
+        : 'Beroperasi';
   return (
     <div className="border-b border-border/60 pb-4">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
@@ -43,16 +63,24 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
             role="status"
             aria-live="polite"
             className={`inline-flex items-center gap-2 text-xs font-medium shrink-0 ${
-              loadError ? 'text-rose-400' : isLoading ? 'text-text-muted' : 'text-emerald-400'
+              loadError
+                ? 'text-rose-400'
+                : isLoading || statusTidakDiketahui
+                  ? 'text-text-muted'
+                  : 'text-emerald-400'
             }`}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                loadError ? 'bg-rose-500' : isLoading ? 'bg-text-muted' : 'bg-emerald-500'
+                loadError
+                  ? 'bg-rose-500'
+                  : isLoading || statusTidakDiketahui
+                    ? 'bg-text-muted'
+                    : 'bg-emerald-500'
               }`}
               aria-hidden="true"
             />
-            <span>{loadError ? 'Gateway Tidak Tersedia' : isLoading ? 'Memuat Status…' : 'Beroperasi'}</span>
+            <span>{labelStatus}</span>
           </div>
 
           <h2 className="text-xs sm:text-sm font-medium text-text-secondary tracking-tight shrink-0">
@@ -68,8 +96,13 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
               <span>
                 {/* B-285: "0/0 upstream sehat" selama muatan pertama
                     adalah angka karangan — tampilkan penanda belum
-                    terukur sampai data pertama benar-benar tiba. */}
-                <span className="text-text-primary font-medium">{isLoading ? '—' : `${healthyProvidersCount}/${totalProvidersCount}`}</span> upstream sehat
+                    terukur sampai data pertama benar-benar tiba.
+                    B-346: gerbangnya keberadaan data provider, bukan
+                    isLoading — muatan parsial yang menggagalkan
+                    sumber provider selesai TANPA isLoading dan
+                    tanpa loadError, tetapi hitungannya tetap belum
+                    terukur. */}
+                <span className="text-text-primary font-medium">{providersTerukur ? `${healthyProvidersCount}/${totalProvidersCount}` : '—'}</span> upstream sehat
               </span>
             </span>
 
@@ -78,7 +111,9 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
             <span className="inline-flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-text-muted inline" aria-hidden="true" />
               <span>
-                <span className="text-text-primary font-medium">{isLoading ? '—' : (overview?.in_flight_requests ?? 0)}</span> in-flight
+                {/* B-346: in-flight dari overview; tanpa overview
+                    angkanya belum terukur ("—"), bukan 0 karangan. */}
+                <span className="text-text-primary font-medium">{overview ? overview.in_flight_requests : '—'}</span> in-flight
               </span>
             </span>
 

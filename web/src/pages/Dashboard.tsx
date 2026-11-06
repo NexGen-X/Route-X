@@ -87,6 +87,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [summary, setSummary] = useState<ObservabilitySummary | null>(null);
   const [series, setSeries] = useState<TimeSeriesPoint[]>([]);
   const [providers, setProviders] = useState<Provider[]>([]);
+  // B-346: penanda daftar provider PERNAH tiba — hero menggerbangi
+  // klaim "x/y upstream sehat" padanya, karena keadaan awal [] juga
+  // adalah keadaan sesudah sumber provider gagal pada muatan
+  // parsial (loadError tidak disetel untuk kegagalan parsial).
+  const [providersPernahDimuat, setProvidersPernahDimuat] = useState<boolean>(false);
   const [overview, setOverview] = useState<SystemOverview | null>(null);
   const [recentRequests, setRecentRequests] = useState<RequestLog[]>([]);
   const [timeWindow, setTimeWindow] = useState<'1h' | '6h' | '24h' | '7d'>('24h');
@@ -172,6 +177,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         if (provRes.status === 'fulfilled' && provRes.value) {
           const pItems = Array.isArray(provRes.value) ? provRes.value : provRes.value.items;
           setProviders(pItems || []);
+          setProvidersPernahDimuat(true);
           setProvidersTerpotong(!Array.isArray(provRes.value) && !!provRes.value.terpotong);
         } else if (provRes.status === 'rejected') {
           failedEndpoints.push('Penyedia Upstream');
@@ -358,6 +364,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         loadError={loadError}
         healthyProvidersCount={healthyProvidersCount}
         totalProvidersCount={providers.length}
+        providersTerukur={providersPernahDimuat}
         overview={overview}
         isLoading={isLoading}
         isRefreshing={isRefreshing}

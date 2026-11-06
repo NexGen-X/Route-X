@@ -14,11 +14,13 @@ import (
 )
 
 // pipelineValid adalah resep combo sah menurut constraint migrasi 0014: salah satu dari
-// 4 strategi UI, attempts 1-20, models 1-8.
+// 4 strategi UI, attempts 1-20, models 1-8. Anggotanya model katalog seed
+// yang benar-benar ada — sejak B-179 jalur tulis me-resolusi tiap anggota,
+// nama rekaan di sini akan ditolak sebagai pipeline_model_tidak_dikenal.
 var pipelineValid = map[string]any{
 	"strategy": "round_robin",
 	"attempts": 3,
-	"models":   []string{"gpt-4o-mini", "gemini-2.5-flash"},
+	"models":   []string{"gpt-5", "gemini-2-5-pro"},
 }
 
 // routingRuleResp adalah bentuk respons create/update routing rule yang diperiksa test.
@@ -115,7 +117,7 @@ func TestCreateRoutingRuleDenganPipelineDanAlias(t *testing.T) {
 
 	// Kolom di database benar-benar terisi, bukan hanya DTO.
 	pipeline, alias := kolomPipelineAlias(t, env, got.ID)
-	if !strings.Contains(pipeline, "round_robin") || !strings.Contains(pipeline, "gemini-2.5-flash") {
+	if !strings.Contains(pipeline, "round_robin") || !strings.Contains(pipeline, "gemini-2-5-pro") {
 		t.Errorf("kolom pipeline = %q, mau berisi resep jsonb", pipeline)
 	}
 	if alias != "murah-cerdas" {

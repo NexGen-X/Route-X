@@ -2,6 +2,7 @@ import React from 'react';
 import { Menu, Search, BookOpen } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Tooltip } from '../common/Tooltip';
+import { useGatewayStatus } from '../../lib/useGatewayStatus';
 
 export interface HeaderProps {
   title: string;
@@ -17,6 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCommandPalette,
 }) => {
   const { principal } = useAuth();
+  const statusGateway = useGatewayStatus();
 
   return (
     <header className="sticky top-0 z-30 h-14 border-b border-border bg-bg-base/85 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between transition-colors">
@@ -54,14 +56,39 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Kanan: Minimalist Status Dot + Search Keycap Pill + Actions */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        {/* Status Gateway: titik status saja — versi tinggal di Login & Pengaturan (Fase 4) */}
+        {/* Status Gateway: titik status saja — versi tinggal di Login & Pengaturan (Fase 4).
+            Statusnya DITURUNKAN dari endpoint overview nyata (B-224), bukan
+            klaim hijau hardcoded: gagal memuat tampil sebagai tidak tersedia. */}
         <div
           role="status"
           aria-label="Status Telemetri Gateway"
           className="hidden sm:inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-bg-surface-1 border border-border text-xs font-mono"
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />
-          <span className="text-emerald-400 font-medium">Gateway Online</span>
+          <span
+            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              statusGateway === 'online'
+                ? 'bg-emerald-500'
+                : statusGateway === 'offline'
+                  ? 'bg-rose-500'
+                  : 'bg-zinc-500'
+            }`}
+            aria-hidden="true"
+          />
+          <span
+            className={`font-medium ${
+              statusGateway === 'online'
+                ? 'text-emerald-400'
+                : statusGateway === 'offline'
+                  ? 'text-rose-400'
+                  : 'text-text-muted'
+            }`}
+          >
+            {statusGateway === 'online'
+              ? 'Gateway Online'
+              : statusGateway === 'offline'
+                ? 'Gateway Tidak Tersedia'
+                : 'Memeriksa Gateway…'}
+          </span>
         </div>
 
         {/* Search button: clean minimal keycap pill (⌘K) */}

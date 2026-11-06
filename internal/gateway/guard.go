@@ -275,11 +275,17 @@ func (g *Guard) kembalikanSatuKuotaModel(ctx context.Context, modelID string) bo
 		return false
 	}
 	t := pemegangKuotaModel(ctx)
-	if t == nil || !t.klaim(modelID) {
+	if t == nil {
+		return false
+	}
+	jangkar, ok := t.klaim(modelID)
+	if !ok {
 		return false
 	}
 	scopes := g.rates.Requests(ctx, []policy.Target{{Scope: policy.ScopeModel, ID: modelID}}, apikey.Limits{})
-	g.limiter.RefundScopes(ctx, scopes)
+	// B-353: refund berjangkar ke waktu kenaikan yang ditanam pada
+	// tanda, bukan jam saat ini — lihat tandaKuotaModel.jangkar.
+	g.limiter.RefundScopesAt(ctx, scopes, jangkar)
 	return true
 }
 
@@ -312,28 +318,39 @@ type kunciKuotaModel struct{}
 type tandaKuotaModel struct {
 	mu     sync.Mutex
 	jumlah map[string]int
+	// jangkar menampung waktu kenaikan tiap kenaikan yang belum
+	// dikembalikan, satu per kenaikan, urut waktu (B-353): refund
+	// harus menurunkan ember dari jendela kenaikan itu, bukan
+	// ember dari jam saat refund berjalan.
+	jangkar map[string][]time.Time
 }
 
-// tambah mencatat satu kenaikan untuk modelID.
-func (t *tandaKuotaModel) tambah(modelID string) {
+// tambah mencatat satu kenaikan untuk modelID beserta waktu
+// kenaikannya (B-353).
+func (t *tandaKuotaModel) tambah(modelID string, jangkar time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.jumlah == nil {
 		t.jumlah = map[string]int{}
+		t.jangkar = map[string][]time.Time{}
 	}
 	t.jumlah[modelID]++
+	t.jangkar[modelID] = append(t.jangkar[modelID], jangkar)
 }
 
-// klaim mengambil satu kenaikan modelID untuk dikembalikan; false bila
-// tidak ada yang belum dikembalikan.
-func (t *tandaKuotaModel) klaim(modelID string) bool {
+// klaim mengambil satu kenaikan modelID untuk dikembalikan beserta
+// jangkar waktu kenaikannya; false bila tidak ada yang belum
+// dikembalikan.
+func (t *tandaKuotaModel) klaim(modelID string) (time.Time, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.jumlah[modelID] <= 0 {
-		return false
+		return time.Time{}, false
 	}
 	t.jumlah[modelID]--
-	return true
+	jangkar := t.jangkar[modelID][0]
+	t.jangkar[modelID] = t.jangkar[modelID][1:]
+	return jangkar, true
 }
 
 // terdaftar mengembalikan ID model yang masih punya kenaikan belum
@@ -368,16 +385,33 @@ func pemegangKuotaModel(ctx context.Context) *tandaKuotaModel {
 // sudah membawa pemegang tanda, tanda ditambahkan ke pemegang yang sama
 // dan context dikembalikan apa adanya — context turunan (jalur tier)
 // dengan begitu menandai pemegang yang sama dengan induknya.
-func TandaiKuotaModel(ctx context.Context, modelID string) context.Context {
+//
+// Jangkar waktunya dibaca dari jam limiter penjaga (B-353) — jam
+// yang sama yang menggerakkan kenaikan penghitung di
+// PeriksaBatasModel — supaya refund dihitung dari jendela yang
+// benar walau jam limiter disuntik (test) atau berbeda dari jam
+// dinding. (Fungsi bebas pendahulunya dihapus pada amendemen PR
+// Fase 16 C: sesudah ketiga situs panggil beralih ke method ini ia
+// tak terjangkau — gerbang deadcode CI menangkapnya.)
+func (g *Guard) TandaiKuotaModel(ctx context.Context, modelID string) context.Context {
+	jangkar := time.Now()
+	if g != nil && g.limiter != nil {
+		jangkar = g.limiter.Now()
+	}
+	return tanamTandaKuotaModel(ctx, modelID, jangkar)
+}
+
+// tanamTandaKuotaModel adalah penanam di balik Guard.TandaiKuotaModel.
+func tanamTandaKuotaModel(ctx context.Context, modelID string, jangkar time.Time) context.Context {
 	if ctx == nil || modelID == "" {
 		return ctx
 	}
 	if t := pemegangKuotaModel(ctx); t != nil {
-		t.tambah(modelID)
+		t.tambah(modelID, jangkar)
 		return ctx
 	}
 	t := &tandaKuotaModel{}
-	t.tambah(modelID)
+	t.tambah(modelID, jangkar)
 	return context.WithValue(ctx, kunciKuotaModel{}, t)
 }
 

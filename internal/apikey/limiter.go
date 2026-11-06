@@ -745,8 +745,14 @@ func (l *Limiter) Allow(ctx context.Context, keyID string, limits Limits, ip net
 	if l == nil || l.redis == nil {
 		return Decision{Allowed: true}
 	}
-	now := l.now()
+	return l.allowAt(ctx, keyID, limits, ip, l.now())
+}
 
+// allowAt adalah Allow dengan waktu yang sudah ditentukan pemanggil
+// (pasangan allowScopesAt): Limit() memakainya supaya satu jam yang
+// sama menggerakkan keputusan DAN jangkar refund yang ditanamnya
+// (B-353).
+func (l *Limiter) allowAt(ctx context.Context, keyID string, limits Limits, ip netip.Addr, now time.Time) Decision {
 	// Batas key lebih dulu: itu yang tertulis pada key pelanggan, jadi itu yang paling
 	// pantas dilaporkan lewat header bila keduanya sama-sama membatasi.
 	scopes := []ScopeLimits{{Scope: ScopeAPIKey, ID: keyID, Limits: limits.WithDefaults(l.keyDefaults)}}
@@ -754,6 +760,18 @@ func (l *Limiter) Allow(ctx context.Context, keyID string, limits Limits, ip net
 		scopes = append(scopes, ScopeLimits{Scope: ScopeIP, ID: ip.String(), Limits: l.ipLimits})
 	}
 	return l.allowScopesAt(ctx, scopes, now)
+}
+
+// Now mengembalikan waktu menurut jam limiter ini. Penjaga gateway
+// memakainya untuk menanam jangkar refund cakupan model pada jam
+// yang sama dengan yang menggerakkan kenaikan penghitungnya
+// (B-353) — dua jam berbeda dalam satu pasangan naik/turun bisa
+// jatuh di dua jendela yang berbeda.
+func (l *Limiter) Now() time.Time {
+	if l == nil || l.now == nil {
+		return time.Now()
+	}
+	return l.now()
 }
 
 // ScopeLimits adalah satu cakupan pembatasan beserta batas request-nya.
@@ -877,21 +895,49 @@ func (l *Limiter) RefundRequest(ctx context.Context, p *Principal, ip netip.Addr
 			scopes = append(scopes, ScopeLimits{Scope: ScopeIP, ID: ip.String(), Limits: l.ipLimits})
 		}
 	}
+	// B-353: refund menurunkan ember dari JENDELA KENAIKAN — jangkar
+	// yang ditanam Limit() pada context permintaan ini — bukan
+	// ember dari jam saat refund berjalan. Context tanpa jangkar
+	// (refund yang tidak didahului Limit(), misalnya dari test atau
+	// jalur lama) mempertahankan perilaku sebelumnya: jam saat ini.
+	if jangkar, ok := ctx.Value(kunciJangkarRefund{}).(time.Time); ok {
+		l.RefundScopesAt(ctx, scopes, jangkar)
+		return
+	}
 	l.RefundScopes(ctx, scopes)
 }
+
+// kunciJangkarRefund adalah kunci context tempat Limit() menanam
+// waktu kenaikannya untuk dibaca RefundRequest (B-353).
+type kunciJangkarRefund struct{}
 
 // RefundScopes membatalkan kenaikan penghitung request untuk cakupan yang
 // diberikan — pasangan AllowScopes bagi cakupan di luar resolver principal
 // (saat ini: cakupan model dari kebijakan gateway, B-254). Semantiknya sama
-// persis dengan ekor RefundRequest: jendela dihitung dari jam limiter saat
-// ini, skrip refund yang sama menurunkan penghitungnya, dan kegagalan Redis
-// hanya dicatat debug — refund tidak pernah menggagalkan respons.
+// persis dengan ekor RefundRequest: skrip refund yang sama menurunkan
+// penghitungnya, dan kegagalan Redis hanya dicatat debug — refund tidak
+// pernah menggagalkan respons.
+//
+// Jendelanya dihitung dari jam limiter saat ini; pemanggil yang tahu
+// waktu kenaikannya memakai RefundScopesAt (B-353).
 func (l *Limiter) RefundScopes(ctx context.Context, scopes []ScopeLimits) {
+	if l == nil || l.redis == nil {
+		return
+	}
+	l.RefundScopesAt(ctx, scopes, l.now())
+}
+
+// RefundScopesAt adalah RefundScopes dengan jendela dihitung dari
+// waktu yang diberikan — waktu KENAIKAN penghitungnya (B-353).
+// Refund yang menyeberangi batas jendela dengan jam refund akan
+// menurunkan ember jendela berikutnya (memakan hitungan sah di
+// sana, dijepit di nol per kunci) dan meninggalkan hitungan hantu
+// di ember asal sampai kedaluwarsa; berjangkar ke waktu kenaikan
+// menutup kedua arah kesalahan itu.
+func (l *Limiter) RefundScopesAt(ctx context.Context, scopes []ScopeLimits, now time.Time) {
 	if l == nil || l.redis == nil || len(scopes) == 0 {
 		return
 	}
-
-	now := l.now()
 	var windows []window
 	for _, s := range scopes {
 		windows = append(windows, requestWindows(s.Scope, s.ID, s.Limits, now)...)
@@ -1148,11 +1194,15 @@ func (l *Limiter) Limit() func(http.Handler) http.Handler {
 			// Dengan resolver, seluruh cakupan datang dari sana — termasuk cakupan key dan
 			// IP. Lihat kontrak ScopeResolver soal mengapa hasilnya menggantikan, bukan
 			// menambah.
+			//
+			// B-353: satu pembacaan jam menggerakkan keputusan ini dan
+			// menjadi jangkar yang ditanam pada context di bawah.
+			jangkar := l.now()
 			var decision Decision
 			if l.resolver != nil {
-				decision = l.AllowScopes(ctx, l.resolver(ctx, principal, clientIP))
+				decision = l.allowScopesAt(ctx, l.resolver(ctx, principal, clientIP), jangkar)
 			} else {
-				decision = l.Allow(ctx, principal.ID(), LimitsFromKey(principal.Key), clientIP)
+				decision = l.allowAt(ctx, principal.ID(), LimitsFromKey(principal.Key), clientIP, jangkar)
 			}
 			decision.SetHeaders(w)
 
@@ -1190,6 +1240,14 @@ func (l *Limiter) Limit() func(http.Handler) http.Handler {
 				return
 			}
 
+			// B-353: tanam jangkar waktu kenaikan pada context
+			// permintaan. RefundRequest membacanya untuk menurunkan
+			// ember yang sama dengan yang dinaikkan di sini — refund
+			// yang dihitung dari jam saat refund menurunkan ember
+			// jendela berikutnya bila batas jendela terlewati di
+			// tengah permintaan, meninggalkan hitungan hantu di
+			// ember asal dan memakan hitungan sah di ember baru.
+			r = r.WithContext(context.WithValue(ctx, kunciJangkarRefund{}, jangkar))
 			next.ServeHTTP(w, r)
 		})
 	}

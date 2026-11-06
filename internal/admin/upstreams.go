@@ -2486,6 +2486,12 @@ func (h *Handlers) createEgressPool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "create", "egress_pool", ep.ID, map[string]any{"name": ep.Name})
+
+	// B-339: pool egress baru mengubah jalur hulu yang bisa
+	// melayani; kosongkan cache respons seperti mutasi kredensial
+	// lain (B-258).
+	h.kosongkanCacheRespons(ctx)
+
 	_ = h.respond(w, r, http.StatusCreated, toEgressPoolDTO(ep))
 }
 
@@ -2566,6 +2572,10 @@ func (h *Handlers) updateEgressPool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-339: pool yang berubah mengubah jalur hulu yang melayani;
+	// kosongkan cache respons (lihat createEgressPool).
+	h.kosongkanCacheRespons(ctx)
+
 	_ = h.respond(w, r, http.StatusOK, toEgressPoolDTO(ep))
 }
 
@@ -2579,6 +2589,11 @@ func (h *Handlers) deleteEgressPool(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeAudit(ctx, r, "delete", "egress_pool", id, nil)
+
+	// B-339: pool terhapus tidak lagi melayani; kosongkan cache
+	// respons (lihat createEgressPool).
+	h.kosongkanCacheRespons(ctx)
+
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "deleted"})
 }
 

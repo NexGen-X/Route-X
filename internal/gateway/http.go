@@ -514,7 +514,7 @@ func (h *Handlers) kebijakan(
 	// kenaikan itu; tandanya ditanam pada *r yang sama dengan yang
 	// dipegang penjaga kuota, karena RefundRequest-nya resolver tidak
 	// mengenal cakupan model.
-	*r = *r.WithContext(TandaiKuotaModel(r.Context(), model.ID))
+	*r = *r.WithContext(h.guard.TandaiKuotaModel(r.Context(), model.ID))
 	if rj := h.guard.PeriksaAnggaranDenganReservasi(r.Context(), targets, estimasi); rj != nil {
 		rj.Tulis(w, r)
 		return false
@@ -1591,7 +1591,7 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 	// tier yang dilewati pemanggil membakar slot model tier secara
 	// permanen, dan refund B-254 tidak menjangkaunya karena tandanya
 	// (satu string di context induk) tidak pernah ditanam untuk tier.
-	ctx = TandaiKuotaModel(ctx, tModel.ID)
+	ctx = h.guard.TandaiKuotaModel(ctx, tModel.ID)
 	batalkanTier := func() { h.guard.KembalikanKuotaModel(ctx, tModel.ID) }
 	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
 		batalkanTier()
@@ -1783,7 +1783,7 @@ func (h *Handlers) cobaTierFallbackEmbeddings(ctx context.Context, tier ComboTie
 	// B-294: sama seperti siapkanTierFallback — kenaikan batas model
 	// tier ditandai pada pemegang bersama dan dikembalikan di tempat
 	// oleh setiap jalan keluar yang tidak berujung Execute.
-	ctx = TandaiKuotaModel(ctx, tModel.ID)
+	ctx = h.guard.TandaiKuotaModel(ctx, tModel.ID)
 	batalkanTier := func() { h.guard.KembalikanKuotaModel(ctx, tModel.ID) }
 	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
 		batalkanTier()
@@ -2118,10 +2118,20 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 			// Baris requests untuk HIT tetap menyebut provider & pemetaan
 			// model asal jawaban (audit3 V-GW-09); tanpa ini inspektor
 			// menampilkan request tanpa provider untuk semua HIT.
-			if menang := kandidatCacheHIT(pr, entry); menang != nil {
+			menang := kandidatCacheHIT(pr, entry)
+			if menang != nil {
 				j.pasangPercobaan(nil, menang)
 			}
 			h.guard.CatatToken(r.Context(), pr.principal, pr.targets, int64(pemakaian.TotalTokens))
+			// B-327: HIT juga mencatat ke kolom TPM provider, persis
+			// seperti jalur MISS (chatSekali di bawah). Sebelumnya
+			// ketiga jalur HIT hanya memanggil CatatToken, jadi batas
+			// rate_limit_tpm provider tidak pernah berkurang oleh
+			// HIT — prompt yang ter-cache bisa diulang tanpa batas
+			// melewati kolom itu sementara jendela token key tetap
+			// berkurang. Kandidat yang dicatat adalah pemenang asal
+			// entri, tokennya total pemakaian HIT yang sama.
+			h.guard.CatatTokenKolomProvider(r.Context(), menang, int64(pemakaian.TotalTokens))
 			// Kebijakan jawaban yang berlaku saat menyimpan bisa berubah sejak
 			// itu; yang ditegakkan adalah kebijakan SAAT INI. Teks diambil dari
 			// entri; entri lama yang belum punya teks diekstrak dari Raw-nya —

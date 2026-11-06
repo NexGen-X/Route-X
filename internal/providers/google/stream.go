@@ -345,6 +345,15 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 	}
 
 	delta := &oaDelta{ReasoningContent: reasoning.String(), ToolCalls: encodeToolCalls(calls, true)}
+	if sigThought != "" {
+		// B-324: signature yang sama yang disalin ke
+		// StreamEvent.ReasoningSignature (B-295) kini juga masuk Raw
+		// chunk — sebelumnya encodeChunk menyusun byte klien dari
+		// delta tanpa field signature, jadi signature berhenti di
+		// kontrak internal dan rantai multi-turn lewat klien
+		// eksternal tetap kehilangannya di mil terakhir.
+		delta.ThoughtSignature = sigThought
+	}
 	if adaNonTeks {
 		// Peristiwa berpart non-teks dirender sebagai larik content dialek
 		// OpenAI (B-211): bentuk string polos tidak bisa membawa gambar di

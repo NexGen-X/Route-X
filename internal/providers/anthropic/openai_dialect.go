@@ -45,9 +45,13 @@ type oaMessage struct {
 }
 
 type oaDelta struct {
-	Role             string       `json:"role,omitempty"`
-	Content          *string      `json:"content,omitempty"`
-	ReasoningContent string       `json:"reasoning_content,omitempty"`
+	Role             string  `json:"role,omitempty"`
+	Content          *string `json:"content,omitempty"`
+	ReasoningContent string  `json:"reasoning_content,omitempty"`
+	// ThoughtSignature membawa signature_delta block thinking (B-324):
+	// tanpanya peristiwa signature hanya hidup di kontrak kanonik
+	// (B-295) dan gateway melewatinya karena Raw-nya kosong.
+	ThoughtSignature string       `json:"thought_signature,omitempty"`
 	ToolCalls        []oaToolCall `json:"tool_calls,omitempty"`
 }
 

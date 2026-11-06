@@ -3,14 +3,22 @@ package anthropic
 import (
 	"context"
 	"io"
+	"strings"
 	"testing"
 )
 
 // TestB295SignatureDeltaSampaiPeristiwa adalah pengunci B-295 sisi
 // Anthropic: signature_delta pada aliran sebelumnya dibuang ("tidak
 // punya wujud di sisi klien") karena StreamEvent tidak punya field
-// signature. Kini ia tiba sebagai StreamEvent.ReasoningSignature
-// dengan Raw kosong (dialek OpenAI tak punya padanan chunk untuknya).
+// signature. Kini ia tiba sebagai StreamEvent.ReasoningSignature.
+//
+// Catatan B-324 (Fase 16): asersi Raw semula menuntut Raw KOSONG
+// ("dialek OpenAI tak punya padanan chunk untuknya"). Keputusan itu
+// digantikan B-324 — dialek kini punya padanannya (delta
+// thought_signature), karena Raw kosong berarti gateway melewati
+// peristiwa itu dan signature tak pernah sampai ke byte klien.
+// Asersi di bawah kini menuntut Raw MEMUAT signature-nya; cakupan
+// kanonik B-295 (ReasoningSignature tiba) tidak berubah.
 func TestB295SignatureDeltaSampaiPeristiwa(t *testing.T) {
 	p, _ := newServer(t, sseHandler(
 		"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_295\",\"model\":\"claude-sonnet-4-5-20250929\",\"usage\":{\"input_tokens\":10,\"output_tokens\":1}}}\n\n",
@@ -37,8 +45,11 @@ func TestB295SignatureDeltaSampaiPeristiwa(t *testing.T) {
 		}
 		if ev.ReasoningSignature != "" {
 			sig = ev.ReasoningSignature
-			if len(ev.Raw) != 0 {
-				t.Errorf("peristiwa signature membawa Raw %q, mau kosong", ev.Raw)
+			// B-324: Raw peristiwa ini wajib memuat signature-nya
+			// sebagai delta thought_signature; Raw kosong berarti
+			// signature berhenti di kontrak kanonik.
+			if !strings.Contains(string(ev.Raw), `"thought_signature":"sig-ant-295"`) {
+				t.Errorf("Raw peristiwa signature = %q, mau memuat thought_signature sig-ant-295", ev.Raw)
 			}
 		}
 	}

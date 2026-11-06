@@ -304,6 +304,38 @@ func (s *stream) blockStart(env *streamEnvelope) *providers.StreamEvent {
 		out.Delta = env.ContentBlock.Text
 		return out
 
+	case blockImage:
+		// B-341: block image dulu jatuh ke default dan hilang
+		// senyap — asimetri B-299 di jalur streaming. Terjemahkan
+		// ke part gambar kanonik dengan aturan yang sama persis
+		// seperti jalur non-streaming di toCanonicalResponse:
+		// sumber url diteruskan apa adanya, sumber base64 menjadi
+		// data URI; sumber yang tak bisa dipakai tidak mengarang
+		// part. Dialek OpenAI adapter ini tidak punya encoder
+		// larik content untuk Raw chunk, jadi gambar berjalan
+		// lewat bentuk kanoniknya — permukaan yang menyintesis
+		// dari kanonik (Messages) yang merendernya, dan gerbang
+		// konten gateway menghitung Parts sebagai isi.
+		if env.ContentBlock.Source == nil {
+			return nil
+		}
+		src := env.ContentBlock.Source
+		var url string
+		switch {
+		case src.Type == "url" && src.URL != "":
+			url = src.URL
+		case src.Data != "":
+			url = "data:" + src.MediaType + ";base64," + src.Data
+		default:
+			return nil
+		}
+		out := s.event(&oaDelta{}, "", nil)
+		out.Parts = []providers.ContentPart{{
+			Type:     providers.PartTypeImageURL,
+			ImageURL: &providers.ImageURL{URL: url},
+		}}
+		return out
+
 	default:
 		return nil
 	}
@@ -347,16 +379,24 @@ func (s *stream) blockDelta(env *streamEnvelope) *providers.StreamEvent {
 		return out
 
 	case "signature_delta":
-		// Signature block thinking kini punya wujud kanonik
+		// Signature block thinking punya wujud kanonik
 		// (StreamEvent.ReasoningSignature, B-295): tanpa ini ia
 		// terbuang struktural dan giliran lanjutan lewat streaming
-		// kehilangan tanda tangan penalarannya. Raw dikosongkan —
-		// dialek OpenAI tidak punya padanan chunk untuknya, dan
-		// gateway memang melewati peristiwa ber-Raw kosong.
+		// kehilangan tanda tangan penalarannya.
+		//
+		// B-324: peristiwa ini kini juga membawa chunk — delta
+		// ber-field thought_signature. B-295 dulu mengosongkan Raw
+		// dengan alasan dialek OpenAI tak punya padanan chunk
+		// untuknya, dan gateway memang melewati peristiwa ber-Raw
+		// kosong, jadi signature tak pernah menjadi byte klien;
+		// field delta itulah padanannya sekarang.
 		if env.Delta.Signature == "" {
 			return nil
 		}
-		return &providers.StreamEvent{ReasoningSignature: string(env.Delta.Signature)}
+		sig := string(env.Delta.Signature)
+		out := s.event(&oaDelta{ThoughtSignature: sig}, "", nil)
+		out.ReasoningSignature = sig
+		return out
 
 	default:
 		// Jenis delta baru lainnya tidak punya wujud di sisi klien.

@@ -38,10 +38,22 @@ func TestCheckOrphans(t *testing.T) {
 		return nil
 	})
 
-	// Daftar putih rute yatim yang DISENGAJA: hanya tiga alias ringkasan
-	// baca (/summary, /overview, /diagnostics) yang dipertahankan sesudah
-	// pemangkasan alias Fase 2 R5 — 23 alias CRUD datar dihapus dari
-	// routes.go setelah analisis membuktikan nol konsumen di dalam repo.
+	// Daftar putih rute yatim yang DISENGAJA, dua kategori:
+	//
+	// (1) Tiga alias ringkasan baca (/summary, /overview, /diagnostics)
+	// yang dipertahankan sesudah pemangkasan alias Fase 2 R5 — 23 alias
+	// CRUD datar dihapus dari routes.go setelah analisis membuktikan
+	// nol konsumen di dalam repo.
+	//
+	// (2) Rute-rute B-286 (Fase 14): wrapper klien web untuk permukaan
+	// ini dihapus dari client.ts karena nol pemanggil UI (grup
+	// filters/bans/sessions utuh + metode sebaran), TETAPI rutenya
+	// SENGAJA dipertahankan hidup sebagai permukaan API langsung —
+	// keputusan entri B-286 membatasi penghapusan pada wrapper klien
+	// dan menyatakan rute backend tidak disentuh. Pendaftaran di sini
+	// mendokumentasikan kesengajaan itu; gerbang tetap menggagalkan
+	// tes untuk yatim BARU apa pun di luar daftar.
+	//
 	// Di luar daftar ini, rute backend TANPA pemanggil frontend adalah
 	// temuan nyata dan MENGGAGALKAN tes ini — sebelum perbaikan F11 tes
 	// ini hanya mencetak tanpa assertion sehingga tidak bisa gagal.
@@ -49,6 +61,23 @@ func TestCheckOrphans(t *testing.T) {
 		"/api/admin/diagnostics": true,
 		"/api/admin/overview":    true,
 		"/api/admin/summary":     true,
+		// Kategori (2) — B-286:
+		"/api/admin/access/sessions":                           true,
+		"/api/admin/access/sessions/{param}":                   true,
+		"/api/admin/access/sessions/revoke-all":                true,
+		"/api/admin/gateway/bans":                              true,
+		"/api/admin/gateway/bans/{param}/lift":                 true,
+		"/api/admin/gateway/content-filters":                   true,
+		"/api/admin/gateway/content-filters/{param}":           true,
+		"/api/admin/gateway/content-filters/{param}/toggle":    true,
+		"/api/admin/gateway/rate-limits/{param}/toggle":        true,
+		"/api/admin/observability/metrics/live":                true,
+		"/api/admin/requests/{param}":                          true,
+		"/api/admin/upstreams/models/{param}":                  true,
+		"/api/admin/upstreams/models/{param}/aliases/{param}":  true,
+		"/api/admin/upstreams/models/{param}/mappings":         true,
+		"/api/admin/upstreams/models/mappings/{param}":         true,
+		"/api/admin/upstreams/providers/{param}/health-checks": true,
 	}
 
 	var yatimBaru []string

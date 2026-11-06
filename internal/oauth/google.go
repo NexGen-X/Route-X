@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"crypto/rsa"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/security"
@@ -104,6 +106,30 @@ func lengkapiClientSecret(clientID, clientSecret string) (string, error) {
 // token Google berukuran ratusan byte; 1 MiB sudah sangat longgar).
 const maxTokenResponseBytes = 1 << 20
 
+// penandaSaring menggantikan kredensial yang tersaring dari pesan error
+// upstream (penanda yang sama dengan redactedMark pada adapter providers).
+const penandaSaring = "[REDACTED]"
+
+// saringKredensial membuang nilai kredensial persis — dan bentuk
+// "Bearer <nilai>"-nya — dari teks pesan asal upstream sebelum teks itu
+// menyusun error yang akan dicatat pemanggil (B-268).
+//
+// Pola yang sama dengan safeMessage adapter providers: upstream/proksi
+// dapat memantulkan kredensial yang dikirim di dalam pesan errornya, dan
+// error itu berakhir di log gateway. Menyaring nilai persis yang sedang
+// dipegang pemanggil menutup pantulan itu tanpa membuang sisa pesan yang
+// berguna untuk diagnosis.
+func saringKredensial(msg string, nilai ...string) string {
+	for _, n := range nilai {
+		if n == "" {
+			continue
+		}
+		msg = strings.ReplaceAll(msg, "Bearer "+n, "Bearer "+penandaSaring)
+		msg = strings.ReplaceAll(msg, n, penandaSaring)
+	}
+	return msg
+}
+
 // TokenResult memuat hasil pertukaran atau pembaharuan token Google.
 type TokenResult struct {
 	AccessToken  security.Secret
@@ -121,6 +147,14 @@ type GoogleOAuthClient struct {
 	defaultClient      string
 	tokenEndpoint      string
 	codeAssistEndpoint string
+
+	// Verifikasi tanda tangan id_token (B-265): endpoint JWKS Google dan
+	// cache kunci publiknya. Cache hanya memuat kunci PUBLIK — tidak ada
+	// rahasia pada struct ini.
+	jwksURL           string
+	jwksMu            sync.Mutex
+	jwksKunci         map[string]*rsa.PublicKey
+	jwksBerlakuSampai time.Time
 }
 
 // NewGoogleOAuthClient membuat instance klien Google OAuth.
@@ -133,6 +167,7 @@ func NewGoogleOAuthClient(client *http.Client) *GoogleOAuthClient {
 		defaultClient:      DefaultAntigravityClientID,
 		tokenEndpoint:      GoogleTokenEndpoint,
 		codeAssistEndpoint: DefaultCodeAssistEndpoint,
+		jwksURL:            googleJWKSURL,
 	}
 }
 
@@ -278,15 +313,26 @@ func (c *GoogleOAuthClient) ExchangeAuthCodeWithProxy(
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("http status %d", resp.StatusCode)
 		}
+		// Pesan upstream disaring dari kredensial yang sedang dikirim
+		// (kode otorisasi & client secret) sebelum menyusun error (B-268).
+		errMsg = saringKredensial(errMsg, clientSecret, code)
 		if res.Error == "invalid_grant" {
 			return nil, fmt.Errorf("%w: server oauth google menolak kode: %s", ErrTokenDitolakPermanen, errMsg)
 		}
 		return nil, fmt.Errorf("server oauth google menolak kode: %s", errMsg)
 	}
 
-	email, name, err := parseIDTokenClaims(res.IDToken, clientID)
-	if err != nil {
-		return nil, fmt.Errorf("validasi id_token google: %w", err)
+	// Identitas akun hanya boleh berasal dari id_token yang tanda
+	// tangannya terbukti milik Google (B-265). id_token absen berarti
+	// tidak ada identitas terverifikasi sama sekali: email dibiarkan
+	// kosong dan pemanggil (handler exchange) menolak membuat sesi
+	// tanpa email terverifikasi — bukan mengarang label cadangan.
+	var email, name string
+	if res.IDToken != "" {
+		email, name, err = c.verifikasiIDToken(ctx, client, res.IDToken, clientID)
+		if err != nil {
+			return nil, fmt.Errorf("validasi id_token google: %w", err)
+		}
 	}
 	var scopes []string
 	if res.Scope != "" {
@@ -372,6 +418,9 @@ func (c *GoogleOAuthClient) RefreshAccessTokenWithProxy(
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("http status %d", resp.StatusCode)
 		}
+		// Pesan upstream disaring dari kredensial yang sedang dikirim
+		// (refresh token & client secret) sebelum menyusun error (B-268).
+		errMsg = saringKredensial(errMsg, clientSecret, refreshToken)
 		if res.Error == "invalid_grant" {
 			// Refresh token dicabut/kedaluwarsa permanen: mencoba lagi pada
 			// putaran berikutnya tidak akan mengubah hasil (audit3 V-EO-17).
@@ -395,6 +444,12 @@ func (c *GoogleOAuthClient) RefreshAccessTokenWithProxy(
 }
 
 // parseIDTokenClaims mengekstrak dan memvalidasi klausa JWT id_token Google secara aman tanpa dependensi eksternal.
+//
+// Fungsi ini HANYA memvalidasi klaim — ia tidak memeriksa tanda tangan.
+// Pemanggil produksi wajib melewati verifikasiIDToken (B-265), yang
+// memverifikasi tanda tangan RS256 terhadap JWKS Google terlebih dahulu
+// lalu memanggil fungsi ini; memanggil fungsi ini langsung atas token
+// dari jaringan berarti mempercayai klaim yang belum terbukti.
 // Memvalidasi:
 // - Issuer (iss) wajib https://accounts.google.com atau accounts.google.com (jika ada).
 // - Audience (aud) wajib cocok dengan expectedClientID (jika expectedClientID diberikan).

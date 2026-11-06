@@ -248,8 +248,12 @@ func TestExchangeAuthCodeMock(t *testing.T) {
 	// cadangan tertanam, B-156).
 	t.Setenv("ANTIGRAVITY_CLIENT_SECRET", "test-secret-dari-env")
 
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256"}`))
-	mockClaims, _ := json.Marshal(map[string]any{
+	// id_token tiruan kini WAJIB bertanda tangan sah (B-265): kunci uji
+	// dibuat di tempat dan JWKS-nya disajikan server tiruan kedua.
+	// Fixture lama bertanda tangan sampah (".sig") adalah persis kelas
+	// token yang sejak B-265 harus ditolak exchange.
+	privUji := kunciRSAUji(t)
+	fakeJWT := tandaTanganiJWTUji(t, privUji, kidUjiB265, map[string]any{
 		"iss":            "https://accounts.google.com",
 		"aud":            DefaultAntigravityClientID,
 		"exp":            time.Now().Add(time.Hour).Unix(),
@@ -257,8 +261,11 @@ func TestExchangeAuthCodeMock(t *testing.T) {
 		"email_verified": true,
 		"name":           "Test User",
 	})
-	payload := base64.RawURLEncoding.EncodeToString(mockClaims)
-	fakeJWT := header + "." + payload + ".sig"
+	jwksServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(dokumenJWKSUji(&privUji.PublicKey, kidUjiB265)))
+	}))
+	defer jwksServer.Close()
 
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -309,7 +316,7 @@ func TestExchangeAuthCodeMock(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	client := NewGoogleOAuthClient(mockServer.Client()).WithTokenEndpoint(mockServer.URL)
+	client := NewGoogleOAuthClient(mockServer.Client()).WithTokenEndpoint(mockServer.URL).WithJWKSURL(jwksServer.URL)
 
 	// Test 1: Exchange Auth Code
 	res, err := client.ExchangeAuthCode(context.Background(), "http://localhost:4567/?code=4/test-code", "", "", "")

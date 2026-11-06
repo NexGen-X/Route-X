@@ -200,6 +200,11 @@ func (c *GoogleOAuthClient) LoadCodeAssistProject(ctx context.Context, accessTok
 		if msg == "" {
 			msg = fmt.Sprintf("http status %d", resp.StatusCode)
 		}
+		// Pesan upstream disaring dari access token yang sedang dikirim
+		// (dan bentuk Bearer-nya) sebelum menyusun error (B-268): error
+		// ini dicatat pemanggil ke log, dan upstream/proksi dapat
+		// memantulkan token di dalam pesan errornya.
+		msg = saringKredensial(msg, accessToken)
 		return "", fmt.Errorf("server code assist menolak loadCodeAssist: %s", msg)
 	}
 

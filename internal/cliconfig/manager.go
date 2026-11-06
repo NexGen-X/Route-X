@@ -1365,7 +1365,10 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			{"GOOSE_MODEL", target},
 			{"OPENAI_HOST", strings.TrimSuffix(gwURL, "/v1")},
 		})
-		if err := tulisAtomik(goosePath, []byte(content), 0644); err != nil {
+		// Izin mengikuti berkas eksisting (B-220): penulisan ulang tidak
+		// boleh melonggarkan berkas 0600 milik pengguna menjadi 0644;
+		// 0644 hanya bawaan untuk berkas baru.
+		if err := tulisAtomik(goosePath, []byte(content), permBerkasAtau(goosePath, 0644)); err != nil {
 			return fmt.Errorf("menulis %s: %w", goosePath, err)
 		}
 
@@ -1398,19 +1401,27 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			}
 			providers["routex"] = routexProv
 		}
-		if opts, ok := routexProv["options"].(map[string]any); ok {
-			opts["baseURL"] = gwURL
-			// apiKey di sini adalah kunci EFEKTIF (B-215): kunci baru
-			// bila Configure membawanya, jika tidak kunci tersimpan
-			// produk diteruskan pemanggil. Field kosong berarti
-			// "tidak diubah", jadi konfigurasi ulang tanpa kunci
-			// TIDAK menghapus apiKey selama produk masih menyimpan
-			// kunci untuk tool ini.
-			if apiKey != "" {
-				opts["apiKey"] = apiKey
-			} else {
-				delete(opts, "apiKey")
-			}
+		opts, ok := routexProv["options"].(map[string]any)
+		if !ok || opts == nil {
+			// B-221: berkas warisan/buatan tangan bisa memuat provider
+			// routex TANPA sub-objek options; dulu cabang ini senyap
+			// melewatkan baseURL/apiKey sementara models dan model
+			// tetap diperbarui — provider menunjuk URL lama tetapi
+			// Configure melaporkan sukses. Buat sub-objeknya.
+			opts = make(map[string]any)
+			routexProv["options"] = opts
+		}
+		opts["baseURL"] = gwURL
+		// apiKey di sini adalah kunci EFEKTIF (B-215): kunci baru
+		// bila Configure membawanya, jika tidak kunci tersimpan
+		// produk diteruskan pemanggil. Field kosong berarti
+		// "tidak diubah", jadi konfigurasi ulang tanpa kunci
+		// TIDAK menghapus apiKey selama produk masih menyimpan
+		// kunci untuk tool ini.
+		if apiKey != "" {
+			opts["apiKey"] = apiKey
+		} else {
+			delete(opts, "apiKey")
 		}
 		models, ok := routexProv["models"].(map[string]any)
 		if !ok || models == nil {

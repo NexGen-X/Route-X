@@ -932,6 +932,15 @@ func (s *Service) ChangePassword(ctx context.Context, userID string, current, ne
 		return 0, fmt.Errorf("%s: %w", op, err)
 	}
 
+	// B-274: penghitung Redis per email juga dilepas, meniru Login.
+	// Transaksi di atas menolkan penghitung kegagalan di DB, tetapi ember
+	// email di limiter adalah penghitung terpisah: tanpa reset ini,
+	// kegagalan lama tetap mengotori jendela berjalan dan bisa menolak
+	// percobaan sah berikutnya dari alamat lain. Limiter gagal terbuka
+	// dan method-nya aman pada penerima nil, jadi pemanggilan ini tidak
+	// bisa menggagalkan perubahan password yang sudah ter-commit.
+	s.limiter.ResetEmail(ctx, u.Email)
+
 	s.log(ctx).LogAttrs(ctx, slog.LevelInfo, "password diganti",
 		slog.String("user_id", u.ID), slog.Int("revoked_sessions", revoked))
 	return revoked, nil

@@ -537,8 +537,15 @@ func (j *jejak) selesai(ctx context.Context) {
 	// notifikasi tidak boleh mati hanya karena klien menutup koneksi lebih
 	// dulu (justru request yang terputus termasuk yang perlu dilaporkan).
 	if j.webhooks != nil {
+		// Kegagalan mid-stream tercatat berstatus 200 dengan ErrorType
+		// terisi (B-172): status saja tidak cukup untuk memilih event,
+		// karena konsumen webhook akan menerima "completed" untuk aliran
+		// yang tidak pernah diterima klien utuh (B-246). Sinyal yang sama
+		// yang dipakai agregasi — ErrorType tidak kosong berarti gagal —
+		// menentukan event di sini.
+		gagal := status >= 400 || ev.ErrorType != ""
 		event := "request.completed"
-		if status >= 400 {
+		if gagal {
 			event = "request.failed"
 		}
 		payload := map[string]any{
@@ -554,8 +561,13 @@ func (j *jejak) selesai(ctx context.Context) {
 			"duration_ms":  ev.Latency.Milliseconds(),
 			"timestamp":    time.Now().UTC().Format(time.RFC3339),
 		}
-		if status >= 400 {
-			payload["error_code"] = kode
+		if gagal {
+			if kode != "" {
+				payload["error_code"] = kode
+			}
+			if ev.ErrorType != "" {
+				payload["error_type"] = ev.ErrorType
+			}
 		}
 		if _, err := j.webhooks.Enqueue(context.WithoutCancel(ctx), event, payload); err != nil {
 			j.logger.WarnContext(ctx, "gagal memasukkan event permintaan ke antrean webhook",

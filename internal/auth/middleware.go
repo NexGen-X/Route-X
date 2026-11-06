@@ -78,7 +78,9 @@ func (s *Service) RequireSession() func(http.Handler) http.Handler {
 				return
 			}
 
-			s.touchIfStale(ctx, principal)
+			if s.touchIfStale(ctx, principal) {
+				s.segarkanCookieSesi(w, r, principal)
+			}
 			next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principal)))
 		})
 	}
@@ -122,9 +124,20 @@ func (s *Service) RequireSessionOrBearer(validToken string, allowLoopback bool) 
 
 			// 3. Periksa sesi admin (token header lebih dulu, cookie cadangan —
 			// jalur yang sama dengan RequireSession).
+			//
+			// Sesi yang sah saja TIDAK cukup (B-197): yang lolos di sini wajib
+			// admin (users.is_admin, kewenangan penuh B-102). Sebelumnya
+			// principal terautentikasi mana pun diterima, sehingga akun
+			// pengguna biasa dengan sesi dashboard bisa men-scrape seluruh
+			// metrik Prometheus — padahal endpoint metrik admin lain
+			// mensyaratkan izin health:read. Sesi non-admin jatuh ke
+			// unauthorized yang sama di bawah, supaya respons tidak
+			// membedakan "tidak ada sesi" dari "sesi sah tetapi bukan admin".
 			if s != nil && s.cookies != nil {
-				if principal, err := s.authenticateRequest(ctx, r); err == nil && principal != nil {
-					s.touchIfStale(ctx, principal)
+				if principal, err := s.authenticateRequest(ctx, r); err == nil && principal != nil && principal.User.IsAdmin {
+					if s.touchIfStale(ctx, principal) {
+						s.segarkanCookieSesi(w, r, principal)
+					}
 					next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principal)))
 					return
 				}

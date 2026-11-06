@@ -102,8 +102,20 @@ func TestB217OpenCodeJSONCDiterima(t *testing.T) {
 		t.Fatalf("membaca hasil: %v", err)
 	}
 	var cfg map[string]any
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		t.Fatalf("hasil Configure bukan JSON ketat yang sah: %v (%s)", err, raw)
+	// B-280 (Fase 14) mengubah kontrak keluaran yang dikunci di
+	// sini: berkas yang memuat komentar JSONC kini DISUNTING pada
+	// teksnya sehingga komentar pengguna bertahan — hasil Configure
+	// adalah JSONC yang sah (format resmi OpenCode), bukan lagi
+	// JSON ketat hasil normalisasi marshal. Janji inti B-217 tidak
+	// berubah: berkas sah tidak ditolak dan seluruh DATANYA utuh;
+	// penguraian di bawah karena itu memakai penoleransi yang sama
+	// seperti jalur muat.
+	if err := json.Unmarshal(uraiJSONCToleran(raw), &cfg); err != nil {
+		t.Fatalf("hasil Configure bukan JSONC yang sah: %v (%s)", err, raw)
+	}
+	if !strings.Contains(string(raw), "// Konfigurasi pengguna OpenCode") ||
+		!strings.Contains(string(raw), "/* komentar blok") {
+		t.Errorf("komentar pengguna hilang sesudah Configure (B-280):\n%s", raw)
 	}
 	if cfg["theme"] != "opencode" {
 		t.Errorf("theme pengguna hilang: %v", cfg["theme"])

@@ -1890,18 +1890,42 @@ func perbaruiPreambleTOML(existing string, pairs [][2]string) string {
 	return keluaran
 }
 
+// namaSeksiTOML mengekstrak nama seksi dari sebuah baris header TOML
+// secara TOLERAN (B-277): spasi di dalam kurung (`[ model.routex ]`),
+// komentar ekor sesudah kurung tutup (`[model.routex] # catatan`), dan
+// BOM di awal berkas diterima — semuanya bentuk sah yang ditulis
+// editor. Pengenalan exact-match lama membuat penulis menambahkan
+// seksi KEDUA bernama sama (TOML tak sah) alih-alih memperbarui yang
+// ada. Mengembalikan "" bila baris bukan header seksi bernama.
+// Header tabel-berganda `[[...]]` sengaja tidak dikenali sebagai
+// seksi biasa.
+func namaSeksiTOML(baris string) string {
+	l := strings.TrimSpace(strings.TrimPrefix(baris, "\ufeff"))
+	if !strings.HasPrefix(l, "[") || strings.HasPrefix(l, "[[") {
+		return ""
+	}
+	tutup := strings.Index(l, "]")
+	if tutup < 0 {
+		return ""
+	}
+	sisa := strings.TrimSpace(l[tutup+1:])
+	if sisa != "" && !strings.HasPrefix(sisa, "#") {
+		return ""
+	}
+	return strings.TrimSpace(l[1:tutup])
+}
+
 // rentangSeksiTOML mencari rentang isi seksi [nama] (indeks baris isi
 // awal dan akhir eksklusif) di dokumen yang sudah dipecah per baris.
 // ok=false bila seksi tidak ada.
 func rentangSeksiTOML(baris []string, nama string) (awal, akhir int, ok bool) {
-	header := "[" + nama + "]"
 	for i, l := range baris {
-		if strings.TrimSpace(l) != header {
+		if namaSeksiTOML(l) != nama {
 			continue
 		}
 		akhir = len(baris)
 		for j := i + 1; j < len(baris); j++ {
-			if strings.HasPrefix(strings.TrimSpace(baris[j]), "[") {
+			if strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(baris[j], "\ufeff")), "[") {
 				akhir = j
 				break
 			}
@@ -1945,6 +1969,25 @@ func perbaruiKunciSeksiTOML(existing, seksi string, pairs [][2]string) string {
 	return keluaran
 }
 
+// pecahHeaderModelHermes mengenali baris header blok `model:`
+// tingkat-atas secara TOLERAN (B-277): spasi sebelum titik dua
+// (`model :`) dan BOM di awal berkas diterima. Mengembalikan sisa
+// teks sesudah titik dua apa adanya ("" untuk peta murni, "# ..."
+// untuk header berkomentar, atau nilai skalar) dan ok=false bila
+// baris bukan header `model:` tingkat-atas — baris menjorok tidak
+// pernah dianggap header.
+func pecahHeaderModelHermes(l string) (sisa string, ok bool) {
+	teks := strings.TrimPrefix(l, "\ufeff")
+	if strings.HasPrefix(teks, " ") || strings.HasPrefix(teks, "\t") {
+		return "", false
+	}
+	idx := strings.Index(teks, ":")
+	if idx < 0 || strings.TrimSpace(teks[:idx]) != "model" {
+		return "", false
+	}
+	return strings.TrimSpace(teks[idx+1:]), true
+}
+
 // susunBlokModelHermes memperbarui blok `model:` tingkat-atas di
 // config.yaml Hermes ke setelan provider kustom Route-X dengan
 // PENGGABUNGAN PER-KUNCI (B-222): sub-kunci terkelola
@@ -1981,11 +2024,18 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	}
 	baris := strings.Split(existing, "\n")
 	for i, l := range baris {
-		if !strings.HasPrefix(l, "model:") {
+		sisa, adalah := pecahHeaderModelHermes(l)
+		if !adalah {
 			continue
 		}
-		sisa := strings.TrimSpace(strings.TrimPrefix(l, "model:"))
-		if sisa != "" {
+		// B-277: sisa berupa komentar (`model: # catatan`) adalah
+		// header PETA, bukan skalar — sub-baris menjorok sesudahnya
+		// adalah isi blok lama yang harus digabung per-kunci di
+		// bawah. Versi lama memperlakukannya sebagai skalar dan hanya
+		// mengganti baris header, sehingga sub-kunci terkelola lama
+		// menempel sesudah blok baru dan menang last-wins sementara
+		// Configure melaporkan sukses.
+		if sisa != "" && !strings.HasPrefix(sisa, "#") {
 			// Bentuk skalar satu baris: ganti baris itu saja.
 			hasil := make([]string, 0, len(baris)+len(blok))
 			hasil = append(hasil, baris[:i]...)

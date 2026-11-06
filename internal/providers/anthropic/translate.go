@@ -51,9 +51,9 @@ type block struct {
 	Type string `json:"type"`
 
 	// text dan thinking
-	Text      string `json:"text,omitempty"`
-	Thinking  string `json:"thinking,omitempty"`
-	Signature string `json:"signature,omitempty"`
+	Text      string                     `json:"text,omitempty"`
+	Thinking  string                     `json:"thinking,omitempty"`
+	Signature providers.SignatureToleran `json:"signature,omitempty"`
 
 	// image
 	Source *imageSource `json:"source,omitempty"`
@@ -384,7 +384,7 @@ func (p *Provider) blocksFor(m *providers.Message) (string, []block, error) {
 			blocks = append([]block{{
 				Type:      blockThinking,
 				Thinking:  m.ReasoningContent,
-				Signature: m.ReasoningSignature,
+				Signature: providers.SignatureToleran(m.ReasoningSignature),
 			}}, blocks...)
 		}
 		for i := range m.ToolCalls {
@@ -736,7 +736,7 @@ func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatRespo
 		case blockThinking:
 			reasoning.WriteString(b.Thinking)
 			jumlahThinking++
-			signature = b.Signature
+			signature = string(b.Signature)
 		case blockRedactedThink:
 			// Muatannya terenkripsi dan hanya berguna bila dikirim balik ke Anthropic;
 			// tidak ada yang bisa ditampilkan ke klien.

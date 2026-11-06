@@ -695,7 +695,9 @@ export const api = {
       }),
     setProviders: (id: string, data: { provider_ids: string[]; weights: Record<string, number> }) =>
       request<RoutingRule>(`/api/admin/gateway/routing-rules/${encodeURIComponent(id)}/providers`, {
-        method: 'PUT',
+        // Backend hanya mendaftarkan POST untuk rute ini (B-223): PUT
+        // membuat tombol "Simpan Providers" selalu gagal 405.
+        method: 'POST',
         body: JSON.stringify(data),
       }),
   },

@@ -41,6 +41,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -140,12 +141,26 @@ type alatResponses struct {
 	Strict      *bool           `json:"strict"`
 }
 
+// pesanDecodeResponses membersihkan kesalahan unmarshal body Responses
+// sebelum sampai ke klien (B-253): kesalahan encoding/json menyebut nama
+// struct Go ("Go struct field bentukPermintaanResponses...") dan detail
+// stdlib lain yang merupakan jeroan implementasi. Yang boleh tahu klien
+// hanyalah nama field dalam ejaan JSON-nya dan fakta tipenya tak cocok —
+// pola yang sama seperti pesanDecodeAnthropic di permukaan Messages.
+func pesanDecodeResponses(err error) error {
+	var ute *json.UnmarshalTypeError
+	if errors.As(err, &ute) && ute.Field != "" {
+		return tolakResponses("field '" + ute.Field + "' memiliki tipe yang tidak sesuai")
+	}
+	return tolakResponses("body bukan JSON yang sah")
+}
+
 // uraiPermintaanResponses menerjemahkan body Responses API menjadi
 // ChatRequest kanonik. Penolakan eksplisit untuk semua yang di luar subset.
 func uraiPermintaanResponses(body []byte) (*providers.ChatRequest, error) {
 	var b bentukPermintaanResponses
 	if err := json.Unmarshal(body, &b); err != nil {
-		return nil, tolakResponses("body bukan JSON yang sah: " + err.Error())
+		return nil, pesanDecodeResponses(err)
 	}
 	if b.Stream {
 		return nil, &kekeliruanResponses{

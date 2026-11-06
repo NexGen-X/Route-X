@@ -108,6 +108,22 @@ func DecodeChatRequest(body []byte) (*providers.ChatRequest, error) {
 			return nil, err
 		}
 	}
+	// Validasi rentang (B-171): nilai di luar rentang kontrak ditolak
+	// lokal di sini, bukan diteruskan untuk ditolak upstream —
+	// penolakan upstream lebih lambat, tercatat sebagai kegagalan
+	// provider, dan mencemari pemutus arus. Permukaan Anthropic sudah
+	// menolak max_tokens <= 0 secara lokal; permukaan OpenAI dan
+	// Responses menyamakan lewat blok ini dan pasangannya di
+	// uraiPermintaanResponses.
+	if out.MaxTokens != nil && *out.MaxTokens <= 0 {
+		return nil, fmt.Errorf("field %s harus lebih besar dari 0", kutip(fMaxTokens))
+	}
+	if out.Temperature != nil && (*out.Temperature < 0 || *out.Temperature > 2) {
+		return nil, fmt.Errorf("field %s harus antara 0 dan 2", kutip(fTemperature))
+	}
+	if out.TopP != nil && (*out.TopP < 0 || *out.TopP > 1) {
+		return nil, fmt.Errorf("field %s harus antara 0 dan 1", kutip(fTopP))
+	}
 	if raw, ok := ambil(fields, fStop); ok {
 		if out.Stop, err = uraikanStop(raw); err != nil {
 			return nil, err

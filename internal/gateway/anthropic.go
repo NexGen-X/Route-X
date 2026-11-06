@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/NexGen-X/Route-X/internal/apikey"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/providers"
@@ -959,6 +960,10 @@ func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
 // TAKSIRAN, sama seperti yang dijanjikan nama endpoint-nya, dan model yang
 // tidak dikenal tetap ditolak — menghitung token untuk model hantu hanya
 // mengarang angka.
+//
+// Dua koreksi B-170: rutenya tinggal di luar grup pembatas laju (lihat
+// Routes — ia tidak menyentuh upstream, jadi tidak boleh membakar kuota
+// laju key), dan izin model pada key diperiksa seperti jalur chat.
 func (h *Handlers) AnthropicCountTokens(w http.ResponseWriter, r *http.Request) {
 	tangkap := penangkapBaru()
 	body, ok := h.bacaBody(tangkap, r)
@@ -971,7 +976,18 @@ func (h *Handlers) AnthropicCountTokens(w http.ResponseWriter, r *http.Request) 
 		writeAnthropicError(w, http.StatusBadRequest, httpx.ErrTypeInvalidRequest, err.Error())
 		return
 	}
-	if _, ok := h.selesaikanModel(tangkap, r, req.Model); !ok {
+	model, ok := h.selesaikanModel(tangkap, r, req.Model)
+	if !ok {
+		teruskanSebagaiErrorAnthropic(w, tangkap)
+		return
+	}
+	// Izin model diperiksa persis seperti jalur chat (B-170): endpoint ini
+	// luput sebelumnya karena dianggap remeh, sehingga key yang dibatasi
+	// model tetap bisa memastikan model terlarangnya ada beserta taksiran
+	// tokennya. Penolakan ditulis ke penangkap supaya envelope-nya tetap
+	// Anthropic, sama seperti penolakan resolusi di atas.
+	p, _ := apikey.PrincipalFrom(r.Context())
+	if !h.izinModel(tangkap, r, p, model) {
 		teruskanSebagaiErrorAnthropic(w, tangkap)
 		return
 	}

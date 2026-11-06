@@ -132,6 +132,28 @@ type OAuthRefresher interface {
 	RefreshProvider(ctx context.Context, providerID string) error
 }
 
+// AuthFailureReporter mencatat satu kegagalan autentikasi yang benar-benar
+// diamati pada sebuah kredensial. Dipenuhi *upstream.CredentialRepo
+// (MarkAuthFailure menaikkan penghitung auth_failures yang memengaruhi
+// urutan pemilihan kredensial non-priority).
+//
+// Dipasang lewat WithAuthFailureReporter dengan alasan yang sama seperti
+// OAuthRefresher: memasangnya MENGUBAH perilaku jalur request (penolakan
+// upstream kini menulis ke database), dan perubahan seperti itu harus
+// terlihat di tempat perakitannya (B-210).
+type AuthFailureReporter interface {
+	MarkAuthFailure(ctx context.Context, id string) (int, error)
+}
+
+// OAuthCredentialRefresher memaksa refresh sesi OAuth yang terikat pada
+// SATU kredensial, tanpa memandang masa berlakunya. Dipenuhi
+// *worker.PenyegarOAuth. Berbeda dari OAuthRefresher yang berbasis ambang
+// kedaluwarsa: token yang dicabut penyedia jauh sebelum kedaluwarsa lokal
+// tidak akan pernah disentuh penyegar berbasis ambang (B-210).
+type OAuthCredentialRefresher interface {
+	RefreshKredensial(ctx context.Context, providerID, credentialID string) error
+}
+
 // CodeAssistProjectResolver menyelesaikan project Code Assist milik
 // kredensial yang akan dipakai, menyimpannya pada sesi OAuth, dan
 // mengembalikannya untuk diteruskan ke adapter Antigravity. Dipenuhi
@@ -164,6 +186,22 @@ type Factory struct {
 	// yang bisa dipakai. nil berarti perilaku lama: kegagalan itu final
 	// sampai worker berkala memulihkannya.
 	penyegar OAuthRefresher
+
+	// pelaporAuth dan penyegarKred menutup lingkaran umpan balik penolakan
+	// auth (B-210): adapter yang ditolak upstream (ErrKindAuth) mencatatkan
+	// kegagalan itu pada kredensialnya dan memicu refresh paksa sesi
+	// OAuth-nya. Keduanya nil berarti perilaku lama: penolakan hanya
+	// terlihat sebagai failover, tanpa akibat apa pun pada kredensial.
+	pelaporAuth  AuthFailureReporter
+	penyegarKred OAuthCredentialRefresher
+
+	// gerbangAuth adalah waktu pemicu terakhir per kredensial untuk
+	// lingkaran B-210. Satu penolakan yang dicatat + satu refresh per
+	// jendela jedaPemicuRefreshAuth; penolakan berikutnya di jendela yang
+	// sama diabaikan agar upstream yang sedang rusak tidak mengubah setiap
+	// permintaan menjadi penulisan DB + panggilan refresh.
+	gerbangMu   sync.Mutex
+	gerbangAuth map[string]time.Time
 
 	// penyelesaiProject menyelesaikan project Code Assist untuk adapter
 	// Antigravity (B-157). nil berarti adapter dibangun tanpa project —
@@ -237,6 +275,29 @@ func WithOAuthRefresher(r OAuthRefresher) FactoryOption {
 	}
 }
 
+// WithAuthFailureReporter memasang pencatat kegagalan auth kredensial
+// (B-210): penolakan upstream berkelas ErrKindAuth yang diamati adapter
+// kini menaikkan auth_failures kredensial itu — penghitung yang memang
+// sudah memengaruhi urutan pemilihan Active tetapi sebelumnya tidak punya
+// satu pun pemanggil produksi, sehingga urutannya tidak pernah bergerak.
+func WithAuthFailureReporter(r AuthFailureReporter) FactoryOption {
+	return func(f *Factory) {
+		f.pelaporAuth = r
+	}
+}
+
+// WithOAuthCredentialRefresher memasang pemicu refresh paksa per
+// kredensial (B-210): penolakan auth pertama pada sebuah kredensial di
+// luar jendela jeda memicu refresh sesi OAuth yang terikat padanya, agar
+// percobaan berikutnya — yang memilih kredensial lewat Active lagi dan
+// mendapat kunci cache baru dari rahasia baru — memakai access token
+// segar, bukan menunggu kedaluwarsa lokal atau worker berkala.
+func WithOAuthCredentialRefresher(r OAuthCredentialRefresher) FactoryOption {
+	return func(f *Factory) {
+		f.penyegarKred = r
+	}
+}
+
 // WithCodeAssistProjectResolver memasang resolusi project Code Assist di
 // jalur konstruksi adapter Antigravity (B-157): sebelum adapter Google
 // untuk target Antigravity dibangun, factory meminta project milik
@@ -299,12 +360,13 @@ func NewFactory(
 		logger = slog.Default()
 	}
 	f := &Factory{
-		creds:  creds,
-		egress: egress,
-		policy: policy,
-		logger: logger,
-		maks:   defaultAdapterCacheSize,
-		cache:  make(map[string]*entriAdapter),
+		creds:       creds,
+		egress:      egress,
+		policy:      policy,
+		logger:      logger,
+		maks:        defaultAdapterCacheSize,
+		cache:       make(map[string]*entriAdapter),
+		gerbangAuth: make(map[string]time.Time),
 	}
 	for _, o := range opts {
 		o(f)
@@ -404,7 +466,7 @@ func (f *Factory) ProviderForTarget(ctx context.Context, t ProviderTarget) (prov
 	kunci := kunciAdapterTarget(t, cred, proxy, project)
 	if p, ok := f.dariCache(kunci); ok {
 		f.tandaiPemakaian(cred)
-		return p, nil
+		return f.bungkusPenjagaAuth(p, t, cred), nil
 	}
 
 	p, err := f.buatTarget(ctx, t, cred, proxy, project)
@@ -412,7 +474,133 @@ func (f *Factory) ProviderForTarget(ctx context.Context, t ProviderTarget) (prov
 		return nil, err
 	}
 	f.tandaiPemakaian(cred)
-	return f.keCache(kunci, p), nil
+	return f.bungkusPenjagaAuth(f.keCache(kunci, p), t, cred), nil
+}
+
+// jedaPemicuRefreshAuth adalah jendela penahan lingkaran umpan balik
+// B-210 per kredensial: di dalam jendela ini hanya penolakan auth pertama
+// yang mencatatkan kegagalan + memicu refresh.
+const jedaPemicuRefreshAuth = 30 * time.Second
+
+// bungkusPenjagaAuth membungkus adapter dengan penjaga auth bila lingkaran
+// B-210 terpasang dan adapter ini dibangun dari kredensial konkret. Cache
+// tetap menyimpan adapter MENTAH: pembungkus membawa target + kredensial
+// pemanggil saat ini, jadi ia disusun per pengembalian, bukan per entri
+// cache.
+func (f *Factory) bungkusPenjagaAuth(p providers.Provider, t ProviderTarget, cred *upstream.ActiveCredential) providers.Provider {
+	if p == nil || cred == nil || cred.ID == "" {
+		return p
+	}
+	if f.pelaporAuth == nil && f.penyegarKred == nil {
+		return p
+	}
+	return &providerPenjagaAuth{Provider: p, pabrik: f, target: t, cred: cred}
+}
+
+// catatKegagalanAuth menjalankan dua akibat penolakan auth yang diamati:
+// catat kegagalannya pada kredensial, lalu picu refresh paksa sesi
+// OAuth-nya. Keduanya best-effort dan sinkron di jalur langka ini —
+// kegagalannya hanya tercatat di log, tidak pernah mengubah hasil
+// permintaan — dan keduanya ditahan gerbang per kredensial agar penolakan
+// beruntun di jendela yang sama tidak berlipat menjadi penulisan DB +
+// panggilan refresh per permintaan.
+func (f *Factory) catatKegagalanAuth(ctx context.Context, t ProviderTarget, cred *upstream.ActiveCredential) {
+	if cred == nil || cred.ID == "" {
+		return
+	}
+	f.gerbangMu.Lock()
+	if f.gerbangAuth == nil {
+		f.gerbangAuth = make(map[string]time.Time)
+	}
+	if terakhir, ada := f.gerbangAuth[cred.ID]; ada && time.Since(terakhir) < jedaPemicuRefreshAuth {
+		f.gerbangMu.Unlock()
+		return
+	}
+	f.gerbangAuth[cred.ID] = time.Now()
+	f.gerbangMu.Unlock()
+
+	if f.pelaporAuth != nil {
+		if _, err := f.pelaporAuth.MarkAuthFailure(ctx, cred.ID); err != nil {
+			f.logger.WarnContext(ctx, "gagal mencatat kegagalan auth kredensial",
+				"credential_id", cred.ID, "provider_id", t.ID, "error", err)
+		}
+	}
+	if f.penyegarKred != nil {
+		if err := f.penyegarKred.RefreshKredensial(ctx, t.ID, cred.ID); err != nil {
+			f.logger.WarnContext(ctx, "refresh paksa kredensial sesudah penolakan auth gagal",
+				"credential_id", cred.ID, "provider_id", t.ID, "error", err)
+		}
+	}
+}
+
+// providerPenjagaAuth adalah pembungkus adapter untuk lingkaran umpan
+// balik B-210. Sebelumnya penolakan auth dari upstream (401 pada access
+// token OAuth yang dicabut penyedia jauh sebelum kedaluwarsa lokal) tidak
+// berakibat apa pun: refresh on-demand hanya terpicu saat Active tidak
+// menemukan kredensial, dan MarkAuthFailure tidak punya pemanggil
+// produksi — jadi token mati yang sama dipilih lagi dan lagi sampai
+// kedaluwarsa lokalnya tiba. Pembungkus ini mengamati error berkelas
+// ErrKindAuth dari panggilan inferensi dan menyerahkannya ke
+// Factory.catatKegagalanAuth.
+//
+// Hanya permukaan inferensi yang diamati (ChatCompletion,
+// ChatCompletionStream termasuk error di tengah arus, Embeddings).
+// HealthCheck dan Models sengaja TIDAK dibungkus: health checker berjalan
+// berkala di luar jalur permintaan dan penolakan di sana tidak boleh
+// memicu refresh per kredensial.
+type providerPenjagaAuth struct {
+	providers.Provider
+	pabrik *Factory
+	target ProviderTarget
+	cred   *upstream.ActiveCredential
+}
+
+func (p *providerPenjagaAuth) cekAuth(ctx context.Context, err error) {
+	if err == nil {
+		return
+	}
+	if pe := providers.AsError(err); pe != nil && pe.Kind == providers.ErrKindAuth {
+		p.pabrik.catatKegagalanAuth(ctx, p.target, p.cred)
+	}
+}
+
+func (p *providerPenjagaAuth) ChatCompletion(ctx context.Context, req *providers.ChatRequest) (*providers.ChatResponse, error) {
+	resp, err := p.Provider.ChatCompletion(ctx, req)
+	p.cekAuth(ctx, err)
+	return resp, err
+}
+
+func (p *providerPenjagaAuth) ChatCompletionStream(ctx context.Context, req *providers.ChatRequest) (providers.Stream, error) {
+	arus, err := p.Provider.ChatCompletionStream(ctx, req)
+	if err != nil {
+		p.cekAuth(ctx, err)
+		return nil, err
+	}
+	return &arusPenjagaAuth{Stream: arus, penjaga: p}, nil
+}
+
+func (p *providerPenjagaAuth) Embeddings(ctx context.Context, req *providers.EmbeddingsRequest) (*providers.EmbeddingsResponse, error) {
+	resp, err := p.Provider.Embeddings(ctx, req)
+	p.cekAuth(ctx, err)
+	return resp, err
+}
+
+// arusPenjagaAuth meneruskan Recv arus asli dan melaporkan error auth
+// yang muncul di tengah arus (mis. token dicabut sesudah arus dibuka).
+// Stream.Recv tidak menerima context, jadi pelaporan memakai context
+// latar — pekerjaan laporannya (satu penulisan DB + satu refresh yang
+// ditahan gerbang) tidak bergantung pada context permintaan.
+type arusPenjagaAuth struct {
+	providers.Stream
+	penjaga *providerPenjagaAuth
+}
+
+func (a *arusPenjagaAuth) Recv() (*providers.StreamEvent, error) {
+	ev, err := a.Stream.Recv()
+	if err != nil {
+		a.penjaga.cekAuth(context.Background(), err)
+	}
+	return ev, err
 }
 
 // Provider mengembalikan adapter siap pakai untuk kandidat ini.

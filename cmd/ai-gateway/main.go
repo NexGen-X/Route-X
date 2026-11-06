@@ -544,6 +544,11 @@ func buildGatewaySurface(
 	factory := gateway.NewFactory(creds, egress, cfg.UpstreamSSRFPolicy(), logger,
 		gateway.WithCredentialUseMarker(creds),
 		gateway.WithOAuthRefresher(penyegarOAuth),
+		// Lingkaran umpan balik penolakan auth (B-210): adapter yang
+		// ditolak upstream mencatatkan kegagalan auth pada kredensialnya
+		// dan memicu refresh paksa sesi OAuth kredensial itu.
+		gateway.WithAuthFailureReporter(creds),
+		gateway.WithOAuthCredentialRefresher(penyegarOAuth),
 		// Project Code Assist untuk adapter Antigravity (B-157): resolusi
 		// + backfill malas lewat instance penyegar yang sama.
 		gateway.WithCodeAssistProjectResolver(penyegarOAuth),

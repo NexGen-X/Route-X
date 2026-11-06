@@ -2,11 +2,13 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/upstream"
 	"github.com/NexGen-X/Route-X/internal/oauth"
 )
@@ -108,4 +110,46 @@ func (p *PenyegarOAuth) RefreshProvider(ctx context.Context, providerID string) 
 			"session_id", m.ID, "provider_id", providerID)
 	}
 	return nil
+}
+
+// RefreshKredensial memaksa refresh sesi OAuth yang terikat pada satu
+// kredensial, TANPA memandang masa berlakunya (B-210).
+//
+// Inilah potongan yang hilang dari lingkaran penolakan auth: RefreshProvider
+// berbasis ambang kedaluwarsa, jadi access token yang dicabut penyedia jauh
+// sebelum kedaluwarsa lokalnya tidak akan pernah direfresh olehnya — token
+// mati itu dipilih lagi dan lagi sampai jam lokalnya habis. Pemanggilnya
+// adalah Factory lewat WithOAuthCredentialRefresher, tepat sesudah upstream
+// menolak kredensial itu dengan kesalahan auth.
+//
+// Kredensial tanpa sesi OAuth (API key biasa), sesi nonaktif, atau sesi
+// milik provider lain adalah no-op tanpa error: ketiganya memang tidak
+// punya apa pun untuk direfresh. Kunci advisory yang sama dengan refresh
+// lain menjaga tidak ada dua refresh berjalan bersamaan; bila kunci sedang
+// dipegang, panggilan ini menyerah tanpa error.
+func (p *PenyegarOAuth) RefreshKredensial(ctx context.Context, providerID, credentialID string) error {
+	unlock, ok, err := TryAdvisoryLock(ctx, p.pool, LockOAuthRefresh)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	defer unlock()
+
+	meta, err := p.oauthRepo.GetSessionByCredentialID(ctx, credentialID)
+	if err != nil {
+		if errors.Is(err, repo.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if !meta.Enabled || meta.ProviderID != providerID {
+		return nil
+	}
+	sess, err := p.oauthRepo.GetActiveSession(ctx, meta.ID)
+	if err != nil {
+		return err
+	}
+	return RefreshSesiOAuth(ctx, p.deps, sess)
 }

@@ -34,20 +34,25 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
         {/* Kiri: Status Dot, Minimal Label & Telemetry Summary Strip */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0">
+          {/* B-285: status menghormati keadaan muat — selama muatan
+              pertama (loadError masih null, data belum tiba) hero
+              TIDAK boleh mengklaim "Beroperasi" dengan titik emerald;
+              klaim sehat hanya dari data yang benar-benar tiba.
+              Pola yang sama dengan strip KPI B-228. */}
           <div
             role="status"
             aria-live="polite"
             className={`inline-flex items-center gap-2 text-xs font-medium shrink-0 ${
-              loadError ? 'text-rose-400' : 'text-emerald-400'
+              loadError ? 'text-rose-400' : isLoading ? 'text-text-muted' : 'text-emerald-400'
             }`}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                loadError ? 'bg-rose-500' : 'bg-emerald-500'
+                loadError ? 'bg-rose-500' : isLoading ? 'bg-text-muted' : 'bg-emerald-500'
               }`}
               aria-hidden="true"
             />
-            <span>{loadError ? 'Gateway Tidak Tersedia' : 'Beroperasi'}</span>
+            <span>{loadError ? 'Gateway Tidak Tersedia' : isLoading ? 'Memuat Status…' : 'Beroperasi'}</span>
           </div>
 
           <h2 className="text-xs sm:text-sm font-medium text-text-secondary tracking-tight shrink-0">
@@ -61,7 +66,10 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
             <span className="inline-flex items-center gap-1.5">
               <Shield className="w-3.5 h-3.5 text-text-muted inline" aria-hidden="true" />
               <span>
-                <span className="text-text-primary font-medium">{healthyProvidersCount}/{totalProvidersCount}</span> upstream sehat
+                {/* B-285: "0/0 upstream sehat" selama muatan pertama
+                    adalah angka karangan — tampilkan penanda belum
+                    terukur sampai data pertama benar-benar tiba. */}
+                <span className="text-text-primary font-medium">{isLoading ? '—' : `${healthyProvidersCount}/${totalProvidersCount}`}</span> upstream sehat
               </span>
             </span>
 
@@ -70,7 +78,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
             <span className="inline-flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-text-muted inline" aria-hidden="true" />
               <span>
-                <span className="text-text-primary font-medium">{overview?.in_flight_requests ?? 0}</span> in-flight
+                <span className="text-text-primary font-medium">{isLoading ? '—' : (overview?.in_flight_requests ?? 0)}</span> in-flight
               </span>
             </span>
 

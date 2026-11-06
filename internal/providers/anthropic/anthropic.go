@@ -25,6 +25,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -434,40 +435,67 @@ func (p *Provider) Embeddings(_ context.Context, _ *providers.EmbeddingsRequest)
 		"Anthropic tidak menyediakan API embeddings; arahkan model embedding ke provider yang mendukungnya (mis. OpenAI atau Google)")
 }
 
+// maksHalamanModels membatasi paginasi daftar model (B-264): kursor yang
+// tidak pernah habis dari upstream/proksi yang rusak tidak boleh membuat
+// sinkronisasi katalog berputar selamanya. Angka yang sama dipakai
+// discovery admin (maksHalamanDiscovery).
+const maksHalamanModels = 100
+
 // Models mengambil daftar model dari GET /v1/models.
 func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 	// limit=1000 adalah batas maksimum Anthropic. Bawaannya hanya 20, dan daftar yang
 	// terpotong akan tampak seperti model yang hilang bagi operator.
-	resp, err := p.do(ctx, p.client, http.MethodGet, p.endpoint("/v1/models")+"?limit=1000", nil, "application/json")
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	raw, err := p.readAll(resp)
-	if err != nil {
-		return nil, err
-	}
-	var payload struct {
-		Data []struct {
-			ID        string `json:"id"`
-			CreatedAt string `json:"created_at"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, providers.Newf(providers.ErrKindServer, p.name, "daftar model Anthropic tidak bisa diurai")
-	}
-
-	out := make([]providers.ModelInfo, 0, len(payload.Data))
-	for _, m := range payload.Data {
-		if m.ID == "" {
-			continue
+	//
+	// Daftar diikuti sampai habis lewat kursor after_id (B-264): sebelumnya
+	// hanya halaman pertama yang dibaca — has_more/last_id diabaikan — jadi
+	// katalog yang melebihi satu halaman terpotong diam-diam. ID
+	// dideduplikasi lintas halaman; kemunculan pertama menang.
+	var out []providers.ModelInfo
+	dilihat := make(map[string]bool)
+	afterID := ""
+	for halaman := 0; ; halaman++ {
+		if halaman >= maksHalamanModels {
+			return nil, providers.Newf(providers.ErrKindServer, p.name,
+				"daftar model Anthropic tidak habis sesudah %d halaman", maksHalamanModels)
 		}
-		info := providers.ModelInfo{ID: m.ID, OwnedBy: providers.KindAnthropic}
-		info.Created = parseWaktuModel(m.CreatedAt)
-		out = append(out, info)
+		u := p.endpoint("/v1/models") + "?limit=1000"
+		if afterID != "" {
+			u += "&after_id=" + url.QueryEscape(afterID)
+		}
+		resp, err := p.do(ctx, p.client, http.MethodGet, u, nil, "application/json")
+		if err != nil {
+			return nil, err
+		}
+		raw, err := p.readAll(resp)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		var payload struct {
+			Data []struct {
+				ID        string `json:"id"`
+				CreatedAt string `json:"created_at"`
+			} `json:"data"`
+			HasMore bool   `json:"has_more"`
+			LastID  string `json:"last_id"`
+		}
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return nil, providers.Newf(providers.ErrKindServer, p.name, "daftar model Anthropic tidak bisa diurai")
+		}
+		for _, m := range payload.Data {
+			if m.ID == "" || dilihat[m.ID] {
+				continue
+			}
+			dilihat[m.ID] = true
+			info := providers.ModelInfo{ID: m.ID, OwnedBy: providers.KindAnthropic}
+			info.Created = parseWaktuModel(m.CreatedAt)
+			out = append(out, info)
+		}
+		if !payload.HasMore || payload.LastID == "" {
+			return out, nil
+		}
+		afterID = payload.LastID
 	}
-	return out, nil
 }
 
 // parseWaktuModel mengurai created_at daftar model Anthropic.

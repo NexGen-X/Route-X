@@ -40,12 +40,21 @@ func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 
 	// Daftar kosong bukan kegagalan: provider yang belum mengaktifkan satu pun model
 	// memang menjawab begitu, dan pemanggil membedakannya dari galat lewat error nil.
+	//
+	// ID dideduplikasi (B-264): sebagian gateway berdialek OpenAI mengulang
+	// model yang sama dalam satu daftar, dan duplikat yang lolos menjadi
+	// baris katalog ganda di hilir. Kemunculan pertama menang. API daftar
+	// model OpenAI sendiri tidak punya kursor/halaman — responsnya satu
+	// daftar utuh — jadi di sini tidak ada paginasi yang bisa diikuti,
+	// tidak seperti adapter Anthropic dan Google.
+	dilihat := make(map[string]bool, len(wire.Data))
 	out := make([]providers.ModelInfo, 0, len(wire.Data))
 	for _, m := range wire.Data {
-		if m.ID == "" {
+		if m.ID == "" || dilihat[m.ID] {
 			// Entri tanpa id tidak bisa dipakai untuk apa pun.
 			continue
 		}
+		dilihat[m.ID] = true
 		out = append(out, providers.ModelInfo{ID: m.ID, OwnedBy: m.OwnedBy, Created: m.Created})
 	}
 	return out, nil

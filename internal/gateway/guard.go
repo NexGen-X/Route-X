@@ -251,6 +251,41 @@ func (g *Guard) KembalikanKuota(ctx context.Context, p *apikey.Principal, ip net
 		return
 	}
 	g.limiter.RefundRequest(ctx, p, ip)
+	// Cakupan model tidak dikenal resolver principal, jadi RefundRequest
+	// tidak pernah menyentuhnya (B-254): kenaikan dari PeriksaBatasModel
+	// dibatalkan terpisah dari tanda yang ditanam kebijakan saat batas
+	// model lolos. Cakupan disusun ulang dari mesin kebijakan yang sama
+	// persis seperti saat kenaikannya, supaya jendelanya identik.
+	if modelID := KuotaModelTerbakar(ctx); modelID != "" && g.rates != nil {
+		scopes := g.rates.Requests(ctx, []policy.Target{{Scope: policy.ScopeModel, ID: modelID}}, apikey.Limits{})
+		g.limiter.RefundScopes(ctx, scopes)
+	}
+}
+
+// kunciKuotaModel adalah kunci context untuk tanda bahwa batas cakupan
+// model sudah dinaikkan bagi satu permintaan (B-254).
+type kunciKuotaModel struct{}
+
+// TandaiKuotaModel menanam tanda pada context bahwa PeriksaBatasModel sudah
+// menaikkan penghitung cakupan model untuk modelID dalam permintaan ini.
+// kebijakan menanamnya lewat mutasi *http.Request yang sama dengan yang
+// dipegang penjaga kuota, supaya KembalikanKuota dapat membatalkan kenaikan
+// itu ketika permintaan akhirnya ditolak sebelum dilayani.
+func TandaiKuotaModel(ctx context.Context, modelID string) context.Context {
+	if ctx == nil || modelID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, kunciKuotaModel{}, modelID)
+}
+
+// KuotaModelTerbakar mengembalikan ID model yang penghitung cakupan
+// modelnya sudah dinaikkan dalam permintaan ini, atau "" bila belum ada.
+func KuotaModelTerbakar(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	id, _ := ctx.Value(kunciKuotaModel{}).(string)
+	return id
 }
 
 // ProviderDilarang melaporkan apakah satu provider dilarang penyaring konten.

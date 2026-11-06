@@ -927,6 +927,7 @@ func kandidatAnthropicSaja(cands []*upstream.RouteCandidate) []*upstream.RouteCa
 
 // AnthropicMessages melayani POST /v1/messages untuk Anthropic Messages API (Claude Code, dll).
 func (h *Handlers) AnthropicMessages(w http.ResponseWriter, r *http.Request) {
+	h.pasangMemoBatas(r)
 	j, w := h.mulaiJejak(w, r)
 	defer j.selesai(r.Context())
 

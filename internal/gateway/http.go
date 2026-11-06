@@ -503,6 +503,13 @@ func (h *Handlers) kebijakan(
 		rj.Tulis(w, r)
 		return false
 	}
+	// B-254: batas model LOLOS berarti penghitung cakupan model sudah
+	// naik. Bila tahap sesudah ini menolak (anggaran, gerbang token) —
+	// atau persiapan sesudah kebijakan gagal — penjaga kuota membatalkan
+	// kenaikan itu; tandanya ditanam pada *r yang sama dengan yang
+	// dipegang penjaga kuota, karena RefundRequest-nya resolver tidak
+	// mengenal cakupan model.
+	*r = *r.WithContext(TandaiKuotaModel(r.Context(), model.ID))
 	if rj := h.guard.PeriksaAnggaranDenganReservasi(r.Context(), targets, estimasi); rj != nil {
 		rj.Tulis(w, r)
 		return false
@@ -1394,7 +1401,27 @@ func (j *jagaKuota) tutup() {
 	j.h.guard.KembalikanKuota(j.r.Context(), p, ip)
 }
 
+// pasangMemoBatas menanam memo keputusan batas SATU kali per permintaan
+// (B-256). Desain memo memang "hidup di context permintaan; dipasang
+// handler sebelum Execute/ExecuteStream" — tetapi penanamannya sempat
+// tinggal di titik-titik Execute, dan karena DenganMemoBatas tidak
+// menimpa memo yang sudah ada, setiap Execute berikutnya dalam permintaan
+// yang sama (Execute→ExecuteStream, cascade tingkat/combo yang membungkus
+// context segar) bekerja dengan memo BARU: keputusan batas cakupan
+// provider diperiksa — dan kuotanya termakan — sekali lagi.
+//
+// Penanaman mengganti *r, bukan mengikat ulang variabel lokal, supaya
+// semua pemegang pointer yang sama (penjaga kuota, persiapan, dan tahap
+// lanjutan) membaca context yang sama persis.
+func (h *Handlers) pasangMemoBatas(r *http.Request) {
+	if h.guard == nil || r == nil {
+		return
+	}
+	*r = *r.WithContext(h.guard.DenganMemoBatas(r.Context()))
+}
+
 func (h *Handlers) ChatCompletions(w http.ResponseWriter, r *http.Request) {
+	h.pasangMemoBatas(r)
 	// Jejak dibuat sebelum apa pun dan diserahkan lewat defer, sehingga SETIAP jalan keluar
 	// — termasuk yang belum ada saat baris ini ditulis — menghasilkan satu baris log
 	// request. Writer yang dipakai selanjutnya adalah writer dari jejak, karena itulah yang
@@ -2575,6 +2602,7 @@ func requestID(r *http.Request) string {
 // Tanpa syarat itu, permintaan embedding akan dirutekan ke model chat mana pun yang cocok
 // dan gagal di upstream dengan pesan yang tidak menjelaskan apa pun.
 func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
+	h.pasangMemoBatas(r)
 	j, w := h.mulaiJejak(w, r)
 	defer j.selesai(r.Context())
 

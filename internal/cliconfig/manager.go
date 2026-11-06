@@ -111,11 +111,28 @@ func tulisAtomik(path string, data []byte, perm os.FileMode) error {
 	// target di repo dotfiles tidak pernah terbarui. Dengan menulis
 	// ke target hasil EvalSymlinks, tautan dipertahankan dan berkas
 	// sementara lahir di direktori target yang sama (rename tetap
-	// satu filesystem). Symlink putus (target belum ada) tidak bisa
-	// diselesaikan — EvalSymlinks mengembalikan error dan jalur asal
-	// dipakai apa adanya, sama seperti perilaku lama.
+	// satu filesystem).
 	if resolved, err := filepath.EvalSymlinks(path); err == nil && resolved != path {
 		path = resolved
+	} else if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&os.ModeSymlink != 0 {
+		// B-311: symlink PUTUS tidak bisa diselesaikan EvalSymlinks,
+		// tetapi tautannya sendiri masih menyatakan target yang
+		// dimaksud pengguna. Selesaikan target itu secara leksikal
+		// (relatif terhadap direktori tautan), buat direktori
+		// induknya, lalu tulis ke sana — jangan menimpa tautan
+		// menjadi berkas reguler seperti perilaku lama.
+		target, rerr := os.Readlink(path)
+		if rerr != nil {
+			return rerr
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(path), target)
+		}
+		target = filepath.Clean(target)
+		if merr := os.MkdirAll(filepath.Dir(target), 0755); merr != nil {
+			return merr
+		}
+		path = target
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".routex-tulis-*")
 	if err != nil {
@@ -866,18 +883,26 @@ func susunKontenKeyEnv(perTool map[string]kunciTersimpan) (string, error) {
 	type entriVar struct {
 		nilai string
 		pada  time.Time
+		oleh  string
 	}
 	vars := make(map[string]entriVar)
-	set := func(nama, nilai string, pada time.Time) {
+	set := func(nama, nilai string, pada time.Time, oleh string) {
 		if nama == "" || nilai == "" {
 			return
 		}
-		if lama, ok := vars[nama]; !ok || !pada.Before(lama.pada) {
-			vars[nama] = entriVar{nilai: nilai, pada: pada}
+		// B-320: pemenang ditentukan oleh (waktu, ID tool) secara
+		// leksikografis, bukan urutan iterasi map. Pada timestamp
+		// seri persis, ID tool terbesar menang di semua titik —
+		// variabel bersama dan nama generik tidak bisa memilih
+		// pemenang berbeda hanya karena urutan map berubah.
+		if lama, ok := vars[nama]; !ok || pada.After(lama.pada) ||
+			(pada.Equal(lama.pada) && oleh > lama.oleh) {
+			vars[nama] = entriVar{nilai: nilai, pada: pada, oleh: oleh}
 		}
 	}
 
 	var terbaru *kunciTersimpan
+	terbaruID := ""
 	for toolID, kt := range perTool {
 		kt := kt
 		// Tool yang tidak didukung gateway tidak menyumbang variabel
@@ -889,17 +914,19 @@ func susunKontenKeyEnv(perTool map[string]kunciTersimpan) (string, error) {
 		if !dikenal || def.UnsupportedReason != "" {
 			continue
 		}
-		if terbaru == nil || kt.diperbarui.After(terbaru.diperbarui) {
+		if terbaru == nil || kt.diperbarui.After(terbaru.diperbarui) ||
+			(kt.diperbarui.Equal(terbaru.diperbarui) && toolID > terbaruID) {
 			salin := kt
 			terbaru = &salin
+			terbaruID = toolID
 		}
 		if def, ok := cariToolDef(toolID); ok {
-			set(def.EnvVarAPIKey, kt.kunci, kt.diperbarui)
+			set(def.EnvVarAPIKey, kt.kunci, kt.diperbarui, toolID)
 		}
 	}
 	if terbaru != nil {
 		for _, nama := range namaVarKunciGenerik {
-			set(nama, terbaru.kunci, terbaru.diperbarui)
+			set(nama, terbaru.kunci, terbaru.diperbarui, terbaruID)
 		}
 	}
 
@@ -2130,6 +2157,12 @@ func terapkanPasanganTOML(baris []string, pairs [][2]string) []string {
 // dan model milik Codex sah berada (kunci root SESUDAH seksi bukan
 // lagi tingkat-atas dalam TOML).
 func perbaruiPreambleTOML(existing string, pairs [][2]string) string {
+	// B-310: BOM di awal dokumen dibuang lebih dulu. TrimSpace tidak
+	// membuang BOM, jadi tanpa langkah ini kunci pertama ber-BOM
+	// tidak pernah cocok dengan nama polosnya (duplikat) dan header
+	// seksi pertama tidak terdeteksi sebagai awal seksi (kunci root
+	// baru jatuh ke dalam seksi).
+	existing = strings.TrimPrefix(existing, "\ufeff")
 	baris := strings.Split(existing, "\n")
 	idx := len(baris)
 	for i, l := range baris {
@@ -2160,7 +2193,36 @@ func namaSeksiTOML(baris string) string {
 	if !strings.HasPrefix(l, "[") || strings.HasPrefix(l, "[[") {
 		return ""
 	}
-	tutup := strings.Index(l, "]")
+	// Kurung tutup dicari dengan menghormati segmen terkutip: `]`
+	// di dalam string TOML bukan penutup header.
+	tutup := -1
+	var kutip byte
+	escape := false
+	for i := 1; i < len(l); i++ {
+		c := l[i]
+		if kutip == '"' && escape {
+			escape = false
+			continue
+		}
+		if kutip == '"' && c == '\\' {
+			escape = true
+			continue
+		}
+		if kutip != 0 {
+			if c == kutip {
+				kutip = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' {
+			kutip = c
+			continue
+		}
+		if c == ']' {
+			tutup = i
+			break
+		}
+	}
 	if tutup < 0 {
 		return ""
 	}
@@ -2168,7 +2230,67 @@ func namaSeksiTOML(baris string) string {
 	if sisa != "" && !strings.HasPrefix(sisa, "#") {
 		return ""
 	}
-	return strings.TrimSpace(l[1:tutup])
+	return normalisasiNamaSeksiTOML(l[1:tutup])
+}
+
+// normalisasiNamaSeksiTOML mengubah nama seksi TOML menjadi bentuk
+// titik polos yang dibandingkan penulis (B-309): setiap segmen kunci
+// bertitik boleh ditulis polos, sebagai string dasar ("…"), atau
+// sebagai string literal ('…') — ketiganya menamai tabel yang sama.
+// Titik di dalam segmen terkutip BUKAN pemisah segmen.
+func normalisasiNamaSeksiTOML(nama string) string {
+	var segmen []string
+	var b strings.Builder
+	var kutip byte
+	escape := false
+	flush := func() {
+		seg := strings.TrimSpace(b.String())
+		if len(seg) >= 2 {
+			if seg[0] == '"' && seg[len(seg)-1] == '"' {
+				if uq, err := strconv.Unquote(seg); err == nil {
+					seg = uq
+				} else {
+					seg = seg[1 : len(seg)-1]
+				}
+			} else if seg[0] == '\'' && seg[len(seg)-1] == '\'' {
+				seg = seg[1 : len(seg)-1]
+			}
+		}
+		segmen = append(segmen, seg)
+		b.Reset()
+	}
+	for i := 0; i < len(nama); i++ {
+		c := nama[i]
+		if kutip == '"' && escape {
+			b.WriteByte(c)
+			escape = false
+			continue
+		}
+		if kutip == '"' && c == '\\' {
+			b.WriteByte(c)
+			escape = true
+			continue
+		}
+		if kutip != 0 {
+			b.WriteByte(c)
+			if c == kutip {
+				kutip = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' {
+			kutip = c
+			b.WriteByte(c)
+			continue
+		}
+		if c == '.' {
+			flush()
+			continue
+		}
+		b.WriteByte(c)
+	}
+	flush()
+	return strings.Join(segmen, ".")
 }
 
 // rentangSeksiTOML mencari rentang isi seksi [nama] (indeks baris isi

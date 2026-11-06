@@ -40,6 +40,9 @@ export const CLIIntegrations: React.FC = () => {
   // (sisa V-FF-28): pilihan konfigurasi yang tidak terbaca utuh wajib
   // menampilkan peringatan, bukan tampil seolah lengkap.
   const [sumberTerpotong, setSumberTerpotong] = useState<string[]>([]);
+  // Daftar pendamping yang GAGAL dimuat (B-225) — terpisah dari
+  // penanda terpotong: gagal ≠ terpotong ≠ kosong betulan.
+  const [sumberGagal, setSumberGagal] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [mainTab, setMainTab] = useState<'installed' | 'all'>('installed');
@@ -129,6 +132,16 @@ export const CLIIntegrations: React.FC = () => {
         if (rulesRes.status === 'fulfilled' && rulesRes.value?.terpotong) terpotong.push('aturan routing');
         if (apiKeysRes.status === 'fulfilled' && apiKeysRes.value?.terpotong) terpotong.push('kunci API');
         setSumberTerpotong(terpotong);
+
+        // Kegagalan memuat daftar pendamping harus TERLIHAT (B-225):
+        // versi lama mengubahnya menjadi daftar kosong tanpa jejak,
+        // sehingga pemilih target tampil kosong seolah memang tidak
+        // ada model/aturan/kunci yang terdaftar.
+        const gagal: string[] = [];
+        if (modelsRes.status === 'rejected') gagal.push('model');
+        if (rulesRes.status === 'rejected') gagal.push('aturan routing');
+        if (apiKeysRes.status === 'rejected') gagal.push('kunci API');
+        setSumberGagal(gagal);
 
         const comboOpts = extractDynamicComboOptions(rulesList);
         const initialConfigs: Record<string, ToolConfig> = {};
@@ -455,6 +468,19 @@ export const CLIIntegrations: React.FC = () => {
     <div className="space-y-6">
       {sumberTerpotong.length > 0 && (
         <PeringatanDaftarTerpotong sumber={sumberTerpotong.join(', ')} />
+      )}
+      {sumberGagal.length > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 flex items-center gap-2"
+        >
+          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" aria-hidden="true" />
+          <span>
+            Sebagian data gagal dimuat: {sumberGagal.join(', ')}. Pemilih target untuk sumber tersebut tampil
+            kosong karena datanya tidak termuat — bukan karena datanya tidak ada.
+          </span>
+        </div>
       )}
       <PageHeader
         title="Integrasi CLI & Editor AI"

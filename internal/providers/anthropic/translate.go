@@ -708,6 +708,16 @@ func mapStopReason(reason string) string {
 	}
 }
 
+// pesanKanonikKosong melaporkan apakah pesan kanonik tidak memuat apa
+// pun yang bisa diteruskan ke klien — tanpa teks, tanpa bagian, tanpa
+// tool call, tanpa penalaran, tanpa penolakan, tanpa transkrip audio
+// (B-261). Signature penalaran sendirian BUKAN konten: ia hanya sah
+// menemani teks penalarannya.
+func pesanKanonikKosong(m providers.Message) bool {
+	return m.Content == "" && len(m.Parts) == 0 && len(m.ToolCalls) == 0 &&
+		m.ReasoningContent == "" && m.Refusal == "" && m.AudioTranscript == ""
+}
+
 // toCanonicalResponse menerjemahkan respons Anthropic ke bentuk kanonik.
 func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatResponse {
 	var text, reasoning strings.Builder

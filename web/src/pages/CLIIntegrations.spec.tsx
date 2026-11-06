@@ -231,6 +231,73 @@ describe('CLIIntegrations — Pengujian Unit Dekomposisi', () => {
   });
 });
 
+describe('CLIIntegrations — uji koneksi tanpa model karangan (B-227)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('katalog kosong + tool tanpa target aktif → fetch TIDAK dipanggil dan pesan eksplisit tampil', async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('fetch tidak boleh dipanggil pada jalur B-227');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      // Tool tanpa active_target dan katalog model kosong: tidak ada
+      // satu pun sumber target nyata untuk uji koneksi.
+      vi.mocked(api.cli.detected).mockResolvedValueOnce({
+        ...MOCK_CLI_DATA,
+        total_detected: 1,
+        tools: [{ ...MOCK_CLI_DATA.tools[0], active_target: '' }],
+      });
+      vi.mocked(api.models.listAll).mockResolvedValueOnce({ items: [] });
+
+      render(<CLIIntegrations />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude Code')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTitle(/Uji sambungan inferensi nyata/i));
+
+      expect(
+        await screen.findByText(/belum ada model terdaftar di katalog untuk diuji/i),
+      ).toBeInTheDocument();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('target nyata dari katalog → uji tetap menembak model katalog (bukan literal karangan)', async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: 'x' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      render(<CLIIntegrations />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude Code')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTitle(/Uji sambungan inferensi nyata/i));
+
+      await waitFor(() => {
+        expect(fetchSpy).toHaveBeenCalled();
+      });
+      const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+      const body = JSON.parse(String(init.body));
+      expect(body.model).toBe('gpt-4o');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('CLIIntegrations — kejujuran muatan parsial (B-225)', () => {
   it('daftar model gagal dimuat → peringatan parsial menyebut sumbernya (bukan daftar kosong diam-diam)', async () => {
     vi.mocked(api.models.listAll).mockRejectedValueOnce(new Error('daftar model tidak terjangkau'));

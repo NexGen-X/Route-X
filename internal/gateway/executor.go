@@ -956,7 +956,17 @@ func cobaKandidat[T any](
 		// pihak. Dua keputusan itu berbeda sumbu — failover menyangkut
 		// permintaan ini, pencatatan menyangkut reputasi provider — dan
 		// pengecualian di sini hanya menyangkut sumbu kedua.
-		if a.Err.Kind != providers.ErrKindCanceled && a.Err.Kind != providers.ErrKindInvalidRequest && a.Err.Kind != providers.ErrKindContentFilter && !a.Err.Local {
+		//
+		// ErrKindModelNotFound melengkapi daftar itu (B-168): model yang
+		// tidak dikenal provider ini adalah fakta tentang PERMINTAAN (nama
+		// yang diminta klien tidak ada di katalog provider itu), bukan
+		// tentang kesehatan provider — provider yang sama melayani model
+		// lain dengan sehat. Rentetan permintaan ke model hantu tidak boleh
+		// membuka pemutus arus bagi trafik model yang sah. Seperti
+		// ContentFilter, ia tetap failoverable: provider LAIN mungkin
+		// mengenal modelnya, jadi permintaan ini boleh berpindah — yang
+		// tidak boleh adalah kegagalannya menodai reputasi provider ini.
+		if a.Err.Kind != providers.ErrKindCanceled && a.Err.Kind != providers.ErrKindInvalidRequest && a.Err.Kind != providers.ErrKindContentFilter && a.Err.Kind != providers.ErrKindModelNotFound && !a.Err.Local {
 			e.catat(ctx, c, mk, false, plan.BreakerCfg, probe)
 		}
 

@@ -1059,8 +1059,16 @@ func (h *Handlers) anthropicChatSekali(w http.ResponseWriter, r *http.Request, p
 
 	if out.Err != nil {
 		j.pasangKegagalanUpstream(out.Err)
-		status, errType, _, msg := httpUntuk(providers.AsError(out.Err))
-		writeAnthropicError(w, status, errType, msg)
+		perr := providers.AsError(out.Err)
+		status, _, _, msg := httpUntuk(perr)
+		// Status + pesan dari httpUntuk, tetapi TYPE dari pemeta Anthropic
+		// (B-169): errType httpUntuk adalah kosakata OpenAI —
+		// invalid_request_error untuk model tak dikenal, api_error untuk
+		// auth/permission/quota — yang bukan tipe kontrak Anthropic.
+		// Kegagalan yang sama di tengah aliran sudah memakai pemeta ini;
+		// dua titik pra-aliran ini menyusul supaya satu kegagalan punya
+		// satu type di permukaan ini, fase apa pun ia gagalnya.
+		writeAnthropicError(w, status, tipeErrorAnthropicUntukUpstream(perr), msg)
 		return
 	}
 
@@ -1277,8 +1285,11 @@ func (h *Handlers) anthropicChatMengalir(w http.ResponseWriter, r *http.Request,
 
 	if out.Err != nil {
 		j.pasangKegagalanUpstream(out.Err)
-		status, errType, _, msg := httpUntuk(providers.AsError(out.Err))
-		writeAnthropicError(w, status, errType, msg)
+		perr := providers.AsError(out.Err)
+		status, _, _, msg := httpUntuk(perr)
+		// Type dari pemeta Anthropic, bukan kosakata OpenAI httpUntuk —
+		// lihat catatan B-169 di jalur non-streaming di atas.
+		writeAnthropicError(w, status, tipeErrorAnthropicUntukUpstream(perr), msg)
 		return
 	}
 

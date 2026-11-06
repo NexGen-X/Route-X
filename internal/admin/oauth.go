@@ -103,69 +103,41 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 
 	email := tokenRes.AccountEmail
 	if email == "" {
-		email = "google-account"
+		// B-267: sesi tanpa email terverifikasi TIDAK dibuat. Cadangan
+		// lama "google-account" adalah label bersama — akun kedua yang
+		// id_token-nya tanpa email tidak menabrak unik melainkan MENIMPA
+		// sesi & rahasia akun pertama lewat upsert ON CONFLICT
+		// (konflasi akun senyap). Sejak B-265 identitas hanya datang dari
+		// id_token terverifikasi; ketiadaannya berarti exchange ditolak,
+		// bukan diberi label penimpa.
+		h.gagalHulu(w, r, "penukaran oauth tidak mengembalikan email akun terverifikasi", "oauth_exchange_failed",
+			"Penyedia OAuth tidak mengembalikan email akun yang terverifikasi; sesi tidak dibuat, silakan coba lagi", nil)
+		return
 	}
 	label := "oauth:" + email
 	expiresAt := time.Now().Add(time.Duration(tokenRes.ExpiresIn) * time.Second)
 
-	// Periksa apakah kredensial dengan label yang sama sudah ada pada provider ini.
-	// Error List diteruskan (audit F5): versi lama memperlakukan kegagalan
-	// baca sebagai "belum ada kredensial" dan membuat duplikat.
-	var credID string
-	existingCreds, err := h.credentialRepo.List(ctx, providerID)
-	if err != nil {
-		mapRepoError(w, r, err, "kredensial provider")
-		return
-	}
-	for _, c := range existingCreds {
-		if c.Label == label {
-			credID = c.ID
-			break
-		}
-	}
-
-	if credID != "" {
-		// Update rahasia yang ada
-		if err := h.credentialRepo.UpdateSecret(ctx, credID, tokenRes.AccessToken, &expiresAt); err != nil {
-			mapRepoError(w, r, err, "kredensial provider")
-			return
-		}
-		if poolID != nil {
-			// Pool yang diminta pengguna WAJIB terpasang atau handler gagal
-			// (audit F5): menelannya berarti trafik OAuth keluar lewat
-			// jalur lain dari yang dikonfigurasi, tanpa sinyal apa pun.
-			if err := h.credentialRepo.SetCredentialEgressPool(ctx, credID, poolID); err != nil {
-				mapRepoError(w, r, err, "kredensial provider")
-				return
-			}
-		}
-	} else {
-		// Buat kredensial baru di provider_credentials
-		credMeta, err := h.credentialRepo.Create(ctx, upstream.CreateCredentialParams{
-			ProviderID:   providerID,
-			Label:        label,
-			Secret:       tokenRes.AccessToken,
-			ExpiresAt:    &expiresAt,
-			EgressPoolID: poolID,
-		})
-		if err != nil {
-			mapRepoError(w, r, err, "kredensial provider")
-			return
-		}
-		credID = credMeta.ID
-	}
-
-	// Simpan ke provider_oauth_sessions
-	sessionMeta, err := h.oauthRepo.UpsertSession(ctx, upstream.UpsertOAuthSessionParams{
-		ProviderID:   providerID,
-		CredentialID: credID,
-		AccountEmail: email,
-		AccountName:  &tokenRes.AccountName,
-		Scopes:       tokenRes.Scopes,
-		RefreshToken: tokenRes.RefreshToken,
+	// Simpan kredensial + sesi + sinkronisasi provider dalam SATU
+	// transaksi repo (B-267, pola B-208): kegagalan langkah mana pun
+	// membatalkan semuanya — tidak ada lagi kredensial yatim atau
+	// keadaan separuh "connected sebagian" dari penulisan berurutan.
+	perluSinkron := p.Kind != "google" || !strings.Contains(p.BaseURL, "googleapis.com")
+	_, sessionMeta, err := h.oauthRepo.SimpanHasilExchange(ctx, upstream.SimpanHasilExchangeParams{
+		ProviderID:           providerID,
+		Label:                label,
+		AccountEmail:         email,
+		AccountName:          tokenRes.AccountName,
+		Scopes:               tokenRes.Scopes,
+		AccessToken:          tokenRes.AccessToken,
+		RefreshToken:         tokenRes.RefreshToken,
+		ExpiresAt:            expiresAt,
+		EgressPoolID:         poolID,
+		SinkronisasiProvider: perluSinkron,
+		ProviderKind:         "google",
+		ProviderBaseURL:      "https://generativelanguage.googleapis.com",
 	})
 	if err != nil {
-		mapRepoError(w, r, err, "sesi oauth")
+		mapRepoError(w, r, err, "kredensial provider")
 		return
 	}
 
@@ -186,20 +158,9 @@ func (h *Handlers) exchangeOAuthCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Otomatis sinkronkan kind & base_url ke endpoint resmi Gemini.
-	// Kegagalan dicatat keras (audit F5): sesi sudah tersimpan, jadi handler
-	// tetap "connected", tetapi operator harus tahu sinkronisasi provider
-	// tidak terjadi — bukan ditelan senyap.
-	if p.Kind != "google" || !strings.Contains(p.BaseURL, "googleapis.com") {
-		googleBaseURL := "https://generativelanguage.googleapis.com"
-		googleKind := "google"
-		if _, err := h.providerRepo.Update(ctx, providerID, upstream.UpdateProviderParams{
-			Kind:    &googleKind,
-			BaseURL: &googleBaseURL,
-		}); err != nil {
-			h.logger.ErrorContext(ctx, "gagal menyinkronkan kind/base_url provider google setelah oauth", "provider_id", providerID, "error", err)
-		}
-	}
+	// Sinkronisasi kind & base_url provider ke endpoint resmi Gemini
+	// sudah terjadi di dalam transaksi SimpanHasilExchange di atas
+	// (B-267) — tidak ada lagi langkah tulis terpisah di sini.
 
 	h.writeAudit(ctx, r, "connect_oauth", "provider", providerID, map[string]any{
 		"account_email": email,

@@ -55,6 +55,14 @@ func NewEgressRepo(q repo.Querier, cipher *security.Cipher) (*EgressRepo, error)
 	return &EgressRepo{q: q, cipher: cipher}, nil
 }
 
+// WithQuerier membuat salinan EgressRepo yang berjalan di atas Querier baru
+// (misal transaksi pgx.Tx), pola yang sama dengan repo upstream lain — dipakai
+// handler yang harus menggabungkan mutasi egress dengan audit dalam satu
+// transaksi (B-270).
+func (r *EgressRepo) WithQuerier(q repo.Querier) *EgressRepo {
+	return &EgressRepo{q: q, cipher: r.cipher}
+}
+
 // egressColumns tidak memuat proxy_url_encrypted.
 const egressColumns = `
 	id::text, name, kind, description, masked_hint, encryption_key_id,

@@ -93,8 +93,14 @@ func SupportedTools() []ToolDef {
 			BinaryNames: []string{"github-copilot-cli", "copilot"},
 			// B-128: CLI generasi kini memakai $COPILOT_HOME (bawaan
 			// $HOME/.copilot), bukan hosts.json generasi lama.
-			ConfigPaths: []string{".copilot"},
-			VersionArg:  "--version",
+			// B-219: ConfigPaths SENGAJA kosong — Configure copilot
+			// murni env (BYOK di bawah) dan produk tidak menulis/
+			// mengelola berkas apa pun di $COPILOT_HOME; mendaftarkan
+			// ".copilot" di sini membuat Scan/Configure melaporkan
+			// DIREKTORI itu sebagai config_file/config_path, padahal
+			// cariConfigPath hanya memeriksa keberadaan jalur, bukan
+			// berkas konfigurasi yang benar-benar dikelola.
+			VersionArg: "--version",
 			// B-128: jalur resmi ke gateway adalah mode BYOK
 			// COPILOT_PROVIDER_* (dari `copilot help environment`);
 			// GITHUB_COPILOT_* warisan adalah rekaan yang tidak dibaca

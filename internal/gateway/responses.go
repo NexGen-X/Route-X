@@ -765,7 +765,11 @@ func (h *Handlers) responsesSekali(w http.ResponseWriter, r *http.Request, pr *p
 			j.tandaiCacheHit()
 			w.Header().Set("X-RouteX-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(entry.Raw)
+			if _, err := w.Write(entry.Raw); err != nil {
+				// B-459: gagal menulis jawaban HIT tetap kegagalan
+				// pengiriman, bukan sukses.
+				j.tandaiGagalTulis()
+			}
 			return
 		}
 	}
@@ -851,7 +855,10 @@ func (h *Handlers) responsesSekali(w http.ResponseWriter, r *http.Request, pr *p
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-RouteX-Cache", "MISS")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(buf)
+	if _, err := w.Write(buf); err != nil {
+		// B-459: pengiriman gagal tidak tercatat sukses.
+		j.tandaiGagalTulis()
+	}
 
 	if cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() {
 		// B-473: penanaman membawa cap generasi dari saat kunci dihitung

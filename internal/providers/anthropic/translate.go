@@ -55,6 +55,23 @@ type block struct {
 	Thinking  string                     `json:"thinking,omitempty"`
 	Signature providers.SignatureToleran `json:"signature,omitempty"`
 
+	// KEPUTUSAN TERCATAT (B-466): block teks Anthropic bisa membawa
+	// "citations" (atribusi sumber jawaban) dan struct ini sengaja
+	// TIDAK memuatnya — sitasi dibuang saat penerjemahan, sama
+	// seperti groundingMetadata Gemini di adapter google. Alasannya:
+	// (1) bentuk kanonik providers tidak punya slot sitasi/grounding
+	// dan tidak ada satu pun konsumen di gateway/dashboard yang
+	// membacanya — menambah slot berarti kontrak + perender baru di
+	// tiga permukaan, yakni fitur, bukan perbaikan; (2) Raw untuk
+	// adapter ini disusun ulang dari bentuk kanonik, jadi tidak ada
+	// jalur lolos apa-adanya seperti adapter OpenAI (yang Raw-nya
+	// body upstream utuh sehingga annotations sejenis selamat di
+	// sana — asimetri yang dicatat apa adanya); (3) teks jawaban
+	// sendiri selalu utuh — yang hilang hanya atribusi sumbernya.
+	// Pola keputusan ini mengikuti preseden B-416 (redacted_thinking
+	// dibuang dengan catatan tertulis, bukan senyap). Test pengunci:
+	// TestB466SitasiAnthropicDibuangTercatat.
+
 	// image
 	Source *imageSource `json:"source,omitempty"`
 
@@ -459,6 +476,31 @@ func (p *Provider) blocksFor(m *providers.Message) (string, []block, error) {
 					isi = append(isi, block{Type: blockImage, Source: &imageSource{
 						Type: "url", URL: part.ImageURL.URL,
 					}})
+				case providers.PartTypeDocument:
+					// B-464: dokumen hasil tool ikut sebagai block
+					// document native di dalam tool_result — padanan
+					// yang sama seperti pesan user di contentBlocks,
+					// dan memang didukung Anthropic di posisi ini.
+					// Sebelumnya switch ini hanya mengenal teks dan
+					// gambar, jadi PDF dari tool hilang senyap.
+					if part.Document == nil || part.Document.Data == "" {
+						continue
+					}
+					isi = append(isi, block{Type: blockDocument, Source: &imageSource{
+						Type: "base64", MediaType: part.Document.MediaType, Data: part.Document.Data,
+					}})
+				case providers.PartTypeAudio:
+					// B-464: audio hasil tool ditolak eksplisit,
+					// sejajar penolakan audio pesan user di
+					// contentBlocks — Anthropic tidak menerima
+					// masukan audio dalam bentuk apa pun, dan
+					// membuangnya diam-diam (perilaku lama di sini)
+					// inkonsisten dengan penolakan eksplisit itu.
+					if part.Audio == nil || part.Audio.Data == "" {
+						continue
+					}
+					return "", nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,
+						"Anthropic tidak menerima masukan audio; gunakan provider yang mendukung audio")
 				}
 			}
 			// Penolakan/transkrip audio ikut m.Text() pada jalur

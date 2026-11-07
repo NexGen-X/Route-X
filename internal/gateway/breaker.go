@@ -320,7 +320,14 @@ end
 // KEYS[1] kunci breaker.
 // ARGV[1] sekarang (ms epoch), ARGV[2] kuota probe, ARGV[3] batas tunggu probe (ms),
 // ARGV[4] TTL kunci (ms).
-// Kembalian: {boleh (0/1), state, sisa open (ms)}.
+// Kembalian: {boleh (0/1), state, sisa open (ms), token episode probe}.
+//
+// Token episode (B-461) adalah probes_at episode yang memberi izin
+// probe ini — identitas episode half_open yang sedang berjalan.
+// Hasil probe wajib membawanya kembali ke recordScript; hasil yang
+// tokennya tidak lagi cocok dengan probes_at yang berlaku adalah
+// hasil BASI dari episode sebelumnya dan tidak boleh memutuskan
+// episode yang sedang berjalan. 0 berarti izin ini bukan probe.
 //
 // Harus atomik dan tidak bisa dipecah menjadi GET lalu HSET: kuota probe adalah kuota,
 // dan dua instance yang membacanya bersamaan akan sama-sama menyimpulkan masih ada sisa,
@@ -337,11 +344,11 @@ if state == 'closed' then
 	-- Memperbarui TTL di sini akan membuat kunci yang macet di half_open ikut
 	-- diperpanjang oleh permintaan yang ditolaknya sendiri, sehingga jaring pengaman
 	-- terakhir (kunci kedaluwarsa lalu breaker pulih) tidak pernah menjala.
-	return {1, state, 0}
+	return {1, state, 0, 0}
 end
 
 if state == 'open' then
-	return {0, state, num(h, 'open_until') - now}
+	return {0, state, num(h, 'open_until') - now, 0}
 end
 
 local granted = num(h, 'probes')
@@ -354,12 +361,12 @@ if since == 0 or now - since >= tonumber(ARGV[3]) then
 	granted, since = 0, now
 end
 if granted >= tonumber(ARGV[2]) then
-	return {0, state, 0}
+	return {0, state, 0, 0}
 end
 redis.call('HSET', KEYS[1], 'probes', string.format('%d', granted + 1),
 	'probes_at', string.format('%d', since))
 redis.call('PEXPIRE', KEYS[1], ARGV[4])
-return {1, state, 0}
+return {1, state, 0, since}
 `)
 
 // recordScript mencatat hasil satu percobaan dan memindahkan state bila perlu.
@@ -367,7 +374,9 @@ return {1, state, 0}
 // KEYS[1] kunci breaker.
 // ARGV[1] sekarang (ms epoch), ARGV[2] sukses (0/1), ARGV[3] ambang rasio,
 // ARGV[4] sampel minimum, ARGV[5] lebar ember (ms), ARGV[6] jumlah ember,
-// ARGV[7] OpenDuration (ms), ARGV[8] TTL kunci (ms), ARGV[9] hasil probe (0/1).
+// ARGV[7] OpenDuration (ms), ARGV[8] TTL kunci (ms), ARGV[9] hasil probe (0/1),
+// ARGV[10] token episode probe (B-461; 0 = pemanggil lama tanpa token,
+// perlakukan seperti hasil probe biasa).
 // Kembalian: {state, sisa open (ms), total sampel, jumlah gagal, state berubah (0/1)}.
 //
 // "Catat, hitung rasio, lalu buka bila terlampaui" harus menjadi satu langkah. Dipecah,
@@ -392,13 +401,18 @@ if state == 'open' then
 end
 
 if state == 'half_open' then
-	if tonumber(ARGV[9]) ~= 1 then
-		-- Hasil ini BUKAN hasil probe: ia milik permintaan yang diizinkan pada
-		-- episode sebelumnya (saat state masih closed) dan baru selesai
-		-- sekarang. Memakainya sebagai putusan probe berarti breaker menutup
+	local token = tonumber(ARGV[10]) or 0
+	if tonumber(ARGV[9]) ~= 1 or (token ~= 0 and token ~= num(h, 'probes_at')) then
+		-- Hasil ini BUKAN putusan episode ini: entah ia bukan hasil probe
+		-- sama sekali (permintaan yang diizinkan pada episode sebelumnya,
+		-- saat state masih closed, dan baru selesai sekarang — audit3
+		-- V-BR-03), atau ia hasil probe dari EPISODE SEBELUMNYA yang baru
+		-- tiba sekarang (B-461: token episodenya tidak lagi cocok dengan
+		-- probes_at yang berlaku, karena episode sudah disetel ulang oleh
+		-- izin probe yang lebih baru). Memakainya berarti breaker menutup
 		-- atau membuka lagi tanpa satu pun permintaan percobaan yang
-		-- benar-benar dijalankan pada episode ini (audit3 V-BR-03). Hasil
-		-- basi diabaikan; episode ini diputuskan oleh probe yang sesungguhnya.
+		-- benar-benar dijalankan pada episode ini. Hasil basi diabaikan;
+		-- episode ini diputuskan oleh probe yang sesungguhnya.
 		return {'half_open', 0, 0, 0, 0}
 	end
 	-- DEL, bukan HDEL per field: episode berikutnya — closed maupun open — dimulai
@@ -637,7 +651,26 @@ func (b *Breaker) Allow(ctx context.Context, providerID, model string) (bool, St
 	if b == nil {
 		return true, StateClosed, nil
 	}
+	izin, state, _, err := b.allowDengan(ctx, providerID, model, b.cfg, true)
+	return izin, state, err
+}
+
+// IzinkanEpisode adalah Allow yang juga mengembalikan token episode
+// probe (B-461): 0 bila izin ini bukan probe half_open, selain itu
+// identitas episode yang memberi izin — wajib dibawa kembali oleh
+// RecordHasilEpisode supaya hasil probe basi dari episode sebelumnya
+// bisa dikenali dan diabaikan.
+func (b *Breaker) IzinkanEpisode(ctx context.Context, providerID, model string) (bool, State, int64, error) {
+	if b == nil {
+		return true, StateClosed, 0, nil
+	}
 	return b.allowDengan(ctx, providerID, model, b.cfg, true)
+}
+
+// IzinkanEpisodeWithConfig adalah IzinkanEpisode dengan konfigurasi
+// per-aturan routing; lihat AllowWithConfig untuk pemetaan semantiknya.
+func (b *Breaker) IzinkanEpisodeWithConfig(ctx context.Context, providerID, model string, cfg BreakerConfig) (bool, State, int64, error) {
+	return b.allowDengan(ctx, providerID, model, cfg.normalized(), false)
 }
 
 // AllowWithConfig adalah Allow dengan konfigurasi per-aturan routing
@@ -648,22 +681,25 @@ func (b *Breaker) Allow(ctx context.Context, providerID, model string) (bool, St
 // (jumlah) menjadi MinSamples, sisanya nama-sama. Memo keputusan dilewati
 // karena memo dikunci per (provider, model) tanpa dimensi konfigurasi.
 func (b *Breaker) AllowWithConfig(ctx context.Context, providerID, model string, cfg BreakerConfig) (bool, State, error) {
-	return b.allowDengan(ctx, providerID, model, cfg.normalized(), false)
+	izin, state, _, err := b.allowDengan(ctx, providerID, model, cfg.normalized(), false)
+	return izin, state, err
 }
 
-func (b *Breaker) allowDengan(ctx context.Context, providerID, model string, cfg BreakerConfig, pakaiMemo bool) (bool, State, error) {
+func (b *Breaker) allowDengan(ctx context.Context, providerID, model string, cfg BreakerConfig, pakaiMemo bool) (bool, State, int64, error) {
 	if b == nil || b.redis == nil {
-		return true, StateClosed, nil
+		return true, StateClosed, 0, nil
 	}
 	if strings.TrimSpace(providerID) == "" {
-		return true, StateClosed, errNoProvider
+		return true, StateClosed, 0, errNoProvider
 	}
 
 	key := b.kunciUntuk(providerID, model, cfg)
 	now := b.now()
 	if pakaiMemo {
 		if e, ok := b.memoGet(key, now); ok {
-			return e.allow, e.state, nil
+			// Keputusan memo tidak pernah half_open (keputusan itu
+			// tidak disimpan), jadi tokennya selalu 0 di sini.
+			return e.allow, e.state, 0, nil
 		}
 	}
 
@@ -672,14 +708,14 @@ func (b *Breaker) allowDengan(ctx context.Context, providerID, model string, cfg
 	if err != nil {
 		b.log(ctx).Warn("circuit breaker tidak bisa menghubungi redis, permintaan diloloskan",
 			"provider", providerID, "model", model, "error", err.Error())
-		return true, StateClosed, err
+		return true, StateClosed, 0, err
 	}
 
-	allow, state, openRemaining := parseAllow(res)
+	allow, state, openRemaining, token := parseAllow(res)
 	if pakaiMemo && state != StateHalfOpen {
 		b.memoPut(key, memoEntry{allow: allow, state: state, expires: b.memoExpiry(now, openRemaining)})
 	}
-	return allow, state, nil
+	return allow, state, token, nil
 }
 
 // Record mencatat hasil satu percobaan ke (providerID, model).
@@ -699,13 +735,13 @@ func (b *Breaker) Record(ctx context.Context, providerID, model string, sukses b
 	if b == nil {
 		return nil
 	}
-	return b.recordDengan(ctx, providerID, model, sukses, b.cfg, true, false)
+	return b.recordDengan(ctx, providerID, model, sukses, b.cfg, true, false, 0)
 }
 
 // RecordWithConfig adalah Record dengan konfigurasi per-aturan routing;
 // lihat AllowWithConfig untuk pemetaan semantiknya (audit F4).
 func (b *Breaker) RecordWithConfig(ctx context.Context, providerID, model string, sukses bool, cfg BreakerConfig) error {
-	return b.recordDengan(ctx, providerID, model, sukses, cfg.normalized(), false, false)
+	return b.recordDengan(ctx, providerID, model, sukses, cfg.normalized(), false, false, 0)
 }
 
 // RecordHasil adalah Record yang membedakan hasil probe half_open dari
@@ -720,16 +756,34 @@ func (b *Breaker) RecordHasil(ctx context.Context, providerID, model string, suk
 	if b == nil {
 		return nil
 	}
-	return b.recordDengan(ctx, providerID, model, sukses, b.cfg, true, probe)
+	return b.recordDengan(ctx, providerID, model, sukses, b.cfg, true, probe, 0)
 }
 
 // RecordHasilWithConfig adalah RecordHasil dengan konfigurasi per-aturan
 // routing; lihat AllowWithConfig untuk pemetaan semantiknya.
 func (b *Breaker) RecordHasilWithConfig(ctx context.Context, providerID, model string, sukses, probe bool, cfg BreakerConfig) error {
-	return b.recordDengan(ctx, providerID, model, sukses, cfg.normalized(), false, probe)
+	return b.recordDengan(ctx, providerID, model, sukses, cfg.normalized(), false, probe, 0)
 }
 
-func (b *Breaker) recordDengan(ctx context.Context, providerID, model string, sukses bool, cfg BreakerConfig, pakaiMemo bool, probe bool) error {
+// RecordHasilEpisode adalah RecordHasil yang membawa token episode
+// probe dari IzinkanEpisode (B-461). Hasil yang tokennya tidak lagi
+// cocok dengan episode half_open yang sedang berjalan diabaikan
+// recordScript sebagai hasil basi — ia tidak menutup maupun membuka
+// episode yang bukan miliknya. Token 0 berarti hasil ini bukan probe.
+func (b *Breaker) RecordHasilEpisode(ctx context.Context, providerID, model string, sukses bool, token int64) error {
+	if b == nil {
+		return nil
+	}
+	return b.recordDengan(ctx, providerID, model, sukses, b.cfg, true, token != 0, token)
+}
+
+// RecordHasilEpisodeWithConfig adalah RecordHasilEpisode dengan
+// konfigurasi per-aturan routing.
+func (b *Breaker) RecordHasilEpisodeWithConfig(ctx context.Context, providerID, model string, sukses bool, token int64, cfg BreakerConfig) error {
+	return b.recordDengan(ctx, providerID, model, sukses, cfg.normalized(), false, token != 0, token)
+}
+
+func (b *Breaker) recordDengan(ctx context.Context, providerID, model string, sukses bool, cfg BreakerConfig, pakaiMemo bool, probe bool, tokenEpisode int64) error {
 	if b == nil || b.redis == nil {
 		return nil
 	}
@@ -751,7 +805,8 @@ func (b *Breaker) recordDengan(ctx context.Context, providerID, model string, su
 	res, err := b.redis.RunScript(ctx, recordScript, []string{key},
 		now.UnixMilli(), ok, cfg.FailureThreshold, cfg.MinSamples,
 		cfg.bucketWidth().Milliseconds(), windowBuckets,
-		cfg.OpenDuration.Milliseconds(), cfg.keyTTL().Milliseconds(), adalahProbe)
+		cfg.OpenDuration.Milliseconds(), cfg.keyTTL().Milliseconds(), adalahProbe,
+		tokenEpisode)
 	if err != nil {
 		b.log(ctx).Warn("circuit breaker tidak bisa mencatat hasil ke redis",
 			"provider", providerID, "model", model, "sukses", sukses, "error", err.Error())
@@ -1148,15 +1203,18 @@ func (b *Breaker) log(ctx context.Context) *slog.Logger {
 // gagal terbuka, keraguan tidak boleh menahan lalu lintas.
 
 // parseAllow membaca {boleh, state, sisa open} dari allowScript.
-func parseAllow(res any) (allow bool, state State, openRemaining time.Duration) {
+func parseAllow(res any) (allow bool, state State, openRemaining time.Duration, tokenEpisode int64) {
 	v, ok := res.([]any)
 	if !ok || len(v) < 3 {
-		return true, StateClosed, 0
+		return true, StateClosed, 0, 0
 	}
 	n, _ := v[0].(int64)
 	name, _ := v[1].(string)
 	ms, _ := v[2].(int64)
-	return n == 1, stateFromLua(name), msToDuration(ms)
+	if len(v) >= 4 {
+		tokenEpisode, _ = v[3].(int64)
+	}
+	return n == 1, stateFromLua(name), msToDuration(ms), tokenEpisode
 }
 
 // parseRecord membaca {state, sisa open, total, gagal, berubah} dari recordScript.

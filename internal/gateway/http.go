@@ -2195,7 +2195,11 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 			j.tandaiCacheHit()
 			w.Header().Set("X-RouteX-Cache", "HIT")
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(entry.Raw)
+			if _, err := w.Write(entry.Raw); err != nil {
+				// B-459: gagal menulis jawaban HIT tetap kegagalan
+				// pengiriman, bukan sukses.
+				j.tandaiGagalTulis()
+			}
 			return
 		}
 	}
@@ -2311,6 +2315,8 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 		if _, err := w.Write(out.Value.Raw); err != nil {
 			h.logger.DebugContext(r.Context(), "penulisan respons gagal, klien kemungkinan sudah menutup koneksi",
 				"error", err)
+			// B-459: pengiriman gagal tidak tercatat sukses.
+			j.tandaiGagalTulis()
 		}
 		return
 	}
@@ -2906,6 +2912,8 @@ func (h *Handlers) Embeddings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(out.Value.Raw); err != nil {
 		h.logger.DebugContext(r.Context(), "penulisan respons embedding gagal", "error", err)
+		// B-459: pengiriman gagal tidak tercatat sukses.
+		j.tandaiGagalTulis()
 	}
 }
 

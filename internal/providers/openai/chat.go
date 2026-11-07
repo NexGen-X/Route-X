@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/NexGen-X/Route-X/internal/providers"
 )
@@ -564,6 +565,12 @@ func (p *Provider) ChatCompletionStream(ctx context.Context, req *providers.Chat
 		body:     resp.Body,
 		reader:   providers.NewSSEReader(resp.Body),
 		cancel:   cancel,
+		// B-460: jeda yang diminta header respons PEMBUKA aliran
+		// disimpan untuk error peristiwa-pertama — sebelumnya
+		// struct ini tidak menyimpan header sama sekali, jadi
+		// Retry-After pembuka selalu hilang (jalur non-2xx dan
+		// body-200 sudah menghormatinya sejak B-431).
+		retryAfter: providers.ParseRetryAfter(resp.Header),
 	}, nil
 }
 
@@ -573,6 +580,10 @@ type chatStream struct {
 	body     io.ReadCloser
 	reader   *providers.SSEReader
 	cancel   context.CancelFunc
+
+	// retryAfter adalah jeda dari header respons pembuka aliran
+	// (B-460), dibawa error yang lahir dari peristiwa di aliran ini.
+	retryAfter time.Duration
 
 	// readMu menjaga pembaca SSE beserta pencatatan aliran. Close TIDAK mengambil lock
 	// ini: Recv memegangnya selama menggantung menunggu byte dari upstream, jadi Close
@@ -628,7 +639,7 @@ func (s *chatStream) Recv() (*providers.StreamEvent, error) {
 			return nil, s.end(io.EOF)
 		}
 
-		out, perr := parseChunk(data)
+		out, perr := parseChunkBerjeda(data, s.retryAfter)
 		if perr != nil {
 			var pe *providers.Error
 			if errors.As(perr, &pe) {
@@ -775,6 +786,13 @@ func kodeErrorAliran(raw json.RawMessage) string {
 
 // parseChunk menerjemahkan satu muatan data SSE menjadi StreamEvent.
 func parseChunk(data []byte) (*providers.StreamEvent, error) {
+	return parseChunkBerjeda(data, 0)
+}
+
+// parseChunkBerjeda adalah parseChunk dengan jeda Retry-After dari
+// header pembuka aliran (B-460) untuk ditempelkan ke error yang
+// lahir dari peristiwa ini.
+func parseChunkBerjeda(data []byte, retryAfter time.Duration) (*providers.StreamEvent, error) {
 	var wire chatChunk
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return nil, err
@@ -800,6 +818,10 @@ func parseChunk(data []byte) (*providers.StreamEvent, error) {
 			Kind:         jenisGalatAliran(wire.Error.Type, kode),
 			Message:      withCode("upstream melaporkan galat di tengah aliran", kode),
 			UpstreamCode: kode,
+			// B-460: jeda pembuka aliran ikut — tanpa ini retry/
+			// failover untuk error peristiwa-pertama berjalan
+			// dengan backoff tebakan.
+			RetryAfter: retryAfter,
 		}
 	}
 

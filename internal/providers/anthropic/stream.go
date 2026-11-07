@@ -386,6 +386,14 @@ func (s *stream) blockDelta(env *streamEnvelope) *providers.StreamEvent {
 		out.ToolCalls = []providers.ToolCall{call}
 		return out
 
+	case "citations_delta":
+		// B-466: delta sitasi streaming dibuang dengan sadar —
+		// keputusan yang sama seperti sitasi non-streaming di
+		// translate.go (tidak ada slot kanonik, tidak ada konsumen;
+		// teks jawaban tidak terpengaruh). Dicatat eksplisit di
+		// sini supaya ketiadaannya bukan lagi keheningan struktural.
+		return nil
+
 	case "signature_delta":
 		// Signature block thinking punya wujud kanonik
 		// (StreamEvent.ReasoningSignature, B-295): tanpa ini ia
@@ -472,20 +480,39 @@ func (s *stream) mergeUsage(u *upstreamUsage) {
 }
 
 // upstreamError menerjemahkan peristiwa error di tengah aliran.
+//
+// B-458: pesan mentah upstream TIDAK lagi diteruskan, bahkan sesudah
+// safeMessage. safeMessage hanya menyamarkan kredensial; sisa teksnya
+// adalah teks bebas pihak ketiga yang bisa memuat potongan prompt
+// pengguna, dan providers.Error.Message berakhir di respons klien —
+// heuristik pesanKlienAman gateway memperlakukan StatusCode==0
+// sebagai "buatan adapter", jadi di jalur tengah-aliran ini teks itu
+// lolos verbatim ke klien. Polanya mengikuti errorFromResponse
+// OpenAI: yang dibawa hanya klasifikasi kind + kode upstream
+// (token pendek), pesannya generik per kind. B-460: Retry-After dari
+// header respons pembuka aliran ikut dibawa — sebelumnya error
+// tengah-aliran selalu ber-RetryAfter 0 walau upstream mengirimnya.
 func (s *stream) upstreamError(env *streamEnvelope) *providers.Error {
-	code, message := "", "Anthropic melaporkan kegagalan di tengah aliran"
+	code := ""
 	if env.Error != nil {
 		code = env.Error.Type
-		if env.Error.Message != "" {
-			message = s.provider.safeMessage(env.Error.Message)
-		}
+	}
+	kind := kindForUpstreamType(code)
+	message := "Anthropic melaporkan galat di tengah aliran"
+	if code != "" {
+		message += " (kode upstream: " + code + ")"
+	}
+	var retryAfter time.Duration
+	if s.resp != nil {
+		retryAfter = providers.ParseRetryAfter(s.resp.Header)
 	}
 	return &providers.Error{
-		Kind:          kindForUpstreamType(code),
+		Kind:          kind,
 		Provider:      s.provider.name,
 		Message:       message,
 		UpstreamCode:  code,
 		StreamedBytes: s.streamed,
+		RetryAfter:    retryAfter,
 	}
 }
 

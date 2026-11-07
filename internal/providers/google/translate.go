@@ -149,6 +149,17 @@ type geminiCandidate struct {
 	Content      geminiContent `json:"content"`
 	FinishReason string        `json:"finishReason,omitempty"`
 	Index        int           `json:"index"`
+
+	// KEPUTUSAN TERCATAT (B-466): kandidat Gemini bisa membawa
+	// "groundingMetadata" (kueri penelusuran + potongan sumber) dan
+	// struct ini sengaja TIDAK memuatnya — grounding dibuang saat
+	// penerjemahan, sama seperti sitasi Anthropic di adapter
+	// anthropic. Alasannya sejajar: bentuk kanonik tidak punya slot
+	// grounding dan tidak ada konsumen yang membacanya; Raw adapter
+	// ini disusun ulang dari bentuk kanonik sehingga tidak ada jalur
+	// lolos apa-adanya; teks jawaban selalu utuh — yang hilang hanya
+	// atribusi sumbernya. Preseden pola: B-416. Test pengunci:
+	// TestB466GroundingGeminiDibuangTercatat.
 }
 
 type promptFeedback struct {
@@ -364,17 +375,40 @@ func (p *Provider) partsFor(m *providers.Message, names map[string]string) (stri
 		// tangkapan layar MCP) hilang senyap. Pemetaan mengikuti
 		// pola contentParts: data URI menjadi inlineData, URL
 		// biasa menjadi fileData.
+		// B-464: audio hasil tool ikut sebagai part inlineData
+		// pendamping dengan pemetaan yang sama seperti contentParts
+		// (Gemini menerima audio); dokumen hasil tool ditolak
+		// eksplisit, sejajar penolakan dokumen pada contentParts —
+		// PDF hanya bisa dilayani Anthropic, dan membuangnya
+		// diam-diam membuat model menjawab tanpa lampirannya.
 		if m.IsMultimodal() {
 			for i := range m.Parts {
 				part := &m.Parts[i]
-				if part.Type != providers.PartTypeImageURL || part.ImageURL == nil || part.ImageURL.URL == "" {
-					continue
+				switch part.Type {
+				case providers.PartTypeImageURL:
+					if part.ImageURL == nil || part.ImageURL.URL == "" {
+						continue
+					}
+					if mimeType, data, ok := parseDataURI(part.ImageURL.URL); ok {
+						parts = append(parts, geminiPart{InlineData: &geminiBlob{MimeType: mimeType, Data: data}})
+						continue
+					}
+					parts = append(parts, geminiPart{FileData: &geminiFileData{FileURI: part.ImageURL.URL}})
+				case providers.PartTypeAudio:
+					if part.Audio == nil || part.Audio.Data == "" {
+						continue
+					}
+					parts = append(parts, geminiPart{InlineData: &geminiBlob{
+						MimeType: "audio/" + strings.TrimPrefix(part.Audio.Format, "audio/"),
+						Data:     part.Audio.Data,
+					}})
+				case providers.PartTypeDocument:
+					if part.Document == nil || part.Document.Data == "" {
+						continue
+					}
+					return "", nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,
+						"dokumen PDF hanya bisa dilayani provider Anthropic")
 				}
-				if mimeType, data, ok := parseDataURI(part.ImageURL.URL); ok {
-					parts = append(parts, geminiPart{InlineData: &geminiBlob{MimeType: mimeType, Data: data}})
-					continue
-				}
-				parts = append(parts, geminiPart{FileData: &geminiFileData{FileURI: part.ImageURL.URL}})
 			}
 		}
 		return roleUser, parts, nil
@@ -768,6 +802,27 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				continue
 			}
 			switch key {
+			case "properties", "$defs", "definitions", "patternProperties", "dependentSchemas":
+				// B-462: kunci-kunci ini adalah WADAH — nilainya peta
+				// NAMA → node skema, bukan node skema itu sendiri.
+				// Mengiterasi peta wadah sebagai node (perilaku lama)
+				// membuat nama properti yang kebetulan sama dengan
+				// kata kunci ("const", "not", "type", …) ditafsirkan
+				// sebagai kata kunci: properti bernama const berubah
+				// menjadi enum karangan di level wadah, properti
+				// bernama not terhapus, dan isi properti bernama
+				// type lolos tanpa normalisasi. Kini yang dinormalkan
+				// adalah NILAI tiap entri sebagai node; nama entri
+				// tidak pernah ditafsirkan.
+				if wadah, ok := val.(map[string]any); ok {
+					isi := make(map[string]any, len(wadah))
+					for nama, sub := range wadah {
+						isi[nama] = normalisasiNode(sub, root, rantaiRef, kedalaman)
+					}
+					out[key] = isi
+					continue
+				}
+				out[key] = normalisasiNode(val, root, rantaiRef, kedalaman)
 			case "type":
 				if gabungan, ok := val.([]any); ok {
 					tipe, nullable := tipeDariUnion(gabungan)
@@ -972,6 +1027,26 @@ func mapFinishReason(reason string) string {
 // keduanya memang dibaca sebagai teks dan mengarang pembungkus di
 // sekelilingnya akan mengubah isi.
 func partKeluaranNonTeks(part *geminiPart) (providers.ContentPart, bool) {
+	// B-463: fileData keluaran (hasil generasi/edit yang dikembalikan
+	// sebagai URI berkas) kini dibaca juga — sebelumnya field ini ada
+	// di struct wire tetapi tidak pernah dibaca di jalur keluaran,
+	// jadi respons yang hanya memuat fileData dilaporkan sebagai
+	// kegagalan server ("tidak memuat konten") oleh penjaga
+	// kekosongan, dan teks+fileData kehilangan fileData-nya senyap.
+	// Gambar dipetakan ke slot yang sama seperti inlineData
+	// (PartTypeImageURL, URL-nya URI berkas apa adanya — permukaan
+	// klien memang merender URL); mime lain mengikuti keputusan yang
+	// sama seperti video inlineData di bawah: tidak diteruskan,
+	// dinyatakan eksplisit di sini.
+	if part.FileData != nil && part.FileData.FileURI != "" {
+		if strings.HasPrefix(part.FileData.MimeType, "image/") {
+			return providers.ContentPart{
+				Type:     providers.PartTypeImageURL,
+				ImageURL: &providers.ImageURL{URL: part.FileData.FileURI},
+			}, true
+		}
+		return providers.ContentPart{}, false
+	}
 	if part.InlineData == nil || part.InlineData.Data == "" {
 		return providers.ContentPart{}, false
 	}

@@ -510,8 +510,18 @@ func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 			info.Created = parseWaktuModel(m.CreatedAt)
 			out = append(out, info)
 		}
-		if !payload.HasMore || payload.LastID == "" {
+		if !payload.HasMore {
 			return out, nil
+		}
+		if payload.LastID == "" {
+			// B-465: upstream menyatakan masih ada halaman tetapi
+			// kursornya kosong, jadi halaman berikutnya tidak bisa
+			// diminta. Mengembalikan katalog sebagian sebagai sukses
+			// penuh membuat pemanggil (sync/health) mengira katalog
+			// lengkap; kini berhentinya bernama — error server
+			// eksplisit, sejajar perlakuan kursor mandek di bawah.
+			return nil, providers.Newf(providers.ErrKindServer, p.name,
+				"paginasi model Anthropic berhenti: has_more=true tetapi last_id kosong, katalog tidak bisa dilengkapi")
 		}
 		afterID = payload.LastID
 	}

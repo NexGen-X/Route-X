@@ -114,17 +114,26 @@ type lompatanSymlink struct {
 // satu lompatan B-311 berhenti di tautan perantara, dan rename
 // mendarat di atasnya menghancurkannya. Batas 40 lompatan meniru
 // batas kernel; rantai yang melampauinya berhenti di titik itu.
-func selesaikanRantaiSymlink(jalur string) ([]lompatanSymlink, string) {
+//
+// Nilai kembalian ketiga, tuntas, membedakan "berhenti karena
+// memang selesai" dari "berhenti karena batas" (B-393): tanpa
+// pembeda ini rantai SIKLUS (a→b→a) tampak persis seperti rantai
+// sah yang panjang — penyelesaian berhenti di sebuah symlink yang
+// masih hidup, dan pemanggil yang memercayainya menulis menembus
+// atau menimpa tautan pengguna sambil melaporkan sukses. tuntas
+// false berarti jalur akhir MASIH symlink: rantai tidak selesai,
+// dan pemanggil wajib menolak bertindak atasnya.
+func selesaikanRantaiSymlink(jalur string) ([]lompatanSymlink, string, bool) {
 	var rantai []lompatanSymlink
 	kini := jalur
 	for len(rantai) < 40 {
 		fi, err := os.Lstat(kini)
 		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
-			break
+			return rantai, kini, true
 		}
 		mentah, err := os.Readlink(kini)
 		if err != nil {
-			break
+			return rantai, kini, true
 		}
 		rantai = append(rantai, lompatanSymlink{jalur: kini, target: mentah})
 		berikut := mentah
@@ -133,7 +142,13 @@ func selesaikanRantaiSymlink(jalur string) ([]lompatanSymlink, string) {
 		}
 		kini = filepath.Clean(berikut)
 	}
-	return rantai, kini
+	// Batas tercapai: tuntas hanya bila titik berhenti bukan lagi
+	// symlink (rantai sah tepat 40 lompatan) — titik yang tidak
+	// ada (ujung putus) juga tuntas, karena memang itulah target
+	// leksikalnya (kasus B-368).
+	fi, err := os.Lstat(kini)
+	tuntas := err != nil || fi.Mode()&os.ModeSymlink == 0
+	return rantai, kini, tuntas
 }
 
 // tulisAtomik menulis berkas secara atomik: tulis ke berkas sementara di
@@ -162,9 +177,17 @@ func tulisAtomik(path string, data []byte, perm os.FileMode) error {
 		// perantara itu menghancurkannya menjadi berkas reguler.
 		// Direktori induk target akhir dibuat, lalu tulisan mendarat
 		// di sana; seluruh rantai tautan dipertahankan.
-		rantai, akhir := selesaikanRantaiSymlink(path)
+		rantai, akhir, tuntas := selesaikanRantaiSymlink(path)
 		if len(rantai) == 0 {
 			return fmt.Errorf("symlink %s tidak bisa diselesaikan", path)
+		}
+		// B-393: rantai yang tidak tuntas (siklus, atau lebih
+		// panjang dari batas) TIDAK boleh ditulis menembusnya:
+		// "akhir" masih sebuah symlink, dan rename ke sana
+		// menghancurkan tautan pengguna sambil mengembalikan
+		// sukses. Gagal eksplisit, tidak menulis apa pun.
+		if !tuntas {
+			return fmt.Errorf("rantai symlink %s tidak tuntas sesudah %d lompatan (kemungkinan siklus); menolak menulis", path, len(rantai))
 		}
 		if merr := os.MkdirAll(filepath.Dir(akhir), 0755); merr != nil {
 			return merr
@@ -694,12 +717,33 @@ type jepretanBerkas struct {
 	// bisa membangun kembali setiap tautan perantara, bukan hanya
 	// yang di titik masuk.
 	rantai []lompatanSymlink
-	// indukTargetAda (B-381): apakah direktori induk target akhir
-	// sudah ada saat dijepret. Bila tidak dan targetnya ciptaan
-	// Configure, pemulihan menghapus direktori itu lagi (hanya
-	// berhasil bila kosong) — Configure tidak meninggalkan direktori
-	// kosong asing di pohon dotfiles pengguna.
-	indukTargetAda bool
+	// dirCiptaan (B-394): leluhur direktori berkas (atau target
+	// tautannya) yang BELUM ada saat dijepret, terdalam → terluar.
+	// B-381 hanya mencatatnya di cabang symlink; cabang polos —
+	// jalur umum — tidak mencatat apa pun, jadi direktori yang
+	// diciptakan Configure lewat MkdirAll di jalur-jalur tool
+	// bertahan sesudah rollback. Pemulihan menghapus tiap entri
+	// dengan os.Remove (hanya berhasil bila kosong — isi asing
+	// mempertahankannya).
+	dirCiptaan []string
+}
+
+// dirBelumAda mengembalikan leluhur direktori jalur yang belum
+// ada, terdalam → terluar, berhenti di leluhur pertama yang ada.
+func dirBelumAda(jalur string) []string {
+	var out []string
+	d := filepath.Dir(jalur)
+	for {
+		if _, err := os.Lstat(d); err == nil {
+			return out
+		}
+		out = append(out, d)
+		induk := filepath.Dir(d)
+		if induk == d {
+			return out
+		}
+		d = induk
+	}
 }
 
 func jepretBerkasConfigure(jalur string) jepretanBerkas {
@@ -710,7 +754,10 @@ func jepretBerkasConfigure(jalur string) jepretanBerkas {
 	// TAUTAN pengguna, bukan berkas ciptaan Configure.
 	lfi, lerr := os.Lstat(jalur)
 	if lerr != nil {
-		return jepretanBerkas{jalur: jalur}
+		// B-394: berkas belum ada — catat leluhur direktorinya
+		// yang juga belum ada, supaya pemulihan bisa membongkar
+		// direktori ciptaan Configure di cabang polos juga.
+		return jepretanBerkas{jalur: jalur, dirCiptaan: dirBelumAda(jalur)}
 	}
 	if lfi.Mode()&os.ModeSymlink != 0 {
 		j := jepretanBerkas{jalur: jalur, ada: true, tautan: true}
@@ -718,17 +765,25 @@ func jepretBerkasConfigure(jalur string) jepretanBerkas {
 		// penyelesaian satu lompatan lama membuat target
 		// "terselesaikan" berhenti di tautan perantara, sehingga
 		// potret target dan pemulihannya menilai berkas yang salah.
-		rantai, akhir := selesaikanRantaiSymlink(jalur)
+		rantai, akhir, tuntas := selesaikanRantaiSymlink(jalur)
 		if len(rantai) == 0 {
 			j.takTersentuh = true
 			return j
 		}
+		// B-393: rantai yang tidak tuntas (siklus) tidak bisa
+		// dinilai keadaannya — os.Stat pada targetnya menjawab
+		// ELOOP dan terbaca "target tidak ada", yang di pemulihan
+		// berarti MENGHAPUS jalur itu (tautan pengguna sendiri).
+		// Tandai tak tersentuh: Configure akan gagal eksplisit di
+		// tulisAtomik, dan rollback tidak menyentuh berkas ini.
+		if !tuntas {
+			j.takTersentuh = true
+			return j
+		}
+		j.dirCiptaan = dirBelumAda(akhir)
 		j.rantai = rantai
 		j.targetTautan = rantai[0].target
 		j.targetTerselesaikan = akhir
-		if _, err := os.Stat(filepath.Dir(akhir)); err == nil {
-			j.indukTargetAda = true
-		}
 		tfi, err := os.Stat(j.targetTerselesaikan)
 		if err != nil {
 			return j // tautan putus: target belum ada
@@ -799,13 +854,14 @@ func (j jepretanBerkas) pulihkan() {
 		}
 		if !j.targetAda {
 			_ = os.Remove(j.targetTerselesaikan)
-			// B-381: direktori induk yang lahir karena Configure
-			// (MkdirAll di tulisAtomik untuk target tautan putus)
-			// dihapus lagi bila memang belum ada saat dijepret —
-			// os.Remove hanya berhasil bila direktori itu kosong,
-			// jadi isi asing apa pun mempertahankannya.
-			if !j.indukTargetAda {
-				_ = os.Remove(filepath.Dir(j.targetTerselesaikan))
+			// B-381+B-394: direktori leluhur yang lahir karena
+			// Configure (MkdirAll di tulisAtomik untuk target
+			// tautan putus) dihapus lagi — seluruh rantai leluhur
+			// yang belum ada saat dijepret, bukan hanya induk
+			// langsung. os.Remove hanya berhasil bila direktori
+			// itu kosong, jadi isi asing apa pun mempertahankannya.
+			for _, d := range j.dirCiptaan {
+				_ = os.Remove(d)
 			}
 			return
 		}
@@ -814,6 +870,13 @@ func (j jepretanBerkas) pulihkan() {
 	}
 	if !j.ada {
 		_ = os.Remove(j.jalur)
+		// B-394: bongkar juga direktori leluhur ciptaan Configure
+		// di cabang polos (MkdirAll di jalur-jalur tool) — B-381
+		// hanya melakukannya di cabang symlink, jadi jalur umum
+		// meninggalkan direktori kosong asing sesudah rollback.
+		for _, d := range j.dirCiptaan {
+			_ = os.Remove(d)
+		}
 		return
 	}
 	_ = tulisAtomik(j.jalur, j.isi, j.izin)
@@ -1843,13 +1906,24 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		// sama persis; selain itu penulis jatuh ke jalur marshal di
 		// bawah (data tetap benar, komentar hilang seperti dulu).
 		tertulis := false
-		if mentah, errBaca := os.ReadFile(configPath); errBaca == nil && jsoncMengandungKomentar(string(mentah)) {
-			if hasil, errSunting := suntingOpenCodeJSONC(string(mentah), target, gwURL, apiKey); errSunting == nil &&
-				hasilSuntingOpenCodeSah(hasil, cfg, target, gwURL, apiKey) {
-				if err := tulisAtomik(configPath, []byte(hasil), 0600); err != nil {
-					return fmt.Errorf("menulis %s: %w", configPath, err)
+		if mentah, errBaca := os.ReadFile(configPath); errBaca == nil {
+			// B-404: BOM dibuang dari teks mentah SEBELUM jalur
+			// sunting JSONC — muatKonfigJSON sudah membuangnya
+			// untuk peta (B-380), tetapi bacaan mentah di sini
+			// tidak, jadi berkas ber-BOM + komentar selalu gagal
+			// disunting (pemindai bedah menolak BOM di awal) dan
+			// jatuh senyap ke penulisan ulang marshal yang
+			// membuang seluruh komentar pengguna — kehilangan
+			// yang justru dicegah B-280.
+			mentahTeks := strings.TrimPrefix(string(mentah), "\ufeff")
+			if jsoncMengandungKomentar(mentahTeks) {
+				if hasil, errSunting := suntingOpenCodeJSONC(mentahTeks, target, gwURL, apiKey); errSunting == nil &&
+					hasilSuntingOpenCodeSah(hasil, cfg, target, gwURL, apiKey) {
+					if err := tulisAtomik(configPath, []byte(hasil), 0600); err != nil {
+						return fmt.Errorf("menulis %s: %w", configPath, err)
+					}
+					tertulis = true
 				}
-				tertulis = true
 			}
 		}
 		if tertulis {
@@ -2554,7 +2628,14 @@ func pecahHeaderModelHermes(l string) (sisa string, ok bool) {
 		return "", false
 	}
 	idx := strings.Index(teks, ":")
-	if idx < 0 || strings.TrimSpace(teks[:idx]) != "model" {
+	// B-402: nama kunci dinormalkan dengan normalkanKunciYAML
+	// seperti semua pencocok kunci YAML lain di berkas ini —
+	// header berkutip ("model": / 'model':) adalah kunci yang
+	// sama bagi parser YAML, tetapi perbandingan mentah dulu
+	// melewatkannya, jadi blok model: BARU ditambahkan di bawah
+	// blok berkutip yang sudah ada dan dokumen berakhir dengan
+	// dua blok model yang bertentangan.
+	if idx < 0 || normalkanKunciYAML(strings.TrimSpace(teks[:idx])) != "model" {
 		return "", false
 	}
 	return strings.TrimSpace(teks[idx+1:]), true
@@ -2696,6 +2777,26 @@ func gabungBarisYAML(baris []string) string {
 	return keluaran
 }
 
+// namaVariabelEnv membaca nama variabel dari satu baris .env,
+// toleran terhadap bentuk sah yang ditulis tangan (B-403):
+// indentasi di awal baris, awalan "export ", dan spasi di sekitar
+// "=". Mengembalikan "" untuk baris yang bukan penetapan variabel
+// (komentar, baris kosong, tanpa "=").
+func namaVariabelEnv(l string) string {
+	s := strings.TrimSpace(l)
+	if strings.HasPrefix(s, "export") {
+		sisa := s[len("export"):]
+		if sisa != "" && (sisa[0] == ' ' || sisa[0] == '\t') {
+			s = strings.TrimSpace(sisa)
+		}
+	}
+	idx := strings.Index(s, "=")
+	if idx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(s[:idx])
+}
+
 // perbaruiBarisEnv menetapkan satu variabel di konten berkas .env
 // (baris NAMA=nilai), mengganti baris lama atau menambahkan di akhir;
 // variabel lain dipertahankan.
@@ -2716,7 +2817,14 @@ func perbaruiBarisEnv(existing, nama, nilai string) string {
 	// sebagai duplikat; catat indeksnya.
 	dibuang := make(map[int]bool)
 	for i, l := range baris {
-		if strings.HasPrefix(l, nama+"=") {
+		// B-403: pencocokan lewat namaVariabelEnv, bukan awalan
+		// mentah NAMA= — bentuk sah yang ditulis tangan (indentasi,
+		// awalan "export ", spasi di sekitar "=") dulu tidak pernah
+		// cocok, jadi baris lama tertinggal dan salinan kanonik
+		// ditambahkan: variabel ganda yang bacaan efektifnya
+		// bergantung parser dotenv. Baris yang cocok diganti
+		// bentuk kanoniknya.
+		if namaVariabelEnv(l) == nama {
 			if tertulis {
 				baris[i] = ""
 				dibuang[i] = true

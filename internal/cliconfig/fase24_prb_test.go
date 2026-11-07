@@ -99,7 +99,7 @@ func TestB543HermesKomentarSesudahPenandaLolos(t *testing.T) {
 	}
 }
 
-// TestB544PenandaTabDitolakNormalisasi mengunci B-544 untuk
+// TestB544PenandaTabDinormalisasi mengunci B-544 untuk
 // Hermes DAN penyunting bersama (Goose): penanda berpenanda-tab
 // "...\t# selesai" berhasil di-Configure dan baris penanda pada
 // hasil tertulis dalam bentuk kanonik "... # selesai" — bukan

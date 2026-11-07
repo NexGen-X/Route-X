@@ -1741,8 +1741,11 @@ func pecahPenandaAkhirDokumen(line string) (komentar string, ok bool) {
 // normalkanBarisPenanda menulis ulang baris penanda akhir dokumen
 // ke bentuk kanonik "..." atau "... # komentar" (B-544): pemisah
 // tab/rangkap di antara penanda dan komentarnya dilipat menjadi
-// satu spasi, dan CR akhir berkas CRLF dipertahankan. Keputusan
-// NORMALISASI (bukan penolakan): penanda itu sendiri dikenali
+// satu spasi, dan CR akhir berkas CRLF dipertahankan. B-559:
+// normalisasi ini diterapkan pada SETIAP kemunculan penanda saat
+// menulis, bukan hanya yang pertama — penanda kedua+ berbentuk
+// tab/tanpa-spasi yang dulu diteruskan mentah ditolak PyYAML.
+// Keputusan NORMALISASI (bukan penolakan): penanda itu sendiri dikenali
 // maksudnya oleh penyunting dan bentuk kanoniknya diterima semua
 // pemuat — sejajar preseden pembuangan BOM B-344; menolak akan
 // menghukum berkas yang satu-satunya dosa adalah tab warisan
@@ -1772,13 +1775,22 @@ func normalkanBarisPenanda(line string) string {
 // menyerupai kunci atau penanda dokumen: penyunting baris yang
 // tidak melacaknya membaca baris isi itu sebagai struktur — kunci
 // terkelola "ditemukan" DI DALAM nilai string orang, atau blok
-// model Hermes "ditemukan" di tengah kutipan. Skalar blok (|/>)
-// SENGAJA tidak dilacak: isinya terikat indentasi dan kedua
-// penyunting sudah menghormati indentasi, jadi baris isinya tidak
-// pernah mencapai kolom 0 sebagai kunci semu (keputusan per tool
-// ini dicatat di badan PR Fase 24 PR-B).
+// model Hermes "ditemukan" di tengah kutipan.
+//
+// Skalar blok (|/>) dilacak HANYA sebagai keadaan (B-560): isinya
+// terikat indentasi dan kedua penyunting sudah menghormati
+// indentasi, jadi baris isinya tidak pernah mencapai kolom 0
+// sebagai kunci semu — alasan B-550 itu benar untuk
+// isi-sebagai-struktur. Tetapi isi-sebagai-keadaan-pelacak tidak
+// ditutupnya: kutip pada posisi pembuka di isi blok yang tak
+// menutup pada baris yang sama dulu MEMBUKA skalar semu yang
+// menelan struktur asli sesudah blok berakhir (B-560). Kini
+// pelacak mengenali pembuka skalar blok dan menahan pemindaian
+// kutip selama di dalam blok; baris isinya sendiri tetap bukan
+// struktur (ia menjorok).
 type pelacakSkalarYAML struct {
 	kutip byte // 0 di luar skalar; '"' atau '\'' di dalam
+	blok  int  // -1 di luar skalar blok; bila >= 0, indentasi induk skalar blok (|/>) yang sedang berjalan
 }
 
 // lintasi memindai SATU baris dan memperbarui keadaan; nilai
@@ -1790,8 +1802,22 @@ type pelacakSkalarYAML struct {
 // polos (apos dalam kata seperti "don't" tidak membuka). '#'
 // yang didahului spasi/tab di luar skalar memulai komentar:
 // sisa baris inert.
+//
+// B-560: di dalam skalar blok (|/>) baris isinya tidak dipindai
+// kutip sama sekali — kutip di sana huruf isi, bukan pembuka
+// skalar semu. Baris yang MENGAKHIRI blok (tak-kosong dan tidak
+// menjorok lebih dalam dari induknya) adalah baris struktural:
+// ia dipindai normal dengan keadaan di luar skalar, jadi nilai
+// kembali false untuknya walau keadaan blok masih aktif saat
+// baris itu dimulai.
 func (p *pelacakSkalarYAML) lintasi(line string) bool {
 	mulaiDalam := p.kutip != 0
+	if p.kutip == 0 && p.blok >= 0 {
+		if strings.TrimSpace(line) == "" || lebarIndentasiYAML(line) > p.blok {
+			return true
+		}
+		p.blok = -1
+	}
 	for i := 0; i < len(line); i++ {
 		c := line[i]
 		switch p.kutip {
@@ -1825,14 +1851,125 @@ func (p *pelacakSkalarYAML) lintasi(line string) bool {
 			}
 		}
 	}
+	// Baris ini dapat MEMBUKA skalar blok bila berbentuk
+	// "kunci: |" atau "- |" (B-560); pembuka hanya dikenali di
+	// luar skalar terkutip.
+	if p.kutip == 0 {
+		if induk, ok := awalSkalarBlokYAML(line); ok {
+			p.blok = induk
+		}
+	}
 	return mulaiDalam
+}
+
+// awalSkalarBlokYAML melaporkan apakah baris ini MEMBUKA skalar
+// blok YAML (|/>) dan indentasi induknya (B-560): pemetaan
+// "kunci: |" (kunci boleh terkutip, nilai boleh membawa
+// indikator chomping +/-, indikator indentasi 1-9, dan komentar)
+// atau item urutan "- |". Nilai yang hanya diawali '|' tetapi
+// berlanjut huruf lain ("|teks") adalah skalar polos, bukan
+// pembuka blok. Baris kosong/komentar dan baris tanpa pemisah
+// nilai bukan pembuka.
+func awalSkalarBlokYAML(line string) (induk int, ok bool) {
+	trim := strings.TrimSpace(line)
+	if trim == "" || strings.HasPrefix(trim, "#") {
+		return -1, false
+	}
+	induk = lebarIndentasiYAML(line)
+	sisa := line[induk:]
+	// Item urutan "- |" / "- > ...": induknya indentasi garis '-'.
+	if strings.HasPrefix(sisa, "-") && (len(sisa) == 1 || sisa[1] == ' ' || sisa[1] == '\t') {
+		return induk, akhirSkalarBlokYAML(strings.TrimLeft(sisa[1:], " \t"))
+	}
+	// Kunci terkutip di awal ("kunci: x": |): lewati sampai
+	// penutupnya — ':' di dalamnya bukan pemisah nilai — lalu
+	// pemisah ':' harus langsung mengikuti (boleh berjarak
+	// spasi). Tanpa cabang ini, ':' di dalam kunci terkutip
+	// yang diikuti spasi salah dibaca sebagai pemisah.
+	if sisa[0] == '"' || sisa[0] == '\'' {
+		q := sisa[0]
+		j := 1
+		for j < len(sisa) {
+			if q == '"' && sisa[j] == '\\' {
+				j += 2
+				continue
+			}
+			if sisa[j] == q {
+				if q == '\'' && j+1 < len(sisa) && sisa[j+1] == '\'' {
+					j += 2
+					continue
+				}
+				break
+			}
+			j++
+		}
+		if j >= len(sisa) {
+			return -1, false // kunci terkutip tak tertutup
+		}
+		sisa = strings.TrimLeft(sisa[j+1:], " \t")
+		if !strings.HasPrefix(sisa, ":") {
+			return -1, false
+		}
+		return induk, akhirSkalarBlokYAML(strings.TrimLeft(sisa[1:], " \t"))
+	}
+	// Cari ':' pemisah nilai: yang diikuti spasi/tab/akhir baris.
+	idx := -1
+	for k := 0; k < len(sisa); k++ {
+		if sisa[k] != ':' {
+			continue
+		}
+		if k+1 >= len(sisa) || sisa[k+1] == ' ' || sisa[k+1] == '\t' {
+			idx = k
+			break
+		}
+	}
+	if idx <= 0 {
+		return -1, false
+	}
+	return induk, akhirSkalarBlokYAML(strings.TrimLeft(sisa[idx+1:], " \t"))
+}
+
+// akhirSkalarBlokYAML melaporkan apakah nilai (sesudah "kunci:"
+// atau "-") adalah indikator skalar blok: '|' atau '>' diikuti
+// paling banyak satu indikator chomping (+/-) dan satu indikator
+// indentasi (angka 1-9), dalam urutan mana pun, lalu akhir baris
+// atau komentar.
+func akhirSkalarBlokYAML(nilai string) bool {
+	if nilai == "" || (nilai[0] != '|' && nilai[0] != '>') {
+		return false
+	}
+	sisa := nilai[1:]
+	for k := 0; k < 2; k++ {
+		if sisa == "" {
+			break
+		}
+		if sisa[0] == '+' || sisa[0] == '-' {
+			sisa = sisa[1:]
+		} else if sisa[0] >= '1' && sisa[0] <= '9' {
+			sisa = sisa[1:]
+		} else {
+			break
+		}
+	}
+	sisa = strings.TrimLeft(sisa, " \t")
+	return sisa == "" || strings.HasPrefix(sisa, "#")
+}
+
+// pelacakSkalarBaruYAML membuat pelacak dalam keadaan awal:
+// di luar skalar terkutip maupun skalar blok. Konstruktor ini
+// WAJIB dipakai, bukan literal struct kosong — nilai nol blok
+// (0) akan salah dibaca sebagai "di dalam skalar blok berinduk
+// 0", sedangkan keadaan awal adalah -1 (di luar blok).
+func pelacakSkalarBaruYAML() *pelacakSkalarYAML {
+	return &pelacakSkalarYAML{blok: -1}
 }
 
 // petaDalamSkalarYAML memindai seluruh baris sekali dan
 // mengembalikan, per indeks, apakah baris itu DIMULAI di dalam
-// skalar terkutip multiline (lihat pelacakSkalarYAML).
+// skalar terkutip multiline ATAU skalar blok (lihat
+// pelacakSkalarYAML).
 func petaDalamSkalarYAML(baris []string) []bool {
-	p := &pelacakSkalarYAML{}
+	p := pelacakSkalarBaruYAML()
 	dalam := make([]bool, len(baris))
 	for i, l := range baris {
 		dalam[i] = p.lintasi(l)
@@ -1910,11 +2047,23 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 	indeksPenanda := -1
 	// B-550: baris yang dimulai DI DALAM skalar terkutip multiline
 	// adalah isi nilai, bukan struktur — tidak dibaca sebagai
-	// kunci maupun penanda.
-	pelacak := &pelacakSkalarYAML{}
+	// kunci maupun penanda. B-560: baris isi skalar blok juga
+	// bukan struktur (lihat pelacakSkalarYAML).
+	pelacak := pelacakSkalarBaruYAML()
 	for _, line := range strings.Split(existing, "\n") {
 		if indeksPenanda >= 0 {
-			out = append(out, line)
+			// B-559: penanda kedua+ DINORMALISASI juga — cabang
+			// ini dulu meneruskan baris sesudah penanda pertama
+			// apa adanya, sehingga bentuk tab/tanpa-spasi
+			// tertulis mentah dan ditolak PyYAML. Pelacak tetap
+			// dimajukan di sini supaya baris mirip-penanda yang
+			// berada DI DALAM skalar (isi string pengguna) tidak
+			// ikut ditulis ulang.
+			if !pelacak.lintasi(line) && barisPenandaAkhirDokumen(line) {
+				out = append(out, normalkanBarisPenanda(line))
+			} else {
+				out = append(out, line)
+			}
 			continue
 		}
 		if pelacak.lintasi(line) {
@@ -1923,7 +2072,8 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 		}
 		if barisPenandaAkhirDokumen(line) {
 			indeksPenanda = len(out)
-			// B-544: penanda ditulis dalam bentuk kanoniknya.
+			// B-544/B-559: penanda ditulis dalam bentuk kanoniknya
+			// (tiap kemunculan, bukan hanya pertama).
 			out = append(out, normalkanBarisPenanda(line))
 			continue
 		}
@@ -3380,15 +3530,24 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	// sesudah penanda tidak pernah menjadi isi dokumen.
 	// B-550: peta baris yang dimulai DI DALAM skalar terkutip
 	// multiline — baris isi nilai tidak boleh dibaca sebagai
-	// penanda, header blok, atau batas blok.
+	// penanda, header blok, atau batas blok. B-560: peta yang
+	// sama kini mencakup isi skalar blok.
 	dalam := petaDalamSkalarYAML(baris)
 	indeksPenanda := -1
 	for i, l := range baris {
 		if !dalam[i] && barisPenandaAkhirDokumen(l) {
-			indeksPenanda = i
-			// B-544: penanda ditulis dalam bentuk kanoniknya.
+			// B-544/B-559: SETIAP penanda ditulis dalam bentuk
+			// kanoniknya, bukan hanya yang pertama — versi lama
+			// menormalkan lalu `break`, sehingga penanda kedua+
+			// berbentuk tab/tanpa-spasi diteruskan mentah dan
+			// lolos penjaga B-543 yang mengecualikannya,
+			// sementara verifikasi hanya mengurai dokumen
+			// pertama. Penanda di dalam skalar (dalam[i]) adalah
+			// isi string dan tidak disentuh.
 			baris[i] = normalkanBarisPenanda(l)
-			break
+			if indeksPenanda < 0 {
+				indeksPenanda = i
+			}
 		}
 	}
 	// Cari SEMUA blok `model:` tingkat-atas beserta rentangnya.
@@ -3442,8 +3601,14 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 				// verifikasi hasil akhir akan menolaknya secara
 				// jujur (nilai terkelola lama tidak sama dengan
 				// nilai Route-X), bukan menebak dan berisiko
-				// menghilangkan isi pengguna.
-				return existing
+				// menghilangkan isi pengguna. B-559: yang
+				// dikembalikan adalah baris-baris sesudah
+				// normalisasi penanda (gabung pecah-baris itu
+				// pulang-pergi persis) — bukan `existing`
+				// mentah — supaya penanda kedua+ berbentuk
+				// tab/tanpa-spasi tidak ikut lolos mentah di
+				// jalur ini.
+				return strings.Join(baris, "\n")
 			}
 			rentang = append(rentang, rentangBlok{awal: i, akhir: j + 1, jangkar: jangkar, aliran: barisAliran})
 			i = j
@@ -4191,6 +4356,16 @@ func uraiYAMLUtuh(konten string) (map[string]any, error) {
 func verifikasiHasilYAMLTingkatAtas(konten string, pairs [][2]string) error {
 	doc, err := uraiYAMLUtuh(konten)
 	if err != nil {
+		// B-560: galat duplikasi atas kunci TERKELOLA yang
+		// disertai kutip tak tertutup di isi skalar blok TIDAK
+		// boleh menamai duplikasi sebagai sebab — akarnya
+		// adalah skalar semu yang menelan struktur asli.
+		// Duplikasi kunci TAK-terkelola yang tulen tetap
+		// dilaporkan apa adanya (di sana duplikasi memang
+		// sebabnya).
+		if sebab := diagnosisKutipSkalarBlok(konten, pairs, err); sebab != "" {
+			return fmt.Errorf("hasil sunting YAML: %s", sebab)
+		}
 		return fmt.Errorf("hasil sunting YAML tidak terurai: %w", err)
 	}
 	for _, p := range pairs {
@@ -4199,6 +4374,170 @@ func verifikasiHasilYAMLTingkatAtas(konten string, pairs [][2]string) error {
 		}
 	}
 	return nil
+}
+
+// diagnosisKutipSkalarBlok memeriksa apakah galat urai hasil
+// sunting adalah duplikasi kunci TERKELOLA yang disebabkan kutip
+// tak tertutup di isi skalar blok (B-560) — bukan duplikasi di
+// berkas masukan: penyunting membuang duplikat terkelola yang
+// terlihat, jadi kunci terkelola yang tertulis dua kali berarti
+// penyunting salah membaca struktur berkas. Mengembalikan pesan
+// sebab-akar, atau "" bila diagnosis tidak berlaku (galat bukan
+// duplikasi, kunci yang ganda bukan terkelola, atau tidak ada
+// kutip blok yang terbukti menelan baris kunci itu — pesan
+// duplikasi apa adanya dari pemanggil tetap jujur di sana).
+func diagnosisKutipSkalarBlok(konten string, pairs [][2]string, errUrai error) string {
+	kunci := kunciGandaDariGalatYAML(errUrai)
+	if kunci == "" {
+		return ""
+	}
+	terkelola := false
+	for _, p := range pairs {
+		if p[0] == kunci {
+			terkelola = true
+			break
+		}
+	}
+	if !terkelola {
+		return ""
+	}
+	if pembuka, ok := cariKutipBlokMenelanKunciYAML(konten, kunci); ok {
+		return fmt.Sprintf("kunci terkelola %q tertulis dua kali karena kutip tak tertutup di isi skalar blok (%q) membuat penyunting salah membaca struktur — bukan duplikasi di berkas masukan; tutup kutip itu, lalu coba lagi", kunci, pembuka)
+	}
+	return fmt.Sprintf("kunci terkelola %q tertulis dua kali karena penyunting salah membaca struktur berkas — bukan duplikasi di berkas masukan (penyunting membuang duplikat terkelola yang terlihat); periksa struktur di sekitar kunci itu, lalu coba lagi", kunci)
+}
+
+// kunciGandaDariGalatYAML mengambil nama kunci dari galat
+// duplikasi yaml.v3 ("mapping key \"X\" already defined").
+// "" bila galatnya bukan duplikasi.
+func kunciGandaDariGalatYAML(err error) string {
+	if err == nil {
+		return ""
+	}
+	pesan := err.Error()
+	awalan := `mapping key "`
+	i := strings.Index(pesan, awalan)
+	if i < 0 {
+		return ""
+	}
+	sisa := pesan[i+len(awalan):]
+	j := strings.Index(sisa, `"`)
+	if j < 0 {
+		return ""
+	}
+	return sisa[:j]
+}
+
+// kunciKolomNolYAML mengekstrak nama kunci dari baris kolom-0
+// "nama: ..." ("" bila bukan baris kunci kolom-0).
+func kunciKolomNolYAML(line string) string {
+	if line == "" || line[0] == ' ' || line[0] == '\t' || line[0] == '#' {
+		return ""
+	}
+	idx := strings.Index(line, ":")
+	if idx <= 0 {
+		return ""
+	}
+	return normalkanKunciYAML(strings.TrimSpace(line[:idx]))
+}
+
+// cariKutipBlokMenelanKunciYAML membuktikan mekanisme B-560 atas
+// teks hasil sunting: ia mensimulasikan pelacak NAIF pra-B-560
+// (kutip di isi skalar blok pun membuka skalar) dan melaporkan
+// baris pembuka skalar semu itu — HANYA bila skalar semu
+// tersebut masih terbuka saat baris kunci terkelola yang ganda
+// tercapai, yaitu bila ia terbukti menelan baris itu. Batas
+// ketepatan: simulasi memakai pengenal pembuka blok yang sama
+// dengan pelacak (awalSkalarBlokYAML); bentuk pembuka yang tidak
+// dikenali pelacak tidak terdiagnosis di sini dan jatuh ke pesan
+// umum diagnosisKutipSkalarBlok.
+func cariKutipBlokMenelanKunciYAML(konten, kunci string) (pembuka string, ok bool) {
+	induk := -1 // indentasi induk skalar blok (keadaan BENAR)
+	var kutipBenar byte
+	var naif byte // keadaan kutip NAIF: isi blok pun membuka
+	pembukaAktif := ""
+	for _, line := range strings.Split(konten, "\n") {
+		// 1. Status isi-blok menurut keadaan BENAR (kutip di
+		// isi blok tidak membuka; baris kosong/lebih menjorok
+		// adalah isi, baris lain mengakhiri blok).
+		isiBlok := false
+		if kutipBenar == 0 && induk >= 0 {
+			if strings.TrimSpace(line) == "" || lebarIndentasiYAML(line) > induk {
+				isiBlok = true
+			} else {
+				induk = -1
+			}
+		}
+		// 2. Skalar semu NAIF: pindai baris ini tanpa
+		// pengecualian isi blok.
+		naifSebelum := naif
+		naif = pindaiKutipBarisYAML(line, naif)
+		if isiBlok {
+			if naifSebelum == 0 && naif != 0 {
+				pembukaAktif = strings.TrimSpace(line)
+			} else if naif == 0 {
+				pembukaAktif = ""
+			}
+		} else if naif == 0 {
+			pembukaAktif = ""
+		}
+		// 3. Baris kunci terkelola yang ditelan skalar semu?
+		if !isiBlok && naifSebelum != 0 && pembukaAktif != "" && kunciKolomNolYAML(line) == kunci {
+			return pembukaAktif, true
+		}
+		// 4. Perbarui keadaan BENAR (bukan untuk baris isi blok).
+		if !isiBlok {
+			kutipBenar = pindaiKutipBarisYAML(line, kutipBenar)
+			if kutipBenar == 0 {
+				if i, buka := awalSkalarBlokYAML(line); buka {
+					induk = i
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+// pindaiKutipBarisYAML memindai satu baris untuk keadaan skalar
+// terkutip dan mengembalikan keadaan di akhir baris — aturan
+// yang sama dengan pelacakSkalarYAML.lintasi, tanpa keadaan
+// skalar blok (dipakai diagnosis B-560: simulasi naif dan
+// pelacakan keadaan benar di dalam pemindai diagnosis).
+func pindaiKutipBarisYAML(line string, kutip byte) byte {
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch kutip {
+		case '"':
+			if c == '\\' {
+				i++
+			} else if c == '"' {
+				kutip = 0
+			}
+			continue
+		case '\'':
+			if c == '\'' {
+				if i+1 < len(line) && line[i+1] == '\'' {
+					i++
+				} else {
+					kutip = 0
+				}
+			}
+			continue
+		}
+		if c == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
+			return kutip
+		}
+		if c == '"' || c == '\'' {
+			j := i - 1
+			for j >= 0 && (line[j] == ' ' || line[j] == '\t') {
+				j--
+			}
+			if j < 0 || line[j] == ':' || line[j] == '-' || line[j] == '[' || line[j] == '{' || line[j] == ',' {
+				kutip = c
+			}
+		}
+	}
+	return kutip
 }
 
 // verifikasiHasilHermes memeriksa blok `model:` hasil susunan
@@ -4556,6 +4895,16 @@ func deteksiUTF32TanpaBOM(data []byte) string {
 // kosong, komentar, atau penanda lagi. Baris "---" sesudah
 // penanda adalah awal dokumen tambahan dan ikut tertolak (bentuk
 // itu biasanya lebih dulu tertangkap tolakYAMLDokumenGanda).
+//
+// B-559: pengecualian "penanda lagi" di sini SENGAJA tidak
+// dibatasi pada penanda kanonik — penanda berbentuk tab atau
+// tanpa-spasi sesudah penanda pertama tetap dikecualikan, karena
+// penulis (susunBlokModelHermes, perbaruiYAMLTopLevel)
+// menormalkan SETIAP kemunculan penanda ke bentuk kanonik saat
+// menulis (B-544/B-559). Membatasi pengecualian pada bentuk
+// kanonik akan membalik keputusan B-544 (normalisasi, bukan
+// penolakan) untuk penanda kedua+; yang dijaga penjaga ini
+// adalah ISI, bukan bentuk penandanya.
 func tolakIsiSesudahPenandaHermes(path, konten string) error {
 	baris := strings.Split(konten, "\n")
 	dalam := petaDalamSkalarYAML(baris)

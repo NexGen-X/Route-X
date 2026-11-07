@@ -741,6 +741,17 @@ var unsupportedSchemaKeys = map[string]bool{
 	// normalisasiNode (pola convertConstToEnum referensi), bukan
 	// dibuang, karena membuangnya menghilangkan diskriminatornya.
 	"not": true,
+	// "$dynamicRef"/"$recursiveRef" (B-549): mekanisme referensi
+	// dinamis draft 2019-09/2020-12. Pipa ini TIDAK PERNAH
+	// mendereferensi keduanya — $ref non-lokal saja dibuang di
+	// normalisasiNode karena tidak bisa didereferensi di sini —
+	// dan nama keduanya di luar subset OpenAPI 3.0 Gemini.
+	// Meneruskannya (perilaku lama, lewat cabang bawaan) berarti
+	// referensi menggantung yang namanya sendiri ditolak
+	// validator: dibuang di sini, saudara kandung skemanya tetap
+	// berlaku — keputusan yang sama dengan $ref non-lokal.
+	"$dynamicRef":   true,
+	"$recursiveRef": true,
 }
 
 // kunciSubskemaDirekursi adalah kata kunci yang nilainya NODE
@@ -798,18 +809,29 @@ const batasKedalamanRef = 8
 // bukan dari anyOf itu sendiri).
 //
 // Perlakuan per kunci di posisi node terbagi dalam kelas-kelas
-// (B-533/B-540): (1) dibuang — unsupportedSchemaKeys; (2) wadah
-// nama → node — properties & keluarga; (3) DATA, diteruskan utuh
-// tanpa rekursi — enum/default/example(s) & keluarga B-504,
-// $vocabulary/externalDocs/xml, ekstensi vendor "x-*", dan SETIAP
-// kunci lain di luar kosakata: menurut semantik JSON Schema
-// kunci tak dikenal adalah anotasi yang nilainya data bebas, dan
+// (B-533/B-540): (1) dibuang — unsupportedSchemaKeys (termasuk
+// "$dynamicRef"/"$recursiveRef" sejak B-549: referensi dinamis
+// tidak pernah didereferensi pipa ini — $ref non-lokal pun
+// dibuang — dan namanya di luar subset OpenAPI 3.0 Gemini);
+// (2) wadah nama → node — properties & keluarga; (3) DATA,
+// diteruskan utuh tanpa rekursi — enum/default/example(s) &
+// keluarga B-504, $vocabulary/externalDocs/xml, ekstensi vendor
+// "x-*", dan SETIAP kunci lain yang tidak terdaftar di kelas
+// mana pun. Kelas (3) itu mencakup DUA kelompok yang statusnya
+// kini dinamai persis (koreksi redaksi B-533): kunci DALAM
+// kosakata JSON Schema/OpenAPI yang tidak terdaftar di mana pun
+// ($id, $anchor, $dynamicAnchor, $comment, title, description,
+// format, maximum, minimum, multipleOf, required, nullable,
+// readOnly, writeOnly, deprecated, …) DAN kunci di luar
+// kosakata — menurut semantik JSON Schema keduanya anotasi yang
+// nilainya data bebas, diteruskan lewat cabang bawaan, dan
 // merekursinya sebagai skema merusak data itu senyap (entri
 // "not"/"$ref" hilang, "const" menjadi enum karangan, daftar
 // runtuh); (4) diterjemahkan — type union, const, exclusive*;
 // (5) subskema — kunciSubskemaDirekursi, direkursi sebagai node.
 // Klaim "lolos utuh" hanya berlaku bagi nilai DATA pada kelas
-// (3); node skema di bawah kunci kosakata selalu dinormalisasi.
+// (3); node skema di bawah kunci kosakata yang terdaftar selalu
+// dinormalisasi.
 func normalizeSchema(doc any) any {
 	root, _ := doc.(map[string]any)
 	return normalisasiNode(doc, root, nil, 0)
@@ -926,7 +948,18 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 						out["type"] = tipe
 					}
 					if nullable {
-						out["nullable"] = true
+						// B-542: nullable EKSPLISIT pada node yang
+						// sama MENANG atas turunan union — pola
+						// penjaga yang sama seperti const→enum dan
+						// exclusive*→minimum/maximum di fungsi ini.
+						// Tanpa penjaga, hasil bergantung pada
+						// urutan iterasi peta Go: "nullable": false
+						// eksplisit tertimpa true turunan pada
+						// sebagian lari (tak deterministik antar
+						// permintaan atas skema yang sama).
+						if _, sudah := v["nullable"]; !sudah {
+							out["nullable"] = true
+						}
 					}
 					continue
 				}

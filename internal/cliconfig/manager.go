@@ -1688,6 +1688,21 @@ func normalkanKunciYAML(nama string) string {
 	return nama
 }
 
+// barisPenandaAkhirDokumen melaporkan apakah baris ini penanda
+// akhir dokumen YAML "..." pada tingkat atas: kolom 0 dan isinya
+// persis "..." (diikuti akhir baris atau komentar). Penanda ini sah
+// pada config satu dokumen — PyYAML menerimanya — dan penyunting
+// Hermes sudah menanganinya dengan benar; penyunting bersama
+// Goose/Aider disamakan di perbaruiYAMLTopLevel (B-523).
+func barisPenandaAkhirDokumen(line string) bool {
+	if line == "" || line[0] == ' ' || line[0] == '\t' {
+		return false
+	}
+	sisa := strings.TrimRight(line, " \t")
+	return sisa == "..." || strings.HasPrefix(sisa, "... ") ||
+		strings.HasPrefix(sisa, "...#")
+}
+
 func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 	// B-344: BOM di awal dokumen dibuang lebih dulu, sama seperti
 	// jalur TOML (B-310). TrimSpace tidak membuang BOM, jadi kunci
@@ -1703,7 +1718,24 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 	}
 	tertulis := make(map[string]bool, len(pairs))
 	var out []string
+	// B-523: posisi baris penanda akhir dokumen "..." di out, atau
+	// -1 bila tidak ada. Sesudah penanda, tidak ada lagi isi dokumen:
+	// baris-baris diteruskan utuh tanpa dibaca sebagai kunci, dan
+	// kunci terkelola yang belum tertulis disisipkan SEBELUM
+	// penanda — versi lama menempelkannya di akhir teks, yaitu DI
+	// LUAR dokumen, sehingga verifikasi urai gagal ("hasil sunting
+	// YAML tidak terurai") atas config satu dokumen yang sah.
+	indeksPenanda := -1
 	for _, line := range strings.Split(existing, "\n") {
+		if indeksPenanda >= 0 {
+			out = append(out, line)
+			continue
+		}
+		if barisPenandaAkhirDokumen(line) {
+			indeksPenanda = len(out)
+			out = append(out, line)
+			continue
+		}
 		kunci := ""
 		if line != "" && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
 			if i := strings.Index(line, ":"); i > 0 {
@@ -1728,15 +1760,31 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 		}
 		out = append(out, line)
 	}
-	hasil := strings.Join(out, "\n")
+	var belum []string
 	for _, p := range pairs {
-		if tertulis[p[0]] {
-			continue
+		if !tertulis[p[0]] {
+			belum = append(belum, p[0]+": "+yamlKutip(p[1]))
 		}
+	}
+	if indeksPenanda >= 0 && len(belum) > 0 {
+		// B-523: sisipkan kunci yang belum tertulis SEBELUM penanda
+		// akhir dokumen; penanda tetap baris penutup dokumen.
+		sisip := make([]string, 0, len(out)+len(belum))
+		sisip = append(sisip, out[:indeksPenanda]...)
+		sisip = append(sisip, belum...)
+		sisip = append(sisip, out[indeksPenanda:]...)
+		hasil := strings.Join(sisip, "\n")
 		if hasil != "" && !strings.HasSuffix(hasil, "\n") {
 			hasil += "\n"
 		}
-		hasil += p[0] + ": " + yamlKutip(p[1]) + "\n"
+		return hasil
+	}
+	hasil := strings.Join(out, "\n")
+	for _, baris := range belum {
+		if hasil != "" && !strings.HasSuffix(hasil, "\n") {
+			hasil += "\n"
+		}
+		hasil += baris + "\n"
 	}
 	if hasil != "" && !strings.HasSuffix(hasil, "\n") {
 		hasil += "\n"
@@ -2374,6 +2422,18 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			existingEnv = isiEnv
 			if enc := deteksiBOMNonUTF8([]byte(isiEnv)); enc != "" {
 				return fmt.Errorf("berkas %s berkode %s; Hermes hanya membaca .env UTF-8 — simpan ulang berkas itu sebagai UTF-8, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", envPath, enc)
+			}
+			// B-522: UTF-16 TANPA BOM lolos dari pemeriksa BOM di
+			// atas — isinya terbaca sebagai teks yang nama
+			// terkelolanya tidak terbaca, baris lama dipertahankan
+			// dan baris bersih ditempel, dan Configure melaporkan
+			// sukses atas berkas yang tetap tidak bisa dibaca
+			// Hermes. Pola NUL-nya dideteksi terpisah dengan
+			// syarat ketat (lihat deteksiUTF16TanpaBOM) supaya
+			// NUL terisolasi yang ditoleransi B-507 tidak ikut
+			// tertolak.
+			if enc := deteksiUTF16TanpaBOM([]byte(isiEnv)); enc != "" {
+				return fmt.Errorf("berkas %s terdeteksi berkode %s tanpa BOM; Hermes hanya membaca .env UTF-8 — simpan ulang berkas itu sebagai UTF-8, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", envPath, enc)
 			}
 		}
 		existingHermes, err := bacaTeksKonfig(hermesPath)
@@ -3914,6 +3974,56 @@ func deteksiBOMNonUTF8(data []byte) string {
 	case len(data) >= 2 && data[0] == 0xFF && data[1] == 0xFE:
 		return "UTF-16LE"
 	case len(data) >= 2 && data[0] == 0xFE && data[1] == 0xFF:
+		return "UTF-16BE"
+	}
+	return ""
+}
+
+// deteksiUTF16TanpaBOM mengenali berkas UTF-16 yang TIDAK membawa
+// BOM dari pola byte NUL-nya (B-522): teks yang hurufnya mayoritas
+// Latin/ASCII terkode UTF-16LE menaruh NUL di posisi GANJIL tiap
+// pasangan byte, UTF-16BE di posisi GENAP. deteksiBOMNonUTF8 tidak
+// melihat berkas seperti ini sama sekali, dan isinya lalu terbaca
+// sebagai "teks UTF-8" yang nama terkelolanya tak terbaca.
+//
+// Syaratnya sengaja ketat agar toleransi B-507 tidak terbuka lagi:
+// berkas UTF-8 sah yang memuat NUL terisolasi di baris tak-terkelola
+// TIDAK boleh tertolak. Karena itu: minimal 8 pasangan byte utuh
+// dinilai (berkas lebih pendek dari itu tidak dinilai), TIDAK boleh
+// ada pasangan ber-NUL-ganda, orientasi lawan harus nol, dan
+// pasangan ber-NUL-tunggal pada orientasi yang dinilai harus
+// mendominasi (≥ 4/5 dari pasangan yang memuat tepat satu NUL atau
+// tanpa NUL — pasangan tanpa NUL pada teks UTF-16 berisi karakter
+// di atas U+00FF adalah sah dan tidak menggugurkan penilaian).
+func deteksiUTF16TanpaBOM(data []byte) string {
+	n := len(data) / 2
+	if n > 256 {
+		n = 256
+	}
+	if n < 8 {
+		return ""
+	}
+	var le, be, ganda, polos int
+	for i := 0; i < n; i++ {
+		a, b := data[2*i], data[2*i+1]
+		switch {
+		case a == 0 && b == 0:
+			ganda++
+		case a == 0:
+			be++ // NUL di posisi genap: pola UTF-16BE
+		case b == 0:
+			le++ // NUL di posisi ganjil: pola UTF-16LE
+		default:
+			polos++
+		}
+	}
+	if ganda > 0 {
+		return ""
+	}
+	if le > 0 && be == 0 && le*5 >= (le+polos)*4 {
+		return "UTF-16LE"
+	}
+	if be > 0 && le == 0 && be*5 >= (be+polos)*4 {
 		return "UTF-16BE"
 	}
 	return ""

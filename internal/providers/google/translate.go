@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -801,6 +803,10 @@ const batasKedalamanRef = 8
 //     union memuat "null" (field proto Gemini tidak mengizinkan daftar).
 //   - exclusiveMinimum/exclusiveMaximum bentuk angka (draft 2020-12) → bentuk boolean
 //     subset OpenAPI: nilainya menjadi minimum/maximum dan kata kuncinya penanda boolean.
+//     Bila batas eksplisit numerik berdampingan (B-584), keduanya DIGABUNG menjadi batas
+//     efektif yang mempertahankan arti konjungsi secara eksak: sisi minimum memakai nilai
+//     TERBESAR dengan ketegasan asalnya (eksklusif bila nilai terbesar itu datang dari
+//     exclusiveMinimum), cermin untuk sisi maximum (nilai TERKECIL).
 //   - "$ref" lokal → didereferensi terhadap dokumen yang sama SEBELUM $defs/definitions
 //     dibuang, supaya tidak ada referensi menggantung.
 //
@@ -964,11 +970,67 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 					continue
 				}
 				out[key] = val
+			case "minimum", "maximum":
+				// B-584: bila batas eksplisit numerik berdampingan
+				// dengan exclusive* numerik, batas efektif adalah
+				// batas yang LEBIH KETAT dari konjungsi keduanya —
+				// sisi minimum memakai nilai TERBESAR dengan
+				// ketegasan asalnya, sisi maximum nilai TERKECIL.
+				// Keputusan dibuat DI SINI (kasus kunci batas),
+				// membaca peta ASLI v: bila kasus exclusive* ikut
+				// menulis out[batas], kedua iterasi balapan pada
+				// kunci keluaran yang sama dan hasilnya bergantung
+				// urutan iterasi peta Go (kelas cacat B-542).
+				eksKunci := "exclusiveMinimum"
+				if key == "maximum" {
+					eksKunci = "exclusiveMaximum"
+				}
+				batas, okBatas := val.(float64)
+				eks, okEks := v[eksKunci].(float64)
+				if okBatas && okEks {
+					// CATATAN BATAS-SAMA (penyimpangan sadar dari
+					// rumusan harfiah keputusan B-584
+					// "exclusiveMinimum <= minimum → buang"):
+					// pada nilai SAMA, konjungsinya adalah batas
+					// EKSKLUSIF (minimum:10 berarti >=10,
+					// exclusiveMinimum:10 berarti >10, gabungannya
+					// >10) — membuang penanda di sini mengubah
+					// artinya menjadi >=10, dan justru merusak
+					// satu-satunya kasus yang perilaku lamanya
+					// BENAR ("benar hanya bila nilainya sama",
+					// PB14-7). Jadi perbandingan pemenangnya
+					// memakai >= (minimum) / <= (maximum):
+					// eksklusif menang saat nilainya sama.
+					// Test pengunci: TestB584BatasSamaMembunuhMutan.
+					menangEks := eks >= batas
+					if key == "maximum" {
+						menangEks = eks <= batas
+					}
+					if menangEks {
+						out[key] = eks
+						out[eksKunci] = true
+					} else {
+						out[key] = batas
+						// Kunci exclusive* dibuang: batas
+						// eksplisit lebih ketat dan inklusif.
+					}
+					continue
+				}
+				out[key] = val
 			case "exclusiveMinimum", "exclusiveMaximum":
 				if angka, ok := val.(float64); ok {
 					batas := "minimum"
 					if key == "exclusiveMaximum" {
 						batas = "maximum"
+					}
+					if _, adaAngka := v[batas].(float64); adaAngka {
+						// Batas eksplisit numerik ada: kasus
+						// "minimum"/"maximum" di atas sudah
+						// memutuskan batas efektif + penanda dari
+						// peta ASLI — di sini tidak ada yang
+						// ditulis (lihat catatan B-584/B-542 di
+						// sana).
+						continue
 					}
 					if _, sudah := v[batas]; !sudah {
 						out[batas] = angka
@@ -1051,11 +1113,31 @@ func resolusiRef(node map[string]any, ref string, root map[string]any, rantaiRef
 }
 
 // cariPointerLokal menelusuri pointer JSON lokal ("#/a/b") pada dokumen akar,
-// termasuk pelepasan "~0"/"~1" menurut RFC 6901.
+// termasuk pelepasan "~0"/"~1" menurut RFC 6901. Segmen yang menunjuk
+// elemen larik didukung (B-585): bila simpul kini []any dan segmennya
+// angka desimal tanpa nol-di-depan dalam rentang, elemen itu ditelusuri
+// ("-", indeks di luar rentang, dan angka ber-nol-di-depan ditolak).
+// Tiap segmen didekode persen (B-586) dengan url.PathUnescape SESUDAH
+// pemisahan atas "/" — supaya "%2F" di dalam segmen tidak terbelah
+// menjadi pemisah — dan SEBELUM pelepasan "~0"/"~1" (dekode URI adalah
+// lapisan luar, pelepasan pointer lapisan dalam, RFC 6901 §6). Segmen
+// yang escape persennya tak sah dibiarkan mentah: pencariannya
+// berlangsung harfiah, sama seperti sebelum B-586.
 func cariPointerLokal(root map[string]any, ref string) (any, bool) {
 	var kini any = root
 	for _, seg := range strings.Split(strings.TrimPrefix(ref, "#/"), "/") {
+		if lepas, err := url.PathUnescape(seg); err == nil {
+			seg = lepas
+		}
 		seg = strings.ReplaceAll(strings.ReplaceAll(seg, "~1", "/"), "~0", "~")
+		if larik, ok := kini.([]any); ok {
+			indeks, ok := indeksSegmen(seg)
+			if !ok || indeks >= len(larik) {
+				return nil, false
+			}
+			kini = larik[indeks]
+			continue
+		}
 		peta, ok := kini.(map[string]any)
 		if !ok {
 			return nil, false
@@ -1066,6 +1148,29 @@ func cariPointerLokal(root map[string]any, ref string) (any, bool) {
 		}
 	}
 	return kini, true
+}
+
+// indeksSegmen mengurai segmen pointer menjadi indeks larik menurut
+// RFC 6901: hanya angka desimal ("0" atau tanpa nol-di-depan),
+// tanpa tanda ("-"/"+") dan tanpa karakter lain. Angka yang
+// meluap strconv.Atoi ditolak (di luar rentang mana pun).
+func indeksSegmen(seg string) (int, bool) {
+	if seg == "" {
+		return 0, false
+	}
+	for i := 0; i < len(seg); i++ {
+		if seg[i] < '0' || seg[i] > '9' {
+			return 0, false
+		}
+	}
+	if len(seg) > 1 && seg[0] == '0' {
+		return 0, false
+	}
+	indeks, err := strconv.Atoi(seg)
+	if err != nil || indeks < 0 {
+		return 0, false
+	}
+	return indeks, true
 }
 
 // tipeDariUnion memilih tipe tunggal dari union "type": tipe non-"null" pertama,

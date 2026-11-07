@@ -1375,6 +1375,12 @@ func (h *Handlers) projectCodeAssistSync(ctx context.Context, p *upstream.Provid
 	if err := h.oauthRepo.UpdateCodeAssistProject(ctx, meta.ID, project); err != nil {
 		h.logger.WarnContext(ctx, "gagal menyimpan project code assist hasil resolusi sync",
 			"provider_id", p.ID, "error", err)
+	} else {
+		// B-438: backfill project mengubah konteks layan sesi,
+		// tetapi project tidak masuk kunci response cache — siram
+		// cache respons seperti jalur exchange (yang menyiram
+		// lewat handler-nya) dan jalur factory (callback worker).
+		h.kosongkanCacheRespons(ctx)
 	}
 	return project
 }

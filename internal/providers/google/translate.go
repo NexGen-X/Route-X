@@ -743,6 +743,23 @@ var unsupportedSchemaKeys = map[string]bool{
 	"not": true,
 }
 
+// kunciSubskemaDirekursi adalah kata kunci yang nilainya NODE
+// skema (atau larik node skema) di luar kasus-kasus khusus
+// normalisasiNode — nilainya direkursi sebagai skema. Daftar ini
+// adalah himpunan TERTUTUP dari kosakata aplikator JSON Schema
+// (draft 4–2020-12) + kosakata konten: di luar daftar ini dan
+// kasus-kasus khusus di normalisasiNode, sebuah kunci di posisi
+// node BUKAN pembawa subskema (B-533).
+var kunciSubskemaDirekursi = map[string]bool{
+	"items":           true,
+	"prefixItems":     true,
+	"additionalItems": true,
+	"allOf":           true,
+	"anyOf":           true,
+	"oneOf":           true,
+	"contentSchema":   true,
+}
+
 // sanitizeSchema menormalkan skema JSON Schema modern menjadi subset OpenAPI 3.0 yang
 // diterima Gemini, secara rekursif (B-161). Skema yang bukan JSON sah diteruskan apa
 // adanya supaya upstream yang melaporkan sebabnya.
@@ -778,8 +795,21 @@ const batasKedalamanRef = 8
 //
 // anyOf/oneOf/allOf TIDAK dibuang: validator menerimanya, dan normalisasi masuk ke
 // dalamnya secara rekursif (error Cline berasal dari exclusiveMinimum di dalam anyOf,
-// bukan dari anyOf itu sendiri). Ini BUKAN allowlist — kata kunci sah (description,
-// default, enum, items, required, dst.) lolos utuh.
+// bukan dari anyOf itu sendiri).
+//
+// Perlakuan per kunci di posisi node terbagi dalam kelas-kelas
+// (B-533/B-540): (1) dibuang — unsupportedSchemaKeys; (2) wadah
+// nama → node — properties & keluarga; (3) DATA, diteruskan utuh
+// tanpa rekursi — enum/default/example(s) & keluarga B-504,
+// $vocabulary/externalDocs/xml, ekstensi vendor "x-*", dan SETIAP
+// kunci lain di luar kosakata: menurut semantik JSON Schema
+// kunci tak dikenal adalah anotasi yang nilainya data bebas, dan
+// merekursinya sebagai skema merusak data itu senyap (entri
+// "not"/"$ref" hilang, "const" menjadi enum karangan, daftar
+// runtuh); (4) diterjemahkan — type union, const, exclusive*;
+// (5) subskema — kunciSubskemaDirekursi, direkursi sebagai node.
+// Klaim "lolos utuh" hanya berlaku bagi nilai DATA pada kelas
+// (3); node skema di bawah kunci kosakata selalu dinormalisasi.
 func normalizeSchema(doc any) any {
 	root, _ := doc.(map[string]any)
 	return normalisasiNode(doc, root, nil, 0)
@@ -807,6 +837,13 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				if _, sudah := v["enum"]; !sudah {
 					out["enum"] = []any{val}
 				}
+				continue
+			}
+			if strings.HasPrefix(key, "x-") {
+				// B-533: ekstensi vendor (pola "^x-" OpenAPI/JSON
+				// Schema) adalah DATA bebas — diteruskan utuh,
+				// tidak pernah direkursi sebagai node skema.
+				out[key] = val
 				continue
 			}
 			switch key {
@@ -852,7 +889,7 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 					continue
 				}
 				out[key] = normalisasiNode(val, root, rantaiRef, kedalaman)
-			case "enum", "default", "example", "examples", "propertyDependencies", "discriminator":
+			case "enum", "default", "example", "examples", "propertyDependencies", "discriminator", "$vocabulary", "externalDocs", "xml":
 				// B-504: nilai di kunci-kunci ini adalah DATA, bukan
 				// skema — isi enum, nilai bawaan, dan contoh boleh
 				// berbentuk objek apa pun (termasuk yang kuncinya
@@ -872,6 +909,15 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				// terbukti — kelas peringatan yang sama seperti
 				// kata kunci lolos lainnya; yang diperbaiki di
 				// sini adalah perusakan isinya.)
+				//
+				// B-540: "$vocabulary" (peta URI → bool),
+				// "externalDocs" dan "xml" (objek metadata OpenAPI
+				// berfield tetap) masuk keluarga yang sama. Klaim
+				// sapuan Fase 22 "lolos utuh" untuk ketiganya dulu
+				// hanya benar pada bentuk sahnya — nilai di
+				// bawahnya direkursi sebagai node dan rusak di
+				// bawah kunci bermusuhan; sebagai data ketiganya
+				// kini utuh pada bentuk apa pun.
 				out[key] = val
 			case "type":
 				if gabungan, ok := val.([]any); ok {
@@ -900,7 +946,25 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				// Bentuk boolean warisan (subset OpenAPI) diteruskan apa adanya.
 				out[key] = val
 			default:
-				out[key] = normalisasiNode(val, root, rantaiRef, kedalaman)
+				if kunciSubskemaDirekursi[key] {
+					// Nilai adalah node skema (atau larik node):
+					// direkursi sebagai skema.
+					out[key] = normalisasiNode(val, root, rantaiRef, kedalaman)
+					continue
+				}
+				// B-533: kunci di luar kosakata JSON Schema /
+				// OpenAPI adalah ANOTASI — nilainya data bebas
+				// menurut semantik spek, jadi diteruskan utuh.
+				// Versi lama merekursi SEMUA kunci tak dikenal
+				// sebagai node skema: data di bawah kunci
+				// ekstensi/asing rusak senyap (entri "not"/"$ref"
+				// hilang, "const" menjadi enum karangan, daftar
+				// "type" runtuh). Nilai skalar/larik-skalar tidak
+				// berubah oleh perubahan ini (rekursi atasnya
+				// identitas); yang berubah hanya nilai berbentuk
+				// peta/larik-peta di bawah kunci asing — persis
+				// kelas datanya.
+				out[key] = val
 			}
 		}
 		return out

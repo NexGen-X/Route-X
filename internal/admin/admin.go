@@ -464,6 +464,21 @@ func (h *Handlers) kosongkanCacheRespons(ctx context.Context) {
 	}
 }
 
+// siramanCacheRespons adalah varian kosongkanCacheRespons yang
+// MENGEMBALIKAN errornya (B-475). Mayoritas pemanggil memang
+// best-effort — mutasi mereka sudah berhasil dan kegagalan siraman
+// cukup tercatat di log — tetapi pemanggil yang hasil akhirnya
+// mengklaim keadaan sesudah-mutasi (restore database) wajib bisa
+// MENAMAI kegagalan siraman di respons & auditnya, bukan menelannya.
+// Engine tidak terpasang bukan kegagalan: tidak ada yang disiram.
+func (h *Handlers) siramanCacheRespons(ctx context.Context) error {
+	if h.responseCache == nil {
+		return nil
+	}
+	_, err := h.responseCache.Flush(ctx)
+	return err
+}
+
 // errBodyJSON adalah satu-satunya kesalahan yang boleh keluar dari decodeJSON.
 // Teks error mentah encoding/json memuat nama struct & field Go serta cuplikan
 // body ("json: cannot unmarshal string into Go struct field

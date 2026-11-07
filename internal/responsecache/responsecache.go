@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -52,6 +53,14 @@ type Entry struct {
 	// sebelum teks mulai direkam — jalur HIT mengekstraknya dari Raw.
 	Teks     string    `json:"teks,omitempty"`
 	CachedAt time.Time `json:"cached_at"`
+	// Generasi adalah cap generasi cache saat entri ini ditulis
+	// (mekanisme generasi B-473). Entri hanya boleh disajikan selama
+	// generasinya sama dengan generasi cache yang sedang berjalan;
+	// setiap Flush dan setiap pergeseran konteks jawaban menaikkan
+	// generasi, jadi entri dari generasi lama terbaca sebagai MISS
+	// walau kunci Redis-nya masih hidup. Entri warisan yang ditulis
+	// sebelum mekanisme ini ada membawa 0 — sama dengan generasi awal.
+	Generasi int64 `json:"generasi,omitempty"`
 }
 
 // Stats merangkum metrik performa response cache.
@@ -133,6 +142,59 @@ func (e *Engine) TTL() time.Duration {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.ttl
+}
+
+// --- Mekanisme generasi cache (B-473/B-474) ---
+//
+// Invariant: sebuah entri hanya boleh disajikan atau ditanam oleh
+// request yang CAP generasinya sama dengan generasi cache yang sedang
+// berjalan. Setiap Flush menaikkan generasi, dan pergeseran konteks
+// jawaban yang tidak melewati Flush (pergeseran pemenang kredensial,
+// B-474) menaikkannya lewat NaikkanGenerasi. Dengan itu balapan
+// in-flight tidak bisa lagi menanam jawaban basi: request menghitung
+// kunci pada generasi G, eksekusi berjalan lama, Flush/kenaikan terjadi
+// di tengah (generasi menjadi G+1), lalu Set-nya tiba membawa cap G —
+// dan ditolak, karena konteks yang menghasilkan jawaban itu sudah
+// bukan konteks yang berlaku. Tanpa mekanisme ini keluarga flush
+// selalu kalah oleh dimensi waktu: siraman hanya membuang entri yang
+// SUDAH tertanam, bukan yang sedang dalam perjalanan.
+
+// kunciGenerasi adalah kunci Redis counter generasi cache.
+func (e *Engine) kunciGenerasi() string {
+	return cache.Key(cache.NamespaceResponseCache, "meta", "generasi")
+}
+
+// GenerasiSaatIni membaca nomor generasi cache yang sedang berjalan.
+// Kunci yang belum pernah lahir berarti generasi 0.
+func (e *Engine) GenerasiSaatIni(ctx context.Context) (int64, error) {
+	if e.redis == nil {
+		return 0, nil
+	}
+	gen, err := e.redis.Client().Get(ctx, e.kunciGenerasi()).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("membaca generasi response cache: %w", err)
+	}
+	return gen, nil
+}
+
+// NaikkanGenerasi menaikkan generasi cache TANPA menghapus entri:
+// entri generasi lama cukup berhenti disajikan (terbaca MISS) dan
+// kedaluwarsa oleh TTL. Dipakai untuk pergeseran konteks yang tidak
+// membenarkan siraman penuh — terutama pergeseran pemenang kredensial
+// (B-474) — di mana menghapus seluruh isi cache akan membuang entri
+// yang tidak berhubungan dengan pergeseran itu.
+func (e *Engine) NaikkanGenerasi(ctx context.Context) (int64, error) {
+	if e.redis == nil {
+		return 0, nil
+	}
+	gen, err := e.redis.Client().Incr(ctx, e.kunciGenerasi()).Result()
+	if err != nil {
+		return 0, fmt.Errorf("menaikkan generasi response cache: %w", err)
+	}
+	return gen, nil
 }
 
 // ComputeKey menghitung signature SHA-256 unik dari permintaan chat completion.
@@ -256,30 +318,87 @@ func (e *Engine) ComputeScopedKey(req *providers.ChatRequest, scope Scope) strin
 	return hex.EncodeToString(sum[:])
 }
 
-// Get mencari respons yang pernah disimpan berdasarkan kunci.
-func (e *Engine) Get(ctx context.Context, key string) (*Entry, bool, error) {
+// skripAmbilBerCap membaca entri dan generasi berjalan dalam SATU
+// langkah atomik: keduanya harus berasal dari momen yang sama, kalau
+// tidak request bisa memasangkan entri pra-siraman dengan generasi
+// pasca-siraman (atau sebaliknya) dan invariant generasi bocor lewat
+// jendela di antara dua perintah terpisah.
+var skripAmbilBerCap = redis.NewScript(`
+local gen = redis.call('GET', KEYS[2])
+local val = redis.call('GET', KEYS[1])
+return {val, gen}
+`)
+
+// GetBerCap mencari entri berdasarkan kunci DAN melaporkan generasi
+// yang berlaku pada momen pembacaan itu. Pemanggil yang berniat
+// menyimpan hasil eksekusi wajib meneruskan generasi ini ke SetBerCap:
+// itulah cap yang membuktikan kunci dihitung sebelum mutasi konteks
+// apa pun yang menaikkan generasi di tengah eksekusi (B-473).
+//
+// Entri yang cap generasinya tidak sama dengan generasi berjalan
+// dilaporkan sebagai MISS — bukan HIT — walau kunci Redis-nya masih
+// ada: isinya lahir dari konteks jawaban yang sudah tidak berlaku.
+func (e *Engine) GetBerCap(ctx context.Context, key string) (*Entry, int64, bool, error) {
 	if !e.IsEnabled() || key == "" {
-		return nil, false, nil
+		return nil, 0, false, nil
 	}
 
 	rKey := cache.Key(cache.NamespaceResponseCache, "entry", key)
-	val, err := e.redis.Client().Get(ctx, rKey).Bytes()
-	if errors.Is(err, redis.Nil) {
-		e.recordStat(ctx, "misses")
-		return nil, false, nil
-	}
+	hasil, err := skripAmbilBerCap.Run(ctx, e.redis.Client(),
+		[]string{rKey, e.kunciGenerasi()}).Result()
 	if err != nil {
 		e.logger.WarnContext(ctx, "gagal membaca response cache", "key", key, "error", err)
-		return nil, false, err
+		return nil, 0, false, err
+	}
+	sepasang, ok := hasil.([]interface{})
+	if !ok || len(sepasang) != 2 {
+		return nil, 0, false, fmt.Errorf("hasil skrip baca response cache tidak berbentuk pasangan")
+	}
+	var generasi int64
+	switch mentah := sepasang[1].(type) {
+	case int64:
+		generasi = mentah
+	case string:
+		// Nilai counter di Redis adalah teks angka; Lua meneruskannya
+		// apa adanya sebagai bulk string.
+		n, err := strconv.ParseInt(mentah, 10, 64)
+		if err != nil {
+			return nil, 0, false, fmt.Errorf("generasi response cache tidak terbaca: %w", err)
+		}
+		generasi = n
+	}
+	if sepasang[0] == nil {
+		e.recordStat(ctx, "misses")
+		return nil, generasi, false, nil
+	}
+	val, ok := sepasang[0].(string)
+	if !ok {
+		return nil, generasi, false, fmt.Errorf("isi response cache tidak berbentuk teks")
 	}
 
 	var entry Entry
-	if err := json.Unmarshal(val, &entry); err != nil {
-		return nil, false, err
+	if err := json.Unmarshal([]byte(val), &entry); err != nil {
+		return nil, generasi, false, err
+	}
+	if entry.Generasi != generasi {
+		// Entri dari generasi lama (atau ditulis sebelum mekanisme
+		// generasi ada, sementara generasi sudah bergerak): jangan
+		// disajikan. Ia kedaluwarsa oleh TTL dengan sendirinya.
+		e.recordStat(ctx, "misses")
+		return nil, generasi, false, nil
 	}
 
 	e.recordStat(ctx, "hits")
-	return &entry, true, nil
+	return &entry, generasi, true, nil
+}
+
+// Get mencari respons yang pernah disimpan berdasarkan kunci.
+// Penegakan generasinya sama dengan GetBerCap; pemanggil yang akan
+// menyimpan hasil eksekusi sesudah pembacaan ini harus memakai
+// GetBerCap + SetBerCap supaya cap generasinya terbawa.
+func (e *Engine) Get(ctx context.Context, key string) (*Entry, bool, error) {
+	entry, _, hit, err := e.GetBerCap(ctx, key)
+	return entry, hit, err
 }
 
 // skripSetEntri menulis entri sekaligus memelihara counter ringkas
@@ -297,10 +416,23 @@ return 1
 `)
 
 // Set menyimpan respons inferensi ke Redis dengan TTL aktif.
+//
+// Entri dicap dengan generasi yang berjalan pada saat penulisan, jadi
+// ia hanya tersaji selama generasi itu belum bergerak. Pemanggil yang
+// menghitung kunci SEBELUM eksekusi panjang (ketiga permukaan gateway)
+// tidak boleh memakai Set ini — cap "saat penulisan" akan selalu cocok
+// dan balapan B-473 tetap menang; mereka wajib memakai SetBerCap dengan
+// generasi dari GetBerCap.
 func (e *Engine) Set(ctx context.Context, key string, entry *Entry) error {
 	if !e.IsEnabled() || key == "" || entry == nil {
 		return nil
 	}
+
+	generasi, err := e.GenerasiSaatIni(ctx)
+	if err != nil {
+		return err
+	}
+	entry.Generasi = generasi
 
 	rKey := cache.Key(cache.NamespaceResponseCache, "entry", key)
 	data, err := json.Marshal(entry)
@@ -325,10 +457,80 @@ func (e *Engine) Set(ctx context.Context, key string, entry *Entry) error {
 	return nil
 }
 
+// skripSetEntriBerCap adalah skripSetEntri plus gerbang generasi:
+// penulisan hanya terjadi bila generasi berjalan masih sama dengan
+// cap yang dibawa pemanggil, diperiksa dan ditulis dalam SATU langkah
+// atomik — pemeriksaan terpisah di sisi Go akan selalu kalah oleh
+// Flush yang menyela di antara periksa dan tulis.
+var skripSetEntriBerCap = redis.NewScript(`
+local gen = tonumber(redis.call('GET', KEYS[3]) or '0')
+if gen ~= tonumber(ARGV[3]) then
+  return 0
+end
+if redis.call('EXISTS', KEYS[1]) == 0 then
+  redis.call('INCR', KEYS[2])
+end
+redis.call('PSETEX', KEYS[1], ARGV[2], ARGV[1])
+return 1
+`)
+
+// SetBerCap menyimpan entri HANYA bila generasi cache belum bergerak
+// sejak cap generasi diambil (lewat GetBerCap pada saat kunci
+// dihitung). Return false berarti penulisan DITOLAK karena generasi
+// sudah bergeser — jawaban yang hendak ditanam lahir dari konteks
+// yang sudah tidak berlaku (B-473) dan membuangnya adalah perilaku
+// yang benar, bukan kegagalan. Error hanya untuk kegagalan Redis /
+// serialisasi yang sesungguhnya.
+func (e *Engine) SetBerCap(ctx context.Context, key string, entry *Entry, generasi int64) (bool, error) {
+	if !e.IsEnabled() || key == "" || entry == nil {
+		return false, nil
+	}
+
+	entry.Generasi = generasi
+	rKey := cache.Key(cache.NamespaceResponseCache, "entry", key)
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return false, fmt.Errorf("serialize cache entry: %w", err)
+	}
+	if len(data) > MaxEntryBytes {
+		e.logger.DebugContext(ctx, "entri response cache melewati batas ukuran, tidak disimpan",
+			"key", key, "ukuran", len(data), "batas", MaxEntryBytes)
+		return false, nil
+	}
+
+	entryCountKey := cache.Key(cache.NamespaceResponseCache, "meta", "entry_count")
+	ttl := e.TTL()
+	tertulis, err := skripSetEntriBerCap.Run(ctx, e.redis.Client(),
+		[]string{rKey, entryCountKey, e.kunciGenerasi()},
+		data, ttl.Milliseconds(), generasi).Int64()
+	if err != nil {
+		e.logger.WarnContext(ctx, "gagal menulis response cache", "key", key, "error", err)
+		return false, err
+	}
+	if tertulis == 0 {
+		e.logger.DebugContext(ctx, "penanaman entri response cache ditolak: generasi sudah bergeser sejak kunci dihitung",
+			"key", key, "generasi_cap", generasi)
+	}
+	return tertulis == 1, nil
+}
+
 // Flush membersihkan seluruh entri cache respons di Redis tanpa menyentuh namespace lain.
+//
+// Flush menaikkan generasi SEBELUM menghapus apa pun (B-473): request
+// in-flight yang kuncinya dihitung sebelum flush tidak bisa menanam
+// jawabannya kembali sesudah penghapusan selesai, karena SetBerCap-nya
+// membawa cap generasi lama. Tanpa kenaikan ini siraman hanya menang
+// melawan entri yang sudah tertanam, bukan yang sedang dalam
+// perjalanan — persis celah dimensi waktu putaran bersih #7.
+// Kunci generasi sendiri TIDAK ikut dihapus: ia adalah memori bahwa
+// siraman pernah terjadi.
 func (e *Engine) Flush(ctx context.Context) (int64, error) {
 	if e.redis == nil {
 		return 0, nil
+	}
+
+	if _, err := e.NaikkanGenerasi(ctx); err != nil {
+		return 0, err
 	}
 
 	pattern := cache.Key(cache.NamespaceResponseCache, "entry") + ":*"

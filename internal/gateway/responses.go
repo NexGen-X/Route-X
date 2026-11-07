@@ -737,9 +737,14 @@ func (h *Handlers) responsesSekali(w http.ResponseWriter, r *http.Request, pr *p
 	// membawa teks (syarat ketat permukaan Anthropic) supaya penyaring bisa
 	// dinilai ulang dengan kebijakan saat HIT.
 	var cacheKey string
+	// generasiCache: cap generasi saat kunci dihitung (B-473) — lihat
+	// catatan yang sama di chatSekali (http.go).
+	var generasiCache int64
 	if h.respCache != nil && h.respCache.IsEnabled() && layakCacheRespons(pr.req) {
 		cacheKey = h.respCache.ComputeScopedKey(pr.req, cakupanCache(pr, permukaanResponses))
-		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.Raw) > 0 && entry.Teks != "" {
+		entry, generasi, hit, err := h.respCache.GetBerCap(r.Context(), cacheKey)
+		generasiCache = generasi
+		if err == nil && hit && entry != nil && len(entry.Raw) > 0 && entry.Teks != "" {
 			pemakaian := pemakaianCacheHIT(pr.req, entry)
 			j.pasangPemakaian(pemakaian)
 			menang := kandidatCacheHIT(pr, entry)
@@ -849,13 +854,15 @@ func (h *Handlers) responsesSekali(w http.ResponseWriter, r *http.Request, pr *p
 	_, _ = w.Write(buf)
 
 	if cacheKey != "" && h.respCache != nil && h.respCache.IsEnabled() {
-		_ = h.respCache.Set(r.Context(), cacheKey, &responsecache.Entry{
+		// B-473: penanaman membawa cap generasi dari saat kunci dihitung
+		// (SetBerCap), sama seperti permukaan OpenAI.
+		_, _ = h.respCache.SetBerCap(r.Context(), cacheKey, &responsecache.Entry{
 			Model:      out.Candidate.UpstreamModelName,
 			ProviderID: out.Candidate.ProviderID,
 			Raw:        buf,
 			Usage:      pemakaian,
 			Teks:       teks,
 			CachedAt:   time.Now(),
-		})
+		}, generasiCache)
 	}
 }

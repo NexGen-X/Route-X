@@ -727,6 +727,14 @@ var unsupportedSchemaKeys = map[string]bool{
 	"else":                  true,
 	"propertyNames":         true,
 	"unevaluatedProperties": true,
+	// "unevaluatedItems" (B-524, keputusan sapuan Fase 22): saudara
+	// 2019-09+ dari unevaluatedProperties — aplikator "unevaluated*"
+	// sama-sama di luar subset OpenAPI 3.0 Gemini, jadi alasan grup
+	// B-161 berlaku untuk seluruh keluarganya. Versi lama
+	// meneruskannya (ternormalisasi) sementara saudaranya dibuang:
+	// tidak konsisten, dan mempertahankan nama yang ditolak
+	// validator menggagalkan seluruh permintaan.
+	"unevaluatedItems": true,
 	// "not" (B-427): sama-sama di luar subset Gemini dan tanpa
 	// terjemahan setia — dibuang seperti grup B-161. "const" TIDAK
 	// ada di peta ini: ia diterjemahkan menjadi enum:[nilai] di
@@ -802,7 +810,7 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				continue
 			}
 			switch key {
-			case "properties", "dependentSchemas", "dependentRequired":
+			case "properties", "dependentSchemas", "dependentRequired", "dependencies":
 				// B-462: kunci-kunci ini adalah WADAH — nilainya peta
 				// NAMA → node skema, bukan node skema itu sendiri.
 				// Mengiterasi peta wadah sebagai node (perilaku lama)
@@ -816,6 +824,12 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				// tidak pernah ditafsirkan. B-503 menambahkan
 				// dependentRequired (wadah nama → daftar nama, keluarga
 				// yang sama; nilai daftarnya lolos sebagai daun).
+				// B-524 menambahkan dependencies (JSON Schema
+				// draft ≤7): wadah CAMPURAN — nilai entri boleh
+				// berbentuk skema (dinormalkan sebagai node) atau
+				// daftar nama string (lolos sebagai daun lewat
+				// cabang larik), persis dua bentuk yang ditangani
+				// badan kasus ini per entri.
 				//
 				// B-515 (kejelasan, tanpa perubahan perilaku): "$defs",
 				// "definitions", dan "patternProperties" TIDAK ada di
@@ -824,8 +838,11 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				// di atas switch ini (keputusan B-161) sebelum kasus
 				// wadah sempat tercapai; dereferensi $ref membaca
 				// dokumen akar MENTAH, jadi pembuangan itu tidak
-				// menggantungkan referensi. Ketiganya hanya selamat
-				// sebagai NAMA entri di dalam wadah di atas.
+				// menggantungkan referensi. Ketiganya selamat dalam
+				// dua posisi bukan-node saja: sebagai NAMA entri di
+				// dalam wadah di atas, dan sebagai NILAI data pada
+				// kunci-kunci data (kasus B-504 di bawah) — tidak
+				// pernah sebagai kata kunci di posisi node.
 				if wadah, ok := val.(map[string]any); ok {
 					isi := make(map[string]any, len(wadah))
 					for nama, sub := range wadah {
@@ -835,7 +852,7 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 					continue
 				}
 				out[key] = normalisasiNode(val, root, rantaiRef, kedalaman)
-			case "enum", "default", "example", "examples":
+			case "enum", "default", "example", "examples", "propertyDependencies", "discriminator":
 				// B-504: nilai di kunci-kunci ini adalah DATA, bukan
 				// skema — isi enum, nilai bawaan, dan contoh boleh
 				// berbentuk objek apa pun (termasuk yang kuncinya
@@ -843,6 +860,18 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				// mereka sebagai node (perilaku lama) merusak mereka
 				// senyap: kunci data "not" terhapus, "const" berubah
 				// menjadi enum karangan. Kini diteruskan utuh.
+				//
+				// B-528: propertyDependencies adalah data murni
+				// (nama → nama → daftar nama). B-529: discriminator
+				// adalah objek OpenAPI yang mapping-nya data
+				// (nama varian → string). Keduanya masuk kasus ini
+				// dengan alasan yang sama: merekursinya sebagai
+				// node menggerus nama-nama di dalamnya yang
+				// kebetulan kata kunci. (Apakah validator Gemini
+				// menerima NAMA discriminator itu sendiri belum
+				// terbukti — kelas peringatan yang sama seperti
+				// kata kunci lolos lainnya; yang diperbaiki di
+				// sini adalah perusakan isinya.)
 				out[key] = val
 			case "type":
 				if gabungan, ok := val.([]any); ok {

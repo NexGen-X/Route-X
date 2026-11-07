@@ -122,7 +122,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     {
       id: 'nav-cli',
       title: 'Integrasi CLI & Konfigurasi 3 Mode',
-      subtitle: 'Konfigurasi Antigravity, Claude, OpenCode, dan perkakas AI terminal',
+      subtitle: 'Konfigurasi Claude, OpenCode, dan perkakas AI terminal lainnya',
       category: 'Navigasi',
       icon: Code2,
       badge: jumlahToolCli !== null ? `${jumlahToolCli} Tools` : undefined,
@@ -369,7 +369,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               aria-controls="command-palette-results"
               aria-autocomplete="list"
               aria-label="Palette Perintah Cepat"
-              placeholder="Cari perintah, navigasi rute, atau panduan CLI (mis. 'Antigravity', 'Cache')..."
+              placeholder="Cari perintah, navigasi rute, atau panduan CLI (mis. 'Claude', 'Cache')..."
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);

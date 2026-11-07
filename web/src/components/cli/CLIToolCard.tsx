@@ -29,6 +29,13 @@ export interface CLIToolCardProps {
   models: Model[];
   rules: RoutingRule[];
   dynamicComboOptions: ComboOption[];
+  // B-512: penanda sumber pendamping yang GAGAL dimuat di halaman
+  // (B-225). Daftar kosong dari sumber yang gagal BUKAN katalog
+  // kosong — klaim definitif "belum ada … terdaftar" digerbang
+  // penanda ini supaya tidak bertabrakan dengan banner kegagalan
+  // halaman di layar yang sama.
+  modelsGagal?: boolean;
+  rulesGagal?: boolean;
   userApiKey: string;
   publicBaseURL: string;
   isApplying: boolean;
@@ -50,6 +57,8 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
   models,
   rules,
   dynamicComboOptions,
+  modelsGagal = false,
+  rulesGagal = false,
   userApiKey,
   publicBaseURL,
   isApplying,
@@ -263,7 +272,9 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                     />
                   ) : (
                     <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400">
-                      Belum ada model terdaftar di katalog.
+                      {modelsGagal
+                        ? 'Daftar model gagal dimuat — katalog belum dapat dipastikan kosong.'
+                        : 'Belum ada model terdaftar di katalog.'}
                     </div>
                   ))}
 
@@ -279,7 +290,9 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                     />
                   ) : (
                     <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400">
-                      Belum ada aturan routing terdaftar di database.
+                      {rulesGagal
+                        ? 'Daftar aturan routing gagal dimuat — belum dapat dipastikan kosong.'
+                        : 'Belum ada aturan routing terdaftar di database.'}
                     </div>
                   ))}
 
@@ -313,7 +326,9 @@ export const CLIToolCard: React.FC<CLIToolCardProps> = ({
                     </div>
                   ) : (
                     <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-400">
-                      Belum ada aturan combo bertingkat.
+                      {rulesGagal
+                        ? 'Daftar aturan routing gagal dimuat — combo belum dapat dipastikan kosong.'
+                        : 'Belum ada aturan combo bertingkat.'}
                     </div>
                   ))}
               </div>

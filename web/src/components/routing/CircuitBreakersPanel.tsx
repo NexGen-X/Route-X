@@ -253,7 +253,7 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
                 <span className="text-xs font-bold font-mono text-sky-400">
                   {ruleGlobalTeratas
                     ? `${ruleGlobalTeratas.failure_threshold}x Gagal`
-                    : rulesGagal
+                    : rulesGagal || modelsGagal
                       ? '—'
                       : 'Bawaan Server'}
                 </span>
@@ -268,6 +268,25 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
               const isTrip = b.state === 'open';
               const isHalf = b.state === 'half-open';
               const konf = konfigurasiEfektif(b, rules, models);
+              // B-511: bila daftar model GAGAL dimuat, rule
+              // khusus-model yang cakupannya memuat breaker ini
+              // tidak dapat dinilai sama sekali — rule generik
+              // yang terpilih bisa jadi bukan pemenang
+              // sesungguhnya (dengan daftar model terukur, rule
+              // khusus-model berprioritas lebih tinggi akan
+              // menang). Labelnya karena itu "belum terukur",
+              // bukan angka definitif dari rule yang salah.
+              const konfMeragukan =
+                konf != null &&
+                modelsGagal &&
+                rules.some((r) => {
+                  if (!r.enabled || !r.match_model_id) return false;
+                  const cakupan = r.providers ?? [];
+                  return (
+                    cakupan.length === 0 ||
+                    cakupan.some((p) => p.provider_id === b.provider_id)
+                  );
+                });
               const sisaProbeDtk = b.next_probe_at
                 ? Math.max(0, Math.round((new Date(b.next_probe_at).getTime() - sekarang) / 1000))
                 : null;
@@ -339,14 +358,14 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
                           Konfigurasi Efektif:
                         </span>
                         <span className="text-white font-semibold text-right">
-                          {konf
+                          {konf && !konfMeragukan
                             ? `Ambang ${konf.rule.failure_threshold}x · jeda ${labelDurasiBuka(konf.rule.open_duration_ms)} · probe ${konf.rule.half_open_probes}x`
                             : rulesGagal || modelsGagal
                               ? 'Belum terukur (daftar rule/model gagal dimuat)'
                               : 'Bawaan server'}
                         </span>
                       </div>
-                      {konf && (
+                      {konf && !konfMeragukan && (
                         <div className="text-[10px] text-text-muted text-right">
                           dari rule &quot;{konf.rule.name}&quot;
                           {konf.jumlahRuleLain > 0 && ` · +${konf.jumlahRuleLain} rule lain juga mencakup`}

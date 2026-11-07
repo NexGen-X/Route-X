@@ -113,6 +113,16 @@ func (r *CredentialRepo) WithQuerier(q repo.Querier) *CredentialRepo {
 //   - Ia tidak boleh menggagalkan mutasinya: tidak ada nilai
 //     kembali, dan kegagalannya adalah urusan callback sendiri
 //     (cmd mencatatnya).
+//   - Callback HARUS IDEMPOTEN: satu pergeseran neto yang sama
+//     bisa sah dilaporkan lebih dari satu kali bila dua aktor
+//     bersamaan menilainya dari baseline ter-commit yang sama —
+//     B-538, teramati pada laporan ganda lintas aktor atas satu
+//     pergeseran neto dan tercatat benign justru karena callback
+//     produksi (kenaikan generasi cache di cmd) bersifat
+//     idempoten: INCR ekstra hanya membuang generasi, tidak
+//     pernah menghidupkan jawaban basi. Callback yang berefek
+//     samping non-idempoten (penghitung persis, pemberitahuan
+//     keluar) TIDAK memenuhi kontrak ini.
 func (r *CredentialRepo) SetSesudahPemenangBergeser(fn func(ctx context.Context, providerID string)) {
 	r.sesudahPemenangBergeser = fn
 }

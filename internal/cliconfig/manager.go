@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 	"github.com/NexGen-X/Route-X/internal/security"
@@ -4547,6 +4548,11 @@ func pindaiKutipBarisYAML(line string, kutip byte) byte {
 // ketat bersama, karena PyYAML menerima kunci ganda di luar blok
 // terkelola sementara yaml.v3 menolaknya: menolak di sini berarti
 // Configure gagal atas berkas yang dibaca Hermes dengan benar.
+// B-571: toleransi itu hanya berlaku DI DALAM dokumen pertama —
+// ekor sesudahnya diperiksa ketat oleh uraiYAMLHermes (dokumen
+// tambahan atau galat urai di ekor adalah galat), jadi
+// verifikasi dokumen-pertama tidak lagi menjadi batas yang
+// membiarkan isi tersembunyi sesudah "..." lolos.
 func verifikasiHasilHermes(konten, target, gwURL, apiKey string) error {
 	doc, err := uraiYAMLHermes(konten)
 	if err != nil {
@@ -4882,6 +4888,43 @@ func deteksiUTF32TanpaBOM(data []byte) string {
 	return ""
 }
 
+// pecahBarisYAML memecah teks pada pemisah garis YAML (B-571):
+// LF, CRLF (satu pemisah), CR saja, dan pemisah Unicode NEL
+// (U+0085), LINE SEPARATOR (U+2028), PARAGRAPH SEPARATOR
+// (U+2029) — semuanya pemisah garis menurut spesifikasi YAML
+// dan diperlakukan demikian oleh PyYAML maupun yaml.v3.
+// strings.Split pada "\n" saja buta terhadap pemisah-pemisah
+// ini: satu "baris-\n" dapat memuat dua baris YAML, sehingga
+// pemindai berbasis baris membaca isi sesudah penanda sebagai
+// komentar padahal pemuat melihat dokumen tambahan (kelas
+// sukses-bohong B-571). Hasilnya meniru strings.Split pada
+// "\n": pemisah akhir menghasilkan elemen kosong penutup, dan
+// teks tanpa pemisah menghasilkan satu elemen utuh.
+func pecahBarisYAML(teks string) []string {
+	var baris []string
+	awal := 0
+	for i := 0; i < len(teks); {
+		r, lebar := utf8.DecodeRuneInString(teks[i:])
+		switch r {
+		case '\r':
+			baris = append(baris, teks[awal:i])
+			i += lebar
+			if i < len(teks) && teks[i] == '\n' {
+				i++
+			}
+			awal = i
+		case '\n', '\u0085', '\u2028', '\u2029':
+			baris = append(baris, teks[awal:i])
+			i += lebar
+			awal = i
+		default:
+			i += lebar
+		}
+	}
+	baris = append(baris, teks[awal:])
+	return baris
+}
+
 // tolakIsiSesudahPenandaHermes menolak config Hermes yang memuat
 // isi non-kosong non-komentar SESUDAH penanda akhir dokumen "..."
 // (B-543): isi itu berada di luar dokumen yang disusun penyunting
@@ -4905,8 +4948,25 @@ func deteksiUTF32TanpaBOM(data []byte) string {
 // kanonik akan membalik keputusan B-544 (normalisasi, bukan
 // penolakan) untuk penanda kedua+; yang dijaga penjaga ini
 // adalah ISI, bukan bentuk penandanya.
+// B-571: pemecahan memakai pecahBarisYAML, bukan strings.Split
+// pada "\n" — CR, NEL, LS, dan PS adalah pemisah garis YAML
+// yang menyembunyikan satu baris utuh di dalam satu "baris-\n":
+// komentar penanda (pertama maupun kedua) atau komentar biasa
+// yang memuat pemisah itu diikuti isi membuat pemuat melihat
+// dokumen tambahan sesudah "...", sementara pemindaian "\n"
+// membaca semuanya sebagai satu baris komentar/penanda dan
+// meloloskan. Normalisasi (memecah pemisah tersembunyi menjadi
+// "\n" lalu menulis) TIDAK menyelamatkan masukan ini: isinya
+// tetap dokumen kedua sesudah "..." yang ditolak PyYAML —
+// penolakan jujur di sini adalah satu-satunya hasil benar.
+// Penulis (susunBlokModelHermes, perbaruiYAMLTopLevel) SENGAJA
+// tetap memakai pemecahan "\n": pemisah "\r" di akhir baris
+// adalah CR berkas CRLF yang dipertahankan (B-544) — penjaga
+// inilah yang melihat baris YAML sejati sebelum penulis mana
+// pun berjalan, dan Goose/Aider sudah gagal jujur atas kelas
+// ini lewat verifikasi ketat semua-dokumennya.
 func tolakIsiSesudahPenandaHermes(path, konten string) error {
-	baris := strings.Split(konten, "\n")
+	baris := pecahBarisYAML(konten)
 	dalam := petaDalamSkalarYAML(baris)
 	indeksPenanda := -1
 	for i, l := range baris {
@@ -5005,6 +5065,31 @@ func uraiYAMLHermes(konten string) (map[string]any, error) {
 	var akar yaml.Node
 	if err := dec.Decode(&akar); err != nil {
 		return nil, err
+	}
+	// B-571: ekor sesudah dokumen pertama diperiksa ketat —
+	// dokumen tambahan ATAU galat urai di ekor adalah galat.
+	// PyYAML safe_load (pemuat Hermes) menolak aliran apa pun
+	// yang memuat isi sesudah "..." yang bukan komentar, baris
+	// kosong, atau penanda lagi, sementara verifikasi lama hanya
+	// mengurai dokumen pertama — isi sesudah "..." yang
+	// menyembunyikan pemisah garis (CR/LS/NEL/PS) lolos sebagai
+	// sukses-bohong. Toleransi B-483 TIDAK berubah: ia hanya
+	// berlaku DI DALAM dokumen pertama (kunci ganda di luar blok
+	// model); ekor apa pun memang ditolak pemuat tujuan.
+	// Penanda "..." berulang, komentar, dan baris kosong di
+	// ekor TIDAK menghasilkan dokumen — Decode mengembalikan
+	// EOF atasnya (terbukti atas ketiganya + CRLF), jadi tidak
+	// ada penolakan palsu atas ekor yang sah.
+	for {
+		var sisa yaml.Node
+		err := dec.Decode(&sisa)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("isi sesudah dokumen pertama tidak terurai: %w", err)
+		}
+		return nil, errors.New("dokumen YAML tambahan sesudah dokumen pertama")
 	}
 	if akar.Kind == 0 || len(akar.Content) == 0 {
 		return nil, nil

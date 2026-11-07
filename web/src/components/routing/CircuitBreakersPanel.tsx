@@ -128,6 +128,9 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
 
   // Ambang bawaan pada banner sehat: dari rule global prioritas tertinggi
   // (tanpa cakupan provider/model), bukan angka karangan di UI.
+  // B-518: angka ini hanya sah dari daftar yang segar — bila muat-ulang
+  // rule gagal (rulesGagal), daftar ini BASI dan chip di bawah
+  // menampilkannya sebagai netral '—', bukan angka definitif.
   const ruleGlobalTeratas = [...rules]
     .filter((r) => r.enabled && (r.providers ?? []).length === 0 && !r.match_model_id)
     .sort((a, b) => b.priority - a.priority)[0];
@@ -251,7 +254,7 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
               <div className="col-span-2 sm:col-span-1 px-3 py-2 rounded-lg bg-bg-surface-1 border border-border/60 text-center">
                 <span className="text-[10px] text-text-muted block font-sans">Ambang Isolasi</span>
                 <span className="text-xs font-bold font-mono text-sky-400">
-                  {ruleGlobalTeratas
+                  {ruleGlobalTeratas && !rulesGagal
                     ? `${ruleGlobalTeratas.failure_threshold}x Gagal`
                     : rulesGagal || modelsGagal
                       ? '—'
@@ -276,17 +279,24 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
               // khusus-model berprioritas lebih tinggi akan
               // menang). Labelnya karena itu "belum terukur",
               // bukan angka definitif dari rule yang salah.
+              // B-518: rulesGagal ikut serta TANPA syarat — konf
+              // diturunkan dari daftar rule itu sendiri, jadi
+              // daftar rule BASI (muat-ulang gagal dan daftar
+              // sukses sebelumnya bertahan di state) membuat
+              // setiap konf meragukan; gerbang B-511 lama hanya
+              // menutup cabang daftar kosong, bukan cabang basi.
               const konfMeragukan =
                 konf != null &&
-                modelsGagal &&
-                rules.some((r) => {
-                  if (!r.enabled || !r.match_model_id) return false;
-                  const cakupan = r.providers ?? [];
-                  return (
-                    cakupan.length === 0 ||
-                    cakupan.some((p) => p.provider_id === b.provider_id)
-                  );
-                });
+                (rulesGagal ||
+                  (modelsGagal &&
+                    rules.some((r) => {
+                      if (!r.enabled || !r.match_model_id) return false;
+                      const cakupan = r.providers ?? [];
+                      return (
+                        cakupan.length === 0 ||
+                        cakupan.some((p) => p.provider_id === b.provider_id)
+                      );
+                    })));
               const sisaProbeDtk = b.next_probe_at
                 ? Math.max(0, Math.round((new Date(b.next_probe_at).getTime() - sekarang) / 1000))
                 : null;

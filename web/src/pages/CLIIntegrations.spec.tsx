@@ -268,6 +268,40 @@ describe('CLIIntegrations — uji koneksi tanpa model karangan (B-227)', () => {
     }
   });
 
+  it('B-525: daftar model GAGAL dimuat → pesan menyatakan kegagalan muat, bukan katalog kosong definitif', async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('fetch tidak boleh dipanggil pada jalur B-525');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      vi.mocked(api.cli.detected).mockResolvedValueOnce({
+        ...MOCK_CLI_DATA,
+        total_detected: 1,
+        tools: [{ ...MOCK_CLI_DATA.tools[0], active_target: '' }],
+      });
+      // Sumber model gagal: katalog BUKAN terbukti kosong —
+      // keadaannya belum terukur, dan pesan uji koneksi harus
+      // mengatakannya (gerbang modelsGagal, saudara B-512).
+      vi.mocked(api.models.listAll).mockRejectedValueOnce(new Error('jaringan putus'));
+
+      render(<CLIIntegrations />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Claude Code')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTitle(/Uji sambungan inferensi nyata/i));
+
+      expect(
+        await screen.findByText(/daftar model gagal dimuat, jadi keadaan katalog belum dapat dipastikan/i),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/belum ada model terdaftar di katalog untuk diuji/i)).not.toBeInTheDocument();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('target nyata dari katalog → uji tetap menembak model katalog (bukan literal karangan)', async () => {
     const fetchSpy = vi.fn(
       async () =>

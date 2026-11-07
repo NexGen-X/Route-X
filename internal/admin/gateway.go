@@ -864,10 +864,12 @@ func paramsRoutingMenyebut(p upstream.UpdateRoutingRuleParams) bool {
 // perubahanRoutingNilaiSama melaporkan apakah SETIAP field yang
 // disebut params sama nilainya dengan keadaan tersimpan (B-468).
 // Field yang tidak disebut selalu "sama" (semantik pembaruan
-// parsial). Pipeline dibandingkan sebagai byte mentah: resep yang
-// sama secara semantik tetapi tertulis beda urutan kunci terbaca
-// "berubah" — arah yang aman (audit berlebih sesekali, tidak
-// pernah menelan perubahan nyata).
+// parsial). Pipeline dibandingkan sebagai byte, tetapi kedua
+// sisinya sudah kanonis: permintaanPipeline menyusun ulang JSON
+// masukan secara kanonis (diurai lalu di-marshal ulang) dan nilai
+// tersimpan ditulis dari bentuk kanonis yang sama, jadi perbedaan
+// urutan kunci terbaca "sama"; byte yang berbeda berarti isi JSON
+// memang berbeda.
 func perubahanRoutingNilaiSama(tersimpan *upstream.RoutingRule, p upstream.UpdateRoutingRuleParams) bool {
 	if tersimpan == nil {
 		return false

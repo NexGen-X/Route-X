@@ -266,7 +266,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({
               Sambungkan Editor atau CLI
             </h4>
             <p className="text-[11px] text-text-secondary leading-relaxed">
-              Integrasikan Cursor, Claude Code, Cline, Antigravity, atau Aider dalam 1-klik.
+              Integrasikan Claude Code, OpenCode, Cline, Codex, atau Aider dalam 1-klik.
             </p>
           </div>
         </div>
@@ -346,11 +346,11 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({
                   🛠️ Coding Asisten
                 </span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded bg-bg-surface-2 text-text-secondary border border-border-hover/60 font-mono">
-                  Cursor / Claude
+                  Claude / Codex
                 </span>
               </div>
               <p className="text-[11px] text-text-secondary leading-relaxed">
-                Panduan konfigurasi instan untuk menghubungkan Cursor, Claude Code, atau Cline.
+                Panduan konfigurasi instan untuk menghubungkan Claude Code, Cline, atau Codex.
               </p>
             </button>
 
@@ -399,7 +399,7 @@ export const QuickStartGuide: React.FC<QuickStartGuideProps> = ({
         onClose={() => setSelectedRecipe(null)}
         title={
           selectedRecipe === 'coding'
-            ? '🛠️ Resep: Hubungkan Coding Assistant (Cursor / Claude Code / Cline)'
+            ? '🛠️ Resep: Hubungkan Coding Assistant (Claude Code / Cline / Codex)'
             : selectedRecipe === 'budget'
             ? '💰 Resep: Hemat Biaya Inferensi Hingga 90%'
             : '🛡️ Resep: Anti-Downtime dengan Auto-Failover Multi-Provider'

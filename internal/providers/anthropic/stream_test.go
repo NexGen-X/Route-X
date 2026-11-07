@@ -329,8 +329,13 @@ func TestAliranPeristiwaError(t *testing.T) {
 	if e.UpstreamCode != "overloaded_error" {
 		t.Errorf("UpstreamCode = %q", e.UpstreamCode)
 	}
-	if e.Message != "sedang penuh" {
-		t.Errorf("Message = %q", e.Message)
+	// B-458: pesan mentah upstream ("sedang penuh") TIDAK lagi
+	// diteruskan — Message kini generik per kind + kode upstream,
+	// karena teks bebas upstream bisa memuat potongan prompt dan
+	// heuristik gateway memperlakukan error ber-StatusCode 0
+	// sebagai buatan adapter (lolos verbatim ke klien).
+	if e.Message != "Anthropic melaporkan galat di tengah aliran (kode upstream: overloaded_error)" {
+		t.Errorf("Message = %q, mau pesan generik B-458", e.Message)
 	}
 	if e.Retryable() {
 		t.Error("Retryable() = true padahal sebagian aliran sudah terkirim")

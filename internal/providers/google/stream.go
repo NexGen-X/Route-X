@@ -229,7 +229,11 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 	}
 	// blockReason maupun error yang menumpang di tengah aliran diklasifikasi sama seperti
 	// pada respons non-streaming; bedanya di sini StreamedBytes ikut terisi.
-	if err := s.provider.checkBlocked(&chunk); err != nil {
+	// B-460: header respons pembuka aliran diteruskan — checkBlocked
+	// sudah menerimanya sejak B-431 untuk jalur non-streaming, tetapi
+	// jalur streaming memanggilnya tanpa header, jadi Retry-After
+	// pembuka selalu hilang di sini.
+	if err := s.provider.checkBlocked(&chunk, s.resp.Header); err != nil {
 		if e := providers.AsError(err); e != nil {
 			e.StreamedBytes = s.streamed
 			return nil, e

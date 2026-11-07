@@ -132,6 +132,28 @@ type CircuitGuardHasilProbe interface {
 // var _ memastikan *Breaker memenuhi kontrak hasil probe.
 var _ CircuitGuardHasilProbe = (*Breaker)(nil)
 
+// CircuitGuardEpisode adalah penjaga arus yang menandai izin probe
+// half_open dengan TOKEN EPISODE (B-461). Hasil probe dibawa token
+// episodenya dari izin sampai pencatatan; penjaga memakai token itu
+// untuk mengabaikan hasil basi — probe dari episode sebelumnya yang
+// baru selesai di tengah episode berikutnya tidak boleh memutuskan
+// episode yang bukan miliknya. Executor memakainya bila penjaga
+// mendukungnya; penjaga lama tetap bekerja lewat CircuitGuardHasilProbe
+// (tanpa penyaringan lintas-episode).
+type CircuitGuardEpisode interface {
+	// IzinkanEpisode adalah Allow plus token episode (0 = bukan probe).
+	IzinkanEpisode(ctx context.Context, providerID, model string) (bool, State, int64, error)
+	// IzinkanEpisodeWithConfig adalah IzinkanEpisode dengan konfigurasi per-aturan.
+	IzinkanEpisodeWithConfig(ctx context.Context, providerID, model string, cfg BreakerConfig) (bool, State, int64, error)
+	// RecordHasilEpisode mencatat hasil probe bertoken episode.
+	RecordHasilEpisode(ctx context.Context, providerID, model string, sukses bool, token int64) error
+	// RecordHasilEpisodeWithConfig adalah RecordHasilEpisode dengan konfigurasi per-aturan.
+	RecordHasilEpisodeWithConfig(ctx context.Context, providerID, model string, sukses bool, token int64, cfg BreakerConfig) error
+}
+
+// var _ memastikan *Breaker memenuhi kontrak episode.
+var _ CircuitGuardEpisode = (*Breaker)(nil)
+
 // Plan adalah rencana eksekusi satu permintaan: kandidat berurut beserta kesabaran yang
 // berlaku untuknya.
 //
@@ -765,9 +787,29 @@ func (e *Executor) poolEgressTakSehat(ctx context.Context, id string) bool {
 
 // izinkan menanyakan pemutus arus, dan meloloskan permintaan bila penjaganya sendiri
 // bermasalah.
-func (e *Executor) izinkan(ctx context.Context, c *upstream.RouteCandidate, model string, cfg BreakerConfig) (bool, State, error) {
+//
+// tokenEpisode (B-461) adalah identitas episode probe bila izin ini
+// probe half_open dari penjaga yang mendukung CircuitGuardEpisode;
+// 0 bila bukan probe atau penjaga tidak mendukungnya.
+func (e *Executor) izinkan(ctx context.Context, c *upstream.RouteCandidate, model string, cfg BreakerConfig) (bool, State, int64, error) {
 	if e.guard == nil {
-		return true, "", nil
+		return true, "", 0, nil
+	}
+	// Penjaga berepisode didahulukan: tokennya hanya tersedia lewat
+	// jalur ini, dan jalur lama tidak bisa membedakannya.
+	if ep, ok := e.guard.(CircuitGuardEpisode); ok {
+		if cfg != (BreakerConfig{}) {
+			izin, state, token, err := ep.IzinkanEpisodeWithConfig(ctx, c.ProviderID, model, cfg)
+			if err != nil {
+				return true, state, 0, err
+			}
+			return izin, state, token, nil
+		}
+		izin, state, token, err := ep.IzinkanEpisode(ctx, c.ProviderID, model)
+		if err != nil {
+			return true, state, 0, err
+		}
+		return izin, state, token, nil
 	}
 	// Jalur terkonfigurasi hanya bila rencana membawa konfigurasi aturan
 	// DAN penjaga mendukungnya; selain itu jalur biasa.
@@ -775,16 +817,16 @@ func (e *Executor) izinkan(ctx context.Context, c *upstream.RouteCandidate, mode
 		if ter, ok := e.guard.(CircuitGuardTerkonfigurasi); ok {
 			izin, state, err := ter.AllowWithConfig(ctx, c.ProviderID, model, cfg)
 			if err != nil {
-				return true, state, err
+				return true, state, 0, err
 			}
-			return izin, state, nil
+			return izin, state, 0, nil
 		}
 	}
 	izin, state, err := e.guard.Allow(ctx, c.ProviderID, model)
 	if err != nil {
-		return true, state, err
+		return true, state, 0, err
 	}
-	return izin, state, nil
+	return izin, state, 0, nil
 }
 
 // ambilSlot memesan satu slot konkurensi provider. ok=false berarti batas
@@ -835,18 +877,26 @@ func hitungPercobaanNyata(att []Attempt) int {
 // tahu apakah pembukaannya adalah sebuah probe (audit3 V-BR-03).
 type kunciStatusProbe struct{}
 
+// statusProbe adalah muatan penanda probe: status probe itu sendiri
+// plus token episode (B-461) dari penjaga berepisode — 0 bila penjaga
+// tidak menerbitkan token.
+type statusProbe struct {
+	probe bool
+	token int64
+}
+
 // ctxDenganProbe menanam penanda probe pada context percobaan.
-func ctxDenganProbe(ctx context.Context, probe bool) context.Context {
-	if !probe {
+func ctxDenganProbe(ctx context.Context, probe bool, token int64) context.Context {
+	if !probe && token == 0 {
 		return ctx
 	}
-	return context.WithValue(ctx, kunciStatusProbe{}, true)
+	return context.WithValue(ctx, kunciStatusProbe{}, statusProbe{probe: probe, token: token})
 }
 
 // probeDariContext membaca penanda probe dari context percobaan.
-func probeDariContext(ctx context.Context) bool {
-	v, _ := ctx.Value(kunciStatusProbe{}).(bool)
-	return v
+func probeDariContext(ctx context.Context) (probe bool, token int64) {
+	v, _ := ctx.Value(kunciStatusProbe{}).(statusProbe)
+	return v.probe, v.token
 }
 
 // dikecualikanDariPencatatanBreaker melaporkan apakah kegagalan ini fakta
@@ -964,7 +1014,7 @@ func cobaKandidat[T any](
 		// Kunci pemutus arus per kandidat (B-181): plan combo memakai
 		// model kanonik kandidat ini, bukan model jangkar plan.
 		mk := modelKandidat(plan, c)
-		izin, state, gerr := e.izinkan(ctx, c, mk, plan.BreakerCfg)
+		izin, state, tokenEpisode, gerr := e.izinkan(ctx, c, mk, plan.BreakerCfg)
 		if gerr != nil {
 			// Penjaga yang error tidak memblokir: lihat catatan di CircuitGuard.
 			e.logger.WarnContext(ctx, "pemutus arus tidak bisa dibaca, permintaan diloloskan",
@@ -983,11 +1033,13 @@ func cobaKandidat[T any](
 		}
 		// Percobaan yang diizinkan saat half_open adalah sebuah probe, dan
 		// status itu menentukan bagaimana hasilnya boleh ditafsirkan
-		// pemutus arus (audit3 V-BR-03).
+		// pemutus arus (audit3 V-BR-03). Token episode (B-461) ikut
+		// ditanam: hasil probe basi dari episode sebelumnya dikenali
+		// penjaga lewat token ini saat pencatatan.
 		probe := state == StateHalfOpen
 
 		mulai := time.Now()
-		nilai, perr := jalankan(ctxDenganProbe(ctx, probe), c)
+		nilai, perr := jalankan(ctxDenganProbe(ctx, probe, tokenEpisode), c)
 		a := Attempt{
 			ProviderID: c.ProviderID, ProviderName: c.ProviderName,
 			ProviderModelID: c.ProviderModelID, UpstreamModel: c.UpstreamModelName,
@@ -1019,7 +1071,7 @@ func cobaKandidat[T any](
 			// pencatatan ditunda ke pembungkus aliran di ExecuteStream yang
 			// tahu bagaimana aliran itu berakhir (audit F4).
 			if !plan.streaming {
-				e.catat(ctx, c, mk, true, plan.BreakerCfg, probe)
+				e.catat(ctx, c, mk, true, plan.BreakerCfg, probe, tokenEpisode)
 				lepas()
 			} else if aliran, ok := any(nilai).(providers.Stream); ok {
 				// Slot dipegang selama aliran HIDUP, bukan sampai ia dibuka
@@ -1041,7 +1093,7 @@ func cobaKandidat[T any](
 		// jenisnya dan alasannya di dikecualikanDariPencatatanBreaker,
 		// dipakai bersama jalur streaming (B-255).
 		if !dikecualikanDariPencatatanBreaker(a.Err) {
-			e.catat(ctx, c, mk, false, plan.BreakerCfg, probe)
+			e.catat(ctx, c, mk, false, plan.BreakerCfg, probe, tokenEpisode)
 		}
 
 		if !a.Err.Retryable() || n == maksPercobaan {
@@ -1190,12 +1242,21 @@ func jadikanProviderError(provider string, err error) *providers.Error {
 // Kegagalan mencatat hanya di-log, tidak dikembalikan: pada titik ini permintaan sudah
 // punya jawaban, dan menggagalkannya karena Redis tidak bisa dicatat berarti menukar
 // permintaan yang berhasil dengan error demi kerapian metrik.
-func (e *Executor) catat(ctx context.Context, c *upstream.RouteCandidate, model string, sukses bool, cfg BreakerConfig, probe bool) {
+func (e *Executor) catat(ctx context.Context, c *upstream.RouteCandidate, model string, sukses bool, cfg BreakerConfig, probe bool, tokenEpisode int64) {
 	if e.guard == nil {
 		return
 	}
 	var err error
-	if hp, ok := e.guard.(CircuitGuardHasilProbe); ok {
+	// B-461: hasil bertoken episode dicatat lewat jalur episode bila
+	// penjaganya mendukung — token itulah yang membuat hasil basi
+	// lintas episode bisa disaring penjaga.
+	if ep, ok := e.guard.(CircuitGuardEpisode); ok && tokenEpisode != 0 {
+		if cfg != (BreakerConfig{}) {
+			err = ep.RecordHasilEpisodeWithConfig(ctx, c.ProviderID, model, sukses, tokenEpisode, cfg)
+		} else {
+			err = ep.RecordHasilEpisode(ctx, c.ProviderID, model, sukses, tokenEpisode)
+		}
+	} else if hp, ok := e.guard.(CircuitGuardHasilProbe); ok {
 		if cfg != (BreakerConfig{}) {
 			err = hp.RecordHasilWithConfig(ctx, c.ProviderID, model, sukses, probe, cfg)
 		} else {
@@ -1373,8 +1434,9 @@ func bungkusPencatatAliran(
 		// Status probe pembukaan ini dibaca dari context percobaan: hasil
 		// aliran dicatat saat aliran berakhir, dan hanya penanda di context
 		// yang masih menghubungkan akhir itu ke izin yang membukanya
-		// (audit3 V-BR-03).
-		probe := probeDariContext(octx)
+		// (audit3 V-BR-03). Token episode (B-461) ikut terbaca dari
+		// penanda yang sama.
+		probe, tokenEpisode := probeDariContext(octx)
 		return &aliranPencatat{
 			Stream: &aliranPeristiwaPertama{Stream: dijaga, ev: ev},
 			ctx:    ctx,
@@ -1385,7 +1447,7 @@ func bungkusPencatatAliran(
 			// dan sudah mengirim peristiwa.
 			terima: 1,
 			catat: func(sukses bool) {
-				e.catat(ctx, c, modelKandidat(plan, c), sukses, plan.BreakerCfg, probe)
+				e.catat(ctx, c, modelKandidat(plan, c), sukses, plan.BreakerCfg, probe, tokenEpisode)
 			},
 		}, nil
 	}

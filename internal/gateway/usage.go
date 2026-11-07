@@ -639,6 +639,23 @@ func (j *jejak) tandaiCacheHit() {
 	}
 }
 
+// tandaiGagalTulis mencatat bahwa penulisan jawaban akhir ke klien
+// GAGAL (B-459): koneksi putus tepat pada Write terakhir permukaan
+// non-streaming. Status yang terkirim tetap 200 (header sudah
+// terkirim sebelum body gagal ditulis) tetapi kategorinya menjadi
+// canceled — pola yang sama dengan kegagalan mid-stream B-172 —
+// sehingga peristiwa pemakaian ber-ErrorType dan webhook siklusnya
+// request.failed, bukan request.completed. Sebelumnya ketujuh
+// permukaan non-streaming menelan error Write ini, jadi pengiriman
+// yang gagal tercatat sebagai sukses penuh. Kategori upstream yang
+// sudah terpasang tidak ditimpa: penanda ini hanya mengisi yang
+// kosong.
+func (j *jejak) tandaiGagalTulis() {
+	if j != nil && j.kind == "" {
+		j.kind = string(providers.ErrKindCanceled)
+	}
+}
+
 // pasangFinishAsing mencatat finish reason di luar kosakata kanonik
 // yang dilipat menjadi end_turn di permukaan Anthropic (B-248). Nilai
 // kosong — upstream tidak menyebut sebab — bukan keasingan dan tidak

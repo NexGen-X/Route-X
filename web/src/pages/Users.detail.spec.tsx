@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { UsersPage } from './Users';
 import { ToastProvider } from '../context/ToastContext';
 import type { User } from '../types';
@@ -58,5 +58,62 @@ describe('UsersPage — drawer detail gagal dimuat (B-450)', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Memuat detail...')).toBeNull();
     expect(screen.getByRole('button', { name: 'Coba Lagi' })).toBeInTheDocument();
+  });
+});
+
+// B-486: penjaga urutan muat detail — membuka pengguna A lalu B
+// dengan cepat tidak boleh membiarkan respons A yang tiba terakhir
+// menimpa drawer B (peran yang tampil adalah peran B, karena
+// "Simpan Peran" menulis ke detailUserId yang sedang terbuka).
+describe('UsersPage — penjaga urutan detail (B-486)', () => {
+  const PENGGUNA_B: User = {
+    ...PENGGUNA,
+    id: 'user-2',
+    email: 'dua@routex.internal',
+    display_name: 'Pengguna Dua',
+  } as User;
+
+  function tunda<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockList.mockResolvedValue({ items: [PENGGUNA, PENGGUNA_B] });
+  });
+
+  it('respons detail basi tidak menimpa drawer pengguna yang dibuka terakhir', async () => {
+    const tundaA = tunda<{ roles: string[]; permissions: string[] }>();
+    const tundaB = tunda<{ roles: string[]; permissions: string[] }>();
+    mockGet.mockImplementation((id: string) =>
+      id === 'user-1' ? tundaA.promise : tundaB.promise
+    );
+
+    render(
+      <ToastProvider>
+        <UsersPage />
+      </ToastProvider>
+    );
+
+    const kelola = await screen.findAllByRole('button', { name: 'Kelola' });
+    fireEvent.click(kelola[0]); // buka A (responsnya tertahan)
+    fireEvent.click(kelola[1]); // segera buka B
+
+    // B tiba lebih dulu: drawer B menampilkan peran B (user).
+    await act(async () => {
+      tundaB.resolve({ roles: ['User'], permissions: [] });
+    });
+    const pemilih = (await screen.findByLabelText('Peran pengguna')) as HTMLSelectElement;
+    expect(pemilih.value).toBe('user');
+
+    // Respons A (Admin) tiba TERAKHIR — wajib diabaikan.
+    await act(async () => {
+      tundaA.resolve({ roles: ['Admin'], permissions: ['*'] });
+    });
+    expect(pemilih.value).toBe('user');
   });
 });

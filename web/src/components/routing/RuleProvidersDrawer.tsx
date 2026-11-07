@@ -60,6 +60,17 @@ export const RuleProvidersDrawer: React.FC<RuleProvidersDrawerProps> = ({
   const handleSaveProviders = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rule) return;
+    // B-490: banner sumberGagal saja tidak cukup — simpan WAJIB
+    // terblokir selama daftar model/provider belum terukur (pola
+    // penjaga simpan B-445). Tanpa ini operator bisa menyimpan
+    // himpunan provider dari daftar kosong-palsu dan menimpa
+    // ikatan aturan yang sebenarnya.
+    if (sumberGagal) {
+      toast.error(
+        `Belum dapat menyimpan: daftar ${sumberGagal} gagal dimuat — pilihan provider belum terukur. Muat ulang halaman lebih dulu.`
+      );
+      return;
+    }
     // Cermin penolakan server (V-FF-11): provider terpilih yang tidak
     // memetakan model target aturan akan ditolak — sampaikan di sini dengan
     // nama providernya, bukan menunggu error umum dari server. Lencana
@@ -115,6 +126,7 @@ export const RuleProvidersDrawer: React.FC<RuleProvidersDrawerProps> = ({
             variant="primary"
             size="md"
             isLoading={isSubmitting}
+            disabled={!!sumberGagal}
             className="flex-1 sm:flex-initial"
           >
             Simpan Providers

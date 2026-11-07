@@ -263,6 +263,18 @@ const Shell: React.FC = () => {
           isOpen={isCommandPaletteOpen}
           onClose={() => setIsCommandPaletteOpen(false)}
           onNavigate={navigate}
+          onSelectCLI={(toolId) => {
+            // B-489: palet dulu memanggil onSelectCLI yang tidak
+            // pernah diteruskan App — memilih tool di palet hanya
+            // menavigasi tanpa menyorot apa pun. Kini id tool
+            // diserahkan lewat sessionStorage dan dikonsumsi
+            // CLIIntegrations saat termuat (menyaring ke tool itu).
+            try {
+              sessionStorage.setItem('routex_cli_tujuan', toolId);
+            } catch {
+              // sessionStorage tidak tersedia: navigasi tetap sah.
+            }
+          }}
         />
       </WidgetErrorBoundary>
     </div>

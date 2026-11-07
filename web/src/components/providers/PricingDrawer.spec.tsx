@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { PricingDrawer, hargaEfektifSekarang } from './PricingDrawer';
 import type { Price, Provider, ProviderModel, ReferencePrice } from '../../types';
 
@@ -184,5 +184,52 @@ describe('PricingDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: /Pasang harga/ }));
     expect(await screen.findByText(/wajib diisi/)).toBeTruthy();
     expect(mockSetPrice).not.toHaveBeenCalled();
+  });
+});
+
+describe('PricingDrawer — penjaga urutan muat (B-486)', () => {
+  it('respons basi pemetaan sebelumnya tidak menimpa acuan pemetaan yang sedang dibuka', async () => {
+    let resolveHistA!: (v: { items: Price[] }) => void;
+    let resolveRefA!: (v: ReferencePrice) => void;
+    const janjiHistA = new Promise<{ items: Price[] }>((r) => {
+      resolveHistA = r;
+    });
+    const janjiRefA = new Promise<ReferencePrice>((r) => {
+      resolveRefA = r;
+    });
+    mockHistory.mockImplementation((id: string) =>
+      id === 'pm-1' ? janjiHistA : Promise.resolve({ items: [] as Price[] })
+    );
+    mockReference.mockImplementation((id: string) =>
+      id === 'pm-1'
+        ? janjiRefA
+        : Promise.resolve({
+            ...ACUAN_TERSEDIA,
+            input_per_1m_usd: '7',
+            output_per_1m_usd: '70',
+            cached_input_per_1m_usd: '0.7',
+            source: 'sumber-b.example',
+          } as ReferencePrice)
+    );
+
+    const { rerender } = render(
+      <PricingDrawer mapping={MAPPING} provider={PROVIDER} onClose={vi.fn()} />
+    );
+    // Berpindah ke pemetaan B selagi muatan A tertahan.
+    rerender(
+      <PricingDrawer mapping={{ ...MAPPING, id: 'pm-2' }} provider={PROVIDER} onClose={vi.fn()} />
+    );
+    expect(await screen.findByText(/sumber-b\.example/)).toBeTruthy();
+
+    // Respons A tiba terakhir — wajib diabaikan.
+    await act(async () => {
+      resolveHistA({ items: [] });
+      resolveRefA(ACUAN_TERSEDIA);
+    });
+    expect(screen.queryByText(/platform\.claude\.com/)).toBeNull();
+
+    // "Pakai acuan" mengisi harga MILIK B (7), bukan milik A (2).
+    fireEvent.click(screen.getByRole('button', { name: /Pakai harga acuan sebagai isian/ }));
+    expect((screen.getByLabelText(/Input \(USD/) as HTMLInputElement).value).toBe('7');
   });
 });

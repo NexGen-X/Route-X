@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { User } from '../types';
 import { Card } from '../components/common/Card';
@@ -62,7 +62,15 @@ export const UsersPage: React.FC = () => {
     void loadAll();
   }, []);
 
+  // B-486: token urutan muat detail (pola yang sama seperti
+  // providerDetailsReqRef B-446 / allowedReqRef APIKeys). Tanpa
+  // penjaga ini, membuka pengguna A lalu B dengan cepat membuat
+  // respons A yang tiba TERAKHIR menimpa drawer B — dan tombol
+  // "Simpan Peran" di drawer menulis peran ke pengguna yang salah.
+  const detailReqRef = useRef(0);
+
   const openDetail = async (id: string) => {
+    const reqId = ++detailReqRef.current;
     setDetailUserId(id);
     setDetail(null);
     setDetailError(null);
@@ -70,10 +78,12 @@ export const UsersPage: React.FC = () => {
     if (u) setRenameName(u.display_name || '');
     try {
       const res = await api.users.get(id);
+      if (detailReqRef.current !== reqId) return;
       const roles = res.roles || res.user?.roles || [];
       setDetail({ roles, permissions: res.permissions || [] });
       setPeranDetail(roles.includes('Admin') ? 'admin' : 'user');
     } catch (err) {
+      if (detailReqRef.current !== reqId) return;
       const pesan = err instanceof Error ? err.message : String(err);
       setDetailError(pesan);
       toast.error('Gagal memuat detail pengguna: ' + pesan);

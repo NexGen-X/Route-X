@@ -42,6 +42,13 @@ export interface CreateProviderModalProps {
   selectedPreset: KnownProviderPreset | null;
   providers?: Provider[];
   egressPools?: EgressPool[];
+  // B-488: penanda gagal-muat kedua sumber referensi modal. Tanpa
+  // gerbang ini, kegagalan query membuat modal menerima daftar
+  // KOSONG dan bekerja seolah dunia memang kosong: validasi nama
+  // ganda lolos terhadap daftar yang belum terukur dan pencocokan
+  // provider/pool berjalan atas data yang tidak ada.
+  isProvidersError?: boolean;
+  isPoolsError?: boolean;
   loadData: () => Promise<void>;
   handleOpenDrawer: (prov: Provider, tab?: 'models' | 'credentials' | 'settings') => void;
   toast: {
@@ -60,6 +67,8 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
   selectedPreset: initialPreset,
   providers = [],
   egressPools = [],
+  isProvidersError = false,
+  isPoolsError = false,
   loadData,
   toast,
   handleOpenDrawer,
@@ -300,8 +309,20 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
     ? quickApiKey.trim()
     : (authExtractedToken.trim() || authFallbackInput.trim());
 
+  // B-488: simpan terblokir selama sumber referensi gagal dimuat.
+  const sumberGagalBagian: string[] = [];
+  if (isProvidersError) sumberGagalBagian.push('daftar provider');
+  if (isPoolsError) sumberGagalBagian.push('daftar egress pool');
+  const sumberGagalModal = sumberGagalBagian.length > 0 ? sumberGagalBagian.join(' dan ') : null;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (sumberGagalModal) {
+      toast.error(
+        `Belum dapat menyimpan: ${sumberGagalModal} gagal dimuat, jadi pemeriksaan nama ganda dan pencocokan pool belum terukur. Muat ulang daftar itu lebih dulu.`
+      );
+      return;
+    }
     setIsSaving(true);
 
     if (modalMode === 'add_to_pool' && targetExistingProvider) {
@@ -478,6 +499,7 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
             variant="primary"
             form="create-provider-form"
             isLoading={isSaving}
+            disabled={sumberGagalModal != null}
             icon={isAddToPoolMode ? <Plus className="w-4 h-4" aria-hidden="true" /> : <Check className="w-4 h-4" aria-hidden="true" />}
             title={isAddToPoolMode ? 'Tambahkan akun ke pool provider' : 'Simpan provider baru ke database'}
             className="min-h-[44px] sm:min-h-[38px] font-semibold"
@@ -488,6 +510,23 @@ export const CreateProviderModal: React.FC<CreateProviderModalProps> = ({
       }
     >
       <form id="create-provider-form" noValidate onSubmit={handleSubmit} className="space-y-4 text-xs">
+        {sumberGagalModal && (
+          <div
+            role="alert"
+            className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg p-3 flex items-center justify-between gap-3"
+          >
+            <span>
+              {`Daftar gagal dimuat: ${sumberGagalModal} — pemeriksaan nama ganda dan pilihan pool di bawah belum terukur, bukan daftar kosong. Simpan dinonaktifkan sampai daftar itu termuat.`}
+            </span>
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              className="underline font-medium shrink-0 cursor-pointer"
+            >
+              Muat Ulang
+            </button>
+          </div>
+        )}
         {/* 1-KLIK PRESET CARDS SELECTOR */}
         <div className="rounded-xl border border-border/80 bg-bg-surface-2/40 p-3 space-y-2.5">
           <div className="flex items-center justify-between">

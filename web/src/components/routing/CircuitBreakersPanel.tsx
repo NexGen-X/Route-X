@@ -28,6 +28,12 @@ export interface CircuitBreakersPanelProps {
   // B-449: daftar provider (sumber terpisah dari breaker) gagal
   // dimuat halaman induk — chip hitungan provider belum terukur.
   providersGagal?: boolean;
+  // B-491: daftar rule/model (sumber terpisah lain) gagal dimuat —
+  // label "Bawaan server" di panel ini diturunkan dari rule/model
+  // itu, jadi kegagalannya membuat label itu belum terukur, bukan
+  // klaim definitif tentang bawaan server.
+  rulesGagal?: boolean;
+  modelsGagal?: boolean;
 }
 
 // Konfigurasi efektif yang ditampilkan untuk satu breaker: rule aktif
@@ -84,6 +90,8 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
   loadBreakers,
   handleResetBreaker,
   providersGagal = false,
+  rulesGagal = false,
+  modelsGagal = false,
 }) => {
   const totalAbnormalBreakers = breakers.filter((b) => b.state !== 'closed').length;
   // B-312: klaim sehat hanya sah dari data yang benar-benar tiba.
@@ -245,7 +253,9 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
                 <span className="text-xs font-bold font-mono text-sky-400">
                   {ruleGlobalTeratas
                     ? `${ruleGlobalTeratas.failure_threshold}x Gagal`
-                    : 'Bawaan Server'}
+                    : rulesGagal
+                      ? '—'
+                      : 'Bawaan Server'}
                 </span>
               </div>
             </div>
@@ -331,7 +341,9 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
                         <span className="text-white font-semibold text-right">
                           {konf
                             ? `Ambang ${konf.rule.failure_threshold}x · jeda ${labelDurasiBuka(konf.rule.open_duration_ms)} · probe ${konf.rule.half_open_probes}x`
-                            : 'Bawaan server'}
+                            : rulesGagal || modelsGagal
+                              ? 'Belum terukur (daftar rule/model gagal dimuat)'
+                              : 'Bawaan server'}
                         </span>
                       </div>
                       {konf && (

@@ -494,7 +494,13 @@ export const Providers: React.FC = () => {
     detailsProviderId !== null && detailsProviderId === selectedProvider?.id;
   const keadaanRincian = keadaanMuat({
     memuat: providerDetailsLoading,
-    gagal: providerDetailsError != null,
+    // B-487: kegagalan sesi OAuth ikut menentukan keadaan rincian.
+    // Dulu hanya providerDetailsError yang dihitung, jadi bila
+    // kredensial/model berhasil tetapi sesi OAuth GAGAL, keadaan
+    // terbaca 'ada' dan CredentialsTab mengklaim "Belum ada akun
+    // Google Antigravity yang terhubung" + CTA hubungkan —
+    // padahal sesi belum terukur sama sekali.
+    gagal: providerDetailsError != null || oauthSessionsError != null,
     jumlah: rincianMilikTerpilih ? 1 : 0,
   });
   const teksJumlahModel = teksHitungKeadaan(keadaanRincian, models.length);
@@ -883,7 +889,16 @@ export const Providers: React.FC = () => {
                 credentials={credentials}
                 oauthSessions={oauthSessions}
                 egressPools={egressPools}
-                gagalMuat={keadaanRincian === 'gagal' || keadaanRincian === 'memuat'}
+                gagalMuat={
+                  keadaanRincian === 'gagal' ||
+                  keadaanRincian === 'memuat' ||
+                  // B-487: sesi OAuth adalah sumber tab ini —
+                  // kegagalannya membuat klaim kosong tab belum
+                  // terukur walau kredensial/model berhasil dimuat
+                  // (keadaanMuat memberi kemenangan pada data yang
+                  // ada, jadi gerbang tab harus menyebutnya sendiri).
+                  oauthSessionsError != null
+                }
                 handleToggleKey={handleToggleKey}
                 handleDeleteKey={handleDeleteKey}
                 loadProviderDetails={loadProviderDetails}
@@ -927,6 +942,8 @@ export const Providers: React.FC = () => {
         selectedPreset={selectedPreset}
         providers={providers}
         egressPools={egressPools}
+        isProvidersError={isProvidersError}
+        isPoolsError={isPoolsError}
         loadData={loadData}
         handleOpenDrawer={handleOpenDrawer}
         toast={toast}

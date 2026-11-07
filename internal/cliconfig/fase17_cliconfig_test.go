@@ -1,6 +1,7 @@
 package cliconfig
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,7 +117,9 @@ func TestB380JSONBOM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("muatKonfigJSON ber-BOM: %v — BOM menggagalkan Configure", err)
 	}
-	if cfg["model"] != "lama" || cfg["lainnya"] != float64(1) {
+	// B-478: angka kini terbaca sebagai json.Number (teks mentah),
+	// bukan float64 — itulah yang melestarikan angka besar utuh.
+	if cfg["model"] != "lama" || cfg["lainnya"] != json.Number("1") {
 		t.Errorf("cfg = %v, mau isi berkas terbaca utuh", cfg)
 	}
 

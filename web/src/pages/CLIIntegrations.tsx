@@ -364,14 +364,22 @@ export const CLIIntegrations: React.FC = () => {
     // eksplisit SEBELUM fetch apa pun diterbitkan.
     const targetModel = cfg?.target || tool.active_target || models[0]?.model_id;
     if (!targetModel) {
+      // B-525: klaim "belum ada model terdaftar di katalog" hanya
+      // sah bila daftar model benar-benar termuat dan kosong. Bila
+      // sumber model GAGAL dimuat, keadaan katalog belum terukur —
+      // pesan harus menyatakan kegagalan muat itu, bukan keadaan
+      // katalog yang definitif (saudara gerbang B-512 di
+      // CLIToolCard untuk permukaan diagnostik yang sama).
+      const modelsGagal = sumberGagal.includes('model');
       setDiagStatus((prev) => ({
         ...prev,
         [toolId]: {
           testing: false,
           latency: 0,
           ok: false,
-          message:
-            'Uji koneksi dibatalkan: belum ada model terdaftar di katalog untuk diuji. Sinkronkan model dari provider terlebih dahulu.',
+          message: modelsGagal
+            ? 'Uji koneksi dibatalkan: daftar model gagal dimuat, jadi keadaan katalog belum dapat dipastikan. Muat ulang halaman lalu coba lagi.'
+            : 'Uji koneksi dibatalkan: belum ada model terdaftar di katalog untuk diuji. Sinkronkan model dari provider terlebih dahulu.',
         },
       }));
       return;

@@ -107,8 +107,10 @@ func (r *OAuthRepo) WithQuerier(q repo.Querier) *OAuthRepo {
 // pemanggilannya sama dengan
 // CredentialRepo.SetSesudahPemenangBergeser: tidak pernah dipanggil
 // sambil kunci internal terpegang, di jalur transaksional berjalan
-// SESUDAH commit, harus murah, dan tidak boleh menggagalkan
-// mutasinya.
+// SESUDAH commit, harus murah, tidak boleh menggagalkan mutasinya,
+// dan HARUS IDEMPOTEN — satu pergeseran neto bisa dilaporkan lebih
+// dari sekali oleh aktor bersamaan (B-538, benign untuk callback
+// produksi yang berupa kenaikan generasi).
 func (r *OAuthRepo) SetSesudahPemenangBergeser(fn func(ctx context.Context, providerID string)) {
 	r.sesudahPemenangBergeser = fn
 }

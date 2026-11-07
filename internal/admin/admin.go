@@ -637,7 +637,8 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 		// dan webhooks kini ikut menolak params kosong dengan
 		// sentinelnya masing-masing, bukan menjawab 200 idempoten.
 		httpx.BadRequest(w, r, "no_changes", fmt.Sprintf("tidak ada perubahan yang diminta untuk %s", resource))
-	case errors.Is(err, security.ErrBlockedScheme) || errors.Is(err, security.ErrBlockedAddress):
+	case errors.Is(err, security.ErrBlockedScheme) || errors.Is(err, security.ErrBlockedAddress) ||
+		errors.Is(err, security.ErrCredentialsInURL) || errors.Is(err, security.ErrInvalidBaseURL):
 		// B-470: URL yang ditolak kebijakan SSRF (skema atau alamat
 		// terlarang) adalah kesalahan masukan pemanggil, bukan
 		// kegagalan server. Repo webhook menjalankan ValidateBaseURL
@@ -645,6 +646,12 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 		// dari klien yang bermaksud mengosongkan URL — dan
 		// sentinelnya dulu tidak punya cabang di sini, jadi penolakan
 		// masukan yang murni ini jatuh ke default 500.
+		// B-496: keluarga sentinel ValidateBaseURL dilengkapi —
+		// ErrCredentialsInURL (URL memuat userinfo) dan
+		// ErrInvalidBaseURL (tak terurai/tanpa host) adalah kesalahan
+		// masukan yang sama kelasnya dan jalur provider sudah
+		// menjawab 400 untuk semuanya; keduanya dulu tetap jatuh ke
+		// default 500 di jalur webhook.
 		httpx.BadRequest(w, r, "blocked_url", fmt.Sprintf("URL untuk %s tidak diizinkan oleh kebijakan keamanan", resource))
 	case errors.Is(err, repo.ErrConstraint):
 		cName := repo.ConstraintName(err)

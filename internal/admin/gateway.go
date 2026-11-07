@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/netip"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -736,6 +736,24 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// B-501: no-op total diputuskan SEBELUM transaksi dari keadaan
+	// tersimpan. B-468 membandingkan nilai hanya untuk menekan
+	// audit/invalidasi SESUDAH repo Update menulis baris — jadi
+	// updated_at tetap bergerak pada PUT nilai-sama. Kini, bila
+	// setiap field yang disebut nilai-sama DAN ikatan provider
+	// absen/identik DAN permintaan memang menyebut sesuatu (params
+	// tak kosong atau provider_ids disebut), Update dan
+	// SetProviders tidak dipanggil sama sekali: baris tidak
+	// ditulis, updated_at tidak bergerak. Permintaan yang tidak
+	// menyebut apa pun TIDAK dilewatkan — ia tetap jatuh ke
+	// ErrNoChanges repo dan 400 no_changes seperti kontrak
+	// B-401/B-434.
+	nilaiSama := perubahanRoutingNilaiSama(existing, p)
+	providerIdentikAwal := req.ProviderIDs != nil &&
+		ikatanProviderIdentik(existing.Providers, req.ProviderIDs, req.Weights)
+	lewatiTulis := nilaiSama && (req.ProviderIDs == nil || providerIdentikAwal) &&
+		(paramsRoutingMenyebut(p) || req.ProviderIDs != nil)
+
 	var rule *upstream.RoutingRule
 	// B-434: dua penanda no-op dijumlahkan sesudah transaksi —
 	// pembaruan field yang ditelan sebagai ErrNoChanges DAN ikatan
@@ -747,8 +765,18 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txRouting := upstream.NewRoutingRepo(q)
 		var err error
-		rule, err = txRouting.Update(ctx, id, p)
-		if err != nil {
+		if lewatiTulis {
+			// B-501: no-op total — baca keadaan tersimpan tanpa
+			// satu pun tulisan baris.
+			updateDitelan = true
+			rule, err = txRouting.Get(ctx, id)
+			if err != nil {
+				return err
+			}
+		} else {
+			rule, err = txRouting.Update(ctx, id, p)
+		}
+		if err != nil && !lewatiTulis {
 			// B-401: body yang HANYA menyebut provider_ids tidak
 			// membawa perubahan field, jadi Update menolaknya
 			// dengan ErrNoChanges — dan penolakan itu dulu
@@ -820,6 +848,19 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
+// paramsRoutingMenyebut melaporkan apakah params menyebut SATU PUN
+// field (kehadiran, bukan nilai) — pasangan kehadiran dari
+// perubahanRoutingNilaiSama untuk keputusan B-501: params kosong
+// total bukan no-op yang dilewatkan, melainkan ErrNoChanges yang
+// diteruskan sebagai 400 (kontrak B-401/B-434).
+func paramsRoutingMenyebut(p upstream.UpdateRoutingRuleParams) bool {
+	return p.Name != nil || p.Description.Set || p.Priority != nil ||
+		p.MatchModelID.Set || p.MatchAPIKeyID.Set || p.MatchCapabilities != nil ||
+		p.Strategy != nil || p.MaxAttempts != nil || p.BackoffMS != nil ||
+		p.FailureThreshold != nil || p.OpenDurationMS != nil || p.HalfOpenProbes != nil ||
+		p.Enabled != nil || p.Pipeline.Set || p.VirtualAlias.Set
+}
+
 // perubahanRoutingNilaiSama melaporkan apakah SETIAP field yang
 // disebut params sama nilainya dengan keadaan tersimpan (B-468).
 // Field yang tidak disebut selalu "sama" (semantik pembaruan
@@ -847,12 +888,15 @@ func perubahanRoutingNilaiSama(tersimpan *upstream.RoutingRule, p upstream.Updat
 	// nilai = nilai itu harus sama dengan yang tersimpan. optSama
 	// menampung ketiganya lewat ptrSama.
 	if !optSama(p.Description.Set, p.Description.Value, tersimpan.Description) ||
-		!optSama(p.MatchModelID.Set, p.MatchModelID.Value, tersimpan.MatchModelID) ||
-		!optSama(p.MatchAPIKeyID.Set, p.MatchAPIKeyID.Value, tersimpan.MatchAPIKeyID) ||
+		!optSamaUUID(p.MatchModelID.Set, p.MatchModelID.Value, tersimpan.MatchModelID) ||
+		!optSamaUUID(p.MatchAPIKeyID.Set, p.MatchAPIKeyID.Value, tersimpan.MatchAPIKeyID) ||
 		!optSama(p.VirtualAlias.Set, p.VirtualAlias.Value, tersimpan.VirtualAlias) {
 		return false
 	}
-	if p.MatchCapabilities != nil && !slices.Equal(tersimpan.MatchCapabilities, p.MatchCapabilities) {
+	// B-502: match_capabilities ber-semantik himpunan di runtime,
+	// jadi perbandingannya pun himpunan — urutan berbeda dengan isi
+	// sama BUKAN perubahan.
+	if p.MatchCapabilities != nil && !himpunanStringSama(tersimpan.MatchCapabilities, p.MatchCapabilities) {
 		return false
 	}
 	if p.Pipeline.Set {
@@ -928,6 +972,67 @@ func samaBilaDisebut[T comparable](diminta, tersimpan *T) bool {
 	return diminta == nil || ptrSama(diminta, tersimpan)
 }
 
+// ptrSamaUUID adalah ptrSama untuk field UUID tunggal (B-499):
+// kolom uuid Postgres selalu menyimpan ejaan kanonik huruf kecil,
+// jadi ejaan kapital dari UUID yang sama adalah NILAI yang sama —
+// perbandingan teks mentah membacanya "berubah" dan memicu audit,
+// tulisan, bahkan siraman cache untuk no-op representasi. B-467
+// menutup kaki himpunan/ikatan; varian ini menutup kaki field
+// tunggalnya.
+func ptrSamaUUID(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return strings.EqualFold(*a, *b)
+}
+
+// optSamaUUID adalah optSama untuk field Opt berisi UUID (B-499):
+// tidak Set selalu "sama"; Clear (Value nil) sama hanya bila
+// tersimpan juga kosong; Set-nilai dibandingkan tak peka huruf.
+func optSamaUUID(disebut bool, nilai, tersimpan *string) bool {
+	return !disebut || ptrSamaUUID(nilai, tersimpan)
+}
+
+// samaBilaDisebutUUID adalah samaBilaDisebut untuk field UUID
+// tunggal berpola "string kosong berarti kosongkan" (B-499): field
+// tak disebut selalu "sama"; "" (Clear) sama hanya bila tersimpan
+// memang kosong; UUID disebut dibandingkan tak peka huruf.
+func samaBilaDisebutUUID(diminta, tersimpan *string) bool {
+	if diminta == nil {
+		return true
+	}
+	if *diminta == "" {
+		return tersimpan == nil || *tersimpan == ""
+	}
+	return tersimpan != nil && strings.EqualFold(*diminta, *tersimpan)
+}
+
+// himpunanStringSama membandingkan dua daftar string sebagai
+// HIMPUNAN (B-502): urutan dan duplikat tidak bermakna. Semantik
+// runtime daftar seperti match_capabilities memang himpunan
+// (aturan cocok bila seluruh syarat termuat di permintaan), jadi
+// perbandingan terurut membaca no-op representasi sebagai
+// perubahan.
+func himpunanStringSama(a, b []string) bool {
+	sa := make(map[string]struct{}, len(a))
+	for _, s := range a {
+		sa[s] = struct{}{}
+	}
+	sb := make(map[string]struct{}, len(b))
+	for _, s := range b {
+		sb[s] = struct{}{}
+	}
+	if len(sa) != len(sb) {
+		return false
+	}
+	for s := range sa {
+		if _, ok := sb[s]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // optSama adalah samaBilaDisebut untuk field berbalut Opt[repo]:
 // Opt yang tidak Set selalu "sama"; yang Set dibandingkan nilainya.
 func optSama[T comparable](disebut bool, nilai, tersimpan *T) bool {
@@ -938,17 +1043,94 @@ func optSama[T comparable](disebut bool, nilai, tersimpan *T) bool {
 // (B-469): urutan kunci objek & format angka yang setara tidak
 // dianggap perbedaan. Dokumen yang tidak terurai tidak pernah
 // "sama" kecuali byte-nya identik — arah aman.
+//
+// B-495: penguraian memakai json.Decoder UseNumber dan angka
+// dibandingkan sebagai nilai rasional EKSAK (math/big.Rat), bukan
+// float64. Versi float64 membaca 9007199254740993 dan ...992 sebagai
+// nilai yang sama (keduanya runtuh ke float64 yang sama), sehingga
+// perubahan nyata pada integer besar di setting/metadata dinyatakan
+// "tidak berubah" dan tidak pernah tertulis — kelas B-478 yang
+// masuk kembali lewat helper ini. Format yang setara secara nilai
+// (1.50 vs 1.5, 1e2 vs 100) tetap "sama" karena Rat menormalkan
+// keduanya ke nilai rasional yang sama.
 func jsonSamaSemantik(a, b []byte) bool {
 	if bytes.Equal(a, b) {
 		return true
 	}
-	var va, vb any
-	if json.Unmarshal(a, &va) != nil || json.Unmarshal(b, &vb) != nil {
-		return false
+	va, okA := uraiJSONEksak(a)
+	vb, okB := uraiJSONEksak(b)
+	return okA && okB && nilaiJSONSama(va, vb)
+}
+
+// uraiJSONEksak mengurai SATU dokumen JSON dengan angka sebagai
+// json.Number (UseNumber); data susulan sesudah dokumen pertama
+// membuat penguraian gagal, sejajar json.Unmarshal.
+func uraiJSONEksak(doc []byte) (any, bool) {
+	dec := json.NewDecoder(bytes.NewReader(doc))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, false
 	}
-	ca, err1 := json.Marshal(va)
-	cb, err2 := json.Marshal(vb)
-	return err1 == nil && err2 == nil && bytes.Equal(ca, cb)
+	if dec.More() {
+		return nil, false
+	}
+	return v, true
+}
+
+// nilaiJSONSama membandingkan dua nilai hasil uraiJSONEksak secara
+// rekursif: objek per kunci (urutan tak bermakna), larik per urutan,
+// skalar per nilai, angka per nilai rasional eksak.
+func nilaiJSONSama(a, b any) bool {
+	switch av := a.(type) {
+	case nil:
+		return b == nil
+	case bool:
+		bv, ok := b.(bool)
+		return ok && av == bv
+	case string:
+		bv, ok := b.(string)
+		return ok && av == bv
+	case json.Number:
+		bv, ok := b.(json.Number)
+		return ok && angkaJSONSama(av, bv)
+	case []any:
+		bv, ok := b.([]any)
+		if !ok || len(av) != len(bv) {
+			return false
+		}
+		for i := range av {
+			if !nilaiJSONSama(av[i], bv[i]) {
+				return false
+			}
+		}
+		return true
+	case map[string]any:
+		bv, ok := b.(map[string]any)
+		if !ok || len(av) != len(bv) {
+			return false
+		}
+		for k, va := range av {
+			vb, ada := bv[k]
+			if !ada || !nilaiJSONSama(va, vb) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// angkaJSONSama membandingkan dua literal angka JSON menurut NILAI
+// rasionalnya yang eksak: 9007199254740993 != 9007199254740992,
+// tetapi 1.50 == 1.5 dan 1e2 == 100.
+func angkaJSONSama(a, b json.Number) bool {
+	if a == b {
+		return true
+	}
+	ra, okA := new(big.Rat).SetString(a.String())
+	rb, okB := new(big.Rat).SetString(b.String())
+	return okA && okB && ra.Cmp(rb) == 0
 }
 
 // ikatanProviderIdentik melaporkan apakah daftar provider yang
@@ -1976,8 +2158,8 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 			samaBilaDisebut(p.PatternType, &ada.PatternType) &&
 			samaBilaDisebut(p.CaseSensitive, &ada.CaseSensitive) &&
 			samaBilaDisebut(p.MaxEvalMS, &ada.MaxEvalMS) &&
-			samaBilaDisebut(p.ModelID, &ada.ModelID) &&
-			samaBilaDisebut(p.ProviderID, &ada.ProviderID) &&
+			samaBilaDisebutUUID(p.ModelID, &ada.ModelID) &&
+			samaBilaDisebutUUID(p.ProviderID, &ada.ProviderID) &&
 			samaBilaDisebut(p.MaxRequestBytes, ada.MaxRequestBytes) &&
 			samaBilaDisebut(p.Enabled, &ada.Enabled) {
 			_ = h.respond(w, r, http.StatusOK, toContentFilterDTO(ada))

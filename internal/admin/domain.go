@@ -384,30 +384,42 @@ func (h *Handlers) updateDomainConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.settingsRepo != nil {
-		// Simpan konfigurasi domain
-		_, err = h.settingsRepo.Put(ctx, identity.SettingWrite{
-			Key:         SettingKeyDomainConfig,
-			Value:       valBytes,
-			Description: "Konfigurasi domain kustom dan HTTPS otomatis Route-X",
-			UpdatedBy:   actorID,
-		})
-		if err != nil {
-			mapRepoError(w, r, err, "konfigurasi domain")
-			return
-		}
-
+		// B-500: dua Put ini adalah SATU keadaan, sama seperti
+		// pasangan hapusnya yang ditransaksikan B-472 — versi lama
+		// menulisnya berurutan tanpa transaksi, jadi kegagalan pada
+		// Put kedua meninggalkan konfigurasi domain BARU ter-commit
+		// tanpa public_url yang menyertainya, sementara operator
+		// menerima 500: keadaan setengah yang persis ditutup B-472
+		// di jalur hapus, bertahan di jalur update. Kini keduanya
+		// dalam SATU transaksi: gagal di mana pun → rollback,
+		// keadaan lama utuh, error jujur.
 		// Simpan URL publik kanonikal. Error-nya diteruskan (audit F5):
 		// versi lama menelannya sehingga domain bisa aktif sementara
 		// public_url tetap yang lama — padahal nilai itu dipakai
 		// resolveGatewayURL dan pemeriksaan origin CSRF.
 		pubURLBytes, _ := json.Marshal("https://" + domain)
-		if _, err := h.settingsRepo.Put(ctx, identity.SettingWrite{
-			Key:         SettingKeyPublicURL,
-			Value:       pubURLBytes,
-			Description: "URL publik kanonikal Route-X",
-			UpdatedBy:   actorID,
-		}); err != nil {
-			mapRepoError(w, r, err, "url publik domain")
+		err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+			txSettings := identity.NewSettings(q)
+			if _, err := txSettings.Put(ctx, identity.SettingWrite{
+				Key:         SettingKeyDomainConfig,
+				Value:       valBytes,
+				Description: "Konfigurasi domain kustom dan HTTPS otomatis Route-X",
+				UpdatedBy:   actorID,
+			}); err != nil {
+				return err
+			}
+			if _, err := txSettings.Put(ctx, identity.SettingWrite{
+				Key:         SettingKeyPublicURL,
+				Value:       pubURLBytes,
+				Description: "URL publik kanonikal Route-X",
+				UpdatedBy:   actorID,
+			}); err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			mapRepoError(w, r, err, "konfigurasi domain")
 			return
 		}
 	}

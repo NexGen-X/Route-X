@@ -399,7 +399,7 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 		optSama(params.RateLimitRPM.Set, params.RateLimitRPM.Value, pAda.RateLimitRPM) &&
 		optSama(params.RateLimitTPM.Set, params.RateLimitTPM.Value, pAda.RateLimitTPM) &&
 		optSama(params.MaxConcurrent.Set, params.MaxConcurrent.Value, pAda.MaxConcurrent) &&
-		optSama(params.EgressPoolID.Set, params.EgressPoolID.Value, pAda.EgressPoolID) &&
+		optSamaUUID(params.EgressPoolID.Set, params.EgressPoolID.Value, pAda.EgressPoolID) &&
 		(req.Metadata == nil || jsonSamaSemantik(req.Metadata, pAda.Metadata)) {
 		mapRepoError(w, r, upstream.ErrNoChanges, "provider")
 		return
@@ -1922,7 +1922,11 @@ func (h *Handlers) setCredentialEgressPool(w http.ResponseWriter, r *http.Reques
 	// versi lama tetap menjalankan ketiganya pada setiap no-op,
 	// jadi endpoint ini mengosongkan seluruh response cache untuk
 	// permintaan yang tidak mengubah apa pun.
-	if ptrSama(cred.EgressPoolID, poolID) {
+	// B-499: persisnya tak peka huruf — poolID datang dari body
+	// (ejaan bebas) sementara cred.EgressPoolID dari kolom uuid
+	// (huruf kecil), jadi ejaan kapital dari pool yang sama dulu
+	// terbaca berubah dan tetap menyiram seluruh cache.
+	if ptrSamaUUID(cred.EgressPoolID, poolID) {
 		_ = h.respond(w, r, http.StatusOK, toCredentialMetaDTO(cred))
 		return
 	}
@@ -2203,7 +2207,7 @@ func (h *Handlers) updateModel(w http.ResponseWriter, r *http.Request) {
 		if samaBilaDisebut(params.ModelID, &ada.ModelID) &&
 			samaBilaDisebut(params.DisplayName, &ada.DisplayName) &&
 			optSama(params.Family.Set, params.Family.Value, ada.Family) &&
-			(params.Capabilities == nil || slices.Equal(ada.Capabilities, params.Capabilities)) &&
+			(params.Capabilities == nil || himpunanStringSama(ada.Capabilities, params.Capabilities)) &&
 			optSama(params.ContextWindow.Set, params.ContextWindow.Value, ada.ContextWindow) &&
 			optSama(params.MaxOutputTokens.Set, params.MaxOutputTokens.Value, ada.MaxOutputTokens) &&
 			samaBilaDisebut(params.RoutingPriority, &ada.RoutingPriority) &&
@@ -2388,6 +2392,29 @@ func (h *Handlers) setPricing(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cachedUSD = &v
+	}
+
+	// B-498: permukaan ke-22 keluarga nilai-sama B-469 yang lolos
+	// dari enumerasi 21 permukaan — endpoint set harga ini tidak
+	// membandingkan apa pun, jadi POST harga yang PERSIS sama
+	// dengan yang berlaku tetap menutup baris riwayat lama, membuka
+	// baris identik baru, menginvalidasi cache harga, dan menulis
+	// audit "set_pricing". Kini dibandingkan dulu dengan harga
+	// berlaku (PricingRepo.Current): identik → 200 diam dengan
+	// keadaan tersimpan, tanpa baris/audit/invalidasi — gaya
+	// endpoint set keluarga ini. Perbandingan memuat Reasoning:
+	// Set di bawah selalu menulis reasoning NULL, jadi harga
+	// berlaku yang reasoning-nya terisi BUKAN no-op untuk
+	// permintaan ini.
+	if cur, err := upstream.NewPricingRepo(h.pool).Current(ctx, mappingID); err == nil {
+		if cur.Input == inUSD && cur.Output == outUSD &&
+			ptrSama(cur.CachedInput, cachedUSD) && cur.Reasoning == nil {
+			_ = h.respond(w, r, http.StatusOK, toPriceDTO(cur))
+			return
+		}
+	} else if !errors.Is(err, repo.ErrNotFound) {
+		mapRepoError(w, r, err, "harga model")
+		return
 	}
 
 	var price *upstream.Price

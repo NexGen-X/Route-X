@@ -4282,25 +4282,43 @@ func deteksiBOMNonUTF8(data []byte) string {
 //     1/4. Klasifikasi dekode menetralkan keduanya: pasangan
 //     pengganti (surrogate) yang sah dinilai NETRAL sebagai satu
 //     karakter astral, bukan dua suara mentah. Orientasi menyala
-//     bila dekodenya bebas karakter cacat, memuat ≥3 karakter
-//     Latin/struktural termasuk '=', dan karakter Latinnya
-//     mendominasi >2:1 atas karakter U+xx00 — bukti berbentuk
-//     teks .env, bukan ambang suara mentah.
+//     bila dekodenya memuat ≥3 karakter Latin/struktural
+//     termasuk '=', dan karakter Latinnya mendominasi >2:1 atas
+//     karakter U+xx00 DAN atas karakter cacat (B-563: cacat
+//     proporsional, bukan lagi syarat bebas-cacat) — bukti
+//     berbentuk teks .env, bukan ambang suara mentah.
 //
 // KUALIFIKASI AMBANG (koreksi redaksi atas klaim versi B-531 yang
 // menyatakan teks Latin "selalu" memenuhi jalur klasik — klaim
 // itu GUGUR di Putaran Bersih #11): berkas yang bukti struktural
 // Latinnya kurang dari 3 karakter, yang tidak memuat '=', yang
-// rasio dominasinya tepat 2:1 atau 5:3, atau yang pasangan
-// NUL-gandanya rapat (≥1/4) tetap LOLOS dari kedua jalur — itu
-// batas bukti yang disengaja, bukan janji deteksi total. Label
-// orientasi (B-556) diambil dari klasifikasi dekode: label klasik
-// hanya dipertahankan bila dekode orientasinya masuk akal sebagai
+// rasio Latin:anti-nya TIDAK melebihi 2:1 (batasnya ketat: tepat
+// 2:1, 5:3, atau lebih rendah semuanya lolos — bukan hanya dua
+// rasio contoh itu), yang cacatnya mencapai separuh Latinnya
+// (B-563: cacat kini proporsional, bukan veto — satu cacat di
+// antara ≥3 Latin tidak memveto, tetapi dominasi cacat tetap
+// menggugurkan), atau yang pasangan NUL-gandanya rapat (≥1/4)
+// tetap LOLOS dari kedua jalur — itu batas bukti yang disengaja,
+// bukan janji deteksi total. BATAS CAMPURAN ORIENTASI (B-564,
+// keputusan induk: batas sah): janji detektor mencakup berkas
+// yang ADALAH satu pengkodean (termasuk yang salah label),
+// BUKAN sambungan byte dua pengkodean — sambungan seimbang
+// UTF-16LE + UTF-16BE (dan urutan baliknya) menghasilkan dekode
+// simetris di kedua orientasi dan LOLOS dari semua jalur;
+// berkas seperti itu bukan pengkodean sah mana pun dan tak
+// dihasilkan penyunting mana pun. Label orientasi (B-556)
+// diambil dari klasifikasi dekode: label klasik hanya
+// dipertahankan bila dekode orientasinya masuk akal sebagai
 // teks .env; bila hanya orientasi lawan yang masuk akal, label
 // lawan yang dipakai (berkas LE yang didominasi U+0100 dulu
 // berlabel BE karena byte mentahnya meniru paritas BE); bila
 // keduanya tidak masuk akal, label netral "UTF-16" — vonisnya
 // tetap penolakan, hanya nama orientasinya yang tidak dikarang.
+// Label netral itu dalam praktik SELALU lahir dari jalur klasik
+// (B-556), bukan dari cabang "kedua orientasi layak" di bawah —
+// cabang itu cabang mati yang dipertahankan (lihat catatannya):
+// satu unit Latin di satu orientasi selalu anti di orientasi
+// lawan, sehingga kedua orientasi tak pernah layak bersamaan.
 //
 // Gerbang arah sebaliknya (toleransi B-507) tetap mutlak: berkas
 // UTF-8 sah yang memuat NUL TERISOLASI/TERSEBAR di baris
@@ -4342,6 +4360,19 @@ func deteksiUTF16TanpaBOM(data []byte) string {
 	// dan labelnya selalu orientasi yang terbukti dari dekode.
 	le := nilaiOrientasiUTF16(data, n, true)
 	be := nilaiOrientasiUTF16(data, n, false)
+	// Cabang pertama switch di bawah adalah CABANG MATI yang
+	// DIPERTAHANKAN dengan sengaja (koreksi redaksi B-541):
+	// kedua orientasi tak pernah layak bersamaan — setiap unit
+	// Latin di satu orientasi adalah unit anti (U+xx00) di
+	// orientasi lawan, jadi anti_lawan ≥ latin; layak di kedua
+	// sisi sekaligus menuntut latin > 2×anti ≥ 2×latin_lawan >
+	// 4×latin, mustahil untuk latin ≥ 3. Sapuan mekanis
+	// Fase 25 (fase25_prc_test.go) menegaskan tidak satu pun
+	// bentuk yang disapu memenuhi kedua sisi bersamaan. Cabang
+	// ini dipertahankan sebagai jangkar niat (bila keduanya
+	// layak, labelnya netral) dan TIDAK dihapus: penghapusan
+	// tidak mengubah perilaku apa pun, sementara keberadaannya
+	// mendokumentasikan vonis simetris yang dituju.
 	switch {
 	case le.layak() && be.layak():
 		return "UTF-16"
@@ -4387,10 +4418,17 @@ type penilaianOrientasiUTF16 struct {
 	adaSamaDengan bool // '=' struktural .env hadir dalam dekode
 }
 
-// masukAkal: dekode orientasi ini menyerupai teks .env — bebas
-// cacat dan memuat bukti Latin struktural termasuk '='.
+// masukAkal: dekode orientasi ini menyerupai teks .env —
+// memuat bukti Latin struktural termasuk '=', dan karakter
+// Latinnya mendominasi >2:1 atas karakter cacat (B-563).
+// Syarat cacat==0 versi lama adalah veto satu karakter: satu
+// U+0085 (NEL) atau satu surrogate yatim di EOF menggugurkan
+// vonis atas berkas yang selebihnya teks .env sah. Kini cacat
+// dinilai proporsional seperti kelas Anti (Fase 23): satu cacat
+// di antara ≥3 karakter Latin tidak lagi memveto; dekode yang
+// cacatnya mencapai separuh Latinnya tetap tidak masuk akal.
 func (p penilaianOrientasiUTF16) masukAkal() bool {
-	return p.cacat == 0 && p.latin >= 3 && p.adaSamaDengan
+	return p.latin >= 3 && p.adaSamaDengan && p.latin > 2*p.cacat
 }
 
 // layak: masuk akal DAN karakter Latin mendominasi >2:1 atas
@@ -4454,29 +4492,46 @@ func nilaiOrientasiUTF16(data []byte, n int, le bool) penilaianOrientasiUTF16 {
 // tidak ada), UTF-32BE simetris pada residu 0, 1, 2 (residu 0
 // selalu NUL). deteksiUTF16TanpaBOM sengaja melepaskan pola ini
 // lewat penjaga NUL-ganda rapatnya. Syarat residu pendamping
-// (≥3/4 grup) menuntut byte kedua-tertinggi juga mayoritas NUL —
-// teks Latin memenuhinya (titik kode < U+10000); pola UTF-16 yang
-// dibaca per-4-byte tidak: UTF-16LE ASCII menaruh NUL hanya pada
-// separuh residu yang dituntut UTF-32LE, UTF-16BE simetris, dan
-// UTF-8 realistis tidak pernah menaruh NUL pada SEMUA grup di
-// satu residu pun. Mengembalikan nama pengkodean, label netral
-// "UTF-32" bila kedua orientasi menyala (pola simetris karangan),
-// atau "" bila bukan UTF-32 tanpa BOM.
+// (≥3/4 grup "terjelaskan") menuntut byte kedua-tertinggi juga
+// mayoritas terjelaskan — teks Latin memenuhinya (titik kode
+// < U+10000); pola UTF-16 yang dibaca per-4-byte tidak:
+// UTF-16LE ASCII menaruh NUL hanya pada separuh residu yang
+// dituntut UTF-32LE, UTF-16BE simetris, dan UTF-8 realistis
+// tidak pernah menaruh NUL pada SEMUA grup di satu residu pun.
+// Grup TERJELASKAN bila residu pendampingnya NUL (karakter BMP)
+// ATAU membentuk skalar astral sah (B-562): karakter astral
+// (≥ U+10000) menaruh byte bukan-NUL pada residu pendamping —
+// byte itu nilai byte kedua-tertinggi skalarnya sendiri, bukan
+// bukti melawan UTF-32. LE: byte2 0x01–0x10 dengan byte3 NUL
+// (nilai 0x10000–0x10FFFF); BE simetris byte1 0x01–0x10 dengan
+// byte0 NUL. Tanpa penghitungan ini berkas UTF-32 yang
+// fraksi astralnya di atas 1/4 lolos (residu pendamping jatuh
+// di bawah ambang 3/4). Mengembalikan nama pengkodean, label
+// netral "UTF-32" bila kedua orientasi menyala (pola simetris
+// karangan), atau "" bila bukan UTF-32 tanpa BOM.
 func deteksiUTF32TanpaBOM(data []byte) string {
 	g := len(data) / 4 // grup 4 byte utuh yang dinilai
 	if g < 4 {
 		return ""
 	}
 	var nol [4]int
+	var astralLE, astralBE int // grup yang residu pendampingnya
+	// membentuk skalar astral sah (B-562), bukan NUL
 	for i := 0; i < g; i++ {
 		for r := 0; r < 4; r++ {
 			if data[4*i+r] == 0 {
 				nol[r]++
 			}
 		}
+		if data[4*i+3] == 0 && data[4*i+2] >= 0x01 && data[4*i+2] <= 0x10 {
+			astralLE++
+		}
+		if data[4*i] == 0 && data[4*i+1] >= 0x01 && data[4*i+1] <= 0x10 {
+			astralBE++
+		}
 	}
-	le := nol[3] == g && nol[2]*4 >= 3*g
-	be := nol[0] == g && nol[1]*4 >= 3*g
+	le := nol[3] == g && (nol[2]+astralLE)*4 >= 3*g
+	be := nol[0] == g && (nol[1]+astralBE)*4 >= 3*g
 	switch {
 	case le && be:
 		return "UTF-32"

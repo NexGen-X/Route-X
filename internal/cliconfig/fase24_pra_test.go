@@ -170,6 +170,10 @@ func TestB548EnvUTF32TanpaBOMDitolak(t *testing.T) {
 // beberapa aksara, emoji UTF-8, dan NUL terisolasi campuran —
 // tidak satu pun tertolak oleh jalur proporsional maupun detektor
 // UTF-32; Configure berhasil dan kunci terkelola tertulis.
+// (Fase 25 PR-C memperluas korpus ini: astral CJK ekstensi,
+// campuran emoji+CJK, Latin-1 padat, Hangul, NUL tersebar di
+// beberapa baris, NUL sesudah '=', simbol campuran astral,
+// komentar Arab + nilai kana — semuanya wajib lolos.)
 func TestB541KorpusKontrolUTF8TidakTertolak(t *testing.T) {
 	for _, tc := range []struct {
 		nama string
@@ -189,6 +193,22 @@ func TestB541KorpusKontrolUTF8TidakTertolak(t *testing.T) {
 			"LAIN=ü\x00x\nCATATAN=naïve façade — déjà vu\nKUNCI=GANTI_nilai-b541\n"},
 		{"nilai mata uang dan simbol",
 			"HARGA=€100 £50 ¥1000 ✓✗\nKUNCI=GANTI_nilai-b541\n"},
+		{"nilai astral CJK ekstensi U+20000 padat (Fase 25)",
+			"CATATAN=𐀀𐀀𐀀𐀀𐀀𐀀𐀀𐀀\nKUNCI=GANTI_nilai-b541\n"},
+		{"campuran emoji dan CJK padat (Fase 25)",
+			"MOOD=😀中文😀中文😀中文😀中文\nKUNCI=GANTI_nilai-b541\n"},
+		{"nilai Latin-1 padat (Fase 25)",
+			"CATATAN=éèêàáâöüßÿñç\nKUNCI=GANTI_nilai-b541\n"},
+		{"nilai Hangul padat (Fase 25)",
+			"이름=테스트테스트테스트\nKUNCI=GANTI_nilai-b541\n"},
+		{"NUL tersebar di beberapa baris + non-ASCII (Fase 25)",
+			"LAIN=a\x00b\nLAIN2=ü\x00x\nLAIN3=naïve\x00façade\nKUNCI=GANTI_nilai-b541\n"},
+		{"NUL sesudah '=' di baris tak-terkelola (Fase 25)",
+			"LAIN=\x00ab\nLAIN2=cd\x00\nKUNCI=GANTI_nilai-b541\n"},
+		{"nilai simbol dan mata uang campuran astral (Fase 25)",
+			"HARGA=€100 😀 ¥1000 𐀀 ✓\nKUNCI=GANTI_nilai-b541\n"},
+		{"komentar Arab + nilai kana (Fase 25)",
+			"# مرحبا بالعالم\n名前=テスト\nKUNCI=GANTI_nilai-b541\n"},
 	} {
 		t.Run(tc.nama, func(t *testing.T) {
 			home := t.TempDir()

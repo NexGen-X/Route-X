@@ -49,8 +49,8 @@ func TestB474PergeseranPemenangMelapor(t *testing.T) {
 		}
 		return meta
 	}
-	credA := buat("a-b474", "sk-b474-aaaa00000000000000000000000001")
-	credB := buat("b-b474", "sk-b474-bbbb00000000000000000000000002")
+	credA := buat("a-b474", "sk-b474-aa01")
+	credB := buat("b-b474", "sk-b474-bb02")
 
 	var laporan []string
 	credentials.SetSesudahPemenangBergeser(func(_ context.Context, providerID string) {
@@ -110,7 +110,7 @@ func TestB474PergeseranPemenangMelapor(t *testing.T) {
 	// auth_failures B ke 0; seri dipecah last_used_at: B belum
 	// pernah dipakai (NULL lebih dulu) menyalip A — WAJIB dilaporkan.
 	if err := credentials.UpdateSecret(ctx, credB.ID,
-		security.Secret("sk-b474-bbbb11111111111111111111111103"), &kedaluwarsa); err != nil {
+		security.Secret("sk-b474-bb03"), &kedaluwarsa); err != nil {
 		t.Fatalf("UpdateSecret B: %v", err)
 	}
 	if got := pemenang(); got != credB.ID {

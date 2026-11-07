@@ -2406,9 +2406,37 @@ func (h *Handlers) setPricing(w http.ResponseWriter, r *http.Request) {
 	// Set di bawah selalu menulis reasoning NULL, jadi harga
 	// berlaku yang reasoning-nya terisi BUKAN no-op untuk
 	// permintaan ini.
-	if cur, err := upstream.NewPricingRepo(h.pool).Current(ctx, mappingID); err == nil {
-		if cur.Input == inUSD && cur.Output == outUSD &&
-			ptrSama(cur.CachedInput, cachedUSD) && cur.Reasoning == nil {
+	//
+	// B-519 (sapuan mekanis SEMUA field yang ditulis Set terhadap
+	// yang dibandingkan gerbang ini): Input ✓, Output ✓,
+	// CachedInput ✓, Reasoning ✓ (keempatnya di atas); Currency
+	// dan Source kini ikut dibandingkan — Set menulis keduanya
+	// dari nilai bawaan (DefaultCurrency/DefaultPriceSource)
+	// karena permintaan tidak menerimanya, jadi baris berlaku
+	// yang currency/source-nya menyimpang dari bawaan BUKAN
+	// no-op: POST identik harus menulis baris koreksi, bukan
+	// ditelan. Dua field Set yang lain sengaja di luar
+	// perbandingan nilai: EffectiveFrom bersifat temporal (yang
+	// akan ditulis adalah now(); interaksinya adalah konflik
+	// B-520 di bawah, bukan kesamaan nilai) dan CreatedBy adalah
+	// metadata kepengarangan baris (harga yang keadaannya
+	// identik tidak bergantung pada siapa penulisnya).
+	//
+	// B-520: penilaian konflik MENDAHULUI jalan pintas no-op.
+	// Baris terbuka ber-effective_from masa depan membuat Set
+	// pasti ErrConflict; tanpa pemeriksaan ini, POST yang
+	// identik dengan harga yang sedang berlaku lolos 200 dari
+	// gerbang di atas dan konfliknya tertelan diam-diam.
+	pricingRepo := upstream.NewPricingRepo(h.pool)
+	if cur, err := pricingRepo.Current(ctx, mappingID); err == nil {
+		adaDepan, errDepan := pricingRepo.AdaHargaMasaDepanTerbuka(ctx, mappingID)
+		if errDepan != nil {
+			mapRepoError(w, r, errDepan, "harga model")
+			return
+		}
+		if !adaDepan && cur.Input == inUSD && cur.Output == outUSD &&
+			ptrSama(cur.CachedInput, cachedUSD) && cur.Reasoning == nil &&
+			cur.Currency == upstream.DefaultCurrency && cur.Source == upstream.DefaultPriceSource {
 			_ = h.respond(w, r, http.StatusOK, toPriceDTO(cur))
 			return
 		}

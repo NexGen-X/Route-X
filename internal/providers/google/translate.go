@@ -802,7 +802,7 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				continue
 			}
 			switch key {
-			case "properties", "$defs", "definitions", "patternProperties", "dependentSchemas":
+			case "properties", "dependentSchemas", "dependentRequired":
 				// B-462: kunci-kunci ini adalah WADAH — nilainya peta
 				// NAMA → node skema, bukan node skema itu sendiri.
 				// Mengiterasi peta wadah sebagai node (perilaku lama)
@@ -813,7 +813,19 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 				// bernama not terhapus, dan isi properti bernama
 				// type lolos tanpa normalisasi. Kini yang dinormalkan
 				// adalah NILAI tiap entri sebagai node; nama entri
-				// tidak pernah ditafsirkan.
+				// tidak pernah ditafsirkan. B-503 menambahkan
+				// dependentRequired (wadah nama → daftar nama, keluarga
+				// yang sama; nilai daftarnya lolos sebagai daun).
+				//
+				// B-515 (kejelasan, tanpa perubahan perilaku): "$defs",
+				// "definitions", dan "patternProperties" TIDAK ada di
+				// daftar kasus ini — di posisi node ketiganya anggota
+				// unsupportedSchemaKeys dan sudah dibuang oleh saringan
+				// di atas switch ini (keputusan B-161) sebelum kasus
+				// wadah sempat tercapai; dereferensi $ref membaca
+				// dokumen akar MENTAH, jadi pembuangan itu tidak
+				// menggantungkan referensi. Ketiganya hanya selamat
+				// sebagai NAMA entri di dalam wadah di atas.
 				if wadah, ok := val.(map[string]any); ok {
 					isi := make(map[string]any, len(wadah))
 					for nama, sub := range wadah {
@@ -823,6 +835,15 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 					continue
 				}
 				out[key] = normalisasiNode(val, root, rantaiRef, kedalaman)
+			case "enum", "default", "example", "examples":
+				// B-504: nilai di kunci-kunci ini adalah DATA, bukan
+				// skema — isi enum, nilai bawaan, dan contoh boleh
+				// berbentuk objek apa pun (termasuk yang kuncinya
+				// kebetulan bernama kata kunci skema). Merekursi
+				// mereka sebagai node (perilaku lama) merusak mereka
+				// senyap: kunci data "not" terhapus, "const" berubah
+				// menjadi enum karangan. Kini diteruskan utuh.
+				out[key] = val
 			case "type":
 				if gabungan, ok := val.([]any); ok {
 					tipe, nullable := tipeDariUnion(gabungan)

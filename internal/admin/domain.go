@@ -321,6 +321,15 @@ func (h *Handlers) updateDomainConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// KEPUTUSAN TERCATAT (B-418): mode yang absen atau tidak
+	// dikenal jatuh ke "letsencrypt", menimpa mode tersimpan
+	// (mis. "cloudflare"). Ini diterima dengan sadar karena
+	// endpoint ini adalah POST konfigurasi PENUH, bukan update
+	// parsial: dashboard selalu mengirim mode, dan bentuk
+	// permintaannya adalah "jadikan ini konfigurasi domain",
+	// bukan "ubah field yang disebut". Membedakan mode absen di
+	// sini menuntut DTO penunjuk dan kontrak parsial yang tidak
+	// dimiliki permukaan konfigurasi-penuh ini di field mana pun.
 	mode := strings.ToLower(strings.TrimSpace(req.Mode))
 	if mode != "cloudflare" && mode != "letsencrypt" {
 		mode = "letsencrypt"

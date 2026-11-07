@@ -478,6 +478,34 @@ func decodeJSON(r *http.Request, v any) error {
 	return nil
 }
 
+// fieldTeks adalah field string JSON yang MENCATAT KEHADIRAN
+// kuncinya (B-398): *string polos melebur "tidak disebut" dan
+// "disebut null" menjadi nil yang sama, padahal untuk field yang
+// nilai kosongnya bermakna (mis. melepas ikatan) keduanya adalah
+// perintah yang berbeda — yang pertama "biarkan", yang kedua
+// "lepaskan". Disebut terisi true bila kunci muncul di body dengan
+// nilai apa pun (termasuk null); Nilai membawa stringnya, atau nil
+// untuk null eksplisit.
+type fieldTeks struct {
+	Disebut bool
+	Nilai   *string
+}
+
+// UnmarshalJSON mencatat kehadiran kunci lalu mengurai nilainya.
+func (f *fieldTeks) UnmarshalJSON(b []byte) error {
+	f.Disebut = true
+	if string(b) == "null" {
+		f.Nilai = nil
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	f.Nilai = &s
+	return nil
+}
+
 // toggleEnabledReq adalah body bersama SEMUA endpoint toggle admin
 // (provider, kredensial, sesi OAuth, kunci API, webhook, aturan routing,
 // batas laju, anggaran, filter konten).

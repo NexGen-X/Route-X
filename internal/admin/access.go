@@ -784,6 +784,17 @@ func (h *Handlers) getAPIKeyAllowed(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// setAllowedAPIKey memasang daftar izin model/provider sebuah
+// kunci dengan semantik HIMPUNAN PENUH (KEPUTUSAN TERCATAT B-417,
+// dipertahankan sesudah diperiksa di Putaran Bersih #5): body
+// adalah keadaan akhir yang diminta, bukan tambalan parsial —
+// PUT {} dengan sadar mengosongkan daftar, dan daftar kosong
+// adalah keadaan sah yang bermakna "tanpa pembatasan". Ini
+// endpoint set (seperti setRuleProviders untuk ikatan aturan,
+// B-184), BUKAN update field per field seperti updateAPIKey yang
+// wajib membedakan tak-disebut (B-369): menerapkan pembedaan itu
+// di sini justru menghapus satu-satunya cara menyatakan
+// "cabut semua pembatasan" lewat permukaan ini.
 func (h *Handlers) setAllowedAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -995,6 +1006,19 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 	// atau sesi curian langsung mengunci admin keluar tanpa jejak khusus.
 	if diriSendiri && req.Status != "" && identity.UserStatus(req.Status) != identity.UserStatusActive {
 		httpx.BadRequest(w, r, "self_disable_forbidden", "akun sendiri tidak bisa dinonaktifkan; minta admin lain yang melakukannya")
+		return
+	}
+
+	// B-400: body kosong total bukan pembaruan. Sebelumnya ia
+	// lolos semua penjaga (tidak ada field yang divalidasi),
+	// menjawab 200, DAN tetap menulis baris audit "update" di
+	// akhir handler — jejak perubahan yang tidak pernah terjadi.
+	// Repo identity tidak mengenal ErrNoChanges, jadi penolakan
+	// no_changes ditegakkan di sini, sesudah validasi + muat
+	// target + penjaga diri (404 dan penolakan diri tetap
+	// mendahului), sebelum mutasi dan audit apa pun.
+	if req.Name == "" && req.Status == "" && req.Role == nil {
+		httpx.BadRequest(w, r, "no_changes", "tidak ada perubahan yang diminta untuk pengguna")
 		return
 	}
 

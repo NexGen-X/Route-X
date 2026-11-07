@@ -1781,7 +1781,12 @@ func (h *Handlers) toggleCredential(w http.ResponseWriter, r *http.Request) {
 }
 
 type setCredentialEgressPoolReq struct {
-	EgressPoolID *string `json:"egress_pool_id"`
+	// fieldTeks pencatat kehadiran (B-398): *string polos melebur
+	// absen/null/"" menjadi perintah melepas ikatan yang sama,
+	// jadi PUT {} ikut MEMUTUS ikatan pool kredensial dan dijawab
+	// 200. Kini absen = tidak ada yang diminta (400 no_changes);
+	// null atau "" eksplisit = lepas ikatan; nilai = ikat.
+	EgressPoolID fieldTeks `json:"egress_pool_id"`
 }
 
 func (h *Handlers) setCredentialEgressPool(w http.ResponseWriter, r *http.Request) {
@@ -1803,7 +1808,15 @@ func (h *Handlers) setCredentialEgressPool(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	poolID := req.EgressPoolID
+	// B-398: kunci absen berarti body tidak meminta apa pun —
+	// tolak no_changes SEBELUM keadaan apa pun dibaca/diubah,
+	// sejajar permukaan update lain (B-306/B-354). null atau ""
+	// yang DISEBUT eksplisit tetap berarti lepas ikatan.
+	if !req.EgressPoolID.Disebut {
+		httpx.BadRequest(w, r, "no_changes", "tidak ada perubahan yang diminta untuk kredensial")
+		return
+	}
+	poolID := req.EgressPoolID.Nilai
 	if poolID != nil && *poolID == "" {
 		poolID = nil
 	}

@@ -564,6 +564,11 @@ func (r *Repo) replaceAllowed(ctx context.Context, keyID string, modelIDs, provi
 // dari maksud operator. Bila Querier masih berupa pool, transaksi
 // dibungkus di sini; jalur admin sebelumnya memanggil metode ini langsung
 // di atas pool tanpa transaksi sama sekali.
+//
+// Semantiknya memang delete-all + insert (KEPUTUSAN TERCATAT
+// B-417): daftar kosong adalah keadaan sah "tanpa pembatasan"
+// yang hanya bisa dinyatakan lewat penggantian penuh ini —
+// endpoint pemanggilnya adalah endpoint set, bukan update parsial.
 func (r *Repo) SetAllowed(ctx context.Context, keyID string, modelIDs, providerIDs []string) error {
 	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
 		return repo.InTx(ctx, pool, func(q repo.Querier) error {

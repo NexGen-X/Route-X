@@ -337,8 +337,13 @@ func (h *Handlers) getDiagnostics(w http.ResponseWriter, r *http.Request) {
 // -----------------------------------------------------------------------------
 
 type CacheSettingsRequest struct {
-	Enabled    bool  `json:"enabled"`
-	TTLSeconds int64 `json:"ttl_seconds"`
+	// Keduanya penunjuk (B-399): bool/int64 polos melebur "tidak
+	// disebut" menjadi false/0, jadi POST parsial seperti
+	// {"ttl_seconds":600} ikut MEMATIKAN cache dan POST {}
+	// menonaktifkannya dengan TTL 0. Kini yang tidak disebut
+	// diwarisi dari setelan engine yang berlaku.
+	Enabled    *bool  `json:"enabled"`
+	TTLSeconds *int64 `json:"ttl_seconds"`
 }
 
 func (h *Handlers) getCacheStats(w http.ResponseWriter, r *http.Request) {
@@ -404,10 +409,28 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 		httpx.BadRequest(w, r, "invalid_json", err.Error())
 		return
 	}
-	// Validasi rentang TTL sebelum konversi (audit F5): nilai negatif atau
-	// raksasa meluap int64 saat dikali time.Second dan tersimpan sebagai
-	// durasi acak tanpa satu pun penolakan.
-	if req.TTLSeconds < 0 || req.TTLSeconds > 86400 {
+	// B-399: body tanpa satu pun field bukan pembaruan — tolak
+	// no_changes sejajar permukaan update lain (B-306/B-354).
+	if req.Enabled == nil && req.TTLSeconds == nil {
+		httpx.BadRequest(w, r, "no_changes", "tidak ada perubahan yang diminta untuk setelan response cache")
+		return
+	}
+	// Gabungkan dengan setelan yang berlaku: field yang disebut
+	// menang, sisanya diwarisi — POST parsial tidak lagi bisa
+	// mematikan cache atau meng-nol-kan TTL secara tidak sengaja.
+	enabled := h.responseCache.IsEnabled()
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	ttlDetik := int64(h.responseCache.TTL() / time.Second)
+	if req.TTLSeconds != nil {
+		ttlDetik = *req.TTLSeconds
+	}
+	// Validasi rentang TTL (atas nilai GABUNGAN) sebelum konversi
+	// (audit F5): nilai negatif atau raksasa meluap int64 saat
+	// dikali time.Second dan tersimpan sebagai durasi acak tanpa
+	// satu pun penolakan.
+	if ttlDetik < 0 || ttlDetik > 86400 {
 		httpx.BadRequest(w, r, "invalid_ttl", "TTLSeconds harus dalam rentang 0–86400 detik")
 		return
 	}
@@ -421,17 +444,20 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 	// knob di permukaan ini yang bisa melemahkan isolasi itu — kunci
 	// selalu dibentuk kode, bukan pilihan operator — jadi tidak ada
 	// konfigurasi tak aman yang perlu ditolak di sini.
-	ttl := time.Duration(req.TTLSeconds) * time.Second
+	ttl := time.Duration(ttlDetik) * time.Second
 	// Persistensikan SEBELUM menerapkan (audit F3): setelan yang hanya
 	// hidup di memori hilang saat restart dan boot lama diam-diam
 	// menyalakan cache lagi. Kini tabel settings adalah sumber kebenaran;
 	// kegagalan menyimpannya menggagalkan handler, bukan sukses palsu.
+	// Yang disimpan adalah nilai GABUNGAN (B-399): menyimpan nilai
+	// mentah body parsial akan menimpa setelan persisten dengan
+	// keadaan yang tidak pernah diminta operator.
 	if h.settingsRepo != nil {
 		var actorID string
 		if p, ok := auth.PrincipalFrom(r.Context()); ok && p != nil {
 			actorID = p.User.ID
 		}
-		persisted, _ := json.Marshal(responsecache.PersistedSettings{Enabled: req.Enabled, TTLSeconds: req.TTLSeconds})
+		persisted, _ := json.Marshal(responsecache.PersistedSettings{Enabled: enabled, TTLSeconds: ttlDetik})
 		if _, err := h.settingsRepo.Put(r.Context(), identity.SettingWrite{
 			Key:         responsecache.SettingKey,
 			Value:       persisted,
@@ -445,16 +471,16 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 	// Kill switch: SetSettings(false, ...) berlaku seketika — IsEnabled
 	// diperiksa pada setiap request, jadi penonaktifan menghentikan
 	// penyajian HIT pada request berikutnya tanpa restart.
-	h.responseCache.SetSettings(req.Enabled, ttl)
+	h.responseCache.SetSettings(enabled, ttl)
 	// B-202: perubahan saklar/TTL cache sebelumnya tidak diaudit —
 	// jejaknya hanya baris settings generik tanpa aktor yang jelas.
 	h.writeAudit(r.Context(), r, "update", "response_cache", "", map[string]any{
-		"enabled":     req.Enabled,
-		"ttl_seconds": req.TTLSeconds,
+		"enabled":     enabled,
+		"ttl_seconds": ttlDetik,
 	})
 	_ = h.respond(w, r, http.StatusOK, CacheSettingsResponseDTO{
-		Enabled:    req.Enabled,
-		TTLSeconds: req.TTLSeconds,
+		Enabled:    enabled,
+		TTLSeconds: ttlDetik,
 		Message:    "Pengaturan response cache berhasil diperbarui",
 	})
 }

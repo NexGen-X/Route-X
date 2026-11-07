@@ -197,6 +197,14 @@ func tulisAtomik(path string, data []byte, perm os.FileMode) error {
 		}
 		path = akhir
 	}
+	// B-484: tujuan yang SUDAH ADA dan bukan berkas reguler (FIFO,
+	// socket, perangkat) ditolak bernama sebelum rename: rename
+	// akan MENIMPA penghuni khususnya secara senyap dan Configure
+	// melaporkan sukses atas konfigurasi yang tidak pernah bisa
+	// dibaca tool dari FIFO/socket itu.
+	if fi, lerr := os.Lstat(path); lerr == nil && !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s bukan berkas reguler (mode %s); menolak menimpa berkas khusus", path, fi.Mode().Type())
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".routex-tulis-*")
 	if err != nil {
 		return err
@@ -234,7 +242,42 @@ func tulisAtomik(path string, data []byte, perm os.FileMode) error {
 //     menggantung) untuk tool yang format resminya memang JSONC
 //     (OpenCode): berkas yang sah menurut tool-nya tidak boleh gagal
 //     terurai di sini.
+//
+// bacaTeksKonfig membaca berkas konfigurasi yang MUNGKIN belum
+// ada: belum ada → ("", nil). Berkas yang ADA tetapi bukan berkas
+// reguler (FIFO/socket/perangkat) adalah galat bernama (B-484):
+// os.ReadFile pada FIFO menggantung tanpa batas menunggu penulis,
+// jadi keberadaannya tidak pernah boleh mencapai ReadFile. Galat
+// baca lain juga dikembalikan — menelan galat baca lalu menimpa
+// berkas dari nol adalah kelas B-217.
+func bacaTeksKonfig(path string) (string, error) {
+	fi, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("memeriksa %s: %w", path, err)
+	}
+	if !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("%s bukan berkas reguler (mode %s); Configure tidak membaca berkas khusus", path, fi.Mode().Type())
+	}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("membaca %s: %w", path, err)
+	}
+	return string(data), nil
+}
+
 func muatKonfigJSON(path string, toleranJSONC bool) (map[string]any, error) {
+	// B-484: penjaga berkas khusus lebih dulu — ReadFile pada
+	// FIFO menggantung; muatKonfigJSON adalah pintu baca keempat
+	// tool JSON.
+	if fi, serr := os.Stat(path); serr == nil && !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s bukan berkas reguler (mode %s); Configure tidak membaca berkas khusus", path, fi.Mode().Type())
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return make(map[string]any), nil
@@ -256,14 +299,57 @@ func muatKonfigJSON(path string, toleranJSONC bool) (map[string]any, error) {
 	if toleranJSONC {
 		data = uraiJSONCToleran(data)
 	}
-	cfg := make(map[string]any)
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	cfg, err := uraiPetaJSON(data)
+	if err != nil {
 		return nil, fmt.Errorf("berkas konfigurasi %s tidak bisa diurai (%v); Configure dibatalkan agar setelan di dalamnya tidak tertimpa — perbaiki atau pindahkan berkas itu, lalu coba lagi", path, err)
+	}
+	return cfg, nil
+}
+
+// uraiPetaJSON mengurai dokumen JSON berbentuk objek dengan
+// UseNumber (B-478): angka dipertahankan sebagai teks mentahnya
+// (json.Number), BUKAN float64. Unmarshal baku mengubah
+// 9007199254740993 menjadi 9007199254740992 secara senyap, dan
+// penulisan ulang hasil gabungan lalu MENETAPKAN kerusakan itu ke
+// berkas pengguna (id numerik besar, batas presisi) sementara
+// Configure melaporkan sukses. Dengan Number, angka yang tidak
+// dikelola Route-X berjalan pulang-pergi apa adanya. Muatan
+// sesudah dokumen pertama ditolak, setara Unmarshal.
+func uraiPetaJSON(data []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	cfg := make(map[string]any)
+	if err := dec.Decode(&cfg); err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = fmt.Errorf("muatan tambahan sesudah dokumen JSON")
+		}
+		return nil, err
 	}
 	if cfg == nil {
 		cfg = make(map[string]any)
 	}
 	return cfg, nil
+}
+
+// verifikasiHasilJSON adalah gerbang hasil akhir jalur JSON
+// (B-478), setara verifikasiHasilTOML/verifikasiHasilHermes:
+// konten yang akan ditulis diurai ulang dengan UseNumber dan wajib
+// SAMA persis secara semantik dengan peta hasil mutasi yang
+// diniatkan. Perbedaan apa pun — angka besar yang bergeser, kunci
+// yang hilang/berubah di perjalanan marshal — menggagalkan
+// Configure secara jujur sebelum berkas ditulis.
+func verifikasiHasilJSON(konten []byte, harapan map[string]any) error {
+	terbaca, err := uraiPetaJSON(konten)
+	if err != nil {
+		return fmt.Errorf("hasil sunting JSON tidak terurai: %w", err)
+	}
+	if !reflect.DeepEqual(terbaca, harapan) {
+		return fmt.Errorf("hasil sunting JSON tidak sama dengan konfigurasi yang diniatkan (kemungkinan angka presisi atau kunci berubah di perjalanan)")
+	}
+	return nil
 }
 
 // uraiJSONCToleran mengubah JSONC menjadi JSON ketat yang bisa diterima
@@ -805,7 +891,11 @@ func jepretBerkasConfigure(jalur string) jepretanBerkas {
 		if err != nil {
 			return j // tautan putus: target belum ada
 		}
-		if tfi.IsDir() {
+		// B-484: target non-reguler (direktori, FIFO, socket)
+		// tidak pernah DIBACA: os.ReadFile pada FIFO menggantung
+		// tanpa batas menunggu penulis. Tandai tak tersentuh —
+		// tulisAtomik menolaknya bernama di jalur tulis.
+		if !tfi.Mode().IsRegular() {
 			j.targetTakTersentuh = true
 			return j
 		}
@@ -820,7 +910,11 @@ func jepretBerkasConfigure(jalur string) jepretanBerkas {
 		return j
 	}
 	j := jepretanBerkas{jalur: jalur, ada: true, izin: lfi.Mode().Perm()}
-	if lfi.IsDir() {
+	// B-484: direktori dan berkas khusus (FIFO/socket/perangkat)
+	// tidak dibaca — ReadFile pada FIFO menggantung tanpa batas.
+	// Keduanya ditandai tak tersentuh; penolakan bernama terjadi
+	// di tulisAtomik saat Configure benar-benar menulis.
+	if !lfi.Mode().IsRegular() {
 		j.takTersentuh = true
 		return j
 	}
@@ -1847,6 +1941,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if err != nil {
 			return fmt.Errorf("mengkodekan settings.json Claude: %w", err)
 		}
+		if err := verifikasiHasilJSON(data, cfg); err != nil {
+			return err
+		}
 		if err := tulisAtomik(settingsPath, data, 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", settingsPath, err)
 		}
@@ -1863,9 +1960,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		// Nama model WAJIB berprefiks provider LiteLLM `openai/`
 		// (B-098) — sama seperti AIDER_MODEL di env.
 		aiderConfigPath := filepath.Join(homeDir, ".aider.conf.yml")
-		var existingAider string
-		if data, err := os.ReadFile(aiderConfigPath); err == nil {
-			existingAider = string(data)
+		existingAider, err := bacaTeksKonfig(aiderConfigPath)
+		if err != nil {
+			return err
 		}
 		pasanganAider := [][2]string{
 			{"openai-api-base", gwURL},
@@ -1891,9 +1988,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		gooseDir := filepath.Join(homeDir, ".config", "goose")
 		_ = os.MkdirAll(gooseDir, 0755)
 		goosePath := filepath.Join(gooseDir, "config.yaml")
-		var existing string
-		if data, err := os.ReadFile(goosePath); err == nil {
-			existing = string(data)
+		existing, err := bacaTeksKonfig(goosePath)
+		if err != nil {
+			return err
 		}
 		pasanganGoose := [][2]string{
 			{"GOOSE_PROVIDER", "openai"},
@@ -1959,6 +2056,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if err != nil {
 			return fmt.Errorf("mengkodekan opencode.json: %w", err)
 		}
+		if err := verifikasiHasilJSON(data, cfg); err != nil {
+			return err
+		}
 		// 0600, bukan 0644: berkas ini bisa memuat apiKey plaintext
 		// (opts.apiKey di atas) — versi lama membuatnya terbaca seluruh
 		// pengguna lokal (audit3 V-LN-25).
@@ -1978,9 +2078,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		codexDir := filepath.Join(homeDir, ".codex")
 		_ = os.MkdirAll(codexDir, 0755)
 		codexPath := filepath.Join(codexDir, "config.toml")
-		var existingCodex string
-		if data, err := os.ReadFile(codexPath); err == nil {
-			existingCodex = string(data)
+		existingCodex, err := bacaTeksKonfig(codexPath)
+		if err != nil {
+			return err
 		}
 		pasanganPreambleCodex := [][2]string{
 			{"model_provider", "routex"},
@@ -2015,9 +2115,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		grokDir := filepath.Join(homeDir, ".grok")
 		_ = os.MkdirAll(grokDir, 0755)
 		grokPath := filepath.Join(grokDir, "config.toml")
-		var existingGrok string
-		if data, err := os.ReadFile(grokPath); err == nil {
-			existingGrok = string(data)
+		existingGrok, err := bacaTeksKonfig(grokPath)
+		if err != nil {
+			return err
 		}
 		pasanganModelsGrok := [][2]string{{"default", "routex"}}
 		pasanganRoutexGrok := [][2]string{
@@ -2095,6 +2195,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if err != nil {
 			return fmt.Errorf("mengkodekan settings.json Qwen: %w", err)
 		}
+		if err := verifikasiHasilJSON(dataQ, qcfg); err != nil {
+			return err
+		}
 		if err := tulisAtomik(qwenPath, dataQ, permBerkasAtau(qwenPath, 0644)); err != nil {
 			return fmt.Errorf("menulis %s: %w", qwenPath, err)
 		}
@@ -2161,6 +2264,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if err != nil {
 			return fmt.Errorf("mengkodekan crush.json: %w", err)
 		}
+		if err := verifikasiHasilJSON(dataC, ccfg); err != nil {
+			return err
+		}
 		if err := tulisAtomik(crushPath, dataC, 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", crushPath, err)
 		}
@@ -2183,9 +2289,37 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		hermesDir := filepath.Join(homeDir, ".hermes")
 		_ = os.MkdirAll(hermesDir, 0755)
 		hermesPath := filepath.Join(hermesDir, "config.yaml")
-		var existingHermes string
-		if data, err := os.ReadFile(hermesPath); err == nil {
-			existingHermes = string(data)
+		envPath := filepath.Join(hermesDir, ".env")
+		// B-477: .env berkode UTF-16/32 ditolak SEBELUM berkas apa
+		// pun ditulis. Jalur lama menjalankannya lewat penyunting
+		// teks UTF-8 dan menghasilkan berkas yang bukan UTF-8 sah
+		// maupun UTF-16 sah sementara Configure melaporkan sukses
+		// dan menyimpan baris DB — padahal python-dotenv Hermes
+		// gagal membaca berkas UTF-16 sama sekali
+		// (UnicodeDecodeError, terbukti dengan pustaka sungguhan).
+		var existingEnv string
+		if apiKey != "" {
+			isiEnv, errEnv := bacaTeksKonfig(envPath)
+			if errEnv != nil {
+				return errEnv
+			}
+			existingEnv = isiEnv
+			if enc := deteksiBOMNonUTF8([]byte(isiEnv)); enc != "" {
+				return fmt.Errorf("berkas %s berkode %s; Hermes hanya membaca .env UTF-8 — simpan ulang berkas itu sebagai UTF-8, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", envPath, enc)
+			}
+		}
+		existingHermes, err := bacaTeksKonfig(hermesPath)
+		if err != nil {
+			return err
+		}
+		// B-485: config multi-dokumen ditolak jujur. Penyusun blok
+		// bekerja pada teks gabungan dan verifikasi hanya membaca
+		// dokumen pertama, tetapi PyYAML safe_load — pemuat Hermes
+		// — MENOLAK aliran multi-dokumen ("expected a single
+		// document in the stream", terbukti dengan pustaka
+		// sungguhan): sukses di sini adalah sukses-bohong.
+		if nDok, errDok := jumlahDokumenYAML(existingHermes); errDok == nil && nDok > 1 {
+			return fmt.Errorf("berkas %s memuat %d dokumen YAML; Hermes (PyYAML safe_load) hanya menerima satu dokumen — gabungkan menjadi satu dokumen, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", hermesPath, nDok)
 		}
 		kontenHermes := susunBlokModelHermes(existingHermes, target, gwURL, apiKey)
 		if err := verifikasiHasilHermes(kontenHermes, target, gwURL, apiKey); err != nil {
@@ -2195,13 +2329,10 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			return fmt.Errorf("menulis %s: %w", hermesPath, err)
 		}
 		if apiKey != "" {
-			envPath := filepath.Join(hermesDir, ".env")
-			var existingEnv string
-			if data, err := os.ReadFile(envPath); err == nil {
-				existingEnv = string(data)
-			}
+			// existingEnv sudah dibaca (dan lolos deteksi B-477)
+			// di awal case ini.
 			kontenEnv := perbaruiBarisEnv(existingEnv, "OPENAI_API_KEY", apiKey)
-			if err := verifikasiEnvTanpaDuplikat(kontenEnv); err != nil {
+			if err := verifikasiEnvHermes(kontenEnv, "OPENAI_API_KEY"); err != nil {
 				return err
 			}
 			if err := tulisAtomik(envPath, []byte(kontenEnv), 0600); err != nil {
@@ -2390,16 +2521,20 @@ func suntingOpenCodeJSONC(s, target, gwURL, apiKey string) (string, error) {
 // pun yang disalahartikan pemindai bedah gugur ke jalur marshal,
 // tidak pernah menjadi config yang salah.
 func hasilSuntingOpenCodeSah(hasil string, cfgAwal map[string]any, target, gwURL, apiKey string) bool {
-	terurai := make(map[string]any)
-	if err := json.Unmarshal(uraiJSONCToleran([]byte(hasil)), &terurai); err != nil {
+	// B-478: kedua sisi diurai dengan UseNumber — perbandingan
+	// float64 lama menyamakan 9007199254740993 dengan …992,
+	// sehingga suntingan yang menggeser angka besar pengguna
+	// tetap dinyatakan "sah" dan dipakai.
+	terurai, err := uraiPetaJSON(uraiJSONCToleran([]byte(hasil)))
+	if err != nil {
 		return false
 	}
 	rawHarapan, err := json.Marshal(cfgAwal)
 	if err != nil {
 		return false
 	}
-	harapan := make(map[string]any)
-	if err := json.Unmarshal(rawHarapan, &harapan); err != nil {
+	harapan, err := uraiPetaJSON(rawHarapan)
+	if err != nil {
 		return false
 	}
 	mutasiCfgOpenCode(harapan, target, gwURL, apiKey)
@@ -2434,11 +2569,22 @@ type pemindaiMultilineTOML struct {
 	// multi adalah karakter pembatas string multiline yang sedang
 	// terbuka ('"' atau '\''), 0 bila di luar string multiline.
 	multi byte
+	// kurung adalah kedalaman kurung siku [...] yang sedang
+	// terbuka di luar string/komentar (B-479): nilai array boleh
+	// membentang banyak baris dan isinya boleh diawali karakter
+	// kurung — tanpa pelacakan ini, baris isi array dibaca sebagai
+	// header seksi dan awal array kunci terkelola diganti baris
+	// tunggal sementara sisa arraynya yatim.
+	kurung int
 }
 
-// diDalamMultiline melaporkan apakah pemindai sedang berada di
-// dalam string multiline pada posisi kini.
-func (p *pemindaiMultilineTOML) diDalamMultiline() bool { return p.multi != 0 }
+// diDalamStruktur melaporkan apakah posisi kini berada di dalam
+// nilai yang membentang lintas baris: string multiline ATAU array
+// yang belum tertutup. Baris yang dimulai dalam keadaan ini adalah
+// kelanjutan nilai, bukan kode.
+func (p *pemindaiMultilineTOML) diDalamStruktur() bool {
+	return p.multi != 0 || p.kurung > 0
+}
 
 // pindaiBaris memindai satu baris dan memajukan keadaan multiline
 // ke akhir baris itu. String satu baris dan komentar ditangani
@@ -2466,6 +2612,14 @@ func (p *pemindaiMultilineTOML) pindaiBaris(l string) {
 		switch c := l[i]; c {
 		case '#':
 			return // komentar: sisa baris bukan kode
+		case '[':
+			p.kurung++
+			i++
+		case ']':
+			if p.kurung > 0 {
+				p.kurung--
+			}
+			i++
 		case '"', '\'':
 			if i+2 < len(l) && l[i+1] == c && l[i+2] == c {
 				p.multi = c
@@ -2492,13 +2646,16 @@ func (p *pemindaiMultilineTOML) pindaiBaris(l string) {
 	}
 }
 
-// petaBarisMultilineTOML mengembalikan, untuk tiap baris, apakah
-// baris itu dimulai di dalam string multiline TOML.
-func petaBarisMultilineTOML(baris []string) []bool {
+// petaBarisStrukturTOML mengembalikan, untuk tiap baris, apakah
+// baris itu dimulai di dalam NILAI lintas-baris (string multiline
+// atau array belum tertutup) — B-479. Penentu batas preamble dan
+// seksi memakai peta ini: hanya baris yang dimulai di luar
+// struktur apa pun yang boleh dinilai sebagai header seksi.
+func petaBarisStrukturTOML(baris []string) []bool {
 	p := &pemindaiMultilineTOML{}
 	diDalam := make([]bool, len(baris))
 	for i, l := range baris {
-		diDalam[i] = p.diDalamMultiline()
+		diDalam[i] = p.diDalamStruktur()
 		p.pindaiBaris(l)
 	}
 	return diDalam
@@ -2517,10 +2674,11 @@ func terapkanPasanganTOML(baris []string, pairs [][2]string) []string {
 	pindai := &pemindaiMultilineTOML{}
 	for i := 0; i < len(baris); i++ {
 		l := baris[i]
-		// B-439: baris isi string multiline adalah TEKS pengguna,
-		// bukan kode — dipertahankan apa adanya dan tidak pernah
-		// dinilai sebagai kunci/header, berapa pun miripnya.
-		if pindai.diDalamMultiline() {
+		// B-439+B-479: baris isi string multiline ATAU array
+		// lintas-baris adalah TEKS/nilai pengguna, bukan kode —
+		// dipertahankan apa adanya dan tidak pernah dinilai
+		// sebagai kunci/header, berapa pun miripnya.
+		if pindai.diDalamStruktur() {
 			hasil = append(hasil, l)
 			pindai.pindaiBaris(l)
 			continue
@@ -2548,14 +2706,15 @@ func terapkanPasanganTOML(baris []string, pairs [][2]string) []string {
 			continue
 		}
 		// Kunci terkelola ditemukan. Penetapannya bisa membentang
-		// beberapa baris bila nilainya string multiline: seluruh
-		// rentang itu diganti SATU baris kanonik (atau dibuang
-		// sebagai duplikat) — mengganti baris pertamanya saja akan
-		// meninggalkan sisa string yatim yang merusak dokumen.
+		// beberapa baris bila nilainya string multiline atau array
+		// (B-479): seluruh rentang itu diganti SATU baris kanonik
+		// (atau dibuang sebagai duplikat) — mengganti baris
+		// pertamanya saja akan meninggalkan sisa nilai yatim yang
+		// merusak dokumen.
 		sesudah := *pindai
 		akhir := i
 		sesudah.pindaiBaris(l)
-		for sesudah.diDalamMultiline() && akhir+1 < len(baris) {
+		for sesudah.diDalamStruktur() && akhir+1 < len(baris) {
 			akhir++
 			sesudah.pindaiBaris(baris[akhir])
 		}
@@ -2586,10 +2745,10 @@ func perbaruiPreambleTOML(existing string, pairs [][2]string) string {
 	// baru jatuh ke dalam seksi).
 	existing = strings.TrimPrefix(existing, "\ufeff")
 	baris := strings.Split(existing, "\n")
-	// B-439: baris pembuka-[ di dalam string multiline adalah isi
-	// teks, bukan awal seksi — batas preamble hanya dihitung dari
-	// baris yang berada di luar string.
-	diDalam := petaBarisMultilineTOML(baris)
+	// B-439+B-479: baris pembuka-[ di dalam string multiline atau
+	// array adalah isi nilai, bukan awal seksi — batas preamble
+	// hanya dihitung dari baris yang berada di luar struktur.
+	diDalam := petaBarisStrukturTOML(baris)
 	idx := len(baris)
 	for i, l := range baris {
 		if diDalam[i] {
@@ -2726,10 +2885,10 @@ func normalisasiNamaSeksiTOML(nama string) string {
 // awal dan akhir eksklusif) di dokumen yang sudah dipecah per baris.
 // ok=false bila seksi tidak ada.
 func rentangSeksiTOML(baris []string, nama string) (awal, akhir int, ok bool) {
-	// B-439: header di dalam string multiline adalah isi teks —
-	// ia tidak membuka seksi dan tidak menutup seksi yang sedang
-	// berjalan.
-	diDalam := petaBarisMultilineTOML(baris)
+	// B-439+B-479: header di dalam string multiline atau array
+	// adalah isi nilai — ia tidak membuka seksi dan tidak menutup
+	// seksi yang sedang berjalan.
+	diDalam := petaBarisStrukturTOML(baris)
 	for i, l := range baris {
 		if diDalam[i] || namaSeksiTOML(l) != nama {
 			continue
@@ -2753,6 +2912,13 @@ func rentangSeksiTOML(baris []string, nama string) (awal, akhir int, ok bool) {
 // sudah ada tanpa membuang kunci lain di seksi itu; seksi dibuat di
 // akhir dokumen bila belum ada.
 func perbaruiKunciSeksiTOML(existing, seksi string, pairs [][2]string) string {
+	// B-480: BOM dibuang di sini juga, bukan hanya di jalur
+	// preamble (B-310) — Grok memanggil fungsi ini langsung atas
+	// berkas mentah, jadi BOM dulu BERTAHAN di keluaran dan
+	// verifikasi hasil akhir (go-toml) menolaknya: Configure Grok
+	// gagal untuk berkas ber-BOM yang oleh jalur Codex (yang
+	// melewati preamble) diterima.
+	existing = strings.TrimPrefix(existing, "\ufeff")
 	baris := strings.Split(existing, "\n")
 	awal, akhir, ok := rentangSeksiTOML(baris, seksi)
 	if !ok {
@@ -2851,20 +3017,58 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	// YAML Hermes, membatalkan seluruh pembaruan blok pertama
 	// sementara Configure melaporkan sukses. Kini semua blok
 	// digabung menjadi satu.
-	type rentangBlok struct{ awal, akhir int }
+	//
+	// B-481+B-482: header boleh membawa JANGKAR (`model: &m`) dan
+	// nilai boleh berbentuk FLOW MAP satu/rentang baris
+	// (`model: {default: lama, catatan: x}`) — keduanya bentuk sah
+	// YAML yang dulu dibaca sebagai "skalar": blok diganti dan
+	// seluruh isi flow map (termasuk kunci tak-terkelola) hilang
+	// senyap, dan jangkar yang dirujuk alias `*m` di tempat lain
+	// ikut musnah. Kini jangkar dipertahankan pada header blok
+	// gabungan dan entri tak-terkelola flow map diurai tingkat-atas
+	// lalu dipertahankan sebagai baris blok biasa.
+	type rentangBlok struct {
+		awal, akhir int
+		jangkar     string   // nama jangkar header ("" bila tidak ada)
+		aliran      []string // baris tak-terkelola dari flow map, sudah bentuk blok
+	}
 	var rentang []rentangBlok
 	for i, l := range baris {
 		sisa, adalah := pecahHeaderModelHermes(l)
 		if !adalah {
 			continue
 		}
+		jangkar, inti := pisahJangkarHermes(sisa)
+		if strings.HasPrefix(inti, "{") {
+			// Flow map: kumpulkan teks sampai kurungnya seimbang
+			// (boleh membentang beberapa baris).
+			teks := inti
+			j := i
+			for !flowMapHermesSeimbang(teks) && j+1 < len(baris) {
+				j++
+				teks += "\n" + baris[j]
+			}
+			barisAliran, okFlow := pecahFlowMapHermes(teks, terkelola)
+			if !okFlow {
+				// Bentuk yang tidak bisa diurai tingkat-atas
+				// dengan aman: kembalikan dokumen APA ADANYA —
+				// verifikasi hasil akhir akan menolaknya secara
+				// jujur (nilai terkelola lama tidak sama dengan
+				// nilai Route-X), bukan menebak dan berisiko
+				// menghilangkan isi pengguna.
+				return existing
+			}
+			rentang = append(rentang, rentangBlok{awal: i, akhir: j + 1, jangkar: jangkar, aliran: barisAliran})
+			i = j
+			continue
+		}
 		// B-277: sisa berupa komentar (`model: # catatan`) adalah
 		// header PETA, bukan skalar — sub-baris menjorok sesudahnya
 		// adalah isi blok lama yang harus digabung per-kunci di
 		// bawah.
-		if sisa != "" && !strings.HasPrefix(sisa, "#") {
+		if inti != "" && !strings.HasPrefix(inti, "#") {
 			// Bentuk skalar satu baris: rentangnya baris itu saja.
-			rentang = append(rentang, rentangBlok{i, i + 1})
+			rentang = append(rentang, rentangBlok{awal: i, akhir: i + 1, jangkar: jangkar})
 			continue
 		}
 		// Bentuk peta: isi blok adalah baris sesudahnya yang kosong,
@@ -2885,7 +3089,7 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 			}
 			break
 		}
-		rentang = append(rentang, rentangBlok{i, j})
+		rentang = append(rentang, rentangBlok{awal: i, akhir: j, jangkar: jangkar})
 	}
 	if len(rentang) == 0 {
 		keluaran := existing
@@ -2905,7 +3109,19 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	// penggabungan idempoten.
 	var dipertahankan []string
 	for _, r := range rentang {
+		if r.aliran != nil {
+			// Blok flow map: isinya sudah diurai menjadi baris
+			// blok tak-terkelola saat rentang dicari (B-482).
+			dipertahankan = append(dipertahankan, r.aliran...)
+			continue
+		}
 		dipertahankan = append(dipertahankan, saringIsiBlokHermes(baris[r.awal+1:r.akhir], terkelola)...)
+	}
+	// B-481: jangkar blok PERTAMA dipertahankan pada header blok
+	// gabungan, supaya alias `*nama` di bagian lain dokumen tetap
+	// menunjuk blok model yang diperbarui.
+	if rentang[0].jangkar != "" {
+		blok[0] = "model: &" + rentang[0].jangkar
 	}
 	for len(dipertahankan) > 0 && dipertahankan[len(dipertahankan)-1] == "" {
 		dipertahankan = dipertahankan[:len(dipertahankan)-1]
@@ -2943,6 +3159,259 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	}
 	hasil = append(hasil, sisaBaris...)
 	return gabungBarisYAML(hasil)
+}
+
+// pisahJangkarHermes memisahkan awalan jangkar YAML (`&nama`)
+// dari sisa header blok model Hermes (B-481). Nama jangkar sah
+// terdiri dari huruf/angka/`-`/`_`; bentuk lain (mis. `&` saja,
+// atau teks yang diawali `&` tetapi bukan jangkar) mengembalikan
+// sisa apa adanya dengan jangkar kosong.
+func pisahJangkarHermes(sisa string) (jangkar, inti string) {
+	if !strings.HasPrefix(sisa, "&") {
+		return "", sisa
+	}
+	token, rest := sisa, ""
+	if spasi := strings.IndexAny(sisa, " \t"); spasi >= 0 {
+		token, rest = sisa[:spasi], strings.TrimSpace(sisa[spasi:])
+	}
+	nama := token[1:]
+	if nama == "" {
+		return "", sisa
+	}
+	for i := 0; i < len(nama); i++ {
+		c := nama[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return "", sisa
+		}
+	}
+	return nama, rest
+}
+
+// pindaiFlowHermes menjalankan fungsi fn atas setiap byte teks
+// flow YAML yang berada di LUAR string terkutip, sambil melacak
+// kedalaman kurung {}/[]; fn menerima byte dan kedalaman SEBELUM
+// byte itu. String tanda-kutip-ganda menghormati escape backslash;
+// tanda-kutip-tunggal menghormati penggandaan ” ala YAML.
+func pindaiFlowHermes(teks string, fn func(c byte, kedalaman int)) {
+	kedalaman := 0
+	var kutip byte
+	for i := 0; i < len(teks); i++ {
+		c := teks[i]
+		if kutip == '"' {
+			if c == '\\' {
+				i++
+			} else if c == '"' {
+				kutip = 0
+			}
+			continue
+		}
+		if kutip == '\'' {
+			if c == '\'' {
+				if i+1 < len(teks) && teks[i+1] == '\'' {
+					i++
+				} else {
+					kutip = 0
+				}
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			kutip = c
+		case '{', '[':
+			fn(c, kedalaman)
+			kedalaman++
+		case '}', ']':
+			kedalaman--
+			fn(c, kedalaman)
+		default:
+			fn(c, kedalaman)
+		}
+	}
+}
+
+// flowMapHermesSeimbang melaporkan apakah teks flow yang diawali
+// "{" sudah tertutup seimbang (kurung terluarnya kembali ke 0).
+func flowMapHermesSeimbang(teks string) bool {
+	seimbang := false
+	pindaiFlowHermes(teks, func(c byte, kedalaman int) {
+		if c == '}' && kedalaman == 0 {
+			seimbang = true
+		}
+	})
+	return seimbang
+}
+
+// pecahFlowMapHermes mengurai flow map YAML (`{k: v, ...}`) pada
+// TINGKAT ATASNYA saja (B-482): entri dipisah pada koma kedalaman
+// 0 di luar string, kunci dipisah dari nilai pada titik dua
+// kedalaman 0 pertama. Entri tak-terkelola dikembalikan sebagai
+// baris blok kanonis ("  kunci: nilai") dengan teks nilai apa
+// adanya — termasuk nilai bersarang dan string berkoma — supaya
+// tidak ada isi pengguna yang hilang. ok=false bila bentuknya
+// tidak bisa diurai dengan aman (pemanggil membiarkan dokumen apa
+// adanya dan verifikasi menolak secara jujur).
+func pecahFlowMapHermes(teks string, terkelola map[string]bool) (baris []string, ok bool) {
+	teks = strings.TrimSpace(teks)
+	if !strings.HasPrefix(teks, "{") {
+		return nil, false
+	}
+	// Cari kurung tutup pasangan pada kedalaman 0; sesudahnya
+	// hanya boleh ada komentar.
+	tutup := -1
+	{
+		kedalaman := 0
+		var kutip byte
+		for i := 0; i < len(teks) && tutup < 0; i++ {
+			c := teks[i]
+			if kutip == '"' {
+				if c == '\\' {
+					i++
+				} else if c == '"' {
+					kutip = 0
+				}
+				continue
+			}
+			if kutip == '\'' {
+				if c == '\'' {
+					if i+1 < len(teks) && teks[i+1] == '\'' {
+						i++
+					} else {
+						kutip = 0
+					}
+				}
+				continue
+			}
+			switch c {
+			case '"', '\'':
+				kutip = c
+			case '{', '[':
+				kedalaman++
+			case '}', ']':
+				kedalaman--
+				if kedalaman == 0 {
+					tutup = i
+				}
+			}
+		}
+	}
+	if tutup < 0 {
+		return nil, false
+	}
+	if sisa := strings.TrimSpace(teks[tutup+1:]); sisa != "" && !strings.HasPrefix(sisa, "#") {
+		return nil, false
+	}
+	dalam := teks[1:tutup]
+	// Pisah entri pada koma kedalaman 0.
+	var entri []string
+	{
+		kedalaman := 0
+		mulai := 0
+		var kutip byte
+		for i := 0; i < len(dalam); i++ {
+			c := dalam[i]
+			if kutip == '"' {
+				if c == '\\' {
+					i++
+				} else if c == '"' {
+					kutip = 0
+				}
+				continue
+			}
+			if kutip == '\'' {
+				if c == '\'' {
+					if i+1 < len(dalam) && dalam[i+1] == '\'' {
+						i++
+					} else {
+						kutip = 0
+					}
+				}
+				continue
+			}
+			switch c {
+			case '"', '\'':
+				kutip = c
+			case '{', '[':
+				kedalaman++
+			case '}', ']':
+				kedalaman--
+			case ',':
+				if kedalaman == 0 {
+					entri = append(entri, dalam[mulai:i])
+					mulai = i + 1
+				}
+			}
+		}
+		entri = append(entri, dalam[mulai:])
+	}
+	for _, e := range entri {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue // koma menggantung di akhir: sah, tanpa entri
+		}
+		idx := indeksTitikDuaFlow(e)
+		if idx < 0 {
+			return nil, false
+		}
+		kunciMentah := strings.TrimSpace(e[:idx])
+		nilai := strings.TrimSpace(e[idx+1:])
+		if kunciMentah == "" {
+			return nil, false
+		}
+		if terkelola[normalkanKunciYAML(kunciMentah)] {
+			continue // ditulis ulang dari blok kanonis
+		}
+		if nilai == "" {
+			baris = append(baris, "  "+kunciMentah+":")
+		} else {
+			baris = append(baris, "  "+kunciMentah+": "+nilai)
+		}
+	}
+	return baris, true
+}
+
+// indeksTitikDuaFlow mencari titik dua pemisah kunci/nilai pada
+// kedalaman 0 di luar string dalam satu entri flow map; -1 bila
+// tidak ada. Titik dua WAJIB diikuti spasi/akhir (aturan YAML
+// untuk kunci polos) supaya nilai seperti URL "http://…" yang
+// menjadi kunci aneh tidak terbelah di tengah.
+func indeksTitikDuaFlow(e string) int {
+	kedalaman := 0
+	var kutip byte
+	for i := 0; i < len(e); i++ {
+		c := e[i]
+		if kutip == '"' {
+			if c == '\\' {
+				i++
+			} else if c == '"' {
+				kutip = 0
+			}
+			continue
+		}
+		if kutip == '\'' {
+			if c == '\'' {
+				if i+1 < len(e) && e[i+1] == '\'' {
+					i++
+				} else {
+					kutip = 0
+				}
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			kutip = c
+		case '{', '[':
+			kedalaman++
+		case '}', ']':
+			kedalaman--
+		case ':':
+			if kedalaman == 0 && (i+1 == len(e) || e[i+1] == ' ' || e[i+1] == '\t') {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // saringIsiBlokHermes menyaring isi satu blok `model:` Hermes
@@ -3291,9 +3760,13 @@ func verifikasiHasilYAMLTingkatAtas(konten string, pairs [][2]string) error {
 
 // verifikasiHasilHermes memeriksa blok `model:` hasil susunan
 // Hermes: dokumen wajib terurai dan sub-kunci terkelola wajib
-// terbaca efektif dari blok itu.
+// terbaca efektif dari blok itu. Penguraiannya memakai toleransi
+// parser tujuan Hermes (uraiYAMLHermes, B-483) — BUKAN pengurai
+// ketat bersama, karena PyYAML menerima kunci ganda di luar blok
+// terkelola sementara yaml.v3 menolaknya: menolak di sini berarti
+// Configure gagal atas berkas yang dibaca Hermes dengan benar.
 func verifikasiHasilHermes(konten, target, gwURL, apiKey string) error {
-	doc, err := uraiYAMLUtuh(konten)
+	doc, err := uraiYAMLHermes(konten)
 	if err != nil {
 		return fmt.Errorf("hasil sunting YAML Hermes tidak terurai: %w", err)
 	}
@@ -3318,20 +3791,134 @@ func verifikasiHasilHermes(konten, target, gwURL, apiKey string) error {
 	return nil
 }
 
-// verifikasiEnvTanpaDuplikat memeriksa hasil sunting .env: tidak
-// boleh ada nama variabel efektif yang muncul lebih dari satu kali
-// (bacaan efektif variabel ganda bergantung parser dotenv).
-func verifikasiEnvTanpaDuplikat(konten string) error {
-	terlihat := map[string]bool{}
-	for _, l := range strings.Split(konten, "\n") {
-		nama := namaVariabelEnv(l)
-		if nama == "" {
+// deteksiBOMNonUTF8 mengenali tanda urutan byte (BOM) pengkodean
+// non-UTF-8 di awal berkas (B-477): UTF-16LE/BE dan UTF-32LE/BE.
+// Mengembalikan nama pengkodeannya, atau "" bila tidak ada — BOM
+// UTF-8 BUKAN temuan fungsi ini (ia artefak penyunting yang
+// ditangani jalur B-310/B-344/B-374 dengan membuangnya).
+func deteksiBOMNonUTF8(data []byte) string {
+	switch {
+	case len(data) >= 4 && data[0] == 0xFF && data[1] == 0xFE && data[2] == 0x00 && data[3] == 0x00:
+		return "UTF-32LE"
+	case len(data) >= 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0xFE && data[3] == 0xFF:
+		return "UTF-32BE"
+	case len(data) >= 2 && data[0] == 0xFF && data[1] == 0xFE:
+		return "UTF-16LE"
+	case len(data) >= 2 && data[0] == 0xFE && data[1] == 0xFF:
+		return "UTF-16BE"
+	}
+	return ""
+}
+
+// jumlahDokumenYAML menghitung dokumen dalam satu aliran YAML
+// (B-485). Galat urai dikembalikan apa adanya.
+func jumlahDokumenYAML(konten string) (int, error) {
+	dec := yaml.NewDecoder(strings.NewReader(konten))
+	n := 0
+	for {
+		var doc any
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return n, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		n++
+	}
+}
+
+// nodeYAMLKeAnyToleran mengubah simpul YAML menjadi nilai Go
+// dengan semantik parser tujuan Hermes (PyYAML): kunci ganda di
+// pemetaan BUKAN galat — kemunculan TERAKHIR yang menang, di
+// kedalaman berapa pun (B-483; terbukti dengan PyYAML sungguhan:
+// safe_load atas kunci ganda diterima dan membaca nilai terakhir).
+func nodeYAMLKeAnyToleran(n *yaml.Node) any {
+	switch n.Kind {
+	case yaml.MappingNode:
+		out := make(map[string]any, len(n.Content)/2)
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			out[n.Content[i].Value] = nodeYAMLKeAnyToleran(n.Content[i+1])
+		}
+		return out
+	case yaml.SequenceNode:
+		out := make([]any, 0, len(n.Content))
+		for _, anak := range n.Content {
+			out = append(out, nodeYAMLKeAnyToleran(anak))
+		}
+		return out
+	case yaml.AliasNode:
+		if n.Alias != nil {
+			return nodeYAMLKeAnyToleran(n.Alias)
+		}
+		return nil
+	case yaml.ScalarNode:
+		var v any
+		if err := n.Decode(&v); err != nil {
+			return n.Value
+		}
+		return v
+	}
+	return nil
+}
+
+// uraiYAMLHermes memeriksa dokumen YAML untuk verifikasi Hermes
+// dengan toleransi parser tujuannya (B-483): kunci tingkat-atas
+// ganda DI LUAR blok `model:` ditoleransi last-wins (PyYAML
+// menerimanya), sedangkan ISI blok `model:` sendiri tetap diurai
+// KETAT — duplikat di dalam blok terkelola tetap galat, karena di
+// sanalah nilai yang diverifikasi hidup.
+func uraiYAMLHermes(konten string) (map[string]any, error) {
+	dec := yaml.NewDecoder(strings.NewReader(konten))
+	var akar yaml.Node
+	if err := dec.Decode(&akar); err != nil {
+		return nil, err
+	}
+	if akar.Kind == 0 || len(akar.Content) == 0 {
+		return nil, nil
+	}
+	dok := akar.Content[0]
+	if dok.Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	out := make(map[string]any, len(dok.Content)/2)
+	for i := 0; i+1 < len(dok.Content); i += 2 {
+		kunciNode := dok.Content[i]
+		nilaiNode := dok.Content[i+1]
+		if normalkanKunciYAML(kunciNode.Value) == "model" && nilaiNode.Kind == yaml.MappingNode {
+			var blok map[string]any
+			if err := nilaiNode.Decode(&blok); err != nil {
+				return nil, err
+			}
+			out["model"] = blok
 			continue
 		}
-		if terlihat[nama] {
-			return fmt.Errorf("hasil sunting .env memuat variabel ganda %q", nama)
+		out[kunciNode.Value] = nodeYAMLKeAnyToleran(nilaiNode)
+	}
+	return out, nil
+}
+
+// verifikasiEnvHermes memeriksa hasil sunting .env Hermes
+// (B-477+B-483): byte NUL — jejak pengkodean UTF-16/32 yang
+// terbawa ke hasil — adalah galat (python-dotenv gagal membaca
+// berkas seperti itu sama sekali), dan variabel TERKELOLA tidak
+// boleh ganda. Duplikat variabel LAIN ditoleransi: python-dotenv
+// menerimanya dengan bacaan last-wins (terbukti dengan pustaka
+// sungguhan), dan baris-baris itu milik pengguna yang
+// dipertahankan apa adanya oleh perbaruiBarisEnv.
+func verifikasiEnvHermes(konten, namaTerkelola string) error {
+	if strings.ContainsRune(konten, '\x00') {
+		return fmt.Errorf("hasil sunting .env memuat byte NUL (jejak pengkodean UTF-16/32); Hermes tidak bisa membaca berkas seperti itu")
+	}
+	terlihat := false
+	for _, l := range strings.Split(konten, "\n") {
+		if namaVariabelEnv(l) != namaTerkelola {
+			continue
 		}
-		terlihat[nama] = true
+		if terlihat {
+			return fmt.Errorf("hasil sunting .env memuat variabel terkelola ganda %q", namaTerkelola)
+		}
+		terlihat = true
 	}
 	return nil
 }

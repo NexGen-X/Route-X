@@ -1,6 +1,9 @@
 package upstream
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -36,20 +39,30 @@ import (
 //  1. Panggilan mutasi pelapor `.UpdateSecret(` / `.MarkAuthFailure(`
 //     — bentuk panggilan metode langsung pada ekspresi penerima
 //     apa pun.
-//  2. Literal `&CredentialRepo{` / `&OAuthRepo{` (konstruksi repo
-//     kredensial di luar konstruktor pun tertangkap).
+//  2. Literal TAK BERKUALIFIKASI `&CredentialRepo{` / `&OAuthRepo{`
+//     (konstruksi repo kredensial di luar konstruktor pun
+//     tertangkap — selama ditulis tanpa kualifikasi paket; lihat
+//     pengecualian literal berkualifikasi di bawah).
 //  3. Setiap penyebutan panggilan `penilaianPergeseranTertundaBaru(`
 //     — bentuk penugasan apa pun (`:=`, `=`, argumen bersarang),
 //     DITAMBAH deklarasi fungsinya sendiri yang terdaftar terpisah
-//     per berkas; pengurasan `jalankanPenilaianSesudahKomit(ctx,
-//     <nama apa pun>)` (nama variabel registry bebas sejak B-557,
-//     tidak lagi terikat literal `tertunda`); dan panggilan
-//     internal `tertunda.jalankan(` di pemilik registry.
+//     per berkas; pembuatan registri TANPA panggilan konstruktor —
+//     nilai fungsi (`f := penilaianPergeseranTertundaBaru`),
+//     literal struct (`&penilaianPergeseranTertunda{`, hanya badan
+//     konstruktor sendiri yang terdaftar), dan `new(...)`
+//     (terlarang); pengurasan `.jalankanPenilaianSesudahKomit(
+//     <ekspresi apa pun>, <ekspresi apa pun>)` (argumen pertama
+//     bebas sejak B-566 — tidak lagi terikat literal `ctx` —
+//     argumen kedua ekspresi apa pun termasuk akses field
+//     `r.tertunda`); dan panggilan internal `tertunda.jalankan(`
+//     di pemilik registry.
 //  4. TERLARANG (hitungan wajib NOL): deklarasi alias tipe atas
 //     kedua repo (`type X = CredentialRepo` / `type X =
 //     upstream.OAuthRepo`, dsb.) — alias memberi nama kedua pada
 //     tipe yang sama dan akan meloloskan konstruksi dari pola
-//     literal di (2).
+//     literal di (2). Dideteksi lewat AST (B-561): bentuk tunggal
+//     maupun berkelompok `type (...)`, berkualifikasi, berkomentar,
+//     dan berpenunjuk `*` semuanya tertangkap.
 //
 // Yang TIDAK dicakup gerbang ini, dan tidak boleh dibaca sebagai
 // diklaimnya: komposisi graf panggilan atas situs terdaftar
@@ -58,7 +71,18 @@ import (
 // perilaku), nilai metode (`f := repo.UpdateSecret` — tanpa
 // kurung panggil ia tak berbentuk pola (1)), refleksi, dan
 // konstruksi repo di berkas _test.go (di luar biner produksi,
-// memang dikecualikan dari pindaian).
+// memang dikecualikan dari pindaian). Juga tidak dicakup:
+// literal repo BERKUALIFIKASI (`&upstream.CredentialRepo{}` dari
+// paket lain) — semua field kedua repo tak-terekspor, jadi
+// literal itu tidak bisa dipasangi querier/cipher/registry dari
+// luar paket dan repo nilai-nolnya tidak dapat dipakai untuk
+// mutasi pelapor; registry NILAI-NOL via deklarasi `var`
+// (`var r penilaianPergeseranTertunda`) — map `perProvider`-nya
+// nil sehingga `catat` panik pada mutasi pertama dan `qKomit`-nya
+// nil, jadi ia gagal keras bukan jalan pintas diam-diam; dan
+// argumen pengurasan yang bersarang lebih dari satu tingkat tanda
+// kurung (pola (3) membuka satu tingkat — bentuk itu tidak ada di
+// pohon dan tidak wajar untuk argumen ctx/registry).
 //
 // Invarian isi yang diperiksa terpisah dari hitungan:
 //   - Setiap literal `creds := &CredentialRepo{...}` di oauth.go
@@ -80,16 +104,24 @@ func TestGerbangRegistriPergeseranB537(t *testing.T) {
 
 	// B-557: pindaian kini atas SELURUH pohon repo (bukan hanya
 	// internal/ + cmd/) — berkas .go non-tes di direktori baru
-	// mana pun ikut terhitung; web/ dikecualikan (tidak memuat
-	// Go; isinya aset frontend) dan .git/node_modules bukan
-	// sumber repo.
+	// mana pun ikut terhitung. B-567 (Fase 25): pengecualian
+	// direktori hanya berlaku pada JALUR AKAR — `web/`, `.git/`,
+	// dan `node_modules/` di akar repo saja (web/ akar tidak
+	// memuat Go, isinya aset frontend; .git/node_modules akar
+	// bukan sumber repo). Direktori bernama sama pada kedalaman
+	// lebih dalam TETAP dipindai: literal di `internal/gateway/
+	// web/` dan alias di `node_modules` bersarang terhitung.
 	sumber := map[string]string{} // path relatif (slash) → isi
 	err := filepath.Walk(akar, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if info.IsDir() {
-			switch info.Name() {
+			rel, err := filepath.Rel(akar, p)
+			if err != nil {
+				return err
+			}
+			switch filepath.ToSlash(rel) {
 			case ".git", "web", "node_modules":
 				return filepath.SkipDir
 			}
@@ -121,6 +153,37 @@ func TestGerbangRegistriPergeseranB537(t *testing.T) {
 		for rel, isi := range sumber {
 			for _, m := range re.FindAllStringSubmatch(isi, -1) {
 				hasil[rel+"|"+m[1]] += 1
+			}
+		}
+		return hasil
+	}
+	// hitungKemunculan menghitung kemunculan pola per berkas
+	// dengan label tetap (untuk pola tanpa grup tangkap yang
+	// bermakna — bandingkan dengan hitungPola yang mengunci pada
+	// grup pertama).
+	hitungKemunculan := func(re *regexp.Regexp, label string) map[string]int {
+		hasil := map[string]int{}
+		for rel, isi := range sumber {
+			if n := len(re.FindAllString(isi, -1)); n > 0 {
+				hasil[rel+"|"+label] += n
+			}
+		}
+		return hasil
+	}
+	// hitungNilaiFungsiKonstruktor menghitung penyebutan nama
+	// konstruktor yang TIDAK langsung diikuti `(` — yakni nama
+	// yang dipakai sebagai nilai (disimpan ke variabel,
+	// diteruskan sebagai argumen), bukan dipanggil dan bukan
+	// dideklarasikan. Bentuk `f (x)` (spasi sebelum kurung)
+	// bukan bentuk gofmt sehingga tidak ada di pohon.
+	hitungNilaiFungsiKonstruktor := func() map[string]int {
+		hasil := map[string]int{}
+		re := regexp.MustCompile(`penilaianPergeseranTertundaBaru\b`)
+		for rel, isi := range sumber {
+			for _, lok := range re.FindAllStringIndex(isi, -1) {
+				if lok[1] >= len(isi) || isi[lok[1]] != '(' {
+					hasil[rel+"|nilai-fungsi"]++
+				}
 			}
 		}
 		return hasil
@@ -196,14 +259,49 @@ func TestGerbangRegistriPergeseranB537(t *testing.T) {
 			"internal/database/repo/upstream/credentials.go|penilaianPergeseranTertundaBaru": 1,
 			"internal/database/repo/upstream/oauth.go|penilaianPergeseranTertundaBaru":       2,
 		})
-	// B-557: pola pengurasan dilonggarkan dari nama variabel
-	// literal `tertunda` menjadi nama variabel registry APA PUN —
-	// mengganti nama variabel lokal tidak lagi meloloskan situs
-	// pengurasan dari hitungan. (Deklarasi metodenya sendiri
-	// tidak berbentuk pola ini: parameter pertamanya bernama,
-	// `ctx context.Context`, bukan `ctx, <nama>`.)
+	// (3b) B-565 (Fase 25): pembuatan registri TANPA memanggil
+	// konstruktor — tiga bentuk yang lolos dari hitungan panggilan
+	// di atas:
+	//   - nilai fungsi: `f := penilaianPergeseranTertundaBaru`
+	//     lalu `f(nil)` memanggil konstruktor lewat variabel —
+	//     TERLARANG (wajib nol); yang dihitung adalah penyebutan
+	//     nama yang TIDAK langsung diikuti `(` (deklarasi dan
+	//     panggilan biasa diikuti `(` dan tidak terhitung di sini).
+	//   - literal struct: `&penilaianPergeseranTertunda{...}`
+	//     (dengan/tanpa `&`) membangun registry tanpa konstruktor
+	//     — di dalam paket ini literal itu BISA mengisi qKomit dan
+	//     perProvider, jadi satu-satunya yang diizinkan adalah
+	//     badan konstruktor sendiri (credentials.go ×1).
+	//   - `new(penilaianPergeseranTertunda)` — TERLARANG (wajib
+	//     nol); tidak ada pemakaian sahnya karena konstruktorlah
+	//     yang mengisi map perProvider.
+	// Sisa bentuk yang TIDAK dihitung: deklarasi `var` nilai-nol
+	// (lihat komentar kepala — gagal keras, bukan jalan pintas).
+	tanpaPanggilan := map[string]int{}
+	for k, v := range hitungNilaiFungsiKonstruktor() {
+		tanpaPanggilan[k] += v
+	}
+	for k, v := range hitungKemunculan(regexp.MustCompile(`&?penilaianPergeseranTertunda\{`), "literal-struct") {
+		tanpaPanggilan[k] += v
+	}
+	for k, v := range hitungKemunculan(regexp.MustCompile(`new\(penilaianPergeseranTertunda\)`), "new") {
+		tanpaPanggilan[k] += v
+	}
+	bandingkan("pembuatan registri tanpa panggilan",
+		tanpaPanggilan,
+		map[string]int{
+			"internal/database/repo/upstream/credentials.go|literal-struct": 1,
+		})
+	// B-566 (Fase 25): pola pengurasan dilonggarkan dari
+	// `(ctx, <nama>)` menjadi `(<ekspresi apa pun>, <ekspresi apa
+	// pun>)` — argumen pertama bebas (bukan literal `ctx`) dan
+	// argumen kedua ekspresi apa pun termasuk akses field
+	// (`r.tertunda`) atau panggilan (`ambilRegistry()`); tiap
+	// argumen membuka paling satu tingkat tanda kurung bersarang
+	// (lihat batas di komentar kepala). (Deklarasi metodenya
+	// sendiri tidak berbentuk pola ini: ia tidak diawali `.`.)
 	bandingkan("pengurasan registri",
-		hitungPola(regexp.MustCompile(`\.(jalankanPenilaianSesudahKomit)\(ctx,\s*[A-Za-z_]\w*\s*\)`)),
+		hitungPola(regexp.MustCompile(`\.(jalankanPenilaianSesudahKomit)\(\s*(?:[^,()]|\([^()]*\))+,\s*(?:[^,()]|\([^()]*\))+\s*\)`)),
 		map[string]int{
 			"internal/database/repo/upstream/oauth.go|jalankanPenilaianSesudahKomit": 2,
 		})
@@ -220,11 +318,47 @@ func TestGerbangRegistriPergeseranB537(t *testing.T) {
 	// ini TIDAK PERNAH diperbarui menjadi mengizinkan: temuan
 	// berarti jalan pintas sedang dibuka dan harus ditutup, bukan
 	// didaftarkan.
-	aliasRe := regexp.MustCompile(`type\s+\w+\s*=\s*(\w+\.)?(CredentialRepo|OAuthRepo)\b`)
-	for rel, isi := range sumber {
-		if m := aliasRe.FindAllString(isi, -1); len(m) > 0 {
-			t.Errorf("alias repo terlarang di %s: %v — konstruksi repo wajib berbentuk literal &CredentialRepo{}/&OAuthRepo{} supaya terhitung gerbang B-537/B-557; alias memberi jalan pintas keluar dari inventaris itu", rel, m)
+	//
+	// B-561 (Fase 25): deteksi lewat AST, bukan pola teks — pola
+	// `type\s+\w+\s*=` buta terhadap deklarasi berkelompok
+	// `type ( A = CredentialRepo )`, alias berkomentar
+	// `type A = /*x*/ CredentialRepo`, dan alias penunjuk
+	// `type A = *CredentialRepo`. AST menangkap semuanya (RHS
+	// dibuka dari `*`/tanda kurung; kualifikasi paket diabaikan),
+	// dan komentar yang sekadar menyebut alias tidak lagi memicu
+	// positif palsu. Berkas yang gagal diurai dilaporkan sebagai
+	// galat — pohon yang rusak tidak boleh lolos diam-diam.
+	urutRel := make([]string, 0, len(sumber))
+	for rel := range sumber {
+		urutRel = append(urutRel, rel)
+	}
+	sort.Strings(urutRel)
+	fset := token.NewFileSet()
+	for _, rel := range urutRel {
+		isi := sumber[rel]
+		f, err := parser.ParseFile(fset, rel, isi, parser.ParseComments)
+		if err != nil {
+			t.Errorf("gagal mengurai %s untuk sapuan alias B-561: %v", rel, err)
+			continue
 		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			ts, ok := n.(*ast.TypeSpec)
+			if !ok || !ts.Assign.IsValid() {
+				return true
+			}
+			if !aliasAtasRepo(ts.Type) {
+				return true
+			}
+			awal := fset.Position(ts.Type.Pos()).Offset
+			akhir := fset.Position(ts.Type.End()).Offset
+			rhs := ""
+			if 0 <= awal && awal <= akhir && akhir <= len(isi) {
+				rhs = isi[awal:akhir]
+			}
+			t.Errorf("alias repo terlarang di %s (%s): type %s = %s — konstruksi repo wajib berbentuk literal &CredentialRepo{}/&OAuthRepo{} supaya terhitung gerbang B-537/B-557; alias memberi jalan pintas keluar dari inventaris itu",
+				rel, fset.Position(ts.Pos()), ts.Name.Name, rhs)
+			return true
+		})
 	}
 
 	// Invarian isi: literal blok dari awal pola sampai '}' pertama.
@@ -281,5 +415,25 @@ func TestGerbangRegistriPergeseranB537(t *testing.T) {
 		if !strings.Contains(main, pola) {
 			t.Errorf("cmd/ai-gateway/main.go tidak lagi memuat %q — callback produksi tidak terpasang", pola)
 		}
+	}
+}
+
+// aliasAtasRepo melaporkan apakah ekspresi tipe — sesudah membuka
+// penunjuk `*` dan tanda kurung — bernama CredentialRepo atau
+// OAuthRepo, berkualifikasi paket atau tidak (B-561). Bentuk lain
+// (irisan, map, struct, ...) bukan alias atas repo itu dan tidak
+// terhitung.
+func aliasAtasRepo(e ast.Expr) bool {
+	switch t := e.(type) {
+	case *ast.StarExpr:
+		return aliasAtasRepo(t.X)
+	case *ast.ParenExpr:
+		return aliasAtasRepo(t.X)
+	case *ast.Ident:
+		return t.Name == "CredentialRepo" || t.Name == "OAuthRepo"
+	case *ast.SelectorExpr:
+		return t.Sel.Name == "CredentialRepo" || t.Sel.Name == "OAuthRepo"
+	default:
+		return false
 	}
 }

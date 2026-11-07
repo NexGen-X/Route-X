@@ -820,15 +820,15 @@ const batasKedalamanRef = 8
 // mana pun. Kelas (3) itu mencakup DUA kelompok yang statusnya
 // kini dinamai persis (koreksi redaksi B-533): kunci DALAM
 // kosakata JSON Schema/OpenAPI yang tidak terdaftar di mana pun
-// ($id, $anchor, $dynamicAnchor, $comment, title, description,
-// format, maximum, minimum, multipleOf, required, nullable,
-// readOnly, writeOnly, deprecated, …) DAN kunci di luar
-// kosakata — menurut semantik JSON Schema keduanya anotasi yang
-// nilainya data bebas, diteruskan lewat cabang bawaan, dan
-// merekursinya sebagai skema merusak data itu senyap (entri
-// "not"/"$ref" hilang, "const" menjadi enum karangan, daftar
-// runtuh); (4) diterjemahkan — type union, const, exclusive*;
-// (5) subskema — kunciSubskemaDirekursi, direkursi sebagai node.
+// — yakni setiap kunci kosakata lain, apa pun bentuknya
+// (pembatas nilai, anotasi, maupun penanda metadata) — DAN kunci
+// di luar kosakata — menurut semantik JSON Schema keduanya
+// anotasi yang nilainya data bebas, diteruskan lewat cabang
+// bawaan, dan merekursinya sebagai skema merusak data itu senyap
+// (entri "not"/"$ref" hilang, "const" menjadi enum karangan,
+// daftar runtuh); (4) diterjemahkan — type union, const,
+// exclusive*; (5) subskema — kunciSubskemaDirekursi, direkursi
+// sebagai node.
 // Klaim "lolos utuh" hanya berlaku bagi nilai DATA pada kelas
 // (3); node skema di bawah kunci kosakata yang terdaftar selalu
 // dinormalisasi.

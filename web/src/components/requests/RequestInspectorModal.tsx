@@ -27,6 +27,12 @@ export interface RequestInspectorModalProps {
   // (keadaan normal by design), bukan kegagalan muat — tab Payload lalu
   // menampilkan penjelasan netral, bukan banner error (B-078).
   payloadTidakTersimpan?: boolean;
+  // B-593: events GAGAL dimuat (bukan kosong secara sah). Timeline lalu
+  // menampilkan penanda belum-terukur, bukan klaim "Tidak ada rekaman
+  // event sekunder." — klaim itu hanya sah bila events memang kosong.
+  // Sengaja terpisah dari `error` gabungan: bila HANYA payload yang
+  // gagal sementara events kosong secara sah, klaim kosong tetap benar.
+  eventsGagal?: boolean;
   error?: string | null;
   onRetry?: () => void;
 }
@@ -107,6 +113,7 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
   events,
   payload,
   payloadTidakTersimpan = false,
+  eventsGagal = false,
   error,
   onRetry,
 }) => {
@@ -334,7 +341,13 @@ export const RequestInspectorModal: React.FC<RequestInspectorModalProps> = ({
           </h4>
           <div className="space-y-2">
             {events.length === 0 ? (
-              <p className="text-xs text-text-muted">Tidak ada rekaman event sekunder.</p>
+              eventsGagal ? (
+                <p className="text-xs text-text-muted">
+                  Riwayat event belum dapat dimuat.
+                </p>
+              ) : (
+                <p className="text-xs text-text-muted">Tidak ada rekaman event sekunder.</p>
+              )
             ) : (
               events.map((ev, idx) => (
                 <div

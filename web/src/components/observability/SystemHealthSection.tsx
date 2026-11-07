@@ -441,7 +441,21 @@ export const SystemHealthSection: React.FC = () => {
                       <h4 className="text-sm font-bold text-white font-mono">{j.name}</h4>
                       <span className="text-[11px] text-text-muted">Interval: {j.interval}</span>
                     </div>
-                    <Badge variant={j.last_status === 'ok' ? 'success' : j.last_status === 'running' ? 'warn' : 'error'}>
+                    {/* B-594: status kosong (belum pernah berjalan) adalah
+                        keadaan NETRAL, bukan gagal — varian `neutral`, bukan
+                        `error` (rose) yang sama dengan FAILED. Status tak
+                        dikenal lainnya ikut netral; hanya 'failed' yang merah. */}
+                    <Badge
+                      variant={
+                        j.last_status === 'ok'
+                          ? 'success'
+                          : j.last_status === 'running'
+                            ? 'warn'
+                            : j.last_status === 'failed'
+                              ? 'error'
+                              : 'neutral'
+                      }
+                    >
                       {j.last_status?.toUpperCase() || 'IDLE'}
                     </Badge>
                   </div>
@@ -456,7 +470,10 @@ export const SystemHealthSection: React.FC = () => {
                     <div className="flex justify-between text-text-muted">
                       <span>Durasi Terakhir:</span>
                       <span className="font-mono text-accent-text">
-                        {j.last_duration_ms ?? 0} ms
+                        {/* B-594: belum pernah berjalan → durasi belum
+                            terukur, tampilkan '—' bukan "0 ms" karangan
+                            dari zero value backend. */}
+                        {j.last_run_at ? `${j.last_duration_ms ?? 0} ms` : '—'}
                       </span>
                     </div>
                   </div>

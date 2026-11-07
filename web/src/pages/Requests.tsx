@@ -51,6 +51,11 @@ export const Requests: React.FC = () => {
   const [isLiveFeed, setIsLiveFeed] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [inspectorError, setInspectorError] = useState<string | null>(null);
+  // B-593: penanda kegagalan EVENTS secara terpisah dari `inspectorError`
+  // gabungan (events dan/atau payload). Bila HANYA payload gagal sementara
+  // events kosong secara sah, klaim kosong timeline tetap benar — jadi
+  // gerbangnya harus penanda khusus ini, bukan `inspectorError`.
+  const [eventsGagal, setEventsGagal] = useState(false);
 
   // Penjaga race inspector: abaikan respons basi bila user sudah klik request lain.
   const inspectorReqRef = useRef(0);
@@ -164,6 +169,7 @@ export const Requests: React.FC = () => {
     setPayloadTidakTersimpan(false);
     setIsInspectorOpen(true);
     setInspectorError(null);
+    setEventsGagal(false);
     try {
       const targetId = req.id || req.request_id;
       // allSettled TANPA catch penelan (audit F7): versi lama menangkap
@@ -180,8 +186,10 @@ export const Requests: React.FC = () => {
       const gagal: string[] = [];
       if (eventsRes.status === 'fulfilled') {
         setReqEvents(eventsRes.value.events || []);
+        setEventsGagal(false);
       } else {
         setReqEvents([]);
+        setEventsGagal(true);
         gagal.push('events: ' + getErrorMessage(eventsRes.reason));
       }
       if (payloadRes.status === 'fulfilled') {
@@ -206,6 +214,7 @@ export const Requests: React.FC = () => {
       setReqEvents([]);
       setReqPayload(null);
       setPayloadTidakTersimpan(false);
+      setEventsGagal(true);
       setInspectorError(err instanceof Error ? err.message : String(err));
     }
   };
@@ -363,6 +372,7 @@ export const Requests: React.FC = () => {
         events={reqEvents}
         payload={reqPayload}
         payloadTidakTersimpan={payloadTidakTersimpan}
+        eventsGagal={eventsGagal}
         error={inspectorError}
         onRetry={() => {
           if (selectedReq) void handleInspect(selectedReq);

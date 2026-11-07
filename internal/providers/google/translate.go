@@ -178,7 +178,10 @@ type embeddingValues struct {
 
 // buildGenerateRequest menerjemahkan permintaan kanonik menjadi body Gemini.
 func (p *Provider) buildGenerateRequest(req *providers.ChatRequest) ([]byte, error) {
-	system, conversation := splitSystem(req.Messages)
+	system, conversation, err := splitSystem(p.name, req.Messages)
+	if err != nil {
+		return nil, err
+	}
 	contents, err := p.buildContents(conversation)
 	if err != nil {
 		return nil, err
@@ -217,7 +220,16 @@ func (p *Provider) buildGenerateRequest(req *providers.ChatRequest) ([]byte, err
 //
 // Beberapa pesan digabung dengan baris kosong sebagai pemisah: masing-masing adalah blok
 // instruksi tersendiri, dan menyambungnya tanpa jarak melebur kalimat antar blok.
-func splitSystem(messages []providers.Message) (string, []providers.Message) {
+//
+// Pesan system yang membawa bagian NON-TEKS ditolak dengan error
+// (B-388): systemInstruction Gemini adalah teks, jadi bagian
+// gambar/audio pada pesan system tidak punya padanan — membuangnya
+// senyap (perilaku lama: Text() hanya memanen bagian teks)
+// menghilangkan sebagian instruksi yang diminta klien tanpa jejak.
+// Adapter anthropic menutup celah yang sama di splitSystem-nya;
+// permukaan Messages sudah menolak bentuk ini di pintunya (B-359),
+// jalur Chat sampai di sini tanpa pemeriksaan itu.
+func splitSystem(nama string, messages []providers.Message) (string, []providers.Message, error) {
 	var parts []string
 	rest := make([]providers.Message, 0, len(messages))
 	for i := range messages {
@@ -226,11 +238,17 @@ func splitSystem(messages []providers.Message) (string, []providers.Message) {
 			rest = append(rest, *m)
 			continue
 		}
+		for _, part := range m.Parts {
+			if part.Type != providers.PartTypeText {
+				return "", nil, providers.Newf(providers.ErrKindInvalidRequest, nama,
+					"pesan %s memuat bagian %q yang tidak dapat diterjemahkan ke instruksi system teks", m.Role, part.Type)
+			}
+		}
 		if text := m.Text(); text != "" {
 			parts = append(parts, text)
 		}
 	}
-	return strings.Join(parts, "\n\n"), rest
+	return strings.Join(parts, "\n\n"), rest, nil
 }
 
 // buildContents menerjemahkan pesan kanonik menjadi contents Gemini.

@@ -183,7 +183,10 @@ func (p *Provider) buildMessagesRequest(req *providers.ChatRequest, stream bool)
 		return nil, providers.Newf(providers.ErrKindInvalidRequest, p.name, "nama model wajib diisi")
 	}
 
-	system, conversation := splitSystem(req.Messages)
+	system, conversation, err := splitSystem(p.name, req.Messages)
+	if err != nil {
+		return nil, err
+	}
 	msgs, err := p.buildConversation(conversation)
 	if err != nil {
 		return nil, err
@@ -309,7 +312,16 @@ func (p *Provider) buildMessagesRequest(req *providers.ChatRequest, stream bool)
 // yang tertinggal. Beberapa pesan digabung dengan baris kosong sebagai pemisah: masing-
 // masing adalah blok instruksi tersendiri, dan menyambungnya tanpa jarak membuat kalimat
 // terakhir satu blok melebur ke kalimat pertama blok berikutnya.
-func splitSystem(messages []providers.Message) (string, []providers.Message) {
+//
+// Pesan system yang membawa bagian NON-TEKS ditolak dengan error
+// (B-388): field system Anthropic hanya menerima teks, jadi bagian
+// gambar/audio pada pesan system tidak punya padanan — membuangnya
+// senyap (perilaku lama: Text() hanya memanen bagian teks)
+// menghilangkan sebagian instruksi yang diminta klien tanpa jejak.
+// Permukaan Messages sudah menolak bentuk ini di pintunya (B-359);
+// jalur Chat sampai di sini tanpa pemeriksaan itu, jadi adapter
+// adalah pertahanan terakhirnya.
+func splitSystem(nama string, messages []providers.Message) (string, []providers.Message, error) {
 	var parts []string
 	rest := make([]providers.Message, 0, len(messages))
 	for i := range messages {
@@ -318,11 +330,17 @@ func splitSystem(messages []providers.Message) (string, []providers.Message) {
 			rest = append(rest, *m)
 			continue
 		}
+		for _, part := range m.Parts {
+			if part.Type != providers.PartTypeText {
+				return "", nil, providers.Newf(providers.ErrKindInvalidRequest, nama,
+					"pesan %s memuat bagian %q yang tidak dapat diterjemahkan ke instruksi system teks", m.Role, part.Type)
+			}
+		}
 		if text := m.Text(); text != "" {
 			parts = append(parts, text)
 		}
 	}
-	return strings.Join(parts, "\n\n"), rest
+	return strings.Join(parts, "\n\n"), rest, nil
 }
 
 // buildConversation menerjemahkan pesan kanonik menjadi pesan Anthropic yang berperan
@@ -774,8 +792,19 @@ func (p *Provider) toCanonicalResponse(u *messagesResponse) *providers.ChatRespo
 			jumlahThinking++
 			signature = string(b.Signature)
 		case blockRedactedThink:
-			// Muatannya terenkripsi dan hanya berguna bila dikirim balik ke Anthropic;
-			// tidak ada yang bisa ditampilkan ke klien.
+			// KEPUTUSAN TERCATAT (B-416, dipertahankan sesudah
+			// diperiksa ulang di Putaran Bersih #5): block ini
+			// dibuang dengan sadar. Muatannya terenkripsi dan
+			// hanya berguna bila dikirim balik ke Anthropic apa
+			// adanya; bentuk kanonik tidak punya slot untuk
+			// muatan terenkripsi per-block, dan tidak ada yang
+			// bisa ditampilkan ke klien. Meneruskannya menuntut
+			// slot kanonik baru beserta aturan kirim-baliknya di
+			// semua adapter — perubahan kontrak, bukan perbaikan
+			// kebocoran. Yang WAJIB tetap utuh adalah block teks
+			// pendampingnya; penguncinya TestB416. Jalur streaming
+			// mengambil keputusan yang sama (stream.go, blockStart
+			// tanpa cabang block ini).
 			continue
 		case blockToolUse:
 			args := "{}"

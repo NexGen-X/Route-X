@@ -1742,7 +1742,10 @@ func pecahPenandaAkhirDokumen(line string) (komentar string, ok bool) {
 // normalkanBarisPenanda menulis ulang baris penanda akhir dokumen
 // ke bentuk kanonik "..." atau "... # komentar" (B-544): pemisah
 // tab/rangkap di antara penanda dan komentarnya dilipat menjadi
-// satu spasi, dan CR akhir berkas CRLF dipertahankan. B-559:
+// satu spasi, dan CR akhir berkas CRLF dipertahankan (bila
+// pemanggil meneruskan baris mentahnya; pemanggil B-588
+// meneruskan isi baris tanpa pemisah dan CR-nya hidup pada
+// pemisah yang disimpan per baris). B-559:
 // normalisasi ini diterapkan pada SETIAP kemunculan penanda saat
 // menulis, bukan hanya yang pertama — penanda kedua+ berbentuk
 // tab/tanpa-spasi yang dulu diteruskan mentah ditolak PyYAML.
@@ -1987,7 +1990,10 @@ func petaDalamSkalarYAML(baris []string) []bool {
 // Configure gagal di verifikasi atas config yang sah.
 func pindaiJangkarKunciYAML(existing string, dikelola map[string]bool) map[string]string {
 	hasil := map[string]string{}
-	baris := strings.Split(existing, "\n")
+	// B-588: pecah pada pemisah garis YAML — jangkar pada kunci
+	// terkelola yang terselundup pemisah tersembunyi wajib
+	// terlihat, sama seperti kuncinya.
+	baris := pecahBarisYAML(existing)
 	dalam := petaDalamSkalarYAML(baris)
 	for i, line := range baris {
 		if dalam[i] {
@@ -2037,7 +2043,15 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 		}
 		return kunci + ": " + yamlKutip(nilai[kunci])
 	}
-	var out []string
+	// B-588: pecah pada pemisah garis YAML, bukan hanya "\n" —
+	// baris tersembunyi (CR/NEL/LS/PS) menjadi baris sendiri yang
+	// dipertahankan: kunci pengguna yang terselundup di baris
+	// yang ditulis-ulang/dibuang tidak lagi hilang senyap, dan
+	// kunci terkelola terselundup ditulis ulang di tempat (bukan
+	// diduplikasi di akhir). Pemisah tiap baris disimpan agar
+	// akhir baris asal dipertahankan (CRLF tetap CRLF, B-544).
+	baris := pecahBarisBerpemisaahYAML(existing)
+	var out []barisYAML
 	// B-523: posisi baris penanda akhir dokumen "..." di out, atau
 	// -1 bila tidak ada. Sesudah penanda, tidak ada lagi isi dokumen:
 	// baris-baris diteruskan utuh tanpa dibaca sebagai kunci, dan
@@ -2051,7 +2065,8 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 	// kunci maupun penanda. B-560: baris isi skalar blok juga
 	// bukan struktur (lihat pelacakSkalarYAML).
 	pelacak := pelacakSkalarBaruYAML()
-	for _, line := range strings.Split(existing, "\n") {
+	for _, b := range baris {
+		line := b.teks
 		if indeksPenanda >= 0 {
 			// B-559: penanda kedua+ DINORMALISASI juga — cabang
 			// ini dulu meneruskan baris sesudah penanda pertama
@@ -2061,21 +2076,21 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 			// berada DI DALAM skalar (isi string pengguna) tidak
 			// ikut ditulis ulang.
 			if !pelacak.lintasi(line) && barisPenandaAkhirDokumen(line) {
-				out = append(out, normalkanBarisPenanda(line))
+				out = append(out, barisYAML{teks: normalkanBarisPenanda(line), pem: b.pem})
 			} else {
-				out = append(out, line)
+				out = append(out, b)
 			}
 			continue
 		}
 		if pelacak.lintasi(line) {
-			out = append(out, line)
+			out = append(out, b)
 			continue
 		}
 		if barisPenandaAkhirDokumen(line) {
 			indeksPenanda = len(out)
 			// B-544/B-559: penanda ditulis dalam bentuk kanoniknya
 			// (tiap kemunculan, bukan hanya pertama).
-			out = append(out, normalkanBarisPenanda(line))
+			out = append(out, barisYAML{teks: normalkanBarisPenanda(line), pem: b.pem})
 			continue
 		}
 		kunci := ""
@@ -2097,36 +2112,37 @@ func perbaruiYAMLTopLevel(existing string, pairs [][2]string) string {
 				continue // duplikat kunci terkelola: buang
 			}
 			tertulis[kunci] = true
-			out = append(out, tulisBaris(kunci))
+			// Baris pengganti mewarisi pemisah baris lamanya.
+			out = append(out, barisYAML{teks: tulisBaris(kunci), pem: b.pem})
 			continue
 		}
-		out = append(out, line)
+		out = append(out, b)
 	}
-	var belum []string
+	var belum []barisYAML
 	for _, p := range pairs {
 		if !tertulis[p[0]] {
-			belum = append(belum, tulisBaris(p[0]))
+			belum = append(belum, barisBaruYAML(tulisBaris(p[0])))
 		}
 	}
 	if indeksPenanda >= 0 && len(belum) > 0 {
 		// B-523: sisipkan kunci yang belum tertulis SEBELUM penanda
 		// akhir dokumen; penanda tetap baris penutup dokumen.
-		sisip := make([]string, 0, len(out)+len(belum))
+		sisip := make([]barisYAML, 0, len(out)+len(belum))
 		sisip = append(sisip, out[:indeksPenanda]...)
 		sisip = append(sisip, belum...)
 		sisip = append(sisip, out[indeksPenanda:]...)
-		hasil := strings.Join(sisip, "\n")
+		hasil := sambungBarisBerpemisaahYAML(sisip)
 		if hasil != "" && !strings.HasSuffix(hasil, "\n") {
 			hasil += "\n"
 		}
 		return hasil
 	}
-	hasil := strings.Join(out, "\n")
-	for _, baris := range belum {
+	hasil := sambungBarisBerpemisaahYAML(out)
+	for _, b := range belum {
 		if hasil != "" && !strings.HasSuffix(hasil, "\n") {
 			hasil += "\n"
 		}
-		hasil += baris + "\n"
+		hasil += b.teks + "\n"
 	}
 	if hasil != "" && !strings.HasSuffix(hasil, "\n") {
 		hasil += "\n"
@@ -2399,6 +2415,11 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if err != nil {
 			return err
 		}
+		// B-589: TAB di posisi pemisah yang ditolak PyYAML —
+		// tolak jujur sebelum penulis berjalan.
+		if err := tolakTabPemisahYAML(aiderConfigPath, existingAider, "Aider (PyYAML safe_load) menolak TAB sebagai pemisah di posisi itu"); err != nil {
+			return err
+		}
 		// B-497: config multi-dokumen ditolak jujur seperti Hermes
 		// (B-485) — pemuat Aider adalah PyYAML safe_load, yang
 		// terbukti menolak aliran multi-dokumen; penggabung
@@ -2433,6 +2454,15 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		goosePath := filepath.Join(gooseDir, "config.yaml")
 		existing, err := bacaTeksKonfig(goosePath)
 		if err != nil {
+			return err
+		}
+		// B-589: TAB di posisi pemisah yang ditolak pemuat YAML
+		// yang ketat — tolak jujur sebelum penulis berjalan.
+		// Perilaku serde_yaml Goose atas posisi ini belum
+		// terbukti (lihat B-589); penolakan didasarkan pada
+		// posisi yang ditolak PyYAML dan tidak mengarang klaim
+		// tentang serde_yaml.
+		if err := tolakTabPemisahYAML(goosePath, existing, "TAB di posisi pemisah bukan pemisah yang sah bagi pemuat YAML yang ketat (perilaku serde_yaml Goose atas posisi ini belum terbukti — lihat B-589)"); err != nil {
 			return err
 		}
 		// B-497: config multi-dokumen ditolak jujur seperti Hermes
@@ -2804,6 +2834,11 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		}
 		existingHermes, err := bacaTeksKonfig(hermesPath)
 		if err != nil {
+			return err
+		}
+		// B-589: TAB di posisi pemisah yang ditolak PyYAML —
+		// tolak jujur sebelum penyusunan apa pun.
+		if err := tolakTabPemisahYAML(hermesPath, existingHermes, "Hermes (PyYAML safe_load) menolak TAB sebagai pemisah di posisi itu"); err != nil {
 			return err
 		}
 		// B-485: config multi-dokumen ditolak jujur. Penyusun blok
@@ -3531,7 +3566,14 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 		"provider": true, "default": true, "base_url": true,
 		"api_mode": true, "api_key": apiKey != "",
 	}
-	baris := strings.Split(existing, "\n")
+	// B-588: pecah pada pemisah garis YAML, bukan hanya "\n" —
+	// blok `model:` yang terselundup pemisah tersembunyi (di isi
+	// skalar blok, di baris komentar, sesudah kutip tertutup)
+	// menjadi header yang terlihat dan digabung, bukan
+	// diduplikasi (B-590); kunci terkelola terselundup ditulis
+	// ulang di tempat, bukan diduplikasi (B-591). Pemisah tiap
+	// baris disimpan agar akhir baris asal dipertahankan.
+	baris := pecahBarisBerpemisaahYAML(existing)
 	// B-536: baris penanda akhir dokumen "..." (bila ada) MENUTUP
 	// dokumen bagi pemuat Hermes — blok `model:` hanya hidup di
 	// DALAM dokumen. Versi lama memperlakukan teks sebagai satu
@@ -3546,9 +3588,10 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	// multiline — baris isi nilai tidak boleh dibaca sebagai
 	// penanda, header blok, atau batas blok. B-560: peta yang
 	// sama kini mencakup isi skalar blok.
-	dalam := petaDalamSkalarYAML(baris)
+	dalam := petaDalamSkalarYAML(teksBarisYAML(baris))
 	indeksPenanda := -1
-	for i, l := range baris {
+	for i, b := range baris {
+		l := b.teks
 		if !dalam[i] && barisPenandaAkhirDokumen(l) {
 			// B-544/B-559: SETIAP penanda ditulis dalam bentuk
 			// kanoniknya, bukan hanya yang pertama — versi lama
@@ -3558,7 +3601,7 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 			// sementara verifikasi hanya mengurai dokumen
 			// pertama. Penanda di dalam skalar (dalam[i]) adalah
 			// isi string dan tidak disentuh.
-			baris[i] = normalkanBarisPenanda(l)
+			baris[i].teks = normalkanBarisPenanda(l)
 			if indeksPenanda < 0 {
 				indeksPenanda = i
 			}
@@ -3587,7 +3630,8 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 		aliran      []string // baris tak-terkelola dari flow map, sudah bentuk blok
 	}
 	var rentang []rentangBlok
-	for i, l := range baris {
+	for i, b := range baris {
+		l := b.teks
 		if indeksPenanda >= 0 && i >= indeksPenanda {
 			break // B-536: sesudah penanda = di luar dokumen
 		}
@@ -3606,7 +3650,7 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 			j := i
 			for !flowMapHermesSeimbang(teks) && j+1 < len(baris) {
 				j++
-				teks += "\n" + baris[j]
+				teks += "\n" + baris[j].teks
 			}
 			barisAliran, okFlow := pecahFlowMapHermes(teks, terkelola)
 			if !okFlow {
@@ -3622,7 +3666,7 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 				// mentah — supaya penanda kedua+ berbentuk
 				// tab/tanpa-spasi tidak ikut lolos mentah di
 				// jalur ini.
-				return strings.Join(baris, "\n")
+				return sambungBarisBerpemisaahYAML(baris)
 			}
 			rentang = append(rentang, rentangBlok{awal: i, akhir: j + 1, jangkar: jangkar, aliran: barisAliran})
 			i = j
@@ -3653,7 +3697,7 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 				j++
 				continue
 			}
-			sub := baris[j]
+			sub := baris[j].teks
 			trim := strings.TrimSpace(sub)
 			if trim == "" || strings.HasPrefix(trim, "#") ||
 				strings.HasPrefix(sub, " ") || strings.HasPrefix(sub, "\t") {
@@ -3671,13 +3715,13 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 			// dengan pemisah satu baris kosong seperti jalur
 			// tempel-akhir di bawah; penanda dan baris-baris
 			// sesudahnya diteruskan utuh.
-			kepala := strings.TrimRight(strings.Join(baris[:indeksPenanda], "\n"), "\n")
+			kepala := strings.TrimRight(sambungBarisBerpemisaahYAML(baris[:indeksPenanda]), "\n")
 			hasil := ""
 			if kepala != "" {
 				hasil = kepala + "\n\n"
 			}
 			hasil += strings.Join(blok, "\n") + "\n" +
-				strings.Join(baris[indeksPenanda:], "\n")
+				sambungBarisBerpemisaahYAML(baris[indeksPenanda:])
 			if !strings.HasSuffix(hasil, "\n") {
 				hasil += "\n"
 			}
@@ -3706,7 +3750,7 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 			dipertahankan = append(dipertahankan, r.aliran...)
 			continue
 		}
-		dipertahankan = append(dipertahankan, saringIsiBlokHermes(baris[r.awal+1:r.akhir], terkelola)...)
+		dipertahankan = append(dipertahankan, saringIsiBlokHermes(teksBarisYAML(baris[r.awal+1:r.akhir]), terkelola)...)
 	}
 	// B-481: jangkar blok PERTAMA dipertahankan pada header blok
 	// gabungan, supaya alias `*nama` di bagian lain dokumen tetap
@@ -3746,11 +3790,20 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 			dalamRentang[k] = true
 		}
 	}
-	hasil := make([]string, 0, len(baris)+len(blok))
+	hasil := make([]barisYAML, 0, len(baris)+len(blok))
 	hasil = append(hasil, baris[:rentang[0].awal]...)
-	hasil = append(hasil, blok...)
-	hasil = append(hasil, dipertahankan...)
-	sisaBaris := make([]string, 0, len(baris))
+	for _, b := range blok {
+		hasil = append(hasil, barisBaruYAML(b))
+	}
+	// Baris dipertahankan (sub-kunci tak-terkelola, entri flow
+	// map) ditulis ulang dengan pemisah "\n": pemisah asalnya
+	// yang tersembunyi sudah menjalankan tugasnya sebagai
+	// pemisah baris sejati, dan YAML menormalkan semua pemisah
+	// garis menjadi "\n" saat diurai — nilainya tidak berubah.
+	for _, b := range dipertahankan {
+		hasil = append(hasil, barisBaruYAML(b))
+	}
+	sisaBaris := make([]barisYAML, 0, len(baris))
 	for k := rentang[0].akhir; k < len(baris); k++ {
 		if !dalamRentang[k] {
 			sisaBaris = append(sisaBaris, baris[k])
@@ -3766,17 +3819,17 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	// lari ketiga baru stabil).
 	adaIsiSesudah := false
 	for _, l := range sisaBaris {
-		if strings.TrimSpace(l) != "" {
+		if strings.TrimSpace(l.teks) != "" {
 			adaIsiSesudah = true
 			break
 		}
 	}
-	if adaIsiSesudah && len(sisaBaris) > 0 && sisaBaris[0] != "" &&
-		!barisPenandaAkhirDokumen(sisaBaris[0]) {
-		hasil = append(hasil, "")
+	if adaIsiSesudah && len(sisaBaris) > 0 && sisaBaris[0].teks != "" &&
+		!barisPenandaAkhirDokumen(sisaBaris[0].teks) {
+		hasil = append(hasil, barisBaruYAML(""))
 	}
 	hasil = append(hasil, sisaBaris...)
-	return gabungBarisYAML(hasil)
+	return gabungBarisBerpemisaahYAML(hasil)
 }
 
 // pisahJangkarHermes memisahkan awalan jangkar YAML (`&nama`)
@@ -4173,15 +4226,6 @@ func kunciSubBarisYAML(baris string) string {
 	return normalkanKunciYAML(strings.TrimSpace(trim[:idx]))
 }
 
-// gabungBarisYAML menyatukan baris dan memastikan newline penutup.
-func gabungBarisYAML(baris []string) string {
-	keluaran := strings.Join(baris, "\n")
-	if !strings.HasSuffix(keluaran, "\n") {
-		keluaran += "\n"
-	}
-	return keluaran
-}
-
 // potongAwalanExport membuang awalan kata kunci `export` dari teks
 // baris env yang sudah dipangkas, bila kata itu diikuti spasi ATAU
 // tab (satu atau lebih). Nama yang diawali "export" tanpa pemisah
@@ -4415,10 +4459,46 @@ func diagnosisKutipSkalarBlok(konten string, pairs [][2]string, errUrai error) s
 	if !terkelola {
 		return ""
 	}
+	// B-588/R1-W4: bila kunci yang ganda tersembunyi di balik
+	// pemisah garis di dalam satu baris-"\n", penyebabnya adalah
+	// pemisah itu — bukan kutip di isi skalar blok (diagnosis
+	// B-560 yang keliru untuk kelas ini: kutip itu hanya isi
+	// skalar blok, sedangkan kunci terselundup adalah baris
+	// sungguhan yang tidak dilihat penulis). Periksa dulu
+	// sebelum diagnosis kutip.
+	if sebab := sebabPemisahTersembunyiYAML(konten, kunci); sebab != "" {
+		return sebab
+	}
 	if pembuka, ok := cariKutipBlokMenelanKunciYAML(konten, kunci); ok {
 		return fmt.Sprintf("kunci terkelola %q tertulis dua kali karena kutip tak tertutup di isi skalar blok (%q) membuat penyunting salah membaca struktur — bukan duplikasi di berkas masukan; tutup kutip itu, lalu coba lagi", kunci, pembuka)
 	}
-	return fmt.Sprintf("kunci terkelola %q tertulis dua kali karena penyunting salah membaca struktur berkas — bukan duplikasi di berkas masukan (penyunting membuang duplikat terkelola yang terlihat); periksa struktur di sekitar kunci itu, lalu coba lagi", kunci)
+	return fmt.Sprintf("kunci terkelola %q tertulis dua kali karena penyunting salah membaca struktur berkas — bukan duplikasi di berkas masukan (penyunting membuang duplikat terkelola yang terlihat); periksa struktur di sekitar kunci itu — kemungkinan penyebabnya termasuk pemisah garis tersembunyi (CR, NEL U+0085, LS U+2028, atau PS U+2029) yang menyembunyikan kunci itu di dalam satu baris — lalu coba lagi", kunci)
+}
+
+// sebabPemisahTersembunyiYAML memeriksa apakah kunci yang
+// ganda tersembunyi di balik pemisah garis YAML (CR, NEL, LS,
+// PS) di dalam satu baris-"\n" (B-588/R1-W4): baris sejati yang
+// diawali pemisah tersembunyi — bukan "\n"/CRLF — adalah baris
+// yang tidak dilihat penulis lama saat menulis ulang. Baris di
+// dalam skalar (dalam) bukan kunci sungguhan dan tidak
+// dihitung. Mengembalikan pesan sebab-akar, atau "" bila tidak
+// terbukti.
+func sebabPemisahTersembunyiYAML(konten, kunci string) string {
+	baris := pecahBarisBerpemisaahYAML(konten)
+	dalam := petaDalamSkalarYAML(teksBarisYAML(baris))
+	for i := 1; i < len(baris); i++ {
+		pem := baris[i-1].pem
+		if pem == "\n" || pem == "\r\n" || pem == "" {
+			continue // baris ini terlihat (awal baris-"\n")
+		}
+		if dalam[i] {
+			continue
+		}
+		if kunciKolomNolYAML(baris[i].teks) == kunci {
+			return fmt.Sprintf("kunci terkelola %q tertulis dua kali karena pemisah garis tersembunyi (%s) menyembunyikan kemunculan kunci itu di dalam satu baris, sehingga penyunting tidak melihatnya saat menulis ulang — bukan duplikasi di berkas masukan; ganti pemisah itu dengan baris baru biasa (LF), lalu coba lagi", kunci, namaPemisahGarisYAML(pem))
+		}
+	}
+	return ""
 }
 
 // kunciGandaDariGalatYAML mengambil nama kunci dari galat
@@ -4470,7 +4550,10 @@ func cariKutipBlokMenelanKunciYAML(konten, kunci string) (pembuka string, ok boo
 	var kutipBenar byte
 	var naif byte // keadaan kutip NAIF: isi blok pun membuka
 	pembukaAktif := ""
-	for _, line := range strings.Split(konten, "\n") {
+	// B-588: diagnosis berjalan atas baris YAML sejati, bukan
+	// baris-"\n" — keluaran penulis kini dapat memuat pemisah
+	// tersembunyi sebagai pemisah baris yang sah.
+	for _, line := range pecahBarisYAML(konten) {
 		// 1. Status isi-blok menurut keadaan BENAR (kutip di
 		// isi blok tidak membuka; baris kosong/lebih menjorok
 		// adalah isi, baris lain mengakhiri blok).
@@ -4917,6 +5000,123 @@ func deteksiUTF32TanpaBOM(data []byte) string {
 	return ""
 }
 
+// barisYAML adalah satu baris logis YAML beserta pemisah garis
+// yang mengikutinya dalam teks asal (B-588): pemisah disimpan
+// agar penulis dapat menulis ulang baris tanpa mengubah akhir
+// baris asal — berkas CRLF tetap CRLF, dan pemisah tersembunyi
+// (CR, NEL, LS, PS) tetap menjadi pemisah garis yang sah di
+// keluaran, bukan ditempel ke isi baris tetangga. Baris baru
+// yang ditulis penulis memakai pemisah "\n".
+type barisYAML struct {
+	teks string // isi baris tanpa pemisah
+	pem  string // "\n", "\r\n", "\r", "\u0085", "\u2028", "\u2029", atau "" (baris terakhir tanpa pemisah)
+}
+
+// barisBaruYAML membuat baris YAML baru (ditulis penulis) dengan
+// pemisah "\n".
+func barisBaruYAML(teks string) barisYAML {
+	return barisYAML{teks: teks, pem: "\n"}
+}
+
+// pecahBarisBerpemisaahYAML memecah teks pada pemisah garis YAML
+// (B-571/B-588): LF, CRLF (satu pemisah), CR saja, dan pemisah
+// Unicode NEL (U+0085), LINE SEPARATOR (U+2028), PARAGRAPH
+// SEPARATOR (U+2029) — semuanya pemisah garis menurut
+// spesifikasi YAML dan diperlakukan demikian oleh PyYAML maupun
+// yaml.v3. Berbeda dengan strings.Split pada "\n", pemecah ini
+// melihat baris YAML sejati: satu "baris-\n" dapat memuat dua
+// baris YAML. Pemisah tiap baris disimpan, sehingga gabungan
+// ulang dengan sambungBarisBerpemisaahYAML adalah identitas
+// byte atas teks asal. Hasilnya meniru strings.Split pada
+// "\n": pemisah akhir menghasilkan elemen kosong penutup, dan
+// teks tanpa pemisah menghasilkan satu elemen utuh.
+func pecahBarisBerpemisaahYAML(teks string) []barisYAML {
+	var baris []barisYAML
+	awal := 0
+	for i := 0; i < len(teks); {
+		r, lebar := utf8.DecodeRuneInString(teks[i:])
+		var pem string
+		switch r {
+		case '\r':
+			pem = "\r"
+			i += lebar
+			if i < len(teks) && teks[i] == '\n' {
+				pem = "\r\n"
+				i++
+			}
+		case '\n':
+			pem = "\n"
+			i += lebar
+		case '\u0085':
+			pem = "\u0085"
+			i += lebar
+		case '\u2028':
+			pem = "\u2028"
+			i += lebar
+		case '\u2029':
+			pem = "\u2029"
+			i += lebar
+		default:
+			i += lebar
+			continue
+		}
+		baris = append(baris, barisYAML{teks: teks[awal : i-len(pem)], pem: pem})
+		awal = i
+	}
+	baris = append(baris, barisYAML{teks: teks[awal:], pem: ""})
+	return baris
+}
+
+// teksBarisYAML mengambil isi tiap baris (tanpa pemisah) untuk
+// pemindai berbasis []string (petaDalamSkalarYAML,
+// saringIsiBlokHermes).
+func teksBarisYAML(baris []barisYAML) []string {
+	teks := make([]string, len(baris))
+	for i, b := range baris {
+		teks[i] = b.teks
+	}
+	return teks
+}
+
+// sambungBarisBerpemisaahYAML menyatukan baris beserta pemisah
+// asalnya, tanpa mengubah apa pun.
+func sambungBarisBerpemisaahYAML(baris []barisYAML) string {
+	var b strings.Builder
+	for _, l := range baris {
+		b.WriteString(l.teks)
+		b.WriteString(l.pem)
+	}
+	return b.String()
+}
+
+// gabungBarisBerpemisaahYAML menyatukan baris dan memastikan
+// newline penutup.
+func gabungBarisBerpemisaahYAML(baris []barisYAML) string {
+	keluaran := sambungBarisBerpemisaahYAML(baris)
+	if !strings.HasSuffix(keluaran, "\n") {
+		keluaran += "\n"
+	}
+	return keluaran
+}
+
+// namaPemisahGarisYAML menamai pemisah garis YAML untuk pesan
+// galat (B-588/B-591): CR, NEL (U+0085), LINE SEPARATOR
+// (U+2028), PARAGRAPH SEPARATOR (U+2029).
+func namaPemisahGarisYAML(pem string) string {
+	switch pem {
+	case "\r":
+		return "CR"
+	case "\u0085":
+		return "NEL (U+0085)"
+	case "\u2028":
+		return "LINE SEPARATOR (U+2028)"
+	case "\u2029":
+		return "PARAGRAPH SEPARATOR (U+2029)"
+	default:
+		return fmt.Sprintf("%q", pem)
+	}
+}
+
 // pecahBarisYAML memecah teks pada pemisah garis YAML (B-571):
 // LF, CRLF (satu pemisah), CR saja, dan pemisah Unicode NEL
 // (U+0085), LINE SEPARATOR (U+2028), PARAGRAPH SEPARATOR
@@ -4929,29 +5129,10 @@ func deteksiUTF32TanpaBOM(data []byte) string {
 // sukses-bohong B-571). Hasilnya meniru strings.Split pada
 // "\n": pemisah akhir menghasilkan elemen kosong penutup, dan
 // teks tanpa pemisah menghasilkan satu elemen utuh.
+// Implementasinya mendelegasikan ke
+// pecahBarisBerpemisaahYAML (B-588) dan membuang pemisahnya.
 func pecahBarisYAML(teks string) []string {
-	var baris []string
-	awal := 0
-	for i := 0; i < len(teks); {
-		r, lebar := utf8.DecodeRuneInString(teks[i:])
-		switch r {
-		case '\r':
-			baris = append(baris, teks[awal:i])
-			i += lebar
-			if i < len(teks) && teks[i] == '\n' {
-				i++
-			}
-			awal = i
-		case '\n', '\u0085', '\u2028', '\u2029':
-			baris = append(baris, teks[awal:i])
-			i += lebar
-			awal = i
-		default:
-			i += lebar
-		}
-	}
-	baris = append(baris, teks[awal:])
-	return baris
+	return teksBarisYAML(pecahBarisBerpemisaahYAML(teks))
 }
 
 // tolakIsiSesudahPenandaHermes menolak config Hermes yang memuat
@@ -4988,12 +5169,16 @@ func pecahBarisYAML(teks string) []string {
 // "\n" lalu menulis) TIDAK menyelamatkan masukan ini: isinya
 // tetap dokumen kedua sesudah "..." yang ditolak PyYAML —
 // penolakan jujur di sini adalah satu-satunya hasil benar.
-// Penulis (susunBlokModelHermes, perbaruiYAMLTopLevel) SENGAJA
-// tetap memakai pemecahan "\n": pemisah "\r" di akhir baris
-// adalah CR berkas CRLF yang dipertahankan (B-544) — penjaga
-// inilah yang melihat baris YAML sejati sebelum penulis mana
-// pun berjalan, dan Goose/Aider sudah gagal jujur atas kelas
-// ini lewat verifikasi ketat semua-dokumennya.
+// B-588: penulis (susunBlokModelHermes, perbaruiYAMLTopLevel)
+// kini JUGA memecah pada pemisah garis YAML
+// (pecahBarisBerpemisaahYAML) — klaim lama bahwa penulis
+// "SENGAJA tetap memakai pemecahan "\n"" GUGUR: alasan lama
+// (pemisah "\r" di akhir baris adalah CR berkas CRLF yang
+// dipertahankan, B-544) kini dipenuhi pemisah yang disimpan
+// per baris, jadi CRLF tetap CRLF tanpa membutakan penulis
+// terhadap baris tersembunyi. Penjaga ini tetap lapis pertama
+// untuk isi sesudah penanda, dan Goose/Aider tetap gagal jujur
+// atas kelas ini lewat verifikasi ketat semua-dokumennya.
 func tolakIsiSesudahPenandaHermes(path, konten string) error {
 	baris := pecahBarisYAML(konten)
 	dalam := petaDalamSkalarYAML(baris)
@@ -5015,6 +5200,119 @@ func tolakIsiSesudahPenandaHermes(path, konten string) error {
 		return fmt.Errorf("berkas %s memuat isi sesudah penanda akhir dokumen '...' (%q); isi itu di luar dokumen yang dibaca Hermes (PyYAML safe_load) — gabungkan menjadi satu dokumen, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", path, trim)
 	}
 	return nil
+}
+
+// tolakTabPemisahYAML menolak masukan YAML yang memuat TAB di
+// posisi pemisah yang ditolak PyYAML (B-589): yaml.v3 menerima
+// TAB sebagai pemisah di posisi-posisi itu, tetapi pemuat
+// tujuan (PyYAML safe_load untuk Aider/Hermes) menolak
+// seluruh berkas — Configure yang sukses di sini adalah
+// sukses-bohong. Penolakan bersifat tekstual dan memakai baris
+// YAML sejati (pecahBarisYAML), dengan pelacak skalar yang sama
+// dengan penulis: TAB di dalam skalar terkutip, di dalam
+// komentar, dan di tengah isi skalar blok adalah isi yang sah
+// dan TIDAK ditolak (terbukti oracle PyYAML); TAB pada baris
+// penanda akhir dokumen "..." juga dikecualikan — penulis
+// menormalkannya ke bentuk kanonik (B-544/B-559). Pesan menamai
+// TAB dan nomor barisnya; alasanPemuat menyebut pemuat
+// tujuannya persis — untuk Goose ia menandai bahwa perilaku
+// serde_yaml atas posisi ini belum terbukti (lihat B-589),
+// bukan mengarang klaim tentangnya.
+func tolakTabPemisahYAML(path, konten, alasanPemuat string) error {
+	baris := pecahBarisYAML(konten)
+	p := pelacakSkalarBaruYAML()
+	for i, line := range baris {
+		// Keadaan di awal baris, sebelum lintasi memajukannya:
+		// dalamKutip/dalamBlok di sini sama dengan nilai kembali
+		// lintasi (baris ini isi nilai, bukan struktur).
+		dalamKutip := p.kutip != 0
+		dalamBlok := false
+		if p.kutip == 0 && p.blok >= 0 {
+			if strings.TrimSpace(line) == "" || lebarIndentasiYAML(line) > p.blok {
+				dalamBlok = true
+			}
+		}
+		if !dalamKutip && !dalamBlok && barisPenandaAkhirDokumen(line) {
+			// Baris penanda: TAB di antara "..." dan komentarnya
+			// dinormalisasi penulis (B-544/B-559), bukan ditolak.
+			p.lintasi(line)
+			continue
+		}
+		if _, ok := pindaiTabBarisYAML(line, p.kutip, dalamBlok); ok {
+			teks := strings.TrimSpace(line)
+			if r := []rune(teks); len(r) > 100 {
+				teks = string(r[:100]) + "…"
+			}
+			return fmt.Errorf("berkas %s baris %d memuat TAB di posisi pemisah (%q); %s — ganti TAB dengan spasi, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", path, i+1, teks, alasanPemuat)
+		}
+		p.lintasi(line)
+	}
+	return nil
+}
+
+// pindaiTabBarisYAML memindai satu baris YAML dan melaporkan
+// TAB pertama yang berada di posisi pemisah (B-589): di luar
+// skalar terkutip dan di luar komentar. Mengembalikan posisi
+// byte TAB itu, atau ok=false bila tidak ada. kutipAwal adalah
+// keadaan skalar terkutip saat baris dimulai (0 di luar);
+// dalamBlok berarti baris ini isi skalar blok — TAB hanya
+// terlarang pada indentasi awalnya (termasuk baris yang hanya
+// berisi TAB); sesudah indentasi, TAB adalah isi yang sah
+// (terbukti oracle PyYAML). Aturan pembuka kutip dan awal
+// komentar sama dengan pelacakSkalarYAML.lintasi — apostrof di
+// tengah kata ("don't") bukan pembuka, '#' hanya memulai
+// komentar bila di awal baris atau sesudah spasi/tab.
+func pindaiTabBarisYAML(line string, kutipAwal byte, dalamBlok bool) (posisi int, ok bool) {
+	if dalamBlok {
+		for i := 0; i < len(line); i++ {
+			if line[i] == ' ' {
+				continue
+			}
+			if line[i] == '\t' {
+				return i, true
+			}
+			return -1, false
+		}
+		return -1, false
+	}
+	kutip := kutipAwal
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch kutip {
+		case '"':
+			if c == '\\' {
+				i++ // lewati karakter yang di-escape
+			} else if c == '"' {
+				kutip = 0
+			}
+			continue
+		case '\'':
+			if c == '\'' {
+				if i+1 < len(line) && line[i+1] == '\'' {
+					i++ // '' = apos yang di-escape
+				} else {
+					kutip = 0
+				}
+			}
+			continue
+		}
+		if c == '#' && (i == 0 || line[i-1] == ' ' || line[i-1] == '\t') {
+			return -1, false // sisa baris adalah komentar
+		}
+		if c == '\t' {
+			return i, true
+		}
+		if c == '"' || c == '\'' {
+			j := i - 1
+			for j >= 0 && (line[j] == ' ' || line[j] == '\t') {
+				j--
+			}
+			if j < 0 || line[j] == ':' || line[j] == '-' || line[j] == '[' || line[j] == '{' || line[j] == ',' {
+				kutip = c
+			}
+		}
+	}
+	return -1, false
 }
 
 // tolakYAMLDokumenGanda menolak aliran YAML multi-dokumen atas

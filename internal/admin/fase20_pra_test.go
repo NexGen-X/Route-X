@@ -184,11 +184,15 @@ func TestB476RenameProviderMenyiramCache(t *testing.T) {
 	c.login("superadmin@routex.internal", testPassword)
 	url := "/api/admin/upstreams/providers/" + prov.ID
 
-	// Kontrol 1: rename ke nama yang sama tidak menyiram.
+	// Kontrol 1: rename ke nama yang sama tidak menyiram. (Sejak
+	// PR-B Fase 20 / B-469, PUT yang seluruh field disebutnya
+	// nilai-sama ditolak 400 no_changes — kontrak yang sama seperti
+	// updateUser B-433 — jadi yang dikunci di sini adalah status
+	// no_changes + entri tetap hidup, bukan lagi 200.)
 	tanam()
 	res, body := c.do(http.MethodPut, url, map[string]any{"name": "prov-b476"}, true)
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("PUT nama sama: status = %d, mau 200 (body: %s)", res.StatusCode, body)
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(string(body), "no_changes") {
+		t.Fatalf("PUT nama sama: status = %d, mau 400 no_changes (body: %s)", res.StatusCode, body)
 	}
 	if !hit() {
 		t.Error("entri cache hilang sesudah rename ke nama yang sama — flush terlalu luas")

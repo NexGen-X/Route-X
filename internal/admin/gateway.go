@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -797,7 +798,19 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !(updateDitelan && providerIdentik) {
+	// B-468: penekanan audit B-434 hanya menelan no-op bila Update
+	// DITELAN (params kosong) DAN ikatan identik — tetapi repo
+	// Update memutuskan ErrNoChanges dari KEHADIRAN parameter,
+	// bukan nilainya, jadi PUT yang menyebut field dengan nilai
+	// yang PERSIS sama dengan yang tersimpan (nama sama, strategi
+	// sama) tetap menulis + diaudit sebagai perubahan. Kini
+	// perbandingannya atas nilai: audit & invalidasi hanya terjadi
+	// bila ada field yang nilainya benar-benar berubah, atau
+	// ikatan provider disebut dan berubah. Ikatan yang tidak
+	// disebut berarti ikatan tidak berubah (vakum = identik).
+	tanpaPerubahan := (req.ProviderIDs == nil || providerIdentik) &&
+		(updateDitelan || perubahanRoutingNilaiSama(existing, p))
+	if !tanpaPerubahan {
 		h.writeAudit(ctx, r, "update", "routing_rule", id, map[string]any{
 			"name":          rule.Name,
 			"virtual_alias": aliasAkhir,
@@ -805,6 +818,53 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		h.invalidateRules(ctx)
 	}
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
+}
+
+// perubahanRoutingNilaiSama melaporkan apakah SETIAP field yang
+// disebut params sama nilainya dengan keadaan tersimpan (B-468).
+// Field yang tidak disebut selalu "sama" (semantik pembaruan
+// parsial). Pipeline dibandingkan sebagai byte mentah: resep yang
+// sama secara semantik tetapi tertulis beda urutan kunci terbaca
+// "berubah" — arah yang aman (audit berlebih sesekali, tidak
+// pernah menelan perubahan nyata).
+func perubahanRoutingNilaiSama(tersimpan *upstream.RoutingRule, p upstream.UpdateRoutingRuleParams) bool {
+	if tersimpan == nil {
+		return false
+	}
+	if !samaBilaDisebut(p.Name, &tersimpan.Name) ||
+		!samaBilaDisebut(p.Priority, &tersimpan.Priority) ||
+		!samaBilaDisebut(p.Strategy, &tersimpan.Strategy) ||
+		!samaBilaDisebut(p.MaxAttempts, &tersimpan.MaxAttempts) ||
+		!samaBilaDisebut(p.BackoffMS, &tersimpan.BackoffMS) ||
+		!samaBilaDisebut(p.FailureThreshold, &tersimpan.FailureThreshold) ||
+		!samaBilaDisebut(p.OpenDurationMS, &tersimpan.OpenDurationMS) ||
+		!samaBilaDisebut(p.HalfOpenProbes, &tersimpan.HalfOpenProbes) ||
+		!samaBilaDisebut(p.Enabled, &tersimpan.Enabled) {
+		return false
+	}
+	// Field Opt: tidak Set = biarkan; Set dengan Value nil = Clear
+	// (sama hanya bila tersimpan memang sudah kosong); Set dengan
+	// nilai = nilai itu harus sama dengan yang tersimpan. optSama
+	// menampung ketiganya lewat ptrSama.
+	if !optSama(p.Description.Set, p.Description.Value, tersimpan.Description) ||
+		!optSama(p.MatchModelID.Set, p.MatchModelID.Value, tersimpan.MatchModelID) ||
+		!optSama(p.MatchAPIKeyID.Set, p.MatchAPIKeyID.Value, tersimpan.MatchAPIKeyID) ||
+		!optSama(p.VirtualAlias.Set, p.VirtualAlias.Value, tersimpan.VirtualAlias) {
+		return false
+	}
+	if p.MatchCapabilities != nil && !slices.Equal(tersimpan.MatchCapabilities, p.MatchCapabilities) {
+		return false
+	}
+	if p.Pipeline.Set {
+		var nilaiBaru []byte
+		if p.Pipeline.Value != nil {
+			nilaiBaru = *p.Pipeline.Value
+		}
+		if !bytes.Equal(tersimpan.Pipeline, nilaiBaru) {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *Handlers) deleteRoutingRule(w http.ResponseWriter, r *http.Request) {
@@ -831,6 +891,15 @@ func (h *Handlers) toggleRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-469: toggle ke keadaan yang SUDAH berlaku adalah no-op —
+	// jawab keadaan tersimpan tanpa audit "toggle" dan tanpa
+	// invalidasi. Muatan gagal (aturan tidak ada) dibiarkan jatuh
+	// ke SetEnabled yang menjawab errornya seperti biasa.
+	if ada, err := h.routingRepo.Get(ctx, id); err == nil && ada != nil && ada.Enabled == enabled {
+		_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(ada))
+		return
+	}
+
 	rule, err := h.routingRepo.SetEnabled(ctx, id, enabled)
 	if err != nil {
 		mapRepoError(w, r, err, "aturan routing")
@@ -842,21 +911,73 @@ func (h *Handlers) toggleRoutingRule(w http.ResponseWriter, r *http.Request) {
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
+// ptrSama membandingkan dua penunjuk nilai: dua-duanya nil, atau
+// dua-duanya menunjuk nilai yang sama (B-469).
+func ptrSama[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// samaBilaDisebut adalah perbandingan nilai-sama untuk field
+// pembaruan parsial (B-469): field yang TIDAK disebut (penunjuk
+// nil) selalu "sama"; field yang disebut harus sama nilainya
+// dengan yang tersimpan.
+func samaBilaDisebut[T comparable](diminta, tersimpan *T) bool {
+	return diminta == nil || ptrSama(diminta, tersimpan)
+}
+
+// optSama adalah samaBilaDisebut untuk field berbalut Opt[repo]:
+// Opt yang tidak Set selalu "sama"; yang Set dibandingkan nilainya.
+func optSama[T comparable](disebut bool, nilai, tersimpan *T) bool {
+	return !disebut || ptrSama(nilai, tersimpan)
+}
+
+// jsonSamaSemantik membandingkan dua dokumen JSON secara semantik
+// (B-469): urutan kunci objek & format angka yang setara tidak
+// dianggap perbedaan. Dokumen yang tidak terurai tidak pernah
+// "sama" kecuali byte-nya identik — arah aman.
+func jsonSamaSemantik(a, b []byte) bool {
+	if bytes.Equal(a, b) {
+		return true
+	}
+	var va, vb any
+	if json.Unmarshal(a, &va) != nil || json.Unmarshal(b, &vb) != nil {
+		return false
+	}
+	ca, err1 := json.Marshal(va)
+	cb, err2 := json.Marshal(vb)
+	return err1 == nil && err2 == nil && bytes.Equal(ca, cb)
+}
+
 // ikatanProviderIdentik melaporkan apakah daftar provider yang
 // diminta PERSIS sama dengan ikatan yang tersimpan (B-434):
 // urutan sama (urutan adalah posisi fallback yang disimpan
 // SetProviders) dan bobot sama per provider (absen di peta bobot
 // permintaan berarti bobot NULL, sama seperti absen di sisi
 // tersimpan).
+//
+// B-467: perbandingannya TIDAK peka huruf. UUID yang tersimpan
+// selalu huruf kecil (keluaran Postgres), tetapi klien boleh
+// mengirim ejaan huruf besar untuk UUID yang sama — versi lama
+// membandingkannya sebagai teks mentah, jadi ikatan yang secara
+// semantik identik terbaca "berubah": audit update naik dan,
+// lebih buruk, SetProviders yang menyusul mencocokkan bobot
+// dengan kunci teks mentah itu juga (lihat SetProviders).
 func ikatanProviderIdentik(tersimpan []upstream.RuleProvider, diminta []string, bobot map[string]int) bool {
 	if len(tersimpan) != len(diminta) {
 		return false
 	}
+	bobotNorm := make(map[string]int, len(bobot))
+	for k, v := range bobot {
+		bobotNorm[strings.ToLower(k)] = v
+	}
 	for i, rp := range tersimpan {
-		if rp.ProviderID != diminta[i] {
+		if !strings.EqualFold(rp.ProviderID, diminta[i]) {
 			return false
 		}
-		b, ada := bobot[diminta[i]]
+		b, ada := bobotNorm[strings.ToLower(diminta[i])]
 		switch {
 		case ada && rp.Weight == nil:
 			return false
@@ -1057,6 +1178,31 @@ func (h *Handlers) updateRateLimit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-469: field yang disebut dengan nilai yang PERSIS sama
+	// dengan yang tersimpan bukan perubahan — tolak no_changes
+	// sejajar params kosong (yang sudah ditolak repo), supaya
+	// audit "update" & invalidasi tidak naik untuk no-op.
+	if req.RequestsPerSecond != nil || req.RequestsPerMinute != nil || req.TokensPerMinute != nil ||
+		req.DailyRequestLimit != nil || req.MonthlyRequestLimit != nil ||
+		req.DailyTokenLimit != nil || req.MonthlyTokenLimit != nil || req.Enabled != nil {
+		ada, err := h.policyRepo.GetRateLimit(ctx, id)
+		if err != nil {
+			mapRepoError(w, r, err, "batas laju")
+			return
+		}
+		if samaBilaDisebut(req.RequestsPerSecond, ada.RequestsPerSecond) &&
+			samaBilaDisebut(req.RequestsPerMinute, ada.RequestsPerMinute) &&
+			samaBilaDisebut(req.TokensPerMinute, ada.TokensPerMinute) &&
+			samaBilaDisebut(req.DailyRequestLimit, ada.DailyRequestLimit) &&
+			samaBilaDisebut(req.MonthlyRequestLimit, ada.MonthlyRequestLimit) &&
+			samaBilaDisebut(req.DailyTokenLimit, ada.DailyTokenLimit) &&
+			samaBilaDisebut(req.MonthlyTokenLimit, ada.MonthlyTokenLimit) &&
+			samaBilaDisebut(req.Enabled, &ada.Enabled) {
+			mapRepoError(w, r, policy.ErrNoChanges, "batas laju")
+			return
+		}
+	}
+
 	l, err := h.policyRepo.UpdateRateLimit(ctx, id, policy.UpdateRateLimitParams{
 		RequestsPerSecond:   req.RequestsPerSecond,
 		RequestsPerMinute:   req.RequestsPerMinute,
@@ -1098,6 +1244,12 @@ func (h *Handlers) toggleRateLimit(w http.ResponseWriter, r *http.Request) {
 	enabled, err := decodeToggleEnabled(r)
 	if err != nil {
 		tolakToggle(w, r, err)
+		return
+	}
+
+	// B-469: toggle nilai-sama adalah no-op (lihat toggleRoutingRule).
+	if ada, err := h.policyRepo.GetRateLimit(ctx, id); err == nil && ada != nil && ada.Enabled == enabled {
+		_ = h.respond(w, r, http.StatusOK, toRateLimitDTO(ada))
 		return
 	}
 
@@ -1409,6 +1561,24 @@ func (h *Handlers) updateBudget(w http.ResponseWriter, r *http.Request) {
 		lim = &parsed
 	}
 
+	// B-469: nilai-sama bukan perubahan (lihat updateRateLimit).
+	if req.Name != nil || lim != nil || req.ActionOnExceed != nil ||
+		req.AlertThresholdPct != nil || req.Enabled != nil {
+		ada, err := h.policyRepo.GetBudget(ctx, id)
+		if err != nil {
+			mapRepoError(w, r, err, "anggaran")
+			return
+		}
+		if samaBilaDisebut(req.Name, &ada.Name) &&
+			samaBilaDisebut(lim, &ada.LimitUSD) &&
+			samaBilaDisebut(req.ActionOnExceed, &ada.ActionOnExceed) &&
+			samaBilaDisebut(req.AlertThresholdPct, &ada.AlertThresholdPct) &&
+			samaBilaDisebut(req.Enabled, &ada.Enabled) {
+			mapRepoError(w, r, policy.ErrNoChanges, "anggaran")
+			return
+		}
+	}
+
 	b, err := h.policyRepo.UpdateBudget(ctx, id, policy.UpdateBudgetParams{
 		Name:              req.Name,
 		LimitUSD:          lim,
@@ -1447,6 +1617,12 @@ func (h *Handlers) toggleBudget(w http.ResponseWriter, r *http.Request) {
 	enabled, err := decodeToggleEnabled(r)
 	if err != nil {
 		tolakToggle(w, r, err)
+		return
+	}
+
+	// B-469: toggle nilai-sama adalah no-op (lihat toggleRoutingRule).
+	if ada, err := h.policyRepo.GetBudget(ctx, id); err == nil && ada != nil && ada.Enabled == enabled {
+		_ = h.respond(w, r, http.StatusOK, toBudgetDTO(ada))
 		return
 	}
 
@@ -1773,6 +1949,42 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 	}
 	p.Enabled = req.Enabled
 
+	// B-469: nilai-sama bukan perubahan. Berbeda dari permukaan
+	// PUT lain, body endpoint ini berbentuk FORM PENUH (DTO buat
+	// yang sama, peleburan B-418) — dashboard selalu mengirim
+	// seluruh form saat menyimpan, jadi no-op di sini dijawab
+	// 200 diam bergaya endpoint set (preseden B-434), BUKAN 400:
+	// tanpa tulisan, tanpa audit, tanpa invalidasi matcher.
+	// Params hasil peleburan hanya membawa field yang disebut,
+	// jadi yang dibandingkan hanya field yang terbawa params.
+	if p.Name != nil || p.Description != nil || p.Kind != nil || p.Priority != nil ||
+		p.AppliesTo != nil || p.Action != nil || p.Pattern != nil || p.PatternType != nil ||
+		p.CaseSensitive != nil || p.MaxEvalMS != nil || p.ModelID != nil || p.ProviderID != nil ||
+		p.MaxRequestBytes != nil || p.Enabled != nil {
+		ada, err := h.policyRepo.GetFilter(ctx, id)
+		if err != nil {
+			mapRepoError(w, r, err, "filter konten")
+			return
+		}
+		if samaBilaDisebut(p.Name, &ada.Name) &&
+			samaBilaDisebut(p.Description, &ada.Description) &&
+			samaBilaDisebut(p.Kind, &ada.Kind) &&
+			samaBilaDisebut(p.Priority, &ada.Priority) &&
+			samaBilaDisebut(p.AppliesTo, &ada.AppliesTo) &&
+			samaBilaDisebut(p.Action, &ada.Action) &&
+			samaBilaDisebut(p.Pattern, &ada.Pattern) &&
+			samaBilaDisebut(p.PatternType, &ada.PatternType) &&
+			samaBilaDisebut(p.CaseSensitive, &ada.CaseSensitive) &&
+			samaBilaDisebut(p.MaxEvalMS, &ada.MaxEvalMS) &&
+			samaBilaDisebut(p.ModelID, &ada.ModelID) &&
+			samaBilaDisebut(p.ProviderID, &ada.ProviderID) &&
+			samaBilaDisebut(p.MaxRequestBytes, ada.MaxRequestBytes) &&
+			samaBilaDisebut(p.Enabled, &ada.Enabled) {
+			_ = h.respond(w, r, http.StatusOK, toContentFilterDTO(ada))
+			return
+		}
+	}
+
 	f, err := h.policyRepo.UpdateFilter(ctx, id, p)
 	if err != nil {
 		mapRepoError(w, r, err, "filter konten")
@@ -1805,6 +2017,12 @@ func (h *Handlers) toggleContentFilter(w http.ResponseWriter, r *http.Request) {
 	enabled, err := decodeToggleEnabled(r)
 	if err != nil {
 		tolakToggle(w, r, err)
+		return
+	}
+
+	// B-469: toggle nilai-sama adalah no-op (lihat toggleRoutingRule).
+	if ada, err := h.policyRepo.GetFilter(ctx, id); err == nil && ada != nil && ada.Enabled == enabled {
+		_ = h.respond(w, r, http.StatusOK, toContentFilterDTO(ada))
 		return
 	}
 

@@ -151,6 +151,20 @@ func (h *Handlers) putSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-469: penulisan nilai + deskripsi yang PERSIS sama dengan
+	// yang tersimpan adalah no-op — jawab keadaan tersimpan tanpa
+	// Put dan tanpa audit "put". Nilai dibandingkan secara
+	// semantik JSON (urutan kunci tidak bermakna). Kunci yang
+	// belum ada tetap ditulis (pembuatan adalah perubahan nyata),
+	// dan kegagalan membaca dibiarkan jatuh ke Put seperti biasa.
+	if h.settingsRepo != nil {
+		if ada, err := h.settingsRepo.Get(ctx, key); err == nil &&
+			ada.Description == req.Description && jsonSamaSemantik(ada.Value, req.Value) {
+			_ = h.respond(w, r, http.StatusOK, toSettingDTO(ada))
+			return
+		}
+	}
+
 	var actorID string
 	if p, ok := auth.PrincipalFrom(ctx); ok && p != nil {
 		actorID = p.User.ID
@@ -438,11 +452,13 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 	// Gabungkan dengan setelan yang berlaku: field yang disebut
 	// menang, sisanya diwarisi — POST parsial tidak lagi bisa
 	// mematikan cache atau meng-nol-kan TTL secara tidak sengaja.
-	enabled := h.responseCache.IsEnabled()
+	enabledBerlaku := h.responseCache.IsEnabled()
+	ttlBerlaku := int64(h.responseCache.TTL() / time.Second)
+	enabled := enabledBerlaku
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
-	ttlDetik := int64(h.responseCache.TTL() / time.Second)
+	ttlDetik := ttlBerlaku
 	if req.TTLSeconds != nil {
 		ttlDetik = *req.TTLSeconds
 	}
@@ -452,6 +468,19 @@ func (h *Handlers) updateCacheSettings(w http.ResponseWriter, r *http.Request) {
 	// satu pun penolakan.
 	if ttlDetik < 0 || ttlDetik > 86400 {
 		httpx.BadRequest(w, r, "invalid_ttl", "TTLSeconds harus dalam rentang 0–86400 detik")
+		return
+	}
+	// B-469: nilai GABUNGAN yang persis sama dengan yang berlaku
+	// adalah no-op — jawab tanpa Put persisten, tanpa SetSettings,
+	// dan tanpa audit "update". Perbandingannya melawan keadaan
+	// EFEKTIF engine (yang benar-benar berjalan), bukan baris
+	// settings mentah.
+	if enabled == enabledBerlaku && ttlDetik == ttlBerlaku {
+		_ = h.respond(w, r, http.StatusOK, CacheSettingsResponseDTO{
+			Enabled:    enabled,
+			TTLSeconds: ttlDetik,
+			Message:    "Setelan response cache sudah sesuai; tidak ada perubahan",
+		})
 		return
 	}
 	// Aktivasi DITERIMA sejak Batch C1: penolakan cache_policy_unsafe

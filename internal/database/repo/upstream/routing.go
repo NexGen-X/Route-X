@@ -587,18 +587,32 @@ func (r *RoutingRepo) SetProviders(ctx context.Context, ruleID string, providerI
 	// satu INSERT. Pengenal ganda ditolak di sini, bukan dibiarkan menabrak primary key:
 	// pesan "data sudah ada" tidak memberi tahu operator provider mana yang disebut dua
 	// kali, padahal itulah satu-satunya yang perlu ia perbaiki.
+	//
+	// B-467: pencocokan bobot & deteksi ganda dinormalisasi ke
+	// huruf kecil. UUID tidak peka huruf dan Postgres menyimpannya
+	// kanonik huruf kecil, tetapi peta bobot dari pemanggil dikunci
+	// oleh teks mentah permintaannya — daftar provider berhufur
+	// besar dengan peta bobot berhufur kecil (atau sebaliknya, atau
+	// campuran di dalam satu permintaan) dulu tidak pernah bertemu:
+	// bobot yang diminta jatuh menjadi NULL secara senyap, dan
+	// provider yang sama dalam dua ejaan lolos deteksi ganda.
 	seen := make(map[string]bool, len(providerIDs))
 	weightArgs := make([]*int, len(providerIDs))
+	bobotNorm := make(map[string]int, len(weights))
+	for k, v := range weights {
+		bobotNorm[strings.ToLower(k)] = v
+	}
 	for i, id := range providerIDs {
 		if !idOK(id) {
 			return fmt.Errorf("%s: %w: provider_id ke-%d bukan UUID", op, repo.ErrInvalidReference, i+1)
 		}
-		if seen[id] {
+		kunci := strings.ToLower(id)
+		if seen[kunci] {
 			return fmt.Errorf("%s: %w: provider %s disebut dua kali, padahal satu provider hanya bisa menempati satu position",
 				op, repo.ErrConflict, id)
 		}
-		seen[id] = true
-		if w, ok := weights[id]; ok {
+		seen[kunci] = true
+		if w, ok := bobotNorm[kunci]; ok {
 			weightArgs[i] = &w
 		}
 	}

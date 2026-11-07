@@ -30,6 +30,11 @@ export interface ModelsTabProps {
   handleDeleteModel: (model: ProviderModel) => void | Promise<void>;
   onOpenAddModelModal: () => void;
   copyWithFeedback: (text: string, message: string, onCopied?: () => void) => Promise<void> | void;
+  // B-414: muatan rincian provider GAGAL — daftar kosong berarti
+  // belum terukur, bukan "belum ada model". Pemanggil (Providers)
+  // sudah menampilkan QueryError-nya di drawer; tab hanya wajib
+  // berhenti mengklaim kosong.
+  gagalMuat?: boolean;
 }
 
 export const ModelsTab: React.FC<ModelsTabProps> = ({
@@ -43,6 +48,7 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
   handleDeleteModel,
   onOpenAddModelModal,
   copyWithFeedback,
+  gagalMuat = false,
 }) => {
   const [modelSearch, setModelSearch] = useState('');
   // Pemetaan yang drawer harganya sedang dibuka; null = drawer tertutup.
@@ -182,11 +188,13 @@ export const ModelsTab: React.FC<ModelsTabProps> = ({
       ) : (
         <div className="p-5 rounded-xl border border-dashed border-border text-center space-y-2">
           <Bot className="w-8 h-8 text-text-muted mx-auto" aria-hidden="true" />
-          <p className="text-xs text-text-secondary">{modelSearch ? 'Tidak ada model yang cocok dengan kata kunci.' : 'Belum ada model upstream yang terhubung.'}</p>
-          <div className="pt-2 flex justify-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => handleSyncModels(selectedProvider)} icon={<DownloadCloud className="w-3.5 h-3.5" aria-hidden="true" />}>Tarik Model Upstream</Button>
-            <Button variant="primary" size="sm" onClick={onOpenAddModelModal} icon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}>Tambah Manual</Button>
-          </div>
+          <p className="text-xs text-text-secondary">{gagalMuat ? 'Model belum dapat dimuat.' : modelSearch ? 'Tidak ada model yang cocok dengan kata kunci.' : 'Belum ada model upstream yang terhubung.'}</p>
+          {!gagalMuat && (
+            <div className="pt-2 flex justify-center gap-2">
+              <Button variant="secondary" size="sm" onClick={() => handleSyncModels(selectedProvider)} icon={<DownloadCloud className="w-3.5 h-3.5" aria-hidden="true" />}>Tarik Model Upstream</Button>
+              <Button variant="primary" size="sm" onClick={onOpenAddModelModal} icon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}>Tambah Manual</Button>
+            </div>
+          )}
         </div>
       )}
       <PricingDrawer mapping={pricingModel} provider={selectedProvider} onClose={() => setPricingModel(null)} />

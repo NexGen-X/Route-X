@@ -18,6 +18,7 @@ import { useToast } from '../../context/ToastContext';
 import { QueryError } from '../common/QueryError';
 import { getErrorMessage } from '../../utils/error';
 import { APP_VERSION } from '../../lib/version';
+import { keadaanMuat } from '../../lib/keadaanMuat';
 
 // Section "Kesehatan Sistem" di halaman Observability (Fase 2 R6) —
 // rumah baru isi halaman Diagnostics yang dipensiunkan: checklist Uji
@@ -41,6 +42,9 @@ export const SystemHealthSection: React.FC = () => {
   const [triggeringJob, setTriggeringJob] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // B-413: kegagalan sumber JOBS secara khusus — klaim "tidak ada
+  // worker" digerbang keadaan ini, bukan oleh loadError gabungan.
+  const [jobsGagal, setJobsGagal] = useState(false);
 
   // Live Gateway Diagnostic Test State
   const [isTestingLive, setIsTestingLive] = useState(false);
@@ -69,9 +73,20 @@ export const SystemHealthSection: React.FC = () => {
       if (resJobs.status === 'fulfilled' && resJobs.value) {
         setJobs(resJobs.value.items || []);
       }
+      setJobsGagal(resJobs.status === 'rejected');
 
-      if (resDiag.status === 'rejected' && resJobs.status === 'rejected') {
-        setLoadError(getErrorMessage(resDiag.reason));
+      // B-413: kegagalan SALAH SATU sumber pun adalah galat muat
+      // yang harus terlihat — versi lama hanya menyetel loadError
+      // bila KEDUA sumber ditolak, jadi kegagalan jobs saja
+      // mengosongkan daftar tanpa satu pun penanda dan klaim
+      // "tidak ada worker" tampil definitif. Sumber yang gagal
+      // DINAMAI di pesan QueryError.
+      const gagal: string[] = [];
+      if (resDiag.status === 'rejected') gagal.push('diagnostik');
+      if (resJobs.status === 'rejected') gagal.push('daftar worker');
+      if (gagal.length > 0) {
+        const alasan = resDiag.status === 'rejected' ? resDiag.reason : (resJobs as PromiseRejectedResult).reason;
+        setLoadError(`${gagal.join(' dan ')} gagal dimuat: ${getErrorMessage(alasan)}`);
       } else {
         setLoadError(null);
       }
@@ -407,6 +422,12 @@ export const SystemHealthSection: React.FC = () => {
                 </div>
               </Card>
             ))
+          ) : keadaanMuat({ memuat: isLoading, gagal: jobsGagal, jumlah: jobs.length }) === 'gagal' ? (
+            // B-413: sumber jobs gagal — daftar kosong berarti
+            // belum terukur, bukan "tidak ada worker".
+            <div className="col-span-3 p-6 text-center rounded-box bg-bg-surface-2 border border-border/40 text-xs text-text-muted">
+              Daftar worker latar belakang belum dapat dimuat.
+            </div>
           ) : jobs.length === 0 ? (
             <div className="col-span-3 p-6 text-center rounded-box bg-bg-surface-2 border border-border/40 text-xs text-text-muted">
               Tidak ada worker latar belakang yang terdaftar atau sedang berjalan.

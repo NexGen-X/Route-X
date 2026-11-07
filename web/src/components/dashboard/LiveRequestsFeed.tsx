@@ -3,6 +3,7 @@ import { Activity, ExternalLink, Eye } from 'lucide-react';
 import { Button } from '../common/Button';
 import type { RequestLog } from '../../types';
 import { formatTimeAgo } from './utils';
+import { keadaanMuat } from '../../lib/keadaanMuat';
 
 export interface LiveRequestsFeedProps {
   recentRequests: RequestLog[];
@@ -11,13 +12,19 @@ export interface LiveRequestsFeedProps {
   // berarti "belum ada permintaan" — tampilkan keadaan memuat,
   // bukan klaim definitif.
   memuat?: boolean;
+  // B-395: muatan sumber log ini GAGAL — daftar kosong berarti
+  // "belum terukur", bukan "belum ada permintaan". Digerbang
+  // bersama lewat keadaanMuat (patokan bersama Fase 18).
+  gagal?: boolean;
 }
 
 export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
   recentRequests,
   onNavigate,
   memuat = false,
+  gagal = false,
 }) => {
+  const keadaan = keadaanMuat({ memuat, gagal, jumlah: recentRequests.length });
   return (
     <div className="flex flex-col justify-between h-full py-1">
       <div>
@@ -35,11 +42,16 @@ export const LiveRequestsFeed: React.FC<LiveRequestsFeedProps> = ({
         </div>
 
         {/* Tabular List of recent requests */}
-        {recentRequests.length === 0 ? (
-          memuat ? (
+        {keadaan !== 'ada' ? (
+          keadaan === 'memuat' ? (
             <div className="py-10 text-center text-xs text-text-muted space-y-2">
               <Activity className="w-4 h-4 mx-auto text-text-muted" aria-hidden="true" />
               <p>Memuat permintaan terbaru…</p>
+            </div>
+          ) : keadaan === 'gagal' ? (
+            <div className="py-10 text-center text-xs text-text-muted space-y-2">
+              <Activity className="w-4 h-4 mx-auto text-text-muted" aria-hidden="true" />
+              <p>Permintaan terbaru belum dapat dimuat.</p>
             </div>
           ) : (
             <div className="py-10 text-center text-xs text-text-muted space-y-2">

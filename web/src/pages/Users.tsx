@@ -9,6 +9,7 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Users, Plus, Trash2, KeyRound, LogOut, Pencil, UserCheck, Eye, EyeOff, Shield, LockOpen } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { keadaanMuat } from '../lib/keadaanMuat';
 import { validasiPassword, validasiSpasiTepiKataSandi } from '../utils/password';
 import {
   DataTableShell,
@@ -254,6 +255,15 @@ export const UsersPage: React.FC = () => {
             ))}
           </div>
         </Card>
+      ) : keadaanMuat({ memuat: isLoading, gagal: loadError != null, jumlah: users.length }) === 'gagal' ? (
+        // B-408: muatan gagal — daftar kosong berarti belum
+        // terukur, bukan "belum ada pengguna". QueryError di atas
+        // membawa rincian + coba lagi.
+        <EmptyState
+          icon={<Users className="w-5 h-5" />}
+          title="Pengguna Belum Dapat Dimuat"
+          description="Daftar pengguna belum terukur karena muatan gagal. Gunakan tombol coba lagi di pesan galat di atas."
+        />
       ) : users.length === 0 ? (
         <EmptyState
           icon={<Users className="w-5 h-5" />}

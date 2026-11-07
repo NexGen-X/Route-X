@@ -106,6 +106,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   // kegagalan yang masih berlangsung tampak sembuh setiap 5 detik.
   const [pollError, setPollError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
+  // Bendera gagal PER SUMBER untuk gerbang klaim kosong komponen
+  // (B-395): grafik dan feed permintaan menerima prop gagal dari
+  // sumbernya masing-masing, supaya muatan pertama yang gagal
+  // tidak lagi tampil sebagai "belum ada sampel/permintaan" yang
+  // definitif. Ditulis loadData dan (untuk log) refreshOverview.
+  const [grafikGagal, setGrafikGagal] = useState(false);
+  const [logGagal, setLogGagal] = useState(false);
   // Penanda daftar provider terpotong (sisa V-FF-28): hasil listAll
   // bertanda `terpotong` tidak boleh tampil seolah matriks kesehatan
   // provider sudah lengkap.
@@ -170,8 +177,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
         if (serRes.status === 'fulfilled' && serRes.value) {
           setSeries(serRes.value.points || []);
+          setGrafikGagal(false);
         } else if (serRes.status === 'rejected') {
           failedEndpoints.push('Grafik Trafik');
+          setGrafikGagal(true);
         }
 
         if (provRes.status === 'fulfilled' && provRes.value) {
@@ -191,8 +200,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
         if (reqRes.status === 'fulfilled' && reqRes.value) {
           setRecentRequests(reqRes.value.items || []);
+          setLogGagal(false);
         } else if (reqRes.status === 'rejected') {
           failedEndpoints.push('Log Permintaan');
+          setLogGagal(true);
         }
 
         if (sumRes.status === 'rejected') {
@@ -254,10 +265,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       }
       if (reqRes.status === 'fulfilled' && reqRes.value) {
         setRecentRequests(reqRes.value.items || []);
+        setLogGagal(false);
+      } else if (reqRes.status === 'rejected') {
+        setLogGagal(true);
       }
 
-      if (overRes.status === 'rejected' && reqRes.status === 'rejected') {
-        setLiveError('Gateway overview dan recent requests tidak merespons.');
+      // B-396: kegagalan SATU sumber pun adalah kegagalan poll —
+      // versi lama hanya menyetel liveError bila KEDUA sumber
+      // ditolak, jadi kegagalan tunggal terhapus (null) dan tak
+      // pernah tampil di banner, seolah poll sehat. Kini sumber
+      // yang ditolak DINAMAI, dan error hanya bersih bila kedua
+      // sumber berhasil.
+      const gagalLive: string[] = [];
+      if (overRes.status === 'rejected') gagalLive.push('Gateway overview');
+      if (reqRes.status === 'rejected') gagalLive.push('recent requests');
+      if (gagalLive.length > 0) {
+        setLiveError(`${gagalLive.join(' dan ')} tidak merespons.`);
       } else {
         setLiveError(null);
       }
@@ -401,13 +424,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 timeWindow={timeWindow}
                 setTimeWindow={setTimeWindow}
                 memuat={isLoading}
+                gagal={grafikGagal}
               />
             </React.Suspense>
           </WidgetErrorBoundary>
         </div>
         <div>
           <WidgetErrorBoundary title="Feed Permintaan Terbaru" onRetry={() => void refreshOverview()}>
-            <LiveRequestsFeed recentRequests={recentRequests} onNavigate={onNavigate} memuat={isLoading} />
+            <LiveRequestsFeed recentRequests={recentRequests} onNavigate={onNavigate} memuat={isLoading} gagal={logGagal} />
           </WidgetErrorBoundary>
         </div>
       </div>

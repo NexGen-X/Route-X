@@ -696,28 +696,39 @@ export const Providers: React.FC = () => {
         headerExtra={
           selectedProvider && (
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${
-                  selectedProvider.last_health_status === 'healthy'
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                    : 'bg-red-500/10 text-red-400 border-red-500/20'
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    selectedProvider.last_health_status === 'healthy'
-                      ? 'bg-emerald-400 animate-pulse'
-                      : 'bg-red-400'
-                  }`}
-                />
-                <span>
-                  {selectedProvider.last_health_status === 'healthy'
-                    ? `HEALTHY ${selectedProvider.last_latency_ms ? `(${selectedProvider.last_latency_ms} ms)` : ''}`
-                    : 'UNHEALTHY'}
-                </span>
-              </span>
+              {/* B-406: badge kesehatan drawer memakai semantik
+                  yang sama dengan ProviderCard — versi lama biner
+                  healthy→HEALTHY / selainnya→UNHEALTHY merah,
+                  sehingga provider yang belum pernah diuji,
+                  terdegradasi, atau nonaktif tampil sebagai
+                  UNHEALTHY yang definitif. */}
+              {(() => {
+                const s = !selectedProvider.enabled
+                  ? { kelas: 'bg-bg-surface-2 text-text-muted border-border', titik: 'bg-text-muted', teks: 'NONAKTIF' }
+                  : selectedProvider.last_health_status === 'healthy'
+                    ? {
+                        kelas: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                        titik: 'bg-emerald-400 animate-pulse',
+                        teks: `HEALTHY ${selectedProvider.last_latency_ms ? `(${selectedProvider.last_latency_ms} ms)` : ''}`,
+                      }
+                    : selectedProvider.last_health_status === 'degraded'
+                      ? { kelas: 'bg-amber-500/10 text-amber-400 border-amber-500/20', titik: 'bg-amber-400', teks: 'DEGRADED' }
+                      : selectedProvider.last_health_status === 'unhealthy'
+                        ? { kelas: 'bg-red-500/10 text-red-400 border-red-500/20', titik: 'bg-red-400', teks: 'UNHEALTHY' }
+                        : { kelas: 'bg-bg-surface-2 text-text-muted border-border', titik: 'bg-text-muted', teks: 'BELUM DIUJI' };
+                return (
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 flex-shrink-0 ${s.kelas}`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${s.titik}`} />
+                    <span>{s.teks}</span>
+                  </span>
+                );
+              })()}
               <span className="text-[10px] text-text-muted font-mono">
-                {models.length} Model • {credentials.length} Key
+                {providerDetailsError
+                  ? '— Model • — Key'
+                  : `${models.length} Model • ${credentials.length} Key`}
               </span>
             </div>
           )
@@ -826,6 +837,7 @@ export const Providers: React.FC = () => {
                 handleDeleteModel={handleDeleteModel}
                 onOpenAddModelModal={() => setIsAddModelModalOpen(true)}
                 copyWithFeedback={copyWithFeedback}
+                gagalMuat={providerDetailsError != null}
               />
             )}
 
@@ -842,6 +854,7 @@ export const Providers: React.FC = () => {
                 credentials={credentials}
                 oauthSessions={oauthSessions}
                 egressPools={egressPools}
+                gagalMuat={providerDetailsError != null}
                 handleToggleKey={handleToggleKey}
                 handleDeleteKey={handleDeleteKey}
                 loadProviderDetails={loadProviderDetails}

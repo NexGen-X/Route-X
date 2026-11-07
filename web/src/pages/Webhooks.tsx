@@ -28,6 +28,9 @@ export const Webhooks: React.FC = () => {
   const [selectedWebhook, setSelectedWebhook] = useState<Webhook | null>(null);
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([]);
   const [deliveriesLoading, setDeliveriesLoading] = useState(false);
+  // B-415: galat muat riwayat pengiriman (keadaan persisten di
+  // samping toast) untuk gerbang klaim kosong drawer.
+  const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
 
   const [selectedDeliveryId, setSelectedDeliveryId] = useState<number | null>(null);
   const [deliveryDetails, setDeliveryDetails] = useState<WebhookDelivery | null>(null);
@@ -165,8 +168,14 @@ export const Webhooks: React.FC = () => {
       const res = await api.webhooks.getDeliveries(id);
       if (deliveriesReqRef.current !== reqId) return;
       setDeliveries(res.items || []);
+      setDeliveriesError(null);
     } catch (err: unknown) {
       if (deliveriesReqRef.current !== reqId) return;
+      // B-415: kegagalan dicatat sebagai KEADAAN, bukan hanya
+      // toast sesaat — tanpa ini drawer jatuh ke klaim "Belum ada
+      // riwayat pengiriman." untuk daftar yang tidak pernah
+      // terukur.
+      setDeliveriesError(getErrorMessage(err, 'Gagal memuat riwayat pengiriman.'));
       toast.error(getErrorMessage(err, 'Gagal memuat riwayat pengiriman.'));
     } finally {
       if (deliveriesReqRef.current === reqId) {
@@ -179,6 +188,7 @@ export const Webhooks: React.FC = () => {
     setSelectedWebhook(wh);
     // Bersihkan sisa webhook sebelumnya SEBELUM memuat yang baru (V-FF-21).
     setDeliveries([]);
+    setDeliveriesError(null);
     setSelectedDeliveryId(null);
     setDeliveryDetails(null);
     void loadDeliveries(wh.id);
@@ -435,7 +445,11 @@ export const Webhooks: React.FC = () => {
           <p className="text-xs text-text-muted py-6 text-center">Memuat riwayat pengiriman...</p>
         ) : (
           <div className="space-y-4">
-            {deliveries.length === 0 ? (
+            {deliveries.length === 0 && deliveriesError ? (
+              // B-415: muatan riwayat gagal — kosong berarti belum
+              // terukur, bukan "belum ada riwayat".
+              <p className="text-xs text-text-muted py-6 text-center">Riwayat pengiriman belum dapat dimuat.</p>
+            ) : deliveries.length === 0 ? (
               <p className="text-xs text-text-muted py-6 text-center">Belum ada riwayat pengiriman.</p>
             ) : (
               <div className="space-y-2">

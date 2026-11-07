@@ -45,6 +45,10 @@ export interface DomainTabProps {
 export interface BackupTabProps {
   backupStatus: BackupStatusResponse | null;
   isBackupLoading: boolean;
+  // B-412: galat muat status backup dari halaman induk — tab
+  // menampilkannya dan berhenti mengklaim "belum ada / siap"
+  // untuk status yang tidak pernah terukur.
+  backupError?: string | null;
   exportFormat: 'sql.gz' | 'sql';
   selectedBackupFile: File | null;
   isRestoring: boolean;
@@ -62,6 +66,10 @@ export interface AdvancedSettingsTabProps {
   settings: RuntimeSettingItem[];
   editValues: Record<string, string>;
   isLoading: boolean;
+  // B-411: muatan setelan GAGAL — daftar kosong berarti belum
+  // terukur, bukan "belum ada parameter". Halaman induk sudah
+  // menampilkan QueryError-nya; tab berhenti mengklaim kosong.
+  gagalMuat?: boolean;
   savingKey: string | null;
   onRefresh: () => void;
   onOpenCreateModal: () => void;

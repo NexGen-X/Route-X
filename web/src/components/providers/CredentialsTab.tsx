@@ -52,6 +52,11 @@ export interface CredentialsTabProps {
   api: typeof apiClient;
   copyWithFeedback: (text: string, message: string, onCopied?: () => void) => Promise<void> | void;
   onUpdateProvider?: (updated: Provider) => void;
+  // B-414: muatan rincian provider GAGAL — daftar kosong berarti
+  // belum terukur, bukan "belum ada kredensial". Pemanggil sudah
+  // menampilkan QueryError-nya di drawer; tab hanya wajib berhenti
+  // mengklaim kosong.
+  gagalMuat?: boolean;
 }
 
 export const CredentialsTab: React.FC<CredentialsTabProps> = ({
@@ -67,6 +72,7 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
   api,
   copyWithFeedback,
   onUpdateProvider,
+  gagalMuat = false,
 }) => {
   const [isAddingKeyInline, setIsAddingKeyInline] = useState(false);
   const [inlineAuthTab, setInlineAuthTab] = useState<'apikey' | 'authlogin'>('apikey');
@@ -778,19 +784,23 @@ export const CredentialsTab: React.FC<CredentialsTabProps> = ({
         <div className="p-5 rounded-xl border border-dashed border-border text-center space-y-2">
           <KeyRound className="w-8 h-8 text-text-muted mx-auto" aria-hidden="true" />
           <p className="text-xs text-text-secondary">
-            {isAntigravity
-              ? 'Belum ada akun Google Antigravity yang terhubung ke pool.'
-              : 'Belum ada kredensial API key untuk provider ini.'}
+            {gagalMuat
+              ? 'Kredensial belum dapat dimuat.'
+              : isAntigravity
+                ? 'Belum ada akun Google Antigravity yang terhubung ke pool.'
+                : 'Belum ada kredensial API key untuk provider ini.'}
           </p>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setIsAddingKeyInline(true)}
-            icon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}
-            className="min-h-[44px] sm:min-h-[38px]"
-          >
-            {isAntigravity ? 'Hubungkan Akun Google Pertama' : 'Tambah API Key Pertama'}
-          </Button>
+          {!gagalMuat && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsAddingKeyInline(true)}
+              icon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}
+              className="min-h-[44px] sm:min-h-[38px]"
+            >
+              {isAntigravity ? 'Hubungkan Akun Google Pertama' : 'Tambah API Key Pertama'}
+            </Button>
+          )}
         </div>
       )}
     </div>

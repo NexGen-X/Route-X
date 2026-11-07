@@ -7,6 +7,7 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Network, Plus, RefreshCw, Zap } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { keadaanMuat } from '../lib/keadaanMuat';
 import {
   EgressProbeFeedback,
   EgressPoolCard,
@@ -151,6 +152,17 @@ export const Egress: React.FC = () => {
             </Card>
           ))}
         </div>
+      ) : keadaanMuat({ memuat: isLoading, gagal: loadError != null, jumlah: pools.length }) === 'gagal' ? (
+        // B-407: muatan gagal — daftar kosong berarti belum
+        // terukur, bukan "belum ada pool". QueryError di atas sudah
+        // membawa rincian + coba lagi; di sini cukup teks netral
+        // tanpa CTA buat-baru yang menyiratkan kekosongan.
+        <Card className="p-12 text-center">
+          <h3 className="text-base font-bold text-white">Pool Egress Belum Dapat Dimuat</h3>
+          <p className="text-xs text-text-secondary mt-1 max-w-md mx-auto">
+            Daftar pool belum terukur karena muatan gagal. Gunakan tombol coba lagi di pesan galat di atas.
+          </p>
+        </Card>
       ) : pools.length === 0 ? (
         <Card className="p-12 text-center">
           <div className="w-12 h-12 rounded-full bg-accent/10 text-accent-text flex items-center justify-center mx-auto mb-4">

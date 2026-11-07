@@ -7,6 +7,7 @@ import { PageHeader } from '../components/common/PageHeader';
 import { Plus, Layers } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
+import { keadaanMuat } from '../lib/keadaanMuat';
 import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
 import {
   CircuitBreakersPanel,
@@ -205,6 +206,15 @@ export const RoutingRules: React.FC = () => {
             </Card>
           ))}
         </div>
+      ) : keadaanMuat({ memuat: isRulesLoading, gagal: rulesError != null, jumlah: rules.length }) === 'gagal' ? (
+        // B-409: muatan aturan gagal — daftar kosong berarti belum
+        // terukur, bukan "belum ada aturan". QueryError di atas
+        // membawa rincian + coba lagi.
+        <EmptyState
+          icon={<Layers className="w-5 h-5" />}
+          title="Aturan Perutean Belum Dapat Dimuat"
+          description="Daftar aturan belum terukur karena muatan gagal. Gunakan tombol coba lagi di pesan galat di atas."
+        />
       ) : rules.length === 0 ? (
         <EmptyState
           icon={<Layers className="w-5 h-5" />}

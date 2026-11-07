@@ -7,6 +7,7 @@ import { DataTableShell, kelasSelIsi } from '../components/common/DataTableShell
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
 import { QueryError } from '../components/common/QueryError';
+import { keadaanMuat } from '../lib/keadaanMuat';
 import { RefreshCw, Activity } from 'lucide-react';
 import {
   RequestFilterBar,
@@ -271,6 +272,19 @@ export const Requests: React.FC = () => {
         {/* Requests List: Card List on Mobile, Table on Desktop */}
         {isLoading ? (
           <RequestTableSkeleton />
+        ) : keadaanMuat({ memuat: isLoading, gagal: loadError != null, jumlah: requests.length }) === 'gagal' ? (
+          // B-410: muatan gagal — daftar kosong berarti belum
+          // terukur, bukan "tidak ada catatan". QueryError di atas
+          // kartu membawa rincian + coba lagi.
+          <div className="py-12 px-4 text-center space-y-3">
+            <Activity className="w-8 h-8 mx-auto text-text-muted/40" aria-hidden="true" />
+            <div className="text-sm font-semibold text-white">
+              Catatan permintaan belum dapat dimuat
+            </div>
+            <p className="text-xs text-text-muted max-w-sm mx-auto">
+              Daftar permintaan belum terukur karena muatan gagal. Gunakan tombol coba lagi di pesan galat di atas.
+            </p>
+          </div>
         ) : requests.length === 0 ? (
           <div className="py-12 px-4 text-center space-y-3">
             <Activity className="w-8 h-8 mx-auto text-text-muted/40" aria-hidden="true" />

@@ -15,6 +15,7 @@ import type { BackupTabProps } from './types';
 export const BackupTab: React.FC<BackupTabProps> = ({
   backupStatus,
   isBackupLoading,
+  backupError = null,
   exportFormat,
   selectedBackupFile,
   isRestoring,
@@ -75,6 +76,16 @@ export const BackupTab: React.FC<BackupTabProps> = ({
         </div>
       )}
 
+      {/* B-412: galat muat status tampil, tidak ditelan. */}
+      {backupError && (
+        <p role="alert" className="mt-4 text-xs text-red-400">
+          Gagal memuat status backup: {backupError}{' '}
+          <button type="button" onClick={onRefresh} className="underline cursor-pointer">
+            Coba lagi
+          </button>
+        </p>
+      )}
+
       {/* Ringkasan Status Database */}
       <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="py-1">
@@ -106,13 +117,31 @@ export const BackupTab: React.FC<BackupTabProps> = ({
         </div>
         <div className="py-1">
           <span className="text-text-muted block text-[11px] font-medium">Cadangan Server Terakhir</span>
-          <span className="font-mono text-emerald-400 text-xs font-semibold truncate block">
-            {backupStatus?.last_server_backup ? backupStatus.last_server_backup.file_size : 'Belum ada'}
+          {/* B-412: sel ini dulu mengklaim 'Belum ada' hijau +
+              'Sistem siap di-backup' bahkan saat status GAGAL
+              dimuat — status tak-terukur kini netral, dan hijau
+              hanya untuk cadangan yang benar-benar ada. */}
+          <span
+            className={`font-mono text-xs font-semibold truncate block ${
+              backupStatus?.last_server_backup ? 'text-emerald-400' : 'text-text-primary'
+            }`}
+          >
+            {isBackupLoading
+              ? 'Memuat...'
+              : backupStatus == null
+                ? '—'
+                : backupStatus.last_server_backup
+                  ? backupStatus.last_server_backup.file_size
+                  : 'Belum ada'}
           </span>
           <span className="text-[10px] text-text-muted font-mono mt-0.5 truncate block">
             {backupStatus?.last_server_backup
               ? new Date(backupStatus.last_server_backup.created_at).toLocaleString('id-ID')
-              : 'Sistem siap di-backup'}
+              : backupStatus
+                ? 'Sistem siap di-backup'
+                : isBackupLoading
+                  ? 'Memuat...'
+                  : 'Status cadangan belum terukur'}
           </span>
         </div>
       </div>

@@ -506,7 +506,10 @@ export const APIKeys: React.FC = () => {
           B-554). Cabang muat-awal gagal tidak melahirkan meter sama
           sekali — tanpa penanda ini kartu kunci beranggaran tak
           terbedakan dari kartu tanpa anggaran; cabang refetch gagal
-          ditandai per kartu lewat prop budgetGagal di bawah. */}
+          ditandai per kartu lewat prop budgetGagal di bawah.
+          B-572: teks spanduk memakai rumusan yang akurat di kedua
+          cabang — meter TIDAK menampilkan angka terakhir saat
+          refetch gagal (bukan "memakai data terakhir"). */}
       {isBudgetsError && (
         <div
           role="alert"
@@ -514,8 +517,8 @@ export const APIKeys: React.FC = () => {
         >
           <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" aria-hidden="true" />
           <div className="flex-1">
-            Anggaran gagal dimuat: meter anggaran pada kartu memakai data terakhir yang berhasil
-            dimuat (atau tidak tampil bila belum pernah termuat), bukan keadaan terukur saat ini.
+            Anggaran gagal dimuat: meter anggaran pada kartu tidak menampilkan angka terakhir
+            (atau tidak tampil bila belum pernah termuat), bukan keadaan terukur saat ini.
           </div>
         </div>
       )}

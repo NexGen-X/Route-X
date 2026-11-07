@@ -14,6 +14,14 @@ import type { APIKey } from '../types';
 // satu-satunya indikator anggaran di kartu). Kini gerbang
 // isError budgets → meter '—' berpenanda basi per kartu +
 // spanduk gagal-muat persisten di halaman (pola B-554/B-555).
+//
+// B-572 (teks spanduk B-558, cabang refetch): spanduk lama berbunyi
+// "meter anggaran pada kartu memakai data terakhir yang berhasil
+// dimuat" — padahal di cabang refetch meter justru TIDAK memakai
+// data terakhir (kartu menampilkan '—' + "Data anggaran basi").
+// Spanduk kini menyatakan meter tidak menampilkan angka terakhir.
+// Asersi /tidak menampilkan angka terakhir/ + larangan frasa lama
+// di bawah adalah pengunci B-572: keduanya GAGAL di teks lama.
 
 const KEY_BERANGGARAN: APIKey = {
   id: 'key-1',
@@ -118,6 +126,10 @@ describe('APIKeys — meter anggaran saat budgets gagal (B-558)', () => {
     expect(screen.queryByText(/\$45\.00 \/ \$50\.00 \(90%\)/)).not.toBeInTheDocument();
     // Spanduk gagal-muat persisten ikut tampil di halaman.
     expect(await screen.findByRole('alert')).toHaveTextContent(/Anggaran gagal dimuat/);
+    // B-572: spanduk tidak boleh mengklaim meter memakai data
+    // terakhir — di cabang refetch ini meter justru menampilkan '—'.
+    expect(screen.getByRole('alert')).toHaveTextContent(/tidak menampilkan angka terakhir/);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/memakai data terakhir/);
     // Label meter tetap ada (kartu beranggaran tetap terbedakan),
     // tetapi angkanya penanda netral '—', bukan angka basi.
     expect(screen.getAllByText(/Anggaran Bulanan/)).toHaveLength(1);
@@ -130,6 +142,10 @@ describe('APIKeys — meter anggaran saat budgets gagal (B-558)', () => {
 
     expect(await screen.findByText('Kunci Beranggaran')).toBeInTheDocument();
     expect(await screen.findByRole('alert')).toHaveTextContent(/Anggaran gagal dimuat/);
+    // B-572: teks spanduk yang sama harus akurat juga di cabang
+    // muat-awal — meter tidak menampilkan angka terakhir.
+    expect(screen.getByRole('alert')).toHaveTextContent(/tidak menampilkan angka terakhir/);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/memakai data terakhir/);
     expect(screen.queryByText(/\$45\.00/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Anggaran Bulanan/)).not.toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();

@@ -544,6 +544,27 @@ export const CLIIntegrations: React.FC = () => {
           </span>
         </div>
       )}
+      {/* B-534: kegagalan sumber UTAMA (cli.detected) pada Pindai
+          Ulang dulu tertelan total — loadError hanya dirender pada
+          cabang !data di atas, jadi begitu data pertama ada, kartu,
+          lencana, dan hitungan basi tampil definitif tanpa penanda
+          (kelas B-518 di sumber utama halaman). Semantik
+          keadaanMuat tetap: data lama menang untuk DITAMPILKAN,
+          tetapi kegagalannya wajib TERLIHAT — banner ini menandai
+          daftar sebagai hasil pindai sebelumnya. */}
+      {loadError && data && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-xl p-3 flex items-center gap-2"
+        >
+          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" aria-hidden="true" />
+          <span>
+            Pindai ulang gagal: {loadError}. Daftar di bawah adalah hasil pindai sebelumnya — bukan hasil pindai
+            terkini.
+          </span>
+        </div>
+      )}
       <PageHeader
         title="Integrasi CLI & Editor AI"
         actions={

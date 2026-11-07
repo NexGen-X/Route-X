@@ -176,6 +176,28 @@ func (h *Handlers) getDomainConfigFromDB(ctx context.Context) (*StoredDomainConf
 	return &cfg, nil
 }
 
+// publicURLTersimpanSama melaporkan apakah kunci KEDUA yang
+// ditulis transaksi updateDomainConfig (SettingKeyPublicURL)
+// masih memuat persis nilai yang akan ditulis handler itu
+// ("https://"+domain) — separuh kedua gerbang nilai-sama B-532.
+// Kunci hilang, tak terbaca, atau menyimpang menjawab false:
+// gerbang gugur dan jalur tulis berjalan, menyembuhkan keadaan
+// (arah aman — menulis, bukan diam).
+func (h *Handlers) publicURLTersimpanSama(ctx context.Context, domain string) bool {
+	if h.settingsRepo == nil {
+		return false
+	}
+	s, err := h.settingsRepo.Get(ctx, SettingKeyPublicURL)
+	if err != nil || len(s.Value) == 0 {
+		return false
+	}
+	var pubURL string
+	if err := json.Unmarshal(s.Value, &pubURL); err != nil {
+		return false
+	}
+	return pubURL == "https://"+domain
+}
+
 // domainDariPublicURL mengekstrak nama domain dari PUBLIC_URL konfigurasi
 // env (h.publicURL), atau "" bila tidak ada / hostnya bukan domain.
 //
@@ -378,9 +400,32 @@ func (h *Handlers) updateDomainConfig(w http.ResponseWriter, r *http.Request) {
 	// respons GET maupun POST selalu menghitung last_checked dari
 	// waktu respons, jadi kesegaran pemeriksaan tidak pernah
 	// dibaca dari nilai tersimpan ini.
+	//
+	// B-532: gerbang versi B-521 hanya membandingkan kunci
+	// PERTAMA dari dua yang ditulis transaksi handler ini —
+	// public_url yang menyimpang/hilang dibiarkan oleh POST
+	// identik, padahal resolveGatewayURL memprioritaskan nilai
+	// tersimpan itu sementara DTO respons (dihitung dari domain)
+	// tampak benar. Gerbang kini membandingkan SEMUA kunci yang
+	// ditulis transaksi di bawah (enumerasi dari badan transaksi:
+	// SettingKeyDomainConfig lewat perbandingan di atas, dan
+	// SettingKeyPublicURL lewat publicURLTersimpanSama). Di dalam
+	// nilai kunci pertama, field yang dibandingkan adalah
+	// domain+mode+status; last_checked dikecualikan oleh keputusan
+	// B-521 di atas, dan message tersimpan adalah konstanta yang
+	// ditulis handler ini sendiri (tidak ada pembaca nilai
+	// tersimpannya — GET/POST menghitung pesan sendiri).
+	//
+	// B-539: DTO jalur no-op kini memuat Message yang SAMA dengan
+	// jalur tulis — versi B-521 mengosongkannya (omitempty
+	// menghilangkannya dari JSON), jadi dua bentuk respons untuk
+	// operasi yang dinyatakan identik. Keputusan: bentuk DTO
+	// disamakan persis, bukan didokumentasikan sebagai perbedaan,
+	// karena konsumen tidak punya cara membedakan "baru ditulis"
+	// dari "sudah sama" selain field itu.
 	if tersimpan, errTersimpan := h.getDomainConfigFromDB(ctx); errTersimpan == nil &&
 		tersimpan != nil && tersimpan.Domain == domain && tersimpan.Mode == mode &&
-		tersimpan.Status == "active" {
+		tersimpan.Status == "active" && h.publicURLTersimpanSama(ctx, domain) {
 		sekarang := time.Now().UTC()
 		_ = h.respond(w, r, http.StatusOK, DomainConfigDTO{
 			Domain:      domain,
@@ -392,6 +437,7 @@ func (h *Handlers) updateDomainConfig(w http.ResponseWriter, r *http.Request) {
 			ResolvedIPs: ips,
 			DNSMatched:  dnsMatched,
 			LastChecked: &sekarang,
+			Message:     "Domain dan HTTPS otomatis berhasil diaktifkan. Anda kini dapat mengakses dashboard dan API via HTTPS.",
 		})
 		return
 	}

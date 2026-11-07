@@ -349,3 +349,38 @@ describe('CLIIntegrations — kejujuran muatan parsial (B-225)', () => {
     expect(screen.queryByText(/Sebagian data gagal dimuat/)).not.toBeInTheDocument();
   });
 });
+
+describe('CLIIntegrations — kegagalan pindai ulang sumber utama (B-534)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('Pindai Ulang gagal pada cli.detected → banner basi tampil dan data lama tetap tampil bertanda', async () => {
+    render(<CLIIntegrations />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Claude Code')).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Pindai ulang gagal/)).not.toBeInTheDocument();
+
+    // Pindai ulang: sumber utama gagal. Versi lama menelannya —
+    // loadError hanya dirender bila belum ada data sama sekali.
+    vi.mocked(api.cli.detected).mockRejectedValueOnce(new Error('server mati'));
+    fireEvent.click(screen.getAllByRole('button', { name: /Pindai Ulang/i })[0]);
+
+    expect(
+      await screen.findByText(/Pindai ulang gagal: server mati\. Daftar di bawah adalah hasil pindai sebelumnya/),
+    ).toBeInTheDocument();
+    // Data lama tetap tampil (semantik keadaanMuat: data menang
+    // untuk ditampilkan) — tetapi kini BERTANDA basi.
+    expect(screen.getByText('Claude Code')).toBeInTheDocument();
+  });
+
+  it('muat pertama gagal pada cli.detected → QueryError penuh tetap tampil (jalur lama tidak berubah)', async () => {
+    vi.mocked(api.cli.detected).mockRejectedValueOnce(new Error('server mati'));
+    render(<CLIIntegrations />);
+
+    expect(await screen.findByText(/server mati/)).toBeInTheDocument();
+    expect(screen.queryByText('Claude Code')).not.toBeInTheDocument();
+  });
+});

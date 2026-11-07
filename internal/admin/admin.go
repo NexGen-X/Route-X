@@ -437,9 +437,15 @@ func (h *Handlers) invalidateBudgets() {
 // perubahan kredensial adalah satu-satunya perubahan konteks jawaban yang
 // tidak menghasilkan kunci baru dengan sendirinya (sisa V-GW-03, Batch
 // C1). Perubahan provider/routing/pemetaan tidak memerlukan ini karena
-// sidik rute mengubah kuncinya sendiri. Best-effort mengikuti pola
-// invalidate* di atas: kegagalan dicatat, tidak menggagalkan mutasi yang
-// sudah berhasil.
+// sidik rute mengubah kuncinya sendiri — DENGAN SATU PENGECUALIAN (B-392):
+// egress_pool_id provider. Jalur egress menentukan perantara yang
+// melayani jawaban, tetapi sidik rute (gateway.sidikRuteCache) hanya
+// memuat kandidat terpilih + versi katalog, bukan pool egress
+// kandidatnya — mengganti pool provider tidak mengubah kunci, jadi
+// updateProvider WAJIB memanggil ini bila field itu disebut. Enumerasi
+// lengkap mutasi vs flush ada di badan PR Fase 18 PR-C. Best-effort
+// mengikuti pola invalidate* di atas: kegagalan dicatat, tidak
+// menggagalkan mutasi yang sudah berhasil.
 func (h *Handlers) kosongkanCacheRespons(ctx context.Context) {
 	if h.responseCache == nil || !h.responseCache.IsEnabled() {
 		return

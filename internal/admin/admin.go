@@ -637,6 +637,15 @@ func mapRepoError(w http.ResponseWriter, r *http.Request, err error, resource st
 		// dan webhooks kini ikut menolak params kosong dengan
 		// sentinelnya masing-masing, bukan menjawab 200 idempoten.
 		httpx.BadRequest(w, r, "no_changes", fmt.Sprintf("tidak ada perubahan yang diminta untuk %s", resource))
+	case errors.Is(err, security.ErrBlockedScheme) || errors.Is(err, security.ErrBlockedAddress):
+		// B-470: URL yang ditolak kebijakan SSRF (skema atau alamat
+		// terlarang) adalah kesalahan masukan pemanggil, bukan
+		// kegagalan server. Repo webhook menjalankan ValidateBaseURL
+		// atas setiap URL yang disebut pada update — termasuk ""
+		// dari klien yang bermaksud mengosongkan URL — dan
+		// sentinelnya dulu tidak punya cabang di sini, jadi penolakan
+		// masukan yang murni ini jatuh ke default 500.
+		httpx.BadRequest(w, r, "blocked_url", fmt.Sprintf("URL untuk %s tidak diizinkan oleh kebijakan keamanan", resource))
 	case errors.Is(err, repo.ErrConstraint):
 		cName := repo.ConstraintName(err)
 		observability.LoggerFrom(r.Context()).LogAttrs(r.Context(), slog.LevelWarn,

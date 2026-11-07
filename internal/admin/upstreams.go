@@ -374,6 +374,37 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	}
 	params.Metadata = req.Metadata
 
+	// B-469: field yang disebut dengan nilai yang PERSIS sama
+	// dengan yang tersimpan bukan perubahan — tolak no_changes
+	// sejajar params kosong, supaya audit "update", siraman
+	// egress/rename, dan tulisan DB tidak terjadi untuk no-op.
+	// Perbandingan berjalan atas params hasil normalisasi handler
+	// (nama/kind ternormalisasi) melawan pAda dari pemeriksaan
+	// akses. Metadata dibandingkan secara semantik JSON.
+	disebut := params.Name != nil || params.DisplayName != nil || params.Kind != nil ||
+		params.BaseURL != nil || req.Enabled != nil || req.Priority != nil || req.Weight != nil ||
+		req.TimeoutMS != nil || req.MaxRetries != nil || params.RateLimitRPM.Set ||
+		params.RateLimitTPM.Set || params.MaxConcurrent.Set || params.EgressPoolID.Set ||
+		req.Metadata != nil
+	if disebut &&
+		samaBilaDisebut(params.Name, &pAda.Name) &&
+		samaBilaDisebut(params.DisplayName, &pAda.DisplayName) &&
+		samaBilaDisebut(params.Kind, &pAda.Kind) &&
+		samaBilaDisebut(params.BaseURL, &pAda.BaseURL) &&
+		samaBilaDisebut(req.Enabled, &pAda.Enabled) &&
+		samaBilaDisebut(req.Priority, &pAda.Priority) &&
+		samaBilaDisebut(req.Weight, &pAda.Weight) &&
+		samaBilaDisebut(req.TimeoutMS, &pAda.TimeoutMS) &&
+		samaBilaDisebut(req.MaxRetries, &pAda.MaxRetries) &&
+		optSama(params.RateLimitRPM.Set, params.RateLimitRPM.Value, pAda.RateLimitRPM) &&
+		optSama(params.RateLimitTPM.Set, params.RateLimitTPM.Value, pAda.RateLimitTPM) &&
+		optSama(params.MaxConcurrent.Set, params.MaxConcurrent.Value, pAda.MaxConcurrent) &&
+		optSama(params.EgressPoolID.Set, params.EgressPoolID.Value, pAda.EgressPoolID) &&
+		(req.Metadata == nil || jsonSamaSemantik(req.Metadata, pAda.Metadata)) {
+		mapRepoError(w, r, upstream.ErrNoChanges, "provider")
+		return
+	}
+
 	var p *upstream.Provider
 	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txRepo := h.providerRepo.WithQuerier(q)
@@ -447,7 +478,8 @@ func (h *Handlers) toggleProvider(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	// Isolasi BYOK: pastikan pemanggil berhak mengakses provider ini
-	if _, err := h.authorizeProviderAccess(ctx, id); err != nil {
+	pAda, err := h.authorizeProviderAccess(ctx, id)
+	if err != nil {
 		mapRepoError(w, r, err, "provider")
 		return
 	}
@@ -455,6 +487,15 @@ func (h *Handlers) toggleProvider(w http.ResponseWriter, r *http.Request) {
 	enabled, err := decodeToggleEnabled(r)
 	if err != nil {
 		tolakToggle(w, r, err)
+		return
+	}
+
+	// B-469: toggle ke keadaan yang SUDAH berlaku adalah no-op —
+	// jawab keadaan tersimpan tanpa transaksi & tanpa audit
+	// "toggle" (provider yang dimuat pemeriksaan akses adalah
+	// keadaan yang sama yang akan ditulis SetEnabled).
+	if pAda.Enabled == enabled {
+		_ = h.respond(w, r, http.StatusOK, toProviderDTO(pAda))
 		return
 	}
 
@@ -1791,6 +1832,17 @@ func (h *Handlers) toggleCredential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-469: toggle ke keadaan yang SUDAH berlaku adalah no-op —
+	// tanpa audit "toggle" dan tanpa siraman cache (siraman pada
+	// no-op ikut membuang entri yang tidak berhubungan). Kredensial
+	// yang tidak ditemukan / bukan milik provider ini dibiarkan
+	// jatuh ke jalur transaksi yang menjawab errornya seperti biasa.
+	if ada, err := h.credentialRepo.Get(ctx, credID); err == nil && ada != nil &&
+		ada.ProviderID == providerID && ada.Enabled == enabled {
+		_ = h.respond(w, r, http.StatusOK, toCredentialMetaDTO(ada))
+		return
+	}
+
 	// 5.1 & 5.8: Modifikasi status kredensial bersyarat provider_id dan lakukan audit log di dalam transaksi
 	var cred *upstream.CredentialMeta
 	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
@@ -1860,6 +1912,18 @@ func (h *Handlers) setCredentialEgressPool(w http.ResponseWriter, r *http.Reques
 	}
 	if cred.ProviderID != providerID {
 		httpx.Forbidden(w, r, "Kredensial bukan milik provider ini")
+		return
+	}
+
+	// B-469: ikatan pool yang diminta PERSIS sama dengan yang
+	// tersimpan (termasuk lepas-ikatan saat memang tak terikat)
+	// adalah no-op — jawab keadaan tersimpan tanpa transaksi,
+	// tanpa audit "update_egress_pool", dan tanpa siraman cache:
+	// versi lama tetap menjalankan ketiganya pada setiap no-op,
+	// jadi endpoint ini mengosongkan seluruh response cache untuk
+	// permintaan yang tidak mengubah apa pun.
+	if ptrSama(cred.EgressPoolID, poolID) {
+		_ = h.respond(w, r, http.StatusOK, toCredentialMetaDTO(cred))
 		return
 	}
 
@@ -2125,6 +2189,30 @@ func (h *Handlers) updateModel(w http.ResponseWriter, r *http.Request) {
 		params.RoutingStrategy = upstream.Set(*req.RoutingStrategy)
 	}
 	params.Enabled = req.Enabled
+
+	// B-469: nilai-sama bukan perubahan (lihat updateProvider).
+	disebutModel := params.ModelID != nil || params.DisplayName != nil || params.Family.Set ||
+		params.Capabilities != nil || params.ContextWindow.Set || params.MaxOutputTokens.Set ||
+		params.RoutingPriority != nil || params.RoutingStrategy.Set || params.Enabled != nil
+	if disebutModel {
+		ada, err := h.modelRepo.Get(ctx, id)
+		if err != nil {
+			mapRepoError(w, r, err, "model")
+			return
+		}
+		if samaBilaDisebut(params.ModelID, &ada.ModelID) &&
+			samaBilaDisebut(params.DisplayName, &ada.DisplayName) &&
+			optSama(params.Family.Set, params.Family.Value, ada.Family) &&
+			(params.Capabilities == nil || slices.Equal(ada.Capabilities, params.Capabilities)) &&
+			optSama(params.ContextWindow.Set, params.ContextWindow.Value, ada.ContextWindow) &&
+			optSama(params.MaxOutputTokens.Set, params.MaxOutputTokens.Value, ada.MaxOutputTokens) &&
+			samaBilaDisebut(params.RoutingPriority, &ada.RoutingPriority) &&
+			optSama(params.RoutingStrategy.Set, params.RoutingStrategy.Value, ada.RoutingStrategy) &&
+			samaBilaDisebut(params.Enabled, &ada.Enabled) {
+			mapRepoError(w, r, upstream.ErrNoChanges, "model")
+			return
+		}
+	}
 
 	m, err := h.modelRepo.Update(ctx, id, params)
 	if err != nil {
@@ -2589,6 +2677,38 @@ func (h *Handlers) updateEgressPool(w http.ResponseWriter, r *http.Request) {
 	// transaksi dan audit yang sama (B-270).
 	adaPerubahanField := params.Name != nil || params.Kind != nil || params.Description != nil ||
 		params.Enabled != nil || params.Weight != nil || params.Region.Set
+
+	// B-469: nilai-sama bukan perubahan (lihat updateProvider) —
+	// termasuk proxy_url: URL yang sama dengan yang tersimpan
+	// (dibaca lewat jalur diagnostik repo) tidak memicu penulisan
+	// ulang, audit, maupun siraman cache. Pemeriksaan ini berjalan
+	// SEBELUM transaksi; yang tidak disebut apa pun tetap jatuh ke
+	// ErrNoChanges di dalam transaksi seperti sebelumnya (B-306).
+	if adaPerubahanField || req.ProxyURL != "" {
+		ada, err := h.egressRepo.Get(ctx, id)
+		if err != nil {
+			mapRepoError(w, r, err, "egress pool")
+			return
+		}
+		sama := samaBilaDisebut(params.Name, &ada.Name) &&
+			samaBilaDisebut(params.Kind, &ada.Kind) &&
+			samaBilaDisebut(params.Description, &ada.Description) &&
+			samaBilaDisebut(params.Enabled, &ada.Enabled) &&
+			samaBilaDisebut(params.Weight, &ada.Weight) &&
+			optSama(params.Region.Set, params.Region.Value, ada.Region)
+		if sama && req.ProxyURL != "" {
+			proxyAda, err := h.egressRepo.ProxyURLDiagnostik(ctx, id)
+			if err != nil {
+				mapRepoError(w, r, err, "egress pool")
+				return
+			}
+			sama = proxyAda.Reveal() == req.ProxyURL
+		}
+		if sama {
+			mapRepoError(w, r, upstream.ErrNoChanges, "egress pool")
+			return
+		}
+	}
 
 	var ep *upstream.EgressPool
 	err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {

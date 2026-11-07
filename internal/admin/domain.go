@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/auth"
+	"github.com/NexGen-X/Route-X/internal/database/repo"
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 	"github.com/NexGen-X/Route-X/internal/httpx"
 	"github.com/NexGen-X/Route-X/internal/security"
@@ -437,14 +438,37 @@ func (h *Handlers) deleteDomainConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	if h.settingsRepo != nil {
-		// Error penghapusan diteruskan (audit F5): operator tidak boleh
-		// menerima "ok" untuk pencabutan domain yang sebenarnya gagal.
-		if err := h.settingsRepo.Delete(ctx, SettingKeyDomainConfig); err != nil {
+		// B-472: dua baris setelan ini adalah SATU keadaan — dulu
+		// dihapus berurutan tanpa transaksi, jadi keadaan warisan
+		// parsial (konfigurasi ada, url publik tidak) menghasilkan
+		// 404 "url publik tidak ditemukan" PADAHAL baris
+		// konfigurasinya sudah terhapus: jawaban gagal untuk
+		// penghapusan yang setengah berhasil. Kini keberadaan
+		// diperiksa dan keduanya dihapus di dalam SATU transaksi:
+		// konfigurasi tidak ada → 404 tanpa satu pun baris
+		// tersentuh; konfigurasi ada → keduanya hilang (url publik
+		// yang memang tidak ada dilewati, bukan dijadikan kegagalan);
+		// kegagalan nyata di tengah → rollback, keadaan utuh,
+		// error jujur.
+		err := repo.InTx(ctx, h.pool, func(q repo.Querier) error {
+			txSettings := identity.NewSettings(q)
+			if _, err := txSettings.Get(ctx, SettingKeyDomainConfig); err != nil {
+				return err
+			}
+			if err := txSettings.Delete(ctx, SettingKeyDomainConfig); err != nil {
+				return err
+			}
+			if _, err := txSettings.Get(ctx, SettingKeyPublicURL); err == nil {
+				if err := txSettings.Delete(ctx, SettingKeyPublicURL); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			// Error penghapusan diteruskan (audit F5): operator tidak boleh
+			// menerima "ok" untuk pencabutan domain yang sebenarnya gagal.
 			mapRepoError(w, r, err, "konfigurasi domain")
-			return
-		}
-		if err := h.settingsRepo.Delete(ctx, SettingKeyPublicURL); err != nil {
-			mapRepoError(w, r, err, "url publik domain")
 			return
 		}
 	}

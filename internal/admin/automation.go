@@ -250,6 +250,38 @@ func (h *Handlers) updateWebhook(w http.ResponseWriter, r *http.Request) {
 		rotasiSecret = true
 	}
 
+	// B-469: field yang disebut dengan nilai yang PERSIS sama
+	// dengan yang tersimpan bukan perubahan — tolak no_changes
+	// sejajar params kosong. Rotasi secret selalu perubahan nyata
+	// (nilainya tidak bisa dibandingkan tanpa membuka ciphertext,
+	// dan menyebut field-nya adalah niat yang jelas), jadi
+	// penjaga ini hanya berjalan bila secret tidak disebut.
+	// Events dibandingkan sebagai himpunan.
+	if !rotasiSecret && (req.Name != nil || req.URL != nil || req.Events != nil ||
+		req.Enabled != nil || req.MaxRetries != nil || req.TimeoutMS != nil) {
+		ada, err := h.webhooksRepo.Get(ctx, id)
+		if err != nil {
+			mapRepoError(w, r, err, "webhook")
+			return
+		}
+		sama := samaBilaDisebut(req.Name, &ada.Name) &&
+			samaBilaDisebut(req.URL, &ada.URL) &&
+			samaBilaDisebut(req.Enabled, &ada.Enabled) &&
+			samaBilaDisebut(req.MaxRetries, &ada.MaxRetries) &&
+			samaBilaDisebut(req.TimeoutMS, &ada.TimeoutMS)
+		if sama && req.Events != nil {
+			himpunanDiminta := make(map[string]bool, len(req.Events))
+			for _, e := range req.Events {
+				himpunanDiminta[e] = true
+			}
+			sama = himpunanTeksSama(ada.Events, himpunanDiminta)
+		}
+		if sama {
+			mapRepoError(w, r, webhooks.ErrNoChanges, "webhook")
+			return
+		}
+	}
+
 	wh, err := h.webhooksRepo.Update(ctx, id, webhooks.UpdateWebhookParams{
 		Name:       req.Name,
 		URL:        req.URL,
@@ -296,6 +328,12 @@ func (h *Handlers) toggleWebhook(w http.ResponseWriter, r *http.Request) {
 	enabled, err := decodeToggleEnabled(r)
 	if err != nil {
 		tolakToggle(w, r, err)
+		return
+	}
+
+	// B-469: toggle nilai-sama adalah no-op (lihat toggleRoutingRule).
+	if ada, err := h.webhooksRepo.Get(ctx, id); err == nil && ada != nil && ada.Enabled == enabled {
+		_ = h.respond(w, r, http.StatusOK, toWebhookDTO(ada))
 		return
 	}
 

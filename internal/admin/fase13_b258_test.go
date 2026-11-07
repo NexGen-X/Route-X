@@ -71,11 +71,37 @@ func TestFase13B258MutasiStrategiDanEgressMengosongkanCache(t *testing.T) {
 	}
 	sudahKosong("mengubah strategi kredensial")
 
+	// Kaki egress: perubahan NYATA dua arah (ikat ke pool, lalu
+	// lepas) wajib menyiram. Sejak Fase 20 PR-B (B-469),
+	// lepas-saat-memang-terlepas dan ikat-ulang pool yang sama
+	// adalah no-op TANPA siraman — kontraknya dikunci di
+	// fase20_prb_test.go; yang dijaga test ini adalah perubahan
+	// konteks yang sesungguhnya tetap menyiram seperti sebelumnya.
+	egressRepo, err := upstream.NewEgressRepo(env.pool, env.cipher)
+	if err != nil {
+		t.Fatalf("NewEgressRepo: %v", err)
+	}
+	pool, err := egressRepo.Create(ctx, upstream.CreateEgressParams{
+		Name: "pool-b258", Kind: upstream.EgressHTTP,
+		ProxyURL: security.Secret("http://127.0.0.1:8899"), Enabled: boolPtr(true),
+	})
+	if err != nil {
+		t.Fatalf("buat egress pool: %v", err)
+	}
+
+	tanam()
+	res, body = c.do(http.MethodPut, "/api/admin/upstreams/providers/"+prov.ID+"/credentials/"+cred.ID+"/egress-pool",
+		map[string]any{"egress_pool_id": pool.ID}, true)
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("ikat pool egress kredensial: status %d (body %s)", res.StatusCode, body)
+	}
+	sudahKosong("mengikat pool egress kredensial")
+
 	tanam()
 	res, body = c.do(http.MethodPut, "/api/admin/upstreams/providers/"+prov.ID+"/credentials/"+cred.ID+"/egress-pool",
 		map[string]any{"egress_pool_id": nil}, true)
 	if res.StatusCode != http.StatusOK {
-		t.Fatalf("set pool egress kredensial: status %d (body %s)", res.StatusCode, body)
+		t.Fatalf("lepas pool egress kredensial: status %d (body %s)", res.StatusCode, body)
 	}
-	sudahKosong("mengubah pool egress kredensial")
+	sudahKosong("melepas pool egress kredensial")
 }

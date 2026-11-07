@@ -365,17 +365,20 @@ func (h *Handlers) refreshOAuthSession(w http.ResponseWriter, r *http.Request) {
 // milik provider di URL yang sama. Mengembalikan false (dan sudah menulis
 // jawabannya) bila tidak: sesi provider lain dijawab 404 agar keberadaannya
 // tidak terkonfirmasi lewat URL provider yang salah (audit3 V-EO-22).
-func (h *Handlers) pastikanSesiMilikProvider(w http.ResponseWriter, r *http.Request, providerID, sessionID string) bool {
+// pastikanSesiMilikProvider memuat sesi dan memastikan ia milik
+// provider ini; meta-nya dikembalikan supaya pemanggil yang butuh
+// keadaan sesi (mis. penjaga no-op B-469) tidak memuat dua kali.
+func (h *Handlers) pastikanSesiMilikProvider(w http.ResponseWriter, r *http.Request, providerID, sessionID string) (*upstream.OAuthSessionMeta, bool) {
 	meta, err := h.oauthRepo.GetSession(r.Context(), sessionID)
 	if err != nil {
 		mapRepoError(w, r, err, "oauth_session")
-		return false
+		return nil, false
 	}
 	if meta.ProviderID != providerID {
 		mapRepoError(w, r, repo.ErrNotFound, "oauth_session")
-		return false
+		return nil, false
 	}
-	return true
+	return meta, true
 }
 
 // toggleOAuthSession menyalakan atau mematikan salah satu akun OAuth tanpa menghapusnya.
@@ -400,7 +403,19 @@ func (h *Handlers) toggleOAuthSession(w http.ResponseWriter, r *http.Request) {
 	}
 	enabled := *req.Enabled
 
-	if !h.pastikanSesiMilikProvider(w, r, providerID, sessionID) {
+	meta, ok := h.pastikanSesiMilikProvider(w, r, providerID, sessionID)
+	if !ok {
+		return
+	}
+
+	// B-469: toggle ke keadaan yang SUDAH berlaku adalah no-op —
+	// tanpa audit "toggle_oauth_session" dan tanpa siraman cache.
+	if meta.Enabled == enabled {
+		_ = h.respond(w, r, http.StatusOK, OAuthToggleResponseDTO{
+			Status:    "updated",
+			SessionID: sessionID,
+			Enabled:   enabled,
+		})
 		return
 	}
 
@@ -436,7 +451,7 @@ func (h *Handlers) deleteOAuthSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.pastikanSesiMilikProvider(w, r, providerID, sessionID) {
+	if _, ok := h.pastikanSesiMilikProvider(w, r, providerID, sessionID); !ok {
 		return
 	}
 
@@ -461,7 +476,8 @@ func (h *Handlers) setProviderCredentialStrategy(w http.ResponseWriter, r *http.
 	ctx := r.Context()
 	providerID := chi.URLParam(r, "id")
 
-	if _, err := h.authorizeProviderAccess(ctx, providerID); err != nil {
+	pAda, err := h.authorizeProviderAccess(ctx, providerID)
+	if err != nil {
 		mapRepoError(w, r, err, "provider")
 		return
 	}
@@ -475,6 +491,15 @@ func (h *Handlers) setProviderCredentialStrategy(w http.ResponseWriter, r *http.
 	req.Strategy = strings.TrimSpace(strings.ToLower(req.Strategy))
 	if req.Strategy != "round_robin" && req.Strategy != "priority" {
 		httpx.BadRequest(w, r, "invalid_strategy", "Strategi harus 'round_robin' atau 'priority'")
+		return
+	}
+
+	// B-469 (permukaan ke-21, ditemukan saat enumerasi permukaan
+	// ini dikerjakan): strategi yang diminta PERSIS sama dengan
+	// yang berlaku adalah no-op — tanpa audit
+	// "update_credential_strategy" dan tanpa siraman cache.
+	if pAda.CredentialStrategy == req.Strategy {
+		_ = h.respond(w, r, http.StatusOK, toProviderDTO(pAda))
 		return
 	}
 

@@ -611,6 +611,43 @@ func (h *Handlers) updateAPIKey(w http.ResponseWriter, r *http.Request) {
 		params.ExpiresAt = keys.Set(*exp)
 	}
 
+	// B-469: field yang disebut dengan nilai yang PERSIS sama
+	// dengan yang tersimpan bukan perubahan — tolak no_changes
+	// sejajar body kosong (yang sudah ditolak repo sejak B-369),
+	// supaya audit "update" tidak naik untuk no-op. Allowlist
+	// dibandingkan sebagai himpunan prefiks; expires_at sebagai
+	// momen (Equal), bukan representasi.
+	disebut := params.Name != nil || params.RateLimitRPS.Set || params.RateLimitRPM.Set ||
+		params.RateLimitTPM.Set || params.DailyRequestLimit.Set || params.MonthlyRequestLimit.Set ||
+		params.DailyTokenLimit.Set || params.MonthlyTokenLimit.Set || params.ExpiresAt.Set ||
+		params.IPAllowlist != nil
+	if disebut {
+		ada, err := h.keyRepo.GetByID(ctx, id)
+		if err != nil {
+			mapRepoError(w, r, err, "api key")
+			return
+		}
+		sama := samaBilaDisebut(params.Name, &ada.Name) &&
+			optSama(params.RateLimitRPS.Set, params.RateLimitRPS.Value, ada.RateLimitRPS) &&
+			optSama(params.RateLimitRPM.Set, params.RateLimitRPM.Value, ada.RateLimitRPM) &&
+			optSama(params.RateLimitTPM.Set, params.RateLimitTPM.Value, ada.RateLimitTPM) &&
+			optSama(params.DailyRequestLimit.Set, params.DailyRequestLimit.Value, ada.DailyRequestLimit) &&
+			optSama(params.MonthlyRequestLimit.Set, params.MonthlyRequestLimit.Value, ada.MonthlyRequestLimit) &&
+			optSama(params.DailyTokenLimit.Set, params.DailyTokenLimit.Value, ada.DailyTokenLimit) &&
+			optSama(params.MonthlyTokenLimit.Set, params.MonthlyTokenLimit.Value, ada.MonthlyTokenLimit)
+		if sama && params.ExpiresAt.Set {
+			sama = ada.ExpiresAt != nil && params.ExpiresAt.Value != nil &&
+				params.ExpiresAt.Value.Equal(*ada.ExpiresAt)
+		}
+		if sama && params.IPAllowlist != nil {
+			sama = himpunanPrefiksSama(params.IPAllowlist, ada.IPAllowlist)
+		}
+		if sama {
+			mapRepoError(w, r, keys.ErrNoChanges, "api key")
+			return
+		}
+	}
+
 	k, err := h.keyRepo.Update(ctx, id, params)
 	if err != nil {
 		mapRepoError(w, r, err, "api key")
@@ -755,6 +792,16 @@ func (h *Handlers) toggleAPIKey(w http.ResponseWriter, r *http.Request) {
 		status = keys.StatusActive
 	}
 
+	// B-469: toggle ke status yang SUDAH berlaku adalah no-op —
+	// tanpa audit "toggle" dan tanpa pembersihan counter rate
+	// limit (efek samping penonaktifan hanya bermakna pada
+	// transisi nyata). Kunci yang tidak ditemukan dibiarkan jatuh
+	// ke SetStatus yang menjawab errornya seperti biasa.
+	if ada, err := h.keyRepo.GetByID(ctx, id); err == nil && ada != nil && ada.Status == status {
+		_ = h.respond(w, r, http.StatusOK, h.keyDetailResponse(ctx, ada))
+		return
+	}
+
 	k, err := h.keyRepo.SetStatus(ctx, id, status)
 	if err != nil {
 		mapRepoError(w, r, err, "api key")
@@ -827,6 +874,20 @@ func (h *Handlers) setAllowedAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-471: keberadaan kunci diperiksa SEBELUM deteksi identik.
+	// Untuk kunci yang tidak ada, GetAllowed menjawab dua daftar
+	// kosong TANPA error, jadi himpunan kosong selalu terbaca
+	// "identik" dan kunci hantu menerima 200 {"status":"updated"}
+	// — sukses bohong untuk entitas yang tidak pernah ada. Kini
+	// kunci yang tidak ditemukan menjawab 404 seperti permukaan
+	// lain; himpunan tak-kosong pada kunci hantu tetap 400
+	// invalid_reference dari jalur tulis (FK repo), sama seperti
+	// sebelumnya.
+	if _, err := h.keyRepo.GetByID(ctx, id); err != nil {
+		mapRepoError(w, r, err, "api key")
+		return
+	}
+
 	// B-434: penetapan himpunan yang IDENTIK dengan yang tersimpan
 	// adalah no-op — tanpa DELETE+INSERT di repo dan tanpa audit
 	// perubahan, tetapi respons tetap sukses (ini endpoint set,
@@ -846,6 +907,24 @@ func (h *Handlers) setAllowedAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	h.writeAudit(ctx, r, "set_allowed", "api_key", id, map[string]any{"models": req.ModelIDs, "providers": req.ProviderIDs})
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "updated"})
+}
+
+// himpunanPrefiksSama membandingkan dua daftar prefiks IP sebagai
+// HIMPUNAN (urutan tidak bermakna bagi allowlist; B-469).
+func himpunanPrefiksSama(a, b []netip.Prefix) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	himpunan := make(map[string]bool, len(a))
+	for _, p := range a {
+		himpunan[p.String()] = true
+	}
+	for _, p := range b {
+		if !himpunan[p.String()] {
+			return false
+		}
+	}
+	return true
 }
 
 // allowedIdentikDenganTersimpan melaporkan apakah himpunan

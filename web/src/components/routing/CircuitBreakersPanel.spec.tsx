@@ -160,3 +160,26 @@ describe('CircuitBreakersPanel — tampilan diperkaya', () => {
     expect(screen.queryByText('0 (Aman)')).not.toBeInTheDocument();
   });
 });
+
+describe('CircuitBreakersPanel — chip provider belum terukur (B-449)', () => {
+  const propsDasar = {
+    models: [MODEL],
+    isBreakersLoading: false,
+    breakersError: null,
+    loadBreakers: vi.fn(async () => undefined),
+    handleResetBreaker: vi.fn(async () => undefined),
+  };
+
+  it('providers gagal dimuat → chip "— Terhubung", bukan "0 Terhubung" definitif', () => {
+    render(
+      <CircuitBreakersPanel {...propsDasar} breakers={[]} rules={[]} providers={[]} providersGagal />
+    );
+    expect(screen.getByText(/— Terhubung/)).toBeInTheDocument();
+    expect(screen.queryByText(/0 Terhubung/)).toBeNull();
+  });
+
+  it('providers terukur kosong → chip "0 Terhubung" tetap sah', () => {
+    render(<CircuitBreakersPanel {...propsDasar} breakers={[]} rules={[]} providers={[]} />);
+    expect(screen.getByText(/0 Terhubung/)).toBeInTheDocument();
+  });
+});

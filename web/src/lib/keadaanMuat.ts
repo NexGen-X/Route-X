@@ -39,3 +39,15 @@ export function keadaanMuat({ memuat, gagal, jumlah }: MasukanKeadaanMuat): Kead
   if (gagal) return 'gagal';
   return 'kosong';
 }
+
+/**
+ * Teks hitungan untuk lencana/chip yang menampilkan jumlah item
+ * dari satu sumber (Fase 19 — penyatuan permukaan manual ke modul
+ * ini). Angka definitif hanya sah pada keadaan 'ada' dan 'kosong'
+ * (muatan berhasil); pada 'memuat'/'gagal' jumlahnya belum terukur
+ * sehingga ditampilkan penanda netral '—', bukan '0' karangan.
+ */
+export function teksHitungKeadaan(keadaan: KeadaanMuat, jumlah: number): string {
+  if (keadaan === 'memuat' || keadaan === 'gagal') return '—';
+  return String(jumlah);
+}

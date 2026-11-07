@@ -13,6 +13,7 @@ import { Webhook as WebhookIcon, Plus, Trash2, Zap, Play, ChevronRight, Eye, Eye
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { getErrorMessage } from '../utils/error';
+import { keadaanMuat } from '../lib/keadaanMuat';
 
 export const Webhooks: React.FC = () => {
   const { toast, confirmModal } = useToast();
@@ -445,7 +446,28 @@ export const Webhooks: React.FC = () => {
           <p className="text-xs text-text-muted py-6 text-center">Memuat riwayat pengiriman...</p>
         ) : (
           <div className="space-y-4">
-            {deliveries.length === 0 && deliveriesError ? (
+            {/* B-452: muatan ULANG gagal saat daftar lama masih ada —
+                daftar basi wajib berpenanda kesegaran, bukan tampil
+                seolah terkini (pola label data-terakhir Observability). */}
+            {deliveries.length > 0 && deliveriesError && (
+              <p role="alert" className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg p-3">
+                Riwayat di bawah mungkin basi — muatan ulang gagal: {deliveriesError}{' '}
+                {selectedWebhook && (
+                  <button
+                    type="button"
+                    onClick={() => void loadDeliveries(selectedWebhook.id)}
+                    className="underline cursor-pointer"
+                  >
+                    Coba lagi
+                  </button>
+                )}
+              </p>
+            )}
+            {keadaanMuat({
+              memuat: deliveriesLoading,
+              gagal: deliveriesError != null,
+              jumlah: deliveries.length,
+            }) === 'gagal' ? (
               // B-415: muatan riwayat gagal — kosong berarti belum
               // terukur, bukan "belum ada riwayat".
               <p className="text-xs text-text-muted py-6 text-center">Riwayat pengiriman belum dapat dimuat.</p>

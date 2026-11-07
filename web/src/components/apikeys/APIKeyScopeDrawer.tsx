@@ -5,6 +5,7 @@ import { Button } from '../common/Button';
 import { Checkbox } from '../common/Checkbox';
 import type { ScopeOption } from './types';
 import type { APIKey } from '../../types';
+import type { KeadaanMuat } from '../../lib/keadaanMuat';
 
 export interface APIKeyScopeDrawerProps {
   isOpen: boolean;
@@ -20,6 +21,13 @@ export interface APIKeyScopeDrawerProps {
   onDeselectAll: () => void;
   onSave: (e: React.FormEvent) => void;
   isLoading?: boolean;
+  // B-445: keadaan muat scope dari halaman induk (pola keadaanMuat).
+  // Selama keadaan bukan terukur, klaim kosong & footer akses bebas
+  // dilarang tampil dan Simpan nonaktif.
+  keadaanScope?: KeadaanMuat;
+  galatScope?: string | null;
+  onRetryScope?: () => void;
+  simpanNonaktif?: boolean;
 }
 
 export const APIKeyScopeDrawer: React.FC<APIKeyScopeDrawerProps> = ({
@@ -36,7 +44,12 @@ export const APIKeyScopeDrawer: React.FC<APIKeyScopeDrawerProps> = ({
   onDeselectAll,
   onSave,
   isLoading = false,
+  keadaanScope,
+  galatScope,
+  onRetryScope,
+  simpanNonaktif = false,
 }) => {
+  const scopeBelumTerukur = keadaanScope === 'gagal' || keadaanScope === 'memuat';
   return (
     <Drawer
       isOpen={isOpen}
@@ -58,9 +71,13 @@ export const APIKeyScopeDrawer: React.FC<APIKeyScopeDrawerProps> = ({
       footer={
         <div className="flex items-center justify-between w-full">
           <span className="text-xs text-text-muted">
-            {selectedScopeIds.length === 0
-              ? 'Akses Bebas (Seluruh model diizinkan)'
-              : `${selectedScopeIds.length} target dipilih`}
+            {scopeBelumTerukur
+              ? keadaanScope === 'gagal'
+                ? 'Daftar model belum dapat dimuat — simpan dinonaktifkan.'
+                : 'Memuat daftar model…'
+              : selectedScopeIds.length === 0
+                ? 'Akses Bebas (Seluruh model diizinkan)'
+                : `${selectedScopeIds.length} target dipilih`}
           </span>
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={onClose} className="min-h-[44px]">
@@ -70,6 +87,7 @@ export const APIKeyScopeDrawer: React.FC<APIKeyScopeDrawerProps> = ({
               variant="primary"
               onClick={onSave}
               isLoading={isLoading}
+              disabled={simpanNonaktif}
               className="min-h-[44px] px-5 font-semibold"
             >
               Simpan Hak Akses
@@ -96,6 +114,7 @@ export const APIKeyScopeDrawer: React.FC<APIKeyScopeDrawerProps> = ({
               variant="secondary"
               size="sm"
               onClick={onSelectAll}
+              disabled={scopeBelumTerukur}
               icon={<CheckSquare className="w-3.5 h-3.5" aria-hidden="true" />}
               className="text-xs flex-1 sm:flex-initial"
             >
@@ -105,6 +124,7 @@ export const APIKeyScopeDrawer: React.FC<APIKeyScopeDrawerProps> = ({
               variant="secondary"
               size="sm"
               onClick={onDeselectAll}
+              disabled={scopeBelumTerukur}
               icon={<Square className="w-3.5 h-3.5" aria-hidden="true" />}
               className="text-xs flex-1 sm:flex-initial"
             >
@@ -115,7 +135,20 @@ export const APIKeyScopeDrawer: React.FC<APIKeyScopeDrawerProps> = ({
 
         {/* Scope Options List */}
         <div className="border border-border rounded-xl divide-y divide-border/60 max-h-[500px] overflow-y-auto bg-bg-surface-2/40">
-          {filteredScopeOptions.length === 0 ? (
+          {keadaanScope === 'gagal' ? (
+            <div role="alert" className="p-8 text-center text-xs text-text-muted space-y-3">
+              <p>Daftar model belum dapat dimuat.{galatScope ? ` ${galatScope}` : ''}</p>
+              {onRetryScope && (
+                <Button variant="secondary" size="sm" onClick={onRetryScope}>
+                  Coba Lagi
+                </Button>
+              )}
+            </div>
+          ) : keadaanScope === 'memuat' ? (
+            <div className="p-8 text-center text-xs text-text-muted">
+              Memuat daftar model...
+            </div>
+          ) : filteredScopeOptions.length === 0 ? (
             <div className="p-8 text-center text-xs text-text-muted">
               Tidak ada model atau provider yang cocok dengan kriteria pencarian.
             </div>

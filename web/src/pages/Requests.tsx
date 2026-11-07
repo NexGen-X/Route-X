@@ -35,6 +35,10 @@ export const Requests: React.FC = () => {
   // bukan daftar slug vendor karangan yang tidak pernah cocok dengan
   // provider_id mana pun (audit3 V-FJ-03).
   const [providers, setProviders] = useState<Array<{ id: string; name: string }>>([]);
+  // B-454: kegagalan daftar provider untuk filter dicatat — dulu
+  // ditelan sehingga "tidak ada provider" dan "gagal dimuat" tidak
+  // dapat dibedakan operator.
+  const [providersError, setProvidersError] = useState<string | null>(null);
   const [selectedReq, setSelectedReq] = useState<RequestLog | null>(null);
   const [reqEvents, setReqEvents] = useState<RequestEvent[]>([]);
   const [reqPayload, setReqPayload] = useState<RequestPayload | null>(null);
@@ -125,11 +129,14 @@ export const Requests: React.FC = () => {
       .then((res) => {
         if (aktif) {
           setProviders((res.items || []).map((p) => ({ id: p.id, name: p.name })));
+          setProvidersError(null);
         }
       })
-      .catch(() => {
-        // Gagal memuat daftar provider: dropdown tinggal "Semua Provider"
-        // (tanpa filter) — bukan daftar karangan.
+      .catch((err: unknown) => {
+        // B-454: dropdown tetap tinggal "Semua Provider" (bukan
+        // daftar karangan), tetapi kegagalannya kini DITANDAI di
+        // filter lewat providersError.
+        if (aktif) setProvidersError(getErrorMessage(err));
       });
     return () => {
       aktif = false;
@@ -262,6 +269,7 @@ export const Requests: React.FC = () => {
           providerFilter={providerFilter}
           onProviderFilterChange={setProviderFilter}
           providers={providers}
+          providersError={providersError}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
           timeRangeFilter={timeRangeFilter}

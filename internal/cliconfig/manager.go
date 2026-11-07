@@ -271,6 +271,27 @@ func bacaTeksKonfig(path string) (string, error) {
 	return string(data), nil
 }
 
+// errBerkasKhusus menandai penolakan membaca berkas yang ada tetapi
+// bukan berkas reguler (B-494). Pemanggil membedakannya dari galat
+// baca biasa: sebagian situs menelan galat baca biasa (berkas belum
+// ada memang dilewati), tetapi berkas khusus yang ADA tidak boleh
+// pernah dibaca senyap — membacanya menggantung (FIFO) dan
+// melewatinya senyap mengklaim langkah yang tidak terjadi.
+var errBerkasKhusus = errors.New("berkas khusus tidak dibaca")
+
+// bacaReguler membaca berkas dengan penjaga yang sama seperti
+// bacaTeksKonfig (B-484): Stat lebih dulu; berkas yang ada tetapi
+// bukan reguler ditolak dengan errBerkasKhusus TANPA mencapai
+// os.ReadFile — ReadFile pada FIFO menggantung tanpa batas menunggu
+// penulis. Galat lain (termasuk belum ada) diteruskan apa adanya
+// supaya semantik tiap pemanggil tidak berubah.
+func bacaReguler(path string) ([]byte, error) {
+	if fi, err := os.Stat(path); err == nil && !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s bukan berkas reguler (mode %s): %w", path, fi.Mode().Type(), errBerkasKhusus)
+	}
+	return os.ReadFile(path)
+}
+
 func muatKonfigJSON(path string, toleranJSONC bool) (map[string]any, error) {
 	// B-484: penjaga berkas khusus lebih dulu — ReadFile pada
 	// FIFO menggantung; muatKonfigJSON adalah pintu baca keempat
@@ -1773,10 +1794,17 @@ func (m *Manager) syncGlobalEnvScript(homeDir string, tool ToolDef, vars map[str
 
 	envFile := filepath.Join(routexDir, "cli-env.sh")
 
-	// Baca konten lama jika ada
+	// Baca konten lama jika ada. B-494: lewat bacaReguler — cli-env.sh
+	// adalah berkas milik Route-X sendiri yang dibaca pada SETIAP
+	// Configure; FIFO di jalurnya menggantungkan Configure sambil
+	// memegang mutex manajer. Berkas khusus ditolak bernama di sini
+	// (tulisAtomik di bawah juga akan menolaknya, tetapi gagal di
+	// baca lebih jujur daripada membangun konten pengganti dulu).
 	var existing string
-	if data, err := os.ReadFile(envFile); err == nil {
+	if data, err := bacaReguler(envFile); err == nil {
 		existing = string(data)
+	} else if errors.Is(err, errBerkasKhusus) {
+		return err
 	}
 
 	header := "#!/bin/bash\n# Route-X Personal AI Gateway - CLI Environments\n# Muat skrip ini dengan: source ~/.routex/cli-env.sh\n\nif [ -f \"$HOME/.routex/key.env\" ]; then\n    . \"$HOME/.routex/key.env\"\nfi\n\n"
@@ -1840,8 +1868,16 @@ func (m *Manager) ensureShellAutoLoad(homeDir string) error {
 	// pengguna) dan tulisAtomik menimpa symlink itu sendiri dengan berkas
 	// reguler, memutus tautan ke target yang dikelola dotfiles pengguna.
 	pasangHook := func(rcPath string, prepend bool) error {
-		data, err := os.ReadFile(rcPath)
+		// B-494: lewat bacaReguler — FIFO di .bashrc/.zshrc
+		// menggantungkan ReadFile tanpa batas. Berkas khusus yang
+		// ADA ditolak bernama (melewatinya senyap akan mengklaim
+		// hook terpasang padahal tidak); galat baca biasa tetap
+		// berarti "tidak ada: tidak dibuatkan" seperti sebelumnya.
+		data, err := bacaReguler(rcPath)
 		if err != nil {
+			if errors.Is(err, errBerkasKhusus) {
+				return err
+			}
 			return nil // berkas tidak ada: tidak dibuatkan.
 		}
 		if strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
@@ -1874,7 +1910,16 @@ func (m *Manager) ensureShellAutoLoad(homeDir string) error {
 
 	profilePath := "/etc/profile.d/routex.sh"
 	if fi, err := os.Stat("/etc/profile.d"); err == nil && fi.IsDir() {
-		if data, err := os.ReadFile(profilePath); err != nil || !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
+		// B-494: bacaan pemeriksa ini juga lewat bacaReguler — berkas
+		// khusus di jalur sistem tidak dibaca dan tidak ditimpa;
+		// cukup dicatat sebagai peringatan best-effort (semantik
+		// blok ini memang best-effort).
+		if data, err := bacaReguler(profilePath); errors.Is(err, errBerkasKhusus) {
+			if m.logger != nil {
+				m.logger.Warn("hook /etc/profile.d dilewati: berkas tujuan bukan berkas reguler",
+					"path", profilePath, "error", err)
+			}
+		} else if err != nil || !strings.Contains(string(data), "Route-X AI Gateway CLI Auto-Loader") {
 			if err := tulisAtomik(profilePath, []byte(hook), 0644); err != nil {
 				// Best-effort (lihat komentar fungsi): catat, jangan gagalkan.
 				if m.logger != nil {
@@ -1964,6 +2009,14 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if err != nil {
 			return err
 		}
+		// B-497: config multi-dokumen ditolak jujur seperti Hermes
+		// (B-485) — pemuat Aider adalah PyYAML safe_load, yang
+		// terbukti menolak aliran multi-dokumen; penggabung
+		// per-baris di bawah akan merestrukturisasi dokumen pertama
+		// dan melaporkan sukses atas berkas yang tak termuat.
+		if err := tolakYAMLDokumenGanda(aiderConfigPath, existingAider, "Aider (PyYAML safe_load) hanya menerima satu dokumen"); err != nil {
+			return err
+		}
 		pasanganAider := [][2]string{
 			{"openai-api-base", gwURL},
 			{"model", modelAider(target)},
@@ -1990,6 +2043,16 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		goosePath := filepath.Join(gooseDir, "config.yaml")
 		existing, err := bacaTeksKonfig(goosePath)
 		if err != nil {
+			return err
+		}
+		// B-497: config multi-dokumen ditolak jujur seperti Hermes
+		// (B-485) — penggabung tingkat-atas di bawah bekerja pada
+		// teks gabungan dan verifikasi hanya membaca dokumen
+		// pertama, jadi sukses atas aliran multi-dokumen adalah
+		// sukses-bohong kelas yang sama walau semantik pemuat
+		// Goose atas dokumen kedua tidak dibuktikan dengan biner
+		// sungguhan (lihat badan PR).
+		if err := tolakYAMLDokumenGanda(goosePath, existing, "penyunting Route-X hanya menerapkan konfigurasi ke satu dokumen"); err != nil {
 			return err
 		}
 		pasanganGoose := [][2]string{
@@ -2028,7 +2091,12 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		// sama persis; selain itu penulis jatuh ke jalur marshal di
 		// bawah (data tetap benar, komentar hilang seperti dulu).
 		tertulis := false
-		if mentah, errBaca := os.ReadFile(configPath); errBaca == nil {
+		// B-494: bacaan mentah sunting-bedah ini lewat bacaReguler juga
+		// (muatKonfigJSON di atas sudah menolak berkas khusus bernama;
+		// penjaga di sini menutup celah balapan di antara keduanya —
+		// galat apa pun tetap hanya melewatkan jalur bedah, seperti
+		// sebelumnya).
+		if mentah, errBaca := bacaReguler(configPath); errBaca == nil {
 			// B-404: BOM dibuang dari teks mentah SEBELUM jalur
 			// sunting JSONC — muatKonfigJSON sudah membuangnya
 			// untuk peta (B-380), tetapi bacaan mentah di sini
@@ -2318,8 +2386,10 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		// — MENOLAK aliran multi-dokumen ("expected a single
 		// document in the stream", terbukti dengan pustaka
 		// sungguhan): sukses di sini adalah sukses-bohong.
-		if nDok, errDok := jumlahDokumenYAML(existingHermes); errDok == nil && nDok > 1 {
-			return fmt.Errorf("berkas %s memuat %d dokumen YAML; Hermes (PyYAML safe_load) hanya menerima satu dokumen — gabungkan menjadi satu dokumen, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", hermesPath, nDok)
+		// (B-497: penjaga yang sama kini dipakai semua penulis YAML
+		// lewat tolakYAMLDokumenGanda.)
+		if err := tolakYAMLDokumenGanda(hermesPath, existingHermes, "Hermes (PyYAML safe_load) hanya menerima satu dokumen"); err != nil {
+			return err
 		}
 		kontenHermes := susunBlokModelHermes(existingHermes, target, gwURL, apiKey)
 		if err := verifikasiHasilHermes(kontenHermes, target, gwURL, apiKey); err != nil {
@@ -2576,14 +2646,24 @@ type pemindaiMultilineTOML struct {
 	// header seksi dan awal array kunci terkelola diganti baris
 	// tunggal sementara sisa arraynya yatim.
 	kurung int
+	// kurawal adalah kedalaman kurung kurawal {...} tabel inline
+	// yang sedang terbuka di luar string/komentar (B-505): tabel
+	// inline juga boleh membentang banyak baris (sah bagi parser
+	// TOML produk sendiri), dan baris isinya berbentuk
+	// `kunci = nilai` — tanpa pelacakan ini baris isi dibaca
+	// sebagai kunci tingkat-atas/seksi sungguhan: penyunting
+	// mengganti "model" DI DALAM tabel dan membuang model
+	// tingkat-atas asli sebagai duplikat.
+	kurawal int
 }
 
 // diDalamStruktur melaporkan apakah posisi kini berada di dalam
-// nilai yang membentang lintas baris: string multiline ATAU array
-// yang belum tertutup. Baris yang dimulai dalam keadaan ini adalah
-// kelanjutan nilai, bukan kode.
+// nilai yang membentang lintas baris: string multiline, array
+// yang belum tertutup, ATAU tabel inline yang belum tertutup.
+// Baris yang dimulai dalam keadaan ini adalah kelanjutan nilai,
+// bukan kode.
 func (p *pemindaiMultilineTOML) diDalamStruktur() bool {
-	return p.multi != 0 || p.kurung > 0
+	return p.multi != 0 || p.kurung > 0 || p.kurawal > 0
 }
 
 // pindaiBaris memindai satu baris dan memajukan keadaan multiline
@@ -2620,6 +2700,14 @@ func (p *pemindaiMultilineTOML) pindaiBaris(l string) {
 				p.kurung--
 			}
 			i++
+		case '{':
+			p.kurawal++
+			i++
+		case '}':
+			if p.kurawal > 0 {
+				p.kurawal--
+			}
+			i++
 		case '"', '\'':
 			if i+2 < len(l) && l[i+1] == c && l[i+2] == c {
 				p.multi = c
@@ -2647,8 +2735,9 @@ func (p *pemindaiMultilineTOML) pindaiBaris(l string) {
 }
 
 // petaBarisStrukturTOML mengembalikan, untuk tiap baris, apakah
-// baris itu dimulai di dalam NILAI lintas-baris (string multiline
-// atau array belum tertutup) — B-479. Penentu batas preamble dan
+// baris itu dimulai di dalam NILAI lintas-baris (string multiline,
+// array belum tertutup, atau tabel inline belum tertutup) —
+// B-479+B-505. Penentu batas preamble dan
 // seksi memakai peta ini: hanya baris yang dimulai di luar
 // struktur apa pun yang boleh dinilai sebagai header seksi.
 func petaBarisStrukturTOML(baris []string) []bool {
@@ -3120,8 +3209,28 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	// B-481: jangkar blok PERTAMA dipertahankan pada header blok
 	// gabungan, supaya alias `*nama` di bagian lain dokumen tetap
 	// menunjuk blok model yang diperbarui.
-	if rentang[0].jangkar != "" {
-		blok[0] = "model: &" + rentang[0].jangkar
+	//
+	// B-506: yang dipertahankan adalah jangkar DISTINCT PERTAMA dari
+	// blok MANA PUN — B-481 hanya melihat blok pertama, jadi jangkar
+	// yang hanya ada di blok kedua hilang saat penggabungan, alias
+	// `*nama`-nya menggantung, dan verifikasi menolak Configure
+	// ("unknown anchor"). Batas yang disadari: satu node YAML hanya
+	// bisa membawa SATU jangkar, jadi bila blok-blok membawa nama
+	// jangkar yang BERBEDA-beda, hanya yang pertama yang bisa hidup
+	// di header gabungan — jangkar lain menunjuk peta pra-gabung
+	// yang berbeda-beda dan tidak punya rumah setia di satu node;
+	// menulis ulang situs alias di teks pengguna (yang bisa berada
+	// di dalam string/komentar) ditolak sebagai bedah yang tidak
+	// aman. Kasus itu tetap gagal jujur di verifikasi, berkas utuh.
+	jangkarGabungan := ""
+	for _, r := range rentang {
+		if r.jangkar != "" {
+			jangkarGabungan = r.jangkar
+			break
+		}
+	}
+	if jangkarGabungan != "" {
+		blok[0] = "model: &" + jangkarGabungan
 	}
 	for len(dipertahankan) > 0 && dipertahankan[len(dipertahankan)-1] == "" {
 		dipertahankan = dipertahankan[:len(dipertahankan)-1]
@@ -3810,6 +3919,20 @@ func deteksiBOMNonUTF8(data []byte) string {
 	return ""
 }
 
+// tolakYAMLDokumenGanda menolak aliran YAML multi-dokumen atas
+// nama pemuat tool tujuan (B-497, menggeneralisasi penjaga Hermes
+// B-485): penyunting Route-X bekerja pada teks gabungan dan
+// verifikasi hanya membaca dokumen pertama, sementara pemuat
+// tujuan menolak aliran multi-dokumen atau membaca satu dokumen —
+// sukses di sini adalah sukses-bohong kelas B-485 yang sama.
+// alasanPemuat menyebut pemuatnya persis (terbukti di badan PR).
+func tolakYAMLDokumenGanda(path, konten, alasanPemuat string) error {
+	if nDok, errDok := jumlahDokumenYAML(konten); errDok == nil && nDok > 1 {
+		return fmt.Errorf("berkas %s memuat %d dokumen YAML; %s — gabungkan menjadi satu dokumen, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", path, nDok, alasanPemuat)
+	}
+	return nil
+}
+
 // jumlahDokumenYAML menghitung dokumen dalam satu aliran YAML
 // (B-485). Galat urai dikembalikan apa adanya.
 func jumlahDokumenYAML(konten string) (int, error) {
@@ -3899,21 +4022,30 @@ func uraiYAMLHermes(konten string) (map[string]any, error) {
 }
 
 // verifikasiEnvHermes memeriksa hasil sunting .env Hermes
-// (B-477+B-483): byte NUL — jejak pengkodean UTF-16/32 yang
-// terbawa ke hasil — adalah galat (python-dotenv gagal membaca
-// berkas seperti itu sama sekali), dan variabel TERKELOLA tidak
-// boleh ganda. Duplikat variabel LAIN ditoleransi: python-dotenv
-// menerimanya dengan bacaan last-wins (terbukti dengan pustaka
-// sungguhan), dan baris-baris itu milik pengguna yang
-// dipertahankan apa adanya oleh perbaruiBarisEnv.
+// (B-477+B-483): variabel TERKELOLA tidak boleh ganda dan tidak
+// boleh memuat byte NUL — NUL pada baris terkelola adalah jejak
+// pengkodean UTF-16/32 yang terbawa ke HASIL GARAPAN (kelas
+// sukses-bohong B-477: berkas dilaporkan tertulis padahal pemuat
+// gagal membacanya). Duplikat variabel LAIN ditoleransi:
+// python-dotenv menerimanya dengan bacaan last-wins (terbukti
+// dengan pustaka sungguhan), dan baris-baris itu milik pengguna
+// yang dipertahankan apa adanya oleh perbaruiBarisEnv.
+//
+// B-507: penolakan NUL dulu berlaku atas SELURUH berkas, termasuk
+// NUL warisan di baris tak-terkelola yang tidak disentuh sunting
+// ini — lebih ketat dari parser tujuan: python-dotenv terbukti
+// membaca berkas dengan NUL di variabel lain dengan nilainya
+// utuh. Kini penolakan dipersempit ke baris terkelola (satu-satunya
+// bagian yang ditulis fungsi ini); NUL di baris lain adalah isi
+// pengguna yang memang terbaca oleh tool-nya.
 func verifikasiEnvHermes(konten, namaTerkelola string) error {
-	if strings.ContainsRune(konten, '\x00') {
-		return fmt.Errorf("hasil sunting .env memuat byte NUL (jejak pengkodean UTF-16/32); Hermes tidak bisa membaca berkas seperti itu")
-	}
 	terlihat := false
 	for _, l := range strings.Split(konten, "\n") {
 		if namaVariabelEnv(l) != namaTerkelola {
 			continue
+		}
+		if strings.ContainsRune(l, '\x00') {
+			return fmt.Errorf("hasil sunting .env memuat byte NUL pada variabel terkelola %q (jejak pengkodean UTF-16/32); Hermes tidak bisa membaca berkas seperti itu", namaTerkelola)
 		}
 		if terlihat {
 			return fmt.Errorf("hasil sunting .env memuat variabel terkelola ganda %q", namaTerkelola)
@@ -3929,7 +4061,10 @@ func (m *Manager) GetExportScript(homeDir string) (string, error) {
 		homeDir, _ = os.UserHomeDir()
 	}
 	envFile := filepath.Join(homeDir, ".routex", "cli-env.sh")
-	data, err := os.ReadFile(envFile)
+	// B-494: lewat bacaReguler — handler API memanggil ini per
+	// permintaan; FIFO di cli-env.sh menggantungkannya tanpa batas.
+	// Berkas khusus menjadi galat bernama, bukan gantungan.
+	data, err := bacaReguler(envFile)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "# Belum ada konfigurasi CLI yang diterapkan.\nPilih CLI di atas dan klik 'Terapkan ke CLI'.", nil

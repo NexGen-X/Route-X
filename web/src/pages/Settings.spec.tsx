@@ -135,6 +135,15 @@ describe('Settings — Pengujian Halaman Modular & Terisolasi', () => {
     });
   });
 
+  it('B-451: konfigurasi domain gagal dimuat → penanda galat persisten di tab Domain', async () => {
+    vi.mocked(api.system.domain.get).mockRejectedValue(new Error('jaringan putus'));
+    render(<Settings />);
+
+    expect(
+      await screen.findByText(/Konfigurasi domain belum dapat dimuat: jaringan putus/)
+    ).toBeInTheDocument();
+  });
+
   it('berganti ke tab Backup dan memverifikasi status backup serta tombol download/upload', async () => {
     render(<Settings />);
 

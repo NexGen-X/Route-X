@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { AdvancedSettingsTabProps } from './types';
 import { isReservedSetting, labelSettingDikenal } from './utils';
+import { keadaanMuat } from '../../lib/keadaanMuat';
 
 export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
   settings,
@@ -27,6 +28,13 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
 }) => {
   const customSettings = settings.filter((s) => !isReservedSetting(s.key));
   const managedSettings = settings.filter((s) => isReservedSetting(s.key));
+  // Fase 19: cabang kosong permukaan ini kini digerbang modul
+  // keadaanMuat bersama (sebelumnya pola manual prop gagalMuat).
+  const keadaanCustom = keadaanMuat({
+    memuat: isLoading,
+    gagal: gagalMuat,
+    jumlah: customSettings.length,
+  });
 
   return (
     <div className="space-y-5">
@@ -69,12 +77,12 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
       </div>
 
       {/* Custom Operasional Parameters */}
-      {customSettings.length === 0 ? (
-        isLoading ? (
+      {keadaanCustom !== 'ada' ? (
+        keadaanCustom === 'memuat' ? (
           <div className="py-8 text-center">
             <p className="text-xs text-text-muted">Memuat parameter runtime…</p>
           </div>
-        ) : gagalMuat ? (
+        ) : keadaanCustom === 'gagal' ? (
           // B-411: muatan gagal — kosong berarti belum terukur.
           <div className="py-8 text-center">
             <p className="text-xs text-text-muted">Parameter runtime belum dapat dimuat.</p>

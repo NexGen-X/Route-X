@@ -515,6 +515,13 @@ describe('Requests Page — Modular Architecture & Integration Spec', () => {
     });
   });
 
+  it('B-454: daftar provider untuk filter gagal dimuat → penanda gagal tampil di filter', async () => {
+    mockProvidersFn.mockRejectedValue(new Error('jaringan putus'));
+    render(<Requests />);
+
+    expect((await screen.findAllByText('Daftar provider gagal dimuat')).length).toBeGreaterThan(0);
+  });
+
   it('menangani kegagalan fungsi copyTextToClipboard dengan notifikasi toast error', async () => {
     (copyTextToClipboard as unknown as { mockRejectedValueOnce: (err: Error) => void }).mockRejectedValueOnce(
       new Error('Clipboard ditolak oleh izin sistem')

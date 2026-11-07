@@ -8,6 +8,7 @@ import { Tooltip } from '../common/Tooltip';
 import { useToast } from '../../context/ToastContext';
 import { getErrorMessage } from './utils';
 import { InfoBanner } from '../common/InfoBanner';
+import { keadaanMuat } from '../../lib/keadaanMuat';
 
 // Tab "Performa & Cache" di Settings (Fase 2 R3) — rumah tunggal kontrol
 // cache respons. Sebelumnya kontrol ini tinggal di halaman Diagnostics,
@@ -169,8 +170,18 @@ export const CacheTab: React.FC = () => {
   // gagal atau masih berjalan) — badge, ringkasan, dan angka wajib
   // netral pada keadaan itu, bukan "NONAKTIF"/"0.0% hijau"/0 yang
   // definitif. Perlakuan yang sama dengan statistik cache di
-  // Observability (B-225/B-313).
-  const terukur = cache !== null;
+  // Observability (B-225/B-313). Fase 19: keadaan ini kini diturunkan
+  // dari modul keadaanMuat bersama, bukan pola manual lokal.
+  const keadaanCache = keadaanMuat({
+    memuat,
+    gagal: gagalMuat != null,
+    jumlah: cache ? 1 : 0,
+  });
+  const terukur = keadaanCache === 'ada';
+  // B-453: rasio hanya bermakna bila penyebutnya terukur > 0 —
+  // penyebut nol bukan "0.0%" (dan tidak boleh berwarna emerald,
+  // semantik B-384: emerald hanya untuk nilai terukur bermakna).
+  const rasioBermakna = terukur && totalReq > 0;
 
   return (
     <div>
@@ -247,9 +258,9 @@ export const CacheTab: React.FC = () => {
         <div className="py-1">
           <span className="text-[11px] text-text-muted block">Rasio Hit Cache</span>
           <span
-            className={`text-xl font-bold font-mono mt-1 block ${terukur ? 'text-emerald-400' : 'text-text-muted'}`}
+            className={`text-xl font-bold font-mono mt-1 block ${rasioBermakna ? 'text-emerald-400' : 'text-text-muted'}`}
           >
-            {memuat ? '…' : terukur ? `${hitRatio}%` : '—'}
+            {memuat && !terukur ? '…' : rasioBermakna ? `${hitRatio}%` : '—'}
           </span>
           <span className="text-[10px] text-text-secondary block mt-0.5 font-mono">
             {terukur ? `${cache?.hits || 0} hit / ${totalReq} total` : 'belum terukur'}

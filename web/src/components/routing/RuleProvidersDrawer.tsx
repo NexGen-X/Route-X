@@ -15,6 +15,9 @@ export interface RuleProvidersDrawerProps {
   models: Model[];
   providers: Provider[];
   onSuccess: () => void;
+  // B-449: nama sumber (model/provider) yang gagal dimuat di halaman
+  // induk — daftar kosong di drawer berarti belum terukur.
+  sumberGagal?: string | null;
 }
 
 export const RuleProvidersDrawer: React.FC<RuleProvidersDrawerProps> = ({
@@ -24,6 +27,7 @@ export const RuleProvidersDrawer: React.FC<RuleProvidersDrawerProps> = ({
   models,
   providers,
   onSuccess,
+  sumberGagal,
 }) => {
   const { toast } = useToast();
   const [ruleProviders, setRuleProviders] = useState<string[]>([]);
@@ -124,7 +128,12 @@ export const RuleProvidersDrawer: React.FC<RuleProvidersDrawerProps> = ({
         onSubmit={handleSaveProviders}
         className="space-y-4 text-xs"
       >
-        <div className="space-y-2">
+{sumberGagal && (
+          <p role="alert" className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg p-3">
+            Daftar gagal dimuat: {sumberGagal} — pilihan di bawah belum terukur, bukan daftar kosong.
+          </p>
+        )}
+                <div className="space-y-2">
           {providers.map((p) => {
             const targetM = models.find(
               (m) =>

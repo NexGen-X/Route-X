@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { CircuitBreakerStatus, Model, Provider, RoutingRule } from '../../types';
+import { keadaanMuat, teksHitungKeadaan } from '../../lib/keadaanMuat';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
 import { QueryError } from '../common/QueryError';
@@ -24,6 +25,9 @@ export interface CircuitBreakersPanelProps {
   breakersError: string | null;
   loadBreakers: () => Promise<void>;
   handleResetBreaker: (providerId: string, model: string) => Promise<void>;
+  // B-449: daftar provider (sumber terpisah dari breaker) gagal
+  // dimuat halaman induk — chip hitungan provider belum terukur.
+  providersGagal?: boolean;
 }
 
 // Konfigurasi efektif yang ditampilkan untuk satu breaker: rule aktif
@@ -79,6 +83,7 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
   breakersError,
   loadBreakers,
   handleResetBreaker,
+  providersGagal = false,
 }) => {
   const totalAbnormalBreakers = breakers.filter((b) => b.state !== 'closed').length;
   // B-312: klaim sehat hanya sah dari data yang benar-benar tiba.
@@ -222,7 +227,11 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
               <div className="px-3 py-2 rounded-lg bg-bg-surface-1 border border-border/60 text-center">
                 <span className="text-[10px] text-text-muted block font-sans">Provider Dipantau</span>
                 <span className="text-xs font-bold font-mono text-white">
-                  {providers.length} Terhubung
+                  {teksHitungKeadaan(
+                    keadaanMuat({ memuat: false, gagal: providersGagal, jumlah: providers.length }),
+                    providers.length,
+                  )}{' '}
+                  Terhubung
                 </span>
               </div>
               <div className="px-3 py-2 rounded-lg bg-bg-surface-1 border border-border/60 text-center">

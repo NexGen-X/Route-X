@@ -13,6 +13,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type { DomainTabProps, SSLProviderMode } from './types';
+import { keadaanMuat } from '../../lib/keadaanMuat';
 
 export const DomainTab: React.FC<DomainTabProps> = ({
   domainConfig,
@@ -22,6 +23,7 @@ export const DomainTab: React.FC<DomainTabProps> = ({
   isDomainSaving,
   isDomainDeleting,
   domainFeedback,
+  domainError = null,
   serverIP,
   setInputDomain,
   setInputMode,
@@ -64,6 +66,27 @@ export const DomainTab: React.FC<DomainTabProps> = ({
           <span className="hidden sm:inline">Segarkan</span>
         </Button>
       </div>
+
+      {/* B-451: penanda galat PERSISTEN lewat keadaanMuat bersama —
+          gagal muat dibedakan dari benar-benar belum ada domain. */}
+      {keadaanMuat({
+        memuat: isDomainLoading,
+        gagal: domainError != null,
+        jumlah: domainConfig ? 1 : 0,
+      }) === 'gagal' && (
+        <div
+          role="alert"
+          className="mt-4 p-3.5 rounded-lg text-xs flex items-start gap-2.5 border bg-red-500/10 text-red-300 border-red-500/30"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
+          <div className="flex-1">
+            Konfigurasi domain belum dapat dimuat: {domainError}{' '}
+            <button type="button" onClick={onRefresh} className="underline cursor-pointer">
+              Coba lagi
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Feedback Alert */}
       {domainFeedback && (

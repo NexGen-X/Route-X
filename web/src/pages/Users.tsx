@@ -28,6 +28,9 @@ export const UsersPage: React.FC = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
   const [detail, setDetail] = useState<{ roles: string[]; permissions: string[] } | null>(null);
+  // B-450: galat muat detail adalah keadaan tersendiri — dulu hanya
+  // toast, sehingga drawer terjebak "Memuat detail..." selamanya.
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [newUser, setNewUser] = useState<{ email: string; name: string; password: string; role: 'admin' | 'user' }>({
     email: '',
     name: '',
@@ -62,6 +65,7 @@ export const UsersPage: React.FC = () => {
   const openDetail = async (id: string) => {
     setDetailUserId(id);
     setDetail(null);
+    setDetailError(null);
     const u = users.find((x) => x.id === id);
     if (u) setRenameName(u.display_name || '');
     try {
@@ -70,7 +74,9 @@ export const UsersPage: React.FC = () => {
       setDetail({ roles, permissions: res.permissions || [] });
       setPeranDetail(roles.includes('Admin') ? 'admin' : 'user');
     } catch (err) {
-      toast.error('Gagal memuat detail pengguna: ' + (err instanceof Error ? err.message : String(err)));
+      const pesan = err instanceof Error ? err.message : String(err);
+      setDetailError(pesan);
+      toast.error('Gagal memuat detail pengguna: ' + pesan);
     }
   };
 
@@ -578,7 +584,20 @@ export const UsersPage: React.FC = () => {
           </Button>
         }
       >
-        {!detail ? (
+        {!detail && detailError ? (
+          <div className="py-6 text-center space-y-3">
+            <p role="alert" className="text-xs text-red-400">
+              Detail pengguna belum dapat dimuat: {detailError}
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => detailUserId && void openDetail(detailUserId)}
+            >
+              Coba Lagi
+            </Button>
+          </div>
+        ) : !detail ? (
           <p className="text-xs text-text-muted py-6 text-center">Memuat detail...</p>
         ) : (
           <div className="space-y-5 text-xs">

@@ -14,6 +14,9 @@ export interface RequestFilterBarProps {
   // dikirim sebagai provider_id — menggantikan daftar slug vendor karangan
   // lama yang tidak cocok dengan filter backend mana pun (audit3 V-FJ-03).
   providers?: Array<{ id: string; name: string }>;
+  // B-454: daftar provider gagal dimuat — filter menandainya agar
+  // tidak tertukar dengan "memang tidak ada provider".
+  providersError?: string | null;
   statusFilter?: string;
   onStatusFilterChange?: (status: string) => void;
   timeRangeFilter?: string;
@@ -57,6 +60,7 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
   providerFilter = '',
   onProviderFilterChange,
   providers = [],
+  providersError = null,
   statusFilter = '',
   onStatusFilterChange,
   timeRangeFilter = '',
@@ -177,12 +181,22 @@ export const RequestFilterBar: React.FC<RequestFilterBarProps> = ({
               <option value="" className="bg-bg-surface text-text-primary">
                 Semua Provider
               </option>
+              {providersError && (
+                <option value="" disabled className="bg-bg-surface text-text-primary">
+                  Daftar provider gagal dimuat
+                </option>
+              )}
               {providers.map((p) => (
                 <option key={p.id} value={p.id} className="bg-bg-surface text-text-primary">
                   {p.name}
                 </option>
               ))}
             </select>
+            {providersError && (
+              <span role="alert" className="text-[10px] text-red-400 ml-1">
+                Daftar provider gagal dimuat
+              </span>
+            )}
           </div>
         )}
 

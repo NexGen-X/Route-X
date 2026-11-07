@@ -51,6 +51,10 @@ export const Settings: React.FC = () => {
   // diklik pun tampak sibuk/disabled.
   const [isDomainDeleting, setIsDomainDeleting] = useState(false);
   const [domainFeedback, setDomainFeedback] = useState<DomainFeedback>(null);
+  // B-451: galat muat konfigurasi domain sebagai keadaan persisten
+  // untuk tab — dulu hanya toast, sehingga domain terpasang tampak
+  // "belum ada domain" sesudah toast hilang.
+  const [domainError, setDomainError] = useState<string | null>(null);
 
   // Backup & Disaster Recovery state
   const [backupStatus, setBackupStatus] = useState<BackupStatusResponse | null>(null);
@@ -90,11 +94,13 @@ export const Settings: React.FC = () => {
     try {
       const res = await api.system.domain.get();
       setDomainConfig(res);
+      setDomainError(null);
       if (res.domain) {
         setInputDomain(res.domain);
         setInputMode(res.mode || 'letsencrypt');
       }
     } catch (err: unknown) {
+      setDomainError(getErrorMessage(err));
       toast.error('Gagal memuat status domain: ' + getErrorMessage(err));
     } finally {
       setIsDomainLoading(false);
@@ -422,6 +428,7 @@ export const Settings: React.FC = () => {
           isDomainSaving={isDomainSaving}
           isDomainDeleting={isDomainDeleting}
           domainFeedback={domainFeedback}
+          domainError={domainError}
           serverIP={serverIP}
           setInputDomain={setInputDomain}
           setInputMode={setInputMode}

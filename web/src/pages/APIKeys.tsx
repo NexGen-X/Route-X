@@ -9,6 +9,7 @@ import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
 import { getErrorMessage } from '../utils/error';
+import { keadaanMuat } from '../lib/keadaanMuat';
 import { parseJumlahUsd } from '../utils/money';
 import type { Model, APIKey } from '../types';
 import {
@@ -36,7 +37,13 @@ export const APIKeys: React.FC = () => {
   });
   const keys = keysData?.items || [];
 
-  const { data: modelsData } = useQuery({
+  const {
+    data: modelsData,
+    isLoading: isModelsLoading,
+    isError: isModelsError,
+    error: modelsError,
+    refetch: refetchModels,
+  } = useQuery({
     queryKey: ['models'],
     queryFn: () => api.models.listAll(),
   });
@@ -302,6 +309,10 @@ export const APIKeys: React.FC = () => {
   // jadi ia berputar selama data dimuat dan justru bebas diklik saat
   // penyimpanan berlangsung.
   const [isSavingAllowed, setIsSavingAllowed] = useState(false);
+  // B-445: keadaan muat scope — kegagalan getAllowed adalah keadaan
+  // galat tersendiri, bukan daftar kosong senyap.
+  const [allowedError, setAllowedError] = useState<string | null>(null);
+  const [isAllowedLoading, setIsAllowedLoading] = useState(false);
 
   const handleOpenAllowed = async (k: APIKey) => {
     const reqId = ++allowedReqRef.current;
@@ -309,6 +320,8 @@ export const APIKeys: React.FC = () => {
     setSelectedKey(k);
     setIsAllowedOpen(true);
     setScopeSearch('');
+    setAllowedError(null);
+    setIsAllowedLoading(true);
 
     const initialModels: string[] = k.allowed_models || k.model_ids || [];
     const initialProviders: string[] = k.allowed_providers || k.provider_ids || [];
@@ -335,14 +348,47 @@ export const APIKeys: React.FC = () => {
       if (res && !allowedEditedRef.current) {
         setSelectedScopeIds(resolveSelected(res.model_ids || [], res.provider_ids || []));
       }
-    } catch {
-      // Pertahankan initial value jika endpoint gagal
+    } catch (err: unknown) {
+      if (allowedReqRef.current !== reqId) return;
+      // B-445: kegagalan getAllowed tampil sebagai keadaan galat —
+      // tanpa penanda ini seleksi awal tampil seolah terukur kosong.
+      setAllowedError(getErrorMessage(err));
+    } finally {
+      if (allowedReqRef.current === reqId) setIsAllowedLoading(false);
     }
+  };
+
+  // B-445: keadaan bersama drawer scope lewat keadaanMuat — daftar
+  // model yang belum berhasil dimuat TIDAK BOLEH melahirkan klaim
+  // kosong maupun scope kosong (= akses bebas) saat disimpan.
+  const scopeSiap =
+    !isModelsLoading && !isModelsError && !isAllowedLoading && allowedError == null;
+  const keadaanScope = keadaanMuat({
+    memuat: isModelsLoading || isAllowedLoading,
+    gagal: isModelsError || allowedError != null,
+    // Selama belum siap, jumlah dipaksa 0 agar data model yang ada
+    // tidak menutupi keadaan galat/memuat seleksi scope (aturan
+    // 'ada menang' hanya berlaku untuk data yang memang terukur).
+    jumlah: scopeSiap ? scopeOptions.length : 0,
+  });
+  const galatScope =
+    allowedError ??
+    (isModelsError
+      ? modelsError instanceof Error
+        ? modelsError.message
+        : 'Daftar model gagal dimuat.'
+      : null);
+  const handleRetryScope = () => {
+    void refetchModels();
+    if (selectedKey) void handleOpenAllowed(selectedKey);
   };
 
   const handleSaveAllowed = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedKey) return;
+    // Penjaga lapis kedua di luar tombol nonaktif: jangan pernah
+    // menurunkan scope dari daftar yang belum terukur.
+    if (!scopeSiap) return;
 
     let modelIds: string[] = [];
     let providerIds: string[] = [];
@@ -544,6 +590,10 @@ export const APIKeys: React.FC = () => {
         onDeselectAll={handleDeselectAllScopes}
         onSave={handleSaveAllowed}
         isLoading={isSavingAllowed}
+        keadaanScope={keadaanScope}
+        galatScope={galatScope}
+        onRetryScope={handleRetryScope}
+        simpanNonaktif={!scopeSiap}
       />
     </div>
   );

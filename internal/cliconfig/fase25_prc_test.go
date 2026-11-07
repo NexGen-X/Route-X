@@ -193,10 +193,12 @@ func teksUTF16Cacat(latin, cacat, cjk int) string {
 // TestFase25PRCSapuanMekanisDetektor menyapu ruang bentuk
 // detektor yang diubah PR ini — orientasi × fraksi astral ×
 // kelas Cacat × panjang berkas — langsung pada fungsi detektor,
-// dan menegaskan vonis tiap sel beserta bukti ketaktercapaian
-// cabang "kedua orientasi layak" (tak satu pun bentuk yang
-// disapu memenuhi kedua sisi bersamaan). Tabel sel tercetak
-// lewat -v; ringkasannya juga tertulis di badan PR.
+// dan menegaskan vonis tiap sel. Sel-sel di sini (CJK/NEL/
+// Latin) tetap tak memenuhi kedua sisi bersamaan — tetapi itu
+// sifat SEL ini, bukan ketaktercapaian cabang: B-568 membuktikan
+// cabang "kedua orientasi layak" TERJANGKAU lewat pasangan
+// Latin-1 (fase26_pra_test.go). Tabel sel tercetak lewat -v;
+// ringkasannya juga tertulis di badan PR.
 func TestFase25PRCSapuanMekanisDetektor(t *testing.T) {
 	// --- UTF-32: fraksi astral × orientasi × panjang ---
 	for _, total := range []int{4, 7, 8, 12, 14, 40, 200} {
@@ -253,7 +255,7 @@ func TestFase25PRCSapuanMekanisDetektor(t *testing.T) {
 			t.Logf("UTF-16 latin=%d cacat=%d cjk=%3d be=%v -> layakLE=%v layakBE=%v det16=%q (tolak=%v)",
 				tc.latin, tc.cacat, tc.cjk, be, le.layak(), beP.layak(), got, tc.tolak)
 			if le.layak() && beP.layak() {
-				t.Errorf("UTF-16 latin=%d cacat=%d cjk=%d be=%v: kedua orientasi layak — cabang mati tercapai!", tc.latin, tc.cacat, tc.cjk, be)
+				t.Errorf("UTF-16 latin=%d cacat=%d cjk=%d be=%v: kedua orientasi layak — mustahil untuk sel ini (tanpa pasangan Latin-1 D8–DB/DC–DF, B-568); bila ini tercapai, sapuan atau penilai berubah", tc.latin, tc.cacat, tc.cjk, be)
 			}
 			// Orientasi benar harus layak tepat bila tolak;
 			// orientasi lawan tidak pernah layak.

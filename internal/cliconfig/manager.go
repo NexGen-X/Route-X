@@ -2765,6 +2765,29 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			if enc := deteksiBOMNonUTF8([]byte(isiEnv)); enc != "" {
 				return fmt.Errorf("berkas %s berkode %s; Hermes hanya membaca .env UTF-8 — simpan ulang berkas itu sebagai UTF-8, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", envPath, enc)
 			}
+			// B-548: UTF-32 TANPA BOM juga lolos dari pemeriksa
+			// BOM, dan penjaga NUL-ganda rapat di detektor UTF-16
+			// justru MELEPASKANNYA sebagai "bukan UTF-16" — tanpa
+			// pemeriksa ini berkas UTF-32 menempuh jalur sukses
+			// yang sama dengan UTF-16 tanpa BOM dulu. Pola NUL
+			// per-4-byte-nya dideteksi terpisah (lihat
+			// deteksiUTF32TanpaBOM).
+			//
+			// B-569: pemeriksa UTF-32 berjalan SEBELUM pemeriksa
+			// UTF-16 — urutan lama (det16 dulu) salah melabeli
+			// .env UTF-32 astral-dominan sebagai "UTF-16":
+			// jalur klasik det16 menyala atas berkas itu iff
+			// A + z1 > 2·z0 (A = grup astral, z0/z1 = astral
+			// berbita-rendah/-kedua 0), sehingga emoji yang
+			// paling umum (😁😂😃😍) justru yang salah label.
+			// Pola 4-byte det32 lebih spesifik daripada suara
+			// NUL det16, jadi det32 yang ditanya dulu; sapuan
+			// mekanis Fase 26 membuktikan det32 (jangkar
+			// DILONGGARKAN, B-570) tidak membayangi label
+			// kasus B-556 atas berkas UTF-16 sungguhan.
+			if enc := deteksiUTF32TanpaBOM([]byte(isiEnv)); enc != "" {
+				return fmt.Errorf("berkas %s terdeteksi berkode %s tanpa BOM; Hermes hanya membaca .env UTF-8 — simpan ulang berkas itu sebagai UTF-8, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", envPath, enc)
+			}
 			// B-522: UTF-16 TANPA BOM lolos dari pemeriksa BOM di
 			// atas — isinya terbaca sebagai teks yang nama
 			// terkelolanya tidak terbaca, baris lama dipertahankan
@@ -2776,16 +2799,6 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			// NUL terisolasi yang ditoleransi B-507 tidak ikut
 			// tertolak.
 			if enc := deteksiUTF16TanpaBOM([]byte(isiEnv)); enc != "" {
-				return fmt.Errorf("berkas %s terdeteksi berkode %s tanpa BOM; Hermes hanya membaca .env UTF-8 — simpan ulang berkas itu sebagai UTF-8, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", envPath, enc)
-			}
-			// B-548: UTF-32 TANPA BOM juga lolos dari pemeriksa
-			// BOM, dan penjaga NUL-ganda rapat di detektor UTF-16
-			// justru MELEPASKANNYA sebagai "bukan UTF-16" — tanpa
-			// pemeriksa ini berkas UTF-32 menempuh jalur sukses
-			// yang sama dengan UTF-16 tanpa BOM dulu. Pola NUL
-			// per-4-byte-nya dideteksi terpisah (lihat
-			// deteksiUTF32TanpaBOM).
-			if enc := deteksiUTF32TanpaBOM([]byte(isiEnv)); enc != "" {
 				return fmt.Errorf("berkas %s terdeteksi berkode %s tanpa BOM; Hermes hanya membaca .env UTF-8 — simpan ulang berkas itu sebagai UTF-8, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", envPath, enc)
 			}
 		}
@@ -4659,11 +4672,17 @@ func deteksiBOMNonUTF8(data []byte) string {
 // berlabel BE karena byte mentahnya meniru paritas BE); bila
 // keduanya tidak masuk akal, label netral "UTF-16" — vonisnya
 // tetap penolakan, hanya nama orientasinya yang tidak dikarang.
-// Label netral itu dalam praktik SELALU lahir dari jalur klasik
-// (B-556), bukan dari cabang "kedua orientasi layak" di bawah —
-// cabang itu cabang mati yang dipertahankan (lihat catatannya):
-// satu unit Latin di satu orientasi selalu anti di orientasi
-// lawan, sehingga kedua orientasi tak pernah layak bersamaan.
+// Label netral lahir dari jalur klasik (B-556) ATAU dari cabang
+// "kedua orientasi layak" di bawah (B-568): cabang itu HIDUP —
+// pasangan surrogate Latin-1 (hi U+00D8–U+00DB, lo U+00DC–
+// U+00DF) di satu orientasi membentuk pasangan surrogate sah
+// di orientasi lawan, sehingga kedua sisi layak bersamaan
+// (konstruksi 6 pasang byte 3D 00 D8 00 DC 00 00 3D 00 D8 00 DC
+// → LE dan BE sama-sama {latin:3 anti:1 cacat:0} layak).
+// Klaim lama "cabang mati" beserta bukti aritmetikanya
+// ("setiap unit Latin selalu anti di lawan") GUGUR — bukti
+// itu mengabaikan pasangan surrogate yang dihitung NETRAL
+// dan memakan dua unit.
 //
 // Gerbang arah sebaliknya (toleransi B-507) tetap mutlak: berkas
 // UTF-8 sah yang memuat NUL TERISOLASI/TERSEBAR di baris
@@ -4705,19 +4724,20 @@ func deteksiUTF16TanpaBOM(data []byte) string {
 	// dan labelnya selalu orientasi yang terbukti dari dekode.
 	le := nilaiOrientasiUTF16(data, n, true)
 	be := nilaiOrientasiUTF16(data, n, false)
-	// Cabang pertama switch di bawah adalah CABANG MATI yang
-	// DIPERTAHANKAN dengan sengaja (koreksi redaksi B-541):
-	// kedua orientasi tak pernah layak bersamaan — setiap unit
-	// Latin di satu orientasi adalah unit anti (U+xx00) di
-	// orientasi lawan, jadi anti_lawan ≥ latin; layak di kedua
-	// sisi sekaligus menuntut latin > 2×anti ≥ 2×latin_lawan >
-	// 4×latin, mustahil untuk latin ≥ 3. Sapuan mekanis
-	// Fase 25 (fase25_prc_test.go) menegaskan tidak satu pun
-	// bentuk yang disapu memenuhi kedua sisi bersamaan. Cabang
-	// ini dipertahankan sebagai jangkar niat (bila keduanya
-	// layak, labelnya netral) dan TIDAK dihapus: penghapusan
-	// tidak mengubah perilaku apa pun, sementara keberadaannya
-	// mendokumentasikan vonis simetris yang dituju.
+	// Cabang pertama switch di bawah adalah cabang HIDUP
+	// (B-568): kedua orientasi BISA layak bersamaan — pasangan
+	// surrogate Latin-1 (hi U+00D8–U+00DB, lo U+00DC–U+00DF)
+	// di satu orientasi membentuk pasangan surrogate sah di
+	// orientasi lawan, karena pasangan surrogate yang sah
+	// dihitung NETRAL dan memakan dua unit. Konstruksi 6 pasang
+	// byte 3D 00 D8 00 DC 00 00 3D 00 D8 00 DC → LE dan BE
+	// sama-sama {latin:3 anti:1 cacat:0} layak (skala 2 juga).
+	// Vonisnya netral "UTF-16": berkasnya bukan satu
+	// orientasi yang terbukti, dan vonisnya tetap penolakan.
+	// Klaim lama "cabang mati" beserta bukti aritmetikanya
+	// GUGUR di Putaran Bersih #13 — jangan hapus cabang ini
+	// berdasar klaim itu: penghapusan mengubah label berkas
+	// sejenis dari netral menjadi LE/BE.
 	switch {
 	case le.layak() && be.layak():
 		return "UTF-16"
@@ -4835,7 +4855,13 @@ func nilaiOrientasiUTF16(data []byte, n int, le bool) penilaianOrientasiUTF16 {
 // terkode UTF-32LE menaruh NUL pada residu byte 1, 2, dan 3 tiap
 // grup 4 byte (residu 3 SELALU NUL — titik kode di atas U+FFFFFF
 // tidak ada), UTF-32BE simetris pada residu 0, 1, 2 (residu 0
-// selalu NUL). deteksiUTF16TanpaBOM sengaja melepaskan pola ini
+// selalu NUL). Jangkar residu itu menoleransi tepat SATU grup
+// menyimpang (B-570: nol[3] >= g-1, bukan == g): satu byte
+// jangkar yang rusak (0x00→0x01) tidak boleh mematikan seluruh
+// detektor — berkasnya satu byte dari UTF-32 sah dan tetap
+// tidak bisa dibaca Hermes; dua grup menyimpang tetap lolos
+// (batas tertulis). deteksiUTF16TanpaBOM sengaja melepaskan
+// pola ini
 // lewat penjaga NUL-ganda rapatnya. Syarat residu pendamping
 // (≥3/4 grup "terjelaskan") menuntut byte kedua-tertinggi juga
 // mayoritas terjelaskan — teks Latin memenuhinya (titik kode
@@ -4875,8 +4901,11 @@ func deteksiUTF32TanpaBOM(data []byte) string {
 			astralBE++
 		}
 	}
-	le := nol[3] == g && (nol[2]+astralLE)*4 >= 3*g
-	be := nol[0] == g && (nol[1]+astralBE)*4 >= 3*g
+	// B-570: jangkar UNANIM (== g) diganti toleransi satu grup
+	// (>= g-1) — satu byte jangkar rusak mematikan det32
+	// sepenuhnya dan Configure sukses-bohong atas .env UTF-32.
+	le := nol[3] >= g-1 && (nol[2]+astralLE)*4 >= 3*g
+	be := nol[0] >= g-1 && (nol[1]+astralBE)*4 >= 3*g
 	switch {
 	case le && be:
 		return "UTF-32"

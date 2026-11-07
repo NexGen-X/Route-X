@@ -34,6 +34,9 @@ export interface DomainTabProps {
   isDomainSaving: boolean;
   isDomainDeleting: boolean;
   domainFeedback: DomainFeedback;
+  // B-451: galat muat konfigurasi domain dari halaman induk — tab
+  // menampilkan penanda persisten, bukan formulir kosong senyap.
+  domainError?: string | null;
   serverIP: string | null;
   setInputDomain: (domain: string) => void;
   setInputMode: (mode: SSLProviderMode) => void;

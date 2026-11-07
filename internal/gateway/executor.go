@@ -1378,6 +1378,12 @@ func bungkusPencatatAliran(
 		return &aliranPencatat{
 			Stream: &aliranPeristiwaPertama{Stream: dijaga, ev: ev},
 			ctx:    ctx,
+			// B-423: peristiwa intipan pertama SUDAH diterima saat
+			// konstruksi, jadi terima diawali 1. Tanpa ini Close
+			// sebelum Recv pertama handler (jalur gagal PrepareSSE)
+			// melaporkan kegagalan breaker bagi aliran yang sehat
+			// dan sudah mengirim peristiwa.
+			terima: 1,
 			catat: func(sukses bool) {
 				e.catat(ctx, c, modelKandidat(plan, c), sukses, plan.BreakerCfg, probe)
 			},
@@ -1507,7 +1513,8 @@ func (a *aliranPenjagaDiam) Close() error {
 //     sekali, sama seperti gerbang yang sama di cobaKandidat.
 //   - Close sebelum Recv terminal: sukses bila aliran sudah sempat
 //     mengirim >=1 peristiwa tanpa error (konsumen menutup aliran yang
-//     sehat), gagal bila belum ada satu pun peristiwa (aliran dibuka
+//     sehat) — peristiwa intipan pertama dihitung sejak konstruksi
+//     (B-423) — gagal bila belum ada satu pun peristiwa (aliran dibuka
 //     lalu mati sebelum berguna).
 //   - Context permintaan sudah dibatalkan (klien pergi): tidak dicatat
 //     sama sekali, konsisten dengan aturan ErrKindCanceled di executor.

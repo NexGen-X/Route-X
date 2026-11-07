@@ -220,7 +220,10 @@ func (s *stream) handle(ev *providers.SSEEvent) (*providers.StreamEvent, error) 
 		var env struct {
 			Response generateResponse `json:"response"`
 		}
-		if err := json.Unmarshal(ev.Data, &env); err == nil && (len(env.Response.Candidates) > 0 || env.Response.UsageMetadata != nil) {
+		// B-428: amplop error juga dibuka di jalur streaming —
+		// tanpa ini error amplop dilewati senyap dan aliran
+		// berakhir sebagai kegagalan terputus generik.
+		if err := json.Unmarshal(ev.Data, &env); err == nil && (len(env.Response.Candidates) > 0 || env.Response.UsageMetadata != nil || env.Response.Error != nil || env.Response.PromptFeedback != nil) {
 			chunk = env.Response
 		}
 	}

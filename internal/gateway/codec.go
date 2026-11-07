@@ -479,7 +479,9 @@ type pesanMasuk struct {
 	ToolCallID string          `json:"tool_call_id"`
 	// ThoughtSignature adalah tanda tangan block thinking Anthropic di
 	// tingkat pesan (B-390); lihat pengecualian bernama di atas.
-	ThoughtSignature string `json:"thought_signature"`
+	// Bertipe SignatureToleran (B-424): signature numerik dari klien yang
+	// mengulang riwayat tidak boleh menggagalkan seluruh decode.
+	ThoughtSignature providers.SignatureToleran `json:"thought_signature"`
 }
 
 // toolCallMasuk adalah satu tool call dalam riwayat yang dikirim ulang klien.
@@ -491,7 +493,7 @@ type toolCallMasuk struct {
 	// bolak-balik utuh, karena upstream menolak riwayat functionCall model thinking
 	// yang tidak membawanya — mengabaikannya di sini memutus sesi tool di giliran
 	// hasil pertama.
-	ThoughtSignature string `json:"thought_signature"`
+	ThoughtSignature providers.SignatureToleran `json:"thought_signature"`
 	Function         struct {
 		Name string `json:"name"`
 		// Mentah supaya bentuk yang salah bisa dilaporkan dengan tepat. Di dialek OpenAI
@@ -529,7 +531,7 @@ func uraikanPesan(raw json.RawMessage) ([]providers.Message, error) {
 			ToolCallID: m.ToolCallID,
 			// Tanda tangan berpikir tingkat pesan diteruskan ke bentuk
 			// kanonik (B-390), sejajar tanda tangan per tool call B-162.
-			ReasoningSignature: m.ThoughtSignature,
+			ReasoningSignature: string(m.ThoughtSignature),
 		}
 
 		adaKonten, err := uraikanKonten(&pesan, m.Content, jalur+".content")
@@ -561,7 +563,7 @@ func uraikanPesan(raw json.RawMessage) ([]providers.Message, error) {
 					Arguments: args,
 				},
 				// Tanda tangan berpikir diteruskan ke bentuk kanonik (B-162).
-				ThoughtSignature: tc.ThoughtSignature,
+				ThoughtSignature: string(tc.ThoughtSignature),
 			})
 		}
 

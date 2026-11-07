@@ -429,7 +429,47 @@ func (p *Provider) blocksFor(m *providers.Message) (string, []block, error) {
 				"pesan berperan tool tidak menyertakan tool_call_id, sehingga hasilnya tidak bisa dikaitkan ke panggilan tool")
 		}
 		result := block{Type: blockToolResult, ToolUseID: m.ToolCallID, IsError: m.IsError}
-		if text := m.Text(); text != "" {
+		if m.IsMultimodal() {
+			// B-429: hasil tool multimodal — bagian gambar ikut sebagai
+			// block image di dalam konten tool_result (bentuk yang
+			// didukung Anthropic), bukan hanya teksnya. Sebelumnya
+			// hanya m.Text() yang dipanen, jadi tangkapan layar dari
+			// tool hilang senyap dan model menjawab tentang gambar
+			// yang tak pernah ia terima. Pemetaan gambar mengikuti
+			// pola contentBlocks: data URI menjadi sumber base64,
+			// URL biasa menjadi sumber url.
+			var isi []block
+			for i := range m.Parts {
+				part := &m.Parts[i]
+				switch part.Type {
+				case providers.PartTypeText:
+					if part.Text != "" {
+						isi = append(isi, block{Type: blockText, Text: part.Text})
+					}
+				case providers.PartTypeImageURL:
+					if part.ImageURL == nil || part.ImageURL.URL == "" {
+						continue
+					}
+					if mediaType, data, ok := parseDataURI(part.ImageURL.URL); ok {
+						isi = append(isi, block{Type: blockImage, Source: &imageSource{
+							Type: "base64", MediaType: mediaType, Data: data,
+						}})
+						continue
+					}
+					isi = append(isi, block{Type: blockImage, Source: &imageSource{
+						Type: "url", URL: part.ImageURL.URL,
+					}})
+				}
+			}
+			// Penolakan/transkrip audio ikut m.Text() pada jalur
+			// non-multimodal (B-213); jaga paritasnya di sini.
+			for _, ekstra := range []string{m.Refusal, m.AudioTranscript} {
+				if ekstra != "" {
+					isi = append(isi, block{Type: blockText, Text: ekstra})
+				}
+			}
+			result.Content = isi
+		} else if text := m.Text(); text != "" {
 			result.Content = []block{{Type: blockText, Text: text}}
 		}
 		return roleUser, []block{result}, nil

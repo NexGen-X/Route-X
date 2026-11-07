@@ -37,6 +37,11 @@ export const RoutingRules: React.FC = () => {
 
   const [rulesError, setRulesError] = useState<string | null>(null);
   const [breakersError, setBreakersError] = useState<string | null>(null);
+  // B-449: kegagalan sumber sekunder (model/provider) dicatat
+  // sebagai keadaan tersendiri — dulu ditelan sehingga daftar
+  // kosongnya terbaca sebagai "0 Terhubung"/pilihan kosong.
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [providersError, setProvidersError] = useState<string | null>(null);
   // Sumber daftar yang terpotong saat dimuat (sisa V-FF-28): nama sumber
   // yang hasil listAll-nya bertanda `terpotong`, untuk peringatan visual.
   const [sumberTerpotong, setSumberTerpotong] = useState<string[]>([]);
@@ -60,11 +65,19 @@ export const RoutingRules: React.FC = () => {
 
       if (resModels.status === 'fulfilled') {
         setModels(resModels.value?.items || []);
+        setModelsError(null);
+      } else {
+        const err = resModels.reason;
+        setModelsError(err instanceof Error ? err.message : String(err));
       }
 
       if (resProv.status === 'fulfilled') {
         const pItems = Array.isArray(resProv.value) ? resProv.value : resProv.value?.items;
         setProviders(pItems || []);
+        setProvidersError(null);
+      } else {
+        const err = resProv.reason;
+        setProvidersError(err instanceof Error ? err.message : String(err));
       }
 
       // Penanda terpotong per sumber (sisa V-FF-28): daftar yang tidak
@@ -164,6 +177,13 @@ export const RoutingRules: React.FC = () => {
     setIsProvidersDrawerOpen(true);
   };
 
+  // B-449: nama + alasan sumber sekunder yang gagal, untuk banner
+  // halaman, panel breaker, dan penanda di dalam drawer aturan.
+  const sumberGagalBagian: string[] = [];
+  if (modelsError) sumberGagalBagian.push(`model (${modelsError})`);
+  if (providersError) sumberGagalBagian.push(`provider (${providersError})`);
+  const sumberGagal = sumberGagalBagian.length > 0 ? sumberGagalBagian.join('; ') : null;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -189,6 +209,15 @@ export const RoutingRules: React.FC = () => {
 
       {sumberTerpotong.length > 0 && (
         <PeringatanDaftarTerpotong sumber={sumberTerpotong.join(', ')} className="mb-4" />
+      )}
+
+      {sumberGagal && (
+        <div role="alert" className="mb-4 text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg p-3 flex items-center justify-between gap-3">
+          <span>Daftar gagal dimuat: {sumberGagal} — daftar terkait belum terukur, bukan kosong.</span>
+          <Button variant="secondary" size="sm" onClick={() => void loadRules()}>
+            Coba Lagi
+          </Button>
+        </div>
       )}
 
       {isRulesLoading ? (
@@ -259,6 +288,7 @@ export const RoutingRules: React.FC = () => {
         breakersError={breakersError}
         loadBreakers={loadBreakers}
         handleResetBreaker={handleResetBreaker}
+        providersGagal={providersError != null}
       />
 
       {/* Drawer Buat Routing Rule */}
@@ -268,6 +298,7 @@ export const RoutingRules: React.FC = () => {
         models={models}
         providers={providers}
         onSuccess={loadRules}
+        sumberGagal={sumberGagal}
       />
 
       {/* Drawer Edit Routing Rule */}
@@ -281,6 +312,7 @@ export const RoutingRules: React.FC = () => {
         models={models}
         providers={providers}
         onSuccess={loadRules}
+        sumberGagal={sumberGagal}
       />
 
       {/* Drawer Edit Penyedia & Bobot */}
@@ -294,6 +326,7 @@ export const RoutingRules: React.FC = () => {
         models={models}
         providers={providers}
         onSuccess={loadRules}
+        sumberGagal={sumberGagal}
       />
     </div>
   );

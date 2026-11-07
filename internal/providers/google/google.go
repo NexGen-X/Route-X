@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -474,14 +475,19 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 		var env struct {
 			Response generateResponse `json:"response"`
 		}
-		if err := json.Unmarshal(raw, &env); err == nil && (len(env.Response.Candidates) > 0 || env.Response.PromptFeedback != nil) {
+		// B-428: amplop juga dibuka bila isinya ERROR — syarat lama
+		// (candidates/promptFeedback) membuat error amplop
+		// {"response":{"error":…}} tak pernah terlihat checkBlocked,
+		// jadi 429 RESOURCE_EXHAUSTED jatuh ke kind server generik
+		// tanpa kode upstream dan tanpa RetryInfo B-266.
+		if err := json.Unmarshal(raw, &env); err == nil && (len(env.Response.Candidates) > 0 || env.Response.PromptFeedback != nil || env.Response.Error != nil) {
 			upstream = env.Response
 		} else {
 			if err := json.Unmarshal(raw, &upstream); err != nil {
 				return nil, providers.Newf(providers.ErrKindServer, p.name, "respons Antigravity tidak bisa diurai")
 			}
 		}
-		return p.toCanonicalResponse(req.Model, &upstream)
+		return p.toCanonicalResponse(req.Model, &upstream, resp.Header)
 	}
 
 	endpoint, err := p.methodURL(req.Model, "generateContent", "")
@@ -503,7 +509,7 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 	if err := json.Unmarshal(raw, &upstream); err != nil {
 		return nil, providers.Newf(providers.ErrKindServer, p.name, "respons Gemini tidak bisa diurai")
 	}
-	return p.toCanonicalResponse(req.Model, &upstream)
+	return p.toCanonicalResponse(req.Model, &upstream, resp.Header)
 }
 
 // Embeddings memanggil :embedContent untuk satu masukan, atau :batchEmbedContents untuk
@@ -666,11 +672,22 @@ func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 			})
 		}
 
+		// B-430: kunci map diurutkan dulu — iterasi map Go acak,
+		// jadi tanpa ini urutan katalog berubah di setiap panggilan
+		// atas payload yang sama. Sumber berurutan lain
+		// (agentModelSorts/commandModelIds/tieredModelIds) tetap
+		// mengikuti urutan sumber pertamanya di belakang blok ini;
+		// dedup B-264 tidak berubah.
+		ids := make([]string, 0, len(payload.Models))
 		for id := range payload.Models {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
 			addModel(id)
 		}
-		for _, sort := range payload.AgentModelSorts {
-			for _, g := range sort.Groups {
+		for _, srt := range payload.AgentModelSorts {
+			for _, g := range srt.Groups {
 				for _, id := range g.ModelIDs {
 					addModel(id)
 				}
@@ -679,8 +696,15 @@ func (p *Provider) Models(ctx context.Context) ([]providers.ModelInfo, error) {
 		for _, id := range payload.CommandModelIds {
 			addModel(id)
 		}
-		for _, list := range payload.TieredModelIds {
-			for _, id := range list {
+		// Kunci tier juga map (B-430): urutkan supaya sisa sumber
+		// ini deterministik juga, bukan hanya blok models di atas.
+		tierKeys := make([]string, 0, len(payload.TieredModelIds))
+		for k := range payload.TieredModelIds {
+			tierKeys = append(tierKeys, k)
+		}
+		sort.Strings(tierKeys)
+		for _, k := range tierKeys {
+			for _, id := range payload.TieredModelIds[k] {
 				addModel(id)
 			}
 		}

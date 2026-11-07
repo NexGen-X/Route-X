@@ -61,14 +61,25 @@ describe('CacheTab — Performa & Cache (Settings)', () => {
   it('menampilkan statistik, banner batas tahap awal, dan tombol aktifkan saat nonaktif', async () => {
     render(<CacheTab />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Cache Respons Redis')).toBeInTheDocument();
-    });
-    expect(screen.getByText('NONAKTIF')).toBeInTheDocument();
+    // B-455: tunggu BADGE dan RASIO async itu sendiri — versi lama
+    // hanya menunggu judul statis 'Cache Respons Redis' (selalu ada
+    // sejak render pertama) lalu mengassert badge/rasio secara
+    // sinkron, sehingga lari paralel berbeban bisa mengassert
+    // sebelum mock statistik selesai.
+    expect(await screen.findByText('NONAKTIF')).toBeInTheDocument();
+    // Rasio hit: 12/(12+8) = 60.0%
+    expect(await screen.findByText('60.0%')).toBeInTheDocument();
     expect(screen.getByText(/Cache nonaktif — aktifkan/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /aktifkan cache/i })).toBeInTheDocument();
-    // Rasio hit: 12/(12+8) = 60.0%
-    expect(screen.getByText('60.0%')).toBeInTheDocument();
+  });
+
+  it('rasio terukur-nol (penyebut nol) tampil netral —, bukan 0.0% emerald (B-453)', async () => {
+    mockStatsFn.mockResolvedValue({ ...STATS_NONAKTIF, hits: 0, misses: 0 });
+    render(<CacheTab />);
+
+    expect(await screen.findByText('NONAKTIF')).toBeInTheDocument();
+    expect(screen.queryByText('0.0%')).not.toBeInTheDocument();
+    expect(screen.getByText('0 hit / 0 total')).toBeInTheDocument();
   });
 
   it('muatan statistik GAGAL → badge dan angka netral, bukan NONAKTIF/0.0% (B-405)', async () => {

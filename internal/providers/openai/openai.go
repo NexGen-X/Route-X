@@ -340,10 +340,21 @@ func (p *Provider) errorFromResponse(resp *http.Response) *providers.Error {
 // dibiarkan lewat, klien menerima 200 tanpa jawaban, mesin routing menganggap request
 // berhasil sehingga tidak pernah failover, dan pencatatan pemakaian menyimpan request
 // sukses tanpa token.
-func (p *Provider) errorFromSuccessBody(raw []byte, status int, fallback string) *providers.Error {
+//
+// B-431: header respons ikut diteruskan pemanggil — jalur ini dulu
+// membuang Retry-After sepenuhnya, padahal jalur non-2xx
+// (errorFromResponse) menghormatinya. Header boleh nil dari
+// pemanggil lama; ParseRetryAfter atas header nil menghasilkan 0.
+func (p *Provider) errorFromSuccessBody(raw []byte, status int, fallback string, header ...http.Header) *providers.Error {
+	var retryAfter time.Duration
+	if len(header) > 0 {
+		retryAfter = providers.ParseRetryAfter(header[0])
+	}
 	code, msg := providers.ReadErrorBody(bytes.NewReader(raw))
 	if msg == "" && code == "" {
-		return providers.Newf(providers.ErrKindServer, p.name, "%s", fallback)
+		err := providers.Newf(providers.ErrKindServer, p.name, "%s", fallback)
+		err.RetryAfter = retryAfter
+		return err
 	}
 	// B-297: body error tanpa message tetapi DENGAN kode/type tetap
 	// diklasifikasikan lewat jalur di bawah (Classify + pemetaan
@@ -385,6 +396,7 @@ func (p *Provider) errorFromSuccessBody(raw []byte, status int, fallback string)
 		StatusCode:   status,
 		Message:      withCode(fmt.Sprintf("upstream melaporkan galat pada respons berstatus %d", status), code),
 		UpstreamCode: code,
+		RetryAfter:   retryAfter,
 	}
 }
 

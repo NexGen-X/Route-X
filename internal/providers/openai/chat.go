@@ -25,6 +25,12 @@ type wireMessage struct {
 	Name       string         `json:"name,omitempty"`
 	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
+	// ThoughtSignature adalah tanda tangan berpikir TINGKAT PESAN (B-425):
+	// padanan tingkat pesan dari field per-tool-call B-371. Adapter
+	// anthropic/google membawanya dua arah lewat ReasoningSignature
+	// kanonik (B-390); tanpa field ini adapter ini membuangnya di
+	// ketiga arah (respons, streaming, dan riwayat masuk).
+	ThoughtSignature providers.SignatureToleran `json:"thought_signature,omitempty"`
 	// Refusal meneruskan teks penolakan pada riwayat asisten (B-213):
 	// pesan yang dihasilkan gateway dari respons berpenolakan harus bisa
 	// dikirim balik apa adanya, bukan kehilangan penanda penolakannya.
@@ -57,7 +63,7 @@ type wireToolCall struct {
 	// yang benar-benar bisa mencapai upstream bergaya Gemini —
 	// membuangnya di kedua arah, padahal Gemini menolak riwayat
 	// function call tanpa signature pada giliran lanjutan.
-	ThoughtSignature string `json:"thought_signature,omitempty"`
+	ThoughtSignature providers.SignatureToleran `json:"thought_signature,omitempty"`
 	Function         struct {
 		Name string `json:"name,omitempty"`
 		// arguments selalu ditulis, termasuk saat kosong: nilainya string JSON dan
@@ -77,7 +83,7 @@ func (w wireToolCall) toCanonical(fallbackIndex int) providers.ToolCall {
 		Index:            idx,
 		ID:               w.ID,
 		Type:             w.Type,
-		ThoughtSignature: w.ThoughtSignature,
+		ThoughtSignature: string(w.ThoughtSignature),
 		Function: providers.FunctionCall{
 			Name:      w.Function.Name,
 			Arguments: w.Function.Arguments,
@@ -87,7 +93,7 @@ func (w wireToolCall) toCanonical(fallbackIndex int) providers.ToolCall {
 
 // toolCallToWire menyusun tool call untuk dikirim kembali ke upstream.
 func toolCallToWire(tc providers.ToolCall) wireToolCall {
-	out := wireToolCall{ID: tc.ID, Type: tc.Type, ThoughtSignature: tc.ThoughtSignature}
+	out := wireToolCall{ID: tc.ID, Type: tc.Type, ThoughtSignature: providers.SignatureToleran(tc.ThoughtSignature)}
 	if out.Type == "" {
 		// Satu-satunya jenis yang ada di dialek OpenAI. Mengirim type kosong hanya
 		// menghasilkan 400 yang membingungkan pengguna.
@@ -114,7 +120,10 @@ type chatResponse struct {
 			// beberapa agregator memakai reasoning.
 			ReasoningContent string          `json:"reasoning_content"`
 			Reasoning        json.RawMessage `json:"reasoning"`
-			ToolCalls        []wireToolCall  `json:"tool_calls"`
+			// ThoughtSignature tingkat pesan (B-425), toleran numerik
+			// (B-432) sama seperti tingkat tool call.
+			ThoughtSignature providers.SignatureToleran `json:"thought_signature"`
+			ToolCalls        []wireToolCall             `json:"tool_calls"`
 			// Refusal adalah teks penolakan model (B-213), terpisah dari
 			// content; Audio adalah keluaran audio bermodalitas audio,
 			// yang transkripnya diteruskan ke bentuk kanonik.
@@ -166,11 +175,12 @@ type chatChunk struct {
 	Choices []struct {
 		Index int `json:"index"`
 		Delta struct {
-			Role             string          `json:"role"`
-			Content          string          `json:"content"`
-			ReasoningContent string          `json:"reasoning_content"`
-			Reasoning        json.RawMessage `json:"reasoning"`
-			ToolCalls        []wireToolCall  `json:"tool_calls"`
+			Role             string                     `json:"role"`
+			Content          string                     `json:"content"`
+			ReasoningContent string                     `json:"reasoning_content"`
+			Reasoning        json.RawMessage            `json:"reasoning"`
+			ThoughtSignature providers.SignatureToleran `json:"thought_signature"`
+			ToolCalls        []wireToolCall             `json:"tool_calls"`
 			// Refusal dan Audio sejajar versi non-streamingnya (B-213):
 			// potongan teks penolakan dan potongan transkrip audio.
 			Refusal string     `json:"refusal"`
@@ -218,7 +228,7 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 	}
 	if len(wire.Choices) == 0 {
 		return nil, p.errorFromSuccessBody(raw, resp.StatusCode,
-			"respons upstream tidak memuat satu pun choice")
+			"respons upstream tidak memuat satu pun choice", resp.Header)
 	}
 
 	out := &providers.ChatResponse{
@@ -242,8 +252,9 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 
 	for _, c := range wire.Choices {
 		msg := providers.Message{
-			Role:             providers.Role(firstNonEmpty(c.Message.Role, string(providers.RoleAssistant))),
-			ReasoningContent: firstNonEmpty(c.Message.ReasoningContent, jsonString(c.Message.Reasoning)),
+			Role:               providers.Role(firstNonEmpty(c.Message.Role, string(providers.RoleAssistant))),
+			ReasoningContent:   firstNonEmpty(c.Message.ReasoningContent, jsonString(c.Message.Reasoning)),
+			ReasoningSignature: string(c.Message.ThoughtSignature),
 		}
 		decodeContent(&msg, c.Message.Content)
 		// Penolakan model dan transkrip audio (B-213): keduanya hidup di
@@ -289,7 +300,7 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 	}
 	if semuaKosong {
 		return nil, p.errorFromSuccessBody(raw, resp.StatusCode,
-			"respons upstream tidak memuat konten yang bisa diterjemahkan")
+			"respons upstream tidak memuat konten yang bisa diterjemahkan", resp.Header)
 	}
 	return out, nil
 }
@@ -459,10 +470,11 @@ func messagesToWire(msgs []providers.Message) []wireMessage {
 	for i := range msgs {
 		m := &msgs[i]
 		w := wireMessage{
-			Role:       string(m.Role),
-			Name:       m.Name,
-			ToolCallID: m.ToolCallID,
-			Refusal:    m.Refusal,
+			Role:             string(m.Role),
+			Name:             m.Name,
+			ToolCallID:       m.ToolCallID,
+			Refusal:          m.Refusal,
+			ThoughtSignature: providers.SignatureToleran(m.ReasoningSignature),
 		}
 
 		switch {
@@ -814,6 +826,7 @@ func parseChunk(data []byte) (*providers.StreamEvent, error) {
 		c := wire.Choices[0]
 		out.Delta = c.Delta.Content
 		out.ReasoningDelta = firstNonEmpty(c.Delta.ReasoningContent, jsonString(c.Delta.Reasoning))
+		out.ReasoningSignature = string(c.Delta.ThoughtSignature)
 		// Potongan penolakan dan transkrip audio (B-213), sejajar jalur
 		// non-streaming: keduanya dibawa bentuk kanonik sebagai delta
 		// tersendiri, bukan dicampur ke Delta teks.

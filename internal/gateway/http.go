@@ -397,6 +397,12 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 					}
 					h.logger.InfoContext(r.Context(), "melewati Tier 1 combo karena context window tidak mencukupi, langsung ke fallback tier",
 						"tier", tier.Tier, "tier1_model", model.ModelID, "fallback_model", tModel.ModelID, "tokens", rreq.Tokens.InputTokens)
+					// B-422: tanam ctxTier ke request, sejajar kebijakan()
+					// yang melakukan *r = *r.WithContext(ctxModel) untuk
+					// model utama. Tanpa ini tanda kuota model tier tak
+					// terjangkau dari r.Context() hilir (refund menyeluruh
+					// buta terhadap kenaikan tier ini).
+					*r = *r.WithContext(ctxTier)
 					reqCopy := *req
 					reqCopy.Model = tModel.ModelID
 					j.pasangModel(tModel)

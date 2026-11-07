@@ -29,6 +29,9 @@ export interface CreateRuleDrawerProps {
   models: Model[];
   providers: Provider[];
   onSuccess: () => void;
+  // B-449: nama sumber (model/provider) yang gagal dimuat di halaman
+  // induk — daftar kosong di drawer berarti belum terukur.
+  sumberGagal?: string | null;
 }
 
 interface NewRuleState {
@@ -61,6 +64,7 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
   models,
   providers,
   onSuccess,
+  sumberGagal,
 }) => {
   const { toast } = useToast();
   const [mode, setMode] = useState<'model_only' | 'combo_routing'>('model_only');
@@ -217,7 +221,12 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
       }
     >
       <div className="space-y-5 text-xs">
-        {/* Mode Selector */}
+{sumberGagal && (
+          <p role="alert" className="text-xs text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg p-3">
+            Daftar gagal dimuat: {sumberGagal} — pilihan di bawah belum terukur, bukan daftar kosong.
+          </p>
+        )}
+                {/* Mode Selector */}
         <div>
           <label className="block text-xs font-medium text-text-secondary mb-1.5">
             Pilih Mode Routing

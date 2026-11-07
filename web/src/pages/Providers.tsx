@@ -38,6 +38,7 @@ import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
 import { copyTextToClipboard } from '../utils/clipboard';
+import { keadaanMuat, teksHitungKeadaan } from '../lib/keadaanMuat';
 
 export { matchPresetForProvider, matchExistingProvider };
 
@@ -117,6 +118,10 @@ export const Providers: React.FC = () => {
   const [models, setModels] = useState<ProviderModel[]>([]);
   const [oauthSessions, setOauthSessions] = useState<OAuthSession[]>([]);
   const [providerDetailsError, setProviderDetailsError] = useState<string | null>(null);
+  // B-446/B-448: rincian hanya sah untuk provider yang selesai
+  // dimuat; selama berganti provider keadaannya belum terukur.
+  const [providerDetailsLoading, setProviderDetailsLoading] = useState(false);
+  const [detailsProviderId, setDetailsProviderId] = useState<string | null>(null);
   // Error sesi OAuth TERPISAH dari daftarnya: kegagalan memuat tidak boleh
   // lagi ditelan menjadi daftar kosong (audit3 V-FJ-15).
   const [oauthSessionsError, setOauthSessionsError] = useState<string | null>(null);
@@ -200,6 +205,16 @@ export const Providers: React.FC = () => {
     const reqId = ++providerDetailsReqRef.current;
     setProviderDetailsError(null);
     setOauthSessionsError(null);
+    // B-446: bersihkan rincian provider SEBELUMNYA segera — selama
+    // muatan provider baru berjalan, baris lama tidak boleh tampil
+    // atau dapat diaksi di drawer provider lain (pola Webhooks
+    // V-FF-21: bersihkan lebih dulu, baru muat).
+    setCredentials([]);
+    setModels([]);
+    setOauthSessions([]);
+    setModelTestResults({});
+    setDetailsProviderId(null);
+    setProviderDetailsLoading(true);
     try {
       const [credsRes, modsRes] = await Promise.all([
         api.credentials.list(providerId),
@@ -208,12 +223,14 @@ export const Providers: React.FC = () => {
       if (providerDetailsReqRef.current !== reqId) return;
       setCredentials(credsRes.items || []);
       setModels(modsRes.items || []);
+      setDetailsProviderId(providerId);
     } catch (err) {
       if (providerDetailsReqRef.current !== reqId) return;
       setCredentials([]);
       setModels([]);
       setOauthSessions([]);
       setProviderDetailsError(err instanceof Error ? err.message : String(err));
+      setProviderDetailsLoading(false);
       return;
     }
     // Sesi OAuth dimuat terpisah dari kredensial & model: kegagalannya
@@ -229,6 +246,7 @@ export const Providers: React.FC = () => {
       setOauthSessions([]);
       setOauthSessionsError(err instanceof Error ? err.message : String(err));
     }
+    if (providerDetailsReqRef.current === reqId) setProviderDetailsLoading(false);
   };
 
   // Buka Drawer Konfigurasi untuk Provider Tertentu
@@ -468,6 +486,19 @@ export const Providers: React.FC = () => {
     () => providers.filter((p) => p.last_health_status === 'healthy').length,
     [providers]
   );
+
+  // B-448: hitungan tab & header drawer lewat keadaanMuat bersama —
+  // selama rincian belum terukur untuk provider terpilih (memuat
+  // atau gagal), tampilkan '—', bukan angka provider lain atau '0'.
+  const rincianMilikTerpilih =
+    detailsProviderId !== null && detailsProviderId === selectedProvider?.id;
+  const keadaanRincian = keadaanMuat({
+    memuat: providerDetailsLoading,
+    gagal: providerDetailsError != null,
+    jumlah: rincianMilikTerpilih ? 1 : 0,
+  });
+  const teksJumlahModel = teksHitungKeadaan(keadaanRincian, models.length);
+  const teksJumlahKredensial = teksHitungKeadaan(keadaanRincian, credentials.length);
 
   return (
     <div className="space-y-6">
@@ -726,9 +757,7 @@ export const Providers: React.FC = () => {
                 );
               })()}
               <span className="text-[10px] text-text-muted font-mono">
-                {providerDetailsError
-                  ? '— Model • — Key'
-                  : `${models.length} Model • ${credentials.length} Key`}
+                {`${teksJumlahModel} Model • ${teksJumlahKredensial} Key`}
               </span>
             </div>
           )
@@ -772,7 +801,7 @@ export const Providers: React.FC = () => {
                     drawerTab === 'models' ? 'bg-black/20 text-black' : 'bg-bg-base text-text-muted'
                   }`}
                 >
-                  {models.length}
+                  {teksJumlahModel}
                 </span>
               </button>
 
@@ -799,7 +828,7 @@ export const Providers: React.FC = () => {
                     drawerTab === 'credentials' ? 'bg-black/20 text-black' : 'bg-bg-base text-text-muted'
                   }`}
                 >
-                  {credentials.length}
+                  {teksJumlahKredensial}
                 </span>
               </button>
 
@@ -837,7 +866,7 @@ export const Providers: React.FC = () => {
                 handleDeleteModel={handleDeleteModel}
                 onOpenAddModelModal={() => setIsAddModelModalOpen(true)}
                 copyWithFeedback={copyWithFeedback}
-                gagalMuat={providerDetailsError != null}
+                gagalMuat={keadaanRincian === 'gagal' || keadaanRincian === 'memuat'}
               />
             )}
 
@@ -854,7 +883,7 @@ export const Providers: React.FC = () => {
                 credentials={credentials}
                 oauthSessions={oauthSessions}
                 egressPools={egressPools}
-                gagalMuat={providerDetailsError != null}
+                gagalMuat={keadaanRincian === 'gagal' || keadaanRincian === 'memuat'}
                 handleToggleKey={handleToggleKey}
                 handleDeleteKey={handleDeleteKey}
                 loadProviderDetails={loadProviderDetails}

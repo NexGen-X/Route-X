@@ -11,6 +11,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import type { BackupTabProps } from './types';
+import { keadaanMuat } from '../../lib/keadaanMuat';
 
 export const BackupTab: React.FC<BackupTabProps> = ({
   backupStatus,
@@ -28,6 +29,14 @@ export const BackupTab: React.FC<BackupTabProps> = ({
   onExport,
   isExporting,
 }) => {
+  // B-447: keadaan status cadangan lewat modul keadaanMuat bersama
+  // (menyatukan pola manual permukaan ini) — sel Basis Data tidak
+  // lagi mengklaim 'Memuat...' selamanya saat muatan gagal.
+  const keadaanStatus = keadaanMuat({
+    memuat: isBackupLoading,
+    gagal: backupError != null,
+    jumlah: backupStatus ? 1 : 0,
+  });
   return (
     <section>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-border">
@@ -91,7 +100,11 @@ export const BackupTab: React.FC<BackupTabProps> = ({
         <div className="py-1">
           <span className="text-text-muted block text-[11px] font-medium">Basis Data</span>
           <span className="font-mono text-text-primary text-sm font-semibold truncate block">
-            {backupStatus?.database_name || 'Memuat...'}
+            {keadaanStatus === 'ada'
+              ? backupStatus?.database_name
+              : keadaanStatus === 'memuat'
+                ? 'Memuat...'
+                : '—'}
           </span>
           <span className="text-[10px] text-accent-text font-mono mt-0.5 block">
             Ukuran: {backupStatus?.database_size || '-'}

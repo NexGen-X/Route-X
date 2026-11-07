@@ -377,7 +377,7 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 	// jawaban kosong yang sukses — pemutus arus tidak mencatat apa pun,
 	// failover tidak berjalan, dan panggilan tercatat berhasil.
 	if upstream.Type == "error" {
-		return nil, p.errorFromErrorBody(&upstream, resp.StatusCode)
+		return nil, p.errorFromErrorBody(&upstream, resp.StatusCode, resp.Header)
 	}
 	kanonik := p.toCanonicalResponse(&upstream)
 	// Respons sukses yang hasil terjemahannya kosong juga bukan jawaban:
@@ -387,7 +387,15 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 	// diam-diam, jadi respons yang seluruh bloknya asing — atau hanya
 	// memuat redacted_thinking — tadinya LOLOS penjaga lama yang hanya
 	// menghitung blok, dan tercatat sebagai jawaban sukses yang kosong.
-	if len(kanonik.Choices) == 0 || pesanKanonikKosong(kanonik.Choices[0].Message) {
+	// Finish content_filter DIKECUALIKAN (B-426): refusal tanpa konten
+	// adalah penolakan kebijakan yang sah — kekosongannya bermakna,
+	// sejajar pengecualian yang sama di penjaga B-298 adapter
+	// google/openai. Tanpa pengecualian ini refusal kosong menjadi
+	// kind server (retryable+failoverable) dan disebar ke provider
+	// lain, padahal content_filter sengaja tidak difailover.
+	if len(kanonik.Choices) == 0 ||
+		(kanonik.Choices[0].FinishReason != providers.FinishContentFilter &&
+			pesanKanonikKosong(kanonik.Choices[0].Message)) {
 		return nil, providers.Newf(providers.ErrKindServer, p.name,
 			"respons Anthropic tidak memuat konten yang bisa diterjemahkan")
 	}
@@ -399,10 +407,20 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *providers.ChatReques
 // Klasifikasinya memakai pemetaan jenis upstream yang sama dengan jalur
 // streaming, dan pesannya melewati penyaringan kredensial yang sama
 // dengan jalur status gagal.
-func (p *Provider) errorFromErrorBody(u *messagesResponse, status int) *providers.Error {
+//
+// B-431: header respons ikut diteruskan pemanggil supaya Retry-After
+// pada jalur body-200 tidak dibuang (jalur non-2xx sudah
+// menghormatinya lewat errorFromResponse). Header boleh nil.
+func (p *Provider) errorFromErrorBody(u *messagesResponse, status int, header ...http.Header) *providers.Error {
+	var retryAfter time.Duration
+	if len(header) > 0 {
+		retryAfter = providers.ParseRetryAfter(header[0])
+	}
 	if u.Error == nil {
-		return providers.Newf(providers.ErrKindServer, p.name,
+		err := providers.Newf(providers.ErrKindServer, p.name,
 			"respons Anthropic bertipe error tanpa rincian error")
+		err.RetryAfter = retryAfter
+		return err
 	}
 	kind := kindForUpstreamType(u.Error.Type)
 	message := u.Error.Message
@@ -421,6 +439,7 @@ func (p *Provider) errorFromErrorBody(u *messagesResponse, status int) *provider
 		StatusCode:   status,
 		Message:      p.safeMessage(message),
 		UpstreamCode: u.Error.Type,
+		RetryAfter:   retryAfter,
 	}
 }
 

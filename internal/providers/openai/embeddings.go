@@ -89,7 +89,7 @@ func (p *Provider) Embeddings(ctx context.Context, req *providers.EmbeddingsRequ
 	}
 	if len(wire.Data) == 0 {
 		return nil, p.errorFromSuccessBody(raw, resp.StatusCode,
-			"respons upstream tidak memuat satu pun vektor embedding")
+			"respons upstream tidak memuat satu pun vektor embedding", resp.Header)
 	}
 
 	out := &providers.EmbeddingsResponse{

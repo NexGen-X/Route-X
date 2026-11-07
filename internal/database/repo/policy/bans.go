@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/NexGen-X/Route-X/internal/database/repo"
 )
 
@@ -139,6 +141,28 @@ func normalisasiSubjekBan(kind, subject string) (string, error) {
 // sesudah blokir lamanya dicabut. (Komentar lama di sini mengklaim
 // duplikat "tidak ditolak, disengaja" — keliru, diperbaiki B-357:
 // perilaku DB-lah yang selalu menang.)
+//
+// B-587: predikat indeks itu LEBIH LONGGAR daripada definisi "aktif"
+// yang dipakai ActiveBans/BanFor/penegakan (`lifted_at is null AND
+// (expires_at is null OR expires_at > now())`) — baris yang sudah
+// kedaluwarsa tetap menempati keunikan walau tak terlihat lagi di
+// API, sehingga ban ulang subjek yang sama ditolak 409. Predikat
+// indeks tidak boleh diubah menjadi `expires_at > now()` (predikat
+// indeks parsial PostgreSQL wajib IMMUTABLE, `now()` tidak
+// memenuhinya), jadi CreateBan menghapus dulu baris kedaluwarsa
+// untuk subjek yang sama — DELETE lalu INSERT dalam satu transaksi
+// (sisipBan) — sebelum memasukkan baris baru. Yang dihapus hanya
+// baris mati menurut definisi aktif itu (kedaluwarsa dan belum
+// dicabut); baris permanen dan baris yang dicabut manual tidak
+// tersentuh, dan duplikat aktif tetap ditolak indeks seperti
+// sebelumnya.
+//
+// Catatan implementasi: gabungan DELETE+INSERT dalam SATU statement
+// CTE (`WITH mati AS (DELETE ...) INSERT ...`) TIDAK bisa dipakai —
+// terbukti di eksperimen (B-587): semua statement dalam satu query
+// WITH melihat snapshot yang sama, jadi pemeriksaan unik INSERT
+// tetap melihat baris yang baru dihapus CTE dan 23505 bertahan.
+// Dua statement dalam satu transaksi adalah bentuk yang benar.
 func (r *Repo) CreateBan(ctx context.Context, p CreateBanParams) (*Ban, error) {
 	const op = "memblokir subjek"
 
@@ -156,6 +180,41 @@ func (r *Repo) CreateBan(ctx context.Context, p CreateBanParams) (*Ban, error) {
 			return nil, fmt.Errorf("%s: %w: created_by bukan UUID", op, repo.ErrInvalidReference)
 		}
 		createdBy = p.CreatedBy
+	}
+
+	// DELETE lalu INSERT harus atomik: bila querier-nya pool, bungkus
+	// dalam transaksi sendiri; bila sudah di dalam transaksi pemanggil,
+	// kedua statement ikut transaksi itu.
+	if pool, ok := r.q.(*pgxpool.Pool); ok {
+		var dibuat *Ban
+		if err := repo.InTx(ctx, pool, func(q repo.Querier) error {
+			b, err := (&Repo{q: q}).sisipBan(ctx, p, createdBy)
+			if err != nil {
+				return err
+			}
+			dibuat = b
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+		return dibuat, nil
+	}
+	return r.sisipBan(ctx, p, createdBy)
+}
+
+// sisipBan menghapus baris kedaluwarsa subjek yang sama (B-587) lalu
+// menyisipkan ban baru, keduanya pada r.q — di dalam transaksi
+// pemanggil (lihat CreateBan).
+func (r *Repo) sisipBan(ctx context.Context, p CreateBanParams, createdBy any) (*Ban, error) {
+	const op = "memblokir subjek"
+
+	if _, err := r.q.Exec(ctx, `
+		delete from bans
+		where subject_kind = $1 and subject = $2
+		  and lifted_at is null
+		  and expires_at is not null and expires_at <= now()`,
+		p.SubjectKind, p.Subject); err != nil {
+		return nil, repo.Err(op, err)
 	}
 
 	row := r.q.QueryRow(ctx, `

@@ -235,6 +235,7 @@ func TestAdvisoryLockNamespaceMemastikanTidakBertabrakanDenganMigrasi(t *testing
 		LockBudget,
 		LockHealth,
 		LockWebhookRecovery,
+		LockBanPurge,
 	}
 
 	for _, k := range keys {
@@ -594,6 +595,70 @@ func TestBudgetResetterJobMemajukanPeriode(t *testing.T) {
 
 	if repo.resetID != "b-expired-1" {
 		t.Errorf("resetID = %q, mau b-expired-1", repo.resetID)
+	}
+}
+
+// TestBanExpiredPurgeJobMembersihkanBanKedaluarsa membuktikan bagian (c)
+// B-587: job berkala memanggil PurgeExpired — ban yang kedaluwarsa lebih
+// lama dari tenggang dihapus, ban aktif dipertahankan, dan ban yang
+// dicabut manual (jejak keputusan orang) tidak tersentuh.
+func TestBanExpiredPurgeJobMembersihkanBanKedaluarsa(t *testing.T) {
+	ctx := context.Background()
+	pool := testPool(t)
+	pr := policy.New(pool)
+
+	lampau := time.Now().Add(-2 * time.Hour)
+	mati, err := pr.CreateBan(ctx, policy.CreateBanParams{
+		SubjectKind: policy.BanSubjectIP, Subject: "203.0.113.91", Reason: "mati", ExpiresAt: &lampau,
+	})
+	if err != nil {
+		t.Fatalf("CreateBan kedaluwarsa: %v", err)
+	}
+	hidupExp := time.Now().Add(1 * time.Hour)
+	hidup, err := pr.CreateBan(ctx, policy.CreateBanParams{
+		SubjectKind: policy.BanSubjectIP, Subject: "203.0.113.92", Reason: "hidup", ExpiresAt: &hidupExp,
+	})
+	if err != nil {
+		t.Fatalf("CreateBan aktif: %v", err)
+	}
+	dicabut, err := pr.CreateBan(ctx, policy.CreateBanParams{
+		SubjectKind: policy.BanSubjectIP, Subject: "203.0.113.93", Reason: "dicabut",
+	})
+	if err != nil {
+		t.Fatalf("CreateBan permanen: %v", err)
+	}
+	if _, err := pr.Lift(ctx, dicabut.ID, ""); err != nil {
+		t.Fatalf("Lift ban permanen: %v", err)
+	}
+
+	job := NewBanExpiredPurgeJob(pool, pr, 1*time.Hour, nil)
+	if job.Name() != "ban_expired_purge" {
+		t.Fatalf("job.Name() = %q, mau ban_expired_purge", job.Name())
+	}
+	if err := job.Run(ctx); err != nil {
+		t.Fatalf("Run ban purge: %v", err)
+	}
+
+	ada := func(id string) bool {
+		var n int
+		if err := pool.QueryRow(ctx, `select count(*) from bans where id = $1`, id).Scan(&n); err != nil {
+			t.Fatalf("hitung baris bans %s: %v", id, err)
+		}
+		return n == 1
+	}
+	if ada(mati.ID) {
+		t.Errorf("ban kedaluwarsa %s masih ada sesudah Run", mati.ID)
+	}
+	if !ada(hidup.ID) {
+		t.Errorf("ban aktif %s ikut terhapus oleh Run", hidup.ID)
+	}
+	if !ada(dicabut.ID) {
+		t.Errorf("ban yang dicabut manual %s ikut terhapus oleh Run", dicabut.ID)
+	}
+
+	// Putaran kedua tidak menemukan apa-apa dan tetap sukses.
+	if err := job.Run(ctx); err != nil {
+		t.Fatalf("Run kedua ban purge: %v", err)
 	}
 }
 

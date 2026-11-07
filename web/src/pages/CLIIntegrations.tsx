@@ -396,7 +396,9 @@ export const CLIIntegrations: React.FC = () => {
         ...prev,
         [toolId]: {
           testing: false,
-          latency: 0,
+          // B-592: uji dibatalkan SEBELUM fetch apa pun — tidak ada
+          // latensi yang terukur, jadi `latency` dibiarkan undefined
+          // agar chip `ms` tidak mengarang angka (dulu `latency: 0`).
           ok: false,
           message: modelsGagal
             ? 'Uji koneksi dibatalkan: daftar model gagal dimuat, jadi keadaan katalog belum dapat dipastikan. Muat ulang halaman lalu coba lagi.'
@@ -480,7 +482,11 @@ export const CLIIntegrations: React.FC = () => {
         ...prev,
         [toolId]: {
           testing: false,
-          latency: 0,
+          // B-592: cabang `catch` (galat jaringan/abort/timeout) tidak
+          // pernah mengukur latensi — `latency` dibiarkan undefined
+          // agar chip `ms` tidak mengarang `0ms` (dulu `latency: 0`).
+          // Cabang HTTP non-ok di atas tetap memakai latensi round-trip
+          // terukur yang nyata.
           ok: false,
           message:
             err instanceof Error && err.name === 'AbortError'

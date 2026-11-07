@@ -74,6 +74,13 @@ type OAuthRepo struct {
 	// pabrik yang callback-nya terpasang. Nil berarti tidak ada yang
 	// peduli — perilaku repo tidak berubah.
 	sesudahPemenangBergeser func(ctx context.Context, providerID string)
+	// tertunda, bila non-nil, adalah registry penilaian pergeseran
+	// tertunda (B-517) milik transaksi yang sedang dibangun jalur
+	// SimpanHasil* repo ini: ia diteruskan ke CredentialRepo yang
+	// dibangun di dalamnya dan dijalankan pemilik transaksi sesudah
+	// commit. Hanya diisi sesaat di cabang pool SimpanHasil*; repo
+	// yang dipakai pemanggil luar membiarkannya nil.
+	tertunda *penilaianPergeseranTertunda
 }
 
 // NewOAuthRepo membuat instance OAuthRepo dengan cipher untuk enkripsi refresh token.
@@ -85,19 +92,36 @@ func NewOAuthRepo(q repo.Querier, cipher *security.Cipher) (*OAuthRepo, error) {
 }
 
 // WithQuerier membuat salinan OAuthRepo dengan querier baru (misal transaksi pgx.Tx).
+//
+// Registry penilaian tertunda (B-517) diwarisi apa adanya, sama
+// seperti di CredentialRepo.WithQuerier.
 func (r *OAuthRepo) WithQuerier(q repo.Querier) *OAuthRepo {
 	return &OAuthRepo{q: q, cipher: r.cipher,
-		sesudahPemenangBergeser: r.sesudahPemenangBergeser}
+		sesudahPemenangBergeser: r.sesudahPemenangBergeser,
+		tertunda:                r.tertunda}
 }
 
 // SetSesudahPemenangBergeser memasang callback pergeseran pemenang
 // kredensial (B-474/B-493) yang diteruskan ke CredentialRepo yang
-// dibangun jalur simpan hasil refresh/exchange repo ini — semantik
-// dan kewajiban callback-nya sama dengan
-// CredentialRepo.SetSesudahPemenangBergeser: berjalan sinkron sesudah
-// mutasi, harus murah, dan tidak boleh menggagalkan mutasinya.
+// dibangun jalur simpan hasil refresh/exchange repo ini — kontrak
+// pemanggilannya sama dengan
+// CredentialRepo.SetSesudahPemenangBergeser: tidak pernah dipanggil
+// sambil kunci internal terpegang, di jalur transaksional berjalan
+// SESUDAH commit, harus murah, dan tidak boleh menggagalkan
+// mutasinya.
 func (r *OAuthRepo) SetSesudahPemenangBergeser(fn func(ctx context.Context, providerID string)) {
 	r.sesudahPemenangBergeser = fn
+}
+
+// jalankanPenilaianSesudahKomit menjalankan registry penilaian
+// tertunda B-517 sesudah transaksi SimpanHasil* commit: pemenang
+// dinilai ulang dari querier pool repo ini (keadaan ter-commit)
+// dan callback pergeseran dipanggil bagi provider yang terbukti
+// bergeser. Dipanggil HANYA pada jalur sukses — rollback tidak
+// menjalankan apa pun.
+func (r *OAuthRepo) jalankanPenilaianSesudahKomit(ctx context.Context, tertunda *penilaianPergeseranTertunda) {
+	pembaca := &CredentialRepo{q: r.q, cipher: r.cipher}
+	tertunda.jalankan(ctx, pembaca.pemenangID, r.sesudahPemenangBergeser)
 }
 
 const oauthSessionJoinedColumns = `
@@ -500,18 +524,30 @@ type SimpanHasilExchangeParams struct {
 // — keadaan separuh yang terlihat "connected" sebagian.
 func (r *OAuthRepo) SimpanHasilExchange(ctx context.Context, p SimpanHasilExchangeParams) (string, *OAuthSessionMeta, error) {
 	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
+		// B-517: penilaian pergeseran dari UpdateSecret di dalam
+		// transaksi ini ditunda ke sesudah commit — registry dibuat
+		// di sini, dipasang ke salinan transaksional, dan dijalankan
+		// hanya bila InTx commit.
+		tertunda := penilaianPergeseranTertundaBaru(pool)
 		var credID string
 		var meta *OAuthSessionMeta
 		err := repo.InTx(ctx, pool, func(q repo.Querier) error {
 			var err error
-			credID, meta, err = r.WithQuerier(q).SimpanHasilExchange(ctx, p)
+			klon := r.WithQuerier(q)
+			klon.tertunda = tertunda
+			credID, meta, err = klon.SimpanHasilExchange(ctx, p)
 			return err
 		})
-		return credID, meta, err
+		if err != nil {
+			return "", nil, err
+		}
+		r.jalankanPenilaianSesudahKomit(ctx, tertunda)
+		return credID, meta, nil
 	}
 
 	creds := &CredentialRepo{q: r.q, cipher: r.cipher,
-		sesudahPemenangBergeser: r.sesudahPemenangBergeser}
+		sesudahPemenangBergeser: r.sesudahPemenangBergeser,
+		tertunda:                r.tertunda}
 
 	// Cari kredensial berlabel sama pada provider ini (semantik yang sama
 	// dengan pencarian handler versi lama).
@@ -605,12 +641,23 @@ type SimpanHasilRefreshParams struct {
 // lewat login ulang manual.
 func (r *OAuthRepo) SimpanHasilRefresh(ctx context.Context, p SimpanHasilRefreshParams) error {
 	if pool, isPool := r.q.(*pgxpool.Pool); isPool {
-		return repo.InTx(ctx, pool, func(q repo.Querier) error {
-			return r.WithQuerier(q).SimpanHasilRefresh(ctx, p)
+		// B-517: sama dengan SimpanHasilExchange — penilaian
+		// pergeseran ditunda ke sesudah commit lewat registry.
+		tertunda := penilaianPergeseranTertundaBaru(pool)
+		err := repo.InTx(ctx, pool, func(q repo.Querier) error {
+			klon := r.WithQuerier(q)
+			klon.tertunda = tertunda
+			return klon.SimpanHasilRefresh(ctx, p)
 		})
+		if err != nil {
+			return err
+		}
+		r.jalankanPenilaianSesudahKomit(ctx, tertunda)
+		return nil
 	}
 	creds := &CredentialRepo{q: r.q, cipher: r.cipher,
-		sesudahPemenangBergeser: r.sesudahPemenangBergeser}
+		sesudahPemenangBergeser: r.sesudahPemenangBergeser,
+		tertunda:                r.tertunda}
 	if err := creds.UpdateSecret(ctx, p.CredentialID, p.AccessToken, &p.ExpiresAt); err != nil {
 		return err
 	}

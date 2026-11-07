@@ -67,6 +67,13 @@ type CredentialRepo struct {
 	// peduli (mis. perkakas rotasi offline) — perilaku repo tidak
 	// berubah.
 	sesudahPemenangBergeser func(ctx context.Context, providerID string)
+	// tertunda, bila non-nil, berarti repo ini salinan transaksional
+	// yang penilaian pergeserannya ditunda sampai transaksi pemilik
+	// commit (B-517): mutasi pelapor mendaftarkan penilaiannya ke
+	// registry ini alih-alih memanggil callback dari dalam transaksi.
+	// Dipasang oleh pemilik transaksi (jalur OAuthRepo.SimpanHasil*)
+	// dan diwarisi WithQuerier; repo autocommit membiarkannya nil.
+	tertunda *penilaianPergeseranTertunda
 }
 
 // NewCredentialRepo membuat CredentialRepo. cipher berasal dari config.EncryptionKey.
@@ -79,16 +86,33 @@ func NewCredentialRepo(q repo.Querier, cipher *security.Cipher) (*CredentialRepo
 }
 
 // WithQuerier membuat salinan CredentialRepo yang berjalan di atas Querier baru (misal transaksi pgx.Tx).
+//
+// Registry penilaian tertunda (B-517) diwarisi apa adanya: salinan
+// dari repo transaksional tetap mendaftarkan penilaiannya ke
+// transaksi pemilik yang sama.
 func (r *CredentialRepo) WithQuerier(q repo.Querier) *CredentialRepo {
 	return &CredentialRepo{q: q, cipher: r.cipher,
-		sesudahPemenangBergeser: r.sesudahPemenangBergeser}
+		sesudahPemenangBergeser: r.sesudahPemenangBergeser,
+		tertunda:                r.tertunda}
 }
 
 // SetSesudahPemenangBergeser memasang callback pergeseran pemenang
-// (B-474). Callback berjalan sinkron sesudah mutasi selesai — di
-// dalam transaksi pemanggil bila repo ini salinan transaksional —
-// jadi ia harus murah dan tidak boleh menggagalkan mutasinya:
-// kegagalannya adalah urusan callback sendiri (cmd mencatatnya).
+// (B-474). Kontrak pemanggilannya (dipertegas B-517/B-527):
+//
+//   - Callback TIDAK PERNAH dipanggil sambil kunci internal repo
+//     terpegang. Di jalur autocommit ia berjalan sesudah kunci
+//     per-provider dilepas; di jalur transaksional ia berjalan
+//     SESUDAH transaksi commit — penilaian pergeseran jalur itu
+//     dipindah ke pasca-commit oleh penilaianPergeseranTertunda,
+//     karena penilaian di dalam transaksi membaca keadaan yang
+//     belum tentu commit dan kuncinya dilepas sebelum commit
+//     (B-517). Callback yang menyentuh mutasi pelapor provider
+//     yang sama tidak bisa deadlock oleh kunci repo ini.
+//   - Ia tetap harus MURAH (produksi: satu INCR Redis) dan berjalan
+//     sinkron di goroutine mutasi/pemilik transaksi.
+//   - Ia tidak boleh menggagalkan mutasinya: tidak ada nilai
+//     kembali, dan kegagalannya adalah urusan callback sendiri
+//     (cmd mencatatnya).
 func (r *CredentialRepo) SetSesudahPemenangBergeser(fn func(ctx context.Context, providerID string)) {
 	r.sesudahPemenangBergeser = fn
 }
@@ -105,16 +129,141 @@ func (r *CredentialRepo) pemenangID(ctx context.Context, providerID string) stri
 	return aktif.ID
 }
 
-// laporkanPergeseranPemenang membandingkan pemenang sesudah mutasi
-// dengan idSebelum dan memanggil callback hanya bila benar-benar
-// bergeser — mutasi yang tidak menggeser pemenang tidak menyentuh
-// cache sama sekali.
-func (r *CredentialRepo) laporkanPergeseranPemenang(ctx context.Context, providerID, idSebelum string) {
-	if r.sesudahPemenangBergeser == nil || providerID == "" {
+// pemenangIDPada membaca pemenang lewat querier tertentu (misal
+// querier pool untuk keadaan ter-commit, dari repo yang querier-nya
+// transaksi).
+func (r *CredentialRepo) pemenangIDPada(ctx context.Context, q repo.Querier, providerID string) string {
+	if q == nil || q == r.q {
+		return r.pemenangID(ctx, providerID)
+	}
+	klon := *r
+	klon.q = q
+	return klon.pemenangID(ctx, providerID)
+}
+
+// selesaikanPergeseran menutup rangkaian penilaian pergeseran satu
+// mutasi pelapor (B-514/B-517/B-527). Pemanggil menjalankannya
+// TEPAT SATU KALI sesudah mutasinya berhasil, selagi kunci
+// per-provider dari mulaiPergeseran masih dipegang; fungsi ini yang
+// melepas kunci itu (lewat selesai).
+//
+// Jalur autocommit: pemenang sesudah dinilai di bawah kunci, kunci
+// DILEPAS, baru callback dipanggil — callback tidak pernah berjalan
+// sambil kunci internal terpegang (B-527), jadi callback yang
+// menyentuh mutasi pelapor provider yang sama tidak deadlock.
+//
+// Jalur transaksional (tertunda != nil): TIDAK ada callback di
+// sini. Penilaian di dalam transaksi tidak sah sebagai dasar
+// laporan: ia membaca keadaan yang belum tentu commit, dan kunci
+// per-provider dilepas sesudah fungsi mutasi kembali — sebelum
+// transaksi commit — sehingga mutasi bersamaan di jendela commit
+// menilai dari keadaan ter-commit lama dan pergeseran gabungan
+// bisa selesai tanpa satu pun laporan (B-517, terbukti dinamis
+// Putaran Bersih #9). Sebagai gantinya pasangan (pemenang
+// ter-commit sebelum transaksi, pemenang sesudah mutasi di dalam
+// transaksi) didaftarkan ke registry, dan pemilik transaksi
+// menjalankannya SESUDAH commit berhasil.
+func (r *CredentialRepo) selesaikanPergeseran(ctx context.Context, providerID, pemenangSebelum string, selesai func()) {
+	if providerID == "" {
+		selesai()
 		return
 	}
-	if r.pemenangID(ctx, providerID) != idSebelum {
+	if r.tertunda != nil {
+		dalamTx := r.pemenangID(ctx, providerID)
+		r.tertunda.catat(providerID, pemenangSebelum, dalamTx)
+		selesai()
+		return
+	}
+	bergeser := r.sesudahPemenangBergeser != nil &&
+		r.pemenangID(ctx, providerID) != pemenangSebelum
+	selesai()
+	if bergeser {
 		r.sesudahPemenangBergeser(ctx, providerID)
+	}
+}
+
+// penilaianPergeseran adalah satu pendaftaran penilaian tertunda:
+// pemenang ter-commit SEBELUM transaksi dan pemenang sesudah
+// mutasi pelapor terakhir DI DALAM transaksi.
+type penilaianPergeseran struct {
+	sebelum string
+	dalamTx string
+}
+
+// penilaianPergeseranTertunda menampung penilaian pergeseran
+// pemenang dari mutasi-mutasi pelapor di dalam SATU transaksi
+// untuk dinilai ulang SESUDAH transaksi itu commit (B-517).
+//
+// Pemilik transaksi membuatnya (satu per transaksi), memasangnya
+// ke salinan CredentialRepo transaksional, lalu memanggil jalankan
+// hanya sesudah commit berhasil — rollback berarti registry
+// dibuang tanpa laporan apa pun, jadi tidak ada lagi kenaikan
+// generasi mubazir dari transaksi yang batal (faset kedua B-517).
+type penilaianPergeseranTertunda struct {
+	// qKomit adalah querier keadaan ter-commit (pool): baseline
+	// "sebelum" dan pembacaan "akhir" dinilai darinya, bukan dari
+	// querier transaksi.
+	qKomit      repo.Querier
+	mu          sync.Mutex
+	urutan      []string
+	perProvider map[string]*penilaianPergeseran
+}
+
+func penilaianPergeseranTertundaBaru(qKomit repo.Querier) *penilaianPergeseranTertunda {
+	return &penilaianPergeseranTertunda{
+		qKomit:      qKomit,
+		perProvider: map[string]*penilaianPergeseran{},
+	}
+}
+
+// catat mendaftarkan satu mutasi pelapor. Bila satu transaksi
+// menyentuh provider yang sama berkali-kali, "sebelum" PERTAMA
+// yang menang (baseline-nya adalah keadaan ter-commit sebelum
+// transaksi) dan "dalamTx" TERAKHIR yang menang (pandangan akhir
+// transaksi atas mutasinya sendiri).
+func (t *penilaianPergeseranTertunda) catat(providerID, sebelum, dalamTx string) {
+	if t == nil || providerID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if p, ada := t.perProvider[providerID]; ada {
+		p.dalamTx = dalamTx
+		return
+	}
+	t.perProvider[providerID] = &penilaianPergeseran{sebelum: sebelum, dalamTx: dalamTx}
+	t.urutan = append(t.urutan, providerID)
+}
+
+// jalankan menilai ulang setiap provider terdaftar terhadap
+// keadaan ter-commit SESUDAH commit dan memanggil callback bagi
+// yang terbukti bergeser. Tiga titik dibandingkan: laporan terbit
+// bila pemenang di dalam transaksi berbeda dari sebelum
+// (transaksi ini sendiri menggeser pemenang pada commit-nya —
+// walau mutasi bersamaan sesudahnya mengembalikannya, entri yang
+// ditanam di era pemenang antaranya wajib gugur) ATAU pemenang
+// ter-commit akhir berbeda dari sebelum (gabungan transaksi ini
+// dengan mutasi bersamaan di jendela commit yang menggeser).
+// Callback dipanggil TANPA kunci internal terpegang (B-527).
+func (t *penilaianPergeseranTertunda) jalankan(ctx context.Context, bacaPemenang func(context.Context, string) string, callback func(context.Context, string)) {
+	if t == nil || callback == nil {
+		return
+	}
+	t.mu.Lock()
+	urutan := append([]string(nil), t.urutan...)
+	salinan := make(map[string]penilaianPergeseran, len(t.perProvider))
+	for id, p := range t.perProvider {
+		salinan[id] = *p
+	}
+	t.mu.Unlock()
+	for _, providerID := range urutan {
+		p := salinan[providerID]
+		lepas := kunciPergeseranProvider(providerID)
+		akhir := bacaPemenang(ctx, providerID)
+		lepas()
+		if akhir != p.sebelum || p.dalamTx != p.sebelum {
+			callback(ctx, providerID)
+		}
 	}
 }
 
@@ -146,17 +295,26 @@ func kunciPergeseranProvider(providerID string) func() {
 // mulaiPergeseran memuat provider pemilik kredensial id, mengunci
 // rangkaian penilaian pergeserannya, lalu membaca pemenang SEBELUM
 // mutasi di bawah kunci itu (B-514). Pemanggil WAJIB menjalankan
-// mutasi dan laporkanPergeseranPemenang sebelum memanggil selesai —
-// pola pakai: `defer selesai()` tepat sesudah baris ini. Kredensial
-// yang tidak terbaca menghasilkan provider kosong: pelaporan memang
-// tidak berlaku untuknya (sama seperti sebelum B-514) dan tidak ada
-// yang dikunci.
+// mutasinya lalu menutup rangkaian dengan selesaikanPergeseran
+// (yang melepas kunci lewat selesai), atau memanggil selesai
+// sendiri pada jalur gagal. Kredensial yang tidak terbaca
+// menghasilkan provider kosong: pelaporan memang tidak berlaku
+// untuknya (sama seperti sebelum B-514) dan tidak ada yang dikunci.
+//
+// Pada repo transaksional (tertunda != nil), "sebelum" adalah
+// pemenang TER-COMMIT yang dibaca lewat querier pool — bukan
+// pemenang menurut querier transaksi — supaya penilaian
+// sesudah-commit B-517 membandingkan keadaan yang sama-sama
+// ter-commit.
 func (r *CredentialRepo) mulaiPergeseran(ctx context.Context, id string) (providerID, pemenangSebelum string, selesai func()) {
 	meta, err := r.Get(ctx, id)
 	if err != nil || meta == nil {
 		return "", "", func() {}
 	}
 	lepas := kunciPergeseranProvider(meta.ProviderID)
+	if r.tertunda != nil {
+		return meta.ProviderID, r.pemenangIDPada(ctx, r.tertunda.qKomit, meta.ProviderID), lepas
+	}
 	return meta.ProviderID, r.pemenangID(ctx, meta.ProviderID), lepas
 }
 
@@ -429,7 +587,6 @@ func (r *CredentialRepo) UpdateSecret(ctx context.Context, id string, secret sec
 	}
 
 	providerID, pemenangSebelum, selesai := r.mulaiPergeseran(ctx, id)
-	defer selesai()
 
 	tag, err := r.q.Exec(ctx, `
 		update provider_credentials
@@ -443,12 +600,14 @@ func (r *CredentialRepo) UpdateSecret(ctx context.Context, id string, secret sec
 		id, ciphertext, r.cipher.KeyID(), maskCredential(secret), expiresAt,
 	)
 	if err != nil {
+		selesai()
 		return repo.Err(op, err)
 	}
 	if tag.RowsAffected() == 0 {
+		selesai()
 		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
-	r.laporkanPergeseranPemenang(ctx, providerID, pemenangSebelum)
+	r.selesaikanPergeseran(ctx, providerID, pemenangSebelum, selesai)
 	return nil
 }
 
@@ -613,16 +772,16 @@ func (r *CredentialRepo) MarkAuthFailure(ctx context.Context, id string) (int, e
 	}
 
 	providerID, pemenangSebelum, selesai := r.mulaiPergeseran(ctx, id)
-	defer selesai()
 
 	var failures int
 	err := r.q.QueryRow(ctx, `
 		update provider_credentials set auth_failures = auth_failures + 1
 		where id = $1 returning auth_failures`, id).Scan(&failures)
 	if err != nil {
+		selesai()
 		return 0, repo.Err(op, err)
 	}
-	r.laporkanPergeseranPemenang(ctx, providerID, pemenangSebelum)
+	r.selesaikanPergeseran(ctx, providerID, pemenangSebelum, selesai)
 	return failures, nil
 }
 

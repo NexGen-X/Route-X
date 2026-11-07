@@ -680,6 +680,14 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	if req.Name != "" {
 		p.Name = &req.Name
 	}
+	// KEPUTUSAN TERCATAT (B-418): description tidak bisa
+	// dikosongkan dan priority tidak bisa di-nol-kan lewat update
+	// ini — keduanya dijaga oleh != "" / > 0 di bawah, melebur
+	// "absen" dan "kosong" menjadi "biarkan". Batas ekspresif
+	// yang sadar, sejajar updateContentFilter: harga pola
+	// anti-B-369, dan tidak ada kebutuhan operasional nyata untuk
+	// description kosong atau priority 0 pada aturan yang sudah
+	// ada (aturan baru membuatnya lewat create).
 	if req.Description != "" {
 		p.Description = upstream.Set(req.Description)
 	}
@@ -733,7 +741,18 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		var err error
 		rule, err = txRouting.Update(ctx, id, p)
 		if err != nil {
-			return err
+			// B-401: body yang HANYA menyebut provider_ids tidak
+			// membawa perubahan field, jadi Update menolaknya
+			// dengan ErrNoChanges — dan penolakan itu dulu
+			// menggagalkan seluruh transaksi, termasuk
+			// SetProviders yang sah di bawah (400 palsu untuk
+			// permintaan ikatan yang sah). Telan sentinel itu
+			// HANYA bila ikatan provider memang disebut; tanpa
+			// provider_ids, no_changes tetap kesalahan pemanggil
+			// yang diteruskan ke mapRepoError.
+			if !(req.ProviderIDs != nil && errors.Is(err, upstream.ErrNoChanges)) {
+				return err
+			}
 		}
 
 		if req.ProviderIDs != nil {
@@ -1648,6 +1667,17 @@ func (h *Handlers) updateContentFilter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// KEPUTUSAN TERCATAT (B-418): beberapa field di sini tidak
+	// bisa dikosongkan/di-nol-kan lewat update — description dan
+	// pattern dijaga != "", priority dan max_eval_ms dijaga > 0.
+	// Ini batas ekspresif yang SADAR, bukan kelalaian: DTO memakai
+	// nilai polos (bukan penunjuk/Set-Clear) karena untuk field
+	// ini "absen" dan "kosong" sengaja dilebur menjadi "biarkan",
+	// harga dari pola anti-B-369 (update parsial tidak pernah
+	// menghapus yang tidak disebut). Mengosongkan description
+	// atau pattern bukan kebutuhan operasional yang nyata
+	// (pattern kosong = filter tanpa pola, keadaan yang memang
+	// tidak boleh ada), dan jalur menghapus filter tersedia.
 	var p policy.UpdateFilterParams
 	if req.Name != "" {
 		p.Name = &req.Name

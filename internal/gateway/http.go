@@ -381,14 +381,18 @@ func (h *Handlers) siapkanChatParsed(w http.ResponseWriter, r *http.Request, req
 		if pipeline := ekstrakComboPipeline(keputusan.Rule); len(pipeline) > 0 {
 			tempPr := &persiapan{req: req, model: model, principal: p}
 			for _, tier := range pipeline {
-				tModel, tCands, tTargets, rj := h.siapkanTierFallback(r.Context(), tier.Model, tier.ProviderIDs, tempPr, req.Stream)
+				tModel, tCands, tTargets, rj, ctxTier := h.siapkanTierFallback(r.Context(), tier.Model, tier.ProviderIDs, tempPr, req.Stream)
 				if rj == nil && tModel != nil && len(tCands) > 0 {
 					if rreq.Tokens.InputTokens > 0 && semuaKandidatKekecilan(tCands, rreq.Tokens.InputTokens) {
 						// Tier disiapkan (batas modelnya sudah dinaikkan
 						// di siapkanTierFallback) tetapi dibuang di sini
 						// (B-294): kembalikan kenaikannya, kalau tidak
 						// slot model tier ini bocor walau tak pernah dicoba.
-						h.guard.KembalikanKuotaModel(r.Context(), tModel.ID)
+						// Refund WAJIB memakai ctxTier bertanda dari
+						// siapkanTierFallback (B-391): context luar
+						// tidak membawa pemegang tanda tier ini, jadi
+						// refund dengannya no-op senyap.
+						h.guard.KembalikanKuotaModel(ctxTier, tModel.ID)
 						continue // Tier ini juga kekecilan, coba tier berikutnya
 					}
 					h.logger.InfoContext(r.Context(), "melewati Tier 1 combo karena context window tidak mencukupi, langsung ke fallback tier",
@@ -1550,19 +1554,29 @@ func semuaKandidatKekecilan(cands []*upstream.RouteCandidate, inputTokens int) b
 
 // siapkanTierFallback menyiapkan fallback combo routing untuk tier tertentu: resolusi model,
 // kewenangan key, penyaringan provider khusus tier (jika ada), kebijakan, dan kandidat tersaring.
-func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string, allowedProviderIDs []string, pr *persiapan, stream bool) (*upstream.Model, []*upstream.RouteCandidate, []policy.Target, *Rejection) {
+//
+// Nilai kembalian kelima adalah context BERTANDA kuota model tier
+// (B-391): PeriksaBatasModel menanam tandanya pada context BARU
+// yang hanya hidup di dalam fungsi ini, jadi pemanggil yang membuang
+// tier tersiapkan (refund) atau mengeksekusinya WAJIB memakai
+// context kembalian ini — memakai context luar membuat refund
+// no-op senyap (pemegang tanda yang berbeda) dan eksekusi tanpa
+// pemegang tanda yang bisa diklaim refund menyeluruh di hilir.
+// Jalan keluar sebelum PeriksaBatasModel mengembalikan context
+// masukan apa adanya.
+func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string, allowedProviderIDs []string, pr *persiapan, stream bool) (*upstream.Model, []*upstream.RouteCandidate, []policy.Target, *Rejection, context.Context) {
 	tModel, err := h.models.Resolve(ctx, tierModelName)
 	if err != nil {
 		h.logger.WarnContext(ctx, "resolusi combo fallback model gagal", "target_model", tierModelName, "error", err)
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, ctx
 	}
 	if !tModel.Enabled {
 		h.logger.WarnContext(ctx, "combo fallback model dimatikan, fallback dilewati", "target_model", tierModelName)
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, ctx
 	}
 	if pr.model != nil && tModel.ID == pr.model.ID {
 		h.logger.WarnContext(ctx, "combo fallback model sama dengan model saat ini, fallback dilewati", "target_model", tierModelName)
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, ctx
 	}
 	p := pr.principal
 	if h.restrict != nil && p.ID() != "" {
@@ -1570,23 +1584,23 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 		if err != nil {
 			h.logger.ErrorContext(ctx, "pemeriksaan pembatasan model fallback gagal",
 				"api_key", p.Masked(), "model", tModel.ModelID, "error", err)
-			return nil, nil, nil, nil
+			return nil, nil, nil, nil, ctx
 		}
 		if !boleh {
 			return nil, nil, nil, &Rejection{
 				Status: http.StatusForbidden, Type: httpx.ErrTypePermission, Code: "model_not_allowed",
 				Message: "API key ini tidak diizinkan memakai model " + kutip(tModel.ModelID),
-			}
+			}, ctx
 		}
 	}
 	clientIP, _ := httpx.ClientIPFrom(ctx)
 	targets := TargetsFor(p, tModel.ID, clientIP)
 	if rj := h.guard.SaringPermintaan(ctx, contentfilter.Subject{ModelID: tModel.ID}); rj != nil {
-		return nil, nil, nil, rj
+		return nil, nil, nil, rj, ctx
 	}
 	ctxBertanda, rj := h.guard.PeriksaBatasModel(ctx, tModel.ID)
 	if rj != nil {
-		return nil, nil, nil, rj
+		return nil, nil, nil, rj, ctx
 	}
 	// B-294: kenaikan batas model tier DITANDAI pada pemegang
 	// bersama (kini oleh PeriksaBatasModel sendiri pada context
@@ -1601,11 +1615,11 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 	batalkanTier := func() { h.guard.KembalikanKuotaModel(ctx, tModel.ID) }
 	if rj := h.guard.PeriksaAnggaran(ctx, targets); rj != nil {
 		batalkanTier()
-		return nil, nil, nil, rj
+		return nil, nil, nil, rj, ctx
 	}
 	if rj := h.guard.GerbangToken(ctx, p, targets); rj != nil {
 		batalkanTier()
-		return nil, nil, nil, rj
+		return nil, nil, nil, rj, ctx
 	}
 	var ownerUserID string
 	if p != nil {
@@ -1618,7 +1632,7 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 	if err != nil || len(cands) == 0 {
 		batalkanTier()
 		h.logger.WarnContext(ctx, "tidak ada kandidat untuk combo fallback model", "target_model", tierModelName, "error", err)
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, ctx
 	}
 
 	// Filter kandidat berdasarkan allowedProviderIDs jika ditentukan untuk tier ini
@@ -1633,7 +1647,7 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 		if len(cands) == 0 {
 			batalkanTier()
 			h.logger.WarnContext(ctx, "tidak ada kandidat lolos filter provider tier", "target_model", tierModelName, "allowed_providers", allowedProviderIDs)
-			return nil, nil, nil, nil
+			return nil, nil, nil, nil, ctx
 		}
 	}
 
@@ -1641,7 +1655,7 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 	if !ok || len(saring) == 0 {
 		batalkanTier()
 		h.logger.WarnContext(ctx, "tidak ada kandidat fallback yang lolos penyaringan provider", "target_model", tierModelName)
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, ctx
 	}
 
 	// Permintaan berdokumen PDF hanya boleh jatuh ke kandidat Anthropic —
@@ -1654,10 +1668,10 @@ func (h *Handlers) siapkanTierFallback(ctx context.Context, tierModelName string
 		if len(saring) == 0 {
 			batalkanTier()
 			h.logger.WarnContext(ctx, "tidak ada kandidat Anthropic untuk fallback berdokumen PDF, tier dilewati", "target_model", tierModelName)
-			return nil, nil, nil, nil
+			return nil, nil, nil, nil, ctx
 		}
 	}
-	return tModel, saring, targets, nil
+	return tModel, saring, targets, nil, ctx
 }
 
 // saringKandidatTier2 menerapkan penyaringan provider yang sama seperti jalur
@@ -1696,7 +1710,7 @@ func (h *Handlers) saringKandidatTier2(ctx context.Context, cands []*upstream.Ro
 
 // cobaTierFallbackSekali mencoba eksekusi satu tier fallback non-streaming.
 func (h *Handlers) cobaTierFallbackSekali(ctx context.Context, tier ComboTier, pr *persiapan, j *jejak) (*Outcome[*providers.ChatResponse], *Rejection) {
-	tModel, cands, targets, rj := h.siapkanTierFallback(ctx, tier.Model, tier.ProviderIDs, pr, false)
+	tModel, cands, targets, rj, ctxTier := h.siapkanTierFallback(ctx, tier.Model, tier.ProviderIDs, pr, false)
 	if rj != nil {
 		return nil, rj
 	}
@@ -1709,8 +1723,11 @@ func (h *Handlers) cobaTierFallbackSekali(ctx context.Context, tier ComboTier, p
 
 	tPlan := PlanFromRule(pr.decision.Rule, tModel.ModelID, cands)
 
+	// Eksekusi memakai ctxTier bertanda (B-391) supaya refund
+	// menyeluruh di hilir mengklaim pemegang tanda yang sama dengan
+	// yang ditanam persiapan tier.
 	h.logger.InfoContext(ctx, "menjalankan fallback combo routing tier", "tier", tier.Tier, "tier_model", tModel.ModelID)
-	out := Execute(h.guard.DenganMemoBatas(ctx), h.exec, tPlan,
+	out := Execute(h.guard.DenganMemoBatas(ctxTier), h.exec, tPlan,
 		func(c context.Context, cand *upstream.RouteCandidate) (*providers.ChatResponse, error) {
 			if perr := h.guard.PeriksaBatasProvider(c, cand.ProviderID, cand.ProviderName); perr != nil {
 				return nil, perr
@@ -1865,7 +1882,7 @@ func (h *Handlers) cobaTierFallbackEmbeddings(ctx context.Context, tier ComboTie
 
 // cobaTierFallbackMengalir mencoba eksekusi satu tier fallback streaming.
 func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier, pr *persiapan, j *jejak) (*Outcome[providers.Stream], *Rejection) {
-	tModel, cands, targets, rj := h.siapkanTierFallback(ctx, tier.Model, tier.ProviderIDs, pr, true)
+	tModel, cands, targets, rj, ctxTier := h.siapkanTierFallback(ctx, tier.Model, tier.ProviderIDs, pr, true)
 	if rj != nil {
 		return nil, rj
 	}
@@ -1878,8 +1895,10 @@ func (h *Handlers) cobaTierFallbackMengalir(ctx context.Context, tier ComboTier,
 
 	tPlan := PlanFromRule(pr.decision.Rule, tModel.ModelID, cands)
 
+	// Eksekusi memakai ctxTier bertanda (B-391), sama seperti
+	// pasangan non-streamingnya.
 	h.logger.InfoContext(ctx, "menjalankan fallback streaming combo routing tier", "tier", tier.Tier, "tier_model", tModel.ModelID)
-	out := ExecuteStream(h.guard.DenganMemoBatas(ctx), h.exec, tPlan,
+	out := ExecuteStream(h.guard.DenganMemoBatas(ctxTier), h.exec, tPlan,
 		func(c context.Context, cand *upstream.RouteCandidate) (providers.Stream, error) {
 			if perr := h.guard.PeriksaBatasProvider(c, cand.ProviderID, cand.ProviderName); perr != nil {
 				return nil, perr

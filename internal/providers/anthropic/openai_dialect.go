@@ -37,9 +37,13 @@ type oaChoice struct {
 
 type oaMessage struct {
 	Role string `json:"role"`
-	// Content sengaja bertipe penunjuk: OpenAI mengirim null (bukan string kosong) ketika
-	// jawaban hanya berisi pemanggilan tool, dan sebagian klien membedakan keduanya.
-	Content          *string      `json:"content"`
+	// Content bertipe any sejak B-389: *string untuk jawaban teks
+	// biasa (penunjuk, karena OpenAI mengirim null — bukan string
+	// kosong — ketika jawaban hanya berisi pemanggilan tool, dan
+	// sebagian klien membedakan keduanya), []oaContentPart bila
+	// jawaban kanonik membawa Parts (gambar keluaran). Sebelumnya
+	// *string memaksa encodeCompletion membuang Parts seluruhnya.
+	Content          any          `json:"content"`
 	ReasoningContent string       `json:"reasoning_content,omitempty"`
 	ToolCalls        []oaToolCall `json:"tool_calls,omitempty"`
 	// ThoughtSignature (B-360): dialek streaming (oaDelta) sudah
@@ -190,6 +194,27 @@ func finishReasonUntukOpenAI(reason string) string {
 	}
 }
 
+// encodeBagianOpenAI menerjemahkan Parts kanonik ke larik content
+// dialek OpenAI — kembaran fungsi yang sama di adapter google
+// (B-211). Part selain teks dan gambar tidak punya bentuk larik
+// yang diterima klien OpenAI pada pesan asisten, jadi ia dilewati
+// di permukaan ini secara eksplisit; part-nya tetap hidup di bentuk
+// kanonik untuk permukaan yang bisa membawanya.
+func encodeBagianOpenAI(parts []providers.ContentPart) []oaContentPart {
+	out := make([]oaContentPart, 0, len(parts))
+	for _, p := range parts {
+		switch p.Type {
+		case providers.PartTypeText:
+			out = append(out, oaContentPart{Type: "text", Text: p.Text})
+		case providers.PartTypeImageURL:
+			if p.ImageURL != nil {
+				out = append(out, oaContentPart{Type: "image_url", ImageURL: &oaImageURL{URL: p.ImageURL.URL}})
+			}
+		}
+	}
+	return out
+}
+
 // encodeCompletion menyusun objek chat.completion dari respons kanonik.
 func encodeCompletion(resp *providers.ChatResponse) json.RawMessage {
 	out := oaCompletion{
@@ -208,7 +233,15 @@ func encodeCompletion(resp *providers.ChatResponse) json.RawMessage {
 			ToolCalls:        encodeToolCalls(c.Message.ToolCalls, false),
 			ThoughtSignature: c.Message.ReasoningSignature,
 		}
-		if c.Message.Content != "" || len(c.Message.ToolCalls) == 0 {
+		// B-389: Parts kanonik (diisi toCanonicalResponse sejak
+		// B-299) adalah sumber sebenarnya untuk jawaban multimodal —
+		// membacanya di sini menyamakan jalur non-streaming dengan
+		// adapter google dan jalur Messages. Tanpa Parts, perilaku
+		// lama dipertahankan persis: string, atau null bila jawaban
+		// hanya berisi tool call.
+		if len(c.Message.Parts) > 0 {
+			msg.Content = encodeBagianOpenAI(c.Message.Parts)
+		} else if c.Message.Content != "" || len(c.Message.ToolCalls) == 0 {
 			content := c.Message.Content
 			msg.Content = &content
 		}

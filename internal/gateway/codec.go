@@ -462,12 +462,24 @@ func periksaTokenEmbedding(urutan []int, jalur string) error {
 // (mis. "refusal", "annotations", "audio") — OpenAI sendiri mengabaikannya pada permintaan
 // masuk. Field masukan per pesan milik dialek lain, seperti "cache_control" milik
 // Anthropic, memang belum bisa dipakai lewat permukaan ini.
+//
+// Pengecualian bernama kedua (B-390): thought_signature TINGKAT PESAN di bawah.
+// Adapter anthropic menerbitkan tanda tangan block thinking-nya di tingkat
+// pesan pada keluaran Chat (encodeDelta), dan adapter yang sama hanya
+// mengirim balik block thinking ke upstream bila ReasoningSignature terisi —
+// tanpa meneruskan field ini di pintu masuk, giliran lanjutan sesi Claude
+// lewat Chat kehilangan block thinking-nya secara diam-diam, persis
+// kegagalan yang ditutup B-162 untuk tanda tangan per tool call Gemini dan
+// yang sudah ditutup permukaan Messages (ReasoningSignature terisi di sana).
 type pesanMasuk struct {
 	Role       string          `json:"role"`
 	Content    json.RawMessage `json:"content"`
 	Name       string          `json:"name"`
 	ToolCalls  []toolCallMasuk `json:"tool_calls"`
 	ToolCallID string          `json:"tool_call_id"`
+	// ThoughtSignature adalah tanda tangan block thinking Anthropic di
+	// tingkat pesan (B-390); lihat pengecualian bernama di atas.
+	ThoughtSignature string `json:"thought_signature"`
 }
 
 // toolCallMasuk adalah satu tool call dalam riwayat yang dikirim ulang klien.
@@ -515,6 +527,9 @@ func uraikanPesan(raw json.RawMessage) ([]providers.Message, error) {
 			Role:       providers.Role(m.Role),
 			Name:       m.Name,
 			ToolCallID: m.ToolCallID,
+			// Tanda tangan berpikir tingkat pesan diteruskan ke bentuk
+			// kanonik (B-390), sejajar tanda tangan per tool call B-162.
+			ReasoningSignature: m.ThoughtSignature,
 		}
 
 		adaKonten, err := uraikanKonten(&pesan, m.Content, jalur+".content")

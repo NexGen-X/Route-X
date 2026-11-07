@@ -1447,6 +1447,20 @@ func (a *aliranPenjagaDiam) tembak() {
 func (a *aliranPenjagaDiam) Recv() (*providers.StreamEvent, error) {
 	ev, err := a.Stream.Recv()
 
+	// B-387: peristiwa (nil, nil) adalah pelanggaran kontrak yang
+	// sama kelasnya dengan aliran typed-nil B-358, satu tingkat
+	// lebih dalam: gerbang B-358 memeriksa ALIRAN saat dibuka,
+	// tetapi adapter yang sehat saat dibuka masih bisa
+	// mengembalikan peristiwa nil tanpa error di tengah jalan.
+	// Tanpa penjaga ini len(ev.Raw) di bawah meledak sebagai panic
+	// di goroutine handler. Ubah menjadi kegagalan aliran berkind
+	// server supaya alur error yang ada (penanda kegagalan +
+	// failover di pemanggil) yang menanganinya.
+	if err == nil && ev == nil {
+		err = &providers.Error{Kind: providers.ErrKindServer,
+			Message: "adapter mengembalikan peristiwa kosong (nil) tanpa error"}
+	}
+
 	a.mu.Lock()
 	if err == nil {
 		a.terkirim += int64(len(ev.Raw))

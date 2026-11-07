@@ -29,4 +29,7 @@ export interface APIKeyCardProps {
     periodLabel: string;
     thresholdPct: number;
   };
+  // B-558: query ['budgets'] terakhir gagal — meter yang tampil
+  // berasal dari data basi dan wajib berpenanda, bukan definitif.
+  budgetGagal?: boolean;
 }

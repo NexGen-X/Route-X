@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"os"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/NexGen-X/Route-X/internal/database/repo/identity"
 	"github.com/NexGen-X/Route-X/internal/security"
+	toml "github.com/pelletier/go-toml/v2"
+	yaml "go.yaml.in/yaml/v3"
 )
 
 // SettingsStore adalah antarmuka minimum untuk membaca dan menyimpan preferensi setelan CLI.
@@ -503,6 +506,14 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 	if strings.ContainsAny(p.Target, "\x00\r\n") {
 		return nil, fmt.Errorf("target model memuat karakter terlarang")
 	}
+	// B-443: APIKey divalidasi di pintu masuk dengan aturan yang
+	// sama seperti Target. Versi lama tidak memvalidasinya sama
+	// sekali, jadi kunci ber-newline baru ketahuan di tengah jalan
+	// (shellQuote di susunKontenKeyEnv) — sesudah direktori .routex
+	// diciptakan — dengan pesan galat yang buram.
+	if strings.ContainsAny(p.APIKey, "\x00\r\n") {
+		return nil, fmt.Errorf("API key memuat karakter terlarang")
+	}
 
 	gwURL := p.GatewayURL
 	if gwURL == "" {
@@ -595,6 +606,12 @@ func (m *Manager) Configure(ctx context.Context, p ConfigureParams, defaultGatew
 		// variabelnya sendiri, dan tool lain tidak lagi hilang dari berkas
 		// hanya karena tool lain dikonfigurasi sesudahnya.
 		if err := m.tulisUlangKeyEnv(ctx, keyEnvPath, p.ToolID, p.APIKey, stored); err != nil {
+			// B-443: cabang ini dulu satu-satunya cabang kegagalan
+			// pasca-jepretan yang kembali TANPA pulihkanSemua, jadi
+			// direktori .routex ciptaan MkdirAll di atas bocor
+			// sebagai residu kosong sesudah Configure yang "gagal
+			// dan dipulihkan". Kini simetris dengan cabang lain.
+			pulihkanSemua()
 			return nil, err
 		}
 	}
@@ -1850,10 +1867,14 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if data, err := os.ReadFile(aiderConfigPath); err == nil {
 			existingAider = string(data)
 		}
-		content := perbaruiYAMLTopLevel(existingAider, [][2]string{
+		pasanganAider := [][2]string{
 			{"openai-api-base", gwURL},
 			{"model", modelAider(target)},
-		})
+		}
+		content := perbaruiYAMLTopLevel(existingAider, pasanganAider)
+		if err := verifikasiHasilYAMLTingkatAtas(content, pasanganAider); err != nil {
+			return err
+		}
 		if err := tulisAtomik(aiderConfigPath, []byte(content), permBerkasAtau(aiderConfigPath, 0644)); err != nil {
 			return fmt.Errorf("menulis %s: %w", aiderConfigPath, err)
 		}
@@ -1874,11 +1895,15 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if data, err := os.ReadFile(goosePath); err == nil {
 			existing = string(data)
 		}
-		content := perbaruiYAMLTopLevel(existing, [][2]string{
+		pasanganGoose := [][2]string{
 			{"GOOSE_PROVIDER", "openai"},
 			{"GOOSE_MODEL", target},
 			{"OPENAI_HOST", strings.TrimSuffix(gwURL, "/v1")},
-		})
+		}
+		content := perbaruiYAMLTopLevel(existing, pasanganGoose)
+		if err := verifikasiHasilYAMLTingkatAtas(content, pasanganGoose); err != nil {
+			return err
+		}
 		// Izin mengikuti berkas eksisting (B-220): penulisan ulang tidak
 		// boleh melonggarkan berkas 0600 milik pengguna menjadi 0644;
 		// 0644 hanya bawaan untuk berkas baru.
@@ -1957,20 +1982,27 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if data, err := os.ReadFile(codexPath); err == nil {
 			existingCodex = string(data)
 		}
-		kontenCodex := perbaruiPreambleTOML(existingCodex, [][2]string{
+		pasanganPreambleCodex := [][2]string{
 			{"model_provider", "routex"},
 			{"model", target},
-		})
-		// B-222: gabung PER-KUNCI, bukan ganti seluruh seksi — kunci
-		// lain yang pengguna taruh di [model_providers.routex]
-		// (mis. request_max_retries) adalah konfigurasi sah Codex
-		// dan tidak boleh terhapus setiap Configure.
-		kontenCodex = perbaruiKunciSeksiTOML(kontenCodex, "model_providers.routex", [][2]string{
+		}
+		pasanganSeksiCodex := [][2]string{
 			{"name", "Route-X"},
 			{"base_url", gwURL},
 			{"env_key", "OPENAI_API_KEY"},
 			{"wire_api", "responses"},
-		})
+		}
+		kontenCodex := perbaruiPreambleTOML(existingCodex, pasanganPreambleCodex)
+		// B-222: gabung PER-KUNCI, bukan ganti seluruh seksi — kunci
+		// lain yang pengguna taruh di [model_providers.routex]
+		// (mis. request_max_retries) adalah konfigurasi sah Codex
+		// dan tidak boleh terhapus setiap Configure.
+		kontenCodex = perbaruiKunciSeksiTOML(kontenCodex, "model_providers.routex", pasanganSeksiCodex)
+		if err := verifikasiHasilTOML(kontenCodex, pasanganPreambleCodex, map[string][][2]string{
+			"model_providers.routex": pasanganSeksiCodex,
+		}); err != nil {
+			return err
+		}
 		if err := tulisAtomik(codexPath, []byte(kontenCodex), permBerkasAtau(codexPath, 0644)); err != nil {
 			return fmt.Errorf("menulis %s: %w", codexPath, err)
 		}
@@ -1987,15 +2019,23 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if data, err := os.ReadFile(grokPath); err == nil {
 			existingGrok = string(data)
 		}
-		kontenGrok := perbaruiKunciSeksiTOML(existingGrok, "models", [][2]string{{"default", "routex"}})
-		// B-222: gabung PER-KUNCI seperti codex di atas — kunci lain
-		// pengguna di [model.routex] dipertahankan.
-		kontenGrok = perbaruiKunciSeksiTOML(kontenGrok, "model.routex", [][2]string{
+		pasanganModelsGrok := [][2]string{{"default", "routex"}}
+		pasanganRoutexGrok := [][2]string{
 			{"model", target},
 			{"name", "Route-X"},
 			{"base_url", gwURL},
 			{"env_key", "XAI_API_KEY"},
-		})
+		}
+		kontenGrok := perbaruiKunciSeksiTOML(existingGrok, "models", pasanganModelsGrok)
+		// B-222: gabung PER-KUNCI seperti codex di atas — kunci lain
+		// pengguna di [model.routex] dipertahankan.
+		kontenGrok = perbaruiKunciSeksiTOML(kontenGrok, "model.routex", pasanganRoutexGrok)
+		if err := verifikasiHasilTOML(kontenGrok, nil, map[string][][2]string{
+			"models":       pasanganModelsGrok,
+			"model.routex": pasanganRoutexGrok,
+		}); err != nil {
+			return err
+		}
 		if err := tulisAtomik(grokPath, []byte(kontenGrok), permBerkasAtau(grokPath, 0644)); err != nil {
 			return fmt.Errorf("menulis %s: %w", grokPath, err)
 		}
@@ -2148,6 +2188,9 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			existingHermes = string(data)
 		}
 		kontenHermes := susunBlokModelHermes(existingHermes, target, gwURL, apiKey)
+		if err := verifikasiHasilHermes(kontenHermes, target, gwURL, apiKey); err != nil {
+			return err
+		}
 		if err := tulisAtomik(hermesPath, []byte(kontenHermes), 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", hermesPath, err)
 		}
@@ -2157,7 +2200,11 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			if data, err := os.ReadFile(envPath); err == nil {
 				existingEnv = string(data)
 			}
-			if err := tulisAtomik(envPath, []byte(perbaruiBarisEnv(existingEnv, "OPENAI_API_KEY", apiKey)), 0600); err != nil {
+			kontenEnv := perbaruiBarisEnv(existingEnv, "OPENAI_API_KEY", apiKey)
+			if err := verifikasiEnvTanpaDuplikat(kontenEnv); err != nil {
+				return err
+			}
+			if err := tulisAtomik(envPath, []byte(kontenEnv), 0600); err != nil {
 				return fmt.Errorf("menulis %s: %w", envPath, err)
 			}
 		}
@@ -2374,6 +2421,89 @@ func tomlKutip(v string) string {
 	return strconv.Quote(v)
 }
 
+// pemindaiMultilineTOML melacak keadaan string multiline TOML
+// ("""…""" dasar dan ”'…”' literal) lintas baris (B-439).
+// Penyunting TOML di berkas ini bekerja per baris; tanpa kesadaran
+// ini, baris ISI string multiline yang mirip kunci/header
+// diperlakukan sebagai kode sungguhan: isi teks pengguna ditulis
+// ulang, kunci asli dibuang sebagai "duplikat", dan batas preamble
+// /seksi terpotong di tengah string — sementara Configure tetap
+// melaporkan sukses. Pemindai ini hanya menjawab satu pertanyaan
+// per baris: apakah baris itu DIMULAI di dalam string multiline.
+type pemindaiMultilineTOML struct {
+	// multi adalah karakter pembatas string multiline yang sedang
+	// terbuka ('"' atau '\''), 0 bila di luar string multiline.
+	multi byte
+}
+
+// diDalamMultiline melaporkan apakah pemindai sedang berada di
+// dalam string multiline pada posisi kini.
+func (p *pemindaiMultilineTOML) diDalamMultiline() bool { return p.multi != 0 }
+
+// pindaiBaris memindai satu baris dan memajukan keadaan multiline
+// ke akhir baris itu. String satu baris dan komentar ditangani
+// supaya pembatas di dalamnya tidak membuka string multiline
+// palsu.
+func (p *pemindaiMultilineTOML) pindaiBaris(l string) {
+	i := 0
+	for i < len(l) {
+		if p.multi != 0 {
+			// Di dalam string multiline hanya pembatas tutup yang
+			// bermakna. Pada string dasar, \" adalah escape dan
+			// bukan bagian dari pembatas.
+			if p.multi == '"' && l[i] == '\\' {
+				i += 2
+				continue
+			}
+			if l[i] == p.multi && i+2 < len(l) && l[i+1] == p.multi && l[i+2] == p.multi {
+				p.multi = 0
+				i += 3
+				continue
+			}
+			i++
+			continue
+		}
+		switch c := l[i]; c {
+		case '#':
+			return // komentar: sisa baris bukan kode
+		case '"', '\'':
+			if i+2 < len(l) && l[i+1] == c && l[i+2] == c {
+				p.multi = c
+				i += 3
+				continue
+			}
+			// String satu baris: lompat ke penutupnya pada baris
+			// ini juga supaya isinya tidak ditafsirkan sebagai kode.
+			i++
+			for i < len(l) {
+				if c == '"' && l[i] == '\\' {
+					i += 2
+					continue
+				}
+				if l[i] == c {
+					i++
+					break
+				}
+				i++
+			}
+		default:
+			i++
+		}
+	}
+}
+
+// petaBarisMultilineTOML mengembalikan, untuk tiap baris, apakah
+// baris itu dimulai di dalam string multiline TOML.
+func petaBarisMultilineTOML(baris []string) []bool {
+	p := &pemindaiMultilineTOML{}
+	diDalam := make([]bool, len(baris))
+	for i, l := range baris {
+		diDalam[i] = p.diDalamMultiline()
+		p.pindaiBaris(l)
+	}
+	return diDalam
+}
+
 // terapkanPasanganTOML mengganti baris pasangan kelolaan di dalam
 // daftar baris (preamble atau isi seksi), mempertahankan baris lain,
 // dan menambahkan pasangan yang belum ada di akhir daftar.
@@ -2384,7 +2514,17 @@ func terapkanPasanganTOML(baris []string, pairs [][2]string) []string {
 	}
 	tertulis := map[string]bool{}
 	hasil := make([]string, 0, len(baris)+len(pairs))
-	for _, l := range baris {
+	pindai := &pemindaiMultilineTOML{}
+	for i := 0; i < len(baris); i++ {
+		l := baris[i]
+		// B-439: baris isi string multiline adalah TEKS pengguna,
+		// bukan kode — dipertahankan apa adanya dan tidak pernah
+		// dinilai sebagai kunci/header, berapa pun miripnya.
+		if pindai.diDalamMultiline() {
+			hasil = append(hasil, l)
+			pindai.pindaiBaris(l)
+			continue
+		}
 		kunci := ""
 		if eq := strings.Index(l, "="); eq > 0 {
 			// B-343: sisi-kiri dinormalkan sebelum dibandingkan —
@@ -2404,13 +2544,27 @@ func terapkanPasanganTOML(baris []string, pairs [][2]string) []string {
 		}
 		if kunci == "" {
 			hasil = append(hasil, l)
+			pindai.pindaiBaris(l)
 			continue
 		}
-		if tertulis[kunci] {
-			continue // duplikat kunci kelolaan dibuang
+		// Kunci terkelola ditemukan. Penetapannya bisa membentang
+		// beberapa baris bila nilainya string multiline: seluruh
+		// rentang itu diganti SATU baris kanonik (atau dibuang
+		// sebagai duplikat) — mengganti baris pertamanya saja akan
+		// meninggalkan sisa string yatim yang merusak dokumen.
+		sesudah := *pindai
+		akhir := i
+		sesudah.pindaiBaris(l)
+		for sesudah.diDalamMultiline() && akhir+1 < len(baris) {
+			akhir++
+			sesudah.pindaiBaris(baris[akhir])
 		}
-		tertulis[kunci] = true
-		hasil = append(hasil, kunci+" = "+tomlKutip(nilai[kunci]))
+		if !tertulis[kunci] {
+			tertulis[kunci] = true
+			hasil = append(hasil, kunci+" = "+tomlKutip(nilai[kunci]))
+		}
+		*pindai = sesudah
+		i = akhir
 	}
 	for _, p := range pairs {
 		if !tertulis[p[0]] {
@@ -2432,8 +2586,15 @@ func perbaruiPreambleTOML(existing string, pairs [][2]string) string {
 	// baru jatuh ke dalam seksi).
 	existing = strings.TrimPrefix(existing, "\ufeff")
 	baris := strings.Split(existing, "\n")
+	// B-439: baris pembuka-[ di dalam string multiline adalah isi
+	// teks, bukan awal seksi — batas preamble hanya dihitung dari
+	// baris yang berada di luar string.
+	diDalam := petaBarisMultilineTOML(baris)
 	idx := len(baris)
 	for i, l := range baris {
+		if diDalam[i] {
+			continue
+		}
 		if strings.HasPrefix(strings.TrimSpace(l), "[") {
 			idx = i
 			break
@@ -2565,12 +2726,19 @@ func normalisasiNamaSeksiTOML(nama string) string {
 // awal dan akhir eksklusif) di dokumen yang sudah dipecah per baris.
 // ok=false bila seksi tidak ada.
 func rentangSeksiTOML(baris []string, nama string) (awal, akhir int, ok bool) {
+	// B-439: header di dalam string multiline adalah isi teks —
+	// ia tidak membuka seksi dan tidak menutup seksi yang sedang
+	// berjalan.
+	diDalam := petaBarisMultilineTOML(baris)
 	for i, l := range baris {
-		if namaSeksiTOML(l) != nama {
+		if diDalam[i] || namaSeksiTOML(l) != nama {
 			continue
 		}
 		akhir = len(baris)
 		for j := i + 1; j < len(baris); j++ {
+			if diDalam[j] {
+				continue
+			}
 			if strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(baris[j], "\ufeff")), "[") {
 				akhir = j
 				break
@@ -2676,6 +2844,15 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 		"api_mode": true, "api_key": apiKey != "",
 	}
 	baris := strings.Split(existing, "\n")
+	// Cari SEMUA blok `model:` tingkat-atas beserta rentangnya.
+	// B-441: versi lama berhenti di kemunculan PERTAMA dan langsung
+	// kembali — blok kedua tertinggal apa adanya dan, sebagai
+	// duplikat kunci tingkat-atas yang menang last-wins di parser
+	// YAML Hermes, membatalkan seluruh pembaruan blok pertama
+	// sementara Configure melaporkan sukses. Kini semua blok
+	// digabung menjadi satu.
+	type rentangBlok struct{ awal, akhir int }
+	var rentang []rentangBlok
 	for i, l := range baris {
 		sisa, adalah := pecahHeaderModelHermes(l)
 		if !adalah {
@@ -2684,66 +2861,205 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 		// B-277: sisa berupa komentar (`model: # catatan`) adalah
 		// header PETA, bukan skalar — sub-baris menjorok sesudahnya
 		// adalah isi blok lama yang harus digabung per-kunci di
-		// bawah. Versi lama memperlakukannya sebagai skalar dan hanya
-		// mengganti baris header, sehingga sub-kunci terkelola lama
-		// menempel sesudah blok baru dan menang last-wins sementara
-		// Configure melaporkan sukses.
+		// bawah.
 		if sisa != "" && !strings.HasPrefix(sisa, "#") {
-			// Bentuk skalar satu baris: ganti baris itu saja.
-			hasil := make([]string, 0, len(baris)+len(blok))
-			hasil = append(hasil, baris[:i]...)
-			hasil = append(hasil, blok...)
-			hasil = append(hasil, baris[i+1:]...)
-			return gabungBarisYAML(hasil)
+			// Bentuk skalar satu baris: rentangnya baris itu saja.
+			rentang = append(rentang, rentangBlok{i, i + 1})
+			continue
 		}
-		// Bentuk peta: isi blok adalah baris kosong/berindentasi
-		// sesudahnya, sampai kunci tingkat-atas berikutnya.
+		// Bentuk peta: isi blok adalah baris sesudahnya yang kosong,
+		// berindentasi, ATAU komentar — pada kedalaman berapa pun.
+		// B-440: komentar kolom-0 di tengah blok dulu MENGHENTIKAN
+		// pemindaian, sehingga sub-kunci terkelola sesudahnya
+		// tertinggal dan menang last-wins; dalam YAML baris komentar
+		// tidak mengakhiri pemetaan. Blok berakhir di baris isi
+		// kolom-0 pertama yang bukan komentar.
 		j := i + 1
-		for j < len(baris) && (baris[j] == "" || strings.HasPrefix(baris[j], " ") || strings.HasPrefix(baris[j], "\t")) {
-			j++
-		}
-		// B-222: saring sub-baris blok lama — yang terkelola dibuang
-		// (ditulis ulang dari blok baru), yang lain dipertahankan
-		// apa adanya sesudah baris terkelola. Baris kosong di EKOR
-		// segmen adalah pemisah ke seksi berikutnya, bukan isi blok:
-		// ia diregenerasi satu kali di bawah, jadi dipangkas di sini
-		// agar penggabungan idempoten (pemindaian blok menelan baris
-		// kosong itu sebagai bagian segmen pada terapan berikutnya).
-		var dipertahankan []string
-		for _, sub := range baris[i+1 : j] {
-			if kunci := kunciSubBarisYAML(sub); kunci != "" && terkelola[kunci] {
+		for j < len(baris) {
+			sub := baris[j]
+			trim := strings.TrimSpace(sub)
+			if trim == "" || strings.HasPrefix(trim, "#") ||
+				strings.HasPrefix(sub, " ") || strings.HasPrefix(sub, "\t") {
+				j++
 				continue
 			}
-			dipertahankan = append(dipertahankan, sub)
+			break
 		}
-		for len(dipertahankan) > 0 && dipertahankan[len(dipertahankan)-1] == "" {
-			dipertahankan = dipertahankan[:len(dipertahankan)-1]
+		rentang = append(rentang, rentangBlok{i, j})
+	}
+	if len(rentang) == 0 {
+		keluaran := existing
+		if keluaran != "" && !strings.HasSuffix(keluaran, "\n") {
+			keluaran += "\n"
 		}
-		hasil := make([]string, 0, len(baris)+len(blok))
-		hasil = append(hasil, baris[:i]...)
-		hasil = append(hasil, blok...)
-		hasil = append(hasil, dipertahankan...)
-		if j < len(baris) {
-			hasil = append(hasil, "")
+		if keluaran != "" {
+			keluaran += "\n"
 		}
-		hasil = append(hasil, baris[j:]...)
-		return gabungBarisYAML(hasil)
+		return keluaran + strings.Join(blok, "\n") + "\n"
 	}
-	keluaran := existing
-	if keluaran != "" && !strings.HasSuffix(keluaran, "\n") {
-		keluaran += "\n"
+	// B-222 + B-440: saring isi SEMUA blok lama — sub-kunci
+	// terkelola dibuang (ditulis ulang dari blok baru), sub-kunci
+	// lain dipertahankan dan digabung. Baris kosong di EKOR hasil
+	// gabungan adalah pemisah ke seksi berikutnya, bukan isi blok:
+	// ia diregenerasi satu kali saat penyusunan di bawah agar
+	// penggabungan idempoten.
+	var dipertahankan []string
+	for _, r := range rentang {
+		dipertahankan = append(dipertahankan, saringIsiBlokHermes(baris[r.awal+1:r.akhir], terkelola)...)
 	}
-	if keluaran != "" {
-		keluaran += "\n"
+	for len(dipertahankan) > 0 && dipertahankan[len(dipertahankan)-1] == "" {
+		dipertahankan = dipertahankan[:len(dipertahankan)-1]
 	}
-	return keluaran + strings.Join(blok, "\n") + "\n"
+	// Susun ulang: blok gabungan menempati posisi blok PERTAMA;
+	// blok-blok lain dibuang rentangnya; baris di luar blok
+	// dipertahankan apa adanya.
+	dalamRentang := make([]bool, len(baris))
+	for _, r := range rentang {
+		for k := r.awal; k < r.akhir; k++ {
+			dalamRentang[k] = true
+		}
+	}
+	hasil := make([]string, 0, len(baris)+len(blok))
+	hasil = append(hasil, baris[:rentang[0].awal]...)
+	hasil = append(hasil, blok...)
+	hasil = append(hasil, dipertahankan...)
+	sisaBaris := make([]string, 0, len(baris))
+	for k := rentang[0].akhir; k < len(baris); k++ {
+		if !dalamRentang[k] {
+			sisaBaris = append(sisaBaris, baris[k])
+		}
+	}
+	// Satu baris kosong pemisah sebelum isi berikutnya (bila blok
+	// gabungan tidak di ekor dokumen dan pemisah belum ada).
+	adaIsiSesudah := false
+	for _, l := range sisaBaris {
+		if strings.TrimSpace(l) != "" {
+			adaIsiSesudah = true
+			break
+		}
+	}
+	if adaIsiSesudah && len(sisaBaris) > 0 && sisaBaris[0] != "" {
+		hasil = append(hasil, "")
+	}
+	hasil = append(hasil, sisaBaris...)
+	return gabungBarisYAML(hasil)
+}
+
+// saringIsiBlokHermes menyaring isi satu blok `model:` Hermes
+// (baris-baris sesudah header) untuk penggabungan B-222: sub-kunci
+// terkelola dibuang bersama baris-baris bersarang di bawahnya,
+// sub-kunci lain dipertahankan. Isi dipecah menjadi segmen per
+// sub-kunci supaya duplikat sub-kunci tak-terkelola — termasuk dari
+// blok kedua yang digabung B-441 — terlipat ke kemunculan TERAKHIR,
+// sesuai bacaan last-wins parser YAML atas berkas asalnya.
+//
+// B-440: tingkat sub-kunci adalah indentasi sub-kunci PERTAMA blok
+// itu, berapa pun lebarnya (2, 4, tab) — definisi lama "persis 2
+// spasi atau 1 tab" membuat sub-kunci berindentasi 4 tidak dikenali
+// sebagai terkelola, tertinggal sesudah blok baru berindentasi 2,
+// dan keluaran menjadi YAML yang tidak terurai sama sekali.
+func saringIsiBlokHermes(subbaris []string, terkelola map[string]bool) []string {
+	type segmen struct {
+		kunci string // "" untuk baris lepas sebelum sub-kunci pertama
+		baris []string
+	}
+	// Tingkat indentasi sub-kunci = indentasi baris isi (bukan
+	// kosong/komentar) berindentasi pertama di blok ini.
+	tingkat := -1
+	for _, sub := range subbaris {
+		trim := strings.TrimSpace(sub)
+		if trim == "" || strings.HasPrefix(trim, "#") || !barisBerindentasiYAML(sub) {
+			continue
+		}
+		tingkat = lebarIndentasiYAML(sub)
+		break
+	}
+	var seg []segmen
+	kini := -1 // indeks segmen aktif; -1 = belum ada
+	for _, sub := range subbaris {
+		trim := strings.TrimSpace(sub)
+		kunci := ""
+		if trim != "" && !strings.HasPrefix(trim, "#") && barisBerindentasiYAML(sub) &&
+			tingkat >= 0 && lebarIndentasiYAML(sub) <= tingkat {
+			kunci = kunciSubBarisYAML(sub)
+		}
+		// Baris komentar dan baris kosong masuk segmen LEPAS
+		// tersendiri yang tidak pernah dibuang: menempelkannya ke
+		// segmen sub-kunci sebelumnya akan membuang komentar
+		// pengguna hanya karena sub-kunci di atasnya terkelola.
+		longgar := trim == "" || strings.HasPrefix(trim, "#")
+		if kunci != "" {
+			seg = append(seg, segmen{kunci: kunci})
+			kini = len(seg) - 1
+		} else if kini < 0 || (longgar && seg[kini].kunci != "") {
+			seg = append(seg, segmen{})
+			kini = len(seg) - 1
+		}
+		barisKeluar := sub
+		// Komentar kolom-0 di tengah blok dipertahankan isinya,
+		// tetapi dalam keluaran ia WAJIB menjorok: ditulis di
+		// kolom-0 ia akan mengakhiri pemetaan `model:` keluaran
+		// dan baris-baris sesudahnya menjadi yatim tak terurai.
+		if strings.HasPrefix(trim, "#") && !barisBerindentasiYAML(sub) {
+			barisKeluar = "  " + trim
+		}
+		// B-440: sub-kunci yang dipertahankan ditulis ulang pada
+		// indentasi kanonik blok baru (2 spasi), digeser sebesar
+		// selisih tingkat blok lamanya — baris isi berindentasi 4
+		// yang dipertahankan apa adanya di bawah blok baru
+		// berindentasi 2 adalah YAML yang tidak terurai (parser
+		// menolak campuran tingkat itu). Baris bersarang digeser
+		// dengan delta yang sama sehingga struktur relatifnya
+		// utuh; baris komentar tidak disentuh (inert di kedalaman
+		// berapa pun).
+		if tingkat > 0 && tingkat != 2 && trim != "" && !strings.HasPrefix(trim, "#") &&
+			lebarIndentasiYAML(sub) >= tingkat {
+			barisKeluar = "  " + sub[tingkat:]
+		}
+		seg[kini].baris = append(seg[kini].baris, barisKeluar)
+	}
+	// Kemunculan terakhir tiap sub-kunci tak-terkelola yang menang;
+	// segmen terkelola selalu dibuang.
+	terakhir := map[string]int{}
+	for i, s := range seg {
+		if s.kunci != "" {
+			terakhir[s.kunci] = i
+		}
+	}
+	var hasil []string
+	for i, s := range seg {
+		if s.kunci != "" && (terkelola[s.kunci] || terakhir[s.kunci] != i) {
+			continue
+		}
+		hasil = append(hasil, s.baris...)
+	}
+	return hasil
+}
+
+// barisBerindentasiYAML melaporkan apakah baris diawali spasi/tab.
+func barisBerindentasiYAML(l string) bool {
+	return strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")
+}
+
+// lebarIndentasiYAML menghitung lebar indentasi awal baris dalam
+// jumlah karakter spasi/tab.
+func lebarIndentasiYAML(l string) int {
+	n := 0
+	for n < len(l) && (l[n] == ' ' || l[n] == '\t') {
+		n++
+	}
+	return n
 }
 
 // kunciSubBarisYAML mengekstrak nama kunci dari baris sub-entri blok
-// YAML berindentasi tepat satu tingkat ("  nama: nilai" → "nama").
-// Baris kosong, komentar, item daftar, kelanjutan nilai berindentasi
-// lebih dalam, dan baris tanpa pola kunci mengembalikan "" — semua
-// itu selalu dipertahankan apa adanya oleh penggabungan B-222.
+// YAML ("<indentasi>nama: nilai" → "nama"), untuk indentasi berapa
+// pun lebarnya. Penentuan apakah baris itu sub-kunci LANGSUNG blok
+// (bukan kelanjutan nilai yang menjorok lebih dalam) adalah tugas
+// pemanggil (saringIsiBlokHermes, yang membandingkan lebar
+// indentasi dengan tingkat bloknya) — B-440: definisi lama di sini
+// ("tepat 2 spasi atau 1 tab") membuat sub-kunci sah berindentasi 4
+// tidak pernah dikenali sebagai sub-kunci. Baris kosong, komentar,
+// item daftar, dan baris tanpa pola kunci mengembalikan "".
 //
 // Nama yang dikembalikan DINORMALKAN dari kutip luarnya (B-372):
 // saringan terkelola di susunBlokModelHermes membandingkan nama ini
@@ -2752,9 +3068,7 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 // last-key-wins (PyYAML Hermes) membaca nilai LAMA sementara
 // Configure melaporkan sukses (kelas sukses-bohong B-277).
 func kunciSubBarisYAML(baris string) string {
-	satuTingkat := (strings.HasPrefix(baris, "  ") && !strings.HasPrefix(baris, "   ")) ||
-		(strings.HasPrefix(baris, "\t") && !strings.HasPrefix(baris, "\t\t"))
-	if !satuTingkat {
+	if !barisBerindentasiYAML(baris) {
 		return ""
 	}
 	trim := strings.TrimSpace(baris)
@@ -2777,24 +3091,65 @@ func gabungBarisYAML(baris []string) string {
 	return keluaran
 }
 
+// potongAwalanExport membuang awalan kata kunci `export` dari teks
+// baris env yang sudah dipangkas, bila kata itu diikuti spasi ATAU
+// tab (satu atau lebih). Nama yang diawali "export" tanpa pemisah
+// (mis. variabel `exportX`) bukan awalan dan dibiarkan.
+func potongAwalanExport(s string) string {
+	if !strings.HasPrefix(s, "export") {
+		return s
+	}
+	sisa := s[len("export"):]
+	if sisa == "" || (sisa[0] != ' ' && sisa[0] != '\t') {
+		return s
+	}
+	return strings.TrimSpace(sisa)
+}
+
 // namaVariabelEnv membaca nama variabel dari satu baris .env,
 // toleran terhadap bentuk sah yang ditulis tangan (B-403):
-// indentasi di awal baris, awalan "export ", dan spasi di sekitar
-// "=". Mengembalikan "" untuk baris yang bukan penetapan variabel
-// (komentar, baris kosong, tanpa "=").
+// indentasi di awal baris, awalan "export " (spasi/tab), dan spasi
+// di sekitar "=". B-442: nama TERKUTIP (`"OPENAI_API_KEY"=…` atau
+// `'OPENAI_API_KEY'=…` — bentuk yang dibaca parser dotenv seperti
+// python-dotenv) dinormalkan dengan membuang pasangan kutip
+// luarnya, sejajar perlakuan kunci YAML (B-372) dan TOML (B-343) di
+// berkas ini; versi lama tidak mengenalinya sehingga baris lama
+// tertinggal dan variabel terduplikasi. Mengembalikan "" untuk
+// baris yang bukan penetapan variabel (komentar, baris kosong,
+// tanpa "=").
 func namaVariabelEnv(l string) string {
-	s := strings.TrimSpace(l)
-	if strings.HasPrefix(s, "export") {
-		sisa := s[len("export"):]
-		if sisa != "" && (sisa[0] == ' ' || sisa[0] == '\t') {
-			s = strings.TrimSpace(sisa)
-		}
-	}
+	s := potongAwalanExport(strings.TrimSpace(l))
 	idx := strings.Index(s, "=")
 	if idx < 0 {
 		return ""
 	}
-	return strings.TrimSpace(s[:idx])
+	nama := strings.TrimSpace(s[:idx])
+	if len(nama) >= 2 {
+		if (nama[0] == '"' && nama[len(nama)-1] == '"') ||
+			(nama[0] == '\'' && nama[len(nama)-1] == '\'') {
+			nama = strings.TrimSpace(nama[1 : len(nama)-1])
+		}
+	}
+	return nama
+}
+
+// pecahBarisEnv membelah satu baris .env/skrip menjadi nama dan
+// nilai variabelnya memakai pengenalan yang sama seperti
+// namaVariabelEnv (awalan export spasi/tab, nama terkutip, spasi di
+// sekitar "="). Dipakai fungsi redaksi/pembersihan skrip supaya
+// bentuk tulis yang dikenali di SATU tempat dikenali di semua
+// tempat (B-444). ok=false untuk baris bukan penetapan variabel.
+func pecahBarisEnv(l string) (nama, nilai string, ok bool) {
+	s := potongAwalanExport(strings.TrimSpace(l))
+	idx := strings.Index(s, "=")
+	if idx < 0 {
+		return "", "", false
+	}
+	nama = namaVariabelEnv(l)
+	if nama == "" {
+		return "", "", false
+	}
+	return nama, strings.TrimSpace(s[idx+1:]), true
 }
 
 // perbaruiBarisEnv menetapkan satu variabel di konten berkas .env
@@ -2855,6 +3210,132 @@ func perbaruiBarisEnv(existing, nama, nilai string) string {
 	return keluaran
 }
 
+// --- Verifikasi hasil akhir Configure (B-439…B-442) ---
+//
+// Kelas bug B-439/B-440/B-441 berbagi satu watak: penyunting teks
+// per-baris melaporkan sukses atas bentuk sah yang tidak ia
+// kenali. Perbaikan per-bentuk saja tidak menutup kelasnya, jadi
+// setiap berkas TOML/YAML/.env yang disunting Configure kini
+// diverifikasi HASIL AKHIRNYA di titik bersama ini sebelum ditulis:
+// konten final wajib terurai dengan parser sungguhan (pelletier
+// go-toml untuk TOML, go.yaml.in/yaml/v3 untuk YAML — keduanya
+// dependensi yang sudah dipakai repo) DAN kunci terkelola yang
+// diniatkan wajib terbaca efektif dengan nilai yang diniatkan.
+// Kegagalan verifikasi mengembalikan galat dari
+// applyToolSpecificConfig, dan Configure memulihkan seluruh
+// jepretan berkasnya (pulihkanSemua) — tidak ada lagi sukses atas
+// hasil yang tidak terbukti.
+
+func verifikasiHasilTOML(konten string, preamble [][2]string, seksi map[string][][2]string) error {
+	var doc map[string]any
+	if err := toml.Unmarshal([]byte(konten), &doc); err != nil {
+		return fmt.Errorf("hasil sunting TOML tidak terurai: %w", err)
+	}
+	for _, p := range preamble {
+		if v, ok := doc[p[0]].(string); !ok || v != p[1] {
+			return fmt.Errorf("hasil sunting TOML: kunci tingkat-atas %q tidak efektif (terbaca %v)", p[0], doc[p[0]])
+		}
+	}
+	for namaSeksi, pairs := range seksi {
+		tbl := doc
+		for _, seg := range strings.Split(namaSeksi, ".") {
+			anak, ok := tbl[seg].(map[string]any)
+			if !ok {
+				return fmt.Errorf("hasil sunting TOML: seksi %q tidak efektif", namaSeksi)
+			}
+			tbl = anak
+		}
+		for _, p := range pairs {
+			if v, ok := tbl[p[0]].(string); !ok || v != p[1] {
+				return fmt.Errorf("hasil sunting TOML: kunci %q di seksi %q tidak efektif (terbaca %v)", p[0], namaSeksi, tbl[p[0]])
+			}
+		}
+	}
+	return nil
+}
+
+// uraiYAMLUtuh mengurai seluruh dokumen dalam konten YAML; galat
+// urai apa pun — termasuk kunci ganda yang ditolak parser —
+// dikembalikan apa adanya.
+func uraiYAMLUtuh(konten string) (map[string]any, error) {
+	dec := yaml.NewDecoder(strings.NewReader(konten))
+	var pertama map[string]any
+	for {
+		var doc map[string]any
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if pertama == nil {
+			pertama = doc
+		}
+	}
+	return pertama, nil
+}
+
+func verifikasiHasilYAMLTingkatAtas(konten string, pairs [][2]string) error {
+	doc, err := uraiYAMLUtuh(konten)
+	if err != nil {
+		return fmt.Errorf("hasil sunting YAML tidak terurai: %w", err)
+	}
+	for _, p := range pairs {
+		if v, ok := doc[p[0]].(string); !ok || v != p[1] {
+			return fmt.Errorf("hasil sunting YAML: kunci tingkat-atas %q tidak efektif (terbaca %v)", p[0], doc[p[0]])
+		}
+	}
+	return nil
+}
+
+// verifikasiHasilHermes memeriksa blok `model:` hasil susunan
+// Hermes: dokumen wajib terurai dan sub-kunci terkelola wajib
+// terbaca efektif dari blok itu.
+func verifikasiHasilHermes(konten, target, gwURL, apiKey string) error {
+	doc, err := uraiYAMLUtuh(konten)
+	if err != nil {
+		return fmt.Errorf("hasil sunting YAML Hermes tidak terurai: %w", err)
+	}
+	blok, ok := doc["model"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("hasil sunting YAML Hermes: blok model tidak efektif")
+	}
+	mau := [][2]string{
+		{"provider", "custom"},
+		{"default", target},
+		{"base_url", gwURL},
+		{"api_mode", "chat_completions"},
+	}
+	if apiKey != "" {
+		mau = append(mau, [2]string{"api_key", apiKey})
+	}
+	for _, p := range mau {
+		if v, ok := blok[p[0]].(string); !ok || v != p[1] {
+			return fmt.Errorf("hasil sunting YAML Hermes: sub-kunci %q tidak efektif (terbaca %v)", p[0], blok[p[0]])
+		}
+	}
+	return nil
+}
+
+// verifikasiEnvTanpaDuplikat memeriksa hasil sunting .env: tidak
+// boleh ada nama variabel efektif yang muncul lebih dari satu kali
+// (bacaan efektif variabel ganda bergantung parser dotenv).
+func verifikasiEnvTanpaDuplikat(konten string) error {
+	terlihat := map[string]bool{}
+	for _, l := range strings.Split(konten, "\n") {
+		nama := namaVariabelEnv(l)
+		if nama == "" {
+			continue
+		}
+		if terlihat[nama] {
+			return fmt.Errorf("hasil sunting .env memuat variabel ganda %q", nama)
+		}
+		terlihat[nama] = true
+	}
+	return nil
+}
+
 // GetExportScript membaca seluruh skrip lingkungan gabungan.
 func (m *Manager) GetExportScript(homeDir string) (string, error) {
 	if homeDir == "" {
@@ -2908,10 +3389,11 @@ func (m *Manager) removeAPIKeysFromScript(content string) string {
 	lines := strings.Split(content, "\n")
 	kept := lines[:0]
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		rest := strings.TrimPrefix(trimmed, "export ")
-		eq := strings.Index(rest, "=")
-		if eq > 0 && keyVars[strings.TrimSpace(rest[:eq])] {
+		// B-444: pengenalan baris lewat pecahBarisEnv (parser yang
+		// sama dengan perbaruiBarisEnv) — potongan awalan lama
+		// `TrimPrefix(trimmed, "export ")` hanya menerima SATU spasi
+		// persis, jadi bentuk `export`+TAB lolos dari pembersihan.
+		if nama, _, ok := pecahBarisEnv(line); ok && keyVars[nama] {
 			continue
 		}
 		kept = append(kept, line)
@@ -2927,25 +3409,22 @@ func (m *Manager) redactAPIKeysInScript(content string) string {
 	keyVars := himpunanVarKunci()
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		rest := strings.TrimPrefix(trimmed, "export ")
-		eq := strings.Index(rest, "=")
-		if eq <= 0 {
+		// B-444: pengenalan baris lewat pecahBarisEnv (parser yang
+		// sama dengan perbaruiBarisEnv) — potongan awalan lama
+		// `TrimPrefix(trimmed, "export ")` hanya menerima SATU spasi
+		// persis, jadi baris `export`+TAB tampil TAK tersamar lewat
+		// GetExportScript.
+		varName, val, ok := pecahBarisEnv(line)
+		if !ok || !keyVars[varName] {
 			continue
 		}
-		varName := strings.TrimSpace(rest[:eq])
-		if !keyVars[varName] {
-			continue
-		}
-		val := strings.TrimSpace(rest[eq+1:])
-		val = strings.Trim(val, "\"")
+		val = strings.Trim(val, "\"'")
 		if val == "" {
 			continue
 		}
-		prefixPart := ""
-		if idx := strings.Index(line, "export "); idx >= 0 {
-			prefixPart = line[:idx]
-		}
+		// Indentasi asli baris dipertahankan di depan bentuk
+		// kanonik tersamar.
+		prefixPart := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 		lines[i] = fmt.Sprintf("%sexport %s=\"%s\"", prefixPart, varName, security.MaskAPIKey(val))
 	}
 	return strings.Join(lines, "\n")

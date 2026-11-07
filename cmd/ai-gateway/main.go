@@ -739,6 +739,15 @@ func buildGatewaySurface(
 	}
 	workerSup.Register(reconcileCacheJob, 15*time.Minute, 1*time.Minute)
 
+	// 10. Pembersih ban kedaluwarsa: policy.PurgeExpired sebelumnya
+	// TIDAK punya satu pun pemanggil produksi (B-587) — baris ban mati
+	// menumpuk tanpa pernah dibersihkan. Berjalan tiap jam dengan
+	// tenggang 24 jam (pola yang sama dengan session_cleanup): ban yang
+	// baru kedaluwarsa masih punya jejak satu hari sebelum dibersihkan,
+	// dan yang dicabut manual tidak pernah tersentuh.
+	banPurgeJob := worker.NewBanExpiredPurgeJob(db.Pool, policyRepo, 24*time.Hour, logger)
+	workerSup.Register(banPurgeJob, 1*time.Hour, 50*time.Second)
+
 	workerSup.Start(ctx)
 
 	// Penolakan 401 autentikator dicatat sebagai baris requests lewat

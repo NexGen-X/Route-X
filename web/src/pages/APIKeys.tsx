@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
-import { KeyRound, Plus, RefreshCw, Search } from 'lucide-react';
+import { KeyRound, Plus, RefreshCw, Search, AlertCircle } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
@@ -51,7 +51,10 @@ export const APIKeys: React.FC = () => {
 
   // Anggaran per kunci dari entitas Budget (scope 'api_key') untuk batang
   // anggaran kartu kunci — hanya kunci dengan anggaran aktif & valid yang dipetakan.
-  const { data: budgetsData } = useQuery({
+  // B-558: query ini sumber sekunder halaman; isError-nya wajib
+  // dijaga — saat refetch gagal sesudah sukses React Query menahan
+  // data terakhir dan meter di kartu tidak boleh tetap definitif.
+  const { data: budgetsData, isError: isBudgetsError } = useQuery({
     queryKey: ['budgets'],
     queryFn: () => api.budgets.list(),
   });
@@ -499,6 +502,24 @@ export const APIKeys: React.FC = () => {
       {keysData?.terpotong && <PeringatanDaftarTerpotong sumber="kunci API" className="mb-4" />}
       {modelsData?.terpotong && <PeringatanDaftarTerpotong sumber="model (pilihan pada formulir kunci)" className="mb-4" />}
 
+      {/* B-558: penanda gagal-muat anggaran yang persisten (pola
+          B-554). Cabang muat-awal gagal tidak melahirkan meter sama
+          sekali — tanpa penanda ini kartu kunci beranggaran tak
+          terbedakan dari kartu tanpa anggaran; cabang refetch gagal
+          ditandai per kartu lewat prop budgetGagal di bawah. */}
+      {isBudgetsError && (
+        <div
+          role="alert"
+          className="mb-4 p-3.5 rounded-lg text-xs flex items-start gap-2.5 border bg-amber-500/10 text-amber-300 border-amber-500/30"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" aria-hidden="true" />
+          <div className="flex-1">
+            Anggaran gagal dimuat: meter anggaran pada kartu memakai data terakhir yang berhasil
+            dimuat (atau tidak tampil bila belum pernah termuat), bukan keadaan terukur saat ini.
+          </div>
+        </div>
+      )}
+
       {isError ? (
         <QueryError
           message={error instanceof Error ? error.message : 'Daftar kunci API tidak tersedia.'}
@@ -564,6 +585,7 @@ export const APIKeys: React.FC = () => {
               onToggleEnabled={handleToggleEnabled}
               onDelete={handleDelete}
               budget={budgetByKeyId.get(k.id)}
+              budgetGagal={isBudgetsError}
             />
           ))}
         </div>

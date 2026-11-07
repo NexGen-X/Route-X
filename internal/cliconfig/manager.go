@@ -1694,11 +1694,21 @@ func normalkanKunciYAML(nama string) string {
 // pada config satu dokumen — PyYAML menerimanya — dan penyunting
 // Hermes sudah menanganinya dengan benar; penyunting bersama
 // Goose/Aider disamakan di perbaruiYAMLTopLevel (B-523).
+//
+// B-535: sisa baris dipangkas juga dari "\r" — baris hasil pecahan
+// "\n" atas berkas CRLF (bawaan penyunting Windows) menyisakan CR
+// di ekornya, dan "...\r" dulu tidak dikenali sebagai penanda,
+// sehingga config CRLF yang sah gagal di-Configure. Sapuan
+// pencocokan baris lain di penyunting yang sama: ekstraksi kunci
+// perbaruiYAMLTopLevel memakai TrimSpace (sudah membuang \r) atas
+// potongan SEBELUM titik dua pertama, jadi akhir baris tidak
+// pernah mencapai perbandingan kunci — fungsi ini satu-satunya
+// permukaan yang peka CR.
 func barisPenandaAkhirDokumen(line string) bool {
 	if line == "" || line[0] == ' ' || line[0] == '\t' {
 		return false
 	}
-	sisa := strings.TrimRight(line, " \t")
+	sisa := strings.TrimRight(line, " \t\r")
 	return sisa == "..." || strings.HasPrefix(sisa, "... ") ||
 		strings.HasPrefix(sisa, "...#")
 }
@@ -2429,7 +2439,8 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			// dan baris bersih ditempel, dan Configure melaporkan
 			// sukses atas berkas yang tetap tidak bisa dibaca
 			// Hermes. Pola NUL-nya dideteksi terpisah dengan
-			// syarat ketat (lihat deteksiUTF16TanpaBOM) supaya
+			// syarat bukti+dominasi+kerapatan (lihat
+			// deteksiUTF16TanpaBOM; diperketat B-531) supaya
 			// NUL terisolasi yang ditoleransi B-507 tidak ikut
 			// tertolak.
 			if enc := deteksiUTF16TanpaBOM([]byte(isiEnv)); enc != "" {
@@ -3159,6 +3170,23 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 		"api_mode": true, "api_key": apiKey != "",
 	}
 	baris := strings.Split(existing, "\n")
+	// B-536: baris penanda akhir dokumen "..." (bila ada) MENUTUP
+	// dokumen bagi pemuat Hermes — blok `model:` hanya hidup di
+	// DALAM dokumen. Versi lama memperlakukan teks sebagai satu
+	// hamparan: blok baru untuk config berpenanda TANPA blok model
+	// ditempel di akhir teks, yaitu SESUDAH penanda di luar
+	// dokumen, dan verifikasi hasil menolaknya ("blok model tidak
+	// efektif") atas config yang sah. Kini pemindaian rentang
+	// berhenti di penanda, dan blok baru disisipkan SEBELUM
+	// penanda (lihat cabang tanpa-rentang di bawah); baris-baris
+	// sesudah penanda tidak pernah menjadi isi dokumen.
+	indeksPenanda := -1
+	for i, l := range baris {
+		if barisPenandaAkhirDokumen(l) {
+			indeksPenanda = i
+			break
+		}
+	}
 	// Cari SEMUA blok `model:` tingkat-atas beserta rentangnya.
 	// B-441: versi lama berhenti di kemunculan PERTAMA dan langsung
 	// kembali — blok kedua tertinggal apa adanya dan, sebagai
@@ -3183,6 +3211,9 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 	}
 	var rentang []rentangBlok
 	for i, l := range baris {
+		if indeksPenanda >= 0 && i >= indeksPenanda {
+			break // B-536: sesudah penanda = di luar dokumen
+		}
 		sisa, adalah := pecahHeaderModelHermes(l)
 		if !adalah {
 			continue
@@ -3241,6 +3272,24 @@ func susunBlokModelHermes(existing, target, gwURL, apiKey string) string {
 		rentang = append(rentang, rentangBlok{awal: i, akhir: j, jangkar: jangkar})
 	}
 	if len(rentang) == 0 {
+		if indeksPenanda >= 0 {
+			// B-536: belum ada blok model DI DALAM dokumen —
+			// sisipkan blok baru tepat sebelum baris penanda,
+			// dengan pemisah satu baris kosong seperti jalur
+			// tempel-akhir di bawah; penanda dan baris-baris
+			// sesudahnya diteruskan utuh.
+			kepala := strings.TrimRight(strings.Join(baris[:indeksPenanda], "\n"), "\n")
+			hasil := ""
+			if kepala != "" {
+				hasil = kepala + "\n\n"
+			}
+			hasil += strings.Join(blok, "\n") + "\n" +
+				strings.Join(baris[indeksPenanda:], "\n")
+			if !strings.HasSuffix(hasil, "\n") {
+				hasil += "\n"
+			}
+			return hasil
+		}
 		keluaran := existing
 		if keluaran != "" && !strings.HasSuffix(keluaran, "\n") {
 			keluaran += "\n"
@@ -3986,44 +4035,60 @@ func deteksiBOMNonUTF8(data []byte) string {
 // melihat berkas seperti ini sama sekali, dan isinya lalu terbaca
 // sebagai "teks UTF-8" yang nama terkelolanya tak terbaca.
 //
-// Syaratnya sengaja ketat agar toleransi B-507 tidak terbuka lagi:
-// berkas UTF-8 sah yang memuat NUL terisolasi di baris tak-terkelola
-// TIDAK boleh tertolak. Karena itu: minimal 8 pasangan byte utuh
-// dinilai (berkas lebih pendek dari itu tidak dinilai), TIDAK boleh
-// ada pasangan ber-NUL-ganda, orientasi lawan harus nol, dan
-// pasangan ber-NUL-tunggal pada orientasi yang dinilai harus
-// mendominasi (≥ 4/5 dari pasangan yang memuat tepat satu NUL atau
-// tanpa NUL — pasangan tanpa NUL pada teks UTF-16 berisi karakter
-// di atas U+00FF adalah sah dan tidak menggugurkan penilaian).
+// Penilaian B-531 atas klasifikasi per-PASANGAN versi pertama:
+// syarat "orientasi lawan harus nol" membuat SATU karakter U+xx00
+// (U+4E00, U+0100, U+2100, U+2600 — karakter lazim) menggugurkan
+// vonis, karena dalam satu orientasi ia terbaca sebagai pola
+// orientasi lawan; satu karakter U+0000 (pasangan NUL-ganda) dan
+// ambang ≥8 pasangan juga meloloskan kelas-kelas lain (berkas
+// pendek; teks yang didominasi karakter di atas U+00FF). Kini
+// setiap BYTE NUL memilih paritasnya sendiri di SELURUH data:
+// karakter U+xx00 menyumbang tepat satu suara lawan (tidak lagi
+// veto), karakter U+0000 menyumbang satu suara ke dua paritas
+// (menetralkan dirinya), dan karakter polos di atas U+00FF tidak
+// memilih. Vonis per orientasi menuntut bukti minimal 4 byte NUL
+// pada paritasnya, dominasi ≥2:1 atas paritas lawan, dan kerapatan
+// ≥1/4 dari seluruh pasangan — teks UTF-16 berisi kunci .env
+// Latin selalu memenuhinya, termasuk yang nilainya didominasi
+// aksara CJK.
+//
+// Gerbang arah sebaliknya (toleransi B-507) tetap mutlak: berkas
+// UTF-8 sah yang memuat NUL TERISOLASI/TERSEBAR di baris
+// tak-terkelola tidak boleh tertolak. NUL tersebar tidak pernah
+// mencapai bukti minimal + dominasi + kerapatan sekaligus; satu
+// pola UTF-8 yang tertolak hanyalah NUL rapat satu-paritas yang
+// bit-per-bit identik dengan UTF-16 asli — tak terbedakan oleh
+// detektor pola-NUL mana pun, dan terbaca sebagai kunci sampah
+// oleh python-dotenv juga. Pasangan NUL-ganda yang RAPAT (≥1/4
+// pasangan) menandai pola UTF-32 tanpa BOM atau biner padat NUL,
+// bukan UTF-16 teks — di luar vonis fungsi ini (bentuk ber-BOM
+// tertangkap deteksiBOMNonUTF8).
 func deteksiUTF16TanpaBOM(data []byte) string {
-	n := len(data) / 2
-	if n > 256 {
-		n = 256
-	}
-	if n < 8 {
+	n := len(data) / 2 // pasangan byte utuh yang dinilai
+	if n < 4 {
 		return ""
 	}
-	var le, be, ganda, polos int
+	var nulGanjil, nulGenap, ganda int
 	for i := 0; i < n; i++ {
 		a, b := data[2*i], data[2*i+1]
-		switch {
-		case a == 0 && b == 0:
+		if a == 0 {
+			nulGenap++
+		}
+		if b == 0 {
+			nulGanjil++
+		}
+		if a == 0 && b == 0 {
 			ganda++
-		case a == 0:
-			be++ // NUL di posisi genap: pola UTF-16BE
-		case b == 0:
-			le++ // NUL di posisi ganjil: pola UTF-16LE
-		default:
-			polos++
 		}
 	}
-	if ganda > 0 {
+	if ganda*4 >= n {
 		return ""
 	}
-	if le > 0 && be == 0 && le*5 >= (le+polos)*4 {
+	// NUL di posisi ganjil = byte tinggi UTF-16LE; genap = BE.
+	if nulGanjil >= 4 && nulGanjil >= 2*nulGenap+1 && nulGanjil*4 >= n {
 		return "UTF-16LE"
 	}
-	if be > 0 && le == 0 && be*5 >= (be+polos)*4 {
+	if nulGenap >= 4 && nulGenap >= 2*nulGanjil+1 && nulGenap*4 >= n {
 		return "UTF-16BE"
 	}
 	return ""

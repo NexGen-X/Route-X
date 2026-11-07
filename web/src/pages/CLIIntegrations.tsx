@@ -152,31 +152,44 @@ export const CLIIntegrations: React.FC = () => {
         api.apiKeys.listAll(),
       ]);
 
+      // B-545: keadaan kesegaran sumber PENDAMPING diperbarui dari
+      // hasil sumber itu sendiri, INDEPENDEN dari nasib sumber
+      // utama. Versi lama memproses hasil pendamping hanya di
+      // cabang cli berhasil — kegagalan SERENTAK cli+pendamping
+      // membuang hasil pendamping seluruhnya, sehingga banner
+      // "sebagian data gagal dimuat" tidak pernah muncul dan
+      // gerbang klaim (B-512/B-525, yang membaca sumberGagal)
+      // menilai dari keadaan BASI muatan sebelumnya: sumber yang
+      // baru saja gagal bisa terbaca "tidak gagal" dan klaim
+      // definitif atas katalog hidup lagi. Kini tiap sumber
+      // dicatat/dibersihkan pada muatan yang benar-benar
+      // menyangkutnya, dua arah.
+      const modelsList = modelsRes.status === 'fulfilled' ? modelsRes.value?.items || [] : [];
+      const rulesList = rulesRes.status === 'fulfilled' ? rulesRes.value?.items || [] : [];
+      const keysList = apiKeysRes.status === 'fulfilled' ? apiKeysRes.value?.items || [] : [];
+
+      setModels(modelsList);
+      setRules(rulesList);
+      setRegisteredKeys(keysList);
+
+      const terpotong: string[] = [];
+      if (modelsRes.status === 'fulfilled' && modelsRes.value?.terpotong) terpotong.push('model');
+      if (rulesRes.status === 'fulfilled' && rulesRes.value?.terpotong) terpotong.push('aturan routing');
+      if (apiKeysRes.status === 'fulfilled' && apiKeysRes.value?.terpotong) terpotong.push('kunci API');
+      setSumberTerpotong(terpotong);
+
+      // Kegagalan memuat daftar pendamping harus TERLIHAT (B-225):
+      // versi lama mengubahnya menjadi daftar kosong tanpa jejak,
+      // sehingga pemilih target tampil kosong seolah memang tidak
+      // ada model/aturan/kunci yang terdaftar.
+      const gagal: string[] = [];
+      if (modelsRes.status === 'rejected') gagal.push('model');
+      if (rulesRes.status === 'rejected') gagal.push('aturan routing');
+      if (apiKeysRes.status === 'rejected') gagal.push('kunci API');
+      setSumberGagal(gagal);
+
       if (cliRes.status === 'fulfilled' && cliRes.value) {
         setData(cliRes.value);
-        const modelsList = modelsRes.status === 'fulfilled' ? modelsRes.value?.items || [] : [];
-        const rulesList = rulesRes.status === 'fulfilled' ? rulesRes.value?.items || [] : [];
-        const keysList = apiKeysRes.status === 'fulfilled' ? apiKeysRes.value?.items || [] : [];
-
-        setModels(modelsList);
-        setRules(rulesList);
-        setRegisteredKeys(keysList);
-
-        const terpotong: string[] = [];
-        if (modelsRes.status === 'fulfilled' && modelsRes.value?.terpotong) terpotong.push('model');
-        if (rulesRes.status === 'fulfilled' && rulesRes.value?.terpotong) terpotong.push('aturan routing');
-        if (apiKeysRes.status === 'fulfilled' && apiKeysRes.value?.terpotong) terpotong.push('kunci API');
-        setSumberTerpotong(terpotong);
-
-        // Kegagalan memuat daftar pendamping harus TERLIHAT (B-225):
-        // versi lama mengubahnya menjadi daftar kosong tanpa jejak,
-        // sehingga pemilih target tampil kosong seolah memang tidak
-        // ada model/aturan/kunci yang terdaftar.
-        const gagal: string[] = [];
-        if (modelsRes.status === 'rejected') gagal.push('model');
-        if (rulesRes.status === 'rejected') gagal.push('aturan routing');
-        if (apiKeysRes.status === 'rejected') gagal.push('kunci API');
-        setSumberGagal(gagal);
 
         const comboOpts = extractDynamicComboOptions(rulesList);
         const initialConfigs: Record<string, ToolConfig> = {};
@@ -296,6 +309,14 @@ export const CLIIntegrations: React.FC = () => {
         try {
           const segar = await api.cli.detected();
           setData(segar);
+          // B-553: pindaian ulang verifikasi adalah muatan SEGAR
+          // sumber utama yang BERHASIL — banner basi sumber itu
+          // (dari Pindai Ulang yang gagal sebelumnya) dibersihkan,
+          // sama seperti loadData membersihkannya pada muatan
+          // penuh yang berhasil. Kesegaran dicatat per sumber:
+          // keberhasilan satu muatan membersihkan penanda sumber
+          // itu sendiri, bukan menunggu muatan penuh berikutnya.
+          setLoadError(null);
           const ver = verifikasiHasilApply(
             segar.tools.find((t) => t.id === toolId),
             config.mode,

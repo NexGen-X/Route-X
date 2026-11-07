@@ -5,7 +5,7 @@ import type { Budget, APIKey, Model, RateLimit } from '../types';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { PageHeader } from '../components/common/PageHeader';
-import { Coins, Plus, Sparkles, Gauge } from 'lucide-react';
+import { Coins, Plus, Sparkles, Gauge, AlertCircle } from 'lucide-react';
 import { useToast } from '../context/ToastContext';
 import { QueryError } from '../components/common/QueryError';
 import { PeringatanDaftarTerpotong } from '../components/common/PeringatanDaftarTerpotong';
@@ -48,6 +48,12 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
   // (sisa V-FF-28): pilihan cakupan anggaran/batas yang tidak terbaca
   // utuh wajib menampilkan peringatan.
   const [sumberTerpotong, setSumberTerpotong] = useState<string[]>([]);
+  // Sumber referensi (kunci/model) yang GAGAL dimuat (B-554) —
+  // terpisah dari penanda terpotong: label cakupan pada kartu dan
+  // pilihan target pada formulir diturunkan dari dua daftar ini,
+  // jadi kegagalan muatnya wajib berpenanda, bukan diam-diam
+  // memakai data terakhir (atau kosong) seolah terukur.
+  const [sumberGagal, setSumberGagal] = useState<string[]>([]);
 
   // Drawer States
   const [isCreateBudgetOpen, setIsCreateBudgetOpen] = useState(false);
@@ -89,6 +95,14 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
       if (kRes.status === 'fulfilled' && kRes.value?.terpotong) terpotong.push('kunci API');
       if (mRes.status === 'fulfilled' && mRes.value?.terpotong) terpotong.push('model');
       setSumberTerpotong(terpotong);
+
+      // B-554: kegagalan sumber sekunder dicatat per sumber pada
+      // muatan ini juga (sebelumnya ditelan: daftar lama bertahan
+      // tanpa penanda dan label cakupan dibaca sebagai terukur).
+      const gagal: string[] = [];
+      if (kRes.status === 'rejected') gagal.push('kunci API');
+      if (mRes.status === 'rejected') gagal.push('model');
+      setSumberGagal(gagal);
 
       if (bRes.status === 'rejected') {
         setLoadError(getErrorMessage(bRes.reason));
@@ -320,6 +334,21 @@ export const Budgets: React.FC<BudgetsProps> = ({ initialTab = 'budgets' }) => {
 
       {sumberTerpotong.length > 0 && (
         <PeringatanDaftarTerpotong sumber={sumberTerpotong.join(', ')} className="mb-4" />
+      )}
+
+      {/* B-554: penanda kegagalan sumber referensi sekunder. */}
+      {sumberGagal.length > 0 && (
+        <div
+          role="alert"
+          className="mb-4 p-3.5 rounded-lg text-xs flex items-start gap-2.5 border bg-amber-500/10 text-amber-300 border-amber-500/30"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+          <div className="flex-1">
+            Daftar referensi gagal dimuat: {sumberGagal.join(', ')}. Label cakupan dan pilihan
+            target pada formulir memakai data terakhir yang berhasil dimuat (atau kosong bila
+            belum pernah termuat), bukan keadaan terukur saat ini.
+          </div>
+        </div>
       )}
 
       {/* ===================== TAB 1: BATAS ANGGARAN (USD) ===================== */}

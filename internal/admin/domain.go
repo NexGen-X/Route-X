@@ -363,6 +363,39 @@ func (h *Handlers) updateDomainConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// B-521: konfigurasi domain DIPUTUSKAN sebagai keluarga
+	// nilai-sama. Alasannya keadaan handler apa adanya: jalurnya
+	// tidak punya efek live apa pun selain pre-flight DNS
+	// baca-saja di atas — tidak ada penerbitan sertifikat, tidak
+	// ada perubahan layanan; satu-satunya efeknya adalah dua Put
+	// setting + satu audit. Pengecualian "endpoint aksi" Fase 20
+	// karena itu gugur, dan POST yang mengulang persis
+	// domain+mode+status yang tersimpan adalah no-op: 200 dengan
+	// DTO biasa, tanpa tulis ulang dan tanpa audit palsu. Nasib
+	// last_checked diputuskan terpisah: pengulangan identik TIDAK
+	// menyegarkannya — maknanya menjadi "kapan konfigurasi ini
+	// terakhir ditulis/diubah". Kejujuran tidak hilang karenanya:
+	// respons GET maupun POST selalu menghitung last_checked dari
+	// waktu respons, jadi kesegaran pemeriksaan tidak pernah
+	// dibaca dari nilai tersimpan ini.
+	if tersimpan, errTersimpan := h.getDomainConfigFromDB(ctx); errTersimpan == nil &&
+		tersimpan != nil && tersimpan.Domain == domain && tersimpan.Mode == mode &&
+		tersimpan.Status == "active" {
+		sekarang := time.Now().UTC()
+		_ = h.respond(w, r, http.StatusOK, DomainConfigDTO{
+			Domain:      domain,
+			Mode:        mode,
+			Status:      "active",
+			PublicURL:   fmt.Sprintf("https://%s", domain),
+			BaseURL:     fmt.Sprintf("https://%s/v1", domain),
+			ServerIP:    serverIP,
+			ResolvedIPs: ips,
+			DNSMatched:  dnsMatched,
+			LastChecked: &sekarang,
+		})
+		return
+	}
+
 	now := time.Now().UTC()
 	stored := StoredDomainConfig{
 		Domain:      domain,

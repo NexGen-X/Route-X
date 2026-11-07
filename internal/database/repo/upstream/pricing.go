@@ -309,6 +309,30 @@ func (r *PricingRepo) Current(ctx context.Context, providerModelID string) (*Pri
 	return price, nil
 }
 
+// AdaHargaMasaDepanTerbuka melaporkan apakah pasangan ini punya baris
+// TERBUKA (effective_to is null) yang effective_from-nya masih di masa
+// depan — harga terjadwal yang belum berlaku. Set atas keadaan itu
+// pasti ErrConflict (baris terbuka mulai sesudah waktu pemasangan),
+// jadi penilai konflik di handler set harga (B-520) memakai ini untuk
+// memastikan jalan pintas nilai-sama tidak menelan konflik tersebut.
+func (r *PricingRepo) AdaHargaMasaDepanTerbuka(ctx context.Context, providerModelID string) (bool, error) {
+	const op = "memeriksa harga masa depan"
+	if !idOK(providerModelID) {
+		return false, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
+	}
+	var ada bool
+	if err := r.q.QueryRow(ctx, `
+		select exists(
+			select 1 from model_pricing
+			where provider_model_id = $1
+			  and effective_to is null
+			  and effective_from > now()
+		)`, providerModelID).Scan(&ada); err != nil {
+		return false, repo.Err(op, err)
+	}
+	return ada, nil
+}
+
 // CurrentAll mengambil SELURUH harga yang sedang berlaku, satu baris per pemetaan
 // model-provider.
 //

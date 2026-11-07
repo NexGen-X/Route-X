@@ -56,6 +56,16 @@ type ActiveCredential struct {
 type CredentialRepo struct {
 	q      repo.Querier
 	cipher *security.Cipher
+	// sesudahPemenangBergeser dipanggil HANYA bila sebuah mutasi di
+	// repo ini terbukti mengubah kredensial pemenang (Active) sebuah
+	// provider (B-474). Dipasang oleh cmd ke kenaikan generasi
+	// response cache: sidik rute tidak memuat identitas kredensial,
+	// jadi jawaban yang ditanam saat pemenang lama berlaku tidak
+	// boleh terus tersaji sesudah pemenang bergeser oleh kegagalan
+	// autentikasi atau refresh rahasia. Nil berarti tidak ada yang
+	// peduli (mis. perkakas rotasi offline) — perilaku repo tidak
+	// berubah.
+	sesudahPemenangBergeser func(ctx context.Context, providerID string)
 }
 
 // NewCredentialRepo membuat CredentialRepo. cipher berasal dari config.EncryptionKey.
@@ -69,7 +79,52 @@ func NewCredentialRepo(q repo.Querier, cipher *security.Cipher) (*CredentialRepo
 
 // WithQuerier membuat salinan CredentialRepo yang berjalan di atas Querier baru (misal transaksi pgx.Tx).
 func (r *CredentialRepo) WithQuerier(q repo.Querier) *CredentialRepo {
-	return &CredentialRepo{q: q, cipher: r.cipher}
+	return &CredentialRepo{q: q, cipher: r.cipher,
+		sesudahPemenangBergeser: r.sesudahPemenangBergeser}
+}
+
+// SetSesudahPemenangBergeser memasang callback pergeseran pemenang
+// (B-474). Callback berjalan sinkron sesudah mutasi selesai — di
+// dalam transaksi pemanggil bila repo ini salinan transaksional —
+// jadi ia harus murah dan tidak boleh menggagalkan mutasinya:
+// kegagalannya adalah urusan callback sendiri (cmd mencatatnya).
+func (r *CredentialRepo) SetSesudahPemenangBergeser(fn func(ctx context.Context, providerID string)) {
+	r.sesudahPemenangBergeser = fn
+}
+
+// pemenangID membaca ID kredensial pemenang Active() saat ini, atau
+// "" bila tidak ada pemenang / pembacaan gagal (keadaan "tidak ada
+// pemenang" memang diperlakukan sebagai satu nilai yang bisa berubah
+// ke dan dari kredensial nyata).
+func (r *CredentialRepo) pemenangID(ctx context.Context, providerID string) string {
+	aktif, err := r.Active(ctx, providerID)
+	if err != nil || aktif == nil {
+		return ""
+	}
+	return aktif.ID
+}
+
+// laporkanPergeseranPemenang membandingkan pemenang sesudah mutasi
+// dengan idSebelum dan memanggil callback hanya bila benar-benar
+// bergeser — mutasi yang tidak menggeser pemenang tidak menyentuh
+// cache sama sekali.
+func (r *CredentialRepo) laporkanPergeseranPemenang(ctx context.Context, providerID, idSebelum string) {
+	if r.sesudahPemenangBergeser == nil || providerID == "" {
+		return
+	}
+	if r.pemenangID(ctx, providerID) != idSebelum {
+		r.sesudahPemenangBergeser(ctx, providerID)
+	}
+}
+
+// konteksPergeseran memuat provider & pemenang SEBELUM mutasi yang
+// bisa menggeser pemenang, untuk dibandingkan sesudahnya.
+func (r *CredentialRepo) konteksPergeseran(ctx context.Context, id string) (providerID, pemenangSebelum string) {
+	meta, err := r.Get(ctx, id)
+	if err != nil || meta == nil {
+		return "", ""
+	}
+	return meta.ProviderID, r.pemenangID(ctx, meta.ProviderID)
 }
 
 // ActiveKeyID mengembalikan pengenal kunci enkripsi yang sedang aktif. Baris yang
@@ -319,6 +374,13 @@ func (r *CredentialRepo) Active(ctx context.Context, providerID string) (*Active
 }
 
 // UpdateSecret memperbarui ciphertext kredensial (misalnya setelah auto-refresh token OAuth) dan mereset kegagalan autentikasi.
+//
+// Reset auth_failures + perpanjangan kedaluwarsa di sini bisa
+// menggeser pemenang Active() (kredensial yang pulih menyalip
+// pemenang berjalan), jadi pergeserannya dilaporkan lewat
+// sesudahPemenangBergeser (B-474) — jalur refresh OAuth (worker,
+// putaran B-210, on-demand) bermuara ke fungsi ini, bukan ke handler
+// admin yang sudah menyiram.
 func (r *CredentialRepo) UpdateSecret(ctx context.Context, id string, secret security.Secret, expiresAt *time.Time) error {
 	const op = "memperbarui rahasia kredensial provider"
 	if !idOK(id) {
@@ -332,6 +394,8 @@ func (r *CredentialRepo) UpdateSecret(ctx context.Context, id string, secret sec
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
+
+	providerID, pemenangSebelum := r.konteksPergeseran(ctx, id)
 
 	tag, err := r.q.Exec(ctx, `
 		update provider_credentials
@@ -350,6 +414,7 @@ func (r *CredentialRepo) UpdateSecret(ctx context.Context, id string, secret sec
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
+	r.laporkanPergeseranPemenang(ctx, providerID, pemenangSebelum)
 	return nil
 }
 
@@ -466,6 +531,22 @@ func (r *CredentialRepo) DeleteOfProvider(ctx context.Context, providerID, credI
 // yang dijanjikan skema ("dinaikkan saat upstream menolak kredensial ini, agar rotasi
 // bisa diingatkan"), dan pengingat rotasi justru hilang kalau satu pemakaian berhasil
 // menghapus jejaknya.
+//
+// B-474: last_used_at memang ikut kunci urut Active() pada strategi
+// LRU, jadi pemakaian ini BISA menggeser pemenang — tetapi ia
+// SENGAJA tidak melaporkan pergeseran dan tidak menginvalidasi
+// cache. Rotasi LRU adalah mekanisme penyebaran beban yang berjalan
+// pada HAMPIR SETIAP request di pool multi-kredensial; jalur HIT
+// cache sendiri tidak pernah memilih kredensial, jadi cache memang
+// dirancang akun-agnostik di dalam himpunan kredensial yang layak
+// pada provider yang sama. Menginvalidasi pada setiap MarkUsed akan
+// mengosongkan cache pada nyaris setiap request dan membunuh fitur
+// ini untuk semua pool berisi lebih dari satu kredensial. Yang
+// diinvalidasi adalah pergeseran karena KEADAAN kredensial berubah
+// (kegagalan autentikasi menumpuk, rahasia diperbarui) — bukan rotasi
+// pemakaian normal. Inilah koreksi atas rumusan pengecualian K-3 di
+// B-456: pengecualian MarkUsed sah karena desain rotasinya, bukan
+// karena "pemenang tidak bergeser" (ia memang bergeser).
 func (r *CredentialRepo) MarkUsed(ctx context.Context, id string) error {
 	const op = "mencatat pemakaian kredensial provider"
 	if !idOK(id) {
@@ -486,11 +567,18 @@ func (r *CredentialRepo) MarkUsed(ctx context.Context, id string) error {
 // MarkAuthFailure menaikkan penghitung penolakan autentikasi dan mengembalikan nilai
 // barunya, sehingga pemanggil bisa langsung memutuskan untuk mematikan kredensial atau
 // memberi tahu operator tanpa query tambahan.
+//
+// auth_failures adalah kunci urut utama Active() di luar strategi
+// priority, jadi kenaikan ini bisa menggeser pemenang; pergeserannya
+// dilaporkan lewat sesudahPemenangBergeser (B-474) — jalur penandaan
+// ini berjalan di request path (factory), bukan handler admin.
 func (r *CredentialRepo) MarkAuthFailure(ctx context.Context, id string) (int, error) {
 	const op = "mencatat kegagalan autentikasi kredensial provider"
 	if !idOK(id) {
 		return 0, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
+
+	providerID, pemenangSebelum := r.konteksPergeseran(ctx, id)
 
 	var failures int
 	err := r.q.QueryRow(ctx, `
@@ -499,6 +587,7 @@ func (r *CredentialRepo) MarkAuthFailure(ctx context.Context, id string) (int, e
 	if err != nil {
 		return 0, repo.Err(op, err)
 	}
+	r.laporkanPergeseranPemenang(ctx, providerID, pemenangSebelum)
 	return failures, nil
 }
 

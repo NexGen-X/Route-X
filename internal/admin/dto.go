@@ -53,6 +53,12 @@ type BackupRestoreResponse struct {
 	Status         string `json:"status"`
 	SafetyDatabase string `json:"safety_database"`
 	SchemaVersion  int64  `json:"schema_version"`
+	// Peringatan terisi bila restore-nya sendiri berhasil tetapi
+	// langkah pendamping wajibnya gagal (B-475: siraman response
+	// cache). Restore yang berhasil tidak boleh berbohong menjadi
+	// gagal total, tetapi kegagalan pendamping juga tidak boleh
+	// hilang senyap di log — ia bernama di sini dan di audit.
+	Peringatan string `json:"peringatan,omitempty"`
 }
 
 func (BackupRestoreResponse) adalahDTO() {}

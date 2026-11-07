@@ -548,6 +548,22 @@ func buildGatewaySurface(
 		}
 	}
 
+	// B-474: pergeseran pemenang kredensial dari jalur non-admin
+	// (MarkAuthFailure di request path; UpdateSecret dari rantai
+	// refresh OAuth) mengubah akun yang melayani jawaban, tetapi
+	// sidik rute tidak memuat identitas kredensial — tanpa invalidasi,
+	// jawaban pemenang lama tersaji terus. Siraman penuh untuk setiap
+	// pergeseran terlalu kasar (menghapus entri provider lain juga),
+	// jadi yang dinaikkan adalah GENERASI cache (B-473): entri
+	// generasi lama berhenti disajikan dan kedaluwarsa oleh TTL,
+	// penanaman in-flight bercap lama ditolak.
+	creds.SetSesudahPemenangBergeser(func(cbCtx context.Context, providerID string) {
+		if _, err := respCache.NaikkanGenerasi(cbCtx); err != nil {
+			logger.WarnContext(cbCtx, "gagal menaikkan generasi response cache sesudah pemenang kredensial bergeser",
+				"provider_id", providerID, "error", err)
+		}
+	})
+
 	// Repo sesi OAuth + klien Google dibuat sebelum pabrik: pabrik memakainya
 	// untuk refresh on-demand di jalur request (audit3 V-EO-15), dan worker
 	// refresh berkala memakai instance yang sama di bawah.

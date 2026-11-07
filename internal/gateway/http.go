@@ -2139,9 +2139,15 @@ func lantaiPemakaianEmbeddings(req *providers.EmbeddingsRequest, u providers.Usa
 // chatSekali melayani completion non-streaming.
 func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persiapan, j *jejak) {
 	var cacheKey string
+	// generasiCache adalah cap generasi saat kunci dihitung (B-473):
+	// ia diteruskan ke SetBerCap sesudah Execute, supaya jawaban dari
+	// eksekusi yang disela Flush tidak tertanam kembali.
+	var generasiCache int64
 	if h.respCache != nil && h.respCache.IsEnabled() && layakCacheRespons(pr.req) {
 		cacheKey = h.respCache.ComputeScopedKey(pr.req, cakupanCache(pr, permukaanOpenAI))
-		if entry, hit, err := h.respCache.Get(r.Context(), cacheKey); err == nil && hit && entry != nil && len(entry.Raw) > 0 {
+		entry, generasi, hit, err := h.respCache.GetBerCap(r.Context(), cacheKey)
+		generasiCache = generasi
+		if err == nil && hit && entry != nil && len(entry.Raw) > 0 {
 			// HIT tetap memakan kuota token: tanpa ini prompt yang di-cache bisa
 			// diulang tanpa batas melewati token limit. Biayanya tetap nol —
 			// tidak ada panggilan upstream. Jalur ini MEMANG memasang pemenang
@@ -2287,14 +2293,19 @@ func (h *Handlers) chatSekali(w http.ResponseWriter, r *http.Request, pr *persia
 			// ProviderID dan teks ikut disimpan supaya jalur HIT bisa
 			// menegakkan penyaring jawaban berlingkup provider dengan
 			// kebijakan SAAT HIT, bukan saat menyimpan.
-			_ = h.respCache.Set(r.Context(), cacheKey, &responsecache.Entry{
+			//
+			// B-473: penanaman membawa cap generasi dari saat kunci
+			// dihitung. Bila konteks jawaban bermutasi (Flush) selama
+			// Execute berjalan, SetBerCap menolak menanam jawaban ini —
+			// ia lahir dari konteks yang sudah tidak berlaku.
+			_, _ = h.respCache.SetBerCap(r.Context(), cacheKey, &responsecache.Entry{
 				Model:      out.Candidate.UpstreamModelName,
 				ProviderID: out.Candidate.ProviderID,
 				Raw:        out.Value.Raw,
 				Usage:      pemakaian,
 				Teks:       teks,
 				CachedAt:   time.Now(),
-			})
+			}, generasiCache)
 		}
 
 		if _, err := w.Write(out.Value.Raw); err != nil {

@@ -379,19 +379,36 @@ func (h *Handlers) restoreDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 	// pra-restore tersaji selama TTL untuk rute bersidik identik
 	// di database hasil restore. Siram sesudah penukaran sukses,
 	// sebelum audit & respons.
-	h.kosongkanCacheRespons(ctx)
-
-	h.writeAuditRestore(ctx, r, map[string]any{
+	//
+	// B-475: siraman di sini TIDAK best-effort. Restore-nya sendiri
+	// sudah berhasil, jadi menggagalkannya menjadi 500 juga bohong —
+	// tetapi kegagalan siraman wajib BERNAMA: tercatat di audit
+	// (cache_flush_failed) dan disebut di field peringatan respons,
+	// supaya operator tahu jawaban pra-restore mungkin masih tersaji
+	// sampai TTL berakhir dan bisa menyiram manual dari panel sistem.
+	peringatanSiram := ""
+	metadataRestore := map[string]any{
 		"filename":        header.Filename,
 		"size":            header.Size,
 		"safety_database": hasil.DatabasePengaman,
 		"schema_version":  hasil.VersiSkema,
-	})
+	}
+	if err := h.siramanCacheRespons(ctx); err != nil {
+		h.logger.ErrorContext(ctx, "restore database berhasil tetapi response cache gagal disiram",
+			slog.String("filename", header.Filename), slog.Any("err", err))
+		metadataRestore["cache_flush_failed"] = true
+		peringatanSiram = "Database berhasil dipulihkan, tetapi response cache gagal dikosongkan. " +
+			"Jawaban tersimpan dari keadaan sebelum restore mungkin masih tersaji sampai masa simpannya berakhir; " +
+			"kosongkan cache respons secara manual dari panel sistem."
+	}
+
+	h.writeAuditRestore(ctx, r, metadataRestore)
 
 	_ = h.respond(w, r, http.StatusOK, BackupRestoreResponse{
 		Status:         "success",
 		SafetyDatabase: hasil.DatabasePengaman,
 		SchemaVersion:  hasil.VersiSkema,
+		Peringatan:     peringatanSiram,
 	})
 }
 

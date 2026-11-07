@@ -398,7 +398,19 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 	// mengubah sidik rute (nama/kind/base_url/prioritas/bobot)
 	// atau tidak menyentuh konteks jawaban, jadi flush dibatasi
 	// pada body yang menyebut egress_pool_id.
-	if req.EgressPoolID != nil {
+	//
+	// B-476: NAMA provider adalah pengecualian kedua atas dalil
+	// "nama mengubah sidik sendiri". Sidik rute memang memuat NAMA
+	// MODEL hulu, bukan nama provider — sementara resolusi project
+	// Code Assist di factory memilih jalur berdasarkan substring
+	// "antigravity" pada NAMA PROVIDER (selain base URL). Mengganti
+	// nama provider dengan/tanpa substring itu mengubah project
+	// yang melayani jawaban untuk sidik yang sama persis, jadi
+	// rename yang benar-benar mengubah nama wajib menyiram juga.
+	// Rename adalah aksi admin yang langka; biaya siraman penuh
+	// sebanding. Nama yang sama sesudah normalisasi (params.Name
+	// menunjuk nilai yang sama dengan pAda.Name) tidak menyiram.
+	if req.EgressPoolID != nil || (params.Name != nil && *params.Name != pAda.Name) {
 		h.kosongkanCacheRespons(ctx)
 	}
 

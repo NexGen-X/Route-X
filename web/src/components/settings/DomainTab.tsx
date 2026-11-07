@@ -88,6 +88,30 @@ export const DomainTab: React.FC<DomainTabProps> = ({
         </div>
       )}
 
+      {/* B-546: cabang BASI berpenanda PERSISTEN — konfigurasi
+          masih ada dari muatan berhasil sebelumnya (keadaanMuat
+          'ada': data menang untuk ditampilkan) TETAPI penyegaran
+          terakhir GAGAL. Tanpa penanda ini lencana definitif
+          "Aktif & Terlindungi"/"DNS Terverifikasi" di bawah dibaca
+          sebagai keadaan terukur saat ini, padahal kegagalan
+          segarkan hanya tampil sebagai toast sesaat di halaman
+          induk. Penanda ini menetap sampai segarkan berhasil. */}
+      {domainConfig != null && domainError != null && (
+        <div
+          role="status"
+          className="mt-4 p-3.5 rounded-lg text-xs flex items-start gap-2.5 border bg-amber-500/10 text-amber-300 border-amber-500/30"
+        >
+          <AlertCircle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+          <div className="flex-1">
+            Segarkan terakhir gagal: {domainError} Status di bawah adalah data terakhir yang
+            berhasil dimuat, bukan keadaan terukur saat ini.{' '}
+            <button type="button" onClick={onRefresh} className="underline cursor-pointer">
+              Coba lagi
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Feedback Alert */}
       {domainFeedback && (
         <div

@@ -487,6 +487,16 @@ export const Providers: React.FC = () => {
     [providers]
   );
 
+  // B-555: strip ringkasan hanya terukur bila query sumbernya
+  // TIDAK sedang berstatus galat — saat refetch gagal, React Query
+  // mempertahankan data lama (daftar di bawah bertukar ke
+  // QueryError), tetapi angka strip yang tetap definitif +
+  // berwarna sehat akan dibaca sebagai keadaan saat ini. Pada
+  // keadaan galat strip menampilkan '—' seperti cabang
+  // belum-terukur B-345.
+  const stripProviderTerukur = !!provsData && !isProvidersError;
+  const stripPoolTerukur = !!poolsData && !isPoolsError;
+
   // B-448: hitungan tab & header drawer lewat keadaanMuat bersama —
   // selama rincian belum terukur untuk provider terpilih (memuat
   // atau gagal), tampilkan '—', bukan angka provider lain atau '0'.
@@ -587,7 +597,7 @@ export const Providers: React.FC = () => {
       <div className="flex flex-wrap items-center gap-x-8 gap-y-3 border-b border-border/60 pb-4">
         <span className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-text-muted">Total Provider</span>
-          <span className="text-base font-bold text-white">{provsData ? providers.length : '—'}</span>
+          <span className="text-base font-bold text-white">{stripProviderTerukur ? providers.length : '—'}</span>
         </span>
         <span className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-text-muted">Status Sehat</span>
@@ -595,14 +605,14 @@ export const Providers: React.FC = () => {
               BENAR-BENAR terukur; placeholder "—" selama belum ada
               data memakai warna senyap seperti angka strip lain. */}
           <span
-            className={`text-base font-bold ${provsData ? 'text-emerald-400' : 'text-text-muted'}`}
+            className={`text-base font-bold ${stripProviderTerukur ? 'text-emerald-400' : 'text-text-muted'}`}
           >
-            {provsData ? `${healthyCount} / ${providers.length}` : '—'}
+            {stripProviderTerukur ? `${healthyCount} / ${providers.length}` : '—'}
           </span>
         </span>
         <span className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-text-muted">Pool Egress</span>
-          <span className="text-base font-bold text-white">{poolsData ? egressPools.length : '—'}</span>
+          <span className="text-base font-bold text-white">{stripPoolTerukur ? egressPools.length : '—'}</span>
         </span>
         <span className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-text-muted">Enkripsi Kunci</span>

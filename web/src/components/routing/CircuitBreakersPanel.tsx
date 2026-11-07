@@ -100,6 +100,14 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
   // daftar kosong dari respons SUKSES tetap sah sebagai sehat.
   const statusDiketahui = !isBreakersLoading && !breakersError;
   const klaimSehat = statusDiketahui && totalAbnormalBreakers === 0;
+  // B-555: klaim TERGANGGU pun hanya sah dari data terukur —
+  // versi lama menggantungkan lencana "{n} Sirkuit Terganggu"
+  // hanya pada hitungan daftar, jadi saat refetch GAGAL (daftar
+  // lama dipertahankan halaman induk + breakersError terisi)
+  // lencana merah definitif tetap tampil dari data basi, padahal
+  // halaman yang sama menampilkan QueryError. Kini cabang itu
+  // ikut statusDiketahui seperti klaim sehat B-312.
+  const klaimTerganggu = statusDiketahui && totalAbnormalBreakers > 0;
   const tampilNetral = totalAbnormalBreakers === 0 && !statusDiketahui;
 
   // Jam lokal untuk hitung mundur probe: berdetak tiap detik hanya selama
@@ -143,14 +151,14 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
           <div className="flex items-start gap-3">
             <div
               className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                totalAbnormalBreakers > 0
+                klaimTerganggu
                   ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30 shadow-sm'
                   : klaimSehat
                     ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 shadow-sm'
                     : 'bg-bg-surface-2 text-text-muted border border-border shadow-sm'
               }`}
             >
-              {totalAbnormalBreakers > 0 ? (
+              {klaimTerganggu ? (
                 <ZapOff className="w-5 h-5" aria-hidden="true" />
               ) : klaimSehat ? (
                 <ShieldCheck className="w-5 h-5" aria-hidden="true" />
@@ -165,7 +173,7 @@ export const CircuitBreakersPanel: React.FC<CircuitBreakersPanelProps> = ({
                 <h3 className="text-base font-bold text-white tracking-tight">
                   Pemutus Sirkuit (Circuit Breakers)
                 </h3>
-                {totalAbnormalBreakers > 0 ? (
+                {klaimTerganggu ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30">
                     <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" aria-hidden="true" />
                     {totalAbnormalBreakers} Sirkuit Terganggu

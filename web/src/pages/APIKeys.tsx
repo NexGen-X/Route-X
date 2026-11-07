@@ -480,8 +480,16 @@ export const APIKeys: React.FC = () => {
             />
           </div>
           <div className="text-xs text-text-muted">
-            Menampilkan <span className="text-white font-medium">{filteredKeys.length}</span> dari{' '}
-            <span className="text-white font-medium">{keys.length}</span> kunci
+            {/* B-555: saat refetch gagal (isError) daftar lama
+                dipertahankan React Query tetapi daftar di bawah
+                bertukar ke QueryError — hitungan toolbar tidak
+                boleh tetap definitif dari data basi; tampilkan
+                penanda netral '—' pola B-518 sampai muatan
+                berhasil lagi. */}
+            Menampilkan{' '}
+            <span className="text-white font-medium">{isError ? '—' : filteredKeys.length}</span>{' '}
+            dari <span className="text-white font-medium">{isError ? '—' : keys.length}</span>{' '}
+            kunci
           </div>
         </div>
       )}

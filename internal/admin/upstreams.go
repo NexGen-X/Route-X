@@ -389,6 +389,19 @@ func (h *Handlers) updateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-392: mengganti egress_pool_id provider mengubah jalur
+	// egress yang melayani jawaban, tetapi sidik rute di kunci
+	// cache tidak memuat pool kandidat — kunci tidak berubah
+	// dengan sendirinya, jadi cache WAJIB dikosongkan di sini,
+	// sejajar mutasi egress pool dan ikatan pool kredensial yang
+	// sudah lebih dulu memanggilnya. Field lain di updateProvider
+	// mengubah sidik rute (nama/kind/base_url/prioritas/bobot)
+	// atau tidak menyentuh konteks jawaban, jadi flush dibatasi
+	// pada body yang menyebut egress_pool_id.
+	if req.EgressPoolID != nil {
+		h.kosongkanCacheRespons(ctx)
+	}
+
 	_ = h.respond(w, r, http.StatusOK, toProviderDTO(p))
 }
 

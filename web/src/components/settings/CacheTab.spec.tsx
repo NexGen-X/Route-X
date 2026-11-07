@@ -71,6 +71,17 @@ describe('CacheTab — Performa & Cache (Settings)', () => {
     expect(screen.getByText('60.0%')).toBeInTheDocument();
   });
 
+  it('muatan statistik GAGAL → badge dan angka netral, bukan NONAKTIF/0.0% (B-405)', async () => {
+    mockStatsFn.mockRejectedValue(new Error('jaringan putus'));
+    render(<CacheTab />);
+
+    expect(await screen.findByText('BELUM TERUKUR')).toBeInTheDocument();
+    expect(screen.queryByText('NONAKTIF')).not.toBeInTheDocument();
+    expect(screen.queryByText('0.0%')).not.toBeInTheDocument();
+    expect(screen.getByText(/Statistik cache belum dapat dimuat/)).toBeInTheDocument();
+    expect(screen.getByText(/Gagal memuat statistik cache/)).toBeInTheDocument();
+  });
+
   it('mengaktifkan cache dengan TTL dari kolom (menit -> detik)', async () => {
     render(<CacheTab />);
 

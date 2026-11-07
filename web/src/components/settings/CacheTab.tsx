@@ -165,6 +165,12 @@ export const CacheTab: React.FC = () => {
 
   const totalReq = (cache?.hits || 0) + (cache?.misses || 0);
   const hitRatio = totalReq > 0 ? (((cache?.hits || 0) / totalReq) * 100).toFixed(1) : '0.0';
+  // B-405: cache === null berarti statistik BELUM TERUKUR (muatan
+  // gagal atau masih berjalan) — badge, ringkasan, dan angka wajib
+  // netral pada keadaan itu, bukan "NONAKTIF"/"0.0% hijau"/0 yang
+  // definitif. Perlakuan yang sama dengan statistik cache di
+  // Observability (B-225/B-313).
+  const terukur = cache !== null;
 
   return (
     <div>
@@ -174,8 +180,8 @@ export const CacheTab: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base font-semibold text-text-primary">Cache Respons Redis</h3>
-              <Badge variant={cache?.enabled ? 'success' : 'neutral'}>
-                {cache?.enabled ? 'AKTIF' : 'NONAKTIF'}
+              <Badge variant={terukur && cache?.enabled ? 'success' : 'neutral'}>
+                {!terukur ? (memuat ? 'MEMUAT…' : 'BELUM TERUKUR') : cache?.enabled ? 'AKTIF' : 'NONAKTIF'}
               </Badge>
             </div>
             <p className="text-[11px] text-text-muted mt-0.5">
@@ -212,9 +218,11 @@ export const CacheTab: React.FC = () => {
         variant="info"
         className="mt-4"
         summary={
-          cache?.enabled
-            ? 'Cache aktif — hanya respons sukses non-streaming tanpa tool yang disimpan.'
-            : 'Cache nonaktif — aktifkan untuk melayani respons identik dari Redis.'
+          !terukur
+            ? 'Statistik cache belum dapat dimuat — keadaan cache belum terukur.'
+            : cache?.enabled
+              ? 'Cache aktif — hanya respons sukses non-streaming tanpa tool yang disimpan.'
+              : 'Cache nonaktif — aktifkan untuk melayani respons identik dari Redis.'
         }
       >
         Kunci cache terisolasi per API key: respons untuk satu kunci tidak pernah melayani kunci lain.
@@ -238,18 +246,20 @@ export const CacheTab: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
         <div className="py-1">
           <span className="text-[11px] text-text-muted block">Rasio Hit Cache</span>
-          <span className="text-xl font-bold font-mono text-emerald-400 mt-1 block">
-            {memuat ? '…' : `${hitRatio}%`}
+          <span
+            className={`text-xl font-bold font-mono mt-1 block ${terukur ? 'text-emerald-400' : 'text-text-muted'}`}
+          >
+            {memuat ? '…' : terukur ? `${hitRatio}%` : '—'}
           </span>
           <span className="text-[10px] text-text-secondary block mt-0.5 font-mono">
-            {cache?.hits || 0} hit / {totalReq} total
+            {terukur ? `${cache?.hits || 0} hit / ${totalReq} total` : 'belum terukur'}
           </span>
         </div>
 
         <div className="py-1">
           <span className="text-[11px] text-text-muted block">Hit Cache (Hemat Biaya)</span>
           <span className="text-xl font-bold font-mono text-text-primary mt-1 block">
-            {cache?.hits || 0}
+            {terukur ? cache?.hits || 0 : '—'}
           </span>
           <span className="text-[10px] text-emerald-400/80 block mt-0.5">
             Dilayani lokal, tanpa upstream
@@ -259,7 +269,7 @@ export const CacheTab: React.FC = () => {
         <div className="py-1">
           <span className="text-[11px] text-text-muted block">Total Entri di Redis</span>
           <span className="text-xl font-bold font-mono text-accent-text mt-1 block">
-            {cache?.total_entries || 0}
+            {terukur ? cache?.total_entries || 0 : '—'}
           </span>
           <span className="text-[10px] text-text-secondary block mt-0.5">
             Prompt aktif tersimpan

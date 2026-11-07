@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { QueryError } from '../components/common/QueryError';
 import { SystemHealthSection } from '../components/observability/SystemHealthSection';
+import { keadaanMuat } from '../lib/keadaanMuat';
 import { formatUSD } from '../utils/money';
 import { bucketSecondsFromSeries } from '../utils/series';
 
@@ -37,6 +38,12 @@ export const Observability: React.FC = () => {
   // Peringatan muatan parsial (B-225): sebagian sumber gagal tetapi
   // halaman tetap tampil — kegagalannya harus terlihat, bukan diam.
   const [partialError, setPartialError] = useState<string | null>(null);
+  // Bendera gagal PER SUMBER untuk gerbang klaim kosong grafik dan
+  // rincian (B-397): sumber yang gagal pada muatan pertama tidak
+  // boleh tampil sebagai "tidak ada data" yang definitif. Ditulis
+  // loadData dari status settled tiap sumber.
+  const [seriGagal, setSeriGagal] = useState(false);
+  const [rincianGagal, setRincianGagal] = useState(false);
   // B-321: kapan data yang sedang tampil terakhir benar-benar diterima.
   // Muat ulang yang gagal total mempertahankan angka lama — bannernya
   // wajib menyebut angka itu data terakhir, bukan pengukuran segar.
@@ -120,7 +127,9 @@ export const Observability: React.FC = () => {
 
       if (loadReqRef.current !== reqId) return;
       if (sRes.status === 'fulfilled') setSeries(sRes.value?.points || []);
+      setSeriGagal(sRes.status === 'rejected');
       if (bRes.status === 'fulfilled') setBreakdowns(bRes.value?.items || []);
+      setRincianGagal(bRes.status === 'rejected');
       if (sumRes.status === 'fulfilled') setSummary(sumRes.value);
       if (cRes.status === 'fulfilled') setCacheStats(cRes.value);
       if ([sRes, bRes, sumRes, cRes].some((res) => res.status === 'fulfilled')) {
@@ -297,7 +306,13 @@ export const Observability: React.FC = () => {
 
       {loadError && <QueryError message={loadError} onRetry={() => void loadData()} />}
 
-      {loadError && dataTerakhirPada !== null && dataTampilAda && (
+      {/* B-397: label cap waktu juga wajib tampil pada kegagalan
+          PARSIAL (partialError) — data basi dari sumber yang selamat
+          sama menyesatkannya dengan data basi muat-ulang-gagal-total
+          bila tampil tanpa cap. Gerbangnya tetap B-347: cap hanya
+          menempel bila memang ada data tampil dari muatan berhasil
+          sebelumnya (dataTerakhirPada terisi). */}
+      {(loadError || partialError) && dataTerakhirPada !== null && dataTampilAda && (
         <p role="status" className="text-xs text-text-muted">
           Menampilkan data terakhir yang diterima{' '}
           {new Date(dataTerakhirPada).toLocaleString('id-ID', {
@@ -480,6 +495,12 @@ export const Observability: React.FC = () => {
                 <span>Memuat data telemetri...</span>
               </div>
             </div>
+          ) : keadaanMuat({ memuat: isLoading, gagal: seriGagal, jumlah: series.length }) === 'gagal' ? (
+            // B-397: sumber deret waktu gagal — seri kosong berarti
+            // belum terukur, bukan "tidak ada data".
+            <div className="h-full flex items-center justify-center text-xs text-text-muted">
+              Data deret waktu belum dapat dimuat.
+            </div>
           ) : series.length === 0 ? (
             <div className="h-full flex items-center justify-center text-xs text-text-muted">
               Tidak ada data deret waktu untuk rentang yang dipilih.
@@ -583,6 +604,10 @@ export const Observability: React.FC = () => {
                   </div>
                 ))}
               </div>
+            ) : keadaanMuat({ memuat: isLoading, gagal: rincianGagal, jumlah: breakdowns.length }) === 'gagal' ? (
+              // B-397: sumber rincian gagal — kosong berarti belum
+              // terukur, bukan "belum ada data".
+              <p className="text-xs text-text-muted py-6 text-center">Data breakdown belum dapat dimuat.</p>
             ) : breakdowns.length === 0 ? (
               <p className="text-xs text-text-muted py-6 text-center">Belum ada data breakdown untuk kategori ini.</p>
             ) : (

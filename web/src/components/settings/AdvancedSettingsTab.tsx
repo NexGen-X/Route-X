@@ -17,6 +17,7 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
   settings,
   editValues,
   isLoading,
+  gagalMuat = false,
   savingKey,
   onRefresh,
   onOpenCreateModal,
@@ -69,26 +70,37 @@ export const AdvancedSettingsTab: React.FC<AdvancedSettingsTabProps> = ({
 
       {/* Custom Operasional Parameters */}
       {customSettings.length === 0 ? (
-        <div className="py-8 text-center">
-          <div className="max-w-md mx-auto space-y-3">
-            <Sliders className="w-5 h-5 text-accent-text mx-auto" />
-            <div>
-              <h4 className="text-sm font-bold text-text-primary">Belum Ada Parameter Runtime Kustom</h4>
-              <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                Gunakan parameter runtime untuk menyimpan nilai operasional dinamis (seperti flag fitur, batas jeda timeout, atau konfigurasi eksperimental).
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onOpenCreateModal}
-              icon={<Plus className="w-4 h-4" />}
-              className="text-xs mx-auto"
-            >
-              Tambah Parameter
-            </Button>
+        isLoading ? (
+          <div className="py-8 text-center">
+            <p className="text-xs text-text-muted">Memuat parameter runtime…</p>
           </div>
-        </div>
+        ) : gagalMuat ? (
+          // B-411: muatan gagal — kosong berarti belum terukur.
+          <div className="py-8 text-center">
+            <p className="text-xs text-text-muted">Parameter runtime belum dapat dimuat.</p>
+          </div>
+        ) : (
+          <div className="py-8 text-center">
+            <div className="max-w-md mx-auto space-y-3">
+              <Sliders className="w-5 h-5 text-accent-text mx-auto" />
+              <div>
+                <h4 className="text-sm font-bold text-text-primary">Belum Ada Parameter Runtime Kustom</h4>
+                <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                  Gunakan parameter runtime untuk menyimpan nilai operasional dinamis (seperti flag fitur, batas jeda timeout, atau konfigurasi eksperimental).
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onOpenCreateModal}
+                icon={<Plus className="w-4 h-4" />}
+                className="text-xs mx-auto"
+              >
+                Tambah Parameter
+              </Button>
+            </div>
+          </div>
+        )
       ) : (
         <div className="divide-y divide-border/60 border-t border-border/60">
           {customSettings.map((s) => (

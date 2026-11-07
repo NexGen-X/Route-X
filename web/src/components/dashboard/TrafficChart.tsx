@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { BarChart3, Activity } from 'lucide-react';
 import type { TimeSeriesPoint } from '../../types';
+import { keadaanMuat } from '../../lib/keadaanMuat';
 
 export interface TrafficChartProps {
   series: TimeSeriesPoint[];
@@ -22,6 +23,10 @@ export interface TrafficChartProps {
   // berarti "belum ada sampel" — tampilkan keadaan memuat, bukan
   // klaim definitif.
   memuat?: boolean;
+  // B-395: muatan sumber seri ini GAGAL — seri kosong berarti
+  // "belum terukur", bukan "belum ada sampel". Digerbang bersama
+  // lewat keadaanMuat (patokan bersama Fase 18).
+  gagal?: boolean;
 }
 
 interface MemoizedChartInnerProps {
@@ -122,7 +127,9 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
   timeWindow,
   setTimeWindow,
   memuat = false,
+  gagal = false,
 }) => {
+  const keadaan = keadaanMuat({ memuat, gagal, jumlah: series.length });
   return (
     <div className="lg:col-span-2 bg-bg-surface-1/40 border border-border/60 rounded-xl p-4 sm:p-5 flex flex-col justify-between">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3 sm:mb-4">
@@ -179,13 +186,15 @@ export const TrafficChart: React.FC<TrafficChartProps> = ({
       </div>
 
       <div className="h-52 sm:h-64 w-full pt-1 sm:pt-2">
-        {series.length === 0 ? (
+        {keadaan !== 'ada' ? (
           <div className="h-full flex flex-col items-center justify-center text-xs text-text-muted space-y-2">
             <Activity className="w-5 h-5 text-text-muted" aria-hidden="true" />
             <span>
-              {memuat
+              {keadaan === 'memuat'
                 ? 'Memuat sampel metrik…'
-                : `Belum ada sampel metrik untuk rentang waktu ${timeWindow}`}
+                : keadaan === 'gagal'
+                  ? 'Sampel metrik belum dapat dimuat.'
+                  : `Belum ada sampel metrik untuk rentang waktu ${timeWindow}`}
             </span>
           </div>
         ) : (

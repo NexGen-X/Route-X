@@ -55,6 +55,10 @@ export const Settings: React.FC = () => {
   // Backup & Disaster Recovery state
   const [backupStatus, setBackupStatus] = useState<BackupStatusResponse | null>(null);
   const [isBackupLoading, setIsBackupLoading] = useState(false);
+  // B-412: galat muat status backup — dulu kegagalannya hanya
+  // console.error, jadi tab menampilkan status tak-terukur sebagai
+  // klaim definitif.
+  const [backupError, setBackupError] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<'sql.gz' | 'sql'>('sql.gz');
   const [selectedBackupFile, setSelectedBackupFile] = useState<File | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -102,8 +106,14 @@ export const Settings: React.FC = () => {
     try {
       const res = await api.system.backup.status();
       setBackupStatus(res);
+      setBackupError(null);
     } catch (err: unknown) {
+      // B-412: kegagalan TIDAK lagi ditelan ke console saja —
+      // tanpa keadaan galat, BackupTab menampilkan status null
+      // sebagai "Belum ada / Sistem siap di-backup" yang definitif
+      // padahal statusnya tidak pernah terukur.
       console.error('Gagal memuat status backup:', err);
+      setBackupError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsBackupLoading(false);
     }
@@ -429,6 +439,7 @@ export const Settings: React.FC = () => {
         <BackupTab
           backupStatus={backupStatus}
           isBackupLoading={isBackupLoading}
+          backupError={backupError}
           exportFormat={exportFormat}
           selectedBackupFile={selectedBackupFile}
           isRestoring={isRestoring}
@@ -449,6 +460,7 @@ export const Settings: React.FC = () => {
           settings={settings}
           editValues={editValues}
           isLoading={isLoading}
+          gagalMuat={loadError != null}
           savingKey={savingKey}
           onRefresh={() => void loadSettings()}
           onOpenCreateModal={() => setIsCreateSettingOpen(true)}

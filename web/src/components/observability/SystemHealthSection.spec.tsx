@@ -50,6 +50,28 @@ function renderSection() {
   );
 }
 
+describe('SystemHealthSection — gerbang galat muat (B-413)', () => {
+  it('jobs GAGAL saja (diagnostik sehat) → QueryError tampil menamai sumber, klaim "tidak ada worker" diganti teks netral', async () => {
+    jobsMock.mockRejectedValue(new Error('jobs putus'));
+    renderSection();
+
+    expect(await screen.findByText(/daftar worker gagal dimuat/)).toBeInTheDocument();
+    expect(screen.getByText('Daftar worker latar belakang belum dapat dimuat.')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Tidak ada worker latar belakang yang terdaftar atau sedang berjalan.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('kedua sumber sehat dan jobs kosong → klaim tidak ada worker tetap sah', async () => {
+    jobsMock.mockResolvedValue({ items: [] });
+    renderSection();
+
+    expect(
+      await screen.findByText('Tidak ada worker latar belakang yang terdaftar atau sedang berjalan.'),
+    ).toBeInTheDocument();
+  });
+});
+
 describe('SystemHealthSection — Uji Live (B-226)', () => {
   it('worker yang BARU gagal (hanya terlihat dari pengambilan segar) → checklist DEGRADED + toast peringatan, BUKAN "Semua sistem nominal"', async () => {
     // Muatan awal: belum ada worker terdaftar. Pada pengambilan segar

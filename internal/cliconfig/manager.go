@@ -2785,7 +2785,21 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 			// mekanis Fase 26 membuktikan det32 (jangkar
 			// DILONGGARKAN, B-570) tidak membayangi label
 			// kasus B-556 atas berkas UTF-16 sungguhan.
+			//
+			// B-581 (koreksi atas klaim sapuan Fase 26 di atas):
+			// det32 TERNYATA membayangi label UTF-16 atas berkas
+			// UTF-16 yang didominasi baris kosong/kontrol (275
+			// dari 40.000 acak PB14) — residu pendamping det32
+			// adalah byte-rendah tiap karakter genap, dan bila
+			// ≥3/4-nya adalah \n/\t/\r/U+xx00, det32
+			// menghitungnya "terjelaskan sebagai astral".
+			// Label dikoreksi oleh koreksiLabelBayanganUTF16
+			// (lihat fungsinya); vonis penolakannya sendiri
+			// tidak berubah — hanya nama pengkodeannya.
 			if enc := deteksiUTF32TanpaBOM([]byte(isiEnv)); enc != "" {
+				if k := koreksiLabelBayanganUTF16([]byte(isiEnv), enc); k != "" {
+					enc = k
+				}
 				return fmt.Errorf("berkas %s terdeteksi berkode %s tanpa BOM; Hermes hanya membaca .env UTF-8 — simpan ulang berkas itu sebagai UTF-8, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)", envPath, enc)
 			}
 			// B-522: UTF-16 TANPA BOM lolos dari pemeriksa BOM di
@@ -2828,16 +2842,39 @@ func (m *Manager) applyToolSpecificConfig(ctx context.Context, homeDir string, t
 		if err := verifikasiHasilHermes(kontenHermes, target, gwURL, apiKey); err != nil {
 			return err
 		}
+		// B-578/B-579/B-580: gerbang pasca-sunting .env — dihitung
+		// dan diperiksa SEBELUM berkas apa pun ditulis (dulu
+		// config.yaml sudah tertulis saat verifikasi .env gagal).
+		// Detektor pra-tulis (B-477/B-548/B-569/B-522) buta atas
+		// tiga bentuk evasi: append/prepend ASCII yang mematahkan
+		// jangkar det32, dan berkas pendek di bawah lantai
+		// detektor — ketiganya lolos ke penyunting teks dan
+		// Configure melaporkan sukses atas berkas yang
+		// python-dotenv gagal baca (UnicodeDecodeError) bila
+		// isinya non-ASCII. Gerbangnya adalah utf8.Valid atas
+		// konten HASIL SUNTING: persis syarat baca dotenv (ia
+		// membuka .env sebagai UTF-8) — bukan UTF-8 sah ⟺ dotenv
+		// gagal total. Subset yang hasil suntingnya UTF-8 sah
+		// (ASCII-murni, atau karakter yang semua byte
+		// UTF-32/16-nya < 0x80 seperti Ā dan 中) TIDAK ditolak:
+		// dotenv membacanya dan kunci baru terbaca (oracle PB14,
+		// diverifikasi ulang Fase 27 dengan pustaka sungguhan).
+		var kontenEnv string
+		if apiKey != "" {
+			// existingEnv sudah dibaca (dan lolos deteksi B-477)
+			// di awal case ini.
+			kontenEnv = perbaruiBarisEnv(existingEnv, "OPENAI_API_KEY", apiKey)
+			if err := verifikasiEnvHermes(kontenEnv, "OPENAI_API_KEY"); err != nil {
+				return err
+			}
+			if !utf8.ValidString(kontenEnv) {
+				return fmt.Errorf("hasil sunting .env bukan UTF-8 sah (jejak pengkodean UTF-16/32); Hermes hanya membaca .env UTF-8 — simpan ulang berkas itu sebagai UTF-8, lalu coba lagi (Configure dibatalkan, tidak ada berkas yang diubah)")
+			}
+		}
 		if err := tulisAtomik(hermesPath, []byte(kontenHermes), 0600); err != nil {
 			return fmt.Errorf("menulis %s: %w", hermesPath, err)
 		}
 		if apiKey != "" {
-			// existingEnv sudah dibaca (dan lolos deteksi B-477)
-			// di awal case ini.
-			kontenEnv := perbaruiBarisEnv(existingEnv, "OPENAI_API_KEY", apiKey)
-			if err := verifikasiEnvHermes(kontenEnv, "OPENAI_API_KEY"); err != nil {
-				return err
-			}
 			if err := tulisAtomik(envPath, []byte(kontenEnv), 0600); err != nil {
 				return fmt.Errorf("menulis %s: %w", envPath, err)
 			}
@@ -4689,11 +4726,32 @@ func deteksiBOMNonUTF8(data []byte) string {
 // tak-terkelola tidak boleh tertolak. NUL tersebar tidak pernah
 // mencapai bukti minimal + dominasi + kerapatan jalur klasik, dan
 // dekode orientasi mana pun atasnya memuat karakter cacat atau
-// kekurangan bukti Latin/'=' untuk jalur proporsional; satu pola
-// UTF-8 yang tertolak hanyalah NUL rapat satu-paritas yang
-// bit-per-bit identik dengan UTF-16 asli — tak terbedakan oleh
-// detektor pola-NUL mana pun, dan terbaca sebagai kunci sampah
-// oleh python-dotenv juga. Pasangan NUL-ganda yang RAPAT (≥1/4
+// kekurangan bukti Latin/'=' untuk jalur proporsional. Pola UTF-8
+// yang tertolak BUKAN hanya NUL rapat satu-paritas yang bit-per-bit
+// identik dengan UTF-16 asli — klaim "hanya" itu GUGUR (B-583):
+// dua pola NUL-rapat sintetis ikut tertolak jalur klasik padahal
+// python-dotenv membaca kunci terkelolanya dengan benar, jadi
+// penolakan ini salah-tolak yang disengaja (BATAS SAH — perbaikan
+// jalur klasik ditunda karena risiko regresi atas perilaku
+// terkunci B-531 lebih besar daripada dampak pola sintetis yang
+// tak ada di .env nyata):
+// (a) NUL tiap 3 byte pada offset 3,6,9,… (stride-3 fase-0,
+// 60 byte huruf + baris kunci); CATATAN Fase 27: grid
+// stride-3 literal TIDAK terreproduksi — tiga variannya
+// (offset 3,6,9,…; 0,3,6,…; `ab\0` berulang) semuanya diam
+// dari det16, karena NUL stride-3 selang-seling paritas
+// pasangan sehingga dominasi 2:1 jalur klasik tak pernah
+// tercapai; konstruksi PB14 yang sesungguhnya memicu det16
+// hampir pasti grid `abc\0` (sisipan tiap 3 huruf).
+// (b) Pola `abc\0` berulang (NUL tiap 4 byte, fase
+// byte-ke-2-pasangan): NUL-nya jatuh pada posisi ganjil tiap
+// pasangan sehingga jalur klasik LE menyala, dan labelnya
+// jatuh netral "UTF-16" karena tak satu pun dekode orientasi
+// masuk akal sebagai teks .env (tak ada '=' mandiri).
+// Klaim UnicodeDecodeError total pun hanya benar untuk isi
+// non-ASCII: berkas yang semua byte-nya < 0x80 dibaca dotenv
+// tanpa eksepsi (lihat gerbang pasca-sunting B-578).
+// Pasangan NUL-ganda yang RAPAT (≥1/4
 // pasangan) menandai pola UTF-32 tanpa BOM atau biner padat NUL,
 // bukan UTF-16 teks — di luar vonis fungsi ini (UTF-32 dinilai
 // deteksiUTF32TanpaBOM; bentuk ber-BOM tertangkap
@@ -4913,6 +4971,98 @@ func deteksiUTF32TanpaBOM(data []byte) string {
 		return "UTF-32LE"
 	case be:
 		return "UTF-32BE"
+	}
+	return ""
+}
+
+// koreksiLabelBayanganUTF16 (B-581) mengoreksi label det32 yang
+// membayangi berkas UTF-16 sungguhan: bila det32 menyala atas
+// berkas yang det16-nya juga menyala, DAN penjelasan residu
+// pendamping det32 didominasi karakter kontrol — bukan NUL/astral
+// murni — berkas itu dicurigai bayangan UTF-16 dan label det16
+// yang dipakai. Mengembalikan label koreksi, atau "" bila tidak
+// ada koreksi (label det32 dipertahankan).
+//
+// Mekanisme bayangan: dalam UTF-16LE, residu pendamping det32
+// (byte 2 tiap grup) adalah byte-rendah tiap karakter ganjil;
+// bila karakter-karakter itu didominasi \n/\t/\r, det32
+// menghitung byte 0x09–0x0D sebagai "skalar astral sah" (bidang
+// 9–13) dan jangkar terpenuhi. Dalam UTF-32 sungguhan, byte
+// pendamping 0x09–0x0D berarti skalar bidang 9–13 — bidang yang
+// TAK BERPENGHUNI dalam teks nyata (tak ditetapkan Unicode);
+// skalar astral nyata yang umum (emoji, CJK ekstensi, U+10000+)
+// memakai byte 0x01–0x02 (bidang 1–2) atau 0x10 (bidang 16).
+// Karena itu penjelasan "kontrol" didefinisikan SEMPIT — byte
+// pendamping 0x09–0x0D dengan jangkar NUL — bukan seluruh
+// 0x01–0x10: definisi longgar akan mengklasifikasi emoji
+// (byte 0x01) sebagai kontrol dan menghidupkan kembali
+// salah-label B-569.
+//
+// Syarat koreksi (ketiganya harus terpenuhi — fail-closed ke
+// label det32 bila satu pun tidak):
+//
+//  1. det32 menamai SATU orientasi (LE/BE). Label netral
+//     "UTF-32" (kedua orientasi menyala) tidak dikoreksi:
+//     berkasnya simetris dan tak ada satu bayangan yang
+//     terbukti.
+//  2. det16 juga menyala atas berkas yang sama — berkas itu
+//     terbaca sebagai teks .env UTF-16 (jalur proporsional
+//     atau klasik). Tanpa suara kedua ini, berkas biner yang
+//     kebetulan berpola kontrol bisa salah dikoreksi.
+//  3. Penjelasan kontrol MENDOMINASI penjelasan pendamping:
+//     kontrol > 0 dan kontrol >= NUL dan kontrol >= astral
+//     (astral = byte 0x01–0x10 di luar 0x09–0x0D).
+//     Ketaksamaan memakai >= agar campuran seimbang
+//     (\n dan U+xx00) tetap terkoreksi.
+//
+// Yang SENGAJA tidak dikoreksi (residu terdokumentasi):
+//   - Bayangan lewat penjelasan astral-murni (byte 0x01):
+//     berkas UTF-16 yang didominasi U+0100 (Ā) menjelaskan
+//     residu lawannya sebagai astral bidang-1 — tak terbedakan
+//     dari UTF-32 astral sungguhan oleh kriteria ini; label
+//     UTF-32 dipertahankan (penolakan tetap jujur).
+//   - Bayangan lewat kontrol di luar 0x09–0x0D (mis. U+0001):
+//     tak ada di teks .env nyata; perlakuan yang sama.
+//   - Berkas yang det16-nya diam (mis. hanya berisi NUL atau
+//     tanpa bukti Latin/'='): tak ada suara kedua, label
+//     det32 dipertahankan.
+//   - Berkas UTF-32 yang didominasi skalar bidang 9–13
+//     sungguhan: bidang itu tak berpenghuni, jadi kasusnya
+//     sintetis; bila muncul, labelnya jatuh ke UTF-16.
+func koreksiLabelBayanganUTF16(data []byte, enc32 string) string {
+	var pendamping, jangkar int // indeks residu dalam grup 4 byte
+	switch enc32 {
+	case "UTF-32LE":
+		pendamping, jangkar = 2, 3
+	case "UTF-32BE":
+		pendamping, jangkar = 1, 0
+	default:
+		return ""
+	}
+	enc16 := deteksiUTF16TanpaBOM(data)
+	if enc16 == "" {
+		return ""
+	}
+	g := len(data) / 4
+	if g < 4 {
+		return ""
+	}
+	var kontrol, nul, astral int
+	for i := 0; i < g; i++ {
+		if data[4*i+jangkar] != 0 {
+			continue // tanpa jangkar NUL, grup ini bukan penjelasan
+		}
+		switch b := data[4*i+pendamping]; {
+		case b == 0:
+			nul++
+		case b >= 0x09 && b <= 0x0D:
+			kontrol++
+		case b >= 0x01 && b <= 0x10:
+			astral++
+		}
+	}
+	if kontrol > 0 && kontrol >= nul && kontrol >= astral {
+		return enc16
 	}
 	return ""
 }

@@ -222,16 +222,45 @@ func TestB570JangkarRusakSatuByteTetapDitolak(t *testing.T) {
 // TestB570DuaByteJangkarRusakTetapLolos mengunci BATAS
 // tertulis pelonggaran B-570: DUA byte jangkar rusak tetap
 // lolos dari det32 (jangkar menoleransi tepat satu grup
-// menyimpang) — dan det16 pun diam atas 😀 berbita-rendah 0,
-// sehingga Configure sukses seperti di base. Batas ini
-// disengaja: jangkar 2-dari-g bukan lagi bukti UTF-32.
+// menyimpang) — dan det16 pun diam atas 😀 berbita-rendah 0.
+// Batas DETEKTOR ini tidak berubah (dikunci di sini langsung
+// pada fungsi detektor).
+//
+// REVISI Fase 27 (B-578): di tingkat Configure, berkas
+// non-ASCII dua-jangkar-rusak TIDAK LAGI lolos — gerbang
+// pasca-sunting utf8.Valid menolaknya, dan itu BENAR: oracle
+// python-dotenv atas berkas pasca-Configure ini melempar
+// UnicodeDecodeError (isi emoji), jadi sukses Configure di
+// sini adalah sukses-bohong yang sama dengan yang ditutup
+// B-578. Yang bertahan lolos hanyalah varian ASCII-murni
+// (dotenv membaca kunci baru — subset tak-merugikan, dikunci
+// di bawah). Batas ini disengaja: jangkar 2-dari-g bukan lagi
+// bukti UTF-32.
 func TestB570DuaByteJangkarRusakTetapLolos(t *testing.T) {
+	data := rusakBytePR26(rusakBytePR26(utf32TanpaBOM("A=😀😀😀😀\nB=😀😀😀😀\n", false), 4*7+3, 0x01), 4*9+3, 0x01)
+	if got := deteksiUTF32TanpaBOM(data); got != "" {
+		t.Fatalf("batas detektor B-570 berubah: det32=%q atas dua jangkar rusak", got)
+	}
+	if got := deteksiUTF16TanpaBOM(data); got != "" {
+		t.Fatalf("batas detektor B-570 berubah: det16=%q atas dua jangkar rusak", got)
+	}
+	// Tingkat Configure, isi non-ASCII: kini ditolak gerbang
+	// utf8.Valid (B-578), bukan lagi sukses.
 	home := t.TempDir()
 	envPath := filepath.Join(home, ".hermes", ".env")
-	data := rusakBytePR26(rusakBytePR26(utf32TanpaBOM("A=😀😀😀😀\nB=😀😀😀😀\n", false), 4*7+3, 0x01), 4*9+3, 0x01)
 	tulisBerkasPRD(t, envPath, data)
-	if err := terapkanPRD(t, home, "hermes", "GANTI_kunci-prd"); err != nil {
-		t.Fatalf("batas B-570 berubah: dua jangkar rusak kini ditolak: %v", err)
+	if err := terapkanPRD(t, home, "hermes", "GANTI_kunci-prd"); err == nil {
+		t.Fatalf("batas B-570 berubah: dua jangkar rusak non-ASCII kini lolos dari gerbang B-578")
+	} else if !strings.Contains(err.Error(), "bukan UTF-8") {
+		t.Fatalf("dua jangkar rusak non-ASCII ditolak bukan oleh gerbang B-578: %v", err)
+	}
+	// Varian ASCII-murni: tetap lolos (subset tak-merugikan).
+	dataASCII := rusakBytePR26(rusakBytePR26(utf32TanpaBOM("A=1\nB=2\nOPENAI_API_KEY=lama\n", false), 4*4+3, 0x01), 4*9+3, 0x01)
+	home2 := t.TempDir()
+	envPath2 := filepath.Join(home2, ".hermes", ".env")
+	tulisBerkasPRD(t, envPath2, dataASCII)
+	if err := terapkanPRD(t, home2, "hermes", "GANTI_kunci-prd"); err != nil {
+		t.Fatalf("batas B-570 berubah: dua jangkar rusak ASCII-murni kini ditolak: %v", err)
 	}
 }
 

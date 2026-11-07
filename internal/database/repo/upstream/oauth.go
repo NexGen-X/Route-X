@@ -65,6 +65,15 @@ type UpsertOAuthSessionParams struct {
 type OAuthRepo struct {
 	q      repo.Querier
 	cipher *security.Cipher
+	// sesudahPemenangBergeser diteruskan ke SETIAP CredentialRepo yang
+	// dibangun repo ini (SimpanHasilRefresh, SimpanHasilExchange) —
+	// B-493: tanpa penerusan ini, pergeseran pemenang dari jalur
+	// refresh OAuth (jalur tersering dalam operasi nyata) tidak
+	// pernah dilaporkan, karena CredentialRepo di sini dibangun
+	// sebagai literal yang tidak mewarisi apa pun dari instance
+	// pabrik yang callback-nya terpasang. Nil berarti tidak ada yang
+	// peduli — perilaku repo tidak berubah.
+	sesudahPemenangBergeser func(ctx context.Context, providerID string)
 }
 
 // NewOAuthRepo membuat instance OAuthRepo dengan cipher untuk enkripsi refresh token.
@@ -77,7 +86,18 @@ func NewOAuthRepo(q repo.Querier, cipher *security.Cipher) (*OAuthRepo, error) {
 
 // WithQuerier membuat salinan OAuthRepo dengan querier baru (misal transaksi pgx.Tx).
 func (r *OAuthRepo) WithQuerier(q repo.Querier) *OAuthRepo {
-	return &OAuthRepo{q: q, cipher: r.cipher}
+	return &OAuthRepo{q: q, cipher: r.cipher,
+		sesudahPemenangBergeser: r.sesudahPemenangBergeser}
+}
+
+// SetSesudahPemenangBergeser memasang callback pergeseran pemenang
+// kredensial (B-474/B-493) yang diteruskan ke CredentialRepo yang
+// dibangun jalur simpan hasil refresh/exchange repo ini — semantik
+// dan kewajiban callback-nya sama dengan
+// CredentialRepo.SetSesudahPemenangBergeser: berjalan sinkron sesudah
+// mutasi, harus murah, dan tidak boleh menggagalkan mutasinya.
+func (r *OAuthRepo) SetSesudahPemenangBergeser(fn func(ctx context.Context, providerID string)) {
+	r.sesudahPemenangBergeser = fn
 }
 
 const oauthSessionJoinedColumns = `
@@ -490,7 +510,8 @@ func (r *OAuthRepo) SimpanHasilExchange(ctx context.Context, p SimpanHasilExchan
 		return credID, meta, err
 	}
 
-	creds := &CredentialRepo{q: r.q, cipher: r.cipher}
+	creds := &CredentialRepo{q: r.q, cipher: r.cipher,
+		sesudahPemenangBergeser: r.sesudahPemenangBergeser}
 
 	// Cari kredensial berlabel sama pada provider ini (semantik yang sama
 	// dengan pencarian handler versi lama).
@@ -588,7 +609,8 @@ func (r *OAuthRepo) SimpanHasilRefresh(ctx context.Context, p SimpanHasilRefresh
 			return r.WithQuerier(q).SimpanHasilRefresh(ctx, p)
 		})
 	}
-	creds := &CredentialRepo{q: r.q, cipher: r.cipher}
+	creds := &CredentialRepo{q: r.q, cipher: r.cipher,
+		sesudahPemenangBergeser: r.sesudahPemenangBergeser}
 	if err := creds.UpdateSecret(ctx, p.CredentialID, p.AccessToken, &p.ExpiresAt); err != nil {
 		return err
 	}

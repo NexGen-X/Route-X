@@ -557,12 +557,13 @@ func buildGatewaySurface(
 	// jadi yang dinaikkan adalah GENERASI cache (B-473): entri
 	// generasi lama berhenti disajikan dan kedaluwarsa oleh TTL,
 	// penanaman in-flight bercap lama ditolak.
-	creds.SetSesudahPemenangBergeser(func(cbCtx context.Context, providerID string) {
+	naikkanGenerasiPemenangBergeser := func(cbCtx context.Context, providerID string) {
 		if _, err := respCache.NaikkanGenerasi(cbCtx); err != nil {
 			logger.WarnContext(cbCtx, "gagal menaikkan generasi response cache sesudah pemenang kredensial bergeser",
 				"provider_id", providerID, "error", err)
 		}
-	})
+	}
+	creds.SetSesudahPemenangBergeser(naikkanGenerasiPemenangBergeser)
 
 	// Repo sesi OAuth + klien Google dibuat sebelum pabrik: pabrik memakainya
 	// untuk refresh on-demand di jalur request (audit3 V-EO-15), dan worker
@@ -571,6 +572,13 @@ func buildGatewaySurface(
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	// B-493: rantai refresh/exchange OAuth menulis kredensial lewat
+	// CredentialRepo yang dibangun OAuthRepo sendiri, bukan lewat
+	// instance pabrik di atas — callback kenaikan generasi yang sama
+	// wajib tinggal di OAuthRepo dan diteruskannya ke konstruksi itu,
+	// kalau tidak pergeseran pemenang dari refresh (jalur tersering)
+	// tidak pernah menaikkan generasi.
+	oauthRepo.SetSesudahPemenangBergeser(naikkanGenerasiPemenangBergeser)
 	googleOAuthClient := oauth.NewGoogleOAuthClient(nil)
 	penyegarOAuth := worker.NewPenyegarOAuth(db.Pool, oauthRepo, egress, googleOAuthClient, logger)
 

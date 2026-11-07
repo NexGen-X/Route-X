@@ -38,13 +38,27 @@ func httpUntuk(e *providers.Error) (status int, errType, code, message string) {
 	}
 
 	switch e.Kind {
-	// --- Kegagalan yang memang milik klien: diteruskan apa adanya. ---
+	// --- Kegagalan yang memang milik klien: status & kodenya milik klien,
+	// tetapi PESANNYA digenerikkan (B-421). Pesan mentah upstream untuk
+	// ketiga kind ini sebelumnya diteruskan apa adanya; adapter
+	// anthropic/google hanya menyaring kredensialnya sendiri, jadi teks
+	// bebas upstream — termasuk potongan prompt yang dipantulkan —
+	// bocor ke klien. Prinsip tertulis adapter OpenAI (openai.go):
+	// "Pesan dari upstream TIDAK ikut. providers.Error.Message berakhir
+	// di log operator, di tabel pemakaian, dan di respons ke klien,
+	// sedangkan pesan error provider sering memuat kembali potongan
+	// prompt yang menyebabkannya". Pesan BUATAN gateway/adapter
+	// (Local atau tanpa StatusCode upstream) tetap diteruskan karena
+	// ia bukan teks upstream. ---
 	case providers.ErrKindInvalidRequest:
-		return http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "invalid_request_error", e.Message
+		return http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "invalid_request_error",
+			pesanKlienAman(e, "permintaan tidak sah menurut provider")
 	case providers.ErrKindModelNotFound:
-		return http.StatusNotFound, httpx.ErrTypeInvalidRequest, "model_not_found", e.Message
+		return http.StatusNotFound, httpx.ErrTypeInvalidRequest, "model_not_found",
+			pesanKlienAman(e, "model tidak tersedia di provider yang melayani permintaan ini")
 	case providers.ErrKindContentFilter:
-		return http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "content_filter", e.Message
+		return http.StatusBadRequest, httpx.ErrTypeInvalidRequest, "content_filter",
+			pesanKlienAman(e, "permintaan ditolak kebijakan konten provider")
 
 	// --- Pembatasan laju: satu-satunya kegagalan hulu yang benar-benar mereda dengan
 	// menunggu, jadi satu-satunya yang pantas mengajak klien mengulang. ---
@@ -88,6 +102,21 @@ func httpUntuk(e *providers.Error) (status int, errType, code, message string) {
 		return http.StatusBadGateway, httpx.ErrTypeAPI, "upstream_error",
 			"provider gagal menjawab permintaan ini"
 	}
+}
+
+// pesanKlienAman memilih pesan untuk kind milik klien (B-421): pesan
+// buatan gateway/adapter sendiri diteruskan (ia bernama dan aman —
+// mis. penolakan terjemahan B-388), pesan yang membawa status HTTP
+// upstream diganti pesan generik per kind supaya teks bebas upstream
+// tidak bocor ke klien. Pesan kosong juga jatuh ke generik.
+func pesanKlienAman(e *providers.Error, generik string) string {
+	if e.Message == "" {
+		return generik
+	}
+	if e.Local || e.StatusCode == 0 {
+		return e.Message
+	}
+	return generik
 }
 
 // statusClientClosed adalah 499 dari konvensi nginx: klien menutup koneksi sebelum

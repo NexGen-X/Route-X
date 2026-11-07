@@ -112,3 +112,33 @@ describe('Providers — drawer berganti provider (B-446/B-448)', () => {
     expect(screen.queryByText('1 Model • 0 Key')).toBeNull();
   });
 });
+
+describe('Providers — kegagalan sesi OAuth masuk keadaan rincian (B-487)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockListAll.mockResolvedValue({ items: [PROV_A, PROV_B] });
+    mockCredentialsList.mockResolvedValue({ items: [] });
+    mockModelsList.mockResolvedValue({ items: [] });
+    mockOAuthSessions.mockRejectedValue(new Error('sesi oauth tidak terjangkau'));
+  });
+
+  it('klaim kosong kredensial dilarang saat sesi OAuth gagal dimuat', async () => {
+    renderHalaman();
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Kelola model dan akun provider Provider Alpha',
+      })
+    );
+
+    fireEvent.click(await screen.findByRole('tab', { name: /Kunci API/ }));
+
+    // Banner galat OAuth tampil (perilaku lama yang sudah benar)…
+    expect(await screen.findByText(/Sesi OAuth gagal dimuat/)).toBeInTheDocument();
+    // …dan keadaan kosong di tab menyatakan belum dapat dimuat,
+    // BUKAN klaim definitif "belum ada kredensial".
+    expect(await screen.findByText('Kredensial belum dapat dimuat.')).toBeInTheDocument();
+    expect(screen.queryByText(/Belum ada kredensial API key untuk provider ini/)).toBeNull();
+    expect(screen.queryByText(/Tambah API Key Pertama/)).toBeNull();
+  });
+});

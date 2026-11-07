@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { DollarSign } from 'lucide-react';
 import type { Price, Provider, ProviderModel, ReferencePrice } from '../../types';
 import { api } from '../../api/client';
@@ -80,8 +80,16 @@ export const PricingDrawer: React.FC<PricingDrawerProps> = ({ mapping, provider,
 
   const mappingId = mapping?.id;
 
+  // B-486 (sapuan penjaga urutan): token urutan muat — berpindah
+  // pemetaan dengan cepat dulu membuat respons pemetaan lama yang
+  // tiba terakhir menimpa riwayat/acuan pemetaan yang sedang
+  // dibuka, dan tombol "pakai acuan" lalu mengisi formulir harga
+  // MILIK pemetaan lain ke pemetaan ini.
+  const muatReqRef = useRef(0);
+
   const muat = useCallback(async () => {
     if (!mappingId) return;
+    const reqId = ++muatReqRef.current;
     setMemuat(true);
     setGalat(null);
     try {
@@ -89,12 +97,14 @@ export const PricingDrawer: React.FC<PricingDrawerProps> = ({ mapping, provider,
         api.models.pricingHistory(mappingId),
         api.models.pricingReference(mappingId),
       ]);
+      if (muatReqRef.current !== reqId) return;
       setRiwayat(hist.items ?? []);
       setAcuan(ref);
     } catch (err) {
+      if (muatReqRef.current !== reqId) return;
       setGalat(getErrorMessage(err, 'Gagal memuat harga pemetaan ini.'));
     } finally {
-      setMemuat(false);
+      if (muatReqRef.current === reqId) setMemuat(false);
     }
   }, [mappingId]);
 

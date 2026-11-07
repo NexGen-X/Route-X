@@ -251,81 +251,39 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       },
     },
 
-    // Pintasan Perkakas CLI Populer
-    {
-      id: 'cli-antigravity',
-      title: 'Konfigurasi: Antigravity CLI (AGY)',
-      subtitle: 'CLI resmi agentic Google DeepMind coding assistant',
-      category: 'Perkakas CLI',
+    // Pintasan Perkakas CLI — B-489: daftar ini cerminan registri
+    // CLI HIDUP (11 tool yang benar-benar dilayani halaman
+    // Integrasi CLI). Entri tool yang registri cabut (Antigravity
+    // CLI, Cursor, Continue.dev) dulu tetap ditawarkan di sini dan
+    // memilihnya tidak menghasilkan apa-apa; kini setiap entri
+    // menavigasi ke Integrasi CLI dan meminta tool itu disorot
+    // lewat onSelectCLI (App meneruskannya lewat sessionStorage
+    // yang dikonsumsi CLIIntegrations saat termuat).
+    ...[
+      ['claude', 'Claude Code', 'Asisten koding terminal Anthropic'],
+      ['opencode', 'OpenCode', 'Agen koding terminal sumber terbuka'],
+      ['copilot', 'GitHub Copilot CLI', 'Asisten CLI GitHub Copilot'],
+      ['goose', 'Goose', 'Agen koding lokal Block'],
+      ['aider', 'Aider', 'Pair-programming AI di terminal untuk alur git'],
+      ['qwen', 'Qwen Code', 'CLI koding Qwen (fork Gemini CLI)'],
+      ['crush', 'Crush', 'Agen koding terminal Charm'],
+      ['hermes', 'Hermes Agent', 'Agen Hermes (provider kustom)'],
+      ['grok-build', 'Grok Build', 'CLI koding xAI Grok Build'],
+      ['cline', 'Cline CLI', 'Agen koding otonom Cline'],
+      ['codex', 'Codex CLI', 'CLI koding OpenAI (Responses API)'],
+    ].map(([toolId, nama, deskripsi]) => ({
+      id: `cli-${toolId}`,
+      title: `Konfigurasi: ${nama}`,
+      subtitle: deskripsi,
+      category: 'Perkakas CLI' as const,
       icon: Code2,
       badge: 'CLI Agent',
       action: () => {
         onNavigate('/cli-integrations');
-        onSelectCLI?.('antigravity');
+        onSelectCLI?.(toolId);
         onClose();
       },
-    },
-    {
-      id: 'cli-claude',
-      title: 'Konfigurasi: Claude Code CLI',
-      subtitle: 'Asisten terminal Anthropic Claude',
-      category: 'Perkakas CLI',
-      icon: Code2,
-      badge: 'CLI Agent',
-      action: () => {
-        onNavigate('/cli-integrations');
-        onSelectCLI?.('claude');
-        onClose();
-      },
-    },
-    {
-      id: 'cli-opencode',
-      title: 'Konfigurasi: OpenCode CLI',
-      subtitle: 'Agen koding terminal otonom sumber terbuka',
-      category: 'Perkakas CLI',
-      icon: Code2,
-      action: () => {
-        onNavigate('/cli-integrations');
-        onSelectCLI?.('opencode');
-        onClose();
-      },
-    },
-    {
-      id: 'cli-cursor',
-      title: 'Konfigurasi: Cursor AI IDE',
-      subtitle: 'Editor kode AI dengan custom base URL Route-X',
-      category: 'Perkakas CLI',
-      icon: Code2,
-      action: () => {
-        onNavigate('/cli-integrations');
-        onSelectCLI?.('cursor');
-        onClose();
-      },
-    },
-    {
-      id: 'cli-continue',
-      title: 'Konfigurasi: Continue.dev (VS Code)',
-      subtitle: 'Ekstensi autopilot coding open-source untuk VS Code & JetBrains',
-      category: 'Perkakas CLI',
-      icon: Code2,
-      action: () => {
-        onNavigate('/cli-integrations');
-        onSelectCLI?.('continue');
-        onClose();
-      },
-    },
-    {
-      id: 'cli-aider',
-      title: 'Konfigurasi: Aider AI Pair Programmer',
-      subtitle: 'Terminal AI pair programming tool untuk git workflow',
-      category: 'Perkakas CLI',
-      icon: Code2,
-      action: () => {
-        onNavigate('/cli-integrations');
-        onSelectCLI?.('aider');
-        onClose();
-      },
-    },
+    })),
   ];
 
   // Filter berdasarkan query pencarian

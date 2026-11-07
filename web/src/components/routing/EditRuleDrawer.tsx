@@ -166,6 +166,16 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
   const handleEditSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rule) return;
+    // B-490: penjaga simpan setara B-445 — selama sumber gagal
+    // dimuat, formulir terinisialisasi dari daftar kosong-palsu
+    // (model/pipeline yang dipilih operator bukan cerminan data
+    // terukur); simpan diblokir, bukan hanya diberi banner.
+    if (sumberGagal) {
+      toast.error(
+        `Belum dapat menyimpan: daftar ${sumberGagal} gagal dimuat — isi formulir belum terukur. Muat ulang halaman lebih dulu.`
+      );
+      return;
+    }
     setIsSubmitting(true);
 
     try {
@@ -327,6 +337,7 @@ export const EditRuleDrawer: React.FC<EditRuleDrawerProps> = ({
             variant="primary"
             size="md"
             isLoading={isSubmitting}
+            disabled={!!sumberGagal}
             className="flex-1 sm:flex-initial"
           >
             Simpan Perubahan {editMode === 'combo_routing' ? '(Failover & Combo)' : ''}

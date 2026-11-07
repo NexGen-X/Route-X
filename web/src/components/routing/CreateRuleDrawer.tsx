@@ -93,6 +93,15 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    // B-490: penjaga simpan yang sama seperti drawer edit —
+    // membuat aturan dari pemilih model/provider yang belum
+    // terukur (daftar gagal-muat) dilarang.
+    if (sumberGagal) {
+      toast.error(
+        `Belum dapat menyimpan: daftar ${sumberGagal} gagal dimuat — pilihan di formulir belum terukur. Muat ulang halaman lebih dulu.`
+      );
+      return;
+    }
     setIsSubmitting(true);
     try {
       let payload: Partial<RoutingRule> = {
@@ -213,6 +222,7 @@ export const CreateRuleDrawer: React.FC<CreateRuleDrawerProps> = ({
             variant="primary"
             size="md"
             isLoading={isSubmitting}
+            disabled={!!sumberGagal}
             className="flex-1 sm:flex-initial"
           >
             Simpan Aturan {mode === 'combo_routing' ? '(Failover & Combo)' : ''}

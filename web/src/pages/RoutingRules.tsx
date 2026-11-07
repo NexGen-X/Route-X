@@ -289,6 +289,8 @@ export const RoutingRules: React.FC = () => {
         loadBreakers={loadBreakers}
         handleResetBreaker={handleResetBreaker}
         providersGagal={providersError != null}
+        rulesGagal={rulesError != null}
+        modelsGagal={modelsError != null}
       />
 
       {/* Drawer Buat Routing Rule */}

@@ -125,3 +125,46 @@ describe('EditRuleDrawer — ikatan provider & max_attempts (V-FF-01/V-FF-10)', 
     });
   });
 });
+
+describe('EditRuleDrawer — penjaga simpan saat sumber gagal (B-490)', () => {
+  beforeEach(() => {
+    payloadStore.update = null;
+  });
+
+  it('sumberGagal terisi → tombol simpan nonaktif dan banner tampil', async () => {
+    render(
+      <EditRuleDrawer
+        isOpen={true}
+        onClose={vi.fn()}
+        rule={RULE}
+        models={[]}
+        providers={[]}
+        onSuccess={vi.fn()}
+        sumberGagal="model (jaringan putus)"
+      />
+    );
+
+    expect(
+      await screen.findByText(/Daftar gagal dimuat: model \(jaringan putus\)/)
+    ).toBeInTheDocument();
+    const simpan = screen.getByRole('button', { name: /simpan perubahan/i });
+    expect(simpan).toBeDisabled();
+    expect(payloadStore.update).toBeNull();
+  });
+
+  it('tanpa sumberGagal → tombol simpan aktif', async () => {
+    render(
+      <EditRuleDrawer
+        isOpen={true}
+        onClose={vi.fn()}
+        rule={RULE}
+        models={[MODEL]}
+        providers={PROVIDERS}
+        onSuccess={vi.fn()}
+        sumberGagal={null}
+      />
+    );
+    const simpan = await screen.findByRole('button', { name: /simpan perubahan/i });
+    expect(simpan).not.toBeDisabled();
+  });
+});

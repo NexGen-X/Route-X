@@ -46,6 +46,24 @@ export const CLIIntegrations: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [mainTab, setMainTab] = useState<'installed' | 'all'>('installed');
+  // B-489: tujuan tool dari Command Palette (App menyimpannya di
+  // sessionStorage sesaat sebelum navigasi ke halaman ini) —
+  // dikonsumsi SATU kali: saring tampilan ke tool itu pada tab
+  // "semua" supaya kartu konfigurasinya langsung terlihat.
+  useEffect(() => {
+    let tujuan: string | null = null;
+    try {
+      tujuan = sessionStorage.getItem('routex_cli_tujuan');
+      if (tujuan) sessionStorage.removeItem('routex_cli_tujuan');
+    } catch {
+      tujuan = null;
+    }
+    if (tujuan) {
+      setMainTab('all');
+      setSelectedCategory('all');
+      setSearchQuery(tujuan);
+    }
+  }, []);
 
   // Kunci API global pengguna untuk menghasilkan skrip terminal siap pakai
   const [userApiKey, setUserApiKey] = useState<string>(() => {

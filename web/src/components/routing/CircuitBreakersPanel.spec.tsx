@@ -183,3 +183,39 @@ describe('CircuitBreakersPanel — chip provider belum terukur (B-449)', () => {
     expect(screen.getByText(/0 Terhubung/)).toBeInTheDocument();
   });
 });
+
+describe('CircuitBreakersPanel — label bawaan belum terukur saat rule/model gagal (B-491)', () => {
+  const propsDasar = {
+    providers: [PROVIDER],
+    models: [MODEL],
+    isBreakersLoading: false,
+    breakersError: null,
+    loadBreakers: vi.fn(async () => undefined),
+    handleResetBreaker: vi.fn(async () => undefined),
+  };
+
+  it('rulesGagal → chip ambang menampilkan penanda netral, bukan klaim Bawaan Server', () => {
+    render(
+      <CircuitBreakersPanel {...propsDasar} breakers={[]} rules={[]} rulesGagal={true} />
+    );
+    expect(screen.queryByText('Bawaan Server')).not.toBeInTheDocument();
+  });
+
+  it('rulesGagal → konfigurasi efektif kartu breaker menyatakan belum terukur', () => {
+    render(
+      <CircuitBreakersPanel
+        {...propsDasar}
+        breakers={[BREAKER_OPEN]}
+        rules={[]}
+        rulesGagal={true}
+      />
+    );
+    expect(screen.getByText(/Belum terukur/)).toBeInTheDocument();
+    expect(screen.queryByText('Bawaan server')).not.toBeInTheDocument();
+  });
+
+  it('tanpa kegagalan → klaim Bawaan server tetap tampil (keadaan terukur)', () => {
+    render(<CircuitBreakersPanel {...propsDasar} breakers={[BREAKER_OPEN]} rules={[]} />);
+    expect(screen.getByText('Bawaan server')).toBeInTheDocument();
+  });
+});

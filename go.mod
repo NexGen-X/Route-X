@@ -7,6 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/joho/godotenv v1.5.1
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.25.0
 	github.com/redis/go-redis/v9 v9.23.0
 	go.yaml.in/yaml/v3 v3.0.5

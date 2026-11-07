@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/NexGen-X/Route-X/internal/database/repo"
@@ -117,14 +118,46 @@ func (r *CredentialRepo) laporkanPergeseranPemenang(ctx context.Context, provide
 	}
 }
 
-// konteksPergeseran memuat provider & pemenang SEBELUM mutasi yang
-// bisa menggeser pemenang, untuk dibandingkan sesudahnya.
-func (r *CredentialRepo) konteksPergeseran(ctx context.Context, id string) (providerID, pemenangSebelum string) {
+// kunciPergeseranPerProvider mengurutkan rangkaian penilaian
+// pergeseran pemenang (baca pemenang sebelum → mutasi → baca pemenang
+// sesudah → laporkan) per provider di SELURUH instance CredentialRepo
+// dalam proses (B-514). Keadaan yang dinilai hidup di baris DB satu
+// provider dan penilaiannya datang dari banyak instance (pabrik,
+// OAuthRepo, salinan transaksional), jadi kuncinya memang harus
+// se-proses, bukan se-instance. Tanpa kunci ini, dua mutasi yang
+// saling meniadakan di jendela yang sama bisa sama-sama membaca
+// pemenang-sebelum dan pemenang-sesudah yang sama sementara pemenang
+// sesungguhnya sempat bergeser di antaranya — pergeseran nyata tanpa
+// satu pun laporan (terbukti dinamis: 18/400 putaran balapan pada
+// probe B-514). Yang dikunci hanya dua mutasi pelapor (UpdateSecret
+// dan MarkAuthFailure); jalur panas MarkUsed tidak menyentuhnya.
+var kunciPergeseranPerProvider sync.Map // providerID (string) -> *sync.Mutex
+
+func kunciPergeseranProvider(providerID string) func() {
+	if providerID == "" {
+		return func() {}
+	}
+	mu, _ := kunciPergeseranPerProvider.LoadOrStore(providerID, &sync.Mutex{})
+	m := mu.(*sync.Mutex)
+	m.Lock()
+	return m.Unlock
+}
+
+// mulaiPergeseran memuat provider pemilik kredensial id, mengunci
+// rangkaian penilaian pergeserannya, lalu membaca pemenang SEBELUM
+// mutasi di bawah kunci itu (B-514). Pemanggil WAJIB menjalankan
+// mutasi dan laporkanPergeseranPemenang sebelum memanggil selesai —
+// pola pakai: `defer selesai()` tepat sesudah baris ini. Kredensial
+// yang tidak terbaca menghasilkan provider kosong: pelaporan memang
+// tidak berlaku untuknya (sama seperti sebelum B-514) dan tidak ada
+// yang dikunci.
+func (r *CredentialRepo) mulaiPergeseran(ctx context.Context, id string) (providerID, pemenangSebelum string, selesai func()) {
 	meta, err := r.Get(ctx, id)
 	if err != nil || meta == nil {
-		return "", ""
+		return "", "", func() {}
 	}
-	return meta.ProviderID, r.pemenangID(ctx, meta.ProviderID)
+	lepas := kunciPergeseranProvider(meta.ProviderID)
+	return meta.ProviderID, r.pemenangID(ctx, meta.ProviderID), lepas
 }
 
 // ActiveKeyID mengembalikan pengenal kunci enkripsi yang sedang aktif. Baris yang
@@ -395,7 +428,8 @@ func (r *CredentialRepo) UpdateSecret(ctx context.Context, id string, secret sec
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	providerID, pemenangSebelum := r.konteksPergeseran(ctx, id)
+	providerID, pemenangSebelum, selesai := r.mulaiPergeseran(ctx, id)
+	defer selesai()
 
 	tag, err := r.q.Exec(ctx, `
 		update provider_credentials
@@ -578,7 +612,8 @@ func (r *CredentialRepo) MarkAuthFailure(ctx context.Context, id string) (int, e
 		return 0, fmt.Errorf("%s: %w", op, repo.ErrNotFound)
 	}
 
-	providerID, pemenangSebelum := r.konteksPergeseran(ctx, id)
+	providerID, pemenangSebelum, selesai := r.mulaiPergeseran(ctx, id)
+	defer selesai()
 
 	var failures int
 	err := r.q.QueryRow(ctx, `

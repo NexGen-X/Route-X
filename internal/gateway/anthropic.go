@@ -23,16 +23,16 @@ import (
 )
 
 type anthropicBlock struct {
-	Type      string          `json:"type"`
-	Text      string          `json:"text,omitempty"`
-	Thinking  string          `json:"thinking,omitempty"`
-	Signature string          `json:"signature,omitempty"`
-	Source    *anthropicImage `json:"source,omitempty"`
-	ID        string          `json:"id,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	Input     json.RawMessage `json:"input,omitempty"`
-	ToolUseID string          `json:"tool_use_id,omitempty"`
-	Content   json.RawMessage `json:"content,omitempty"`
+	Type      string                     `json:"type"`
+	Text      string                     `json:"text,omitempty"`
+	Thinking  string                     `json:"thinking,omitempty"`
+	Signature providers.SignatureToleran `json:"signature,omitempty"`
+	Source    *anthropicImage            `json:"source,omitempty"`
+	ID        string                     `json:"id,omitempty"`
+	Name      string                     `json:"name,omitempty"`
+	Input     json.RawMessage            `json:"input,omitempty"`
+	ToolUseID string                     `json:"tool_use_id,omitempty"`
+	Content   json.RawMessage            `json:"content,omitempty"`
 	// IsError hanya bermakna pada block tool_result.
 	IsError bool `json:"is_error,omitempty"`
 }
@@ -405,7 +405,7 @@ func decodePesanAnthropic(m anthropicMsg) ([]providers.Message, error) {
 			// (audit3 V-GW-23).
 			pb.reasoning = append(pb.reasoning, b.Thinking)
 			if b.Signature != "" {
-				pb.signatures = append(pb.signatures, b.Signature)
+				pb.signatures = append(pb.signatures, string(b.Signature))
 			}
 		case "redacted_thinking":
 			// Muatannya terenkripsi dan hanya bisa dipakai ulang oleh Anthropic

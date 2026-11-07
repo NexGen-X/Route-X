@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -352,10 +353,31 @@ func (p *Provider) partsFor(m *providers.Message, names map[string]string) (stri
 			return "", nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,
 				"hasil tool dengan tool_call_id %q tidak bisa dikaitkan ke nama fungsi mana pun; sertakan pesan assistant yang memuat panggilan tool tersebut", m.ToolCallID)
 		}
-		return roleUser, []geminiPart{{FunctionResponse: &geminiFunctionResp{
+		parts := []geminiPart{{FunctionResponse: &geminiFunctionResp{
 			Name:     name,
 			Response: functionResponsePayload(m.Text()),
-		}}}, nil
+		}}}
+		// B-429: bagian gambar pada hasil tool ikut sebagai part
+		// inlineData/fileData PENDAMPING dalam content yang sama —
+		// functionResponse Gemini hanya membawa teks/objek, jadi
+		// tanpa part pendamping ini gambar hasil tool (mis.
+		// tangkapan layar MCP) hilang senyap. Pemetaan mengikuti
+		// pola contentParts: data URI menjadi inlineData, URL
+		// biasa menjadi fileData.
+		if m.IsMultimodal() {
+			for i := range m.Parts {
+				part := &m.Parts[i]
+				if part.Type != providers.PartTypeImageURL || part.ImageURL == nil || part.ImageURL.URL == "" {
+					continue
+				}
+				if mimeType, data, ok := parseDataURI(part.ImageURL.URL); ok {
+					parts = append(parts, geminiPart{InlineData: &geminiBlob{MimeType: mimeType, Data: data}})
+					continue
+				}
+				parts = append(parts, geminiPart{FileData: &geminiFileData{FileURI: part.ImageURL.URL}})
+			}
+		}
+		return roleUser, parts, nil
 
 	default:
 		return "", nil, providers.Newf(providers.ErrKindInvalidRequest, p.name,
@@ -671,6 +693,12 @@ var unsupportedSchemaKeys = map[string]bool{
 	"else":                  true,
 	"propertyNames":         true,
 	"unevaluatedProperties": true,
+	// "not" (B-427): sama-sama di luar subset Gemini dan tanpa
+	// terjemahan setia — dibuang seperti grup B-161. "const" TIDAK
+	// ada di peta ini: ia diterjemahkan menjadi enum:[nilai] di
+	// normalisasiNode (pola convertConstToEnum referensi), bukan
+	// dibuang, karena membuangnya menghilangkan diskriminatornya.
+	"not": true,
 }
 
 // sanitizeSchema menormalkan skema JSON Schema modern menjadi subset OpenAPI 3.0 yang
@@ -726,6 +754,17 @@ func normalisasiNode(node any, root map[string]any, rantaiRef map[string]bool, k
 			if unsupportedSchemaKeys[key] || key == "$ref" {
 				// "$ref" non-lokal tidak bisa didereferensi di sini; namanya tetap
 				// ditolak validator, jadi dibuang dan saudara kandungnya dipertahankan.
+				continue
+			}
+			if key == "const" {
+				// B-427: const diterjemahkan setia menjadi enum:[nilai]
+				// (pola convertConstToEnum pada pipa referensi Gemini).
+				// Bila node sudah punya enum sendiri, enum itu menang
+				// dan const dibuang — menggabungkan keduanya akan
+				// mempersempit makna di luar yang diminta klien.
+				if _, sudah := v["enum"]; !sudah {
+					out["enum"] = []any{val}
+				}
 				continue
 			}
 			switch key {
@@ -958,8 +997,9 @@ func partKeluaranNonTeks(part *geminiPart) (providers.ContentPart, bool) {
 }
 
 // toCanonicalResponse menerjemahkan respons Gemini ke bentuk kanonik.
-func (p *Provider) toCanonicalResponse(model string, u *generateResponse) (*providers.ChatResponse, error) {
-	if err := p.checkBlocked(u); err != nil {
+// Header opsional diteruskan ke checkBlocked untuk B-431.
+func (p *Provider) toCanonicalResponse(model string, u *generateResponse, header ...http.Header) (*providers.ChatResponse, error) {
+	if err := p.checkBlocked(u, header...); err != nil {
 		return nil, err
 	}
 	if len(u.Candidates) == 0 {
@@ -1112,7 +1152,13 @@ func pesanKanonikKosong(m providers.Message) bool {
 }
 
 // checkBlocked menerjemahkan penolakan kebijakan konten dan error yang menumpang di body.
-func (p *Provider) checkBlocked(u *generateResponse) error {
+//
+// B-431: header respons boleh diteruskan pemanggil non-streaming —
+// Retry-After header didahulukan atas RetryInfo body (pola
+// errorFromResponse B-266: header adalah keputusan terbaru lapisan
+// transport, body cadangannya). Pemanggil streaming tidak punya
+// akses header di titik ini dan tetap memakai RetryInfo saja.
+func (p *Provider) checkBlocked(u *generateResponse, header ...http.Header) error {
 	if u.PromptFeedback != nil && u.PromptFeedback.BlockReason != "" {
 		// blockReason berarti PERMINTAAN yang diblokir kebijakan konten, bukan kegagalan
 		// generik. Klasifikasinya penting: content_filter tidak di-failover, sehingga
@@ -1126,15 +1172,20 @@ func (p *Provider) checkBlocked(u *generateResponse) error {
 		if message == "" {
 			message = "Gemini melaporkan kegagalan"
 		}
+		// B-266: petunjuk jeda dari RetryInfo di details body.
+		jeda := providers.RetryAfterFromDetails(u.Error.Details)
+		if len(header) > 0 && header[0] != nil {
+			if dariHeader := providers.ParseRetryAfter(header[0]); dariHeader > 0 {
+				jeda = dariHeader
+			}
+		}
 		return &providers.Error{
 			Kind:         providers.Classify(u.Error.Code, code),
 			Provider:     p.name,
 			StatusCode:   u.Error.Code,
 			Message:      p.safeMessage(message),
 			UpstreamCode: code,
-			// B-266: error yang menumpang di body 200/SSE tidak punya header;
-			// satu-satunya petunjuk jeda adalah RetryInfo di details.
-			RetryAfter: providers.RetryAfterFromDetails(u.Error.Details),
+			RetryAfter:   jeda,
 		}
 	}
 	return nil

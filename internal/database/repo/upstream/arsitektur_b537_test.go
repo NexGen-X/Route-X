@@ -39,19 +39,33 @@ import (
 //
 //  1. Panggilan mutasi pelapor `.UpdateSecret(` / `.MarkAuthFailure(`
 //     — bentuk panggilan metode langsung pada ekspresi penerima
-//     apa pun.
+//     apa pun; sejak B-598 pola dilonggarkan ke
+//     `\.(UpdateSecret|MarkAuthFailure)\s*\(` (spasi/komentar di
+//     antara nama dan tanda buka ikut tertangkap) dan memindai
+//     teks bersih (B-577), jadi penyebutan di komentar/string
+//     bukan situs.
 //  2. Literal TAK BERKUALIFIKASI `&CredentialRepo{` / `&OAuthRepo{`
 //     (konstruksi repo kredensial di luar konstruktor pun
 //     tertangkap — selama ditulis tanpa kualifikasi paket; lihat
-//     pengecualian literal berkualifikasi di bawah).
+//     pengecualian literal berkualifikasi di bawah). Sejak B-598
+//     pola dilonggarkan ke `&\s*(CredentialRepo|OAuthRepo)\s*\{`
+//     (spasi/komentar di antara `&`, nama, dan `{` ikut
+//     tertangkap) dan memindai teks bersih.
 //  3. Setiap penyebutan panggilan `penilaianPergeseranTertundaBaru(`
 //     — bentuk penugasan apa pun (`:=`, `=`, argumen bersarang),
 //     DITAMBAH deklarasi fungsinya sendiri yang terdaftar terpisah
 //     per berkas; pembuatan registri TANPA panggilan konstruktor —
-//     nilai fungsi (`f := penilaianPergeseranTertundaBaru`),
-//     literal struct (`&penilaianPergeseranTertunda{`, hanya badan
-//     konstruktor sendiri yang terdaftar), dan `new(...)`
-//     (terlarang, termasuk bentuk ber-spasi sejak B-574);
+//     LIMA bentuk: nilai fungsi
+//     (`f := penilaianPergeseranTertundaBaru`), literal struct
+//     (`&penilaianPergeseranTertunda{`, hanya badan konstruktor
+//     sendiri yang terdaftar — dihitung lewat AST sejak B-598),
+//     `new(...)` (terlarang, termasuk bentuk ber-spasi sejak
+//     B-574), konversi eksplisit dari tipe terdefinisi
+//     (`penilaianPergeseranTertunda(R{...})`,
+//     `CredentialRepo(R{...})`, `OAuthRepo(R{...})` — terlarang
+//     sejak B-595), dan `var` yang DIISI field
+//     (`r.perProvider = ...`, `r.qKomit = ...` — terlarang sejak
+//     B-596; `var` TAK TERISI tetap bukan situs, lihat bawah);
 //     pengurasan `.jalankanPenilaianSesudahKomit(
 //     <ekspresi apa pun>, <ekspresi apa pun>)` (argumen pertama
 //     bebas sejak B-566 — tidak lagi terikat literal `ctx` —
@@ -59,19 +73,29 @@ import (
 //     `r.tertunda`), pengurasan lewat NILAI-METODE atas drain
 //     (`f := r.jalankanPenilaianSesudahKomit`, `f := t.jalankan` —
 //     TERLARANG sejak B-576), dan panggilan internal
-//     `tertunda.jalankan(` di pemilik registry.
+//     `.jalankan(` atas receiver NAMA APA PUN di pemilik registry
+//     (bebas nama sejak B-597 — dulu terikat `tertunda`; spasi/
+//     komentar sebelum `(` ikut tertangkap sejak B-598).
 //     Seluruh hitungan (3) memindai teks yang SUDAH dikupas dari
 //     komentar dan literal string (B-577): penyebutan nama di
 //     prosa komentar/string bukan situs dan tidak terhitung; nama
 //     juga dijangkar `\b` di kedua sisi, jadi identifier yang
 //     lebih panjang yang mengandung nama persis
 //     (`xpenilaianPergeseranTertundaBaru`) tidak terhitung.
+//     `\b` di sini adalah batas kata ASCII (Go regexp/RE2):
+//     huruf non-ASCII yang menempel di depan nama tetap memberi
+//     batas sehingga terhitung (fail-closed), huruf ASCII tidak.
 //  4. TERLARANG (hitungan wajib NOL): deklarasi alias tipe atas
 //     kedua repo (`type X = CredentialRepo` / `type X =
 //     upstream.OAuthRepo`, dsb.) DAN atas tipe registry
 //     (`type X = penilaianPergeseranTertunda`, sejak B-575) —
 //     alias memberi nama kedua pada tipe yang sama dan akan
-//     meloloskan konstruksi dari pola literal di (2)/(3b).
+//     meloloskan konstruksi dari pola literal di (2)/(3b);
+//     sejak B-595, deklarasi tipe TERDEFINISI atas ketiga nama
+//     (`type X T`, `type X *T`, `type X (T)` — tanpa `=`) juga
+//     TERLARANG: konversi eksplisit `T(X{...})` antara tipe
+//     terdefinisi dan tipe asalnya adalah Go yang sah dan
+//     membangun registry/repo kerja yang lolos pola literal.
 //     Dideteksi lewat AST (B-561): bentuk tunggal maupun
 //     berkelompok `type (...)`, berkualifikasi, berkomentar,
 //     dan berpenunjuk `*` semuanya tertangkap.
@@ -93,16 +117,20 @@ import (
 // mutasi pelapor; registry NILAI-NOL via deklarasi `var`
 // (`var r penilaianPergeseranTertunda`) — map `perProvider`-nya
 // nil sehingga `catat` panik pada mutasi pertama dan `qKomit`-nya
-// nil, jadi ia gagal keras bukan jalan pintas diam-diam; dan
-// argumen pengurasan yang bersarang lebih dari satu tingkat tanda
-// kurung (pola (3) membuka satu tingkat — bentuk itu tidak ada di
-// pohon dan tidak wajar untuk argumen ctx/registry). Terakhir:
-// pola (1), (2), pengurasan, dan panggilan internal memindai
-// teks MENTAH — penyebutan di komentar/string ikut terhitung
-// untuk keempatnya (kelas positif-palsu yang sama seperti
-// sebelum B-577; B-577 hanya mengupas (3), (3b), dan
-// nilai-metode drain, yang polanya menyebut nama telanjang
-// sehingga jauh lebih mungkin muncul dalam prosa komentar).
+// nil, jadi ia gagal keras SELAMA TAK TERISI, bukan jalan pintas
+// diam-diam (koreksi B-596 atas B-565: var yang DIISI field
+// adalah registry kerja dan TERHITUNG sejak B-596); panggilan
+// `.catat(` langsung — satu-satunya pemanggil produksinya adalah
+// `selesaikanPergeseran`, dan rantai yang memakainya tetap
+// tertangkap di mata konstruksi + drain (B-595/B-596/B-597,
+// dibuktikan probe rantai Fase 27); dan argumen pengurasan yang
+// bersarang lebih dari satu tingkat tanda kurung (pola (3)
+// membuka satu tingkat — bentuk itu tidak ada di pohon dan tidak
+// wajar untuk argumen ctx/registry). Terakhir: pola pengurasan
+// (drain) MASIH memindai teks MENTAH — penyebutan di
+// komentar/string ikut terhitung untuknya; (1), (2), panggilan
+// internal, dan seluruh hitungan (3)/(3b) memindai teks BERSIH
+// (B-577; (1)/(2)/internal sejak B-598).
 //
 // Invarian isi yang diperiksa terpisah dari hitungan:
 //   - Setiap literal `creds := &CredentialRepo{...}` di oauth.go
@@ -415,6 +443,13 @@ func selisihBandingan(nama string, got, mau map[string]int) []string {
 func periksaGerbang(sumber map[string]string) []string {
 	var pelanggaran []string
 
+	// B-577 (Fase 26): hitungan (1), (2), (3), (3b), dan panggilan
+	// internal memindai teks BERSIH (komentar/string dikupas) —
+	// penyebutan di komentar/string bukan situs. Hanya pola
+	// pengurasan (drain) yang masih memindai teks mentah (lihat
+	// komentar kepala).
+	bersih := sumberBersih(sumber)
+
 	// (1) Panggilan mutasi pelapor. Terdaftar:
 	//   - oauth.go UpdateSecret ×2: SimpanHasilExchange dan
 	//     SimpanHasilRefresh, keduanya atas `creds` yang literalnya
@@ -423,8 +458,12 @@ func periksaGerbang(sumber map[string]string) []string {
 	//     querier registry diwarisi dari repo transaksional.
 	//   - factory.go MarkAuthFailure ×1: repo pabrik autocommit,
 	//     callback terpasang dari cmd/ai-gateway/main.go.
+	// B-598 (Fase 27): pola dilonggarkan ke
+	// `\.(UpdateSecret|MarkAuthFailure)\s*\(` — spasi/komentar di
+	// antara nama dan tanda buka ikut tertangkap; (1) kini
+	// memindai teks bersih, bukan mentah.
 	pelanggaran = append(pelanggaran, selisihBandingan("panggilan pelapor",
-		hitungPola(sumber, regexp.MustCompile(`\.(UpdateSecret|MarkAuthFailure)\(`)),
+		hitungPola(bersih, regexp.MustCompile(`\.(UpdateSecret|MarkAuthFailure)\s*\(`)),
 		map[string]int{
 			"internal/database/repo/upstream/oauth.go|UpdateSecret": 2,
 			"internal/gateway/factory.go|MarkAuthFailure":           1,
@@ -441,8 +480,12 @@ func periksaGerbang(sumber map[string]string) []string {
 	//     Fase 23 — TIDAK PERNAH bermutasi, callback diteruskan
 	//     sebagai argumen ke tertunda.jalankan), dan `creds` di
 	//     kedua SimpanHasil* (memuat tertunda — invarian isi).
+	// B-598 (Fase 27): pola dilonggarkan ke
+	// `&\s*(CredentialRepo|OAuthRepo)\s*\{` — spasi/komentar di
+	// antara `&`, nama, dan `{` ikut tertangkap; (2) kini
+	// memindai teks bersih, bukan mentah.
 	pelanggaran = append(pelanggaran, selisihBandingan("literal repo",
-		hitungPola(sumber, regexp.MustCompile(`&(CredentialRepo|OAuthRepo)\{`)),
+		hitungPola(bersih, regexp.MustCompile(`&\s*(CredentialRepo|OAuthRepo)\s*\{`)),
 		map[string]int{
 			"internal/database/repo/upstream/credentials.go|CredentialRepo": 2,
 			"internal/database/repo/upstream/oauth.go|OAuthRepo":            2,
@@ -462,7 +505,6 @@ func periksaGerbang(sumber map[string]string) []string {
 	// (komentar/string dikupas) dan nama dijangkar `\b` —
 	// panggilan di komentar dan identifier lebih panjang bukan
 	// situs.
-	bersih := sumberBersih(sumber)
 	pelanggaran = append(pelanggaran, selisihBandingan("pembuatan registri",
 		hitungPola(bersih, regexp.MustCompile(`\b(penilaianPergeseranTertundaBaru)\(`)),
 		map[string]int{
@@ -470,7 +512,7 @@ func periksaGerbang(sumber map[string]string) []string {
 			"internal/database/repo/upstream/oauth.go|penilaianPergeseranTertundaBaru":       2,
 		})...)
 	// (3b) B-565 (Fase 25): pembuatan registri TANPA memanggil
-	// konstruktor — tiga bentuk yang lolos dari hitungan panggilan
+	// konstruktor — LIMA bentuk yang lolos dari hitungan panggilan
 	// di atas:
 	//   - nilai fungsi: `f := penilaianPergeseranTertundaBaru`
 	//     lalu `f(nil)` memanggil konstruktor lewat variabel —
@@ -482,23 +524,47 @@ func periksaGerbang(sumber map[string]string) []string {
 	//     — di dalam paket ini literal itu BISA mengisi qKomit dan
 	//     perProvider, jadi satu-satunya yang diizinkan adalah
 	//     badan konstruktor sendiri (credentials.go ×1).
+	//     B-598 (Fase 27): hitungan literal PINDAH ke AST
+	//     (CompositeLit atas tipe itu, hitungLiteralStructRegistry)
+	//     — regex naif `&?\s*\bpenilaianPergeseranTertunda\s*\{`
+	//     SALAH karena ikut menghitung baris deklarasi
+	//     konstruktornya sendiri
+	//     (`func ... *penilaianPergeseranTertunda {`) sebagai
+	//     literal; AST hanya menghitung literal komposit
+	//     sungguhan, dan spasi/komentar di antara nama dan `{`
+	//     tidak relevan bagi AST.
 	//   - `new(penilaianPergeseranTertunda)` — TERLARANG (wajib
 	//     nol); tidak ada pemakaian sahnya karena konstruktorlah
 	//     yang mengisi map perProvider. B-574 (Fase 26): pola
 	//     dilonggarkan ke `new\s*\(\s*...` — bentuk Go sah
 	//     ber-spasi `new( penilaianPergeseranTertunda )` (bukan
 	//     gofmt) ikut tertangkap.
-	// B-577 (Fase 26): ketiga hitungan di atas memindai teks
+	//   - konversi eksplisit dari tipe terdefinisi (B-595, Fase
+	//     27): `penilaianPergeseranTertunda(R{...})`,
+	//     `CredentialRepo(R{...})`, `OAuthRepo(R{...})` —
+	//     TERLARANG (wajib nol); dihitung terpisah di bawah
+	//     ("konversi tipe terdefinisi") karena satu-satunya
+	//     pemakaian sah ketiga nama diikuti `(` tidak ada —
+	//     deklarasi/field/parameter tidak diikuti `(` dan nama
+	//     konstruktor (`...Baru`) tidak cocok karena jangkar `\b`.
+	//   - `var` yang DIISI field (B-596, Fase 27): penugasan
+	//     `.perProvider =` / `.qKomit =` — TERLARANG (wajib nol);
+	//     dihitung terpisah di bawah ("penugasan field registry").
+	//     Penugasan INDEKS (`t.perProvider[k] = ...`, dipakai
+	//     `catat`) dan perbandingan (`== nil`) BUKAN penugasan
+	//     field dan tidak terhitung.
+	// B-577 (Fase 26): hitungan-hitungan di atas memindai teks
 	// BERSIH (komentar/string dikupas) dan nama dijangkar `\b` —
 	// penyebutan di komentar/string dan identifier lebih panjang
 	// bukan situs dan tidak terhitung.
 	// Sisa bentuk yang TIDAK dihitung: deklarasi `var` nilai-nol
-	// (lihat komentar kepala — gagal keras, bukan jalan pintas).
+	// TAK TERISI (lihat komentar kepala — gagal keras SELAMA tak
+	// terisi, bukan jalan pintas; koreksi B-596 atas B-565).
 	tanpaPanggilan := map[string]int{}
 	for k, v := range hitungNilaiFungsiKonstruktor(bersih) {
 		tanpaPanggilan[k] += v
 	}
-	for k, v := range hitungKemunculan(bersih, regexp.MustCompile(`&?\bpenilaianPergeseranTertunda\{`), "literal-struct") {
+	for k, v := range hitungLiteralStructRegistry(sumber) {
 		tanpaPanggilan[k] += v
 	}
 	for k, v := range hitungKemunculan(bersih, regexp.MustCompile(`new\s*\(\s*\bpenilaianPergeseranTertunda\b\s*\)`), "new") {
@@ -509,6 +575,28 @@ func periksaGerbang(sumber map[string]string) []string {
 		map[string]int{
 			"internal/database/repo/upstream/credentials.go|literal-struct": 1,
 		})...)
+	// B-595 (Fase 27): konversi eksplisit `T(...)` atas ketiga
+	// nama — pasangan dari larangan tipe terdefinisi di (4):
+	// deklarasi tipenya TERLARANG, dan konversi yang memakainya
+	// TERHITUNG di sini. TERLARANG (wajib nol).
+	konversi := map[string]int{}
+	for k, v := range hitungKemunculan(bersih, regexp.MustCompile(`\bpenilaianPergeseranTertunda\s*\(`), "konversi-registry") {
+		konversi[k] += v
+	}
+	for k, v := range hitungPola(bersih, regexp.MustCompile(`\b(CredentialRepo|OAuthRepo)\s*\(`)) {
+		konversi[k] += v
+	}
+	pelanggaran = append(pelanggaran, selisihBandingan("konversi tipe terdefinisi",
+		konversi,
+		map[string]int{})...)
+	// B-596 (Fase 27): penugasan field atas registry — `var`
+	// nilai-nol yang diisi field menjadi registry kerja penuh.
+	// TERLARANG (wajib nol). Pola menuntut `=` tunggal (bukan
+	// `==`): `[^=]` sesudah `=` menolak perbandingan, dan `[`
+	// sesudah nama field menolak penugasan indeks.
+	pelanggaran = append(pelanggaran, selisihBandingan("penugasan field registry",
+		hitungPola(bersih, regexp.MustCompile(`\.(perProvider|qKomit)\s*=(?:[^=]|$)`)),
+		map[string]int{})...)
 	// B-566 (Fase 25): pola pengurasan dilonggarkan dari
 	// `(ctx, <nama>)` menjadi `(<ekspresi apa pun>, <ekspresi apa
 	// pun>)` — argumen pertama bebas (bukan literal `ctx`) dan
@@ -522,10 +610,26 @@ func periksaGerbang(sumber map[string]string) []string {
 		map[string]int{
 			"internal/database/repo/upstream/oauth.go|jalankanPenilaianSesudahKomit": 2,
 		})...)
+	// B-597 (Fase 27): pola panggilan internal dilonggarkan dari
+	// `tertunda\.(jalankan)\(` menjadi `\.(jalankan)\s*\(` —
+	// bebas nama receiver (paralel B-566) dan spasi/komentar
+	// sebelum `(` ikut tertangkap (B-598); hitungan kini
+	// memindai teks bersih. Terdaftar:
+	//   - oauth.go ×1: `tertunda.jalankan(...)` di
+	//     jalankanPenilaianSesudahKomit (pemilik registry).
+	//   - backup_sql.go ×1: `p.jalankan()` atas `*pemindaiDump`
+	//     (pemindai dump SQL admin — metode tak terkait registry,
+	//     nol argumen; ikut terhitung karena namanya sama).
+	//     KOREKSI atas klaim B-597 "nol situs lain di pohon
+	//     nyata": klaim itu salah — situs ini ada dan kini
+	//     TERDAFTAR dengan alasannya, bukan nol.
+	// Panggilan `.jalankanPenilaianSesudahKomit(` BUKAN
+	// `.jalankan(` (nama berlanjut) dan tidak terhitung di sini.
 	pelanggaran = append(pelanggaran, selisihBandingan("panggilan jalankan internal",
-		hitungPola(sumber, regexp.MustCompile(`tertunda\.(jalankan)\(`)),
+		hitungPola(bersih, regexp.MustCompile(`\.(jalankan)\s*\(`)),
 		map[string]int{
 			"internal/database/repo/upstream/oauth.go|jalankan": 1,
+			"internal/admin/backup_sql.go|jalankan":             1,
 		})...)
 	// B-576 (Fase 26): pengurasan lewat NILAI-METODE — `f :=
 	// r.jalankanPenilaianSesudahKomit; f(ctx, reg)` dan `f :=
@@ -552,6 +656,12 @@ func periksaGerbang(sumber map[string]string) []string {
 	// registry (`type X = penilaianPergeseranTertunda`) — alias
 	// itu meloloskan literal `&penilaianPergeseranTertunda{}`
 	// dari pola (3b) dengan cara yang sama.
+	// B-595 (Fase 27): larangan diperluas ke tipe TERDEFINISI
+	// atas ketiga nama (`type X T`, tanpa `=`) — klaim benign
+	// probe B-575 ("tipe terdefinisi wajib tidak terhitung")
+	// GUGUR: konversi `T(X{...})` membangun registry/repo kerja
+	// (dibuktikan dinamis Putaran #14). Deklarasi terdefinisi
+	// TERLARANG seperti alias, dan konversinya dihitung di (3b).
 	//
 	// B-561 (Fase 25): deteksi lewat AST, bukan pola teks — pola
 	// `type\s+\w+\s*=` buta terhadap deklarasi berkelompok
@@ -562,16 +672,17 @@ func periksaGerbang(sumber map[string]string) []string {
 	// dan komentar yang sekadar menyebut alias tidak lagi memicu
 	// positif palsu. Berkas yang gagal diurai dilaporkan sebagai
 	// galat — pohon yang rusak tidak boleh lolos diam-diam.
-	pelanggaran = append(pelanggaran, sapuAliasTerlarang(sumber)...)
+	pelanggaran = append(pelanggaran, sapuAliasDanDefinisiTerlarang(sumber)...)
 
 	return pelanggaran
 }
 
-// sapuAliasTerlarang memeriksa seluruh sumber lewat AST dan
-// mengembalikan pelanggaran alias atas repo/registry (B-561,
-// B-575). Berkas yang gagal diurai dilaporkan sebagai pelanggaran
-// — pohon yang rusak tidak boleh lolos diam-diam.
-func sapuAliasTerlarang(sumber map[string]string) []string {
+// sapuAliasDanDefinisiTerlarang memeriksa seluruh sumber lewat
+// AST dan mengembalikan pelanggaran alias atas repo/registry
+// (B-561, B-575) DAN tipe terdefinisi atas ketiganya (B-595).
+// Berkas yang gagal diurai dilaporkan sebagai pelanggaran — pohon
+// yang rusak tidak boleh lolos diam-diam.
+func sapuAliasDanDefinisiTerlarang(sumber map[string]string) []string {
 	var pelanggaran []string
 	urutRel := make([]string, 0, len(sumber))
 	for rel := range sumber {
@@ -588,7 +699,28 @@ func sapuAliasTerlarang(sumber map[string]string) []string {
 		}
 		ast.Inspect(f, func(n ast.Node) bool {
 			ts, ok := n.(*ast.TypeSpec)
-			if !ok || !ts.Assign.IsValid() {
+			if !ok {
+				return true
+			}
+			if !ts.Assign.IsValid() {
+				// B-595: tipe terdefinisi atas repo/registry
+				// (`type X T`, tanpa `=`) TERLARANG seperti
+				// alias — konversi `T(X{...})` membangun
+				// registry/repo kerja dari nama kedua itu.
+				// Deklarasi struct/map/dsb. (RHS bukan penamaan
+				// tipe sederhana) bukan tipe terdefinisi atas
+				// ketiganya dan tidak terhitung.
+				if !aliasAtasRepo(ts.Type) && !aliasAtasRegistry(ts.Type) {
+					return true
+				}
+				awal := fset.Position(ts.Type.Pos()).Offset
+				akhir := fset.Position(ts.Type.End()).Offset
+				rhs := ""
+				if 0 <= awal && awal <= akhir && akhir <= len(isi) {
+					rhs = isi[awal:akhir]
+				}
+				pelanggaran = append(pelanggaran, fmt.Sprintf("tipe terdefinisi atas repo/registry terlarang di %s (%s): type %s %s — konstruksi registry/repo wajib lewat penilaianPergeseranTertundaBaru(...) / literal &CredentialRepo{}/&OAuthRepo{} supaya terhitung gerbang B-537/B-557; konversi dari tipe terdefinisi membangun registry/repo kerja yang lolos dari inventaris itu",
+					rel, fset.Position(ts.Pos()), ts.Name.Name, rhs))
 				return true
 			}
 			// B-575: alias atas registry dilarang sama seperti
@@ -615,6 +747,42 @@ func sapuAliasTerlarang(sumber map[string]string) []string {
 		})
 	}
 	return pelanggaran
+}
+
+// hitungLiteralStructRegistry menghitung literal struct atas tipe
+// registry lewat AST (B-598, Fase 27): setiap CompositeLit yang
+// tipenya — sesudah membuka `*`/tanda kurung — bernama
+// penilaianPergeseranTertunda. AST adalah obat yang benar untuk
+// pola (3b) ber-spasi/berkomentar: spasi dan komentar di antara
+// nama dan `{` tidak relevan bagi pengurai, dan — yang
+// menentukan — baris deklarasi konstruktornya sendiri
+// (`func ... *penilaianPergeseranTertunda {`) BUKAN CompositeLit
+// sehingga tidak terhitung, padahal regex naif
+// `&?\s*\bpenilaianPergeseranTertunda\s*\{` menghitungnya
+// (terbukti: pola itu cocok pada credentials.go:222). Berkas
+// yang gagal diurai dilewati di sini — sapuan alias sudah
+// melaporkan berkas itu sebagai pelanggaran, jadi penjaga tetap
+// merah.
+func hitungLiteralStructRegistry(sumber map[string]string) map[string]int {
+	hasil := map[string]int{}
+	fset := token.NewFileSet()
+	for rel, isi := range sumber {
+		f, err := parser.ParseFile(fset, rel, isi, 0)
+		if err != nil {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			if namaTipeDasar(lit.Type) == "penilaianPergeseranTertunda" {
+				hasil[rel+"|literal-struct"]++
+			}
+			return true
+		})
+	}
+	return hasil
 }
 
 // namaTipeDasar mengembalikan nama tipe sesudah membuka penunjuk
@@ -717,18 +885,21 @@ func TestProbePenjagaB574NewBerSpasi(t *testing.T) {
 // TestProbePenjagaB575AliasRegistry — B-575: `type R =
 // penilaianPergeseranTertunda` lalu `&R{}` wajib tertangkap
 // larangan alias (4) — begitu pula bentuk berkelompok dan
-// berpenunjuk (paralel B-561). Tipe terdefinisi tanpa `=` dan
-// alias atas tipe lain BUKAN alias atas registry dan wajib tidak
-// terhitung. GAGAL di base: sapuan alias hanya memeriksa
+// berpenunjuk (paralel B-561). Alias atas tipe lain BUKAN alias
+// atas registry dan wajib tidak terhitung. KOREKSI B-595 (Fase
+// 27): kalimat lama probe ini — "tipe terdefinisi tanpa `=`
+// wajib tidak terhitung" — GUGUR; tipe terdefinisi kini
+// TERLARANG dan diuji di probe B-595, bukan di sini. GAGAL di
+// base: sapuan alias hanya memeriksa
 // CredentialRepo/OAuthRepo.
 func TestProbePenjagaB575AliasRegistry(t *testing.T) {
 	sumber := salinanDenganSuntikan(t,
 		"internal/database/repo/upstream/credentials.go",
-		"type R1 = penilaianPergeseranTertunda\n\nvar _ = &R1{}\n\ntype (\n\tR2 = penilaianPergeseranTertunda\n)\n\ntype R3 = *penilaianPergeseranTertunda\n\ntype RDef penilaianPergeseranTertunda\n\ntype S = map[string]int")
+		"type R1 = penilaianPergeseranTertunda\n\nvar _ = &R1{}\n\ntype (\n\tR2 = penilaianPergeseranTertunda\n)\n\ntype R3 = *penilaianPergeseranTertunda\n\ntype S = map[string]int")
 	pelanggaran := periksaGerbang(sumber)
 	gabung := gabungPelanggaran(pelanggaran)
 	if n := strings.Count(gabung, "alias repo/registry terlarang"); n != 3 {
-		t.Errorf("probe B-575: alias atas penilaianPergeseranTertunda terhitung %d, harap 3 (tunggal+berkelompok+penunjuk; tipe terdefinisi/alias lain wajib lolos) — pelanggaran: %v", n, pelanggaran)
+		t.Errorf("probe B-575: alias atas penilaianPergeseranTertunda terhitung %d, harap 3 (tunggal+berkelompok+penunjuk; alias atas tipe lain wajib lolos) — pelanggaran: %v", n, pelanggaran)
 	}
 	if !strings.Contains(gabung, "type R1 = penilaianPergeseranTertunda") {
 		t.Errorf("probe B-575: pesan alias tidak menyebut bentuk yang disuntik — pelanggaran: %v", pelanggaran)
@@ -783,6 +954,242 @@ func TestProbePenjagaB577BypassNyataTetapTertangkap(t *testing.T) {
 	} {
 		if !strings.Contains(gabung, harap) {
 			t.Errorf("probe anti-pelemahan B-577: bentuk bypass nyata %q tidak lagi tertangkap — pelanggaran: %v", harap, gabung)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Probe pengunci Fase 27 (B-595–B-598)
+//
+// Aturan yang sama dengan probe Fase 26: satu bentuk bypass per
+// probe (rantai komposisi sebagai satu unit), suntikan berupa Go
+// yang terurai, pemeriksa gerbang yang sama. Setiap probe di sini
+// GAGAL di base Fase 27 (gigi belum ada) dan LULUS sesudah
+// perbaikan — dibuktikan dengan lari merah-sebelum / hijau-sesudah
+// (lihat badan PR).
+// ---------------------------------------------------------------------------
+
+// TestProbePenjagaB595TipeTerdefinisiDanKonversi — B-595: tipe
+// terdefinisi atas registry/repo (`type R T`, tanpa `=`) lalu
+// konversi eksplisit (`T(R{...})`) membangun registry/repo kerja
+// yang lolos semua pola. Deklarasi tipe terdefinisi TERLARANG
+// (wajib nol, seperti alias B-561/B-575) DAN konversi `T(...)`
+// atas ketiga nama terhitung terpisah. Tipe terdefinisi
+// berpenunjuk (`type R *OAuthRepo`) dan bertanda kurung
+// (`type R (penilaianPergeseranTertunda)`) ikut terlarang —
+// sapuan AST membuka `*`/tanda kurung seperti pada alias.
+// Kontrol benign: `var` telanjang (tak terisi) atas registry
+// bukan situs dan wajib tidak terhitung. GAGAL di base: sapuan
+// alias hanya memeriksa `type X = T`, dan tidak ada hitungan
+// konversi.
+func TestProbePenjagaB595TipeTerdefinisiDanKonversi(t *testing.T) {
+	sumber := salinanDenganSuntikan(t,
+		"internal/database/repo/upstream/credentials.go",
+		"type b595RDef penilaianPergeseranTertunda\n\nvar _ = penilaianPergeseranTertunda(b595RDef{perProvider: map[string]*penilaianPergeseran{}, qKomit: nil})\n\ntype b595RDefRepo CredentialRepo\n\nvar _ = CredentialRepo(b595RDefRepo{q: nil, cipher: nil, sesudahPemenangBergeser: nil, tertunda: nil})\n\ntype b595RDefParen (penilaianPergeseranTertunda)\n\nvar b595Benign *penilaianPergeseranTertunda")
+	pelanggaran := periksaGerbang(sumber)
+	gabung := gabungPelanggaran(pelanggaran)
+	if n := strings.Count(gabung, "tipe terdefinisi atas repo/registry terlarang"); n != 3 {
+		t.Errorf("probe B-595: tipe terdefinisi atas repo/registry terhitung %d, harap 3 (tunggal+repo+bertanda-kurung; var telanjang wajib lolos) — pelanggaran: %v", n, pelanggaran)
+	}
+	for _, harap := range []string{
+		"konversi-registry terhitung 1, terdaftar 0",
+		"credentials.go|CredentialRepo terhitung 1, terdaftar 0",
+	} {
+		if !strings.Contains(gabung, harap) {
+			t.Errorf("probe B-595: konversi %q tidak tertangkap penjaga — pelanggaran: %v", harap, pelanggaran)
+		}
+	}
+}
+
+// TestProbePenjagaB596VarTerisiPenugasanField — B-596: `var`
+// nilai-nol yang DIISI field (`r.perProvider = ...`,
+// `r.qKomit = ...`) adalah registry kerja penuh — premis B-565
+// ("var gagal keras") hanya benar selama var TAK TERISI.
+// Penugasan field atas kedua nama field itu TERLARANG (wajib
+// nol). Kontrol benign: penugasan INDEKS (`t.perProvider[k] =
+// ...`, yang dipakai `catat` di pohon nyata) dan perbandingan
+// (`== nil`) BUKAN penugasan field dan wajib tidak terhitung;
+// `var` telanjang tanpa init juga bukan situs. GAGAL di base:
+// deklarasi `var` dan penugasan field tidak dihitung pola apa pun.
+func TestProbePenjagaB596VarTerisiPenugasanField(t *testing.T) {
+	sumber := salinanDenganSuntikan(t,
+		"internal/database/repo/upstream/credentials.go",
+		"var b596VarReg penilaianPergeseranTertunda\n\nvar b596VarKosong penilaianPergeseranTertunda\n\nfunc init() {\n\tb596VarReg.perProvider = map[string]*penilaianPergeseran{}\n\tb596VarReg.qKomit = nil\n\tb596VarReg.perProvider[\"x\"] = &penilaianPergeseran{sebelum: \"a\", dalamTx: \"b\"}\n\tif b596VarReg.perProvider == nil {\n\t}\n}")
+	pelanggaran := periksaGerbang(sumber)
+	gabung := gabungPelanggaran(pelanggaran)
+	for _, harap := range []string{
+		"credentials.go|perProvider terhitung 1, terdaftar 0",
+		"credentials.go|qKomit terhitung 1, terdaftar 0",
+	} {
+		if !strings.Contains(gabung, harap) {
+			t.Errorf("probe B-596: penugasan field %q tidak tertangkap penjaga (penugasan indeks/perbandingan/var kosong wajib lolos) — pelanggaran: %v", harap, pelanggaran)
+		}
+	}
+}
+
+// TestProbePenjagaB597DrainReceiverBebasNama — B-597: panggilan
+// `.jalankan(` langsung atas receiver BUKAN `tertunda` lolos
+// pola internal yang terikat nama (`tertunda\.(jalankan)\(`).
+// Pola dilonggarkan menjadi `\.(jalankan)\s*\(` bebas nama
+// (paralel B-566). Panggilan `.jalankanPenilaianSesudahKomit(`
+// BUKAN `.jalankan(` (nama berlanjut) dan wajib tidak
+// menambah hitungan ini — dibuktikan dengan tidak adanya
+// pelanggaran `oauth.go|jalankan` (kedua situs drain + satu
+// situs internal terdaftar di sana tetap seimbang). KOREKSI
+// atas klaim B-597: "nol situs lain di pohon nyata" SALAH —
+// `p.jalankan()` (pemindaiDump, internal/admin/backup_sql.go)
+// adalah situs `.jalankan(` yang tidak terkait registry dan
+// kini TERDAFTAR, bukan nol. GAGAL di base: pola menuntut
+// receiver bernama `tertunda`.
+func TestProbePenjagaB597DrainReceiverBebasNama(t *testing.T) {
+	sumber := salinanDenganSuntikan(t,
+		"internal/database/repo/upstream/credentials.go",
+		"var b597Reg penilaianPergeseranTertunda\n\nfunc init() {\n\tb597Reg.jalankan(nil, nil, nil)\n}")
+	pelanggaran := periksaGerbang(sumber)
+	gabung := gabungPelanggaran(pelanggaran)
+	if !strings.Contains(gabung, "credentials.go|jalankan terhitung 1, terdaftar 0") {
+		t.Errorf("probe B-597: drain atas receiver bukan `tertunda` tidak tertangkap penjaga — pelanggaran: %v", pelanggaran)
+	}
+	if strings.Contains(gabung, "oauth.go|jalankan") {
+		t.Errorf("probe B-597: situs drain/pemilik di oauth.go ikut berubah hitungannya (jalankanPenilaianSesudahKomit bukan .jalankan) — pelanggaran: %v", pelanggaran)
+	}
+}
+
+// TestProbePenjagaB598PanggilanPelaporBerSpasi — B-598 (1):
+// panggilan mutasi pelapor ber-spasi/berkomentar
+// (`r.UpdateSecret (...)`, `r.UpdateSecret /*k*/ (...)`,
+// `r.MarkAuthFailure (...)`) lolos pola (1) yang menuntut `(` menempel.
+// Obat B-574 diterapkan: pola menjadi
+// `\.(UpdateSecret|MarkAuthFailure)\s*\(` DAN memindai teks
+// bersih (komentar/string dikupas, paralel B-577) sehingga
+// komentar di antara nama dan tanda buka ikut tertutup.
+// Kontrol: penyebutan di komentar (`// r.UpdateSecret (x)`)
+// BUKAN situs dan wajib tidak terhitung. GAGAL di base: pola
+// (1) menuntut `(` menempel dan memindai teks mentah.
+func TestProbePenjagaB598PanggilanPelaporBerSpasi(t *testing.T) {
+	sumber := salinanDenganSuntikan(t,
+		"internal/database/repo/upstream/credentials.go",
+		"var b598Secret security.Secret\n\nfunc init() {\n\tvar b598r *CredentialRepo\n\t_ = b598r.UpdateSecret (nil, \"\", b598Secret, nil)\n\t_ = b598r.UpdateSecret /*k*/ (nil, \"\", b598Secret, nil)\n\t_, _ = b598r.MarkAuthFailure (nil, \"\")\n}\n\n// r.UpdateSecret (x) di komentar bukan situs")
+	pelanggaran := periksaGerbang(sumber)
+	gabung := gabungPelanggaran(pelanggaran)
+	for _, harap := range []string{
+		"credentials.go|UpdateSecret terhitung 2, terdaftar 0",
+		"credentials.go|MarkAuthFailure terhitung 1, terdaftar 0",
+	} {
+		if !strings.Contains(gabung, harap) {
+			t.Errorf("probe B-598 (1): panggilan pelapor ber-spasi/berkomentar %q tidak tertangkap penjaga (komentar wajib lolos) — pelanggaran: %v", harap, pelanggaran)
+		}
+	}
+}
+
+// TestProbePenjagaB598LiteralRepoBerSpasi — B-598 (2): literal
+// repo ber-spasi/berkomentar (`&CredentialRepo {}`,
+// `&CredentialRepo /*k*/ {}`, `& CredentialRepo{}`) lolos pola
+// (2) yang menuntut `{` menempel pada nama. Obat B-574
+// diterapkan: pola menjadi
+// `&\s*(CredentialRepo|OAuthRepo)\s*\{` DAN memindai teks bersih
+// sehingga komentar di antara nama dan tanda buka ikut tertutup.
+// Literal BERKUALIFIKASI (`&upstream.CredentialRepo{}`) tetap
+// tidak dicakup (lihat komentar kepala) dan bukan bagian probe
+// ini. Kontrol: penyebutan di komentar BUKAN situs. GAGAL di
+// base: pola (2) menuntut `{` menempel dan memindai teks mentah.
+func TestProbePenjagaB598LiteralRepoBerSpasi(t *testing.T) {
+	sumber := salinanDenganSuntikan(t,
+		"internal/database/repo/upstream/credentials.go",
+		"var (\n\t_ = &CredentialRepo {}\n\t_ = &CredentialRepo /*k*/ {}\n\t_ = & CredentialRepo{}\n)\n\n// &CredentialRepo {} di komentar bukan situs")
+	pelanggaran := periksaGerbang(sumber)
+	gabung := gabungPelanggaran(pelanggaran)
+	if !strings.Contains(gabung, "credentials.go|CredentialRepo terhitung 5, terdaftar 2") {
+		t.Errorf("probe B-598 (2): literal repo ber-spasi/berkomentar tidak tertangkap penjaga (harap 5 = 2 terdaftar + 3 suntikan; komentar wajib lolos) — pelanggaran: %v", pelanggaran)
+	}
+}
+
+// TestProbePenjagaB598LiteralStructBerSpasi — B-598 (3b):
+// literal struct registry ber-spasi/berkomentar
+// (`penilaianPergeseranTertunda {…}`,
+// `&penilaianPergeseranTertunda {}`, dan
+// `penilaianPergeseranTertunda /*k*/ {…}`) lolos pola (3b)
+// yang menuntut `{` menempel. Obat B-574 diterapkan dengan
+// cara yang BENAR untuk pola ini: hitungan literal pindah ke
+// AST (CompositeLit atas tipe itu) — regex naif
+// `&?\s*\bpenilaianPergeseranTertunda\s*\{` SALAH karena ikut
+// menghitung baris deklarasi konstruktornya sendiri
+// (`func ... *penilaianPergeseranTertunda {`, credentials.go:222)
+// sebagai literal; AST hanya menghitung literal komposit
+// sungguhan, dan spasi/komentar tidak relevan bagi AST.
+// Kontrol: penyebutan di komentar BUKAN situs, dan deklarasi
+// konstruktor BUKAN literal. GAGAL di base: pola (3b) menuntut
+// `{` menempel.
+func TestProbePenjagaB598LiteralStructBerSpasi(t *testing.T) {
+	sumber := salinanDenganSuntikan(t,
+		"internal/database/repo/upstream/credentials.go",
+		"var (\n\t_ = penilaianPergeseranTertunda {qKomit: nil, perProvider: nil}\n\t_ = &penilaianPergeseranTertunda {}\n\t_ = penilaianPergeseranTertunda /*k*/ {}\n)\n\n// penilaianPergeseranTertunda {} di komentar bukan situs")
+	pelanggaran := periksaGerbang(sumber)
+	gabung := gabungPelanggaran(pelanggaran)
+	if !strings.Contains(gabung, "credentials.go|literal-struct terhitung 4, terdaftar 1") {
+		t.Errorf("probe B-598 (3b): literal struct ber-spasi/berkomentar tidak tertangkap penjaga (harap 4 = 1 terdaftar + 3 suntikan; komentar/deklarasi konstruktor wajib lolos) — pelanggaran: %v", pelanggaran)
+	}
+}
+
+// TestProbePenjagaB598DrainInternalBerSpasi — interaksi
+// B-597/B-598: drain internal ber-spasi/berkomentar
+// (`r.jalankan (...)`, `r.jalankan /*k*/ (...)`) tertangkap
+// pola internal yang dilonggarkan (`\.(jalankan)\s*\(` atas
+// teks bersih) — DAN terhitung pula sebagai nilai-metode drain
+// (penangkap B-576 memeriksa karakter tepat sesudah nama;
+// spasi/komentar bukan `(`). Hitungan ganda ini adalah perilaku
+// fail-closed yang SUDAH didokumentasikan sebagai kontrol di
+// entri B-598 ("panggilan drain ber-spasi terhitung
+// nilai-metode — penjaga merah, bukan lolos"), bukan cacat:
+// satu situs, dua tuduhan, keduanya merah. Probe ini mengunci
+// interaksi itu agar tidak hilang diam-diam. GAGAL di base:
+// pola internal menuntut receiver `tertunda` dan `(` menempel.
+func TestProbePenjagaB598DrainInternalBerSpasi(t *testing.T) {
+	sumber := salinanDenganSuntikan(t,
+		"internal/database/repo/upstream/credentials.go",
+		"var b598RegDrain penilaianPergeseranTertunda\n\nfunc init() {\n\tb598RegDrain.jalankan (nil, nil, nil)\n\tb598RegDrain.jalankan /*k*/ (nil, nil, nil)\n}")
+	pelanggaran := periksaGerbang(sumber)
+	gabung := gabungPelanggaran(pelanggaran)
+	for _, harap := range []string{
+		"credentials.go|jalankan terhitung 2, terdaftar 0",
+		"credentials.go|nilai-metode-drain terhitung 2, terdaftar 0",
+	} {
+		if !strings.Contains(gabung, harap) {
+			t.Errorf("probe B-598 (drain ber-spasi): %q tidak tertangkap penjaga — pelanggaran: %v", harap, pelanggaran)
+		}
+	}
+}
+
+// TestProbePenjagaB595B596B597RantaiSenyap — komposisi rantai
+// senyap (B-595 + B-596 + `.catat(` tak terhitung + B-597)
+// sebagai SATU unit: tipe terdefinisi + konversi, var yang
+// diisi field, catat langsung, dan drain atas receiver bukan
+// `tertunda`. Unit ini terbukti NOL pelanggaran di base
+// (Putaran #14, PB14-20) dan HARUS tertangkap sesudah
+// perbaikan. KEJUJURAN CAKUPAN: `.catat(` sendiri TETAP tidak
+// dihitung pola apa pun — satu-satunya pemanggil produksinya
+// adalah `selesaikanPergeseran` (credentials.go:183), dan
+// `catat` atas var TAK TERISI panik (map nil) sehingga bukan
+// jalan pintas diam-diam. Rantai tertangkap karena SETIAP
+// registry kerja harus dibangun lewat salah satu bentuk
+// konstruksi yang terhitung (B-595/B-596 di sini) DAN dikuras
+// lewat drain yang terhitung (B-597 di sini): tidak ada mata
+// rantai yang lolos tanpa meninggalkan jejak terhitung.
+func TestProbePenjagaB595B596B597RantaiSenyap(t *testing.T) {
+	sumber := salinanDenganSuntikan(t,
+		"internal/database/repo/upstream/credentials.go",
+		"type b595Rantai penilaianPergeseranTertunda\n\nvar b596Rantai penilaianPergeseranTertunda\n\nfunc init() {\n\tb596Rantai.perProvider = map[string]*penilaianPergeseran{}\n\tb596Rantai.qKomit = nil\n\tb596Rantai.catat(\"prov\", \"sebelum\", \"dalamTx\")\n\tb596Rantai.jalankan(nil, nil, nil)\n\tvar _ = penilaianPergeseranTertunda(b595Rantai{perProvider: map[string]*penilaianPergeseran{}, qKomit: nil})\n}")
+	pelanggaran := periksaGerbang(sumber)
+	gabung := gabungPelanggaran(pelanggaran)
+	for _, harap := range []string{
+		"tipe terdefinisi atas repo/registry terlarang",
+		"konversi-registry terhitung 1, terdaftar 0",
+		"credentials.go|perProvider terhitung 1, terdaftar 0",
+		"credentials.go|qKomit terhitung 1, terdaftar 0",
+		"credentials.go|jalankan terhitung 1, terdaftar 0",
+	} {
+		if !strings.Contains(gabung, harap) {
+			t.Errorf("probe rantai senyap: mata rantai %q tidak tertangkap penjaga (`.catat(` sendiri memang tetap tak terhitung — lihat komentar probe) — pelanggaran: %v", harap, pelanggaran)
 		}
 	}
 }

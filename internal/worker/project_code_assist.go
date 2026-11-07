@@ -80,6 +80,15 @@ func (p *PenyegarOAuth) ResolveCodeAssistProject(ctx context.Context, providerID
 	} else {
 		p.logger.InfoContext(ctx, "project code assist terselesaikan dan disimpan pada sesi oauth",
 			"session_id", meta.ID, "provider_id", providerID, "email", meta.AccountEmail)
+		// B-438: project yang baru terisi mengubah konteks layan
+		// sesi, tetapi project tidak masuk kunci response cache —
+		// entri yang tersaji dalam keadaan tanpa project wajib
+		// disiram lewat callback pemilik proses (siraman cache
+		// respons di cmd), sama seperti jalur exchange yang sudah
+		// menyiram lewat handler-nya.
+		if p.sesudahBackfillProject != nil {
+			p.sesudahBackfillProject(ctx)
+		}
 	}
 	return project, nil
 }

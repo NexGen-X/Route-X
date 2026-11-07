@@ -31,6 +31,19 @@ type PenyegarOAuth struct {
 	deps      OAuthRefreshDeps
 	client    *oauth.GoogleOAuthClient
 	logger    *slog.Logger
+	// sesudahBackfillProject (B-438) dipanggil sesudah backfill
+	// project Code Assist BERHASIL disimpan oleh
+	// ResolveCodeAssistProject: project adalah konteks layan sesi
+	// yang tidak masuk kunci response cache, jadi pemilik proses
+	// memasang siraman cache respons di sini.
+	sesudahBackfillProject func(ctx context.Context)
+}
+
+// SetSesudahBackfillProject memasang callback yang dipanggil setiap
+// kali ResolveCodeAssistProject berhasil menyimpan project hasil
+// backfill malas pada sesi (B-438).
+func (p *PenyegarOAuth) SetSesudahBackfillProject(fn func(ctx context.Context)) {
+	p.sesudahBackfillProject = fn
 }
 
 // SetSesudahNonaktif memasang callback penonaktifan sesi pada deps

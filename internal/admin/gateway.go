@@ -736,6 +736,13 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var rule *upstream.RoutingRule
+	// B-434: dua penanda no-op dijumlahkan sesudah transaksi —
+	// pembaruan field yang ditelan sebagai ErrNoChanges DAN ikatan
+	// provider yang identik berarti permintaan ini tidak mengubah
+	// apa pun, jadi audit "update" dan invalidasi cache aturan
+	// tidak ditulis (respons tetap 200 dengan keadaan tersimpan).
+	updateDitelan := false
+	providerIdentik := false
 	err = repo.InTx(ctx, h.pool, func(q repo.Querier) error {
 		txRouting := upstream.NewRoutingRepo(q)
 		var err error
@@ -753,6 +760,7 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 			if !(req.ProviderIDs != nil && errors.Is(err, upstream.ErrNoChanges)) {
 				return err
 			}
+			updateDitelan = true
 		}
 
 		if req.ProviderIDs != nil {
@@ -762,8 +770,13 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 					return err
 				}
 			}
-			if err := txRouting.SetProviders(ctx, id, req.ProviderIDs, req.Weights); err != nil {
-				return err
+			// B-434: ikatan yang identik (urutan + bobot — urutan
+			// adalah posisi fallback) tidak ditulis ulang.
+			providerIdentik = ikatanProviderIdentik(existing.Providers, req.ProviderIDs, req.Weights)
+			if !providerIdentik {
+				if err := txRouting.SetProviders(ctx, id, req.ProviderIDs, req.Weights); err != nil {
+					return err
+				}
 			}
 			rule, err = txRouting.Get(ctx, id)
 			if err != nil {
@@ -784,11 +797,13 @@ func (h *Handlers) updateRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.writeAudit(ctx, r, "update", "routing_rule", id, map[string]any{
-		"name":          rule.Name,
-		"virtual_alias": aliasAkhir,
-	})
-	h.invalidateRules(ctx)
+	if !(updateDitelan && providerIdentik) {
+		h.writeAudit(ctx, r, "update", "routing_rule", id, map[string]any{
+			"name":          rule.Name,
+			"virtual_alias": aliasAkhir,
+		})
+		h.invalidateRules(ctx)
+	}
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
@@ -827,6 +842,33 @@ func (h *Handlers) toggleRoutingRule(w http.ResponseWriter, r *http.Request) {
 	_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(rule))
 }
 
+// ikatanProviderIdentik melaporkan apakah daftar provider yang
+// diminta PERSIS sama dengan ikatan yang tersimpan (B-434):
+// urutan sama (urutan adalah posisi fallback yang disimpan
+// SetProviders) dan bobot sama per provider (absen di peta bobot
+// permintaan berarti bobot NULL, sama seperti absen di sisi
+// tersimpan).
+func ikatanProviderIdentik(tersimpan []upstream.RuleProvider, diminta []string, bobot map[string]int) bool {
+	if len(tersimpan) != len(diminta) {
+		return false
+	}
+	for i, rp := range tersimpan {
+		if rp.ProviderID != diminta[i] {
+			return false
+		}
+		b, ada := bobot[diminta[i]]
+		switch {
+		case ada && rp.Weight == nil:
+			return false
+		case !ada && rp.Weight != nil:
+			return false
+		case ada && rp.Weight != nil && *rp.Weight != b:
+			return false
+		}
+	}
+	return true
+}
+
 func (h *Handlers) setRuleProviders(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -863,6 +905,17 @@ func (h *Handlers) setRuleProviders(w http.ResponseWriter, r *http.Request) {
 			mapRepoError(w, r, err, "provider aturan routing")
 			return
 		}
+	}
+
+	// B-434: ikatan yang IDENTIK dengan yang tersimpan (urutan +
+	// bobot — urutan daftar adalah posisi fallback, jadi
+	// perbandingannya terurut, bukan himpunan) adalah no-op:
+	// tanpa DELETE+INSERT, tanpa audit "set_providers", tanpa
+	// invalidasi cache aturan; respons tetap 200 dengan keadaan
+	// tersimpan.
+	if ikatanProviderIdentik(aturan.Providers, req.ProviderIDs, req.Weights) {
+		_ = h.respond(w, r, http.StatusOK, toRoutingRuleDTO(aturan))
+		return
 	}
 
 	// SetRuleProviders (pembungkus bertransaksi), BUKAN metode repo di atas

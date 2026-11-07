@@ -336,6 +336,25 @@ func buildRouter(
 	return r, nil
 }
 
+// callbackSiramCacheRespons menyusun callback siraman response cache
+// untuk jalur worker (penonaktifan sesi B-365, backfill project Code
+// Assist B-438). Siraman berjalan TANPA syarat keadaan enabled
+// (B-436): Engine.Flush hanya mensyaratkan Redis terpasang, dan entri
+// yang tersimpan sebelum cache dinonaktifkan tetap hidup di Redis —
+// mutasi konteks jawaban selama jendela nonaktif wajib tetap
+// menyiramnya, kalau tidak entri basi tersaji lagi saat re-aktivasi.
+// Kegagalan dicatat, tidak menggagalkan aksi pemicunya.
+func callbackSiramCacheRespons(respCache *responsecache.Engine, logger *slog.Logger) func(context.Context) {
+	return func(cbCtx context.Context) {
+		if respCache == nil {
+			return
+		}
+		if _, err := respCache.Flush(cbCtx); err != nil {
+			logger.WarnContext(cbCtx, "gagal mengosongkan response cache sesudah mutasi konteks jawaban di worker", "error", err)
+		}
+	}
+}
+
 // buildGatewaySurface merakit permukaan API /v1 beserta rantai middleware-nya.
 //
 // Urutan rantainya menentukan kebenaran, bukan kerapian:
@@ -544,18 +563,16 @@ func buildGatewaySurface(
 	// dipilih, tetapi tidak ada flush di jalur worker — entri cache
 	// yang dilayani akun yang baru dinonaktifkan bertahan sampai
 	// TTL. Callback ini menyiramnya, meniru semantik
-	// kosongkanCacheRespons di admin (hanya bila engine aktif;
-	// kegagalan dicatat, tidak menggagalkan refresh). Dipasang pada
-	// penyegar on-demand di sini dan pada worker berkala di bawah.
-	siramCacheSesudahNonaktif := func(cbCtx context.Context) {
-		if !respCache.IsEnabled() {
-			return
-		}
-		if _, err := respCache.Flush(cbCtx); err != nil {
-			logger.WarnContext(cbCtx, "gagal mengosongkan response cache sesudah penonaktifan sesi oauth", "error", err)
-		}
-	}
+	// kosongkanCacheRespons di admin. B-436: siraman berjalan TANPA
+	// syarat keadaan enabled (Engine.Flush tidak mensyaratkannya) —
+	// gerbang enabled lama menggugurkan siraman untuk seluruh
+	// jendela cache nonaktif, dan entri basi hidup lagi saat
+	// re-aktivasi. Callback yang sama dipasang untuk backfill
+	// project Code Assist (B-438) pada penyegar, dan untuk
+	// penonaktifan pada worker berkala di bawah.
+	siramCacheSesudahNonaktif := callbackSiramCacheRespons(respCache, logger)
 	penyegarOAuth.SetSesudahNonaktif(siramCacheSesudahNonaktif)
+	penyegarOAuth.SetSesudahBackfillProject(siramCacheSesudahNonaktif)
 
 	// Pabrik adapter provider dipakai bersama antara permintaan inferensi dan health checker
 	// worker, menegakkan kebijakan SSRF dan cache instance yang konsisten (Aturan 14).

@@ -431,23 +431,32 @@ func (h *Handlers) invalidateBudgets() {
 }
 
 // kosongkanCacheRespons membuang seluruh entri response cache bila engine
-// terpasang dan sedang aktif. Dipanggil sesudah mutasi kredensial (buat/
-// hapus/toggle): himpunan kredensial menentukan akun hulu yang melayani,
-// dan sidik rute di kunci cache tidak memuat identitas kredensial — jadi
-// perubahan kredensial adalah satu-satunya perubahan konteks jawaban yang
-// tidak menghasilkan kunci baru dengan sendirinya (sisa V-GW-03, Batch
-// C1). Perubahan provider/routing/pemetaan tidak memerlukan ini karena
-// sidik rute mengubah kuncinya sendiri — DENGAN SATU PENGECUALIAN (B-392):
-// egress_pool_id provider. Jalur egress menentukan perantara yang
-// melayani jawaban, tetapi sidik rute (gateway.sidikRuteCache) hanya
-// memuat kandidat terpilih + versi katalog, bukan pool egress
-// kandidatnya — mengganti pool provider tidak mengubah kunci, jadi
-// updateProvider WAJIB memanggil ini bila field itu disebut. Enumerasi
-// lengkap mutasi vs flush ada di badan PR Fase 18 PR-C. Best-effort
-// mengikuti pola invalidate* di atas: kegagalan dicatat, tidak
-// menggagalkan mutasi yang sudah berhasil.
+// terpasang — TANPA syarat keadaan enabled (B-436). Dipanggil sesudah
+// mutasi kredensial (buat/hapus/toggle): himpunan kredensial menentukan
+// akun hulu yang melayani, dan sidik rute di kunci cache tidak memuat
+// identitas kredensial — jadi perubahan kredensial adalah satu-satunya
+// perubahan konteks jawaban yang tidak menghasilkan kunci baru dengan
+// sendirinya (sisa V-GW-03, Batch C1). Perubahan provider/routing/
+// pemetaan tidak memerlukan ini karena sidik rute mengubah kuncinya
+// sendiri — DENGAN SATU PENGECUALIAN (B-392): egress_pool_id provider.
+// Jalur egress menentukan perantara yang melayani jawaban, tetapi sidik
+// rute (gateway.sidikRuteCache) hanya memuat kandidat terpilih + versi
+// katalog, bukan pool egress kandidatnya — mengganti pool provider tidak
+// mengubah kunci, jadi updateProvider WAJIB memanggil ini bila field itu
+// disebut. Enumerasi lengkap mutasi vs flush ada di badan PR Fase 19
+// PR-A. Best-effort mengikuti pola invalidate* di atas: kegagalan
+// dicatat, tidak menggagalkan mutasi yang sudah berhasil.
+//
+// Syarat enabled dicabut pada B-436: Engine.Flush sendiri tidak
+// mensyaratkan enabled (ia hanya memeriksa redis nil), jadi gerbang itu
+// murni buatan pemanggil — dan ia menggugurkan SELURUH keluarga flush
+// untuk jendela cache nonaktif. Entri yang tersimpan sebelum cache
+// dimatikan tetap hidup di Redis; mutasi yang terjadi selama jendela itu
+// (skenario persis rotasi kredensial saat insiden) wajib tetap menyiram,
+// kalau tidak entri basi itu tersaji lagi begitu cache diaktifkan
+// kembali dalam TTL-nya.
 func (h *Handlers) kosongkanCacheRespons(ctx context.Context) {
-	if h.responseCache == nil || !h.responseCache.IsEnabled() {
+	if h.responseCache == nil {
 		return
 	}
 	if _, err := h.responseCache.Flush(ctx); err != nil {

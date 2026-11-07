@@ -794,7 +794,10 @@ func (h *Handlers) getAPIKeyAllowed(w http.ResponseWriter, r *http.Request) {
 // B-184), BUKAN update field per field seperti updateAPIKey yang
 // wajib membedakan tak-disebut (B-369): menerapkan pembedaan itu
 // di sini justru menghapus satu-satunya cara menyatakan
-// "cabut semua pembatasan" lewat permukaan ini.
+// "cabut semua pembatasan" lewat permukaan ini. B-434 menambahkan
+// deteksi no-op di atas semantik itu: himpunan yang identik dengan
+// yang tersimpan tidak lagi ditulis ulang maupun diaudit sebagai
+// perubahan (keputusan induk atas koreksi rumusan B-417).
 func (h *Handlers) setAllowedAPIKey(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -824,6 +827,18 @@ func (h *Handlers) setAllowedAPIKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-434: penetapan himpunan yang IDENTIK dengan yang tersimpan
+	// adalah no-op — tanpa DELETE+INSERT di repo dan tanpa audit
+	// perubahan, tetapi respons tetap sukses (ini endpoint set,
+	// bukan update parsial: no-op-nya bukan kesalahan pemanggil).
+	// Perbandingannya atas himpunan UUID hasil resolusi, karena
+	// body boleh menyebut slug model / nama provider sedangkan
+	// yang tersimpan selalu UUID.
+	if h.allowedIdentikDenganTersimpan(ctx, id, req.ModelIDs, req.ProviderIDs) {
+		_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "updated"})
+		return
+	}
+
 	if err := h.keyRepo.SetAllowed(ctx, id, req.ModelIDs, req.ProviderIDs); err != nil {
 		mapRepoError(w, r, err, "izin model/provider api key")
 		return
@@ -831,6 +846,99 @@ func (h *Handlers) setAllowedAPIKey(w http.ResponseWriter, r *http.Request) {
 
 	h.writeAudit(ctx, r, "set_allowed", "api_key", id, map[string]any{"models": req.ModelIDs, "providers": req.ProviderIDs})
 	_ = h.respond(w, r, http.StatusOK, StatusResponse{Status: "updated"})
+}
+
+// allowedIdentikDenganTersimpan melaporkan apakah himpunan
+// model/provider yang diminta — sesudah diresolusi ke UUID dengan
+// semantik yang sama seperti repo (slug model lewat GetByModelID,
+// nama provider lewat GetByName, UUID diteruskan dengan normalisasi
+// huruf kecil) — PERSIS sama dengan himpunan yang tersimpan untuk
+// kunci ini (B-434). Kegagalan membaca atau meresolusi apa pun
+// menjawab false (bukan no-op): jalur tulis normal yang memutuskan,
+// supaya deteksi ini tidak pernah menelan perubahan yang nyata.
+func (h *Handlers) allowedIdentikDenganTersimpan(ctx context.Context, keyID string, modelIDs, providerIDs []string) bool {
+	if h.keyRepo == nil {
+		return false
+	}
+	tersimpanModel, tersimpanProvider, err := h.keyRepo.GetAllowed(ctx, keyID)
+	if err != nil {
+		return false
+	}
+	resolusiModel, ok := h.resolusiHimpunanModel(ctx, modelIDs)
+	if !ok {
+		return false
+	}
+	resolusiProvider, ok := h.resolusiHimpunanProvider(ctx, providerIDs)
+	if !ok {
+		return false
+	}
+	return himpunanTeksSama(tersimpanModel, resolusiModel) && himpunanTeksSama(tersimpanProvider, resolusiProvider)
+}
+
+// resolusiHimpunanModel mengubah daftar slug/UUID model menjadi
+// himpunan UUID kanonis; ok=false bila ada entri yang tidak bisa
+// diresolusi di lapisan handler ini.
+func (h *Handlers) resolusiHimpunanModel(ctx context.Context, mentah []string) (map[string]bool, bool) {
+	hasil := make(map[string]bool, len(mentah))
+	for _, s := range mentah {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if bentukUUID(s) {
+			hasil[strings.ToLower(s)] = true
+			continue
+		}
+		if h.modelRepo == nil {
+			return nil, false
+		}
+		m, err := h.modelRepo.GetByModelID(ctx, s)
+		if err != nil {
+			return nil, false
+		}
+		hasil[strings.ToLower(m.ID)] = true
+	}
+	return hasil, true
+}
+
+// resolusiHimpunanProvider adalah pasangan resolusiHimpunanModel
+// untuk provider (nama lewat GetByName).
+func (h *Handlers) resolusiHimpunanProvider(ctx context.Context, mentah []string) (map[string]bool, bool) {
+	hasil := make(map[string]bool, len(mentah))
+	for _, s := range mentah {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if bentukUUID(s) {
+			hasil[strings.ToLower(s)] = true
+			continue
+		}
+		if h.providerRepo == nil {
+			return nil, false
+		}
+		p, err := h.providerRepo.GetByName(ctx, s)
+		if err != nil {
+			return nil, false
+		}
+		hasil[strings.ToLower(p.ID)] = true
+	}
+	return hasil, true
+}
+
+// himpunanTeksSama melaporkan apakah daftar tersimpan (UUID dari
+// GetAllowed) dan himpunan hasil resolusi memuat anggota yang persis
+// sama — urutan dan duplikat tidak bermakna di kedua sisi.
+func himpunanTeksSama(tersimpan []string, resolusi map[string]bool) bool {
+	if len(tersimpan) != len(resolusi) {
+		return false
+	}
+	for _, s := range tersimpan {
+		if !resolusi[strings.ToLower(s)] {
+			return false
+		}
+	}
+	return true
 }
 
 // -----------------------------------------------------------------------------
@@ -1022,7 +1130,27 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Name != "" {
+	// B-433: nilai-sama total juga bukan pembaruan. Penjaga B-400
+	// hanya memeriksa KEHADIRAN field, jadi body berisi yang
+	// nilainya persis sama dengan yang tersimpan (mis.
+	// {"role":"user"} ke non-admin) lolos sebagai nol mutasi
+	// tetapi tetap menjawab 200 + audit "update" — dan tetangganya
+	// (nama/status nilai-sama) bahkan tetap menulis DB, memicu
+	// trigger updated_at untuk perubahan logis nol. Kini perbedaan
+	// dihitung per field terhadap target yang sudah dimuat:
+	// tidak ada satu pun field yang berbeda → 400 no_changes
+	// tanpa mutasi dan tanpa audit, konsisten pola permukaan
+	// update lain; field yang nilainya sama dilewati penulisannya
+	// satu per satu bila field lain memang berubah.
+	namaBerubah := req.Name != "" && strings.TrimSpace(req.Name) != target.DisplayName
+	statusBerubah := req.Status != "" && identity.UserStatus(req.Status) != target.Status
+	peranBerubah := peranBaru != nil && *peranBaru != target.IsAdmin
+	if !namaBerubah && !statusBerubah && !peranBerubah {
+		httpx.BadRequest(w, r, "no_changes", "tidak ada perubahan yang diminta untuk pengguna")
+		return
+	}
+
+	if namaBerubah {
 		_, err := h.usersRepo.UpdateProfile(ctx, id, identity.ProfileUpdate{
 			DisplayName: &req.Name,
 		})
@@ -1085,7 +1213,7 @@ func (h *Handlers) updateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.Status != "" {
+	if statusBerubah {
 		if identity.UserStatus(req.Status) != identity.UserStatusActive {
 			// (Penolakan non-aktif akun sendiri sudah divalidasi di muka, B-194.)
 			// Menonaktifkan admin aktif TERAKHIR DITOLAK: mencegah lockout sistem.

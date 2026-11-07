@@ -110,8 +110,28 @@ func (h *Handlers) getSetting(w http.ResponseWriter, r *http.Request) {
 // generik — untuk TULIS maupun HAPUS. Penjaga ini dulu hanya ada di
 // putSetting, sehingga DELETE generik bisa menghapus cli:config:* dan
 // melewati alur khusus yang justru dijaga di jalur tulis (B-195).
+//
+// B-457 (TERBUKTI): daftarnya kini juga memuat kunci yang dimiliki
+// handler khusus lain. putSetting generik sebelumnya bisa menulis
+// system:response_cache melewati updateCacheSettings: nilai
+// persisten berubah, tetapi engine yang berjalan tidak menerapkan
+// setelan itu sampai boot ulang — keadaan yang dilaporkan settings
+// dan keadaan cache yang berjalan berpisah diam-diam. Hal yang sama
+// berlaku untuk kunci domain (system:domain:config &
+// system:public_url milik updateDomainConfig/deleteDomainConfig):
+// menuliskannya generik melewati validasi DNS, audit configure, dan
+// penulisan pasangan kuncinya. Kunci khusus yang ada saat ini
+// persis tiga itu ditambah awalan cli:config:* — handler khusus
+// adalah satu-satunya jalur tulis/hapus yang sah untuk semuanya.
 func kunciSettingTerlarang(key string) bool {
-	return strings.HasPrefix(key, "cli:config:")
+	if strings.HasPrefix(key, "cli:config:") {
+		return true
+	}
+	switch key {
+	case responsecache.SettingKey, SettingKeyDomainConfig, SettingKeyPublicURL:
+		return true
+	}
+	return false
 }
 
 func (h *Handlers) putSetting(w http.ResponseWriter, r *http.Request) {

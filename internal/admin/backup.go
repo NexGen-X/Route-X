@@ -372,6 +372,15 @@ func (h *Handlers) restoreDatabaseSQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B-437: restore menukar SELURUH basis data — mutasi paling
+	// total di sistem — tetapi Redis (dan isi response cache di
+	// dalamnya) bertahan lintas penukaran itu, bahkan lintas
+	// restart. Tanpa siraman ini, jawaban cache dari keadaan
+	// pra-restore tersaji selama TTL untuk rute bersidik identik
+	// di database hasil restore. Siram sesudah penukaran sukses,
+	// sebelum audit & respons.
+	h.kosongkanCacheRespons(ctx)
+
 	h.writeAuditRestore(ctx, r, map[string]any{
 		"filename":        header.Filename,
 		"size":            header.Size,

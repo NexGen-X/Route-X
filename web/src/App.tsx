@@ -274,6 +274,10 @@ const Shell: React.FC = () => {
             } catch {
               // sessionStorage tidak tersedia: navigasi tetap sah.
             }
+            // B-513: beri tahu halaman CLI bila ia SUDAH terpasang
+            // (navigasi ke path yang sama tidak me-mount ulang,
+            // jadi konsumsi-saat-mount saja tidak akan berjalan).
+            window.dispatchEvent(new Event('routex:cli-tujuan'));
           }}
         />
       </WidgetErrorBoundary>

@@ -4588,6 +4588,8 @@ paths:
         - Admin Automation
       summary: "Buat Webhook Baru"
       description: |
+        Menjawab 400 dengan kode galat `blocked_url` bila URL tujuan ditolak validasi SSRF (skema terlarang, alamat terlarang, kredensial di dalam URL, atau URL tak terurai/tanpa host).
+
         Izin internal yang disyaratkan: `webhooks:write`.
       operationId: createWebhook
       security:
@@ -4649,6 +4651,8 @@ paths:
         - Admin Automation
       summary: "Perbarui Webhook"
       description: |
+        Menjawab 400 dengan kode galat `blocked_url` bila URL tujuan ditolak validasi SSRF (skema terlarang, alamat terlarang, kredensial di dalam URL, atau URL tak terurai/tanpa host).
+
         Izin internal yang disyaratkan: `webhooks:write`.
       operationId: updateWebhook
       security:
@@ -4926,6 +4930,8 @@ paths:
         - Admin System
       summary: "Tulis Pengaturan"
       description: |
+        Menjawab 400 dengan kode galat `reserved_setting` bila kunci termasuk kunci khusus yang hanya boleh ditulis lewat jalur khususnya sendiri.
+
         Izin internal yang disyaratkan: `settings:write`.
       operationId: putSetting
       security:
@@ -4966,6 +4972,8 @@ paths:
         - Admin System
       summary: "Hapus Pengaturan"
       description: |
+        Menjawab 400 dengan kode galat `reserved_setting` bila kunci termasuk kunci khusus yang hanya boleh ditulis lewat jalur khususnya sendiri.
+
         Izin internal yang disyaratkan: `settings:write`.
       operationId: deleteSetting
       security:
@@ -4985,6 +4993,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/StatusResponse"
+        '400':
+          $ref: "#/components/responses/400BadRequest"
         '401':
           $ref: "#/components/responses/401Unauthorized"
         '403':
@@ -5052,6 +5062,8 @@ paths:
       description: |
         Menghapus konfigurasi domain dan mengembalikan gateway ke akses IP langsung.
 
+        Menjawab 404 bila konfigurasi domain tidak ada.
+
         Izin internal yang disyaratkan: `settings:write`.
       operationId: deleteDomainConfig
       security:
@@ -5068,6 +5080,8 @@ paths:
           $ref: "#/components/responses/401Unauthorized"
         '403':
           $ref: "#/components/responses/403Forbidden"
+        '404':
+          $ref: "#/components/responses/404NotFound"
   /api/admin/system/jobs:
     get:
       tags:
@@ -6125,6 +6139,7 @@ components:
             code:
               type: string
               example: invalid_api_key
+              description: "Kode galat stabil untuk dicocokkan klien (bukan pesan tampilan). Kode admin yang bernama antara lain `no_changes` (PUT pembaruan tanpa perubahan efektif, 400), `reserved_setting` (kunci pengaturan khusus ditulis/dihapus lewat jalur generik, 400), dan `blocked_url` (URL ditolak validasi SSRF, 400)."
             param:
               type: string
               nullable: true
@@ -6242,6 +6257,9 @@ components:
         schema_version:
           type: integer
           format: int64
+        peringatan:
+          type: string
+          description: "Terisi bila restore-nya sendiri berhasil tetapi langkah pendamping wajibnya gagal (mis. siraman cache respons); kosong bila tidak ada kegagalan pendamping."
       required: [status, safety_database, schema_version]
     BackupStatusDTO:
       type: object

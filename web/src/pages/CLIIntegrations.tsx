@@ -50,19 +50,36 @@ export const CLIIntegrations: React.FC = () => {
   // sessionStorage sesaat sebelum navigasi ke halaman ini) —
   // dikonsumsi SATU kali: saring tampilan ke tool itu pada tab
   // "semua" supaya kartu konfigurasinya langsung terlihat.
+  //
+  // B-513: konsumsi tidak lagi hanya saat mount. Bila operator
+  // SUDAH berada di halaman ini, navigasi palet tidak mengubah
+  // path dan halaman tidak ter-mount ulang — pilihan dulu hilang
+  // senyap dan entri storage tertinggal basi untuk kunjungan
+  // berikutnya. Kini konsumsi yang sama berjalan juga pada event
+  // 'routex:cli-tujuan' (ditembakkan App tepat sesudah menulis
+  // storage) dan saat jendela kembali fokus.
   useEffect(() => {
-    let tujuan: string | null = null;
-    try {
-      tujuan = sessionStorage.getItem('routex_cli_tujuan');
-      if (tujuan) sessionStorage.removeItem('routex_cli_tujuan');
-    } catch {
-      tujuan = null;
-    }
-    if (tujuan) {
-      setMainTab('all');
-      setSelectedCategory('all');
-      setSearchQuery(tujuan);
-    }
+    const konsumsiTujuan = () => {
+      let tujuan: string | null = null;
+      try {
+        tujuan = sessionStorage.getItem('routex_cli_tujuan');
+        if (tujuan) sessionStorage.removeItem('routex_cli_tujuan');
+      } catch {
+        tujuan = null;
+      }
+      if (tujuan) {
+        setMainTab('all');
+        setSelectedCategory('all');
+        setSearchQuery(tujuan);
+      }
+    };
+    konsumsiTujuan();
+    window.addEventListener('routex:cli-tujuan', konsumsiTujuan);
+    window.addEventListener('focus', konsumsiTujuan);
+    return () => {
+      window.removeEventListener('routex:cli-tujuan', konsumsiTujuan);
+      window.removeEventListener('focus', konsumsiTujuan);
+    };
   }, []);
 
   // Kunci API global pengguna untuk menghasilkan skrip terminal siap pakai
@@ -596,6 +613,8 @@ export const CLIIntegrations: React.FC = () => {
             models={models}
             rules={rules}
             dynamicComboOptions={dynamicComboOptions}
+            modelsGagal={sumberGagal.includes('model')}
+            rulesGagal={sumberGagal.includes('aturan routing')}
             userApiKey={userApiKey}
             publicBaseURL={publicBaseURL}
             isApplying={applyingTool === tool.id}

@@ -30,6 +30,7 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
   onToggleEnabled,
   onDelete,
   budget,
+  budgetGagal = false,
 }) => {
   const budgetPct =
     budget && budget.limitUsd > 0 ? (budget.spentUsd / budget.limitUsd) * 100 : 0;
@@ -215,38 +216,63 @@ export const APIKeyCard: React.FC<APIKeyCardProps> = ({
           </div>
         </div>
 
-        {/* Batang anggaran per kunci (sampel 09) — data nyata entitas Budget scope api_key */}
+        {/* Batang anggaran per kunci (sampel 09) — data nyata entitas Budget scope api_key.
+            B-558: saat query ['budgets'] terakhir gagal, meter yang
+            tampil berasal dari data basi — angka + persen diganti
+            penanda netral '—', batang tanpa isi definitif, dan
+            penanda basi persisten; tanpa ini $45.00 / $50.00 (90%)
+            tampil pasti dari data basi. */}
         {budget && budget.limitUsd > 0 && (
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-text-muted flex items-center gap-1.5">
-                <Wallet className="w-3.5 h-3.5 text-text-muted" aria-hidden="true" />
-                Anggaran {budget.periodLabel}
-              </span>
-              <span className="font-mono text-text-secondary">
-                ${budget.spentUsd.toFixed(2)} / ${budget.limitUsd.toFixed(2)} ({Math.min(100, Math.round(budgetPct))}%)
-              </span>
-            </div>
-            <div
-              className="w-full h-[5px] bg-bg-surface-2 rounded-full overflow-hidden"
-              role="progressbar"
-              aria-label={`Pemakaian anggaran ${apiKey.name}`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.min(100, Math.round(budgetPct))}
-            >
+          budgetGagal ? (
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-text-muted flex items-center gap-1.5">
+                  <Wallet className="w-3.5 h-3.5 text-text-muted" aria-hidden="true" />
+                  Anggaran {budget.periodLabel}
+                </span>
+                <span className="font-mono text-amber-400">—</span>
+              </div>
               <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  budgetPct >= 100
-                    ? 'bg-status-error'
-                    : budgetPct >= budget.thresholdPct
-                      ? 'bg-status-warn'
-                      : 'bg-accent'
-                }`}
-                style={{ width: `${Math.min(100, budgetPct)}%` }}
+                className="w-full h-[5px] bg-bg-surface-2 rounded-full overflow-hidden"
+                role="progressbar"
+                aria-label={`Pemakaian anggaran ${apiKey.name} belum terukur`}
               />
+              <p className="text-[11px] leading-relaxed text-amber-300">
+                Data anggaran basi — muat ulang gagal, angka terakhir tidak ditampilkan.
+              </p>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-text-muted flex items-center gap-1.5">
+                  <Wallet className="w-3.5 h-3.5 text-text-muted" aria-hidden="true" />
+                  Anggaran {budget.periodLabel}
+                </span>
+                <span className="font-mono text-text-secondary">
+                  ${budget.spentUsd.toFixed(2)} / ${budget.limitUsd.toFixed(2)} ({Math.min(100, Math.round(budgetPct))}%)
+                </span>
+              </div>
+              <div
+                className="w-full h-[5px] bg-bg-surface-2 rounded-full overflow-hidden"
+                role="progressbar"
+                aria-label={`Pemakaian anggaran ${apiKey.name}`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.min(100, Math.round(budgetPct))}
+              >
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    budgetPct >= 100
+                      ? 'bg-status-error'
+                      : budgetPct >= budget.thresholdPct
+                        ? 'bg-status-warn'
+                        : 'bg-accent'
+                  }`}
+                  style={{ width: `${Math.min(100, budgetPct)}%` }}
+                />
+              </div>
+            </div>
+          )
         )}
       </div>
 
